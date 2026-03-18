@@ -1,0 +1,175 @@
+# VelvetPOS
+
+A modern, multi-tenant SaaS Point-of-Sale platform designed for clothing and apparel retailers. Built with Next.js 15+, Prisma 7, and Tailwind CSS v4.
+
+---
+
+## Project Overview
+
+VelvetPOS provides a complete POS terminal, inventory management, CRM, supplier management, staff administration, and a SuperAdmin console — all delivered as a SaaS product with per-tenant isolation.
+
+**Tech Stack**
+
+| Layer         | Technology                              |
+|---------------|-----------------------------------------|
+| Framework     | Next.js 16 (App Router, TypeScript)     |
+| Styling       | Tailwind CSS v4 + ShadCN/UI             |
+| Database ORM  | Prisma 7 + PostgreSQL 15                |
+| Auth          | NextAuth.js v4 (credentials + PIN)      |
+| Server State  | TanStack Query v5                       |
+| Client State  | Zustand v5                              |
+| Package Mgr   | pnpm                                    |
+
+---
+
+## Prerequisites
+
+Ensure the following are installed before continuing:
+
+- **Node.js** >= 20.0.0
+- **pnpm** >= 9.0.0 — install with `npm install -g pnpm`
+- **PostgreSQL** >= 15 — running locally or via a managed provider (Supabase, Neon, Railway, etc.)
+
+---
+
+## Installation
+
+```bash
+# 1. Clone the repository
+git clone <repository-url>
+cd velvetpos
+
+# 2. Install dependencies (automatically runs `prisma generate` via postinstall)
+pnpm install
+
+# 3. Copy the environment template and fill in your values
+cp .env.example .env.local
+```
+
+---
+
+## Environment Setup
+
+Open `.env.local` and update every value. The required variables are:
+
+| Variable                       | Purpose                                                        |
+|--------------------------------|----------------------------------------------------------------|
+| `DATABASE_URL`                 | PostgreSQL connection string                                   |
+| `NEXTAUTH_SECRET`              | JWT signing secret (`openssl rand -base64 32`)                 |
+| `NEXTAUTH_URL`                 | Canonical app URL (`http://localhost:3000` locally)            |
+| `PAYHERE_MERCHANT_ID`          | PayHere merchant identifier                                    |
+| `PAYHERE_MERCHANT_SECRET`      | PayHere signing secret                                         |
+| `PAYHERE_MODE`                 | `sandbox` or `live`                                            |
+| `WHATSAPP_ACCESS_TOKEN`        | Meta Cloud API access token                                    |
+| `WHATSAPP_PHONE_NUMBER_ID`     | Registered WhatsApp phone number ID                            |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | WhatsApp Business Account ID                                   |
+| `STORAGE_PROVIDER`             | `supabase` or `cloudinary`                                     |
+| `SUPABASE_URL`                 | Supabase project URL (if using Supabase)                       |
+| `SUPABASE_ANON_KEY`            | Supabase anon key (if using Supabase)                          |
+| `CLOUDINARY_CLOUD_NAME`        | Cloudinary cloud name (if using Cloudinary)                    |
+| `CLOUDINARY_API_KEY`           | Cloudinary API key (if using Cloudinary)                       |
+| `CLOUDINARY_API_SECRET`        | Cloudinary API secret (if using Cloudinary)                    |
+| `RESEND_API_KEY`               | Resend transactional email API key                             |
+| `EMAIL_FROM_ADDRESS`           | Verified sender address                                        |
+| `NEXT_PUBLIC_APP_URL`          | Public app URL (used in client-side code)                      |
+| `NEXT_PUBLIC_APP_NAME`         | Display name shown in UI and emails                            |
+
+---
+
+## Running the Development Server
+
+```bash
+pnpm dev
+```
+
+The app will be available at http://localhost:3000.
+
+---
+
+## Database Migrations
+
+Run database migrations against the active `DATABASE_URL` in `.env.local`:
+
+```bash
+# Apply pending migrations and regenerate the Prisma client
+pnpm prisma migrate dev
+```
+
+To inspect the current migration state without applying changes:
+
+```bash
+pnpm prisma migrate status
+```
+
+---
+
+## Seeding the Database
+
+Populate the database with initial roles, permissions, and a default SuperAdmin user:
+
+```bash
+pnpm prisma db seed
+```
+
+> **Note:** Migrations must be applied before running the seed script.
+
+---
+
+## Type Checking and Linting
+
+```bash
+# TypeScript type check (no emit)
+pnpm exec tsc --noEmit
+
+# ESLint (zero-warning policy)
+pnpm lint
+
+# Auto-fix ESLint issues
+pnpm lint:fix
+
+# Prettier format check
+pnpm format:check
+
+# Auto-format all source files
+pnpm format
+```
+
+---
+
+## Tests
+
+> Test infrastructure will be added as the project matures. This section will document how to run unit, integration, and end-to-end test suites.
+
+---
+
+## Project Structure
+
+```
+velvetpos/
++-- prisma/               # Prisma schema, migrations, and seed script
+|   +-- schema.prisma
+|   +-- prisma.config.ts  # Prisma 7 config file (loads DATABASE_URL)
+|   +-- seed.ts
++-- public/
+|   +-- fonts/            # Self-hosted WOFF2 fonts
++-- src/
+|   +-- app/              # Next.js App Router pages and layouts
+|   |   +-- (auth)/       # Authentication routes (login, forgot-password)
+|   |   +-- (store)/      # Tenant store routes (POS, inventory, CRM)
+|   |   +-- (superadmin)/ # SuperAdmin console routes
+|   +-- components/
+|   |   +-- shared/       # App-wide shared components (providers, navigation)
+|   |   +-- ui/           # ShadCN-generated primitive components
+|   +-- lib/              # Utility modules (fonts, Prisma client, helpers)
+|   +-- server/           # Server-only logic (actions, services, repositories)
+|   +-- stores/           # Zustand client state stores
+|   +-- types/            # Shared TypeScript type definitions
++-- .env.example          # Environment variable template
++-- README.md
+```
+
+---
+
+## Contributing
+
+This project follows conventional commits. All commits are validated by a Husky pre-commit hook running ESLint and Prettier via lint-staged. Ensure `pnpm lint` and `pnpm format:check` pass before opening a pull request.
