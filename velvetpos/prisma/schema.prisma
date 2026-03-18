@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -10,4 +8,80 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  OWNER
+  MANAGER
+  CASHIER
+  STOCK_CLERK
+}
+
+// ── Auth Models ──────────────────────────────────────────────────────────────
+
+model User {
+  id             String    @id @default(cuid())
+  tenantId       String?
+  email          String    @unique
+  passwordHash   String
+  pin            String?
+  role           UserRole
+  permissions    Json      @default("[]")
+  isActive       Boolean   @default(true)
+  sessionVersion Int       @default(1)
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  sessions       Session[]
+
+  @@index([email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ── Audit ────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String?
+  actorId    String?
+  actorRole  String
+  entityType String
+  entityId   String
+  action     String
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([tenantId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
 }

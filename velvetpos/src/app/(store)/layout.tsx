@@ -1,5 +1,7 @@
 // Shell placeholder — the AppSidebar and main content area will be integrated
 // in SubPhase 02.xx when the navigation components are built.
+import StoreLayoutClient from '@/components/shared/StoreLayoutClient';
+
 export default function StoreLayout({
   children,
 }: {
@@ -7,7 +9,7 @@ export default function StoreLayout({
 }) {
   return (
     <div className="min-h-screen flex bg-linen">
-      {children}
+      <StoreLayoutClient>{children}</StoreLayoutClient>
     </div>
   );
 }

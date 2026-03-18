@@ -15,7 +15,7 @@ VelvetPOS provides a complete POS terminal, inventory management, CRM, supplier 
 | Framework     | Next.js 16 (App Router, TypeScript)     |
 | Styling       | Tailwind CSS v4 + ShadCN/UI             |
 | Database ORM  | Prisma 7 + PostgreSQL 15                |
-| Auth          | NextAuth.js v4 (credentials + PIN)      |
+| Auth          | NextAuth.js v5 (Auth.js, credentials + PIN) |
 | Server State  | TanStack Query v5                       |
 | Client State  | Zustand v5                              |
 | Package Mgr   | pnpm                                    |
@@ -55,8 +55,8 @@ Open `.env.local` and update every value. The required variables are:
 | Variable                       | Purpose                                                        |
 |--------------------------------|----------------------------------------------------------------|
 | `DATABASE_URL`                 | PostgreSQL connection string                                   |
-| `NEXTAUTH_SECRET`              | JWT signing secret (`openssl rand -base64 32`)                 |
-| `NEXTAUTH_URL`                 | Canonical app URL (`http://localhost:3000` locally)            |
+| `AUTH_SECRET`                  | Auth.js signing secret (`pnpm dlx auth secret`)                |
+| `AUTH_URL`                     | Canonical app URL (`http://localhost:3000` locally)            |
 | `PAYHERE_MERCHANT_ID`          | PayHere merchant identifier                                    |
 | `PAYHERE_MERCHANT_SECRET`      | PayHere signing secret                                         |
 | `PAYHERE_MODE`                 | `sandbox` or `live`                                            |
@@ -73,6 +73,8 @@ Open `.env.local` and update every value. The required variables are:
 | `EMAIL_FROM_ADDRESS`           | Verified sender address                                        |
 | `NEXT_PUBLIC_APP_URL`          | Public app URL (used in client-side code)                      |
 | `NEXT_PUBLIC_APP_NAME`         | Display name shown in UI and emails                            |
+| `SEED_SUPER_ADMIN_EMAIL`       | Initial super-admin email used by seed script                  |
+| `SEED_SUPER_ADMIN_PASSWORD`    | Initial super-admin password used by seed script               |
 
 ---
 
@@ -112,6 +114,17 @@ pnpm prisma db seed
 ```
 
 > **Note:** Migrations must be applied before running the seed script.
+
+The seed command is idempotent: if the configured super-admin already exists, it will skip creation safely.
+
+Credentials are controlled by `SEED_SUPER_ADMIN_EMAIL` and `SEED_SUPER_ADMIN_PASSWORD` in `.env.local` (see `.env.example`).
+Change these values before any staging or production deployment.
+
+Recommended first-run workflow:
+1. Configure `DATABASE_URL` in `.env.local`.
+2. Run `pnpm prisma migrate dev`.
+3. Run `pnpm prisma db seed`.
+4. Run `pnpm dev` and sign in with the seeded super-admin account.
 
 ---
 
