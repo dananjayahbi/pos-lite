@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
     const url = request.nextUrl;
     const rawParams: Record<string, string> = {};
-    for (const key of ['search', 'categoryId', 'brandId', 'gender', 'isArchived', 'page', 'limit'] as const) {
+    for (const key of ['search', 'categoryId', 'brandId', 'gender', 'isArchived', 'categories', 'brands', 'genders', 'status', 'page', 'limit'] as const) {
       const val = url.searchParams.get(key);
       if (val !== null) rawParams[key] = val;
     }
@@ -43,12 +43,32 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { page, limit, ...filters } = parsed.data;
-    const result = await getAllProducts(tenantId, { ...filters, page, limit });
+    const { page, limit, categories, brands, genders, status, ...filters } = parsed.data;
+
+    // Parse multi-value params
+    const categoryIds = categories?.split(',').filter(Boolean);
+    const brandIds = brands?.split(',').filter(Boolean);
+    const genderValues = genders?.split(',').filter(Boolean) as import('@/generated/prisma/client').GenderType[] | undefined;
+
+    // Map status to isArchived
+    let isArchived = filters.isArchived;
+    if (status === 'active') isArchived = false;
+    else if (status === 'archived') isArchived = true;
+    else if (status === 'low_stock' || status === 'out_of_stock') isArchived = false;
+
+    const result = await getAllProducts(tenantId, {
+      ...filters,
+      isArchived,
+      categoryIds,
+      brandIds,
+      genders: genderValues,
+      page,
+      limit,
+    });
 
     const canViewCost = hasPermission(session.user, PERMISSIONS.PRODUCT.viewCostPrice);
 
-    const products = canViewCost
+    let filteredProducts = canViewCost
       ? result.products
       : result.products.map((p) => ({
           ...p,
@@ -57,11 +77,24 @@ export async function GET(request: NextRequest) {
             : undefined,
         }));
 
+    // Post-filter for stock status (can't compare two columns in Prisma)
+    if (status === 'low_stock') {
+      filteredProducts = filteredProducts.filter((p) =>
+        'variants' in p && Array.isArray(p.variants) &&
+        p.variants.some((v) => v.stockQuantity > 0 && v.stockQuantity <= v.lowStockThreshold),
+      );
+    } else if (status === 'out_of_stock') {
+      filteredProducts = filteredProducts.filter((p) =>
+        'variants' in p && Array.isArray(p.variants) &&
+        p.variants.every((v) => v.stockQuantity <= 0),
+      );
+    }
+
     const totalPages = Math.ceil(result.total / limit);
 
     return NextResponse.json({
       success: true,
-      data: products,
+      data: filteredProducts,
       meta: { page, limit, total: result.total, totalPages },
     });
   } catch (error) {

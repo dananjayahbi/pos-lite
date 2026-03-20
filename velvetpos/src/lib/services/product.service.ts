@@ -29,8 +29,11 @@ function stripUndefined<T extends object>(obj: T) {
 export interface ProductFilters {
   search?: string | undefined;
   categoryId?: string | undefined;
+  categoryIds?: string[] | undefined;
   brandId?: string | undefined;
+  brandIds?: string[] | undefined;
   gender?: GenderType | undefined;
+  genders?: GenderType[] | undefined;
   isArchived?: boolean | undefined;
   page?: number | undefined;
   limit?: number | undefined;
@@ -122,17 +125,42 @@ function generateSku(brandName: string | null, colour: string | undefined | null
 // ── Product Functions ────────────────────────────────────────────────────────
 
 export async function getAllProducts(tenantId: string, filters: ProductFilters = {}) {
-  const { search, categoryId, brandId, gender, isArchived, page = 1, limit = 20 } = filters;
+  const { search, categoryId, categoryIds, brandId, brandIds, gender, genders, isArchived, page = 1, limit = 20 } = filters;
 
   const where: Prisma.ProductWhereInput = {
     tenantId,
     deletedAt: null,
-    ...(search && { name: { contains: search, mode: 'insensitive' as const } }),
-    ...(categoryId && { categoryId }),
-    ...(brandId && { brandId }),
-    ...(gender && { gender }),
-    ...(isArchived !== undefined && { isArchived }),
   };
+
+  if (search) {
+    where.OR = [
+      { name: { contains: search, mode: 'insensitive' as const } },
+      { variants: { some: { sku: { contains: search, mode: 'insensitive' as const }, deletedAt: null } } },
+      { variants: { some: { barcode: { contains: search, mode: 'insensitive' as const }, deletedAt: null } } },
+    ];
+  }
+
+  if (categoryIds && categoryIds.length > 0) {
+    where.categoryId = { in: categoryIds };
+  } else if (categoryId) {
+    where.categoryId = categoryId;
+  }
+
+  if (brandIds && brandIds.length > 0) {
+    where.brandId = { in: brandIds };
+  } else if (brandId) {
+    where.brandId = brandId;
+  }
+
+  if (genders && genders.length > 0) {
+    where.gender = { in: genders };
+  } else if (gender) {
+    where.gender = gender;
+  }
+
+  if (isArchived !== undefined) {
+    where.isArchived = isArchived;
+  }
 
   const [products, total] = await Promise.all([
     prisma.product.findMany({
@@ -140,6 +168,17 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
       include: {
         category: { select: { id: true, name: true } },
         brand: { select: { id: true, name: true } },
+        variants: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            stockQuantity: true,
+            lowStockThreshold: true,
+            imageUrls: true,
+            retailPrice: true,
+            costPrice: true,
+          },
+        },
         _count: {
           select: {
             variants: { where: { deletedAt: null } },
@@ -663,6 +702,13 @@ export async function getBrandById(tenantId: string, brandId: string) {
 export async function getAllBrands(tenantId: string) {
   return prisma.brand.findMany({
     where: { tenantId, deletedAt: null },
+    include: {
+      _count: {
+        select: {
+          products: { where: { deletedAt: null } },
+        },
+      },
+    },
     orderBy: { name: 'asc' },
   });
 }

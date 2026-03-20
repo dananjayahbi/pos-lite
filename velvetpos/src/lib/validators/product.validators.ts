@@ -111,6 +111,10 @@ export const ProductListQuerySchema = z.object({
   search: z.string().max(100).optional(),
   categoryId: z.string().cuid().optional(),
   brandId: z.string().cuid().optional(),
+  categories: z.string().optional(),
+  brands: z.string().optional(),
+  genders: z.string().optional(),
+  status: z.enum(['active', 'archived', 'low_stock', 'out_of_stock']).optional(),
   gender: z.nativeEnum(GenderType).optional(),
   isArchived: z
     .enum(['true', 'false'])
