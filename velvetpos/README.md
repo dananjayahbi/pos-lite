@@ -107,7 +107,7 @@ pnpm prisma migrate status
 
 ## Seeding the Database
 
-Populate the database with initial roles, permissions, and a default SuperAdmin user:
+Populate the database with initial plans, a default SuperAdmin user, and optionally a sample tenant:
 
 ```bash
 pnpm prisma db seed
@@ -115,9 +115,46 @@ pnpm prisma db seed
 
 > **Note:** Migrations must be applied before running the seed script.
 
-The seed command is idempotent: if the configured super-admin already exists, it will skip creation safely.
+The seed command is idempotent: running it multiple times will not create duplicate records.
 
-Credentials are controlled by `SEED_SUPER_ADMIN_EMAIL` and `SEED_SUPER_ADMIN_PASSWORD` in `.env.local` (see `.env.example`).
+### What gets seeded
+
+| Data                 | Condition                          |
+|----------------------|------------------------------------|
+| Subscription Plans   | Always (Basic POS, Pro POS + WhatsApp) |
+| Super Admin User     | Always                             |
+| Sample Tenant        | Only when `SEED_SAMPLE_TENANT=true` |
+
+### Environment variables
+
+| Variable                     | Purpose                                              |
+|------------------------------|------------------------------------------------------|
+| `SEED_SUPER_ADMIN_EMAIL`     | Super Admin email (default: `superadmin@velvetpos.dev`) |
+| `SEED_SUPER_ADMIN_PASSWORD`  | Super Admin password (default: `changeme123!`)       |
+| `SEED_SAMPLE_TENANT`         | Set to `"true"` to seed "Dilani Boutique" tenant     |
+| `SEED_OWNER_EMAIL`           | Owner email for the sample tenant                    |
+| `SEED_OWNER_PASSWORD`        | Owner password for the sample tenant                 |
+
+### Seeding with sample tenant
+
+```bash
+# Ensure these are set in .env.local:
+# SEED_SAMPLE_TENANT="true"
+# SEED_OWNER_EMAIL="owner@dilani.dev"
+# SEED_OWNER_PASSWORD="ownerpass123!"
+
+pnpm prisma db seed
+```
+
+Expected output:
+```
+Plan already exists, updated fields: Basic POS
+Plan already exists, updated fields: Pro POS + WhatsApp
+Super Admin account already exists. Skipping creation.
+Created sample tenant: Dilani Boutique
+Created OWNER user: owner@dilani.dev
+Created ACTIVE subscription for Dilani Boutique on Pro POS + WhatsApp plan.
+```
 Change these values before any staging or production deployment.
 
 Recommended first-run workflow:

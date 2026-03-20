@@ -110,12 +110,37 @@ export default auth(async (request: NextRequest) => {
     }
   }
 
-  // Tenant status check placeholder for SubPhase 01.03:
-  // - Query tenant by user.tenantId
-  // - Redirect to /suspended for suspended tenants
-  // - Add x-grace-period header for grace period tenants
+  // Tenant status enforcement for store routes
+  if (pathname === '/suspended') {
+    return NextResponse.next();
+  }
+
   if (!user.tenantId) {
     return NextResponse.next();
+  }
+
+  if (isStorePath(pathname)) {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: user.tenantId },
+      select: { id: true, status: true, deletedAt: true, graceEndsAt: true },
+    });
+
+    if (!tenant || tenant.deletedAt !== null) {
+      return NextResponse.next();
+    }
+
+    if (tenant.status === 'SUSPENDED' || tenant.status === 'CANCELLED') {
+      return NextResponse.redirect(new URL('/suspended', request.url));
+    }
+
+    if (tenant.status === 'GRACE_PERIOD') {
+      const response = NextResponse.next();
+      response.headers.set('x-grace-period', 'true');
+      if (tenant.graceEndsAt) {
+        response.headers.set('x-grace-ends-at', tenant.graceEndsAt.toISOString());
+      }
+      return response;
+    }
   }
 
   return NextResponse.next();

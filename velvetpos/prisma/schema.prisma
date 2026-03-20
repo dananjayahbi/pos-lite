@@ -20,11 +20,65 @@ enum UserRole {
   STOCK_CLERK
 }
 
+enum TenantStatus {
+  ACTIVE
+  GRACE_PERIOD
+  SUSPENDED
+  CANCELLED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  TRIALING
+}
+
+enum InvoiceStatus {
+  PAID
+  UNPAID
+  OVERDUE
+}
+
+enum GenderType {
+  MEN
+  WOMEN
+  UNISEX
+  KIDS
+  TODDLERS
+}
+
+enum TaxRule {
+  STANDARD_VAT
+  SSCL
+  EXEMPT
+}
+
+enum StockMovementReason {
+  FOUND
+  DAMAGED
+  STOLEN
+  DATA_ERROR
+  RETURNED_TO_SUPPLIER
+  INITIAL_STOCK
+  SALE_RETURN
+  PURCHASE_RECEIVED
+  STOCK_TAKE_ADJUSTMENT
+}
+
+enum StockTakeStatus {
+  IN_PROGRESS
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
 // ── Auth Models ──────────────────────────────────────────────────────────────
 
 model User {
   id             String    @id @default(cuid())
   tenantId       String?
+  tenant         Tenant?   @relation(fields: [tenantId], references: [id])
   email          String    @unique
   passwordHash   String
   pin            String?
@@ -38,6 +92,9 @@ model User {
   deletedAt      DateTime?
 
   sessions       Session[]
+  stockMovements StockMovement[]
+  initiatedStockTakes StockTakeSession[] @relation("StockTakeInitiator")
+  approvedStockTakes  StockTakeSession[] @relation("StockTakeApprover")
 
   @@index([email])
   @@index([tenantId])
@@ -84,4 +141,248 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ── SaaS Models ──────────────────────────────────────────────────────────────
+
+model Plan {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  description   String
+  priceMonthly  Decimal  @db.Decimal(12, 2)
+  features      Json
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Tenant {
+  id           String       @id @default(cuid())
+  name         String
+  slug         String       @unique
+  logoUrl      String?
+  status       TenantStatus @default(ACTIVE)
+  graceEndsAt  DateTime?
+  customDomain String?
+  settings     Json
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  deletedAt    DateTime?
+
+  users         User[]
+  subscriptions Subscription[]
+  invoices      Invoice[]
+  categories    Category[]
+  brands        Brand[]
+  products      Product[]
+  productVariants ProductVariant[]
+  stockMovements StockMovement[]
+  stockTakeSessions StockTakeSession[]
+
+  @@map("tenants")
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  tenantId           String
+  tenant             Tenant             @relation(fields: [tenantId], references: [id])
+  planId             String
+  plan               Plan               @relation(fields: [planId], references: [id])
+  status             SubscriptionStatus
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  payhereSubId       String?
+  nextBillingDate    DateTime
+  cancelledAt        DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  invoices Invoice[]
+
+  @@index([tenantId])
+  @@index([planId])
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id])
+  subscriptionId String
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id])
+  invoiceNumber  String        @unique
+  amount         Decimal       @db.Decimal(12, 2)
+  status         InvoiceStatus
+  billingDate    DateTime
+  paidAt         DateTime?
+  pdfUrl         String?
+  createdAt      DateTime      @default(now())
+
+  @@index([tenantId])
+  @@index([subscriptionId])
+  @@map("invoices")
+}
+
+// ── Catalog Models ───────────────────────────────────────────────────────────
+
+model Category {
+  id          String    @id @default(cuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  name        String
+  description String?
+  parentId    String?
+  parent      Category? @relation("CategoryTree", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryTree")
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  products    Product[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("categories")
+}
+
+model Brand {
+  id          String    @id @default(cuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  name        String
+  description String?
+  logoUrl     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  products    Product[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("brands")
+}
+
+model Product {
+  id          String     @id @default(cuid())
+  tenantId    String
+  tenant      Tenant     @relation(fields: [tenantId], references: [id])
+  name        String
+  description String?
+  categoryId  String
+  category    Category   @relation(fields: [categoryId], references: [id])
+  brandId     String?
+  brand       Brand?     @relation(fields: [brandId], references: [id])
+  gender      GenderType
+  tags        String[]   @default([])
+  taxRule     TaxRule    @default(STANDARD_VAT)
+  isArchived  Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  variants    ProductVariant[]
+
+  @@index([tenantId])
+  @@index([tenantId, categoryId])
+  @@index([tenantId, isArchived, deletedAt])
+  @@map("products")
+}
+
+model ProductVariant {
+  id                String    @id @default(cuid())
+  productId         String
+  product           Product   @relation(fields: [productId], references: [id])
+  tenantId          String
+  tenant            Tenant    @relation(fields: [tenantId], references: [id])
+  sku               String
+  barcode           String?
+  size              String?
+  colour            String?
+  costPrice         Decimal   @db.Decimal(12, 2)
+  retailPrice       Decimal   @db.Decimal(12, 2)
+  wholesalePrice    Decimal?  @db.Decimal(12, 2)
+  stockQuantity     Int       @default(0)
+  lowStockThreshold Int       @default(5)
+  imageUrls         String[]  @default([])
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+
+  stockMovements    StockMovement[]
+  stockTakeItems    StockTakeItem[]
+
+  @@unique([tenantId, sku])
+  @@unique([tenantId, barcode])
+  @@index([tenantId])
+  @@index([productId, tenantId])
+  @@index([barcode, tenantId])
+  @@map("product_variants")
+}
+
+model StockMovement {
+  id                  String              @id @default(cuid())
+  tenantId            String
+  tenant              Tenant              @relation(fields: [tenantId], references: [id])
+  variantId           String
+  variant             ProductVariant      @relation(fields: [variantId], references: [id])
+  reason              StockMovementReason
+  quantityDelta       Int
+  quantityBefore      Int
+  quantityAfter       Int
+  actorId             String
+  actor               User                @relation(fields: [actorId], references: [id])
+  note                String?
+  saleId              String?
+  purchaseOrderId     String?
+  stockTakeSessionId  String?
+  createdAt           DateTime            @default(now())
+
+  @@index([variantId, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([actorId])
+  @@map("stock_movements")
+}
+
+model StockTakeSession {
+  id            String          @id @default(cuid())
+  tenantId      String
+  tenant        Tenant          @relation(fields: [tenantId], references: [id])
+  categoryId    String?
+  status        StockTakeStatus @default(IN_PROGRESS)
+  initiatedById String
+  initiatedBy   User            @relation("StockTakeInitiator", fields: [initiatedById], references: [id])
+  approvedById  String?
+  approvedBy    User?           @relation("StockTakeApprover", fields: [approvedById], references: [id])
+  startedAt     DateTime        @default(now())
+  completedAt   DateTime?
+  approvedAt    DateTime?
+  notes         String?
+
+  items         StockTakeItem[]
+
+  @@index([tenantId, status])
+  @@map("stock_take_sessions")
+}
+
+model StockTakeItem {
+  id              String           @id @default(cuid())
+  sessionId       String
+  session         StockTakeSession @relation(fields: [sessionId], references: [id])
+  variantId       String
+  variant         ProductVariant   @relation(fields: [variantId], references: [id])
+  systemQuantity  Int
+  countedQuantity Int?
+  discrepancy     Int?
+  isRecounted     Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([sessionId, variantId])
+  @@index([sessionId])
+  @@map("stock_take_items")
 }
