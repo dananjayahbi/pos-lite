@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { displayFont, bodyFont, monoFont } from '@/lib/fonts';
 import QueryProvider from '@/components/shared/QueryProvider';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 export const metadata: Metadata = {
   title: 'VelvetPOS',
@@ -16,7 +17,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${displayFont.variable} ${bodyFont.variable} ${monoFont.variable} antialiased`}>
       <body>
-        <QueryProvider>{children}</QueryProvider>
+        <QueryProvider>
+          <TooltipProvider>{children}</TooltipProvider>
+        </QueryProvider>
       </body>
     </html>
   );

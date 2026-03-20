@@ -64,6 +64,8 @@ enum StockMovementReason {
   SALE_RETURN
   PURCHASE_RECEIVED
   STOCK_TAKE_ADJUSTMENT
+  SALE
+  VOID_REVERSAL
 }
 
 enum StockTakeStatus {
@@ -71,6 +73,47 @@ enum StockTakeStatus {
   PENDING_APPROVAL
   APPROVED
   REJECTED
+}
+
+enum NotificationType {
+  LOW_STOCK_ALERT
+  STOCK_TAKE_SUBMITTED
+  STOCK_TAKE_APPROVED
+  STOCK_TAKE_REJECTED
+  SYSTEM_ALERT
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  SPLIT
+}
+
+enum PaymentLegMethod {
+  CASH
+  CARD
+}
+
+enum SaleStatus {
+  OPEN
+  COMPLETED
+  VOIDED
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+enum ReturnRefundMethod {
+  CASH
+  CARD_REVERSAL
+  STORE_CREDIT
+  EXCHANGE
+}
+
+enum ReturnStatus {
+  COMPLETED
 }
 
 // ── Auth Models ──────────────────────────────────────────────────────────────
@@ -95,6 +138,14 @@ model User {
   stockMovements StockMovement[]
   initiatedStockTakes StockTakeSession[] @relation("StockTakeInitiator")
   approvedStockTakes  StockTakeSession[] @relation("StockTakeApprover")
+  notifications        NotificationRecord[]
+  salesAsCashier       Sale[]             @relation("SaleCashier")
+  salesAsAuthManager   Sale[]             @relation("SaleAuthorizingManager")
+  salesAsVoidActor     Sale[]             @relation("SaleVoidActor")
+  shiftsAsCashier      Shift[]            @relation("ShiftCashier")
+  shiftClosures        ShiftClosure[]     @relation("ShiftCloser")
+  returnsAsInitiator   Return[]           @relation("ReturnInitiator")
+  returnsAsAuthorizer  Return[]           @relation("ReturnAuthorizer")
 
   @@index([email])
   @@index([tenantId])
@@ -139,6 +190,8 @@ model AuditLog {
   @@index([actorId])
   @@index([tenantId])
   @@index([entityType, entityId])
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, actorId, createdAt])
   @@index([createdAt])
   @@map("audit_logs")
 }
@@ -181,6 +234,10 @@ model Tenant {
   productVariants ProductVariant[]
   stockMovements StockMovement[]
   stockTakeSessions StockTakeSession[]
+  notifications      NotificationRecord[]
+  sales              Sale[]
+  shifts             Shift[]
+  storeCredits       StoreCredit[]
 
   @@map("tenants")
 }
@@ -315,6 +372,7 @@ model ProductVariant {
 
   stockMovements    StockMovement[]
   stockTakeItems    StockTakeItem[]
+  saleLines         SaleLine[]
 
   @@unique([tenantId, sku])
   @@unique([tenantId, barcode])
@@ -385,4 +443,203 @@ model StockTakeItem {
   @@unique([sessionId, variantId])
   @@index([sessionId])
   @@map("stock_take_items")
+}
+
+// ── Notifications ────────────────────────────────────────────────────────────
+
+model NotificationRecord {
+  id                String           @id @default(cuid())
+  tenantId          String
+  tenant            Tenant           @relation(fields: [tenantId], references: [id])
+  recipientId       String
+  recipient         User             @relation(fields: [recipientId], references: [id])
+  type              NotificationType
+  title             String
+  body              String
+  relatedEntityType String?
+  relatedEntityId   String?
+  isRead            Boolean          @default(false)
+  createdAt         DateTime         @default(now())
+
+  @@index([tenantId, recipientId, isRead])
+  @@index([tenantId, recipientId, createdAt])
+  @@map("notification_records")
+}
+
+// ── POS Models ───────────────────────────────────────────────────────────────
+
+model Sale {
+  id                    String         @id @default(cuid())
+  tenantId              String
+  tenant                Tenant         @relation(fields: [tenantId], references: [id])
+  shiftId               String
+  shift                 Shift          @relation(fields: [shiftId], references: [id])
+  cashierId             String
+  cashier               User           @relation("SaleCashier", fields: [cashierId], references: [id])
+  subtotal              Decimal        @db.Decimal(12, 2)
+  discountAmount        Decimal        @default(0) @db.Decimal(12, 2)
+  taxAmount             Decimal        @db.Decimal(12, 2)
+  totalAmount           Decimal        @db.Decimal(12, 2)
+  changeGiven           Decimal?       @db.Decimal(12, 2)
+  authorizingManagerId  String?
+  authorizingManager    User?          @relation("SaleAuthorizingManager", fields: [authorizingManagerId], references: [id])
+  paymentMethod         PaymentMethod?
+  status                SaleStatus     @default(OPEN)
+  voidedById            String?
+  voidedBy              User?          @relation("SaleVoidActor", fields: [voidedById], references: [id])
+  voidedAt              DateTime?
+  whatsappReceiptSentAt DateTime?
+  completedAt           DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  lines                 SaleLine[]
+  payments              Payment[]    @relation("SalePayments")
+  linkedReturnId        String?
+  linkedReturn          Return?        @relation("ExchangeLinkedSale", fields: [linkedReturnId], references: [id], onDelete: SetNull)
+  returns               Return[]       @relation("ReturnOriginalSale")
+
+  @@index([tenantId, status, createdAt])
+  @@index([shiftId])
+  @@index([cashierId])
+  @@map("sales")
+}
+
+model SaleLine {
+  id                         String         @id @default(cuid())
+  saleId                     String
+  sale                       Sale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  variantId                  String
+  variant                    ProductVariant @relation(fields: [variantId], references: [id])
+  productNameSnapshot        String
+  variantDescriptionSnapshot String
+  sku                        String
+  unitPrice                  Decimal        @db.Decimal(12, 2)
+  quantity                   Int
+  discountPercent            Decimal        @default(0) @db.Decimal(12, 2)
+  discountAmount             Decimal        @default(0) @db.Decimal(12, 2)
+  lineTotalBeforeDiscount    Decimal        @db.Decimal(12, 2)
+  lineTotalAfterDiscount     Decimal        @db.Decimal(12, 2)
+  createdAt                  DateTime       @default(now())
+
+  returnLines           ReturnLine[]
+
+  @@index([saleId])
+  @@index([variantId])
+  @@map("sale_lines")
+}
+
+// Sum of Payment.amount must equal Sale.totalAmount — enforced in sale.service createSale transaction
+model Payment {
+  id                  String           @id @default(cuid())
+  saleId              String
+  sale                Sale             @relation("SalePayments", fields: [saleId], references: [id], onDelete: Cascade)
+  method              PaymentLegMethod
+  amount              Decimal          @db.Decimal(12, 2)
+  cardReferenceNumber String?
+  createdAt           DateTime         @default(now())
+
+  @@index([saleId])
+  @@map("payments")
+}
+
+model Shift {
+  id           String      @id @default(cuid())
+  tenantId     String
+  tenant       Tenant      @relation(fields: [tenantId], references: [id])
+  cashierId    String
+  cashier      User        @relation("ShiftCashier", fields: [cashierId], references: [id])
+  status       ShiftStatus @default(OPEN)
+  openedAt     DateTime    @default(now())
+  closedAt     DateTime?
+  openingFloat Decimal     @db.Decimal(12, 2)
+  notes        String?
+
+  sales        Sale[]
+  closure      ShiftClosure?
+
+  @@index([tenantId, status])
+  @@index([cashierId, status])
+  @@index([tenantId, openedAt])
+  @@map("shifts")
+}
+
+model ShiftClosure {
+  id                 String   @id @default(cuid())
+  shiftId            String   @unique
+  shift              Shift    @relation(fields: [shiftId], references: [id])
+  closingCashCount   Decimal  @db.Decimal(12, 2)
+  expectedCash       Decimal  @db.Decimal(12, 2)
+  cashDifference     Decimal  @db.Decimal(12, 2)
+  totalSalesCount    Int
+  totalSalesAmount   Decimal  @db.Decimal(12, 2)
+  totalReturnsCount  Int      @default(0)
+  totalReturnsAmount Decimal  @default(0) @db.Decimal(12, 2)
+  totalCashAmount    Decimal  @db.Decimal(12, 2)
+  totalCardAmount    Decimal  @db.Decimal(12, 2)
+  closedById         String
+  closedBy           User     @relation("ShiftCloser", fields: [closedById], references: [id])
+  closedAt           DateTime @default(now())
+
+  @@map("shift_closures")
+}
+
+// ── Returns & Exchanges ──────────────────────────────────────────────────────
+
+model Return {
+  id              String             @id @default(cuid())
+  tenantId        String
+  originalSaleId  String
+  originalSale    Sale               @relation("ReturnOriginalSale", fields: [originalSaleId], references: [id], onDelete: Restrict)
+  initiatedById   String
+  initiatedBy     User               @relation("ReturnInitiator", fields: [initiatedById], references: [id])
+  authorizedById  String
+  authorizedBy    User               @relation("ReturnAuthorizer", fields: [authorizedById], references: [id])
+  refundMethod    ReturnRefundMethod
+  refundAmount    Decimal            @db.Decimal(12, 2)
+  restockItems    Boolean            @default(true)
+  reason          String
+  status          ReturnStatus       @default(COMPLETED)
+  createdAt       DateTime           @default(now())
+
+  lines           ReturnLine[]
+  linkedSales     Sale[]             @relation("ExchangeLinkedSale")
+
+  @@index([tenantId, createdAt])
+  @@index([originalSaleId])
+  @@map("returns")
+}
+
+model ReturnLine {
+  id                         String     @id @default(cuid())
+  returnId                   String
+  return                     Return     @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  originalSaleLineId         String
+  originalSaleLine           SaleLine   @relation(fields: [originalSaleLineId], references: [id])
+  variantId                  String
+  productNameSnapshot        String
+  variantDescriptionSnapshot String
+  quantity                   Int
+  unitPrice                  Decimal    @db.Decimal(12, 2)
+  lineRefundAmount           Decimal    @db.Decimal(12, 2)
+  isRestocked                Boolean    @default(false)
+  createdAt                  DateTime   @default(now())
+
+  @@index([returnId])
+  @@map("return_lines")
+}
+
+model StoreCredit {
+  id         String    @id @default(cuid())
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id])
+  customerId String?
+  amount     Decimal   @db.Decimal(12, 2)
+  usedAmount Decimal   @default(0) @db.Decimal(12, 2)
+  note       String?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([tenantId])
+  @@map("store_credits")
 }

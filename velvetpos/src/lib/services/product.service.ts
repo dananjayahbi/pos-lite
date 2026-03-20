@@ -172,6 +172,10 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
           where: { deletedAt: null },
           select: {
             id: true,
+            sku: true,
+            barcode: true,
+            size: true,
+            colour: true,
             stockQuantity: true,
             lowStockThreshold: true,
             imageUrls: true,

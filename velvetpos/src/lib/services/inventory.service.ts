@@ -14,7 +14,7 @@ import { createAuditLog } from '@/lib/services/audit.service';
 
 // ── Transaction Client Type ──────────────────────────────────────────────────
 
-type TxClient = Omit<
+export type TxClient = Omit<
   typeof prisma,
   '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
 >;
@@ -65,7 +65,7 @@ export interface PaginationInput {
 
 // ── Private Helper: Core Adjust Logic ────────────────────────────────────────
 
-async function adjustStockInTx(
+export async function adjustStockInTx(
   tx: TxClient,
   tenantId: string,
   variantId: string,

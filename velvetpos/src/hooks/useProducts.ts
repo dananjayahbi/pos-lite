@@ -28,6 +28,10 @@ export interface ProductListItem {
   _count: { variants: number };
   variants?: Array<{
     id: string;
+    sku: string;
+    barcode: string | null;
+    size: string | null;
+    colour: string | null;
     stockQuantity: number;
     lowStockThreshold: number;
     imageUrls: string[];

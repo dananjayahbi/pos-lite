@@ -134,3 +134,14 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes pin-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  50% { transform: translateX(6px); }
+  75% { transform: translateX(-6px); }
+}
+
+@utility animate-pin-shake {
+  animation: pin-shake 0.3s ease-in-out;
+}

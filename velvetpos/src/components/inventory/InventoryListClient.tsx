@@ -20,6 +20,7 @@ import { ExportPopover } from '@/components/inventory/ExportPopover';
 import { InventoryFilterBar } from '@/components/inventory/InventoryFilterBar';
 import { ActiveFilterChips } from '@/components/inventory/ActiveFilterChips';
 import { useProducts } from '@/hooks/useProducts';
+import { LowStockAlertBadge } from '@/components/stock/LowStockAlertBadge';
 
 interface InventoryListClientProps {
   initialCount: number;
@@ -150,6 +151,9 @@ export function InventoryListClient({ initialCount, permissions }: InventoryList
           )}
         </div>
       </div>
+
+      {/* Low Stock Alert */}
+      <LowStockAlertBadge />
 
       {/* Filters */}
       <InventoryFilterBar totalCount={displayCount} />
