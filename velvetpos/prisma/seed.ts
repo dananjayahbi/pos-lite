@@ -148,6 +148,14 @@ async function main() {
     throw error;
   }
 
+  // Seed comprehensive demo data (gated behind SEED_DEMO_DATA=true)
+  try {
+    await seedComprehensiveDemoData();
+  } catch (error) {
+    console.error('Failed to seed comprehensive demo data:', error);
+    throw error;
+  }
+
   await prisma.$disconnect();
 }
 
@@ -2310,6 +2318,811 @@ async function seedBillingData() {
   console.log('  Demo invoices:       3 (2 PAID, 1 PENDING)');
   console.log('  Payment reminders:   2 (THREE_DAY + DUE_DATE)');
   console.log('  Demo tenants:        2 new (Trial Demo, Suspended Demo)');
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Comprehensive Demo Data — "velvet-demo" tenant with 90 days of rich data
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function seedComprehensiveDemoData() {
+  if (process.env.SEED_DEMO_DATA !== 'true') {
+    console.log("Skipping comprehensive demo seed (SEED_DEMO_DATA is not set to 'true')");
+    return;
+  }
+
+  // ── 0. Deterministic PRNG ──────────────────────────────────────────────────
+  function seededRandom(seed: number) {
+    let s = seed;
+    return () => {
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      return s / 0x7fffffff;
+    };
+  }
+
+  const rng = seededRandom(42);
+
+  function pick<T>(arr: T[]): T {
+    return arr[Math.floor(rng() * arr.length)]!;
+  }
+
+  function pickN<T>(arr: T[], n: number): T[] {
+    const shuffled = [...arr].sort(() => rng() - 0.5);
+    return shuffled.slice(0, n);
+  }
+
+  function randInt(min: number, max: number): number {
+    return Math.floor(rng() * (max - min + 1)) + min;
+  }
+
+  // ── 1. Upsert tenant ──────────────────────────────────────────────────────
+  let tenant = await prisma.tenant.findFirst({ where: { slug: 'velvet-demo' } });
+  if (!tenant) {
+    tenant = await prisma.tenant.create({
+      data: {
+        name: 'Velvet Boutique (Demo)',
+        slug: 'velvet-demo',
+        status: 'ACTIVE',
+        subscriptionStatus: 'ACTIVE',
+        settings: {},
+      },
+    });
+  }
+  const tenantId = tenant.id;
+
+  // Idempotency guard
+  const existingSales = await prisma.sale.count({ where: { tenantId } });
+  if (existingSales > 100) {
+    console.log('Demo data already seeded — skipping');
+    return;
+  }
+
+  console.log('── Seeding comprehensive demo data for velvet-demo ──');
+
+  // ── 2. Staff users ─────────────────────────────────────────────────────────
+  const staffDefs = [
+    { email: 'owner@velvetdemo.com', role: 'OWNER' as const, pin: '1111', name: 'Kavindi Perera' },
+    { email: 'manager@velvetdemo.com', role: 'MANAGER' as const, pin: '2222', name: 'Chamara Bandara' },
+    { email: 'cashier1@velvetdemo.com', role: 'CASHIER' as const, pin: '3333', name: 'Dilani Senanayake' },
+    { email: 'cashier2@velvetdemo.com', role: 'CASHIER' as const, pin: '4444', name: 'Ruwani Fernando' },
+    { email: 'stock@velvetdemo.com', role: 'STOCK_CLERK' as const, pin: '5555', name: 'Asela Wickramasinghe' },
+  ];
+
+  const passwordHash = await bcrypt.hash('demo-pass-2025!', 12);
+  const pinHashes = await Promise.all(staffDefs.map((s) => bcrypt.hash(s.pin, 10)));
+
+  const staffData = staffDefs.map((s, i) => ({
+    email: s.email,
+    passwordHash,
+    pin: pinHashes[i]!,
+    role: s.role,
+    tenantId,
+    permissions: [] as string[],
+    isActive: true,
+    ...(s.role === 'CASHIER' ? { commissionRate: new Prisma.Decimal(1.5) } : {}),
+  }));
+
+  await prisma.user.createMany({ data: staffData, skipDuplicates: true });
+
+  const allStaff = await prisma.user.findMany({
+    where: { tenantId, deletedAt: null },
+    orderBy: { email: 'asc' },
+  });
+
+  const owner = allStaff.find((u) => u.role === 'OWNER')!;
+  const manager = allStaff.find((u) => u.role === 'MANAGER')!;
+  const cashiers = allStaff.filter((u) => u.role === 'CASHIER');
+  const stockClerk = allStaff.find((u) => u.role === 'STOCK_CLERK')!;
+
+  console.log(`  Staff created: ${allStaff.length}`);
+
+  // ── 3. Categories ──────────────────────────────────────────────────────────
+  const categoryDefs = [
+    { name: 'Sarees', sortOrder: 1 },
+    { name: 'Kurtis & Tops', sortOrder: 2 },
+    { name: 'Trousers & Palazzo', sortOrder: 3 },
+    { name: 'Dresses', sortOrder: 4 },
+    { name: 'Accessories', sortOrder: 5 },
+  ];
+
+  for (const cat of categoryDefs) {
+    await prisma.category.upsert({
+      where: { tenantId_name: { tenantId, name: cat.name } },
+      create: { tenantId, name: cat.name, sortOrder: cat.sortOrder },
+      update: {},
+    });
+  }
+
+  const categories = await prisma.category.findMany({
+    where: { tenantId, deletedAt: null },
+    orderBy: { sortOrder: 'asc' },
+  });
+
+  const catMap = Object.fromEntries(categories.map((c) => [c.name, c.id])) as Record<string, string>;
+
+  console.log(`  Categories created: ${categories.length}`);
+
+  // ── 4. Products & Variants ─────────────────────────────────────────────────
+  type ProductDef = {
+    name: string;
+    category: string;
+    gender: 'WOMEN' | 'UNISEX';
+    taxRule: 'STANDARD_VAT' | 'SSCL';
+    variants: { size: string; colour: string; cost: number; retail: number; stock: number }[];
+  };
+
+  const productDefs: ProductDef[] = [
+    // Sarees (6)
+    { name: 'Kandyan Silk Saree', category: 'Sarees', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'Standard', colour: 'Maroon', cost: 8500, retail: 15500, stock: 12 },
+      { size: 'Standard', colour: 'Royal Blue', cost: 8500, retail: 15500, stock: 10 },
+      { size: 'Standard', colour: 'Emerald', cost: 8500, retail: 15500, stock: 8 },
+    ]},
+    { name: 'Cotton Handloom Saree', category: 'Sarees', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'Standard', colour: 'Off-White', cost: 4200, retail: 7800, stock: 18 },
+      { size: 'Standard', colour: 'Peach', cost: 4200, retail: 7800, stock: 15 },
+    ]},
+    { name: 'Batik Print Saree', category: 'Sarees', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'Standard', colour: 'Multi Blue', cost: 5800, retail: 9900, stock: 14 },
+      { size: 'Standard', colour: 'Multi Green', cost: 5800, retail: 9900, stock: 12 },
+      { size: 'Standard', colour: 'Sunset', cost: 5800, retail: 9900, stock: 10 },
+    ]},
+    { name: 'Linen Saree', category: 'Sarees', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'Standard', colour: 'Grey', cost: 3800, retail: 6500, stock: 20 },
+      { size: 'Standard', colour: 'Beige', cost: 3800, retail: 6500, stock: 16 },
+    ]},
+    { name: 'Embroidered Organza Saree', category: 'Sarees', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'Standard', colour: 'Blush Pink', cost: 11000, retail: 19500, stock: 8 },
+      { size: 'Standard', colour: 'Ivory', cost: 11000, retail: 19500, stock: 6 },
+    ]},
+    { name: 'Crepe Silk Saree', category: 'Sarees', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'Standard', colour: 'Teal', cost: 7200, retail: 12500, stock: 10 },
+      { size: 'Standard', colour: 'Wine', cost: 7200, retail: 12500, stock: 12 },
+      { size: 'Standard', colour: 'Gold', cost: 7200, retail: 12500, stock: 9 },
+    ]},
+
+    // Kurtis & Tops (8)
+    { name: 'Printed Cotton Kurti', category: 'Kurtis & Tops', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Sky Blue', cost: 1200, retail: 2200, stock: 30 },
+      { size: 'M', colour: 'Sky Blue', cost: 1200, retail: 2200, stock: 35 },
+      { size: 'L', colour: 'Sky Blue', cost: 1200, retail: 2200, stock: 25 },
+      { size: 'XL', colour: 'Sky Blue', cost: 1200, retail: 2200, stock: 20 },
+    ]},
+    { name: 'Embroidered Linen Kurti', category: 'Kurtis & Tops', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Mint', cost: 1800, retail: 3200, stock: 18 },
+      { size: 'M', colour: 'Mint', cost: 1800, retail: 3200, stock: 22 },
+      { size: 'L', colour: 'Lavender', cost: 1800, retail: 3200, stock: 16 },
+    ]},
+    { name: 'Chiffon Blouse', category: 'Kurtis & Tops', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'White', cost: 1500, retail: 2800, stock: 20 },
+      { size: 'M', colour: 'White', cost: 1500, retail: 2800, stock: 25 },
+      { size: 'L', colour: 'Black', cost: 1500, retail: 2800, stock: 18 },
+    ]},
+    { name: 'Sleeveless Cotton Top', category: 'Kurtis & Tops', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Coral', cost: 900, retail: 1800, stock: 32 },
+      { size: 'M', colour: 'Coral', cost: 900, retail: 1800, stock: 38 },
+      { size: 'L', colour: 'Navy', cost: 900, retail: 1800, stock: 28 },
+    ]},
+    { name: 'A-Line Rayon Kurti', category: 'Kurtis & Tops', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'M', colour: 'Ochre', cost: 1400, retail: 2500, stock: 22 },
+      { size: 'L', colour: 'Ochre', cost: 1400, retail: 2500, stock: 20 },
+      { size: 'XL', colour: 'Dusty Rose', cost: 1400, retail: 2500, stock: 15 },
+    ]},
+    { name: 'Peplum Kurta Top', category: 'Kurtis & Tops', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Olive', cost: 1600, retail: 2900, stock: 14 },
+      { size: 'M', colour: 'Olive', cost: 1600, retail: 2900, stock: 18 },
+    ]},
+    { name: 'Tie-Dye Casual Top', category: 'Kurtis & Tops', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Multi', cost: 800, retail: 1500, stock: 40 },
+      { size: 'M', colour: 'Multi', cost: 800, retail: 1500, stock: 40 },
+      { size: 'L', colour: 'Multi', cost: 800, retail: 1500, stock: 35 },
+    ]},
+    { name: 'Mandarin Collar Blouse', category: 'Kurtis & Tops', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Burgundy', cost: 1300, retail: 2400, stock: 16 },
+      { size: 'M', colour: 'Burgundy', cost: 1300, retail: 2400, stock: 20 },
+      { size: 'L', colour: 'Sage', cost: 1300, retail: 2400, stock: 14 },
+    ]},
+
+    // Trousers & Palazzo (5)
+    { name: 'Wide-Leg Palazzo', category: 'Trousers & Palazzo', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Black', cost: 1100, retail: 2100, stock: 28 },
+      { size: 'M', colour: 'Black', cost: 1100, retail: 2100, stock: 30 },
+      { size: 'L', colour: 'Cream', cost: 1100, retail: 2100, stock: 22 },
+    ]},
+    { name: 'Cotton Cigarette Pants', category: 'Trousers & Palazzo', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Navy', cost: 1000, retail: 1950, stock: 26 },
+      { size: 'M', colour: 'Navy', cost: 1000, retail: 1950, stock: 30 },
+      { size: 'L', colour: 'Charcoal', cost: 1000, retail: 1950, stock: 20 },
+    ]},
+    { name: 'Printed Harem Pants', category: 'Trousers & Palazzo', gender: 'UNISEX', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'Free Size', colour: 'Elephant Print', cost: 900, retail: 1800, stock: 35 },
+      { size: 'Free Size', colour: 'Floral', cost: 900, retail: 1800, stock: 30 },
+    ]},
+    { name: 'High-Waist Linen Trouser', category: 'Trousers & Palazzo', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Tan', cost: 1500, retail: 2800, stock: 18 },
+      { size: 'M', colour: 'Tan', cost: 1500, retail: 2800, stock: 20 },
+      { size: 'L', colour: 'White', cost: 1500, retail: 2800, stock: 14 },
+    ]},
+    { name: 'Culottes', category: 'Trousers & Palazzo', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Rust', cost: 1200, retail: 2300, stock: 20 },
+      { size: 'M', colour: 'Rust', cost: 1200, retail: 2300, stock: 24 },
+    ]},
+
+    // Dresses (7)
+    { name: 'Batik Midi Dress', category: 'Dresses', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Indigo', cost: 2800, retail: 4900, stock: 14 },
+      { size: 'M', colour: 'Indigo', cost: 2800, retail: 4900, stock: 16 },
+      { size: 'L', colour: 'Terracotta', cost: 2800, retail: 4900, stock: 12 },
+    ]},
+    { name: 'Linen Shirt Dress', category: 'Dresses', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Olive', cost: 3200, retail: 5500, stock: 10 },
+      { size: 'M', colour: 'Olive', cost: 3200, retail: 5500, stock: 14 },
+      { size: 'L', colour: 'Sand', cost: 3200, retail: 5500, stock: 10 },
+    ]},
+    { name: 'Wrap Maxi Dress', category: 'Dresses', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Floral Navy', cost: 3500, retail: 6200, stock: 10 },
+      { size: 'M', colour: 'Floral Navy', cost: 3500, retail: 6200, stock: 12 },
+    ]},
+    { name: 'Cotton Shift Dress', category: 'Dresses', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Mustard', cost: 2200, retail: 3900, stock: 18 },
+      { size: 'M', colour: 'Mustard', cost: 2200, retail: 3900, stock: 20 },
+      { size: 'L', colour: 'Teal', cost: 2200, retail: 3900, stock: 14 },
+    ]},
+    { name: 'Embroidered A-Line Dress', category: 'Dresses', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Ivory', cost: 4500, retail: 7500, stock: 8 },
+      { size: 'M', colour: 'Ivory', cost: 4500, retail: 7500, stock: 10 },
+      { size: 'L', colour: 'Blush', cost: 4500, retail: 7500, stock: 8 },
+    ]},
+    { name: 'Tunic Dress', category: 'Dresses', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'S', colour: 'Sage', cost: 2000, retail: 3500, stock: 22 },
+      { size: 'M', colour: 'Sage', cost: 2000, retail: 3500, stock: 24 },
+      { size: 'L', colour: 'Mauve', cost: 2000, retail: 3500, stock: 16 },
+    ]},
+    { name: 'Kaftan Beach Dress', category: 'Dresses', gender: 'WOMEN', taxRule: 'STANDARD_VAT', variants: [
+      { size: 'Free Size', colour: 'Turquoise', cost: 2600, retail: 4500, stock: 15 },
+      { size: 'Free Size', colour: 'Coral', cost: 2600, retail: 4500, stock: 12 },
+    ]},
+
+    // Accessories (4)
+    { name: 'Handwoven Clutch Bag', category: 'Accessories', gender: 'WOMEN', taxRule: 'SSCL', variants: [
+      { size: 'One Size', colour: 'Gold & Black', cost: 1800, retail: 3200, stock: 20 },
+      { size: 'One Size', colour: 'Silver & Navy', cost: 1800, retail: 3200, stock: 18 },
+    ]},
+    { name: 'Beaded Necklace Set', category: 'Accessories', gender: 'WOMEN', taxRule: 'SSCL', variants: [
+      { size: 'One Size', colour: 'Pearl', cost: 1200, retail: 2200, stock: 25 },
+      { size: 'One Size', colour: 'Coral Beads', cost: 1200, retail: 2200, stock: 20 },
+    ]},
+    { name: 'Silk Scarf', category: 'Accessories', gender: 'UNISEX', taxRule: 'SSCL', variants: [
+      { size: 'One Size', colour: 'Paisley Red', cost: 900, retail: 1800, stock: 30 },
+      { size: 'One Size', colour: 'Geometric Blue', cost: 900, retail: 1800, stock: 26 },
+      { size: 'One Size', colour: 'Floral Cream', cost: 900, retail: 1800, stock: 22 },
+    ]},
+    { name: 'Leather Belt', category: 'Accessories', gender: 'UNISEX', taxRule: 'SSCL', variants: [
+      { size: 'S', colour: 'Brown', cost: 700, retail: 1500, stock: 28 },
+      { size: 'M', colour: 'Brown', cost: 700, retail: 1500, stock: 32 },
+      { size: 'L', colour: 'Black', cost: 700, retail: 1500, stock: 24 },
+    ]},
+  ];
+
+  let variantCounter = 0;
+  for (const pDef of productDefs) {
+    const categoryId = catMap[pDef.category];
+    if (!categoryId) continue;
+
+    const existing = await prisma.product.findFirst({
+      where: { tenantId, name: pDef.name, deletedAt: null },
+    });
+    if (existing) {
+      variantCounter += pDef.variants.length;
+      continue;
+    }
+
+    const product = await prisma.product.create({
+      data: {
+        tenantId,
+        name: pDef.name,
+        categoryId,
+        gender: pDef.gender,
+        taxRule: pDef.taxRule,
+        tags: [],
+      },
+    });
+
+    for (const v of pDef.variants) {
+      variantCounter++;
+      const sku = `VD-${String(variantCounter).padStart(4, '0')}`;
+      await prisma.productVariant.create({
+        data: {
+          productId: product.id,
+          tenantId,
+          sku,
+          size: v.size,
+          colour: v.colour,
+          costPrice: v.cost,
+          retailPrice: v.retail,
+          stockQuantity: v.stock,
+          lowStockThreshold: 5,
+        },
+      });
+    }
+  }
+
+  const allVariants = await prisma.productVariant.findMany({
+    where: { tenantId, deletedAt: null },
+    include: { product: { select: { name: true } } },
+  });
+
+  console.log(`  Products created: ${productDefs.length}, Variants: ${allVariants.length}`);
+
+  // ── 5. Customers ───────────────────────────────────────────────────────────
+  const customerDefs = [
+    { name: 'Nishani Jayawardena', phone: '0771234501', birthday: '1990-03-15' },
+    { name: 'Tharushi De Silva', phone: '0771234502', birthday: '1988-07-22' },
+    { name: 'Amaya Perera', phone: '0771234503', birthday: '1995-11-08' },
+    { name: 'Sachini Fernando', phone: '0771234504', birthday: '1992-01-30' },
+    { name: 'Rashmi Wijesinghe', phone: '0771234505', birthday: '1987-05-12' },
+    { name: 'Kumari Rathnayake', phone: '0771234506', birthday: '1993-09-25' },
+    { name: 'Hiruni Bandara', phone: '0771234507', birthday: '1991-12-03' },
+    { name: 'Nadeesha Gunawardena', phone: '0771234508', birthday: '1986-04-18' },
+    { name: 'Sanduni Herath', phone: '0771234509', birthday: '1994-08-07' },
+    { name: 'Chathurika Liyanage', phone: '0771234510', birthday: '1989-06-21' },
+  ];
+
+  const customerData = customerDefs.map((c) => ({
+    tenantId,
+    name: c.name,
+    phone: c.phone,
+    birthday: new Date(c.birthday),
+    tags: [] as string[],
+  }));
+
+  await prisma.customer.createMany({ data: customerData, skipDuplicates: true });
+
+  const customers = await prisma.customer.findMany({ where: { tenantId } });
+  console.log(`  Customers created: ${customers.length}`);
+
+  // ── 6. Sales (1000+ across 90 days) ────────────────────────────────────────
+  const now = new Date();
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  // Create shifts for each day per cashier (needed by Sale.shiftId)
+  const shiftMap = new Map<string, string>(); // key: `${cashierIdx}-${dayIdx}` -> shiftId
+
+  const saleBatches: {
+    id: string;
+    tenantId: string;
+    shiftId: string;
+    cashierId: string;
+    customerId: string | null;
+    subtotal: Prisma.Decimal;
+    discountAmount: Prisma.Decimal;
+    taxAmount: Prisma.Decimal;
+    totalAmount: Prisma.Decimal;
+    paymentMethod: 'CASH';
+    status: 'COMPLETED';
+    completedAt: Date;
+    createdAt: Date;
+  }[] = [];
+
+  const linesBatch: {
+    saleId: string;
+    variantId: string;
+    productNameSnapshot: string;
+    variantDescriptionSnapshot: string;
+    sku: string;
+    unitPrice: Prisma.Decimal;
+    quantity: number;
+    discountPercent: Prisma.Decimal;
+    discountAmount: Prisma.Decimal;
+    lineTotalBeforeDiscount: Prisma.Decimal;
+    lineTotalAfterDiscount: Prisma.Decimal;
+  }[] = [];
+
+  const paymentsBatch: {
+    saleId: string;
+    method: 'CASH';
+    amount: Prisma.Decimal;
+  }[] = [];
+
+  // Track which sales were made for return generation later
+  const completedSaleIds: { id: string; dayIdx: number; cashierId: string; lines: typeof linesBatch }[] = [];
+
+  for (let dayIdx = 0; dayIdx < 90; dayIdx++) {
+    const saleDate = new Date(now.getTime() - (90 - dayIdx) * dayMs);
+    const dayOfWeek = saleDate.getDay(); // 0=Sun
+
+    let salesPerDay: number;
+    if (dayOfWeek === 0) {
+      salesPerDay = randInt(5, 10); // Sunday
+    } else if (dayOfWeek === 5 || dayOfWeek === 6) {
+      salesPerDay = randInt(18, 28); // Fri/Sat
+    } else {
+      salesPerDay = randInt(8, 15); // Weekdays
+    }
+
+    for (let saleIdx = 0; saleIdx < salesPerDay; saleIdx++) {
+      const cashierIdx = saleIdx % cashiers.length;
+      const cashier = cashiers[cashierIdx]!;
+
+      // Ensure a shift exists for this cashier on this day
+      const shiftKey = `${cashierIdx}-${dayIdx}`;
+      let shiftId = shiftMap.get(shiftKey);
+      if (!shiftId) {
+        const shiftOpen = new Date(saleDate);
+        shiftOpen.setHours(8, 30, 0, 0);
+        const shiftClose = new Date(saleDate);
+        shiftClose.setHours(20, 0, 0, 0);
+
+        const shift = await prisma.shift.create({
+          data: {
+            tenantId,
+            cashierId: cashier.id,
+            status: 'CLOSED',
+            openedAt: shiftOpen,
+            closedAt: shiftClose,
+            openingFloat: 10000,
+          },
+        });
+        shiftId = shift.id;
+        shiftMap.set(shiftKey, shiftId);
+      }
+
+      // Sale time between 09:00-19:00
+      const hour = 9 + Math.floor(rng() * 10);
+      const minute = Math.floor(rng() * 60);
+      const saleTime = new Date(saleDate);
+      saleTime.setHours(hour, minute, 0, 0);
+
+      // Customer attachment (40% chance)
+      const hasCustomer = rng() < 0.4;
+      const customerId = hasCustomer ? pick(customers).id : null;
+
+      // Line items (1-4)
+      const lineCount = randInt(1, 4);
+      const selectedVariants = pickN(allVariants, lineCount);
+
+      const saleId = crypto.randomUUID();
+      let subtotal = new Decimal(0);
+      const saleLines: typeof linesBatch = [];
+
+      for (const variant of selectedVariants) {
+        const qty = randInt(1, 3);
+        const unitPrice = new Decimal(variant.retailPrice.toString());
+        const lineTotal = unitPrice.mul(qty);
+        subtotal = subtotal.plus(lineTotal);
+
+        saleLines.push({
+          saleId,
+          variantId: variant.id,
+          productNameSnapshot: variant.product.name,
+          variantDescriptionSnapshot: `${variant.size ?? ''} ${variant.colour ?? ''}`.trim(),
+          sku: variant.sku,
+          unitPrice: new Prisma.Decimal(unitPrice.toString()),
+          quantity: qty,
+          discountPercent: new Prisma.Decimal(0),
+          discountAmount: new Prisma.Decimal(0),
+          lineTotalBeforeDiscount: new Prisma.Decimal(lineTotal.toString()),
+          lineTotalAfterDiscount: new Prisma.Decimal(lineTotal.toString()),
+        });
+      }
+
+      const taxAmount = subtotal.mul(0.15).toDecimalPlaces(2);
+      const totalAmount = subtotal.plus(taxAmount);
+
+      saleBatches.push({
+        id: saleId,
+        tenantId,
+        shiftId,
+        cashierId: cashier.id,
+        customerId,
+        subtotal: new Prisma.Decimal(subtotal.toString()),
+        discountAmount: new Prisma.Decimal(0),
+        taxAmount: new Prisma.Decimal(taxAmount.toString()),
+        totalAmount: new Prisma.Decimal(totalAmount.toString()),
+        paymentMethod: 'CASH',
+        status: 'COMPLETED',
+        completedAt: saleTime,
+        createdAt: saleTime,
+      });
+
+      linesBatch.push(...saleLines);
+
+      paymentsBatch.push({
+        saleId,
+        method: 'CASH',
+        amount: new Prisma.Decimal(totalAmount.toString()),
+      });
+
+      completedSaleIds.push({ id: saleId, dayIdx, cashierId: cashier.id, lines: saleLines });
+
+      // Batch insert every 100 sales
+      if (saleBatches.length >= 100) {
+        await prisma.sale.createMany({ data: saleBatches });
+        await prisma.saleLine.createMany({ data: linesBatch });
+        await prisma.payment.createMany({ data: paymentsBatch });
+        saleBatches.length = 0;
+        linesBatch.length = 0;
+        paymentsBatch.length = 0;
+      }
+    }
+  }
+
+  // Flush remaining
+  if (saleBatches.length > 0) {
+    await prisma.sale.createMany({ data: saleBatches });
+    await prisma.saleLine.createMany({ data: linesBatch });
+    await prisma.payment.createMany({ data: paymentsBatch });
+    saleBatches.length = 0;
+    linesBatch.length = 0;
+    paymentsBatch.length = 0;
+  }
+
+  const totalSales = completedSaleIds.length;
+  console.log(`  Sales created: ${totalSales}`);
+
+  // ── 7. Returns (~8% of sales) ──────────────────────────────────────────────
+  const returnReasons = ['Size issue', 'Colour mismatch', 'Customer changed mind', 'Defective item'];
+  const returnCount = Math.floor(totalSales * 0.08);
+  const salesToReturn = pickN(completedSaleIds, returnCount);
+
+  let returnsCreated = 0;
+  for (const saleMeta of salesToReturn) {
+    if (saleMeta.lines.length === 0) continue;
+
+    const daysAfter = randInt(1, 5);
+    const returnDate = new Date(now.getTime() - (90 - saleMeta.dayIdx - daysAfter) * dayMs);
+    returnDate.setHours(randInt(10, 17), randInt(0, 59), 0, 0);
+
+    // Return first line item only
+    const returnLine = saleMeta.lines[0]!;
+    const returnQty = 1;
+    const refundAmount = new Decimal(returnLine.unitPrice.toString()).mul(returnQty);
+
+    // Need the SaleLine id — fetch it
+    const saleLine = await prisma.saleLine.findFirst({
+      where: { saleId: saleMeta.id, variantId: returnLine.variantId },
+    });
+    if (!saleLine) continue;
+
+    await prisma.return.create({
+      data: {
+        tenantId,
+        originalSaleId: saleMeta.id,
+        initiatedById: saleMeta.cashierId,
+        authorizedById: manager.id,
+        refundMethod: 'CASH',
+        refundAmount: new Prisma.Decimal(refundAmount.toString()),
+        reason: pick(returnReasons),
+        status: 'COMPLETED',
+        createdAt: returnDate,
+        lines: {
+          create: {
+            originalSaleLineId: saleLine.id,
+            variantId: returnLine.variantId,
+            productNameSnapshot: returnLine.productNameSnapshot,
+            variantDescriptionSnapshot: returnLine.variantDescriptionSnapshot,
+            quantity: returnQty,
+            unitPrice: returnLine.unitPrice,
+            lineRefundAmount: new Prisma.Decimal(refundAmount.toString()),
+          },
+        },
+      },
+    });
+    returnsCreated++;
+  }
+
+  console.log(`  Returns created: ${returnsCreated}`);
+
+  // ── 8. Suppliers & Purchase Orders ─────────────────────────────────────────
+  const supplierDefs = [
+    { name: 'Lanka Silk Traders', contactName: 'Ruwan Dissanayake', phone: '0112345678', address: 'Pettah, Colombo' },
+    { name: 'Kandy Handloom Co-op', contactName: 'Saman Kumara', phone: '0812345678', address: 'Peradeniya Rd, Kandy' },
+    { name: 'Batik House Matara', contactName: 'Priya Mendis', phone: '0412345678', address: 'Beach Rd, Matara' },
+    { name: 'Southern Textiles', contactName: 'Ajith Bandara', phone: '0912345678', address: 'Galle Fort, Galle' },
+    { name: 'Eastern Fabrics Ltd', contactName: 'Faizal Ahmed', phone: '0652345678', address: 'Main St, Batticaloa' },
+  ];
+
+  const createdSuppliers: string[] = [];
+  for (const sDef of supplierDefs) {
+    const existing = await prisma.supplier.findFirst({
+      where: { tenantId, name: sDef.name },
+    });
+    if (existing) {
+      createdSuppliers.push(existing.id);
+      continue;
+    }
+    const supplier = await prisma.supplier.create({
+      data: {
+        tenantId,
+        name: sDef.name,
+        contactName: sDef.contactName,
+        phone: sDef.phone,
+        address: sDef.address,
+      },
+    });
+    createdSuppliers.push(supplier.id);
+  }
+
+  // 2-3 POs per supplier
+  let poCounter = 0;
+  for (const supplierId of createdSuppliers) {
+    const poCount = randInt(2, 3);
+    for (let p = 0; p < poCount; p++) {
+      poCounter++;
+      const orderDate = new Date(now.getTime() - randInt(10, 80) * dayMs);
+      const selectedVars = pickN(allVariants, randInt(2, 5));
+
+      let poTotal = new Decimal(0);
+      const poLineData = selectedVars.map((v) => {
+        const qty = randInt(10, 50);
+        const cost = new Decimal(v.costPrice.toString());
+        const lineTotal = cost.mul(qty);
+        poTotal = poTotal.plus(lineTotal);
+        return {
+          variantId: v.id,
+          productNameSnapshot: v.product.name,
+          variantDescriptionSnapshot: `${v.size ?? ''} ${v.colour ?? ''}`.trim(),
+          orderedQty: qty,
+          expectedCostPrice: v.costPrice,
+          receivedQty: qty,
+          actualCostPrice: v.costPrice,
+          isFullyReceived: true,
+        };
+      });
+
+      await prisma.purchaseOrder.create({
+        data: {
+          tenantId,
+          supplierId,
+          createdById: manager.id,
+          status: 'RECEIVED',
+          totalAmount: new Prisma.Decimal(poTotal.toString()),
+          createdAt: orderDate,
+          lines: { create: poLineData },
+        },
+      });
+    }
+  }
+
+  console.log(`  Suppliers: ${createdSuppliers.length}, POs: ${poCounter}`);
+
+  // ── 9. Expenses ────────────────────────────────────────────────────────────
+  const expenseDefs: { category: 'RENT' | 'UTILITIES' | 'MAINTENANCE' | 'MISCELLANEOUS' | 'ADVERTISING' | 'OTHER'; description: string; amount: number; daysAgo: number }[] = [
+    { category: 'RENT', description: 'Shop rent – January', amount: 85000, daysAgo: 80 },
+    { category: 'RENT', description: 'Shop rent – February', amount: 85000, daysAgo: 50 },
+    { category: 'RENT', description: 'Shop rent – March', amount: 85000, daysAgo: 20 },
+    { category: 'UTILITIES', description: 'Electricity bill – Jan', amount: 12500, daysAgo: 75 },
+    { category: 'UTILITIES', description: 'Electricity bill – Feb', amount: 14200, daysAgo: 45 },
+    { category: 'UTILITIES', description: 'Electricity bill – Mar', amount: 11800, daysAgo: 15 },
+    { category: 'MISCELLANEOUS', description: 'Packaging materials (bags & tissue)', amount: 8500, daysAgo: 60 },
+    { category: 'MISCELLANEOUS', description: 'Receipt paper rolls x20', amount: 3200, daysAgo: 30 },
+    { category: 'MAINTENANCE', description: 'AC servicing', amount: 15000, daysAgo: 55 },
+    { category: 'OTHER', description: 'Delivery van fuel – Jan', amount: 7500, daysAgo: 70 },
+    { category: 'OTHER', description: 'Delivery van fuel – Feb', amount: 8200, daysAgo: 40 },
+    { category: 'ADVERTISING', description: 'Facebook ads – Valentine campaign', amount: 25000, daysAgo: 35 },
+    { category: 'OTHER', description: 'Staff uniforms x5', amount: 22500, daysAgo: 65 },
+    { category: 'OTHER', description: 'Fire extinguisher refill', amount: 4500, daysAgo: 25 },
+    { category: 'MISCELLANEOUS', description: 'Hangers & display stands', amount: 6800, daysAgo: 10 },
+  ];
+
+  const expenseData = expenseDefs.map((e) => ({
+    tenantId,
+    category: e.category,
+    description: e.description,
+    amount: new Prisma.Decimal(e.amount),
+    recordedById: owner.id,
+    expenseDate: new Date(now.getTime() - e.daysAgo * dayMs),
+  }));
+
+  await prisma.expense.createMany({ data: expenseData, skipDuplicates: true });
+  console.log(`  Expenses created: ${expenseDefs.length}`);
+
+  // ── 10. Commission records ─────────────────────────────────────────────────
+  // 1.5% of cashier sales per month for the past 3 months
+  // CommissionRecord is per-sale, so we batch by month and create per-sale records
+  const commissionRate = new Decimal(1.5);
+  let commissionCount = 0;
+
+  // Group completed sales by month and cashier
+  for (const saleMeta of completedSaleIds) {
+    // Only ~20% sample for commissions to keep it manageable
+    if (rng() > 0.2) continue;
+
+    const sale = await prisma.sale.findUnique({ where: { id: saleMeta.id }, select: { totalAmount: true } });
+    if (!sale) continue;
+
+    const baseAmount = new Decimal(sale.totalAmount.toString());
+    const earned = baseAmount.mul(commissionRate).div(100).toDecimalPlaces(2);
+
+    await prisma.commissionRecord.create({
+      data: {
+        tenantId,
+        saleId: saleMeta.id,
+        userId: saleMeta.cashierId,
+        baseAmount: new Prisma.Decimal(baseAmount.toString()),
+        commissionRate: new Prisma.Decimal(commissionRate.toString()),
+        earnedAmount: new Prisma.Decimal(earned.toString()),
+        isPaid: false,
+      },
+    });
+    commissionCount++;
+  }
+
+  console.log(`  Commission records: ${commissionCount}`);
+
+  // ── 11. TimeClock entries ──────────────────────────────────────────────────
+  let timeClockCount = 0;
+  for (let dayIdx = 0; dayIdx < 90; dayIdx++) {
+    const clockDate = new Date(now.getTime() - (90 - dayIdx) * dayMs);
+    const dayOfWeek = clockDate.getDay();
+
+    // Skip Sundays for some staff (owner & stock clerk only on weekdays/Saturdays sometimes)
+    for (const staff of allStaff) {
+      // Skip Sunday for everyone except cashiers
+      if (dayOfWeek === 0 && staff.role !== 'CASHIER') continue;
+      // Stock clerk skips weekends
+      if (staff.role === 'STOCK_CLERK' && (dayOfWeek === 0 || dayOfWeek === 6)) continue;
+      // ~10% chance anyone skips a day (leave/off)
+      if (rng() < 0.1) continue;
+
+      let clockInHour: number;
+      let clockOutHour: number;
+      if (staff.role === 'OWNER' || staff.role === 'MANAGER') {
+        clockInHour = 8;
+        clockOutHour = 18;
+      } else if (staff.role === 'CASHIER') {
+        // Cashiers alternate between morning/evening shifts
+        const isMorning = rng() < 0.5;
+        clockInHour = isMorning ? 8 : 13;
+        clockOutHour = isMorning ? 14 : 20;
+      } else {
+        clockInHour = 9;
+        clockOutHour = 17;
+      }
+
+      const clockIn = new Date(clockDate);
+      clockIn.setHours(clockInHour, randInt(0, 15), 0, 0);
+
+      const clockOut = new Date(clockDate);
+      clockOut.setHours(clockOutHour, randInt(0, 30), 0, 0);
+
+      // Find shift for this day if cashier
+      let shiftId: string | undefined;
+      if (staff.role === 'CASHIER') {
+        const cashierIdx = cashiers.indexOf(staff);
+        if (cashierIdx >= 0) {
+          shiftId = shiftMap.get(`${cashierIdx}-${dayIdx}`) ?? undefined;
+        }
+      }
+
+      await prisma.timeClock.create({
+        data: {
+          tenantId,
+          userId: staff.id,
+          clockedInAt: clockIn,
+          clockedOutAt: clockOut,
+          shiftId: shiftId ?? null,
+        },
+      });
+      timeClockCount++;
+    }
+  }
+
+  console.log(`  TimeClock entries: ${timeClockCount}`);
+
+  // ── Summary ────────────────────────────────────────────────────────────────
+  console.log('── Comprehensive Demo Seed Complete ──');
+  console.log(`  Tenant:       velvet-demo`);
+  console.log(`  Staff:        ${allStaff.length}`);
+  console.log(`  Products:     ${productDefs.length}`);
+  console.log(`  Variants:     ${allVariants.length}`);
+  console.log(`  Customers:    ${customers.length}`);
+  console.log(`  Sales:        ${totalSales}`);
+  console.log(`  Returns:      ${returnsCreated}`);
+  console.log(`  Suppliers:    ${createdSuppliers.length}`);
+  console.log(`  POs:          ${poCounter}`);
+  console.log(`  Expenses:     ${expenseDefs.length}`);
+  console.log(`  Commissions:  ${commissionCount}`);
+  console.log(`  TimeClocks:   ${timeClockCount}`);
 }
 
 main()

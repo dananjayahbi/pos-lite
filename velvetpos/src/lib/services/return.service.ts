@@ -5,6 +5,8 @@ import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { kickCashDrawer } from '@/lib/hardware/cashDrawer';
 import type { PrinterConfig } from '@/lib/hardware/printer';
 import Decimal from 'decimal.js';
+import { setSentryTenantContext } from '@/lib/sentry/context';
+import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 
 const RETURN_WINDOW_DAYS = 30;
 
@@ -154,6 +156,13 @@ interface InitiateReturnInput {
 }
 
 export async function initiateReturn(tenantId: string, input: InitiateReturnInput) {
+  setSentryTenantContext({
+    tenantId,
+    tenantSlug: tenantId,
+    userId: input.initiatedById,
+    userEmail: '',
+  });
+
   const result = await prisma.$transaction(async (tx) => {
     // 1. Validate
     const sale = await validateReturnEligibility(
@@ -248,6 +257,14 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
     action: AUDIT_ACTIONS.RETURN_COMPLETED,
     after: { originalSaleId: input.originalSaleId, refundAmount: result.refundAmount, refundMethod: input.refundMethod, lineCount: result.lines.length },
   }).catch(() => {});
+
+  void dispatchWebhooks(tenantId, 'return.initiated', {
+    returnId: result.id,
+    originalSaleId: input.originalSaleId,
+    refundAmount: result.refundAmount.toString(),
+    refundMethod: input.refundMethod,
+    lineCount: result.lines.length,
+  });
 
   // Kick cash drawer for cash refunds (fire-and-forget)
   if (input.refundMethod === ReturnRefundMethod.CASH) {

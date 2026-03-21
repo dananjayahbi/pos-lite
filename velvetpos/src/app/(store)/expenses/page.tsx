@@ -45,6 +45,7 @@ import { CreateExpenseSchema } from '@/lib/validators/expense.validators';
 import type { CreateExpenseInput } from '@/lib/validators/expense.validators';
 import { formatRupee } from '@/lib/format';
 import Decimal from 'decimal.js';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -318,6 +319,7 @@ export default function ExpensesPage() {
       </div>
 
       {/* Table */}
+      <ErrorBoundary>
       {isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -424,6 +426,7 @@ export default function ExpensesPage() {
           )}
         </>
       )}
+      </ErrorBoundary>
 
       {/* View Dialog */}
       <Dialog open={viewExpense !== null} onOpenChange={(open) => { if (!open) setViewExpense(null); }}>

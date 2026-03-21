@@ -32,10 +32,18 @@ export default async function StoreLayout({
 
   return (
     <div className="min-h-screen flex flex-col bg-linen">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-espresso focus:px-4 focus:py-2 focus:text-pearl focus:outline-none"
+      >
+        Skip to main content
+      </a>
       <GracePeriodBanner visible={isGracePeriod} graceEndsAt={graceEndsAt} />
       {showTrialBanner && subscription && <TrialBanner subscription={subscription} />}
       <div className="flex flex-1">
-        <StoreLayoutClient>{children}</StoreLayoutClient>
+        <main id="main-content" className="flex-1">
+          <StoreLayoutClient>{children}</StoreLayoutClient>
+        </main>
       </div>
     </div>
   );

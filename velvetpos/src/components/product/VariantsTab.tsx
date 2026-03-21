@@ -400,6 +400,7 @@ function VariantRows({
                   size="sm"
                   className="text-mist hover:text-red-600"
                   onClick={onDelete}
+                  aria-label={`Delete variant ${variant.sku}`}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>

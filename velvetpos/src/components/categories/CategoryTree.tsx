@@ -111,6 +111,7 @@ export function CategoryTree({ categories, canEdit, canDelete }: CategoryTreePro
             className={`flex h-5 w-5 items-center justify-center transition-transform ${hasChildren ? 'text-mist' : 'invisible'} ${isExpanded ? 'rotate-90' : ''}`}
             onClick={() => toggleExpand(cat.id)}
             tabIndex={-1}
+            aria-label={isExpanded ? `Collapse ${cat.name}` : `Expand ${cat.name}`}
           >
             <ChevronRight className="h-4 w-4" />
           </button>
@@ -142,6 +143,7 @@ export function CategoryTree({ categories, canEdit, canDelete }: CategoryTreePro
                   type="button"
                   className="rounded p-1 text-mist hover:text-espresso"
                   onClick={() => startEdit(cat)}
+                  aria-label={`Edit ${cat.name}`}
                 >
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
@@ -151,6 +153,7 @@ export function CategoryTree({ categories, canEdit, canDelete }: CategoryTreePro
                   type="button"
                   className="rounded p-1 text-mist hover:text-terracotta"
                   onClick={() => deleteMutation.mutate(cat.id)}
+                  aria-label={`Delete ${cat.name}`}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>

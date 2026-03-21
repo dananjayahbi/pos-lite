@@ -11,6 +11,7 @@ import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
 import type { StockMovementReason, StockTakeStatus } from '@/generated/prisma/client';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 
 // ── Transaction Client Type ──────────────────────────────────────────────────
 
@@ -137,6 +138,13 @@ export async function adjustStock(input: AdjustStockInput) {
       action: AUDIT_ACTIONS.STOCK_ADJUSTED,
       after: { quantityDelta: input.options.quantityDelta, reason: input.options.reason, note: input.options.note },
     }).catch(() => {});
+
+    void dispatchWebhooks(input.tenantId, 'stock.adjusted', {
+      variantId: input.variantId,
+      quantityDelta: input.options.quantityDelta,
+      reason: input.options.reason,
+      note: input.options.note ?? null,
+    });
   }
 
   return result;

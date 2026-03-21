@@ -133,7 +133,7 @@ export function BroadcastPageClient() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <Link href="/customers">
-          <Button variant="ghost" size="icon" className="text-espresso">
+          <Button variant="ghost" size="icon" className="text-espresso" aria-label="Back to customers">
             <ArrowLeft className="h-5 w-5" />
           </Button>
         </Link>

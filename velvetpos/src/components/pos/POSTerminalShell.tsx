@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Clock, LogOut, RotateCcw, WifiOff, Loader2 } from 'lucide-react';
 import { ShiftCloseModal } from '@/components/pos/ShiftCloseModal';
 import { CartPanel } from '@/components/pos/CartPanel';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 
 function formatElapsed(ms: number): string {
@@ -134,7 +135,9 @@ export function POSTerminalShell({
 
         {/* Right panel */}
         <div className="w-full md:w-[37%] bg-pearl overflow-hidden">
-          <CartPanel shiftId={shiftId} />
+          <ErrorBoundary>
+            <CartPanel shiftId={shiftId} />
+          </ErrorBoundary>
         </div>
       </div>
 

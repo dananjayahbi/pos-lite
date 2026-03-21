@@ -1,7 +1,12 @@
 'use client';
 
 import { ProductGrid } from '@/components/pos/ProductGrid';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export default function POSPage() {
-  return <ProductGrid />;
+  return (
+    <ErrorBoundary>
+      <ProductGrid />
+    </ErrorBoundary>
+  );
 }

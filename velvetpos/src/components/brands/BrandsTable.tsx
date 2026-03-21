@@ -88,6 +88,7 @@ export function BrandsTable({ brands, canEdit, canDelete, onEdit }: BrandsTableP
                       type="button"
                       className="rounded p-1.5 text-mist hover:text-espresso"
                       onClick={() => onEdit(brand)}
+                      aria-label={`Edit ${brand.name}`}
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
@@ -97,6 +98,7 @@ export function BrandsTable({ brands, canEdit, canDelete, onEdit }: BrandsTableP
                       type="button"
                       className="rounded p-1.5 text-mist hover:text-terracotta"
                       onClick={() => deleteMutation.mutate(brand.id)}
+                      aria-label={`Delete ${brand.name}`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>

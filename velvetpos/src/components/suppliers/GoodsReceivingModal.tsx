@@ -286,6 +286,7 @@ export function GoodsReceivingModal({
                               onClick={() =>
                                 updateQty(line.id, thisQty - 1)
                               }
+                              aria-label="Decrease quantity"
                             >
                               <Minus className="h-3 w-3" />
                             </Button>
@@ -316,6 +317,7 @@ export function GoodsReceivingModal({
                               onClick={() =>
                                 updateQty(line.id, thisQty + 1)
                               }
+                              aria-label="Increase quantity"
                             >
                               <Plus className="h-3 w-3" />
                             </Button>

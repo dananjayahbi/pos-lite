@@ -200,7 +200,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
                   </p>
                 )}
               </div>
-              <button type="button" onClick={() => { unlinkCustomer(); }} className="text-mist hover:text-espresso transition-colors">
+              <button type="button" onClick={() => { unlinkCustomer(); }} className="text-mist hover:text-espresso transition-colors" aria-label="Unlink customer">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -268,6 +268,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
                   evaluatePromotionsAction();
                 }}
                 className="text-mist hover:text-[#9B2226] transition-colors"
+                aria-label="Remove promo code"
               >
                 <X className="h-3.5 w-3.5" />
               </button>

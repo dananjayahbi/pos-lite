@@ -12,22 +12,27 @@ interface BirthdayCustomerRow {
   lastBirthdayMessageSentYear: number | null;
 }
 
-function isValidCronSecret(headerSecret: string | null): boolean {
+function isValidCronSecret(authHeader: string | null): boolean {
   const envSecret = process.env.CRON_SECRET;
-  if (!envSecret || !headerSecret) return false;
+  if (!envSecret || !authHeader) return false;
 
-  const a = Buffer.from(envSecret, 'utf-8');
-  const b = Buffer.from(headerSecret, 'utf-8');
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  if (!token) return false;
 
-  if (a.length !== b.length) return false;
-
-  return timingSafeEqual(a, b);
+  try {
+    const a = Buffer.from(envSecret, 'utf-8');
+    const b = Buffer.from(token, 'utf-8');
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
 }
 
 export async function GET(request: NextRequest) {
-  const cronSecret = request.headers.get('x-cron-secret');
+  const authHeader = request.headers.get('authorization');
 
-  if (!isValidCronSecret(cronSecret)) {
+  if (!isValidCronSecret(authHeader)) {
     return NextResponse.json(
       { success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid cron secret' } },
       { status: 401 },

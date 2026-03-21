@@ -8,6 +8,8 @@ import { redeemCredit, addToSpendTotal } from '@/lib/services/customer.service';
 import { kickCashDrawer } from '@/lib/hardware/cashDrawer';
 import type { PrinterConfig } from '@/lib/hardware/printer';
 import type { CreateSaleInput, HoldSaleInput } from '@/lib/validators/sale.validators';
+import { setSentryTenantContext } from '@/lib/sentry/context';
+import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -43,6 +45,13 @@ function extractTenantRates(settings: unknown): { vatRate: number; ssclRate: num
 // ── Create Sale ──────────────────────────────────────────────────────────────
 
 export async function createSale(tenantId: string, input: CreateSaleInput & { cashierId: string }) {
+  setSentryTenantContext({
+    tenantId,
+    tenantSlug: tenantId,
+    userId: input.cashierId,
+    userEmail: '',
+  });
+
   const result = await prisma.$transaction(async (tx: TxClient) => {
     // Validate shift
     const shift = await tx.shift.findFirst({
@@ -237,6 +246,13 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     action: AUDIT_ACTIONS.SALE_COMPLETED,
     after: { totalAmount: result.totalAmount, paymentMethod: result.paymentMethod, lineCount: result.lines.length },
   }).catch(() => {});
+
+  void dispatchWebhooks(tenantId, 'sale.completed', {
+    saleId: result.id,
+    totalAmount: result.totalAmount.toString(),
+    itemCount: result.lines.length,
+    customerId: result.customerId ?? null,
+  });
 
   // Kick cash drawer for cash payments (fire-and-forget)
   if (input.paymentMethod === 'CASH' || input.paymentMethod === 'SPLIT') {

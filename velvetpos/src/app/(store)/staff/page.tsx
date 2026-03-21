@@ -37,6 +37,7 @@ import { Plus, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { CreateStaffSchema } from '@/lib/validators/staff.validators';
 import type { CreateStaffInput } from '@/lib/validators/staff.validators';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -259,6 +260,7 @@ export default function StaffPage() {
       />
 
       {/* Table */}
+      <ErrorBoundary>
       <div className="rounded-lg border border-sand/30 bg-white">
         <Table>
           <TableHeader>
@@ -321,6 +323,7 @@ export default function StaffPage() {
           </TableBody>
         </Table>
       </div>
+      </ErrorBoundary>
     </div>
   );
 }

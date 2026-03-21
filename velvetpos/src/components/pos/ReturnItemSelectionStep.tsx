@@ -137,6 +137,7 @@ export function ReturnItemSelectionStep({
                       className="h-7 w-7 p-0"
                       disabled={isDisabled || currentQty <= 0}
                       onClick={() => updateQty(line, -1)}
+                      aria-label={`Decrease return quantity for ${line.productNameSnapshot}`}
                     >
                       <Minus className="h-3 w-3" />
                     </Button>
@@ -149,6 +150,7 @@ export function ReturnItemSelectionStep({
                       className="h-7 w-7 p-0"
                       disabled={isDisabled || currentQty >= returnable}
                       onClick={() => updateQty(line, 1)}
+                      aria-label={`Increase return quantity for ${line.productNameSnapshot}`}
                     >
                       <Plus className="h-3 w-3" />
                     </Button>

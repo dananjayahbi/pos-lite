@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { StockMovementHistory } from '@/components/stock-control/StockMovementHistory';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export const metadata = {
   title: 'Movement History | VelvetPOS',
@@ -14,5 +15,9 @@ export default async function MovementHistoryPage() {
     ? session.user.permissions.filter((p): p is string => typeof p === 'string')
     : [];
 
-  return <StockMovementHistory permissions={userPermissions} />;
+  return (
+    <ErrorBoundary>
+      <StockMovementHistory permissions={userPermissions} />
+    </ErrorBoundary>
+  );
 }

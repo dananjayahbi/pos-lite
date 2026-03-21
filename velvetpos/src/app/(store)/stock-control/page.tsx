@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { StockControlDashboard } from '@/components/stock-control/StockControlDashboard';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export const metadata = {
   title: 'Stock Control | VelvetPOS',
@@ -14,5 +15,9 @@ export default async function StockControlPage() {
     ? session.user.permissions.filter((p): p is string => typeof p === 'string')
     : [];
 
-  return <StockControlDashboard permissions={userPermissions} />;
+  return (
+    <ErrorBoundary>
+      <StockControlDashboard permissions={userPermissions} />
+    </ErrorBoundary>
+  );
 }

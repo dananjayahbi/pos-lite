@@ -297,7 +297,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Button asChild variant="ghost" size="icon">
+        <Button asChild variant="ghost" size="icon" aria-label="Back to stock takes">
           <Link href="/stock-control/stock-takes">
             <ArrowLeft className="h-5 w-5" />
           </Link>

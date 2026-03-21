@@ -4,6 +4,8 @@ import { useTheme } from "next-themes"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
+// Sonner handles ARIA live regions internally — toast notifications are
+// announced to screen readers via role="status" and aria-live="polite" by default.
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme: _ignoredTheme, ...restProps } = props
   const { theme = "system" } = useTheme()

@@ -325,6 +325,7 @@ model Tenant {
   cashMovements        CashMovement[]
   savedReports         SavedReport[]
   dailySummaryLogs     DailySummaryLog[]
+  webhookEndpoints     WebhookEndpoint[]
 
   @@map("tenants")
 }
@@ -1067,4 +1068,43 @@ model DailySummaryLog {
 
   @@index([tenantId])
   @@map("daily_summary_logs")
+}
+
+// ── Webhooks ─────────────────────────────────────────────────────────────────
+
+enum WebhookDeliveryStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model WebhookEndpoint {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  url       String
+  secret    String
+  isActive  Boolean  @default(true)
+  events    String[]
+  createdAt DateTime @default(now())
+
+  deliveries WebhookDelivery[]
+
+  @@index([tenantId])
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id                 String                @id @default(cuid())
+  webhookEndpointId  String
+  webhookEndpoint    WebhookEndpoint       @relation(fields: [webhookEndpointId], references: [id], onDelete: Cascade)
+  event              String
+  payload            Json
+  statusCode         Int?
+  response           String?
+  status             WebhookDeliveryStatus
+  attemptedAt        DateTime              @default(now())
+
+  @@index([webhookEndpointId])
+  @@map("webhook_deliveries")
 }

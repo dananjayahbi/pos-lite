@@ -51,6 +51,7 @@ export function CartLineItem({ item }: CartLineItemProps) {
           onClick={() => updateQuantity(item.variantId, item.quantity - 1)}
           disabled={item.quantity <= 1}
           className="p-1 text-terracotta hover:text-espresso disabled:opacity-40"
+          aria-label={`Decrease quantity of ${item.productName}`}
         >
           <Minus className="h-3.5 w-3.5" />
         </button>
@@ -59,6 +60,7 @@ export function CartLineItem({ item }: CartLineItemProps) {
           type="button"
           onClick={() => updateQuantity(item.variantId, item.quantity + 1)}
           className="p-1 text-terracotta hover:text-espresso"
+          aria-label={`Increase quantity of ${item.productName}`}
         >
           <Plus className="h-3.5 w-3.5" />
         </button>
@@ -74,6 +76,7 @@ export function CartLineItem({ item }: CartLineItemProps) {
         type="button"
         onClick={(e) => { e.stopPropagation(); removeItem(item.variantId); }}
         className="p-1 text-mist hover:text-[#9B2226] transition-colors"
+        aria-label={`Remove ${item.productName} from cart`}
       >
         <X className="h-3.5 w-3.5" />
       </button>

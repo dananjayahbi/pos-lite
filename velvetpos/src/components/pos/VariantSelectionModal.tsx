@@ -140,6 +140,7 @@ export function VariantSelectionModal({
                     onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                     className="flex h-8 w-8 items-center justify-center text-espresso hover:bg-sand disabled:opacity-50"
                     disabled={quantity <= 1}
+                    aria-label="Decrease quantity"
                   >
                     <Minus className="h-3.5 w-3.5" />
                   </button>
@@ -151,6 +152,7 @@ export function VariantSelectionModal({
                     onClick={() => setQuantity((q) => Math.min(99, q + 1))}
                     className="flex h-8 w-8 items-center justify-center text-espresso hover:bg-sand disabled:opacity-50"
                     disabled={quantity >= 99}
+                    aria-label="Increase quantity"
                   >
                     <Plus className="h-3.5 w-3.5" />
                   </button>
@@ -161,6 +163,7 @@ export function VariantSelectionModal({
                   type="button"
                   onClick={onClose}
                   className="flex h-8 w-8 items-center justify-center rounded-md text-mist hover:bg-sand hover:text-espresso"
+                  aria-label="Close variant selection"
                 >
                   <X className="h-4 w-4" />
                   <span className="sr-only">Close</span>

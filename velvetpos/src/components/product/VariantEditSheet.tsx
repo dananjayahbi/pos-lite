@@ -200,6 +200,7 @@ export function VariantEditSheet({
                 className="border-sand text-mist hover:text-espresso shrink-0"
                 onClick={() => setValue('barcode', generateBarcode(), { shouldDirty: true })}
                 title="Auto-generate barcode"
+                aria-label="Auto-generate barcode"
               >
                 <Wand2 className="h-4 w-4" />
               </Button>

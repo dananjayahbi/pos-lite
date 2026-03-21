@@ -220,6 +220,25 @@ velvetpos/
 
 ---
 
+## Code Quality
+
+Verify the codebase is in a clean state:
+
+```bash
+# Type checking
+pnpm tsc --noEmit
+
+# Lint checking
+pnpm eslint src/
+
+# Full production build
+pnpm run build
+```
+
+These commands should all pass with zero errors before merging to main.
+
+---
+
 ## Contributing
 
 This project follows conventional commits. All commits are validated by a Husky pre-commit hook running ESLint and Prettier via lint-staged. Ensure `pnpm lint` and `pnpm format:check` pass before opening a pull request.

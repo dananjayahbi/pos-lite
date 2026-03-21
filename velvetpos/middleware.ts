@@ -10,6 +10,10 @@ import {
 
 export const runtime = 'nodejs';
 
+const tenantSlugCache = new Map<string, boolean>();
+const TENANT_DOMAIN_SUFFIX = '.velvetpos.com';
+const RESERVED_SUBDOMAINS = new Set(['', 'www', 'app']);
+
 const PUBLIC_PATH_PREFIXES = [
   '/login',
   '/pin-login',
@@ -17,6 +21,8 @@ const PUBLIC_PATH_PREFIXES = [
   '/reset-password',
   '/api/auth/',
   '/api/webhooks/',
+  '/status',
+  '/api/health',
 ];
 
 function isPublicPath(pathname: string): boolean {
@@ -175,7 +181,49 @@ export default auth(async (request: NextRequest) => {
     }
   }
 
-  return NextResponse.next();
+  // Subdomain-based tenant routing
+  const hostHeader = request.headers.get('host');
+  const hostname = hostHeader?.split(':')[0] ?? '';
+  const requestHeaders = new Headers(request.headers);
+
+  // Security: strip any incoming X-Tenant-Slug to prevent spoofing
+  requestHeaders.delete('x-tenant-slug');
+
+  if (hostname.endsWith(TENANT_DOMAIN_SUFFIX)) {
+    const slug = hostname.slice(0, -TENANT_DOMAIN_SUFFIX.length);
+
+    if (!RESERVED_SUBDOMAINS.has(slug)) {
+      let exists = tenantSlugCache.get(slug);
+
+      if (exists === undefined) {
+        const tenant = await prisma.tenant.findFirst({
+          where: { slug },
+          select: { id: true },
+        });
+        exists = tenant !== null;
+        tenantSlugCache.set(slug, exists);
+      }
+
+      if (exists) {
+        requestHeaders.set('x-tenant-slug', slug);
+        return NextResponse.next({ request: { headers: requestHeaders } });
+      }
+
+      if (process.env.NODE_ENV === 'production') {
+        return NextResponse.redirect(
+          new URL('https://velvetpos.com/not-found'),
+        );
+      }
+    }
+  } else if (process.env.NODE_ENV !== 'production') {
+    // Dev fallback: allow X-Tenant-Slug override via dev tools
+    const devSlug = request.headers.get('x-tenant-slug');
+    if (devSlug) {
+      return NextResponse.next();
+    }
+  }
+
+  return NextResponse.next({ request: { headers: requestHeaders } });
 });
 
 export const config = {

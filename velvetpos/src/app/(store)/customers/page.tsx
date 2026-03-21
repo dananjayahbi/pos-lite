@@ -26,6 +26,7 @@ import { Plus, Eye, Pencil, ChevronLeft, ChevronRight, Upload } from 'lucide-rea
 import { formatRupee } from '@/lib/format';
 import { CustomerSheet } from '@/components/customers/CustomerSheet';
 import { ImportCustomersSheet } from '@/components/customers/ImportCustomersSheet';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -187,6 +188,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Table */}
+      <ErrorBoundary>
       <div className="rounded-lg border border-sand/30 bg-white">
         <Table>
           <TableHeader>
@@ -261,6 +263,7 @@ export default function CustomersPage() {
           </TableBody>
         </Table>
       </div>
+      </ErrorBoundary>
 
       {/* Pagination */}
       {result && result.totalPages > 1 && (

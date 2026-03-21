@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { SaleHistoryTable } from '@/components/pos/SaleHistoryTable';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export default function SaleHistoryPage() {
   return (
@@ -21,7 +22,9 @@ export default function SaleHistoryPage() {
 
       {/* Table */}
       <div className="flex-1 overflow-y-auto">
-        <SaleHistoryTable />
+        <ErrorBoundary>
+          <SaleHistoryTable />
+        </ErrorBoundary>
       </div>
     </div>
   );
