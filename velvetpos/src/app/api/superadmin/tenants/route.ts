@@ -4,6 +4,7 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { createTrialSubscription } from '@/lib/billing/subscription.service';
 import type { TenantStatus } from '@/generated/prisma/client';
 
 const createTenantSchema = z.object({
@@ -95,10 +96,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Email already in use' }, { status: 409 });
     }
 
-    const now = new Date();
-    const periodEnd = new Date(now);
-    periodEnd.setDate(periodEnd.getDate() + 30);
-
     const passwordHash = await bcrypt.hash(ownerPassword, 12);
 
     const tenant = await prisma.$transaction(async (tx) => {
@@ -126,16 +123,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await tx.subscription.create({
-        data: {
-          tenantId: newTenant.id,
-          planId,
-          status: 'TRIALING',
-          currentPeriodStart: now,
-          currentPeriodEnd: periodEnd,
-          nextBillingDate: periodEnd,
-        },
-      });
+      await createTrialSubscription(newTenant.id, planId, tx);
 
       return newTenant;
     });

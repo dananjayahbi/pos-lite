@@ -9,9 +9,9 @@ export async function GET() {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const plans = await prisma.plan.findMany({
+  const plans = await prisma.subscriptionPlan.findMany({
     where: { isActive: true },
-    orderBy: { sortOrder: 'asc' },
+    orderBy: { createdAt: 'asc' },
   });
 
   return NextResponse.json(plans);

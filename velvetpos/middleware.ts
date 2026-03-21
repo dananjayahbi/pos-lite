@@ -35,6 +35,18 @@ function isStorePath(pathname: string): boolean {
   return !isPublicPath(pathname);
 }
 
+function isSuspensionBypassPath(pathname: string): boolean {
+  return (
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/auth/') ||
+    pathname.startsWith('/_next/') ||
+    pathname.includes('/billing') ||
+    pathname.includes('/suspended') ||
+    pathname.startsWith('/favicon') ||
+    pathname.startsWith('/manifest')
+  );
+}
+
 function clearSessionCookies(response: NextResponse): void {
   response.cookies.delete('authjs.session-token');
   response.cookies.delete('__Secure-authjs.session-token');
@@ -111,26 +123,46 @@ export default auth(async (request: NextRequest) => {
   }
 
   // Tenant status enforcement for store routes
-  if (pathname === '/suspended') {
-    return NextResponse.next();
-  }
-
-  if (!user.tenantId) {
+  if (!user.tenantId || isSuspensionBypassPath(pathname)) {
     return NextResponse.next();
   }
 
   if (isStorePath(pathname)) {
     const tenant = await prisma.tenant.findUnique({
       where: { id: user.tenantId },
-      select: { id: true, status: true, deletedAt: true, graceEndsAt: true },
+      select: {
+        id: true,
+        status: true,
+        deletedAt: true,
+        graceEndsAt: true,
+        subscriptionStatus: true,
+      },
     });
 
     if (!tenant || tenant.deletedAt !== null) {
       return NextResponse.next();
     }
 
-    if (tenant.status === 'SUSPENDED' || tenant.status === 'CANCELLED') {
-      return NextResponse.redirect(new URL('/suspended', request.url));
+    // Subscription suspension — SUPER_ADMIN can bypass
+    if (user.role !== 'SUPER_ADMIN') {
+      if (tenant.subscriptionStatus === 'CANCELLED') {
+        const suspendedUrl = new URL('/suspended', request.url);
+        suspendedUrl.searchParams.set('reason', 'cancelled');
+        return NextResponse.redirect(suspendedUrl);
+      }
+
+      if (
+        tenant.subscriptionStatus === 'SUSPENDED' ||
+        tenant.status === 'SUSPENDED'
+      ) {
+        return NextResponse.redirect(new URL('/suspended', request.url));
+      }
+
+      if (tenant.status === 'CANCELLED') {
+        const suspendedUrl = new URL('/suspended', request.url);
+        suspendedUrl.searchParams.set('reason', 'cancelled');
+        return NextResponse.redirect(suspendedUrl);
+      }
     }
 
     if (tenant.status === 'GRACE_PERIOD') {

@@ -37,7 +37,7 @@ export async function getAllTenants(options: GetAllTenantsOptions = {}) {
       where,
       include: {
         subscriptions: {
-          where: { status: { in: ['ACTIVE', 'TRIALING'] } },
+          where: { status: { in: ['ACTIVE', 'TRIAL'] } },
           take: 1,
           orderBy: { createdAt: 'desc' },
           include: { plan: true },
@@ -64,7 +64,7 @@ export async function getTenantById(tenantId: string) {
           include: { plan: true },
         },
         invoices: {
-          orderBy: { billingDate: 'desc' },
+          orderBy: { createdAt: 'desc' },
           take: 10,
         },
       },
@@ -116,10 +116,9 @@ export async function createTenant(input: CreateTenantInput) {
         data: {
           tenantId: tenant.id,
           planId,
-          status: 'TRIALING',
+          status: 'TRIAL',
           currentPeriodStart: now,
           currentPeriodEnd: periodEnd,
-          nextBillingDate: periodEnd,
         },
       });
 

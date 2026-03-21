@@ -10,8 +10,10 @@ async function seedPlans() {
   const plans = [
     {
       name: 'Basic POS',
-      description: 'The essential toolkit for a modern clothing boutique',
-      priceMonthly: 4999,
+      monthlyPrice: 4999,
+      annualPrice: 49990,
+      maxUsers: 3,
+      maxProductVariants: 200,
       features: [
         'POS Terminal',
         'Inventory Management',
@@ -20,12 +22,13 @@ async function seedPlans() {
         'Up to 3 Staff Accounts',
       ],
       isActive: true,
-      sortOrder: 1,
     },
     {
       name: 'Pro POS + WhatsApp',
-      description: 'Full-featured POS with WhatsApp marketing and priority support',
-      priceMonthly: 7999,
+      monthlyPrice: 7999,
+      annualPrice: 79990,
+      maxUsers: 50,
+      maxProductVariants: 5000,
       features: [
         'Everything in Basic POS',
         'WhatsApp Receipt Delivery',
@@ -35,21 +38,19 @@ async function seedPlans() {
         'Priority Support',
       ],
       isActive: true,
-      sortOrder: 2,
     },
   ];
 
   for (const plan of plans) {
-    const existing = await prisma.plan.findUnique({ where: { name: plan.name } });
+    const existing = await prisma.subscriptionPlan.findUnique({ where: { name: plan.name } });
 
-    await prisma.plan.upsert({
+    await prisma.subscriptionPlan.upsert({
       where: { name: plan.name },
       create: plan,
       update: {
-        priceMonthly: plan.priceMonthly,
+        monthlyPrice: plan.monthlyPrice,
         features: plan.features,
         isActive: plan.isActive,
-        sortOrder: plan.sortOrder,
       },
     });
 
@@ -139,6 +140,14 @@ async function main() {
     throw error;
   }
 
+  // Seed billing demo data (subscription plans, subscriptions, invoices, reminders)
+  try {
+    await seedBillingData();
+  } catch (error) {
+    console.error('Failed to seed billing data:', error);
+    throw error;
+  }
+
   await prisma.$disconnect();
 }
 
@@ -203,7 +212,7 @@ async function seedSampleTenant() {
     return;
   }
 
-  const proPlan = await prisma.plan.findFirst({ where: { name: 'Pro POS + WhatsApp' } });
+  const proPlan = await prisma.subscriptionPlan.findFirst({ where: { name: 'Pro POS + WhatsApp' } });
   if (!proPlan) {
     throw new Error('Pro plan not found — ensure plans are seeded before running tenant seed');
   }
@@ -258,9 +267,6 @@ async function seedSampleTenant() {
         status: 'ACTIVE',
         currentPeriodStart: now,
         currentPeriodEnd: periodEnd,
-        nextBillingDate: periodEnd,
-        payhereSubId: null,
-        cancelledAt: null,
       },
     }),
   ]);
@@ -1935,6 +1941,375 @@ async function seedHardwareAndAuditData() {
   console.log(`  Audit logs:          ${auditsCreated}`);
   console.log(`  Cash movements:      ${cashMovementsCreated}`);
   console.log(`  Customer birthdays:  reset & 1 set to today`);
+}
+
+// ── Billing Seed Data ─────────────────────────────────────────────────────────
+
+async function seedBillingData() {
+  // ── 1. Upsert SubscriptionPlan records ──────────────────────────────────────
+
+  const starterPlan = await prisma.subscriptionPlan.upsert({
+    where: { name: 'STARTER' },
+    create: {
+      name: 'STARTER',
+      monthlyPrice: 1500,
+      annualPrice: 15000,
+      maxUsers: 3,
+      maxProductVariants: 200,
+      features: ['pos:basic', 'reports:basic', 'stock:basic'],
+      isActive: true,
+    },
+    update: {
+      monthlyPrice: 1500,
+      annualPrice: 15000,
+      maxUsers: 3,
+      maxProductVariants: 200,
+      features: ['pos:basic', 'reports:basic', 'stock:basic'],
+      isActive: true,
+    },
+  });
+
+  const growthPlan = await prisma.subscriptionPlan.upsert({
+    where: { name: 'GROWTH' },
+    create: {
+      name: 'GROWTH',
+      monthlyPrice: 3500,
+      annualPrice: 35000,
+      maxUsers: 10,
+      maxProductVariants: 1000,
+      features: [
+        'pos:basic',
+        'pos:returns',
+        'reports:advanced',
+        'stock:advanced',
+        'crm:basic',
+        'whatsapp:basic',
+      ],
+      isActive: true,
+    },
+    update: {
+      monthlyPrice: 3500,
+      annualPrice: 35000,
+      maxUsers: 10,
+      maxProductVariants: 1000,
+      features: [
+        'pos:basic',
+        'pos:returns',
+        'reports:advanced',
+        'stock:advanced',
+        'crm:basic',
+        'whatsapp:basic',
+      ],
+      isActive: true,
+    },
+  });
+
+  const enterprisePlan = await prisma.subscriptionPlan.upsert({
+    where: { name: 'ENTERPRISE' },
+    create: {
+      name: 'ENTERPRISE',
+      monthlyPrice: 8000,
+      annualPrice: 80000,
+      maxUsers: 50,
+      maxProductVariants: 5000,
+      features: [
+        'pos:basic',
+        'pos:returns',
+        'reports:advanced',
+        'reports:export',
+        'stock:advanced',
+        'crm:advanced',
+        'whatsapp:advanced',
+        'staff:unlimited',
+        'hardware:all',
+      ],
+      isActive: true,
+    },
+    update: {
+      monthlyPrice: 8000,
+      annualPrice: 80000,
+      maxUsers: 50,
+      maxProductVariants: 5000,
+      features: [
+        'pos:basic',
+        'pos:returns',
+        'reports:advanced',
+        'reports:export',
+        'stock:advanced',
+        'crm:advanced',
+        'whatsapp:advanced',
+        'staff:unlimited',
+        'hardware:all',
+      ],
+      isActive: true,
+    },
+  });
+
+  console.log('Upserted subscription plans: STARTER, GROWTH, ENTERPRISE');
+
+  // ── 2. Assign primary demo tenant (Dilani) an ACTIVE GROWTH subscription ───
+
+  const demoTenant = await prisma.tenant.findFirst({ where: { slug: 'dilani' } });
+  if (!demoTenant) {
+    console.log('Demo tenant (dilani) not found — skipping billing subscription & invoice seed');
+    return;
+  }
+
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+  const demoSubscription = await prisma.subscription.upsert({
+    where: { tenantId: demoTenant.id },
+    create: {
+      tenantId: demoTenant.id,
+      planId: growthPlan.id,
+      status: 'ACTIVE',
+      currentPeriodStart: startOfMonth,
+      currentPeriodEnd: endOfMonth,
+    },
+    update: {
+      planId: growthPlan.id,
+      status: 'ACTIVE',
+      currentPeriodStart: startOfMonth,
+      currentPeriodEnd: endOfMonth,
+    },
+  });
+
+  await prisma.tenant.update({
+    where: { id: demoTenant.id },
+    data: { subscriptionStatus: 'ACTIVE' },
+  });
+
+  console.log('Assigned ACTIVE GROWTH subscription to Dilani Boutique');
+
+  // ── 3. Three demo invoices ──────────────────────────────────────────────────
+
+  const fourMonthsAgoStart = new Date(now.getFullYear(), now.getMonth() - 4, 1);
+  const fourMonthsAgoEnd = new Date(now.getFullYear(), now.getMonth() - 4 + 1, 0);
+  const twoMonthsAgoStart = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  const twoMonthsAgoEnd = new Date(now.getFullYear(), now.getMonth() - 2 + 1, 0);
+
+  const inv1 = await prisma.invoice.upsert({
+    where: { invoiceNumber: 'INV-SEED-0001' },
+    create: {
+      tenantId: demoTenant.id,
+      subscriptionId: demoSubscription.id,
+      amount: 3500,
+      currency: 'LKR',
+      status: 'PAID',
+      billingPeriodStart: fourMonthsAgoStart,
+      billingPeriodEnd: fourMonthsAgoEnd,
+      dueDate: fourMonthsAgoEnd,
+      paidAt: new Date(fourMonthsAgoEnd.getTime() - 2 * 24 * 60 * 60 * 1000),
+      invoiceNumber: 'INV-SEED-0001',
+    },
+    update: {
+      amount: 3500,
+      status: 'PAID',
+      billingPeriodStart: fourMonthsAgoStart,
+      billingPeriodEnd: fourMonthsAgoEnd,
+      dueDate: fourMonthsAgoEnd,
+      paidAt: new Date(fourMonthsAgoEnd.getTime() - 2 * 24 * 60 * 60 * 1000),
+    },
+  });
+
+  const inv2 = await prisma.invoice.upsert({
+    where: { invoiceNumber: 'INV-SEED-0002' },
+    create: {
+      tenantId: demoTenant.id,
+      subscriptionId: demoSubscription.id,
+      amount: 3500,
+      currency: 'LKR',
+      status: 'PAID',
+      billingPeriodStart: twoMonthsAgoStart,
+      billingPeriodEnd: twoMonthsAgoEnd,
+      dueDate: twoMonthsAgoEnd,
+      paidAt: new Date(twoMonthsAgoEnd.getTime() - 1 * 24 * 60 * 60 * 1000),
+      invoiceNumber: 'INV-SEED-0002',
+    },
+    update: {
+      amount: 3500,
+      status: 'PAID',
+      billingPeriodStart: twoMonthsAgoStart,
+      billingPeriodEnd: twoMonthsAgoEnd,
+      dueDate: twoMonthsAgoEnd,
+      paidAt: new Date(twoMonthsAgoEnd.getTime() - 1 * 24 * 60 * 60 * 1000),
+    },
+  });
+
+  const inv3 = await prisma.invoice.upsert({
+    where: { invoiceNumber: 'INV-SEED-0003' },
+    create: {
+      tenantId: demoTenant.id,
+      subscriptionId: demoSubscription.id,
+      amount: 3500,
+      currency: 'LKR',
+      status: 'PENDING',
+      billingPeriodStart: startOfMonth,
+      billingPeriodEnd: endOfMonth,
+      dueDate: endOfMonth,
+      invoiceNumber: 'INV-SEED-0003',
+    },
+    update: {
+      amount: 3500,
+      status: 'PENDING',
+      billingPeriodStart: startOfMonth,
+      billingPeriodEnd: endOfMonth,
+      dueDate: endOfMonth,
+    },
+  });
+
+  console.log('Upserted 3 demo invoices: INV-SEED-0001 (PAID), INV-SEED-0002 (PAID), INV-SEED-0003 (PENDING)');
+
+  // ── 4. Payment reminders for the pending invoice ────────────────────────────
+
+  // Delete existing reminders for this invoice to re-create cleanly
+  await prisma.paymentReminder.deleteMany({ where: { invoiceId: inv3.id } });
+
+  await prisma.paymentReminder.createMany({
+    data: [
+      {
+        tenantId: demoTenant.id,
+        invoiceId: inv3.id,
+        type: 'THREE_DAY_REMINDER',
+        channel: 'WHATSAPP',
+        status: 'SENT',
+        sentAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000),
+      },
+      {
+        tenantId: demoTenant.id,
+        invoiceId: inv3.id,
+        type: 'DUE_DATE_REMINDER',
+        channel: 'WHATSAPP',
+        status: 'SENT',
+        sentAt: now,
+      },
+    ],
+  });
+
+  console.log('Created 2 payment reminders for INV-SEED-0003');
+
+  // ── 5. Trial demo tenant ────────────────────────────────────────────────────
+
+  const trialPasswordHash = await bcrypt.hash('trial-demo-pass!', 12);
+
+  let trialTenant = await prisma.tenant.findFirst({ where: { slug: 'trial-demo' } });
+  if (!trialTenant) {
+    trialTenant = await prisma.tenant.create({
+      data: {
+        name: 'Trial Demo Boutique',
+        slug: 'trial-demo',
+        status: 'ACTIVE',
+        subscriptionStatus: 'TRIAL',
+        settings: {},
+      },
+    });
+  } else {
+    await prisma.tenant.update({
+      where: { id: trialTenant.id },
+      data: { subscriptionStatus: 'TRIAL' },
+    });
+  }
+
+  const existingTrialUser = await prisma.user.findFirst({
+    where: { email: 'demo-trial-owner@velvetpos.dev', deletedAt: null },
+  });
+  if (!existingTrialUser) {
+    await prisma.user.create({
+      data: {
+        email: 'demo-trial-owner@velvetpos.dev',
+        passwordHash: trialPasswordHash,
+        role: 'OWNER',
+        tenantId: trialTenant.id,
+        permissions: [],
+        isActive: true,
+      },
+    });
+  }
+
+  await prisma.subscription.upsert({
+    where: { tenantId: trialTenant.id },
+    create: {
+      tenantId: trialTenant.id,
+      planId: starterPlan.id,
+      status: 'TRIAL',
+      trialEndsAt: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
+      currentPeriodStart: now,
+      currentPeriodEnd: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
+    },
+    update: {
+      planId: starterPlan.id,
+      status: 'TRIAL',
+      trialEndsAt: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
+    },
+  });
+
+  console.log('Upserted Trial Demo Boutique (TRIAL, STARTER plan, trial ends in 14 days)');
+
+  // ── 6. Suspended demo tenant ────────────────────────────────────────────────
+
+  const suspendedPasswordHash = await bcrypt.hash('suspended-demo-pass!', 12);
+  const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+
+  let suspendedTenant = await prisma.tenant.findFirst({ where: { slug: 'suspended-demo' } });
+  if (!suspendedTenant) {
+    suspendedTenant = await prisma.tenant.create({
+      data: {
+        name: 'Suspended Demo Boutique',
+        slug: 'suspended-demo',
+        status: 'ACTIVE',
+        subscriptionStatus: 'SUSPENDED',
+        settings: {},
+      },
+    });
+  } else {
+    await prisma.tenant.update({
+      where: { id: suspendedTenant.id },
+      data: { subscriptionStatus: 'SUSPENDED' },
+    });
+  }
+
+  const existingSuspendedUser = await prisma.user.findFirst({
+    where: { email: 'demo-suspended-owner@velvetpos.dev', deletedAt: null },
+  });
+  if (!existingSuspendedUser) {
+    await prisma.user.create({
+      data: {
+        email: 'demo-suspended-owner@velvetpos.dev',
+        passwordHash: suspendedPasswordHash,
+        role: 'OWNER',
+        tenantId: suspendedTenant.id,
+        permissions: [],
+        isActive: true,
+      },
+    });
+  }
+
+  await prisma.subscription.upsert({
+    where: { tenantId: suspendedTenant.id },
+    create: {
+      tenantId: suspendedTenant.id,
+      planId: growthPlan.id,
+      status: 'SUSPENDED',
+      currentPeriodStart: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+      currentPeriodEnd: lastMonthEnd,
+    },
+    update: {
+      planId: growthPlan.id,
+      status: 'SUSPENDED',
+      currentPeriodEnd: lastMonthEnd,
+    },
+  });
+
+  console.log('Upserted Suspended Demo Boutique (SUSPENDED, GROWTH plan, past grace period)');
+
+  console.log('── Billing Seed Summary ──');
+  console.log('  Subscription plans:  3 (STARTER, GROWTH, ENTERPRISE)');
+  console.log('  Demo subscriptions:  3 (ACTIVE, TRIAL, SUSPENDED)');
+  console.log('  Demo invoices:       3 (2 PAID, 1 PENDING)');
+  console.log('  Payment reminders:   2 (THREE_DAY + DUE_DATE)');
+  console.log('  Demo tenants:        2 new (Trial Demo, Suspended Demo)');
 }
 
 main()

@@ -59,21 +59,21 @@ async function DashboardMetrics() {
       prisma.tenant.count({ where: { status: "ACTIVE", deletedAt: null } }),
       prisma.subscription.findMany({
         where: { status: "ACTIVE" },
-        include: { plan: { select: { priceMonthly: true } } },
+        include: { plan: { select: { monthlyPrice: true } } },
       }),
       prisma.tenant.count({
         where: { status: "GRACE_PERIOD", deletedAt: null },
       }),
       prisma.subscription.count({
         where: {
-          nextBillingDate: { gte: now, lte: sevenDaysLater },
+          currentPeriodEnd: { gte: now, lte: sevenDaysLater },
           status: { not: "CANCELLED" },
         },
       }),
     ]);
 
   const mrrValue = activeSubscriptions.reduce(
-    (sum, sub) => sum + Number(sub.plan.priceMonthly),
+    (sum, sub) => sum + Number(sub.plan.monthlyPrice),
     0,
   );
 
@@ -120,8 +120,8 @@ async function DashboardPanels() {
       },
     }),
     prisma.subscription.findMany({
-      where: { status: "ACTIVE", nextBillingDate: { gt: now } },
-      orderBy: { nextBillingDate: "asc" },
+      where: { status: "ACTIVE", currentPeriodEnd: { gt: now } },
+      orderBy: { currentPeriodEnd: "asc" },
       take: 5,
       include: { tenant: true, plan: true },
     }),
@@ -204,10 +204,10 @@ async function DashboardPanels() {
                     </TableCell>
                     <TableCell>{sub.plan.name}</TableCell>
                     <TableCell>
-                      {sub.nextBillingDate.toLocaleDateString("en-LK")}
+                      {sub.currentPeriodEnd.toLocaleDateString("en-LK")}
                     </TableCell>
                     <TableCell>
-                      {lkr.format(Number(sub.plan.priceMonthly))}
+                      {lkr.format(Number(sub.plan.monthlyPrice))}
                     </TableCell>
                   </TableRow>
                 ))}

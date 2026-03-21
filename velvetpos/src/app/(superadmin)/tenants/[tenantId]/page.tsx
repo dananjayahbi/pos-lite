@@ -20,8 +20,9 @@ interface PageProps {
 
 const invoiceStatusStyles: Record<string, string> = {
   PAID: 'bg-green-100 text-green-800',
-  UNPAID: 'bg-amber-100 text-amber-800',
-  OVERDUE: 'bg-red-100 text-red-800',
+  PENDING: 'bg-amber-100 text-amber-800',
+  FAILED: 'bg-red-100 text-red-800',
+  VOIDED: 'bg-gray-100 text-gray-600',
 };
 
 export default async function TenantDetailPage({ params }: PageProps) {
@@ -36,7 +37,7 @@ export default async function TenantDetailPage({ params }: PageProps) {
         include: { plan: true },
       },
       invoices: {
-        orderBy: { billingDate: 'desc' },
+        orderBy: { billingPeriodStart: 'desc' },
         take: 10,
       },
     },
@@ -95,8 +96,8 @@ export default async function TenantDetailPage({ params }: PageProps) {
           </CardHeader>
           <CardContent>
             <p className="font-medium text-espresso">
-              {subscription?.nextBillingDate
-                ? new Date(subscription.nextBillingDate).toLocaleDateString()
+              {subscription?.currentPeriodEnd
+                ? new Date(subscription.currentPeriodEnd).toLocaleDateString()
                 : '—'}
             </p>
           </CardContent>
@@ -171,7 +172,7 @@ export default async function TenantDetailPage({ params }: PageProps) {
                       {invoice.invoiceNumber}
                     </TableCell>
                     <TableCell>
-                      {new Date(invoice.billingDate).toLocaleDateString()}
+                      {new Date(invoice.billingPeriodStart).toLocaleDateString()}
                     </TableCell>
                     <TableCell>
                       {Number(invoice.amount).toLocaleString('en-LK', {
