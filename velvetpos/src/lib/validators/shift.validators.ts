@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const OpenShiftSchema = z.object({
   openingFloat: z.number().min(0, 'Opening float must be non-negative'),
+  autoClockIn: z.boolean().optional(),
 });
 
 export const CloseShiftSchema = z.object({

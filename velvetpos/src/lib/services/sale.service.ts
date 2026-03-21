@@ -4,6 +4,7 @@ import type { SaleStatus, TaxRule } from '@/generated/prisma/client';
 import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
 import { createAuditLog } from '@/lib/services/audit.service';
 import { createPayment } from '@/lib/services/payment.service';
+import { redeemCredit, addToSpendTotal } from '@/lib/services/customer.service';
 import type { CreateSaleInput, HoldSaleInput } from '@/lib/validators/sale.validators';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -147,6 +148,8 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
         tenantId,
         shiftId: input.shiftId,
         cashierId: input.cashierId,
+        ...(input.customerId ? { customerId: input.customerId } : {}),
+        ...(input.appliedPromotions !== undefined && { appliedPromotions: input.appliedPromotions }),
         subtotal: subtotal.toNumber(),
         discountAmount: cartDiscount.toNumber(),
         taxAmount: totalTax.toNumber(),
@@ -205,6 +208,15 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
           data: { changeGiven: changeGiven.toNumber() },
         });
       }
+    }
+
+    // Customer credit redemption and spend tracking
+    if (input.customerId) {
+      const creditAmount = new Decimal(input.appliedStoreCredit ?? '0');
+      if (creditAmount.greaterThan(0)) {
+        await redeemCredit(tenantId, input.customerId, creditAmount, tx);
+      }
+      await addToSpendTotal(tenantId, input.customerId, totalAmount, tx);
     }
 
     const completeSale = await tx.sale.findUniqueOrThrow({

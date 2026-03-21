@@ -105,3 +105,58 @@ export async function sendWhatsAppReceiptMessage(
     return { success: false, error: 'WhatsApp dispatch failed due to a network error.' };
   }
 }
+
+export async function sendWhatsAppTextMessage(
+  phoneNumber: string,
+  message: string,
+): Promise<{ success: boolean; error?: string }> {
+  let formattedPhone: string;
+  try {
+    formattedPhone = formatPhoneNumber(phoneNumber);
+  } catch (err) {
+    return {
+      success: false,
+      error: 'Invalid phone number: ' + (err instanceof Error ? err.message : String(err)),
+    };
+  }
+
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+
+  if (!phoneNumberId || !accessToken) {
+    return {
+      success: false,
+      error: 'WhatsApp is not configured. Missing environment variables.',
+    };
+  }
+
+  const url = `https://graph.facebook.com/v18.0/${encodeURIComponent(phoneNumberId)}/messages`;
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: formattedPhone,
+        type: 'text',
+        text: { body: message },
+      }),
+    });
+
+    if (res.status !== 200 && res.status !== 201) {
+      const errorBody = await res.text();
+      console.error(`[WhatsApp] Text message to ${phoneNumber}: API returned HTTP ${res.status}`, errorBody);
+      return { success: false, error: `WhatsApp dispatch failed. Meta API returned HTTP status ${res.status}.` };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error(`[WhatsApp] Text message to ${phoneNumber}: Network error`, err);
+    return { success: false, error: 'WhatsApp dispatch failed due to a network error.' };
+  }
+}

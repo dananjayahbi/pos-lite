@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ShoppingBag, ArchiveRestore, Banknote, CreditCard, Layers } from 'lucide-react';
+import { ShoppingBag, ArchiveRestore, Banknote, CreditCard, Layers, X, Tag } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Decimal from 'decimal.js';
@@ -18,6 +18,8 @@ import { CardPaymentModal } from '@/components/pos/CardPaymentModal';
 import { SplitPaymentModal } from '@/components/pos/SplitPaymentModal';
 import { ReceiptPreviewDialog } from '@/components/pos/ReceiptPreviewDialog';
 import type { CreateSalePayload, CompletedSale } from '@/types/pos.types';
+import { CustomerSearchDropdown } from '@/components/customers/CustomerSearchDropdown';
+import { Switch } from '@/components/ui/switch';
 import { usePersistCartEffect } from '@/hooks/usePersistCartEffect';
 import { clearCartSnapshot } from '@/lib/idb-store';
 
@@ -33,6 +35,19 @@ export function CartPanel({ shiftId }: CartPanelProps) {
   const clearCart = useCartStore((s) => s.clearCart);
   const activeLineId = useCartStore((s) => s.activeLineId);
   const authorizingManagerId = useCartStore((s) => s.authorizingManagerId);
+  const linkedCustomerId = useCartStore((s) => s.linkedCustomerId);
+  const linkedCustomerName = useCartStore((s) => s.linkedCustomerName);
+  const linkedCustomerCreditBalance = useCartStore((s) => s.linkedCustomerCreditBalance);
+  const appliedStoreCredit = useCartStore((s) => s.appliedStoreCredit);
+  const linkCustomer = useCartStore((s) => s.linkCustomer);
+  const unlinkCustomer = useCartStore((s) => s.unlinkCustomer);
+  const setAppliedStoreCredit = useCartStore((s) => s.setAppliedStoreCredit);
+  const appliedPromotions = useCartStore((s) => s.appliedPromotions);
+  const skippedPromotions = useCartStore((s) => s.skippedPromotions);
+  const totalPromotionDiscount = useCartStore((s) => s.totalPromotionDiscount);
+  const appliedPromoCode = useCartStore((s) => s.appliedPromoCode);
+  const setPromoCode = useCartStore((s) => s.setPromoCode);
+  const evaluatePromotionsAction = useCartStore((s) => s.evaluatePromotions);
 
   // Persist cart to IndexedDB
   usePersistCartEffect({ items, cartDiscountPercent, cartDiscountAmount });
@@ -50,6 +65,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
   const [completedSale, setCompletedSale] = useState<CompletedSale | null>(null);
   const [changeAmount, setChangeAmount] = useState<Decimal | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [promoCodeInput, setPromoCodeInput] = useState('');
   const queryClient = useQueryClient();
 
   const { data: heldSalesData } = useQuery({
@@ -68,6 +84,10 @@ export function CartPanel({ shiftId }: CartPanelProps) {
 
   const hasItems = items.length > 0;
   const totalDiscount = discountEffective.toNumber();
+  const appliedCreditDec = new Decimal(appliedStoreCredit);
+  const promoDiscountDec = new Decimal(totalPromotionDiscount);
+  const amountDue = total.minus(appliedCreditDec).minus(promoDiscountDec).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  const promoCodeError = skippedPromotions.find((s) => s.promotionId === 'promo_code')?.reason;
 
   const salePayload: CreateSalePayload = {
     shiftId,
@@ -78,6 +98,9 @@ export function CartPanel({ shiftId }: CartPanelProps) {
     })),
     cartDiscountAmount: discountEffective.toNumber(),
     ...(authorizingManagerId ? { authorizingManagerId } : {}),
+    ...(linkedCustomerId ? { customerId: linkedCustomerId } : {}),
+    ...(appliedCreditDec.greaterThan(0) ? { appliedStoreCredit } : {}),
+    ...(appliedPromotions.length > 0 ? { appliedPromotions } : {}),
   };
 
   const handleSaleComplete = (sale: CompletedSale) => {
@@ -159,6 +182,54 @@ export function CartPanel({ shiftId }: CartPanelProps) {
         </div>
       </div>
 
+      {/* Customer linking */}
+      <div className="shrink-0 px-4 py-2 border-b border-mist/30">
+        {!linkedCustomerId ? (
+          <CustomerSearchDropdown
+            onSelect={(c) => linkCustomer(c.id, c.name, c.creditBalance)}
+            onClear={() => {}}
+          />
+        ) : (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-body text-sm text-espresso font-medium">{linkedCustomerName}</p>
+                {linkedCustomerCreditBalance && new Decimal(linkedCustomerCreditBalance).greaterThan(0) && (
+                  <p className="font-body text-xs text-green-700">
+                    Store Credit: {formatRupee(linkedCustomerCreditBalance)}
+                  </p>
+                )}
+              </div>
+              <button type="button" onClick={() => { unlinkCustomer(); }} className="text-mist hover:text-espresso transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {linkedCustomerCreditBalance && new Decimal(linkedCustomerCreditBalance).greaterThan(0) && hasItems && (
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-body text-xs text-espresso">Use Store Credit</span>
+                  <span className="font-body text-[10px] text-mist ml-1">
+                    ({formatRupee(linkedCustomerCreditBalance)} available)
+                  </span>
+                </div>
+                <Switch
+                  checked={new Decimal(appliedStoreCredit).greaterThan(0)}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      const credit = new Decimal(linkedCustomerCreditBalance);
+                      const validAmount = Decimal.min(credit, total).toFixed(2);
+                      setAppliedStoreCredit(validAmount);
+                    } else {
+                      setAppliedStoreCredit('0');
+                    }
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Line items (scrollable) */}
       <div className="flex-1 overflow-y-auto">
         {!hasItems ? (
@@ -183,6 +254,54 @@ export function CartPanel({ shiftId }: CartPanelProps) {
       {/* Cart-level discount */}
       {hasItems && <CartDiscountControl />}
 
+      {/* Promo code input */}
+      {hasItems && (
+        <div className="shrink-0 px-4 py-2 border-t border-mist/30">
+          {appliedPromoCode ? (
+            <div className="flex items-center gap-2">
+              <Tag className="h-3.5 w-3.5 text-terracotta" />
+              <span className="font-mono text-xs text-espresso bg-linen px-2 py-1 rounded">{appliedPromoCode}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setPromoCode(null);
+                  evaluatePromotionsAction();
+                }}
+                className="text-mist hover:text-[#9B2226] transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+              {promoCodeError && (
+                <span className="font-body text-xs text-[#9B2226]">{promoCodeError}</span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={promoCodeInput}
+                onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
+                placeholder="Promo code"
+                className="flex-1 px-2 py-1.5 border border-mist/50 rounded text-xs font-mono bg-pearl text-espresso placeholder:text-mist/50 focus:outline-none focus:border-terracotta"
+              />
+              <button
+                type="button"
+                disabled={!promoCodeInput.trim()}
+                onClick={() => {
+                  if (!promoCodeInput.trim()) return;
+                  setPromoCode(promoCodeInput.trim());
+                  setPromoCodeInput('');
+                  evaluatePromotionsAction();
+                }}
+                className="px-3 py-1.5 rounded bg-espresso text-pearl text-xs font-body hover:bg-espresso/90 transition-colors disabled:opacity-40"
+              >
+                Apply
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Totals section */}
       {hasItems && (
         <div className="shrink-0 border-t border-espresso/10 bg-pearl shadow-[0_-2px_8px_rgba(0,0,0,0.05)]">
@@ -197,6 +316,26 @@ export function CartPanel({ shiftId }: CartPanelProps) {
                 <span className="font-mono">-{formatRupee(totalDiscount)}</span>
               </div>
             )}
+            {promoDiscountDec.greaterThan(0) && (
+              <div className="space-y-0.5">
+                <div className="flex justify-between font-body text-sm text-green-700">
+                  <span>Promotions</span>
+                  <span className="font-mono">-{formatRupee(promoDiscountDec.toNumber())}</span>
+                </div>
+                {appliedPromotions.map((p) => (
+                  <div key={p.promotionId} className="flex justify-between font-body text-xs text-green-600 pl-2">
+                    <span className="truncate mr-2">{p.label}</span>
+                    <span className="font-mono shrink-0">-{formatRupee(new Decimal(p.discountAmount).toNumber())}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {appliedCreditDec.greaterThan(0) && (
+              <div className="flex justify-between font-body text-sm text-green-700">
+                <span>Store Credit</span>
+                <span className="font-mono">-{formatRupee(appliedStoreCredit)}</span>
+              </div>
+            )}
             <div className="flex justify-between font-body text-sm text-espresso">
               <span>Tax {taxRate > 0 ? `(${taxRate}%)` : ''}</span>
               <span className="font-mono">{formatRupee(taxAmount.toNumber())}</span>
@@ -204,7 +343,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
             <div className="flex justify-between items-baseline pt-1.5 border-t border-mist/30">
               <span className="font-display text-lg text-espresso font-bold">Total</span>
               <span className="font-mono text-lg text-terracotta font-bold">
-                {formatRupee(total.toNumber())}
+                {formatRupee(amountDue.toNumber())}
               </span>
             </div>
           </div>
@@ -272,21 +411,21 @@ export function CartPanel({ shiftId }: CartPanelProps) {
         open={paymentMode === 'cash'}
         onClose={() => setPaymentMode(null)}
         onSaleComplete={handleSaleComplete}
-        totalAmount={total}
+        totalAmount={amountDue}
         salePayload={salePayload}
       />
       <CardPaymentModal
         open={paymentMode === 'card'}
         onClose={() => setPaymentMode(null)}
         onSaleComplete={handleSaleComplete}
-        totalAmount={total}
+        totalAmount={amountDue}
         salePayload={salePayload}
       />
       <SplitPaymentModal
         open={paymentMode === 'split'}
         onClose={() => setPaymentMode(null)}
         onSaleComplete={handleSaleComplete}
-        totalAmount={total}
+        totalAmount={amountDue}
         salePayload={salePayload}
       />
       <ReceiptPreviewDialog

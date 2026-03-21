@@ -1,6 +1,6 @@
 'use client';
 
-import { Minus, Plus, X } from 'lucide-react';
+import { Minus, Plus, X, Sparkles } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
 import { useCartStore, getLineTotalAfterDiscount } from '@/stores/cartStore';
 import type { CartItem } from '@/stores/cartStore';
@@ -14,9 +14,11 @@ export function CartLineItem({ item }: CartLineItemProps) {
   const removeItem = useCartStore((s) => s.removeItem);
   const setActiveLine = useCartStore((s) => s.setActiveLine);
   const activeLineId = useCartStore((s) => s.activeLineId);
+  const appliedPromotions = useCartStore((s) => s.appliedPromotions);
   const isActive = activeLineId === item.variantId;
 
   const lineTotal = getLineTotalAfterDiscount(item);
+  const linePromos = appliedPromotions.filter((p) => p.affectedLines.includes(item.variantId));
 
   return (
     <div
@@ -33,6 +35,12 @@ export function CartLineItem({ item }: CartLineItemProps) {
         {item.discountPercent > 0 && (
           <span className="font-body text-xs text-[#2D6A4F]">-{item.discountPercent}%</span>
         )}
+        {linePromos.map((p) => (
+          <span key={p.promotionId} className="flex items-center gap-0.5 font-body text-xs text-green-700">
+            <Sparkles className="h-3 w-3" />
+            {p.label}
+          </span>
+        ))}
         <p className="font-mono text-[11px] text-mist/70">{item.sku}</p>
       </div>
 

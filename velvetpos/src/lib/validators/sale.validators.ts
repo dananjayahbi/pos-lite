@@ -16,6 +16,9 @@ export const CreateSaleSchema = z.object({
   cashReceived: z.number().positive().optional(),
   cardReferenceNumber: z.string().max(20).optional(),
   cardAmount: z.number().positive().optional(),
+  customerId: z.string().min(1).optional(),
+  appliedStoreCredit: z.string().optional().default('0'),
+  appliedPromotions: z.any().optional(),
 }).superRefine((data, ctx) => {
   if (data.paymentMethod === 'CASH') {
     if (data.cashReceived === undefined || data.cashReceived <= 0) {

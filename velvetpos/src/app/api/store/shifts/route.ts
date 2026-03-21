@@ -4,6 +4,8 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { OpenShiftSchema } from '@/lib/validators/shift.validators';
 import { openShift, getShifts } from '@/lib/services/shift.service';
+import { clockIn } from '@/lib/services/timeclock.service';
+import { prisma } from '@/lib/prisma';
 import type { ShiftStatus } from '@/generated/prisma/client';
 
 export async function GET(request: NextRequest) {
@@ -94,6 +96,21 @@ export async function POST(request: Request) {
     }
 
     const shift = await openShift(tenantId, session.user.id, parsed.data.openingFloat);
+
+    // Auto clock-in side-effect — non-blocking
+    if (parsed.data.autoClockIn) {
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: session.user.id },
+          select: { clockedInAt: true },
+        });
+        if (!user?.clockedInAt) {
+          await clockIn(tenantId, session.user.id, shift.id);
+        }
+      } catch (e) {
+        console.warn('Auto clock-in failed:', e);
+      }
+    }
 
     return NextResponse.json({ success: true, data: shift }, { status: 201 });
   } catch (error) {

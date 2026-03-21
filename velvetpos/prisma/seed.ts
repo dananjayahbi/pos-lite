@@ -115,6 +115,22 @@ async function main() {
     throw error;
   }
 
+  // Seed CRM demo data (gated behind SEED_SAMPLE_TENANT=true)
+  try {
+    await seedCRMData();
+  } catch (error) {
+    console.error('Failed to seed CRM data:', error);
+    throw error;
+  }
+
+  // Seed staff promotions & expenses (gated behind SEED_SAMPLE_TENANT=true)
+  try {
+    await seedStaffPromotionsExpenses();
+  } catch (error) {
+    console.error('Failed to seed staff promotions & expenses:', error);
+    throw error;
+  }
+
   await prisma.$disconnect();
 }
 
@@ -1165,6 +1181,466 @@ async function seedDemoReturns() {
   console.log(`  Return lines created: ${returnLineCount}`);
   console.log(`  Store credits created: ${storeCreditCount}`);
   console.log('  Methods: CASH, STORE_CREDIT, CARD_REVERSAL, EXCHANGE');
+}
+
+async function seedCRMData() {
+  if (process.env.SEED_SAMPLE_TENANT !== 'true') {
+    console.log("Skipping CRM data seed (SEED_SAMPLE_TENANT is not set to 'true')");
+    return;
+  }
+
+  const tenant = await prisma.tenant.findFirst({ where: { slug: 'dilani' } });
+  if (!tenant) {
+    console.log('Sample tenant not found, skipping CRM seed');
+    return;
+  }
+  const tenantId = tenant.id;
+
+  // ── Customers ──
+  const customersData = [
+    { name: 'Amara Perera', phone: '+94770000001', tags: ['VIP', 'REGULAR'], birthday: new Date('1990-03-17'), creditBalance: 1500, totalSpend: 45000, gender: 'FEMALE' as const },
+    { name: 'Nimal Fernando', phone: '+94770000002', tags: ['WHOLESALE'], birthday: undefined, creditBalance: 0, totalSpend: 12000, gender: 'MALE' as const },
+    { name: 'Dilani Jayawardena', phone: '+94770000003', tags: ['VIP'], birthday: new Date('1985-06-21'), creditBalance: 0, totalSpend: 62000, gender: 'FEMALE' as const },
+    { name: 'Kasun Dissanayake', phone: '+94770000004', tags: ['REGULAR'], birthday: new Date('1995-11-08'), creditBalance: 0, totalSpend: 8000, gender: 'MALE' as const },
+    { name: 'Priya Rajapaksa', phone: '+94770000005', tags: ['VIP', 'ONLINE'], birthday: new Date('1992-07-14'), creditBalance: 2000, totalSpend: 38000, gender: 'FEMALE' as const },
+    { name: 'Chamara Silva', phone: '+94770000006', tags: ['REGULAR'], birthday: undefined, creditBalance: 0, totalSpend: 5000, gender: 'MALE' as const },
+    { name: 'Ruwan Bandara', phone: '+94770000007', tags: ['WHOLESALE'], birthday: new Date('1978-02-28'), creditBalance: 0, totalSpend: 15000, gender: 'MALE' as const },
+    { name: 'Sanduni Gunawardena', phone: '+94770000008', tags: ['VIP'], birthday: new Date('1998-09-03'), creditBalance: 750, totalSpend: 28000, gender: 'FEMALE' as const },
+    { name: 'Tharindu Wickramasinghe', phone: '+94770000009', tags: ['REGULAR'], birthday: new Date('1988-12-25'), creditBalance: 0, totalSpend: 3000, gender: 'MALE' as const },
+    { name: 'Ishani Mendis', phone: '+94770000010', tags: ['STAFF'], birthday: new Date('1993-04-18'), creditBalance: 0, totalSpend: 7000, gender: 'FEMALE' as const },
+  ];
+
+  let customersCreated = 0;
+  for (const c of customersData) {
+    const existing = await prisma.customer.findFirst({
+      where: { tenantId, phone: c.phone },
+    });
+    if (existing) continue;
+
+    await prisma.customer.create({
+      data: {
+        tenantId,
+        name: c.name,
+        phone: c.phone,
+        tags: c.tags,
+        gender: c.gender,
+        creditBalance: c.creditBalance,
+        totalSpend: c.totalSpend,
+        ...(c.birthday !== undefined && { birthday: c.birthday }),
+      },
+    });
+    customersCreated++;
+  }
+  console.log(`Customers: ${customersCreated} created, ${customersData.length - customersCreated} skipped (already exist)`);
+
+  // ── Suppliers ──
+  const suppliersData = [
+    { name: 'Colombo Fashion Imports', contactName: 'Ruwan Senanayake', phone: '+94112000001', whatsappNumber: '+94770100001', leadTimeDays: 14, email: 'contact@colombo-fashion-imports.lk' },
+    { name: 'Lanka Textile Mills', contactName: 'Nirosha Wickrama', phone: '+94112000002', whatsappNumber: '+94770100002', leadTimeDays: 7, email: 'contact@lanka-textile-mills.lk' },
+    { name: 'FabricCo Wholesale', contactName: 'Saman Rathnayake', phone: '+94112000003', whatsappNumber: '+94770100003', leadTimeDays: 10, email: 'contact@fabricco-wholesale.lk' },
+  ];
+
+  let suppliersCreated = 0;
+  for (const s of suppliersData) {
+    const existing = await prisma.supplier.findFirst({
+      where: { tenantId, name: s.name },
+    });
+    if (existing) continue;
+
+    await prisma.supplier.create({
+      data: {
+        tenantId,
+        name: s.name,
+        contactName: s.contactName,
+        phone: s.phone,
+        whatsappNumber: s.whatsappNumber,
+        leadTimeDays: s.leadTimeDays,
+        email: s.email,
+      },
+    });
+    suppliersCreated++;
+  }
+  console.log(`Suppliers: ${suppliersCreated} created, ${suppliersData.length - suppliersCreated} skipped (already exist)`);
+
+  // ── Purchase Orders ──
+  const variants = await prisma.productVariant.findMany({
+    where: { product: { tenantId } },
+    include: { product: { select: { name: true } } },
+    take: 2,
+  });
+  if (variants.length < 2) {
+    console.log('Not enough variants for PO seed, skipping POs');
+    return;
+  }
+  const [variantA, variantB] = variants;
+
+  const firstUser = await prisma.user.findFirst({ where: { tenantId } });
+  if (!firstUser) {
+    console.log('No user found for PO seed, skipping POs');
+    return;
+  }
+
+  function buildDesc(v: { size?: string | null; colour?: string | null }): string {
+    const parts: string[] = [];
+    if (v.size) parts.push(v.size);
+    if (v.colour) parts.push(v.colour);
+    return parts.length > 0 ? parts.join(' / ') : 'Default';
+  }
+
+  // Fetch suppliers by name for PO creation
+  const lankaTextile = await prisma.supplier.findFirst({
+    where: { tenantId, name: 'Lanka Textile Mills' },
+  });
+  const colomboFashion = await prisma.supplier.findFirst({
+    where: { tenantId, name: 'Colombo Fashion Imports' },
+  });
+
+  if (!lankaTextile || !colomboFashion) {
+    console.log('Suppliers not found for PO seed, skipping POs');
+    return;
+  }
+
+  // PO 1 — RECEIVED
+  const po1Notes = 'Demo PO \u2014 Received (seed)';
+  const existingPO1 = await prisma.purchaseOrder.findFirst({
+    where: { tenantId, notes: po1Notes },
+  });
+
+  let po1Created = false;
+  if (!existingPO1) {
+    await prisma.purchaseOrder.create({
+      data: {
+        tenantId,
+        supplierId: lankaTextile.id,
+        createdById: firstUser.id,
+        status: 'RECEIVED',
+        notes: po1Notes,
+        expectedDeliveryDate: new Date(),
+        totalAmount: 35000,
+        lines: {
+          create: [
+            {
+              variantId: variantA!.id,
+              productNameSnapshot: variantA!.product.name,
+              variantDescriptionSnapshot: buildDesc(variantA!),
+              orderedQty: 20,
+              expectedCostPrice: 850,
+              receivedQty: 20,
+              actualCostPrice: 840,
+              isFullyReceived: true,
+            },
+            {
+              variantId: variantB!.id,
+              productNameSnapshot: variantB!.product.name,
+              variantDescriptionSnapshot: buildDesc(variantB!),
+              orderedQty: 15,
+              expectedCostPrice: 1200,
+              receivedQty: 15,
+              actualCostPrice: 1200,
+              isFullyReceived: true,
+            },
+          ],
+        },
+      },
+    });
+
+    // Seed-only direct stock increment (bypasses stock movement service)
+    await prisma.productVariant.update({
+      where: { id: variantA!.id },
+      data: { stockQuantity: { increment: 20 } },
+    });
+    await prisma.productVariant.update({
+      where: { id: variantB!.id },
+      data: { stockQuantity: { increment: 15 } },
+    });
+
+    po1Created = true;
+  }
+  console.log(`PO 1 (RECEIVED): ${po1Created ? 'created' : 'skipped (already exists)'}`);
+
+  // PO 2 — DRAFT
+  const po2Notes = 'Demo PO \u2014 Draft (seed)';
+  const existingPO2 = await prisma.purchaseOrder.findFirst({
+    where: { tenantId, notes: po2Notes },
+  });
+
+  let po2Created = false;
+  if (!existingPO2) {
+    const expectedDelivery = new Date();
+    expectedDelivery.setDate(expectedDelivery.getDate() + 21);
+
+    await prisma.purchaseOrder.create({
+      data: {
+        tenantId,
+        supplierId: colomboFashion.id,
+        createdById: firstUser.id,
+        status: 'DRAFT',
+        notes: po2Notes,
+        expectedDeliveryDate: expectedDelivery,
+        totalAmount: 40500,
+        lines: {
+          create: [
+            {
+              variantId: variantA!.id,
+              productNameSnapshot: variantA!.product.name,
+              variantDescriptionSnapshot: buildDesc(variantA!),
+              orderedQty: 30,
+              expectedCostPrice: 900,
+              receivedQty: 0,
+              isFullyReceived: false,
+            },
+            {
+              variantId: variantB!.id,
+              productNameSnapshot: variantB!.product.name,
+              variantDescriptionSnapshot: buildDesc(variantB!),
+              orderedQty: 10,
+              expectedCostPrice: 1350,
+              receivedQty: 0,
+              isFullyReceived: false,
+            },
+          ],
+        },
+      },
+    });
+    po2Created = true;
+  }
+  console.log(`PO 2 (DRAFT): ${po2Created ? 'created' : 'skipped (already exists)'}`);
+
+  // ── Customer Broadcast ──
+  const broadcastMessage =
+    'Dear Valued Customer, our End of Season Sale is here! Visit us this weekend for up to 40% off selected items. Thank you for shopping with us!';
+  const existingBroadcast = await prisma.customerBroadcast.findFirst({
+    where: { tenantId, message: { contains: 'End of Season Sale' } },
+  });
+
+  let broadcastCreated = false;
+  if (!existingBroadcast) {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    await prisma.customerBroadcast.create({
+      data: {
+        tenantId,
+        sentById: firstUser.id,
+        sentAt: sevenDaysAgo,
+        recipientCount: 8,
+        filters: { tag: 'VIP' },
+        message: broadcastMessage,
+      },
+    });
+    broadcastCreated = true;
+  }
+  console.log(`Customer Broadcast: ${broadcastCreated ? 'created' : 'skipped (already exists)'}`);
+
+  // ── Summary ──
+  const customerCount = await prisma.customer.count({ where: { tenantId } });
+  const supplierCount = await prisma.supplier.count({ where: { tenantId } });
+  const poCount = await prisma.purchaseOrder.count({ where: { tenantId } });
+  const broadcastCount = await prisma.customerBroadcast.count({ where: { tenantId } });
+
+  console.log('\u2500\u2500 CRM Seed Summary \u2500\u2500');
+  console.log(`  Customers:   ${customerCount}`);
+  console.log(`  Suppliers:   ${supplierCount}`);
+  console.log(`  POs:         ${poCount}`);
+  console.log(`  Broadcasts:  ${broadcastCount}`);
+}
+
+async function seedStaffPromotionsExpenses() {
+  if (process.env.SEED_SAMPLE_TENANT !== 'true') {
+    console.log("Skipping staff promotions & expenses seed (SEED_SAMPLE_TENANT is not set to 'true')");
+    return;
+  }
+
+  const tenant = await prisma.tenant.findFirst({ where: { slug: 'dilani' } });
+  if (!tenant) {
+    console.log('Sample tenant not found, skipping staff promotions & expenses seed');
+    return;
+  }
+  const tenantId = tenant.id;
+
+  // ── 1. Update CASHIER commissionRate ──
+  const cashiers = await prisma.user.findMany({
+    where: { tenantId, role: 'CASHIER' },
+  });
+  let cashiersUpdated = 0;
+  for (const cashier of cashiers) {
+    if (!cashier.commissionRate) {
+      await prisma.user.update({
+        where: { id: cashier.id },
+        data: { commissionRate: 5.00 },
+      });
+      cashiersUpdated++;
+    }
+  }
+  console.log(`Cashier commissionRate: ${cashiersUpdated} updated`);
+
+  // ── 2. Seed CommissionRecords ──
+  const demoSales = await prisma.sale.findMany({
+    where: { tenantId, status: 'COMPLETED' },
+    take: 5,
+    orderBy: { createdAt: 'asc' },
+  });
+  let commissionsCreated = 0;
+  for (let i = 0; i < demoSales.length; i++) {
+    const sale = demoSales[i];
+    if (!sale) continue;
+    const existing = await prisma.commissionRecord.findFirst({ where: { saleId: sale.id } });
+    if (!existing) {
+      await prisma.commissionRecord.create({
+        data: {
+          tenantId,
+          saleId: sale.id,
+          userId: sale.cashierId,
+          baseAmount: sale.totalAmount,
+          commissionRate: 5.00,
+          earnedAmount: new Decimal(sale.totalAmount.toString()).mul(5).div(100).toDecimalPlaces(2),
+          isPaid: i >= 3,
+        },
+      });
+      commissionsCreated++;
+    }
+  }
+  console.log(`CommissionRecords: ${commissionsCreated} created`);
+
+  // ── 3. Seed Promotions ──
+  const firstCategory = await prisma.category.findFirst({ where: { tenantId } });
+
+  const promotionDefs = [
+    {
+      name: '10% Off Everything',
+      type: 'CART_PERCENTAGE' as const,
+      value: 10,
+      promoCode: null,
+      targetCategoryId: null,
+    },
+    {
+      name: 'Summer10',
+      type: 'PROMO_CODE' as const,
+      value: 10,
+      promoCode: 'SUMMER10',
+      targetCategoryId: null,
+    },
+    {
+      name: 'Category Discount',
+      type: 'CATEGORY_PERCENTAGE' as const,
+      value: 15,
+      promoCode: null,
+      targetCategoryId: firstCategory?.id ?? null,
+    },
+  ];
+
+  let promotionsCreated = 0;
+  for (const promo of promotionDefs) {
+    const existingPromo = await prisma.promotion.findFirst({
+      where: { tenantId, name: promo.name },
+    });
+    if (!existingPromo) {
+      await prisma.promotion.create({
+        data: {
+          tenantId,
+          name: promo.name,
+          type: promo.type,
+          value: promo.value,
+          ...(promo.promoCode !== null && { promoCode: promo.promoCode }),
+          ...(promo.targetCategoryId !== null && { targetCategoryId: promo.targetCategoryId }),
+          isActive: true,
+        },
+      });
+      promotionsCreated++;
+    }
+  }
+  console.log(`Promotions: ${promotionsCreated} created`);
+
+  // ── 4. Seed Expenses ──
+  const recorder = await prisma.user.findFirst({
+    where: { tenantId, role: { in: ['MANAGER', 'OWNER'] } },
+  });
+  if (!recorder) {
+    console.log('No MANAGER/OWNER found for expenses, skipping');
+    return;
+  }
+
+  const expenseDefs = [
+    { category: 'RENT' as const, amount: 1200, description: 'Monthly shop rent' },
+    { category: 'UTILITIES' as const, amount: 230, description: 'Electricity and water bill' },
+    { category: 'SALARIES' as const, amount: 3500, description: 'Staff salaries for the month' },
+    { category: 'ADVERTISING' as const, amount: 150, description: 'Social media advertising campaign' },
+    { category: 'MISCELLANEOUS' as const, amount: 45, description: 'Office supplies and stationery' },
+  ];
+
+  let expensesCreated = 0;
+  for (const exp of expenseDefs) {
+    const existingExpense = await prisma.expense.findFirst({
+      where: { tenantId, category: exp.category, description: exp.description },
+    });
+    if (!existingExpense) {
+      const now = new Date();
+      now.setDate(now.getDate() - Math.floor(Math.random() * 28));
+      await prisma.expense.create({
+        data: {
+          tenantId,
+          category: exp.category,
+          amount: exp.amount,
+          description: exp.description,
+          recordedById: recorder.id,
+          expenseDate: now,
+        },
+      });
+      expensesCreated++;
+    }
+  }
+  console.log(`Expenses: ${expensesCreated} created`);
+
+  // ── 5. Seed CashMovements ──
+  const demoShift = await prisma.shift.findFirst({
+    where: { tenantId },
+    orderBy: { openedAt: 'desc' },
+  });
+  if (!demoShift) {
+    console.log('No shifts found for cash movements, skipping');
+    return;
+  }
+
+  let movementsCreated = 0;
+  const existingFloatMovement = await prisma.cashMovement.findFirst({
+    where: { tenantId, shiftId: demoShift.id, type: 'OPENING_FLOAT' },
+  });
+  if (!existingFloatMovement) {
+    await prisma.cashMovement.create({
+      data: {
+        tenantId,
+        shiftId: demoShift.id,
+        type: 'OPENING_FLOAT',
+        amount: 200,
+      },
+    });
+    movementsCreated++;
+  }
+
+  const existingPettyCash = await prisma.cashMovement.findFirst({
+    where: { tenantId, shiftId: demoShift.id, type: 'PETTY_CASH_OUT' },
+  });
+  if (!existingPettyCash) {
+    await prisma.cashMovement.create({
+      data: {
+        tenantId,
+        shiftId: demoShift.id,
+        type: 'PETTY_CASH_OUT',
+        amount: 35,
+        reason: 'Purchased coffee supplies',
+      },
+    });
+    movementsCreated++;
+  }
+  console.log(`CashMovements: ${movementsCreated} created`);
+
+  // ── Summary ──
+  console.log('\u2500\u2500 Staff Promotions & Expenses Seed Summary \u2500\u2500');
+  console.log(`  Cashiers updated:      ${cashiersUpdated}`);
+  console.log(`  Commission records:    ${commissionsCreated}`);
+  console.log(`  Promotions:            ${promotionsCreated}`);
+  console.log(`  Expenses:              ${expensesCreated}`);
+  console.log(`  Cash movements:        ${movementsCreated}`);
 }
 
 main()

@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { ReturnCreateSchema } from '@/lib/validators/return.validators';
 import { initiateReturn, getReturns } from '@/lib/services/return.service';
+import { createNegativeCommissionRecord } from '@/lib/services/commission.service';
 import { prisma } from '@/lib/prisma';
 import type { ReturnRefundMethod } from '@/generated/prisma/client';
 
@@ -69,6 +70,13 @@ export async function POST(request: Request) {
       restockItems: data.restockItems,
       reason: data.reason,
     });
+
+    // Negative commission side-effect — non-blocking
+    try {
+      await createNegativeCommissionRecord(result.id, tenantId);
+    } catch (commissionError) {
+      console.warn('Negative commission record creation failed:', commissionError);
+    }
 
     return NextResponse.json({ success: true, data: result }, { status: 201 });
   } catch (error) {

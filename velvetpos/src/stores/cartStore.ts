@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import Decimal from 'decimal.js';
+import type { AppliedDiscount, SkippedPromotion } from '@/lib/services/promotion.service';
 
 export interface CartItem {
   variantId: string;
@@ -21,6 +22,17 @@ interface CartState {
   linkedReturnId: string | null;
   exchangeCredit: number | null;
   exchangeReturnRef: string | null;
+  linkedCustomerId: string | null;
+  linkedCustomerName: string | null;
+  linkedCustomerCreditBalance: string | null;
+  appliedStoreCredit: string;
+
+  // Promotion state
+  appliedPromotions: AppliedDiscount[];
+  skippedPromotions: SkippedPromotion[];
+  totalPromotionDiscount: string;
+  appliedPromoCode: string | null;
+  isEvaluatingPromotions: boolean;
 
   // Mutators
   addItem: (item: Omit<CartItem, 'discountPercent'>) => void;
@@ -35,9 +47,23 @@ interface CartState {
   replaceCart: (items: CartItem[], cartDiscountPercent: number, cartDiscountAmount: number) => void;
   setExchangeCredit: (returnId: string, credit: number, ref: string) => void;
   clearExchangeCredit: () => void;
+  linkCustomer: (id: string, name: string, creditBalance: string) => void;
+  unlinkCustomer: () => void;
+  setAppliedStoreCredit: (amount: string) => void;
+  evaluatePromotions: () => void;
+  setPromoCode: (code: string | null) => void;
 }
 
-export const useCartStore = create<CartState>((set) => ({
+let promoDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+function schedulePromoEval(get: () => CartState) {
+  if (promoDebounceTimer !== undefined) clearTimeout(promoDebounceTimer);
+  promoDebounceTimer = setTimeout(() => {
+    get().evaluatePromotions();
+  }, 300);
+}
+
+export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   cartDiscountPercent: 0,
   cartDiscountAmount: 0,
@@ -47,8 +73,18 @@ export const useCartStore = create<CartState>((set) => ({
   linkedReturnId: null,
   exchangeCredit: null,
   exchangeReturnRef: null,
+  linkedCustomerId: null,
+  linkedCustomerName: null,
+  linkedCustomerCreditBalance: null,
+  appliedStoreCredit: '0',
 
-  addItem: (item) =>
+  appliedPromotions: [],
+  skippedPromotions: [],
+  totalPromotionDiscount: '0',
+  appliedPromoCode: null,
+  isEvaluatingPromotions: false,
+
+  addItem: (item) => {
     set((state) => {
       const existing = state.items.find((i) => i.variantId === item.variantId);
       if (existing) {
@@ -61,29 +97,37 @@ export const useCartStore = create<CartState>((set) => ({
         };
       }
       return { items: [...state.items, { ...item, discountPercent: 0 }] };
-    }),
+    });
+    schedulePromoEval(get);
+  },
 
-  removeItem: (variantId) =>
+  removeItem: (variantId) => {
     set((state) => ({
       items: state.items.filter((i) => i.variantId !== variantId),
       activeLineId: state.activeLineId === variantId ? null : state.activeLineId,
-    })),
+    }));
+    schedulePromoEval(get);
+  },
 
-  updateQuantity: (variantId, quantity) =>
+  updateQuantity: (variantId, quantity) => {
     set((state) => ({
       items: state.items.map((i) =>
         i.variantId === variantId ? { ...i, quantity: Math.max(1, quantity) } : i,
       ),
-    })),
+    }));
+    schedulePromoEval(get);
+  },
 
-  setLineDiscount: (variantId, discountPercent) =>
+  setLineDiscount: (variantId, discountPercent) => {
     set((state) => ({
       items: state.items.map((i) =>
         i.variantId === variantId
           ? { ...i, discountPercent: Math.max(0, Math.min(100, discountPercent)) }
           : i,
       ),
-    })),
+    }));
+    schedulePromoEval(get);
+  },
 
   setCartDiscount: (mode, value) =>
     set(() => {
@@ -112,6 +156,15 @@ export const useCartStore = create<CartState>((set) => ({
       linkedReturnId: null,
       exchangeCredit: null,
       exchangeReturnRef: null,
+      linkedCustomerId: null,
+      linkedCustomerName: null,
+      linkedCustomerCreditBalance: null,
+      appliedStoreCredit: '0',
+      appliedPromotions: [],
+      skippedPromotions: [],
+      totalPromotionDiscount: '0',
+      appliedPromoCode: null,
+      isEvaluatingPromotions: false,
     }),
 
   replaceCart: (items, cartDiscountPercent, cartDiscountAmount) =>
@@ -122,6 +175,66 @@ export const useCartStore = create<CartState>((set) => ({
 
   clearExchangeCredit: () =>
     set({ linkedReturnId: null, exchangeCredit: null, exchangeReturnRef: null }),
+
+  linkCustomer: (id, name, creditBalance) =>
+    set({ linkedCustomerId: id, linkedCustomerName: name, linkedCustomerCreditBalance: creditBalance, appliedStoreCredit: '0' }),
+
+  unlinkCustomer: () =>
+    set({ linkedCustomerId: null, linkedCustomerName: null, linkedCustomerCreditBalance: null, appliedStoreCredit: '0' }),
+
+  setAppliedStoreCredit: (amount) =>
+    set({ appliedStoreCredit: amount }),
+
+  evaluatePromotions: () => {
+    const state = get();
+    if (state.items.length === 0) {
+      set({ appliedPromotions: [], skippedPromotions: [], totalPromotionDiscount: '0', isEvaluatingPromotions: false });
+      return;
+    }
+    set({ isEvaluatingPromotions: true });
+
+    const cartLines = state.items.map((item) => {
+      const lineTotal = new Decimal(item.unitPrice).times(item.quantity);
+      const manualDisc = item.discountPercent > 0
+        ? lineTotal.times(item.discountPercent).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toString()
+        : undefined;
+      return {
+        variantId: item.variantId,
+        quantity: item.quantity,
+        unitPrice: String(item.unitPrice),
+        ...(manualDisc !== undefined && { manualDiscountAmount: manualDisc }),
+      };
+    });
+
+    const body: Record<string, unknown> = { cartLines };
+    if (state.linkedCustomerId) body.customerId = state.linkedCustomerId;
+    if (state.appliedPromoCode) body.promoCode = state.appliedPromoCode;
+
+    fetch('/api/store/promotions/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (json?.success && json.data) {
+          set({
+            appliedPromotions: json.data.appliedDiscounts,
+            skippedPromotions: json.data.skippedPromotions,
+            totalPromotionDiscount: json.data.totalDiscountAmount,
+            isEvaluatingPromotions: false,
+          });
+        } else {
+          set({ isEvaluatingPromotions: false });
+        }
+      })
+      .catch(() => {
+        set({ isEvaluatingPromotions: false });
+      });
+  },
+
+  setPromoCode: (code) =>
+    set({ appliedPromoCode: code }),
 }));
 
 // ── Computed selectors (pure functions, not stored state) ────────────

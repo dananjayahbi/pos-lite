@@ -4,6 +4,8 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { CreateSaleSchema } from '@/lib/validators/sale.validators';
 import { createSale, getSales } from '@/lib/services/sale.service';
+import { createCommissionRecord } from '@/lib/services/commission.service';
+import { prisma } from '@/lib/prisma';
 import type { SaleStatus } from '@/generated/prisma/client';
 
 export async function GET(request: NextRequest) {
@@ -95,6 +97,25 @@ export async function POST(request: Request) {
     }
 
     const sale = await createSale(tenantId, { ...parsed.data, cashierId: session.user.id });
+
+    // Commission side-effect — non-blocking, warning only on failure
+    try {
+      const cashier = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { commissionRate: true },
+      });
+      if (cashier?.commissionRate) {
+        await createCommissionRecord({
+          tenantId,
+          saleId: sale.id,
+          userId: session.user.id,
+          baseAmount: sale.totalAmount,
+          commissionRate: cashier.commissionRate,
+        });
+      }
+    } catch (commissionError) {
+      console.warn('Commission record creation failed:', commissionError);
+    }
 
     return NextResponse.json({ success: true, data: sale }, { status: 201 });
   } catch (error) {

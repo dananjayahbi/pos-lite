@@ -10,6 +10,9 @@ export interface CreateSalePayload {
   }>;
   cartDiscountAmount: number;
   authorizingManagerId?: string;
+  customerId?: string | undefined;
+  appliedStoreCredit?: string | undefined;
+  appliedPromotions?: unknown | undefined;
 }
 
 /** Sale object returned by POST /api/store/sales on success */
