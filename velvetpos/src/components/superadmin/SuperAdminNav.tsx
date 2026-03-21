@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 const navGroups = [
   {
     label: 'Overview',
-    items: [{ name: 'Dashboard', href: '/dashboard' }],
+    items: [{ name: 'Dashboard', href: '/superadmin/dashboard' }],
   },
   {
     label: 'Platform',
