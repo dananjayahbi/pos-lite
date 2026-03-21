@@ -1,7 +1,9 @@
 import Decimal from 'decimal.js';
+import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import type { PromotionType } from '@/generated/prisma/client';
 import type { CreatePromotionInput, UpdatePromotionInput } from '@/lib/validators/promotion.validators';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -432,7 +434,7 @@ export async function getPromotions(tenantId: string) {
 }
 
 export async function createPromotion(tenantId: string, data: CreatePromotionInput) {
-  return prisma.promotion.create({
+  const promo = await prisma.promotion.create({
     data: {
       tenantId,
       name: data.name,
@@ -447,10 +449,22 @@ export async function createPromotion(tenantId: string, data: CreatePromotionInp
       ...(data.description !== undefined && { description: data.description }),
     },
   });
+
+  void createAuditLog({
+    tenantId,
+    actorId: null,
+    actorRole: 'SYSTEM',
+    entityType: 'Promotion',
+    entityId: promo.id,
+    action: AUDIT_ACTIONS.PROMOTION_CREATED,
+    after: { name: promo.name, type: promo.type, value: promo.value.toString() },
+  }).catch(() => {});
+
+  return promo;
 }
 
 export async function updatePromotion(tenantId: string, id: string, data: UpdatePromotionInput) {
-  return prisma.promotion.update({
+  const updated = await prisma.promotion.update({
     where: { id, tenantId },
     data: {
       ...(data.name !== undefined && { name: data.name }),
@@ -465,13 +479,40 @@ export async function updatePromotion(tenantId: string, id: string, data: Update
       ...(data.description !== undefined && { description: data.description }),
     },
   });
+
+  void createAuditLog({
+    tenantId,
+    actorId: null,
+    actorRole: 'SYSTEM',
+    entityType: 'Promotion',
+    entityId: id,
+    action: AUDIT_ACTIONS.PROMOTION_UPDATED,
+    after: data as Prisma.InputJsonValue,
+  }).catch(() => {});
+
+  return updated;
 }
 
 export async function togglePromotion(tenantId: string, id: string) {
   const promo = await prisma.promotion.findFirst({ where: { id, tenantId } });
   if (!promo) throw new Error('Promotion not found');
-  return prisma.promotion.update({
+  const updated = await prisma.promotion.update({
     where: { id },
     data: { isActive: !promo.isActive },
   });
+
+  if (!updated.isActive) {
+    void createAuditLog({
+      tenantId,
+      actorId: null,
+      actorRole: 'SYSTEM',
+      entityType: 'Promotion',
+      entityId: id,
+      action: AUDIT_ACTIONS.PROMOTION_ARCHIVED,
+      before: { isActive: true },
+      after: { isActive: false },
+    }).catch(() => {});
+  }
+
+  return updated;
 }

@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import type { ShiftStatus, SaleStatus, PaymentMethod, PaymentLegMethod, ReturnRefundMethod } from '@/generated/prisma/client';
-import { createAuditLog } from '@/lib/services/audit.service';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 
 // ── Open Shift ───────────────────────────────────────────────────────────────
 
@@ -139,8 +139,27 @@ export async function closeShift(
   }
   const totalReturnsCount = shiftReturns.length;
 
+  // Aggregate cash movements (petty cash / manual deposits)
+  const shiftCashMovements = await prisma.cashMovement.findMany({
+    where: { shiftId, tenantId },
+  });
+
+  let cmDeposited = new Decimal(0);
+  let cmPettyCashOut = new Decimal(0);
+  for (const cm of shiftCashMovements) {
+    if (cm.type === 'MANUAL_IN') {
+      cmDeposited = cmDeposited.plus(new Decimal(cm.amount.toString()));
+    } else if (cm.type === 'PETTY_CASH_OUT' || cm.type === 'MANUAL_OUT') {
+      cmPettyCashOut = cmPettyCashOut.plus(new Decimal(cm.amount.toString()));
+    }
+  }
+
   const openingFloatDec = new Decimal(shift.openingFloat.toString());
-  const expectedCash = openingFloatDec.plus(totalCashAmount).minus(cashRefundsTotal);
+  const expectedCash = openingFloatDec
+    .plus(totalCashAmount)
+    .minus(cashRefundsTotal)
+    .plus(cmDeposited)
+    .minus(cmPettyCashOut);
   const closingCashCountDec = new Decimal(input.closingCashCount);
   const cashDifference = closingCashCountDec.minus(expectedCash);
 
@@ -174,13 +193,13 @@ export async function closeShift(
     return { shift: updatedShift, closure };
   });
 
-  await createAuditLog({
+  void createAuditLog({
     tenantId,
     actorId,
     actorRole: actorId === shift.cashierId ? 'CASHIER' : 'MANAGER',
     entityType: 'Shift',
     entityId: shiftId,
-    action: 'SHIFT_CLOSED',
+    action: AUDIT_ACTIONS.SHIFT_CLOSED,
     after: {
       closingCashCount: input.closingCashCount,
       expectedCash: expectedCash.toNumber(),
@@ -188,7 +207,7 @@ export async function closeShift(
       totalSalesCount: salesCount,
       totalSalesAmount: totalSalesAmount.toNumber(),
     },
-  });
+  }).catch(() => {});
 
   return result;
 }
@@ -314,6 +333,8 @@ export interface ZReportData {
     openingFloat: number;
     cashSalesAmount: number;
     cashRefundAmount: number;
+    cashDeposited: number;
+    pettyCashOut: number;
     expectedCashInDrawer: number;
     actualCashCounted: number | null;
     cashDifference: number | null;
@@ -428,9 +449,29 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
     }
   }
 
+  // Cash movements (petty cash / manual deposits)
+  const cashMovements = await prisma.cashMovement.findMany({
+    where: { shiftId, tenantId },
+  });
+
+  let cashDeposited = new Decimal(0);
+  let pettyCashOutAmount = new Decimal(0);
+  for (const cm of cashMovements) {
+    if (cm.type === 'MANUAL_IN') {
+      cashDeposited = cashDeposited.plus(new Decimal(cm.amount.toString()));
+    } else if (cm.type === 'PETTY_CASH_OUT' || cm.type === 'MANUAL_OUT') {
+      pettyCashOutAmount = pettyCashOutAmount.plus(new Decimal(cm.amount.toString()));
+    }
+  }
+
   // Cash reconciliation
+  // Expected = Opening Float + Cash Sales − Cash Refunds + Cash Deposited − Petty Cash Out
   const openingFloat = new Decimal(shift.openingFloat.toString());
-  const expectedCashInDrawer = openingFloat.plus(cashSalesAmount).minus(cashRefundAmount);
+  const expectedCashInDrawer = openingFloat
+    .plus(cashSalesAmount)
+    .minus(cashRefundAmount)
+    .plus(cashDeposited)
+    .minus(pettyCashOutAmount);
   const actualCashCounted = shift.closure ? new Decimal(shift.closure.closingCashCount.toString()) : null;
   const cashDifference = actualCashCounted ? actualCashCounted.minus(expectedCashInDrawer) : null;
 
@@ -466,6 +507,8 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
       openingFloat: openingFloat.toNumber(),
       cashSalesAmount: cashSalesAmount.toDecimalPlaces(2).toNumber(),
       cashRefundAmount: cashRefundAmount.toDecimalPlaces(2).toNumber(),
+      cashDeposited: cashDeposited.toDecimalPlaces(2).toNumber(),
+      pettyCashOut: pettyCashOutAmount.toDecimalPlaces(2).toNumber(),
       expectedCashInDrawer: expectedCashInDrawer.toDecimalPlaces(2).toNumber(),
       actualCashCounted: actualCashCounted?.toDecimalPlaces(2).toNumber() ?? null,
       cashDifference: cashDifference?.toDecimalPlaces(2).toNumber() ?? null,

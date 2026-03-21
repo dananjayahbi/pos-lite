@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import type { ExpenseCategory } from '@/generated/prisma/client';
 import type { CreateExpenseInput, UpdateExpenseInput } from '@/lib/validators/expense.validators';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 
 interface ExpenseFilters {
   category?: string | undefined;
@@ -57,7 +58,7 @@ export async function createExpense(
   tenantId: string,
   data: CreateExpenseInput & { recordedById: string },
 ) {
-  return prisma.expense.create({
+  const expense = await prisma.expense.create({
     data: {
       tenantId,
       category: data.category as ExpenseCategory,
@@ -69,6 +70,18 @@ export async function createExpense(
     },
     include: { recordedBy: { select: { email: true } } },
   });
+
+  void createAuditLog({
+    tenantId,
+    actorId: data.recordedById,
+    actorRole: 'USER',
+    entityType: 'Expense',
+    entityId: expense.id,
+    action: AUDIT_ACTIONS.EXPENSE_CREATED,
+    after: { category: expense.category, amount: expense.amount, description: expense.description },
+  }).catch(() => {});
+
+  return expense;
 }
 
 export async function updateExpense(
@@ -87,4 +100,23 @@ export async function updateExpense(
     },
     include: { recordedBy: { select: { email: true } } },
   });
+}
+
+export async function deleteExpense(tenantId: string, id: string, actorId: string) {
+  const expense = await prisma.expense.findFirst({ where: { id, tenantId } });
+  if (!expense) {
+    throw new Error('Expense not found');
+  }
+
+  await prisma.expense.delete({ where: { id } });
+
+  void createAuditLog({
+    tenantId,
+    actorId,
+    actorRole: 'USER',
+    entityType: 'Expense',
+    entityId: id,
+    action: AUDIT_ACTIONS.EXPENSE_DELETED,
+    before: { category: expense.category, amount: expense.amount, description: expense.description },
+  }).catch(() => {});
 }

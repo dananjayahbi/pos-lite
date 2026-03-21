@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatRupee } from '@/lib/format';
+import PettyCashSection from '@/components/shift/PettyCashSection';
 import type { ZReportData } from '@/lib/services/shift.service';
 
 function formatDateTime(iso: string) {
@@ -185,6 +186,8 @@ export default function ShiftReportPage() {
         <Row label="Opening Float" value={formatRupee(cashReconciliation.openingFloat)} />
         <Row label="+ Cash Sales" value={formatRupee(cashReconciliation.cashSalesAmount)} />
         <Row label="− Cash Refunds" value={formatRupee(cashReconciliation.cashRefundAmount)} />
+        <Row label="+ Cash Deposited" value={formatRupee(cashReconciliation.cashDeposited)} />
+        <Row label="− Petty Cash Out" value={formatRupee(cashReconciliation.pettyCashOut)} />
         <div className="border-t border-mist my-1" />
         <Row
           label="Expected Cash in Drawer"
@@ -210,7 +213,12 @@ export default function ShiftReportPage() {
         )}
       </section>
 
-      {/* 6. Top Items Sold */}
+      {/* 6. Petty Cash Movements */}
+      {shiftId && (
+        <PettyCashSection shiftId={shiftId} isOpen={isOpen} />
+      )}
+
+      {/* 7. Top Items Sold */}
       {topProductsSold.length > 0 && (
         <section className="rounded-lg border border-mist bg-white p-4">
           <button

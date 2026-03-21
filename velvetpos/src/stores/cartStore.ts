@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import Decimal from 'decimal.js';
 import type { AppliedDiscount, SkippedPromotion } from '@/lib/services/promotion.service';
+import type { CFDCartPayload } from '@/lib/cfdEmitter';
 
 export interface CartItem {
   variantId: string;
@@ -63,6 +64,54 @@ function schedulePromoEval(get: () => CartState) {
   }, 300);
 }
 
+function sendCFDUpdate(
+  state: CartState,
+  statusOverride?: CFDCartPayload['status'],
+  extra?: { change?: number },
+) {
+  const status = statusOverride ?? (state.items.length > 0 ? 'ACTIVE' : 'IDLE');
+
+  const items = state.items.map((item) => {
+    const lineTotal = new Decimal(item.unitPrice)
+      .times(item.quantity)
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+      .toNumber();
+    return {
+      productName: item.productName,
+      variantName: item.variantDescription,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      lineTotal,
+    };
+  });
+
+  const { subtotal, discountEffective, total } = getCartTotal(
+    state.items,
+    state.cartDiscountPercent,
+    state.cartDiscountAmount,
+    state.taxRate,
+  );
+
+  const payload: Omit<CFDCartPayload, 'tenantSlug'> = {
+    items,
+    subtotal: subtotal.toNumber(),
+    discount: discountEffective.toNumber(),
+    total: total.toNumber(),
+    appliedPromotions: state.appliedPromotions.map((p) => ({ id: p.promotionId, name: p.label })),
+    ...(state.linkedCustomerName ? { customerName: state.linkedCustomerName } : {}),
+    status,
+    ...(extra?.change !== undefined && { change: extra.change }),
+  };
+
+  fetch('/api/cfd/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).catch((err: unknown) => {
+    console.warn('CFD update failed:', err);
+  });
+}
+
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   cartDiscountPercent: 0,
@@ -99,6 +148,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       return { items: [...state.items, { ...item, discountPercent: 0 }] };
     });
     schedulePromoEval(get);
+    sendCFDUpdate(get());
   },
 
   removeItem: (variantId) => {
@@ -107,6 +157,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       activeLineId: state.activeLineId === variantId ? null : state.activeLineId,
     }));
     schedulePromoEval(get);
+    sendCFDUpdate(get());
   },
 
   updateQuantity: (variantId, quantity) => {
@@ -116,6 +167,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       ),
     }));
     schedulePromoEval(get);
+    sendCFDUpdate(get());
   },
 
   setLineDiscount: (variantId, discountPercent) => {
@@ -127,15 +179,18 @@ export const useCartStore = create<CartState>((set, get) => ({
       ),
     }));
     schedulePromoEval(get);
+    sendCFDUpdate(get());
   },
 
-  setCartDiscount: (mode, value) =>
+  setCartDiscount: (mode, value) => {
     set(() => {
       const safeValue = Math.max(0, value);
       return mode === 'percent'
         ? { cartDiscountPercent: Math.min(100, safeValue), cartDiscountAmount: 0 }
         : { cartDiscountPercent: 0, cartDiscountAmount: safeValue };
-    }),
+    });
+    sendCFDUpdate(get());
+  },
 
   setAuthorizingManager: (managerId) => set({ authorizingManagerId: managerId }),
 
@@ -146,7 +201,7 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   setTaxRate: (rate) => set({ taxRate: rate }),
 
-  clearCart: () =>
+  clearCart: () => {
     set({
       items: [],
       cartDiscountPercent: 0,
@@ -165,10 +220,14 @@ export const useCartStore = create<CartState>((set, get) => ({
       totalPromotionDiscount: '0',
       appliedPromoCode: null,
       isEvaluatingPromotions: false,
-    }),
+    });
+    sendCFDUpdate(get(), 'IDLE');
+  },
 
-  replaceCart: (items, cartDiscountPercent, cartDiscountAmount) =>
-    set({ items, cartDiscountPercent, cartDiscountAmount, authorizingManagerId: null, activeLineId: null }),
+  replaceCart: (items, cartDiscountPercent, cartDiscountAmount) => {
+    set({ items, cartDiscountPercent, cartDiscountAmount, authorizingManagerId: null, activeLineId: null });
+    sendCFDUpdate(get());
+  },
 
   setExchangeCredit: (returnId, credit, ref) =>
     set({ linkedReturnId: returnId, exchangeCredit: credit, exchangeReturnRef: ref }),
@@ -176,11 +235,15 @@ export const useCartStore = create<CartState>((set, get) => ({
   clearExchangeCredit: () =>
     set({ linkedReturnId: null, exchangeCredit: null, exchangeReturnRef: null }),
 
-  linkCustomer: (id, name, creditBalance) =>
-    set({ linkedCustomerId: id, linkedCustomerName: name, linkedCustomerCreditBalance: creditBalance, appliedStoreCredit: '0' }),
+  linkCustomer: (id, name, creditBalance) => {
+    set({ linkedCustomerId: id, linkedCustomerName: name, linkedCustomerCreditBalance: creditBalance, appliedStoreCredit: '0' });
+    sendCFDUpdate(get());
+  },
 
-  unlinkCustomer: () =>
-    set({ linkedCustomerId: null, linkedCustomerName: null, linkedCustomerCreditBalance: null, appliedStoreCredit: '0' }),
+  unlinkCustomer: () => {
+    set({ linkedCustomerId: null, linkedCustomerName: null, linkedCustomerCreditBalance: null, appliedStoreCredit: '0' });
+    sendCFDUpdate(get());
+  },
 
   setAppliedStoreCredit: (amount) =>
     set({ appliedStoreCredit: amount }),

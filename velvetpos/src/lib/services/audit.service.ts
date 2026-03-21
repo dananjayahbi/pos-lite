@@ -40,7 +40,37 @@ export const AUTH_ACTIONS = {
   FORCE_LOGOUT_TRIGGERED: 'FORCE_LOGOUT_TRIGGERED',
 } as const;
 
+export const AUDIT_ACTIONS = {
+  // Sale
+  SALE_COMPLETED: 'SALE_COMPLETED',
+  SALE_VOIDED: 'SALE_VOIDED',
+  // Return
+  RETURN_COMPLETED: 'RETURN_COMPLETED',
+  // Customer
+  CUSTOMER_CREDIT_ADJUSTED: 'CUSTOMER_CREDIT_ADJUSTED',
+  // Purchase Order
+  PO_STATUS_CHANGED: 'PO_STATUS_CHANGED',
+  // Staff
+  STAFF_ROLE_CHANGED: 'STAFF_ROLE_CHANGED',
+  STAFF_PIN_CHANGED: 'STAFF_PIN_CHANGED',
+  STAFF_PERMISSION_CHANGED: 'STAFF_PERMISSION_CHANGED',
+  // Promotion
+  PROMOTION_CREATED: 'PROMOTION_CREATED',
+  PROMOTION_UPDATED: 'PROMOTION_UPDATED',
+  PROMOTION_ARCHIVED: 'PROMOTION_ARCHIVED',
+  // Stock
+  STOCK_ADJUSTED: 'STOCK_ADJUSTED',
+  // Expense
+  EXPENSE_CREATED: 'EXPENSE_CREATED',
+  EXPENSE_DELETED: 'EXPENSE_DELETED',
+  // Shift
+  SHIFT_CLOSED: 'SHIFT_CLOSED',
+  // Settings
+  SETTINGS_CHANGED: 'SETTINGS_CHANGED',
+} as const;
+
 export type AuthAction = (typeof AUTH_ACTIONS)[keyof typeof AUTH_ACTIONS];
+export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
 
 export interface CreateAuditLogInput {
   tenantId: string | null;
@@ -83,4 +113,48 @@ export async function createAuditLog(input: CreateAuditLogInput): Promise<void> 
 
 export function hashEmailForAudit(email: string): string {
   return createHash('sha256').update(email.toLowerCase()).digest('hex').slice(0, 16);
+}
+
+// ── Get Audit Logs (Paginated) ───────────────────────────────────────────────
+
+interface GetAuditLogsFilters {
+  entityType?: string | undefined;
+  startDate?: Date | undefined;
+  endDate?: Date | undefined;
+  userId?: string | undefined;
+  page?: number | undefined;
+  pageSize?: number | undefined;
+}
+
+export async function getAuditLogs(tenantId: string, filters: GetAuditLogsFilters = {}) {
+  const page = Math.max(1, filters.page ?? 1);
+  const pageSize = Math.min(Math.max(1, filters.pageSize ?? 50), 100);
+  const skip = (page - 1) * pageSize;
+
+  const where: Prisma.AuditLogWhereInput = { tenantId };
+
+  if (filters.entityType !== undefined) {
+    where.entityType = filters.entityType;
+  }
+  if (filters.userId !== undefined) {
+    where.actorId = filters.userId;
+  }
+  if (filters.startDate !== undefined || filters.endDate !== undefined) {
+    where.createdAt = {
+      ...(filters.startDate !== undefined ? { gte: filters.startDate } : {}),
+      ...(filters.endDate !== undefined ? { lte: filters.endDate } : {}),
+    };
+  }
+
+  const [data, total] = await Promise.all([
+    prisma.auditLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: pageSize,
+    }),
+    prisma.auditLog.count({ where }),
+  ]);
+
+  return { data, total, page, pageSize };
 }

@@ -1,5 +1,5 @@
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '../src/generated/prisma/client';
+import { Prisma, PrismaClient } from '../src/generated/prisma/client';
 import bcrypt from 'bcryptjs';
 import Decimal from 'decimal.js';
 
@@ -128,6 +128,14 @@ async function main() {
     await seedStaffPromotionsExpenses();
   } catch (error) {
     console.error('Failed to seed staff promotions & expenses:', error);
+    throw error;
+  }
+
+  // Seed hardware config and audit data (gated behind SEED_SAMPLE_TENANT=true)
+  try {
+    await seedHardwareAndAuditData();
+  } catch (error) {
+    console.error('Failed to seed hardware & audit data:', error);
     throw error;
   }
 
@@ -1641,6 +1649,292 @@ async function seedStaffPromotionsExpenses() {
   console.log(`  Promotions:            ${promotionsCreated}`);
   console.log(`  Expenses:              ${expensesCreated}`);
   console.log(`  Cash movements:        ${movementsCreated}`);
+}
+
+// ── Seed Hardware Config & Audit Data ─────────────────────────────────────────
+
+async function seedHardwareAndAuditData() {
+  if (process.env.SEED_SAMPLE_TENANT !== 'true') {
+    console.log("Skipping hardware & audit data seed (SEED_SAMPLE_TENANT is not set to 'true')");
+    return;
+  }
+
+  const tenant = await prisma.tenant.findFirst({ where: { slug: 'dilani' } });
+  if (!tenant) {
+    console.log('Sample tenant not found, skipping hardware & audit data seed');
+    return;
+  }
+  const tenantId = tenant.id;
+
+  // ── 1. Update tenant hardware settings ──
+  const existingSettings = (tenant.settings as Record<string, unknown>) ?? {};
+  if (!existingSettings.hardware) {
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        settings: {
+          ...existingSettings,
+          hardware: {
+            type: 'NETWORK',
+            host: '192.168.1.100',
+            port: 9100,
+            cashDrawerEnabled: true,
+            cfdEnabled: true,
+            paperWidth: '80mm',
+          },
+        },
+      },
+    });
+    console.log('Tenant hardware settings updated');
+  } else {
+    console.log('Tenant hardware settings already present, skipping');
+  }
+
+  // Fetch demo users
+  const owner = await prisma.user.findFirst({
+    where: { tenantId, role: 'OWNER', deletedAt: null },
+    select: { id: true },
+  });
+  const cashier1 = await prisma.user.findFirst({
+    where: { tenantId, email: 'cashier1@velvetpos.dev', deletedAt: null },
+    select: { id: true },
+  });
+  const cashier2 = await prisma.user.findFirst({
+    where: { tenantId, email: 'cashier2@velvetpos.dev', deletedAt: null },
+    select: { id: true },
+  });
+
+  if (!owner || !cashier1 || !cashier2) {
+    console.log('Required demo users not found, skipping audit & cash movement seed');
+    return;
+  }
+
+  // ── 2. Seed 10 AuditLog entries ──
+  const auditCount = await prisma.auditLog.count({ where: { tenantId } });
+  let auditsCreated = 0;
+  if (auditCount === 0) {
+    const now = new Date();
+    const actors = [owner.id, cashier1.id, cashier2.id];
+    const actorRoles = ['OWNER', 'CASHIER', 'CASHIER'];
+
+    const auditEntries: Prisma.AuditLogCreateManyInput[] = [
+      {
+        tenantId,
+        actorId: cashier1.id,
+        actorRole: 'CASHIER',
+        entityType: 'Sale',
+        entityId: 'sale-seed-001',
+        action: 'CREATE',
+        before: Prisma.JsonNull,
+        after: { totalAmount: 4500, paymentMethod: 'CASH', items: 3 },
+        ipAddress: '127.0.0.1',
+        userAgent: 'VelvetPOS/Seed',
+        createdAt: new Date(now.getTime() - 13 * 24 * 60 * 60 * 1000),
+      },
+      {
+        tenantId,
+        actorId: cashier2.id,
+        actorRole: 'CASHIER',
+        entityType: 'Sale',
+        entityId: 'sale-seed-002',
+        action: 'CREATE',
+        before: Prisma.JsonNull,
+        after: { totalAmount: 7800, paymentMethod: 'CARD', items: 2 },
+        ipAddress: '127.0.0.1',
+        userAgent: 'VelvetPOS/Seed',
+        createdAt: new Date(now.getTime() - 12 * 24 * 60 * 60 * 1000),
+      },
+      {
+        tenantId,
+        actorId: cashier1.id,
+        actorRole: 'CASHIER',
+        entityType: 'Return',
+        entityId: 'return-seed-001',
+        action: 'CREATE',
+        before: Prisma.JsonNull,
+        after: { refundAmount: 1250, refundMethod: 'CASH', reason: 'Defective item' },
+        ipAddress: '127.0.0.1',
+        userAgent: 'VelvetPOS/Seed',
+        createdAt: new Date(now.getTime() - 11 * 24 * 60 * 60 * 1000),
+      },
+      {
+        tenantId,
+        actorId: owner.id,
+        actorRole: 'OWNER',
+        entityType: 'Return',
+        entityId: 'return-seed-002',
+        action: 'AUTHORIZE',
+        before: { status: 'PENDING' },
+        after: { status: 'COMPLETED', refundAmount: 3200, refundMethod: 'STORE_CREDIT' },
+        ipAddress: '127.0.0.1',
+        userAgent: 'VelvetPOS/Seed',
+        createdAt: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000),
+      },
+      {
+        tenantId,
+        actorId: owner.id,
+        actorRole: 'OWNER',
+        entityType: 'Customer',
+        entityId: 'customer-seed-001',
+        action: 'CREDIT_ADJUST',
+        before: { creditBalance: 0 },
+        after: { creditBalance: 1500, reason: 'Loyalty reward top-up' },
+        ipAddress: '127.0.0.1',
+        userAgent: 'VelvetPOS/Seed',
+        createdAt: new Date(now.getTime() - 9 * 24 * 60 * 60 * 1000),
+      },
+      {
+        tenantId,
+        actorId: owner.id,
+        actorRole: 'OWNER',
+        entityType: 'User',
+        entityId: cashier1.id,
+        action: 'ROLE_CHANGE',
+        before: { role: 'CASHIER', permissions: ['sale:create'] },
+        after: { role: 'CASHIER', permissions: ['sale:create', 'sale:discount'] },
+        ipAddress: '127.0.0.1',
+        userAgent: 'VelvetPOS/Seed',
+        createdAt: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
+      },
+      {
+        tenantId,
+        actorId: owner.id,
+        actorRole: 'OWNER',
+        entityType: 'Promotion',
+        entityId: 'promo-seed-001',
+        action: 'CREATE',
+        before: Prisma.JsonNull,
+        after: { name: 'Weekend Flash Sale', type: 'CART_PERCENTAGE', value: 15 },
+        ipAddress: '127.0.0.1',
+        userAgent: 'VelvetPOS/Seed',
+        createdAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000),
+      },
+      {
+        tenantId,
+        actorId: owner.id,
+        actorRole: 'OWNER',
+        entityType: 'ProductVariant',
+        entityId: 'variant-seed-001',
+        action: 'STOCK_ADJUST',
+        before: { stockQuantity: 12 },
+        after: { stockQuantity: 20, reason: 'Manual count correction' },
+        ipAddress: '127.0.0.1',
+        userAgent: 'VelvetPOS/Seed',
+        createdAt: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000),
+      },
+      {
+        tenantId,
+        actorId: owner.id,
+        actorRole: 'OWNER',
+        entityType: 'Expense',
+        entityId: 'expense-seed-001',
+        action: 'CREATE',
+        before: Prisma.JsonNull,
+        after: { category: 'UTILITIES', amount: 230, description: 'Electricity bill' },
+        ipAddress: '127.0.0.1',
+        userAgent: 'VelvetPOS/Seed',
+        createdAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000),
+      },
+      {
+        tenantId,
+        actorId: cashier1.id,
+        actorRole: 'CASHIER',
+        entityType: 'Shift',
+        entityId: 'shift-seed-001',
+        action: 'CLOSE',
+        before: { status: 'OPEN', openedAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString() },
+        after: { status: 'CLOSED', cashDifference: 0, totalSalesCount: 8 },
+        ipAddress: '127.0.0.1',
+        userAgent: 'VelvetPOS/Seed',
+        createdAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000),
+      },
+    ];
+
+    await prisma.auditLog.createMany({ data: auditEntries });
+    auditsCreated = auditEntries.length;
+  }
+  console.log(`AuditLog entries: ${auditsCreated > 0 ? `${auditsCreated} created` : 'already exist, skipped'}`);
+
+  // ── 3. Seed 2 CashMovement records ──
+  const cashMovementCount = await prisma.cashMovement.count({
+    where: { tenantId, type: { in: ['PETTY_CASH_OUT', 'MANUAL_IN'] } },
+  });
+  let cashMovementsCreated = 0;
+  if (cashMovementCount === 0) {
+    // Find or create a demo shift for cash movements
+    let demoShift = await prisma.shift.findFirst({
+      where: { tenantId },
+      orderBy: { openedAt: 'desc' },
+      select: { id: true },
+    });
+
+    if (!demoShift) {
+      const shiftDate = new Date();
+      shiftDate.setDate(shiftDate.getDate() - 1);
+      shiftDate.setHours(8, 30, 0, 0);
+      demoShift = await prisma.shift.create({
+        data: {
+          tenantId,
+          cashierId: cashier1.id,
+          status: 'CLOSED',
+          openedAt: shiftDate,
+          closedAt: new Date(shiftDate.getTime() + 11 * 60 * 60 * 1000),
+          openingFloat: 5000.0,
+        },
+        select: { id: true },
+      });
+    }
+
+    await prisma.cashMovement.createMany({
+      data: [
+        {
+          tenantId,
+          shiftId: demoShift.id,
+          type: 'PETTY_CASH_OUT',
+          amount: 15.0,
+          reason: 'Bought paper cups and straws',
+          authorizedById: owner.id,
+        },
+        {
+          tenantId,
+          shiftId: demoShift.id,
+          type: 'MANUAL_IN',
+          amount: 100.0,
+          reason: 'Cash float top-up from safe',
+          authorizedById: owner.id,
+        },
+      ],
+    });
+    cashMovementsCreated = 2;
+  }
+  console.log(`CashMovements (hardware/audit): ${cashMovementsCreated > 0 ? `${cashMovementsCreated} created` : 'already exist, skipped'}`);
+
+  // ── 4. Update demo customer birthdays ──
+  await prisma.customer.updateMany({
+    where: { tenantId },
+    data: { lastBirthdayMessageSentYear: null },
+  });
+
+  const today = new Date();
+  const firstCustomer = await prisma.customer.findFirst({
+    where: { tenantId },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, birthday: true },
+  });
+  if (firstCustomer) {
+    const todayBirthday = new Date(1990, today.getMonth(), today.getDate());
+    await prisma.customer.update({
+      where: { id: firstCustomer.id },
+      data: { birthday: todayBirthday },
+    });
+    console.log(`Customer ${firstCustomer.id.slice(0, 8)} birthday set to today's month/day for testing`);
+  }
+
+  console.log('── Hardware & Audit Seed Summary ──');
+  console.log(`  Hardware settings:   updated`);
+  console.log(`  Audit logs:          ${auditsCreated}`);
+  console.log(`  Cash movements:      ${cashMovementsCreated}`);
+  console.log(`  Customer birthdays:  reset & 1 set to today`);
 }
 
 main()

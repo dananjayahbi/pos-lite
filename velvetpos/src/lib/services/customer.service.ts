@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import Decimal from 'decimal.js';
 import type { TxClient } from '@/lib/services/inventory.service';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 
 // ── Private Helpers ──────────────────────────────────────────────────────────
 
@@ -236,12 +237,24 @@ export async function redeemCredit(
     throw new Error('Redeem amount must be greater than zero');
   }
 
-  return tx.customer.update({
+  const updated = await tx.customer.update({
     where: { id: customerId },
     data: {
       creditBalance: { decrement: amount.toNumber() },
     },
   });
+
+  void createAuditLog({
+    tenantId,
+    actorId: null,
+    actorRole: 'SYSTEM',
+    entityType: 'Customer',
+    entityId: customerId,
+    action: AUDIT_ACTIONS.CUSTOMER_CREDIT_ADJUSTED,
+    after: { amountRedeemed: amount.toString(), newBalance: updated.creditBalance.toString() },
+  }).catch(() => {});
+
+  return updated;
 }
 
 // ── Spend Tracking ───────────────────────────────────────────────────────────

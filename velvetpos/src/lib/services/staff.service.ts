@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { UserRole } from '@/generated/prisma/client';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -95,7 +96,7 @@ export async function getStaffById(tenantId: string, id: string) {
 // ── Update Staff ─────────────────────────────────────────────────────────────
 
 export async function updateStaff(tenantId: string, id: string, data: UpdateStaffInput) {
-  await assertStaffBelongsToTenant(tenantId, id);
+  const existing = await assertStaffBelongsToTenant(tenantId, id);
 
   const updateData: Record<string, unknown> = {};
 
@@ -118,11 +119,38 @@ export async function updateStaff(tenantId: string, id: string, data: UpdateStaf
     updateData.pin = null;
   }
 
-  return prisma.user.update({
+  const updated = await prisma.user.update({
     where: { id },
     data: updateData,
     select: STAFF_SELECT,
   });
+
+  if (data.role !== undefined && data.role !== existing.role) {
+    void createAuditLog({
+      tenantId,
+      actorId: null,
+      actorRole: 'SYSTEM',
+      entityType: 'Staff',
+      entityId: id,
+      action: AUDIT_ACTIONS.STAFF_ROLE_CHANGED,
+      before: { role: existing.role },
+      after: { role: data.role },
+    }).catch(() => {});
+  }
+
+  if (data.clearPin === true) {
+    void createAuditLog({
+      tenantId,
+      actorId: null,
+      actorRole: 'SYSTEM',
+      entityType: 'Staff',
+      entityId: id,
+      action: AUDIT_ACTIONS.STAFF_PIN_CHANGED,
+      after: { pinCleared: true },
+    }).catch(() => {});
+  }
+
+  return updated;
 }
 
 // ── Create Staff Member ──────────────────────────────────────────────────────

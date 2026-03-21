@@ -1,6 +1,9 @@
 import { prisma } from '@/lib/prisma';
 import { ReturnRefundMethod, ReturnStatus } from '@/generated/prisma/client';
 import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { kickCashDrawer } from '@/lib/hardware/cashDrawer';
+import type { PrinterConfig } from '@/lib/hardware/printer';
 import Decimal from 'decimal.js';
 
 const RETURN_WINDOW_DAYS = 30;
@@ -151,7 +154,7 @@ interface InitiateReturnInput {
 }
 
 export async function initiateReturn(tenantId: string, input: InitiateReturnInput) {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     // 1. Validate
     const sale = await validateReturnEligibility(
       tenantId,
@@ -235,6 +238,37 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
       },
     });
   });
+
+  void createAuditLog({
+    tenantId,
+    actorId: input.initiatedById,
+    actorRole: 'USER',
+    entityType: 'Return',
+    entityId: result.id,
+    action: AUDIT_ACTIONS.RETURN_COMPLETED,
+    after: { originalSaleId: input.originalSaleId, refundAmount: result.refundAmount, refundMethod: input.refundMethod, lineCount: result.lines.length },
+  }).catch(() => {});
+
+  // Kick cash drawer for cash refunds (fire-and-forget)
+  if (input.refundMethod === ReturnRefundMethod.CASH) {
+    void prisma.tenant
+      .findUnique({ where: { id: tenantId }, select: { settings: true } })
+      .then((tenant) => {
+        if (!tenant) return;
+        const hw = (tenant.settings as any)?.hardware?.printer;
+        if (!hw?.host) return;
+        const printerConfig: PrinterConfig = {
+          type: hw.type ?? 'NETWORK',
+          host: hw.host,
+          port: hw.port,
+          paperWidth: hw.paperWidth ?? '58mm',
+        };
+        void kickCashDrawer(printerConfig);
+      })
+      .catch(() => {});
+  }
+
+  return result;
 }
 
 // ── Get Return By ID ─────────────────────────────────────────────────────────

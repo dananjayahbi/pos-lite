@@ -196,6 +196,7 @@ model User {
   timeClocks           TimeClock[]
   expenses             Expense[]
   authorizedCashMovements CashMovement[]
+  savedReports         SavedReport[]
 
   @@index([email])
   @@index([tenantId])
@@ -300,6 +301,8 @@ model Tenant {
   customerPricingRules CustomerPricingRule[]
   expenses             Expense[]
   cashMovements        CashMovement[]
+  savedReports         SavedReport[]
+  dailySummaryLogs     DailySummaryLog[]
 
   @@map("tenants")
 }
@@ -718,22 +721,23 @@ model StoreCredit {
 // ── CRM & Supplier Models ────────────────────────────────────────────────────
 
 model Customer {
-  id            String    @id @default(cuid())
-  tenantId      String
-  tenant        Tenant    @relation(fields: [tenantId], references: [id])
-  name          String
-  phone         String
-  email         String?
-  gender        Gender?
-  birthday      DateTime?
-  tags          String[]  @default([])
-  notes         String?
-  creditBalance Decimal   @default(0) @db.Decimal(12, 2)
-  totalSpend    Decimal   @default(0) @db.Decimal(12, 2)
-  isActive      Boolean   @default(true)
-  deletedAt     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                          String    @id @default(cuid())
+  tenantId                    String
+  tenant                      Tenant    @relation(fields: [tenantId], references: [id])
+  name                        String
+  phone                       String
+  email                       String?
+  gender                      Gender?
+  birthday                    DateTime?
+  lastBirthdayMessageSentYear Int?
+  tags                        String[]  @default([])
+  notes                       String?
+  creditBalance               Decimal   @default(0) @db.Decimal(12, 2)
+  totalSpend                  Decimal   @default(0) @db.Decimal(12, 2)
+  isActive                    Boolean   @default(true)
+  deletedAt                   DateTime?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
 
   sales         Sale[]
   birthdayLogs  BirthdayGreetingLog[]
@@ -968,4 +972,39 @@ model CashMovement {
 
   @@index([tenantId, shiftId])
   @@map("cash_movements")
+}
+
+// ── Reports ──────────────────────────────────────────────────────────────────
+
+model SavedReport {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String
+  name       String
+  reportType String
+  filters    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@map("saved_reports")
+}
+
+// ── Daily Summary ────────────────────────────────────────────────────────────
+
+model DailySummaryLog {
+  id             String   @id @default(cuid())
+  tenantId       String
+  sentAt         DateTime @default(now())
+  status         String   // "SENT" or "FAILED"
+  errorMessage   String?
+  recipientEmail String
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("daily_summary_logs")
 }

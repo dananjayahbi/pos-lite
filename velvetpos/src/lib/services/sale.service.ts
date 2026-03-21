@@ -2,9 +2,11 @@ import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import type { SaleStatus, TaxRule } from '@/generated/prisma/client';
 import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
-import { createAuditLog } from '@/lib/services/audit.service';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { createPayment } from '@/lib/services/payment.service';
 import { redeemCredit, addToSpendTotal } from '@/lib/services/customer.service';
+import { kickCashDrawer } from '@/lib/hardware/cashDrawer';
+import type { PrinterConfig } from '@/lib/hardware/printer';
 import type { CreateSaleInput, HoldSaleInput } from '@/lib/validators/sale.validators';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -41,7 +43,7 @@ function extractTenantRates(settings: unknown): { vatRate: number; ssclRate: num
 // ── Create Sale ──────────────────────────────────────────────────────────────
 
 export async function createSale(tenantId: string, input: CreateSaleInput & { cashierId: string }) {
-  return prisma.$transaction(async (tx: TxClient) => {
+  const result = await prisma.$transaction(async (tx: TxClient) => {
     // Validate shift
     const shift = await tx.shift.findFirst({
       where: { id: input.shiftId, tenantId, status: 'OPEN' },
@@ -225,6 +227,37 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     });
     return completeSale;
   });
+
+  void createAuditLog({
+    tenantId,
+    actorId: input.cashierId,
+    actorRole: 'CASHIER',
+    entityType: 'Sale',
+    entityId: result.id,
+    action: AUDIT_ACTIONS.SALE_COMPLETED,
+    after: { totalAmount: result.totalAmount, paymentMethod: result.paymentMethod, lineCount: result.lines.length },
+  }).catch(() => {});
+
+  // Kick cash drawer for cash payments (fire-and-forget)
+  if (input.paymentMethod === 'CASH' || input.paymentMethod === 'SPLIT') {
+    void prisma.tenant
+      .findUnique({ where: { id: tenantId }, select: { settings: true } })
+      .then((tenant) => {
+        if (!tenant) return;
+        const hw = (tenant.settings as any)?.hardware?.printer;
+        if (!hw?.host) return;
+        const printerConfig: PrinterConfig = {
+          type: hw.type ?? 'NETWORK',
+          host: hw.host,
+          port: hw.port,
+          paperWidth: hw.paperWidth ?? '58mm',
+        };
+        void kickCashDrawer(printerConfig);
+      })
+      .catch(() => {});
+  }
+
+  return result;
 }
 
 // ── Get Sale By ID ───────────────────────────────────────────────────────────
@@ -404,7 +437,7 @@ export async function createHeldSale(
 // ── Void Sale ────────────────────────────────────────────────────────────────
 
 export async function voidSale(tenantId: string, saleId: string, actorId: string) {
-  return prisma.$transaction(async (tx: TxClient) => {
+  const result = await prisma.$transaction(async (tx: TxClient) => {
     const sale = await tx.sale.findFirst({
       where: { id: saleId, tenantId },
       include: { lines: true },
@@ -444,20 +477,21 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
       });
     }
 
-    // Audit log (best-effort)
-    await createAuditLog({
-      tenantId,
-      actorId,
-      actorRole: 'USER',
-      entityType: 'Sale',
-      entityId: saleId,
-      action: 'SALE_VOIDED',
-      before: { status: 'COMPLETED' },
-      after: { status: 'VOIDED', voidedById: actorId },
-    });
-
     return updatedSale;
   });
+
+  void createAuditLog({
+    tenantId,
+    actorId,
+    actorRole: 'USER',
+    entityType: 'Sale',
+    entityId: saleId,
+    action: AUDIT_ACTIONS.SALE_VOIDED,
+    before: { status: 'COMPLETED' },
+    after: { status: 'VOIDED', voidedById: actorId },
+  }).catch(() => {});
+
+  return result;
 }
 
 // ── Get Shift Sales ──────────────────────────────────────────────────────────
