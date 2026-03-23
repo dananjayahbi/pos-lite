@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { formatRupee } from '@/lib/format';
 
 interface ShiftCloseModalProps {
   shiftId: string;
@@ -22,6 +23,19 @@ interface ShiftCloseModalProps {
 
 interface ShiftSummary {
   expectedCash: number;
+}
+
+function toNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
 }
 
 export function ShiftCloseModal({
@@ -54,8 +68,7 @@ export function ShiftCloseModal({
         if (res.ok) {
           const json = await res.json();
           const data = json.data;
-          const expectedCash =
-            (data.openingFloat ?? 0) + (data.cashSalesTotal ?? 0);
+          const expectedCash = toNumber(data.expectedCash);
           setSummary({ expectedCash });
         }
       } catch {
@@ -181,7 +194,7 @@ export function ShiftCloseModal({
               <div className="flex justify-between">
                 <span className="text-espresso/70">Expected cash</span>
                 <span className="text-espresso font-mono">
-                  Rs. {summary.expectedCash.toFixed(2)}
+                  {formatRupee(summary.expectedCash)}
                 </span>
               </div>
               {discrepancy !== null && (
@@ -196,8 +209,8 @@ export function ShiftCloseModal({
                           : 'text-red-500'
                     }`}
                   >
-                    {discrepancy >= 0 ? '+' : ''}
-                    Rs. {discrepancy.toFixed(2)}
+                    {discrepancy >= 0 ? '+' : '-'}
+                    {formatRupee(Math.abs(discrepancy))}
                   </span>
                 </div>
               )}

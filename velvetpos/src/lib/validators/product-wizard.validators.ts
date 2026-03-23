@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { GenderType, TaxRule } from '@/generated/prisma/client';
+import { GENDER_TYPES, TAX_RULES } from '@/lib/constants/product-options';
 
 export const productStep1Schema = z.object({
   name: z
@@ -11,11 +11,11 @@ export const productStep1Schema = z.object({
     .max(1000, 'Description must be at most 1000 characters'),
   categoryId: z.string().min(1, 'Category is required'),
   brandId: z.string(),
-  gender: z.nativeEnum(GenderType, {
+  gender: z.enum(GENDER_TYPES, {
     error: 'Please select a gender',
   }),
   tags: z.array(z.string()).max(20, 'Maximum 20 tags'),
-  taxRule: z.nativeEnum(TaxRule),
+  taxRule: z.enum(TAX_RULES),
 });
 
 export type ProductStep1FormData = z.infer<typeof productStep1Schema>;

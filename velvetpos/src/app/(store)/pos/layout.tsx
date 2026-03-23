@@ -18,9 +18,15 @@ export default async function POSLayout({ children }: { children: React.ReactNod
   }
 
   const shift = await getCurrentShift(tenantId, session.user.id);
+  const showOwnerDashboardShortcut = session.user.role === 'OWNER';
 
   if (!shift) {
-    return <ShiftOpenModal cashierName={session.user.name ?? 'Cashier'} />;
+    return (
+      <ShiftOpenModal
+        cashierName={session.user.name ?? 'Cashier'}
+        showOwnerDashboardShortcut={showOwnerDashboardShortcut}
+      />
+    );
   }
 
   return (
@@ -28,6 +34,7 @@ export default async function POSLayout({ children }: { children: React.ReactNod
       shiftId={shift.id}
       shiftOpenedAt={shift.openedAt.toISOString()}
       cashierName={session.user.name ?? 'Cashier'}
+      showOwnerDashboardShortcut={showOwnerDashboardShortcut}
     >
       {children}
     </POSTerminalShell>

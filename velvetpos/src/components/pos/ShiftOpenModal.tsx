@@ -1,16 +1,23 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { signOut } from 'next-auth/react';
 
 interface ShiftOpenModalProps {
   cashierName: string;
+  showOwnerDashboardShortcut?: boolean;
 }
 
-export function ShiftOpenModal({ cashierName }: ShiftOpenModalProps) {
+export function ShiftOpenModal({
+  cashierName,
+  showOwnerDashboardShortcut = false,
+}: ShiftOpenModalProps) {
   const router = useRouter();
   const [openingFloat, setOpeningFloat] = useState('');
   const [loading, setLoading] = useState(false);
+  const [returningToLogin, setReturningToLogin] = useState(false);
   const [error, setError] = useState('');
 
   async function handleSubmit(e: React.FormEvent) {
@@ -53,10 +60,36 @@ export function ShiftOpenModal({ cashierName }: ShiftOpenModalProps) {
         onSubmit={handleSubmit}
         className="bg-pearl rounded-2xl p-8 w-full max-w-md shadow-xl"
       >
-        <h1 className="font-display text-espresso text-2xl">VelvetPOS</h1>
-        <h2 className="text-lg text-espresso/80 font-display mt-1">
-          Open Your Shift
-        </h2>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="font-display text-espresso text-2xl">VelvetPOS</h1>
+            <h2 className="text-lg text-espresso/80 font-display mt-1">
+              Open Your Shift
+            </h2>
+          </div>
+
+          <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+            {showOwnerDashboardShortcut && (
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center rounded-lg border border-espresso px-3 py-2 text-sm font-medium text-espresso transition-colors hover:bg-linen"
+              >
+                Owner Dashboard
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={async () => {
+                setReturningToLogin(true);
+                await signOut({ callbackUrl: '/login' });
+              }}
+              disabled={returningToLogin}
+              className="inline-flex items-center rounded-lg border border-mist px-3 py-2 text-sm font-medium text-espresso transition-colors hover:bg-linen disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {returningToLogin ? 'Opening login…' : 'Back to Login'}
+            </button>
+          </div>
+        </div>
 
         <p className="text-sm text-espresso/60 font-body mt-4">
           Welcome, {cashierName}. Enter the opening float — the cash currently
@@ -95,6 +128,14 @@ export function ShiftOpenModal({ cashierName }: ShiftOpenModalProps) {
         >
           {loading ? 'Opening…' : 'Start Shift'}
         </button>
+
+        {showOwnerDashboardShortcut && (
+          <div className="mt-3 rounded-lg border border-mist bg-white/80 p-3">
+            <p className="text-xs font-body text-espresso/70">
+              Need back-office tools first? Use the Owner Dashboard button above.
+            </p>
+          </div>
+        )}
 
         {error && (
           <p className="mt-3 text-sm text-red-500 font-body">{error}</p>

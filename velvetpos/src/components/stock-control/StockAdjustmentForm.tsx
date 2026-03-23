@@ -7,7 +7,11 @@ import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { Search, Plus, Minus, Lock, Loader2, ChevronRight } from 'lucide-react';
-import { StockMovementReason } from '@/generated/prisma/client';
+import {
+  STOCK_MOVEMENT_REASON,
+  STOCK_MOVEMENT_REASONS,
+  type StockMovementReasonValue,
+} from '@/lib/constants/stock-movement';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -51,18 +55,18 @@ interface VariantData {
 
 // ── Reason labels ────────────────────────────────────────────────────────────
 
-const REASON_LABELS: Record<StockMovementReason, string> = {
-  [StockMovementReason.FOUND]: 'Found',
-  [StockMovementReason.DAMAGED]: 'Damaged',
-  [StockMovementReason.STOLEN]: 'Stolen',
-  [StockMovementReason.DATA_ERROR]: 'Data Error',
-  [StockMovementReason.RETURNED_TO_SUPPLIER]: 'Returned to Supplier',
-  [StockMovementReason.INITIAL_STOCK]: 'Initial Stock',
-  [StockMovementReason.SALE_RETURN]: 'Sale Return',
-  [StockMovementReason.PURCHASE_RECEIVED]: 'Purchase Received',
-  [StockMovementReason.STOCK_TAKE_ADJUSTMENT]: 'Stock Take Adjustment',
-  [StockMovementReason.SALE]: 'Sale',
-  [StockMovementReason.VOID_REVERSAL]: 'Void Reversal',
+const REASON_LABELS: Record<StockMovementReasonValue, string> = {
+  FOUND: 'Found',
+  DAMAGED: 'Damaged',
+  STOLEN: 'Stolen',
+  DATA_ERROR: 'Data Error',
+  RETURNED_TO_SUPPLIER: 'Returned to Supplier',
+  INITIAL_STOCK: 'Initial Stock',
+  SALE_RETURN: 'Sale Return',
+  PURCHASE_RECEIVED: 'Purchase Received',
+  STOCK_TAKE_ADJUSTMENT: 'Stock Take Adjustment',
+  SALE: 'Sale',
+  VOID_REVERSAL: 'Void Reversal',
 };
 
 // ── Form schema ──────────────────────────────────────────────────────────────
@@ -72,7 +76,7 @@ const FormSchema = z.object({
   variantId: z.string().min(1, { error: 'Select a variant' }),
   adjustmentType: z.enum(['add', 'remove'], { error: 'Select adjustment type' }),
   quantity: z.number().int().min(1, { error: 'Min quantity is 1' }),
-  reason: z.nativeEnum(StockMovementReason, { error: 'Select a reason' }),
+  reason: z.enum(STOCK_MOVEMENT_REASONS, { error: 'Select a reason' }),
   note: z.string().max(500).optional(),
 });
 
@@ -595,7 +599,7 @@ function AdjustmentFormInner() {
               <Select
                 value={form.watch('reason') || undefined}
                 onValueChange={(val) =>
-                  form.setValue('reason', val as StockMovementReason, {
+                  form.setValue('reason', val as StockMovementReasonValue, {
                     shouldValidate: true,
                   })
                 }
@@ -604,10 +608,10 @@ function AdjustmentFormInner() {
                   <SelectValue placeholder="Select a reason" />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.values(StockMovementReason).map((r) => (
+                  {STOCK_MOVEMENT_REASONS.map((r) => (
                     <SelectItem key={r} value={r}>
                       {REASON_LABELS[r]}
-                      {r === StockMovementReason.STOCK_TAKE_ADJUSTMENT && (
+                      {r === STOCK_MOVEMENT_REASON.STOCK_TAKE_ADJUSTMENT && (
                         <span className="ml-1 text-xs text-mist">(used by stock takes)</span>
                       )}
                     </SelectItem>

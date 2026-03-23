@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -54,6 +54,14 @@ function Row({ label, value, className }: { label: string; value: string; classN
 }
 
 export default function ShiftReportPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-3xl space-y-6 p-6" />}>
+      <ShiftReportPageContent />
+    </Suspense>
+  );
+}
+
+function ShiftReportPageContent() {
   const searchParams = useSearchParams();
   const shiftId = searchParams.get('shiftId');
   const [topItemsOpen, setTopItemsOpen] = useState(false);

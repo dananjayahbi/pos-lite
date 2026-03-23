@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SL_PHONE_REGEX } from '@/lib/services/supplier.service';
+import { SL_PHONE_REGEX } from '@/lib/constants/supplier';
 
 export const CreateSupplierSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),

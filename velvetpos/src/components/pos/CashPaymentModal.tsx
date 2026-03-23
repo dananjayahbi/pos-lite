@@ -5,7 +5,7 @@ import Decimal from 'decimal.js';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatRupee } from '@/lib/format';
-import { computeChange } from '@/lib/services/payment.service';
+import { computeChange } from '@/lib/utils/payments';
 import {
   Dialog,
   DialogContent,

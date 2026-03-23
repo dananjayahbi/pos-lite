@@ -7,10 +7,14 @@ import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 
-import { GenderType, TaxRule } from '@/generated/prisma/client';
 import { useProductWizardStore } from '@/stores/productWizardStore';
 import { useCategories } from '@/hooks/useCategories';
 import { useBrands } from '@/hooks/useBrands';
+import {
+  GENDER_OPTIONS,
+  TAX_RULE,
+  TAX_RULE_OPTIONS,
+} from '@/lib/constants/product-options';
 import {
   productStep1Schema,
   type ProductStep1FormData,
@@ -35,20 +39,6 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { TagInput } from '@/components/product/TagInput';
-
-const GENDER_OPTIONS: { value: GenderType; label: string }[] = [
-  { value: GenderType.MEN, label: 'Men' },
-  { value: GenderType.WOMEN, label: 'Women' },
-  { value: GenderType.UNISEX, label: 'Unisex' },
-  { value: GenderType.KIDS, label: 'Kids' },
-  { value: GenderType.TODDLERS, label: 'Toddlers' },
-];
-
-const TAX_OPTIONS: { value: TaxRule; label: string }[] = [
-  { value: TaxRule.STANDARD_VAT, label: 'Standard VAT (15%)' },
-  { value: TaxRule.SSCL, label: 'SSCL' },
-  { value: TaxRule.EXEMPT, label: 'VAT Exempt' },
-];
 
 export function WizardStep1BasicInfo() {
   const router = useRouter();
@@ -94,9 +84,9 @@ export function WizardStep1BasicInfo() {
           description: '',
           categoryId: '',
           brandId: '',
-          gender: '' as GenderType,
+          gender: '' as ProductStep1FormData['gender'],
           tags: [],
-          taxRule: TaxRule.STANDARD_VAT,
+          taxRule: TAX_RULE.STANDARD_VAT,
         },
   });
 
@@ -400,7 +390,7 @@ export function WizardStep1BasicInfo() {
                 <SelectValue placeholder="Select tax rule" />
               </SelectTrigger>
               <SelectContent>
-                {TAX_OPTIONS.map((opt) => (
+                {TAX_RULE_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
                     {opt.label}
                   </SelectItem>

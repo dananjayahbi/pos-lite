@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, use } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -14,10 +15,21 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Pencil } from 'lucide-react';
+import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
 import { CustomerSheet } from '@/components/customers/CustomerSheet';
+import { usePermissions } from '@/hooks/usePermissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
+import { toast } from 'sonner';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,10 +86,14 @@ export default function CustomerDetailPage({
   params: Promise<{ customerId: string }>;
 }) {
   const { customerId } = use(params);
+  const router = useRouter();
   const queryClient = useQueryClient();
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
 
   const [activeTab, setActiveTab] = useState<Tab>('purchases');
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const { data, isLoading } = useQuery<{ success: boolean; data: CustomerDetail }>({
     queryKey: ['customer', customerId],
@@ -94,6 +110,33 @@ export default function CustomerDetailPage({
     queryClient.invalidateQueries({ queryKey: ['customer', customerId] });
     queryClient.invalidateQueries({ queryKey: ['customers'] });
   }, [queryClient, customerId]);
+
+  const handleDeleteCustomer = useCallback(async () => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/store/customers/${customerId}`, {
+        method: 'DELETE',
+      });
+      const json = (await res.json().catch(() => null)) as
+        | { success?: boolean; error?: { message?: string } }
+        | null;
+
+      if (!res.ok || !json?.success) {
+        toast.error(json?.error?.message ?? 'Failed to delete customer');
+        return;
+      }
+
+      toast.success('Customer deleted');
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      router.push('/customers');
+      router.refresh();
+    } catch {
+      toast.error('Failed to delete customer');
+    } finally {
+      setDeleting(false);
+      setDeleteOpen(false);
+    }
+  }, [customerId, queryClient, router]);
 
   const getInitials = (name: string) =>
     name
@@ -142,6 +185,7 @@ export default function CustomerDetailPage({
   }
 
   const completedSales = customer.sales.filter((s) => s.status === 'COMPLETED');
+  const canDeleteCustomer = !permissionsLoading && hasPermission(PERMISSIONS.CUSTOMER.deleteCustomer);
 
   const getCreditColor = (val: string | number) => {
     const n = Number(val);
@@ -174,6 +218,17 @@ export default function CustomerDetailPage({
               <Pencil className="mr-1.5 h-3.5 w-3.5" />
               Edit
             </Button>
+            {canDeleteCustomer && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-red-200 text-red-600 hover:text-red-700"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                Delete
+              </Button>
+            )}
           </div>
           <p className="text-sm text-sand font-mono mt-0.5">{customer.phone}</p>
           {customer.email && (
@@ -372,6 +427,31 @@ export default function CustomerDetailPage({
         onOpenChange={setSheetOpen}
         onSuccess={handleSuccess}
       />
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-display text-espresso">Delete Customer</DialogTitle>
+            <DialogDescription>
+              This will archive {customer.name} and remove them from the active customer list.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                void handleDeleteCustomer();
+              }}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : 'Delete Customer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

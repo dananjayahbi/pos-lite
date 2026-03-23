@@ -1,6 +1,5 @@
-// Shell placeholder — the AppSidebar and main content area will be integrated
-// in SubPhase 02.xx when the navigation components are built.
 import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { SubscriptionStatus } from '@/generated/prisma/client';
 import { getSubscriptionForTenant } from '@/lib/billing/subscription.service';
@@ -18,7 +17,14 @@ export default async function StoreLayout({
   const graceEndsAt = headersList.get('x-grace-ends-at');
 
   const session = await auth();
+  if (!session?.user) {
+    redirect('/login');
+  }
+
   const tenantId = session?.user?.tenantId;
+  const permissions = Array.isArray(session.user.permissions)
+    ? session.user.permissions.filter((permission): permission is string => typeof permission === 'string')
+    : [];
 
   let subscription: Awaited<ReturnType<typeof getSubscriptionForTenant>> = null;
   if (tenantId) {
@@ -40,10 +46,14 @@ export default async function StoreLayout({
       </a>
       <GracePeriodBanner visible={isGracePeriod} graceEndsAt={graceEndsAt} />
       {showTrialBanner && subscription && <TrialBanner subscription={subscription} />}
-      <div className="flex flex-1">
-        <main id="main-content" className="flex-1">
-          <StoreLayoutClient>{children}</StoreLayoutClient>
-        </main>
+      <div className="flex min-h-0 flex-1">
+        <StoreLayoutClient
+          userEmail={session.user.email ?? 'signed-in-user@velvetpos.dev'}
+          userRole={session.user.role}
+          permissions={permissions}
+        >
+          {children}
+        </StoreLayoutClient>
       </div>
     </div>
   );

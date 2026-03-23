@@ -14,6 +14,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -34,7 +36,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Pencil, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, LogOut, Pencil, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { UpdateStaffSchema } from '@/lib/validators/staff.validators';
 import { PinSchema } from '@/lib/validators/pin.validators';
@@ -264,6 +266,7 @@ export default function StaffDetailPage({
   }
 
   const sessionRole = (sessionData?.user?.role as string) ?? '';
+  const sessionUserId = sessionData?.user?.id ?? '';
 
   return (
     <div className="space-y-6">
@@ -312,6 +315,7 @@ export default function StaffDetailPage({
           editOpen={editOpen}
           setEditOpen={setEditOpen}
           onSuccess={handleSuccess}
+          canForceLogout={sessionRole === 'OWNER' && sessionUserId !== staffMember.id}
         />
       )}
 
@@ -341,15 +345,56 @@ function ProfileTab({
   editOpen,
   setEditOpen,
   onSuccess,
+  canForceLogout,
 }: {
   staffMember: StaffDetail;
   editOpen: boolean;
   setEditOpen: (open: boolean) => void;
   onSuccess: () => void;
+  canForceLogout: boolean;
 }) {
+  const [forceLogoutOpen, setForceLogoutOpen] = useState(false);
+  const [isForceLoggingOut, setIsForceLoggingOut] = useState(false);
+
+  const handleForceLogout = useCallback(async () => {
+    setIsForceLoggingOut(true);
+    try {
+      const res = await fetch(`/api/admin/users/${staffMember.id}/force-logout`, {
+        method: 'POST',
+      });
+      const json = (await res.json().catch(() => null)) as
+        | { message?: string; error?: string }
+        | null;
+
+      if (!res.ok) {
+        toast.error(json?.error ?? 'Failed to force logout user');
+        return;
+      }
+
+      toast.success(json?.message ?? 'User sessions have been invalidated.');
+      setForceLogoutOpen(false);
+    } catch {
+      toast.error('Failed to force logout user');
+    } finally {
+      setIsForceLoggingOut(false);
+    }
+  }, [staffMember.id]);
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        {canForceLogout && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-terracotta/40 text-terracotta hover:text-terracotta"
+            onClick={() => setForceLogoutOpen(true)}
+          >
+            <LogOut className="mr-1.5 h-3.5 w-3.5" />
+            Force Logout
+          </Button>
+        )}
+
         <Dialog open={editOpen} onOpenChange={setEditOpen}>
           <DialogTrigger asChild>
             <Button variant="outline" size="sm">
@@ -444,6 +489,35 @@ function ProfileTab({
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={forceLogoutOpen} onOpenChange={setForceLogoutOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-display">Force Logout User</DialogTitle>
+            <DialogDescription>
+              This will immediately invalidate all active sessions for {staffMember.email}.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setForceLogoutOpen(false)}
+              disabled={isForceLoggingOut}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                void handleForceLogout();
+              }}
+              disabled={isForceLoggingOut}
+            >
+              {isForceLoggingOut ? 'Invalidating…' : 'Force Logout'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

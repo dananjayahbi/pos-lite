@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getDefaultRouteForRole } from "@/lib/utils/default-route";
 import {
   Card,
   CardContent,
@@ -321,6 +322,11 @@ export default async function StoreDashboardPage() {
   const session = await auth();
   if (!session?.user?.tenantId) {
     redirect("/login");
+  }
+
+  const defaultRoute = getDefaultRouteForRole(session.user.role);
+  if (defaultRoute !== '/dashboard') {
+    redirect(defaultRoute);
   }
 
   const { tenantId } = session.user;

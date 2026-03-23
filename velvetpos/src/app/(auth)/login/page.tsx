@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
@@ -8,7 +8,16 @@ import { getSession, signIn } from 'next-auth/react';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { getDefaultRouteForRole } from '@/lib/utils/default-route';
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -38,9 +47,21 @@ function mapAuthError(error: string | undefined): string {
 }
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="w-full px-4" />}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [formError, setFormError] = useState<string | null>(null);
+  const [postLoginMessage, setPostLoginMessage] = useState<string | null>(null);
+  const [cashierChoiceOpen, setCashierChoiceOpen] = useState(false);
+  const [pendingCashierRoute, setPendingCashierRoute] = useState<string | null>(null);
+  const [pendingCashierEmail, setPendingCashierEmail] = useState<string | null>(null);
 
   const sessionExpired = searchParams.get('sessionExpired') === 'true';
 
@@ -53,6 +74,7 @@ export default function LoginPage() {
 
   const onSubmit = async (values: LoginFormValues) => {
     setFormError(null);
+    setPostLoginMessage(null);
 
     const parsed = loginSchema.safeParse(values);
     if (!parsed.success) {
@@ -76,19 +98,49 @@ export default function LoginPage() {
     }
 
     const session = await getSession();
-    if (session?.user.role === 'SUPER_ADMIN') {
-      router.push('/superadmin/dashboard');
+    const targetRoute = getDefaultRouteForRole(session?.user.role);
+
+    if (session?.user.role === 'CASHIER') {
+      setPendingCashierRoute(targetRoute);
+      setPendingCashierEmail(parsed.data.email);
+      setCashierChoiceOpen(true);
+      form.reset({ email: parsed.data.email, password: '' });
       return;
     }
 
-    router.push('/dashboard');
+    router.push(targetRoute);
   };
+
+  function handleCashierRouteChoice(mode: 'current-tab' | 'new-tab') {
+    const targetRoute = pendingCashierRoute ?? '/pos';
+
+    if (mode === 'current-tab') {
+      router.push(targetRoute);
+      return;
+    }
+
+    const openedWindow = window.open(targetRoute, '_blank', 'noopener,noreferrer');
+
+    if (!openedWindow) {
+      setFormError('Unable to open a new tab. Please allow popups for this site or open the POS in the current tab.');
+      return;
+    }
+
+    setCashierChoiceOpen(false);
+    setPostLoginMessage('POS opened in a new tab. You can keep this tab for another sign-in or close it.');
+  }
 
   return (
     <div className="w-full px-4">
       {sessionExpired ? (
         <div className="mb-4 rounded-md border border-sand bg-sand/40 px-4 py-3 text-sm text-espresso">
           Your session has expired or an administrator has signed you out. Please sign in again.
+        </div>
+      ) : null}
+
+      {postLoginMessage ? (
+        <div className="mb-4 rounded-md border border-sand bg-sand/40 px-4 py-3 text-sm text-espresso">
+          {postLoginMessage}
         </div>
       ) : null}
 
@@ -153,6 +205,33 @@ export default function LoginPage() {
           ) : null}
         </form>
       </Card>
+
+      <Dialog open={cashierChoiceOpen} onOpenChange={setCashierChoiceOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-espresso">Open POS</DialogTitle>
+            <DialogDescription>
+              {pendingCashierEmail
+                ? `${pendingCashierEmail} is ready to use the POS.`
+                : 'Your cashier session is ready.'}{' '}
+              Choose whether to open the terminal here or in a separate tab.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleCashierRouteChoice('new-tab')}
+            >
+              Open in new tab
+            </Button>
+            <Button type="button" onClick={() => handleCashierRouteChoice('current-tab')}>
+              Open in this tab
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

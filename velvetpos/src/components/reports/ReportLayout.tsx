@@ -33,9 +33,11 @@ import {
   MenuIcon,
   DownloadIcon,
   BookmarkIcon,
+  FolderOpenIcon,
   FileTextIcon,
   FileSpreadsheetIcon,
   FileIcon,
+  Trash2Icon,
 } from "lucide-react";
 import DateRangePicker from "@/components/reports/DateRangePicker";
 import { ReportProvider, useReportContext } from "@/lib/reports/ReportContext";
@@ -94,6 +96,14 @@ const saveReportSchema = z.object({
 
 type SaveReportForm = z.infer<typeof saveReportSchema>;
 
+interface SavedReportRecord {
+  id: string;
+  name: string;
+  reportType: string;
+  filters: Record<string, unknown>;
+  createdAt: string;
+}
+
 // ── Component ───────────────────────────────────────────────────
 
 interface ReportLayoutProps {
@@ -134,13 +144,19 @@ function ReportLayoutInner({
   const { reportData } = useReportContext();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [savedReportsOpen, setSavedReportsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [savedReports, setSavedReports] = useState<SavedReportRecord[]>([]);
+  const [savedReportsLoading, setSavedReportsLoading] = useState(false);
+  const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
 
   const from = searchParams.get("from") || defaultFrom();
   const to = searchParams.get("to") || defaultTo();
 
   const navItems = getNavItems();
+  const currentReportTitle =
+    reportTitle ?? navItems.find((item) => item.href === pathname)?.label ?? "Report";
 
   // ── Date range handler ──────────────────────────────────────
 
@@ -217,7 +233,7 @@ function ReportLayoutInner({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: data.name,
-          reportType: reportType ?? "unknown",
+          reportType: pathname,
           filters,
         }),
       });
@@ -232,6 +248,80 @@ function ReportLayoutInner({
       }
     } catch {
       toast.error("Failed to save report");
+    }
+  }
+
+  async function loadSavedReports() {
+    setSavedReportsLoading(true);
+    try {
+      const res = await fetch("/api/reports/saved");
+      const json = (await res.json()) as {
+        success: boolean;
+        data?: SavedReportRecord[];
+        error?: { message?: string };
+      };
+
+      if (!res.ok || !json.success) {
+        toast.error(json.error?.message ?? "Failed to load saved reports");
+        return;
+      }
+
+      setSavedReports(json.data ?? []);
+    } catch {
+      toast.error("Failed to load saved reports");
+    } finally {
+      setSavedReportsLoading(false);
+    }
+  }
+
+  function buildSavedReportHref(savedReport: SavedReportRecord): string {
+    const route = savedReport.reportType.startsWith("/") ? savedReport.reportType : pathname;
+    const params = new URLSearchParams();
+
+    Object.entries(savedReport.filters ?? {}).forEach(([key, value]) => {
+      if (typeof value === "string") {
+        params.set(key, value);
+      } else if (Array.isArray(value)) {
+        value.forEach((item) => {
+          if (typeof item === "string") {
+            params.append(key, item);
+          }
+        });
+      }
+    });
+
+    const query = params.toString();
+    return query ? `${route}?${query}` : route;
+  }
+
+  async function handleDeleteSavedReport(reportId: string) {
+    setDeletingReportId(reportId);
+    try {
+      const res = await fetch(`/api/reports/saved/${reportId}`, {
+        method: "DELETE",
+      });
+      const json = (await res.json().catch(() => null)) as
+        | { success?: boolean; error?: { message?: string } }
+        | null;
+
+      if (!res.ok || !json?.success) {
+        toast.error(json?.error?.message ?? "Failed to delete saved report");
+        return;
+      }
+
+      toast.success("Saved report deleted");
+      setSavedReports((current) => current.filter((report) => report.id !== reportId));
+    } catch {
+      toast.error("Failed to delete saved report");
+    } finally {
+      setDeletingReportId(null);
+    }
+  }
+
+  function handleSavedReportsOpenChange(open: boolean) {
+    setSavedReportsOpen(open);
+    if (open) {
+      void loadSavedReports();
     }
   }
 
@@ -376,6 +466,99 @@ function ReportLayoutInner({
                       </Button>
                     </DialogFooter>
                   </form>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={savedReportsOpen} onOpenChange={handleSavedReportsOpenChange}>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 border-mist bg-white font-body text-sm text-espresso"
+                  >
+                    <FolderOpenIcon className="h-4 w-4" />
+                    <span className="hidden sm:inline">Saved Reports</span>
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-xl">
+                  <DialogHeader>
+                    <DialogTitle className="font-display text-espresso">
+                      Saved Reports
+                    </DialogTitle>
+                  </DialogHeader>
+
+                  <div className="space-y-3">
+                    <p className="text-sm text-mist">
+                      Open or remove previously saved report filters.
+                    </p>
+
+                    {savedReportsLoading ? (
+                      <div className="space-y-2">
+                        {Array.from({ length: 3 }).map((_, index) => (
+                          <div
+                            key={index}
+                            className="h-16 animate-pulse rounded-md border border-mist bg-linen"
+                          />
+                        ))}
+                      </div>
+                    ) : savedReports.length === 0 ? (
+                      <div className="rounded-md border border-dashed border-mist bg-linen px-4 py-6 text-center text-sm text-mist">
+                        No saved reports yet for {currentReportTitle}.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {savedReports.map((savedReport) => {
+                          const isDeleting = deletingReportId === savedReport.id;
+
+                          return (
+                            <div
+                              key={savedReport.id}
+                              className="flex items-start justify-between gap-3 rounded-md border border-mist bg-pearl px-4 py-3"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate font-medium text-espresso">
+                                  {savedReport.name}
+                                </p>
+                                <p className="text-xs text-mist">
+                                  {new Date(savedReport.createdAt).toLocaleString("en-GB", {
+                                    day: "2-digit",
+                                    month: "short",
+                                    year: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </p>
+                              </div>
+
+                              <div className="flex shrink-0 items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSavedReportsOpen(false);
+                                    router.push(buildSavedReportHref(savedReport));
+                                  }}
+                                >
+                                  Open
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-terracotta hover:text-terracotta"
+                                  disabled={isDeleting}
+                                  onClick={() => {
+                                    void handleDeleteSavedReport(savedReport.id);
+                                  }}
+                                >
+                                  <Trash2Icon className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </DialogContent>
               </Dialog>
             </div>

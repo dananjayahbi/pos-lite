@@ -1,12 +1,21 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getSession } from 'next-auth/react';
 import PinEntryModal from '@/components/shared/PinEntryModal';
 import { Input } from '@/components/ui/input';
+import { getDefaultRouteForRole } from '@/lib/utils/default-route';
 
 export default function PinLoginPage() {
+  return (
+    <Suspense fallback={<div className="w-full px-4" />}>
+      <PinLoginPageContent />
+    </Suspense>
+  );
+}
+
+function PinLoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -17,12 +26,7 @@ export default function PinLoginPage() {
 
   const handleSuccess = async () => {
     const session = await getSession();
-    if (session?.user.role === 'SUPER_ADMIN') {
-      router.push('/superadmin/dashboard');
-      return;
-    }
-
-    router.push('/dashboard');
+    router.push(getDefaultRouteForRole(session?.user.role));
   };
 
   return (

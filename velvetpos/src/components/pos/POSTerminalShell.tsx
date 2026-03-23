@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Clock, LogOut, RotateCcw, WifiOff, Loader2 } from 'lucide-react';
+import { signOut } from 'next-auth/react';
+import { Clock, LayoutDashboard, LogOut, RotateCcw, WifiOff, Loader2 } from 'lucide-react';
 import { ShiftCloseModal } from '@/components/pos/ShiftCloseModal';
 import { CartPanel } from '@/components/pos/CartPanel';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -50,6 +51,7 @@ interface POSTerminalShellProps {
   shiftId: string;
   shiftOpenedAt: string;
   cashierName: string;
+  showOwnerDashboardShortcut?: boolean;
   children: React.ReactNode;
 }
 
@@ -57,9 +59,11 @@ export function POSTerminalShell({
   shiftId,
   shiftOpenedAt,
   cashierName,
+  showOwnerDashboardShortcut = false,
   children,
 }: POSTerminalShellProps) {
   const [closeModalOpen, setCloseModalOpen] = useState(false);
+  const [returningToLogin, setReturningToLogin] = useState(false);
   const { isOnline, isSyncing } = useOfflineSync();
 
   return (
@@ -101,6 +105,29 @@ export function POSTerminalShell({
         </div>
 
         <div className="flex items-center gap-2">
+          {showOwnerDashboardShortcut && (
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-1 rounded-md border border-terracotta/40 px-2 py-1 text-xs font-medium text-terracotta transition-colors hover:border-pearl hover:text-pearl"
+              aria-label="Owner dashboard"
+              title="Owner dashboard"
+            >
+              <LayoutDashboard className="h-5 w-5" />
+              <span className="hidden sm:inline">Dashboard</span>
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={async () => {
+              setReturningToLogin(true);
+              await signOut({ callbackUrl: '/login' });
+            }}
+            disabled={returningToLogin}
+            className="inline-flex items-center gap-1 rounded-md border border-terracotta/40 px-2 py-1 text-xs font-medium text-terracotta transition-colors hover:border-pearl hover:text-pearl disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label="Back to login"
+          >
+            <span>{returningToLogin ? 'Opening…' : 'Login'}</span>
+          </button>
           <Link
             href="/pos/returns"
             className="text-terracotta hover:text-pearl transition-colors p-1.5"

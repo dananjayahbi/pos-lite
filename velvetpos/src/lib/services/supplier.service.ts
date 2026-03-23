@@ -1,8 +1,7 @@
 import { prisma } from '@/lib/prisma';
+import { SL_PHONE_REGEX } from '@/lib/constants/supplier';
 
 // ── Phone Regex ──────────────────────────────────────────────────────────────
-
-export const SL_PHONE_REGEX = /^(\+94\d{9}|07\d{8})$/;
 
 // ── Private Helpers ──────────────────────────────────────────────────────────
 

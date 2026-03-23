@@ -240,17 +240,67 @@ export async function getShiftById(tenantId: string, shiftId: string) {
     throw new Error('Shift not found');
   }
 
-  const salesTotal = await prisma.sale.aggregate({
-    where: {
-      shiftId,
-      status: 'COMPLETED' satisfies SaleStatus,
-    },
-    _sum: { totalAmount: true },
-  });
+  const [salesTotal, cashSalesTotal, shiftReturns, shiftCashMovements] = await Promise.all([
+    prisma.sale.aggregate({
+      where: {
+        shiftId,
+        status: 'COMPLETED' satisfies SaleStatus,
+      },
+      _sum: { totalAmount: true },
+    }),
+    prisma.sale.aggregate({
+      where: {
+        shiftId,
+        status: 'COMPLETED' satisfies SaleStatus,
+        paymentMethod: 'CASH' satisfies PaymentMethod,
+      },
+      _sum: { totalAmount: true },
+    }),
+    prisma.return.findMany({
+      where: {
+        tenantId,
+        createdAt: {
+          gte: shift.openedAt,
+          lte: shift.closedAt ?? new Date(),
+        },
+      },
+      select: { refundAmount: true, refundMethod: true },
+    }),
+    prisma.cashMovement.findMany({
+      where: { shiftId, tenantId },
+      select: { amount: true, type: true },
+    }),
+  ]);
+
+  let cashRefundsTotal = new Decimal(0);
+  for (const ret of shiftReturns) {
+    if (ret.refundMethod === ('CASH' satisfies ReturnRefundMethod)) {
+      cashRefundsTotal = cashRefundsTotal.plus(new Decimal(ret.refundAmount.toString()));
+    }
+  }
+
+  let cashDeposited = new Decimal(0);
+  let pettyCashOut = new Decimal(0);
+  for (const movement of shiftCashMovements) {
+    if (movement.type === 'MANUAL_IN') {
+      cashDeposited = cashDeposited.plus(new Decimal(movement.amount.toString()));
+    } else if (movement.type === 'PETTY_CASH_OUT' || movement.type === 'MANUAL_OUT') {
+      pettyCashOut = pettyCashOut.plus(new Decimal(movement.amount.toString()));
+    }
+  }
+
+  const openingFloat = new Decimal(shift.openingFloat.toString());
+  const expectedCash = openingFloat
+    .plus(new Decimal(cashSalesTotal._sum.totalAmount?.toString() ?? '0'))
+    .minus(cashRefundsTotal)
+    .plus(cashDeposited)
+    .minus(pettyCashOut);
 
   return {
     ...shift,
+    openingFloat: openingFloat.toNumber(),
     totalSalesAmount: new Decimal(salesTotal._sum.totalAmount?.toString() ?? '0').toNumber(),
+    expectedCash: expectedCash.toDecimalPlaces(2).toNumber(),
   };
 }
 

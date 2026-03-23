@@ -2,7 +2,7 @@
 // The orchestration of the full atomic sale transaction — creating Sale, SaleLines,
 // and Payment records together with stock deduction — is performed in
 // sale.service.createSale. Callers outside of sale.service should only use this
-// module for reads and the computeChange utility.
+// module for payment reads and writes.
 
 import type { PaymentLegMethod } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
@@ -46,14 +46,4 @@ export async function getPaymentsForSale(saleId: string) {
     where: { saleId },
     orderBy: { createdAt: 'asc' },
   });
-}
-
-// ── computeChange ────────────────────────────────────────────────────────────
-
-export function computeChange(totalAmount: Decimal, amountPaid: Decimal): Decimal {
-  if (amountPaid.lessThan(totalAmount)) {
-    throw new Error('Insufficient funds: the amount paid is less than the total due.');
-  }
-
-  return amountPaid.minus(totalAmount);
 }

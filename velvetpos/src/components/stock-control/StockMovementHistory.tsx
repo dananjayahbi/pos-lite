@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowDown,
   ArrowUp,
-  ArrowUpDown,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -16,7 +15,7 @@ import {
   ShieldX,
   X,
 } from 'lucide-react';
-import { StockMovementReason } from '@/generated/prisma/client';
+import { STOCK_MOVEMENT_REASONS } from '@/lib/constants/stock-movement';
 import { mergeSearchParams } from '@/lib/urlUtils';
 import { useGlobalStockMovements } from '@/hooks/useGlobalStockMovements';
 import { useStockActors } from '@/hooks/useStockActors';
@@ -79,7 +78,7 @@ const REASON_DOT_COLOR: Record<string, string> = {
   SALE_RETURN: 'bg-amber-500',
 };
 
-const ALL_REASONS = Object.values(StockMovementReason);
+const ALL_REASONS = [...STOCK_MOVEMENT_REASONS];
 const PAGE_SIZE = 25;
 
 function formatDate(iso: string): string {

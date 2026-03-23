@@ -162,9 +162,11 @@ async function main() {
 async function seedSuperAdmin() {
   const defaultEmail = 'superadmin@velvetpos.dev';
   const defaultPassword = 'changeme123!';
+  const defaultPin = '9999';
 
   const superAdminEmail = process.env.SEED_SUPER_ADMIN_EMAIL ?? defaultEmail;
   const superAdminPassword = process.env.SEED_SUPER_ADMIN_PASSWORD ?? defaultPassword;
+  const superAdminPin = process.env.SEED_SUPER_ADMIN_PIN ?? defaultPin;
 
   if (superAdminEmail === defaultEmail || superAdminPassword === defaultPassword) {
     console.warn('------------------------------------------------------------');
@@ -185,8 +187,14 @@ async function seedSuperAdmin() {
     },
   });
 
+  const superAdminPinHash = await bcrypt.hash(superAdminPin, 10);
+
   if (existingSuperAdmin) {
-    console.log('Super Admin account already exists. Skipping creation.');
+    await prisma.user.update({
+      where: { id: existingSuperAdmin.id },
+      data: { pin: superAdminPinHash },
+    });
+    console.log('Super Admin account already exists. Updated PIN.');
     return;
   }
 
@@ -196,7 +204,7 @@ async function seedSuperAdmin() {
     data: {
       email: superAdminEmail,
       passwordHash,
-      pin: null,
+      pin: superAdminPinHash,
       role: 'SUPER_ADMIN',
       permissions: [],
       isActive: true,
@@ -227,6 +235,7 @@ async function seedSampleTenant() {
 
   const ownerEmail = process.env.SEED_OWNER_EMAIL;
   const ownerPassword = process.env.SEED_OWNER_PASSWORD;
+  const ownerPin = process.env.SEED_OWNER_PIN ?? '1111';
   if (!ownerEmail || !ownerPassword) {
     throw new Error(
       'SEED_OWNER_EMAIL and SEED_OWNER_PASSWORD must be set in .env.local to seed the sample tenant',
@@ -234,6 +243,7 @@ async function seedSampleTenant() {
   }
 
   const ownerPasswordHash = await bcrypt.hash(ownerPassword, 12);
+  const ownerPinHash = await bcrypt.hash(ownerPin, 10);
 
   const now = new Date();
   const periodEnd = new Date(now);
@@ -262,6 +272,7 @@ async function seedSampleTenant() {
       data: {
         email: ownerEmail,
         passwordHash: ownerPasswordHash,
+        pin: ownerPinHash,
         role: 'OWNER',
         tenantId: tenant.id,
         permissions: [],
@@ -613,6 +624,8 @@ async function seedDemoSales() {
 
   // ── Create 2 cashier users ──
   const cashierPassword = await bcrypt.hash('cashier123!', 12);
+  const cashier1PinHash = await bcrypt.hash('3333', 10);
+  const cashier2PinHash = await bcrypt.hash('4444', 10);
   const cashierPermissions = [
     'sale:create',
     'sale:view',
@@ -629,12 +642,15 @@ async function seedDemoSales() {
     create: {
       email: 'cashier1@velvetpos.dev',
       passwordHash: cashierPassword,
+      pin: cashier1PinHash,
       role: 'CASHIER',
       tenantId,
       permissions: cashierPermissions,
       isActive: true,
     },
-    update: {},
+    update: {
+      pin: cashier1PinHash,
+    },
   });
 
   const cashier2 = await prisma.user.upsert({
@@ -642,12 +658,15 @@ async function seedDemoSales() {
     create: {
       email: 'cashier2@velvetpos.dev',
       passwordHash: cashierPassword,
+      pin: cashier2PinHash,
       role: 'CASHIER',
       tenantId,
       permissions: cashierPermissions,
       isActive: true,
     },
-    update: {},
+    update: {
+      pin: cashier2PinHash,
+    },
   });
 
   const cashiers = [cashier1, cashier2];
@@ -2201,6 +2220,7 @@ async function seedBillingData() {
   // ── 5. Trial demo tenant ────────────────────────────────────────────────────
 
   const trialPasswordHash = await bcrypt.hash('trial-demo-pass!', 12);
+  const trialPinHash = await bcrypt.hash('6666', 10);
 
   let trialTenant = await prisma.tenant.findFirst({ where: { slug: 'trial-demo' } });
   if (!trialTenant) {
@@ -2228,11 +2248,17 @@ async function seedBillingData() {
       data: {
         email: 'demo-trial-owner@velvetpos.dev',
         passwordHash: trialPasswordHash,
+        pin: trialPinHash,
         role: 'OWNER',
         tenantId: trialTenant.id,
         permissions: [],
         isActive: true,
       },
+    });
+  } else {
+    await prisma.user.update({
+      where: { id: existingTrialUser.id },
+      data: { pin: trialPinHash },
     });
   }
 
@@ -2258,6 +2284,7 @@ async function seedBillingData() {
   // ── 6. Suspended demo tenant ────────────────────────────────────────────────
 
   const suspendedPasswordHash = await bcrypt.hash('suspended-demo-pass!', 12);
+  const suspendedPinHash = await bcrypt.hash('7777', 10);
   const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
 
   let suspendedTenant = await prisma.tenant.findFirst({ where: { slug: 'suspended-demo' } });
@@ -2286,11 +2313,17 @@ async function seedBillingData() {
       data: {
         email: 'demo-suspended-owner@velvetpos.dev',
         passwordHash: suspendedPasswordHash,
+        pin: suspendedPinHash,
         role: 'OWNER',
         tenantId: suspendedTenant.id,
         permissions: [],
         isActive: true,
       },
+    });
+  } else {
+    await prisma.user.update({
+      where: { id: existingSuspendedUser.id },
+      data: { pin: suspendedPinHash },
     });
   }
 
