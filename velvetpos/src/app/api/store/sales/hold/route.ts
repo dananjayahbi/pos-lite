@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { HoldSaleSchema } from '@/lib/validators/sale.validators';
-import { createHeldSale } from '@/lib/services/sale.service';
+import { createHeldSale, updateHeldSale } from '@/lib/services/sale.service';
 
 export async function POST(request: Request) {
   try {
@@ -43,10 +43,20 @@ export async function POST(request: Request) {
       );
     }
 
-    const sale = await createHeldSale(tenantId, {
-      ...parsed.data,
-      cashierId: session.user.id,
-    });
+    const inputWithCashier = { ...parsed.data, cashierId: session.user.id };
+
+    // If an existing held sale ID is supplied, update it in-place
+    let sale;
+    if (parsed.data.saleId) {
+      try {
+        sale = await updateHeldSale(tenantId, parsed.data.saleId, inputWithCashier);
+      } catch {
+        // Held sale not found (e.g. already completed) — fall through to create a new one
+        sale = await createHeldSale(tenantId, inputWithCashier);
+      }
+    } else {
+      sale = await createHeldSale(tenantId, inputWithCashier);
+    }
 
     return NextResponse.json(
       {
@@ -67,3 +77,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

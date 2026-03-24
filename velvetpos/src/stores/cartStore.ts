@@ -35,6 +35,9 @@ interface CartState {
   appliedPromoCode: string | null;
   isEvaluatingPromotions: boolean;
 
+  // Held-sale tracking (used to update in-place on re-hold)
+  heldSaleId: string | null;
+
   // Mutators
   addItem: (item: Omit<CartItem, 'discountPercent'>) => void;
   removeItem: (variantId: string) => void;
@@ -53,6 +56,7 @@ interface CartState {
   setAppliedStoreCredit: (amount: string) => void;
   evaluatePromotions: () => void;
   setPromoCode: (code: string | null) => void;
+  setHeldSaleId: (id: string | null) => void;
 }
 
 let promoDebounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -132,6 +136,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   totalPromotionDiscount: '0',
   appliedPromoCode: null,
   isEvaluatingPromotions: false,
+  heldSaleId: null,
 
   addItem: (item) => {
     set((state) => {
@@ -220,6 +225,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       totalPromotionDiscount: '0',
       appliedPromoCode: null,
       isEvaluatingPromotions: false,
+      heldSaleId: null,
     });
     sendCFDUpdate(get(), 'IDLE');
   },
@@ -298,6 +304,9 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   setPromoCode: (code) =>
     set({ appliedPromoCode: code }),
+
+  setHeldSaleId: (id) =>
+    set({ heldSaleId: id }),
 }));
 
 // ── Computed selectors (pure functions, not stored state) ────────────

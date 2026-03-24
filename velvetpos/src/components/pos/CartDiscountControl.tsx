@@ -21,6 +21,8 @@ export function CartDiscountControl() {
   const [mode, setMode] = useState<'percent' | 'fixed'>('percent');
   const [inputValue, setInputValue] = useState('');
   const [pinModalOpen, setPinModalOpen] = useState(false);
+  // Capture discount values when override is requested to prevent race condition
+  const [pendingOverride, setPendingOverride] = useState<{ mode: 'percent' | 'fixed'; value: number } | null>(null);
 
   const role = session?.user?.role;
   const isPrivileged = role != null && PRIVILEGED_ROLES.includes(role);
@@ -44,6 +46,7 @@ export function CartDiscountControl() {
   const handleApply = () => {
     if (exceedsTotal || parsedInput <= 0) return;
     if (needsOverride) {
+      setPendingOverride({ mode, value: parsedInput });
       setPinModalOpen(true);
       return;
     }
@@ -58,8 +61,11 @@ export function CartDiscountControl() {
   };
 
   const handlePinSuccess = (managerId: string) => {
-    setCartDiscount(mode, parsedInput);
+    const override = pendingOverride;
+    if (!override) return;
+    setCartDiscount(override.mode, override.value);
     setAuthorizingManager(managerId);
+    setPendingOverride(null);
     setInputValue('');
   };
 

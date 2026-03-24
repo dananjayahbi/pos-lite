@@ -7,6 +7,7 @@ import { useProductWizardStore } from '@/stores/productWizardStore';
 import { WizardProgressBar } from '@/components/wizard/WizardProgressBar';
 import { WizardStep1BasicInfo } from '@/components/wizard/WizardStep1BasicInfo';
 import { WizardStep2Variants } from '@/components/wizard/WizardStep2Variants';
+import { WizardStep3Review } from '@/components/wizard/WizardStep3Review';
 import { Card } from '@/components/ui/card';
 
 export default function NewProductPage() {
@@ -39,14 +40,7 @@ export default function NewProductPage() {
           <div className="mt-8">
             {step === 1 && <WizardStep1BasicInfo />}
             {step === 2 && <WizardStep2Variants />}
-            {step === 3 && (
-              <div className="text-center text-mist py-12">
-                <p className="font-display text-xl text-espresso">
-                  Step 3: Review
-                </p>
-                <p className="text-sm mt-2">Coming soon</p>
-              </div>
-            )}
+            {step === 3 && <WizardStep3Review />}
           </div>
         </Card>
       </div>

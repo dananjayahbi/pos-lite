@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ShoppingBag, ArchiveRestore, Banknote, CreditCard, Layers, X, Tag } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -87,20 +87,34 @@ export function CartPanel({ shiftId }: CartPanelProps) {
   const appliedCreditDec = new Decimal(appliedStoreCredit);
   const promoDiscountDec = new Decimal(totalPromotionDiscount);
   const amountDue = total.minus(appliedCreditDec).minus(promoDiscountDec).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-  const promoCodeError = skippedPromotions.find((s) => s.promotionId === 'promo_code')?.reason;
+  const promoCodeError = appliedPromoCode
+    ? skippedPromotions.find((s) => !appliedPromotions.some((a) => a.promotionId === s.promotionId))?.reason
+    : undefined;
+
+  // Recap store credit when items change or promotions update
+  useEffect(() => {
+    if (appliedCreditDec.lte(0)) return;
+    const netTotal = total.minus(promoDiscountDec);
+    if (appliedCreditDec.greaterThan(netTotal)) {
+      setAppliedStoreCredit(Decimal.max(0, netTotal).toDecimalPlaces(2).toFixed(2));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [total.toString(), promoDiscountDec.toString()]);
 
   const salePayload: CreateSalePayload = {
     shiftId,
     lines: items.map((item) => ({
       variantId: item.variantId,
       quantity: item.quantity,
-      discountPercent: item.discountPercent,
+      discountPercent: Number(item.discountPercent),
     })),
     cartDiscountAmount: discountEffective.toNumber(),
+    ...(authorizingManagerId ? { authorizingManagerId } : {}),
     ...(authorizingManagerId ? { authorizingManagerId } : {}),
     ...(linkedCustomerId ? { customerId: linkedCustomerId } : {}),
     ...(appliedCreditDec.greaterThan(0) ? { appliedStoreCredit } : {}),
     ...(appliedPromotions.length > 0 ? { appliedPromotions } : {}),
+    ...(appliedPromoCode ? { promoCode: appliedPromoCode } : {}),
   };
 
   const handleSaleComplete = (sale: CompletedSale) => {
@@ -217,7 +231,8 @@ export function CartPanel({ shiftId }: CartPanelProps) {
                   onCheckedChange={(checked) => {
                     if (checked) {
                       const credit = new Decimal(linkedCustomerCreditBalance);
-                      const validAmount = Decimal.min(credit, total).toFixed(2);
+                      const netTotal = total.minus(promoDiscountDec);
+                      const validAmount = Decimal.min(credit, netTotal).toDecimalPlaces(2).toFixed(2);
                       setAppliedStoreCredit(validAmount);
                     } else {
                       setAppliedStoreCredit('0');
@@ -356,7 +371,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  disabled={!hasItems}
+                  disabled={!hasItems || amountDue.lte(0)}
                   className="w-full py-3 rounded-lg bg-espresso text-pearl font-body text-base font-bold hover:bg-espresso/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Charge / Pay

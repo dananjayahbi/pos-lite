@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
+import { signOut } from 'next-auth/react';
 import type { UserRole } from '@/generated/prisma/client';
 import StoreSidebar from '@/components/layout/StoreSidebar';
 import ScreenLockOverlay from '@/components/shared/ScreenLockOverlay';
@@ -37,10 +38,6 @@ export default function StoreLayoutClient({
 
   return (
     <>
-      <div className="fixed right-4 top-4 z-50">
-        <NotificationPopover />
-      </div>
-
       {showSidebar ? (
         <div className="flex min-h-0 flex-1">
           <aside className="hidden w-64 shrink-0 border-r border-mist bg-pearl md:flex">
@@ -52,6 +49,25 @@ export default function StoreLayoutClient({
           </aside>
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {/* Desktop header */}
+            <header className="sticky top-0 z-40 hidden items-center justify-between border-b border-mist bg-pearl/95 px-6 py-3 backdrop-blur-sm md:flex">
+              <div />
+              <div className="flex items-center gap-3">
+                <NotificationPopover />
+                <span className="max-w-[180px] truncate rounded-full bg-linen px-3 py-1 text-xs text-espresso/70">
+                  {userEmail}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void signOut({ callbackUrl: '/login' })}
+                  className="text-xs text-terracotta transition-colors hover:text-espresso"
+                >
+                  Log Out
+                </button>
+              </div>
+            </header>
+
+            {/* Mobile header */}
             <header className="sticky top-0 z-40 flex items-center gap-3 border-b border-mist bg-pearl px-4 py-3 md:hidden">
               <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
                 <SheetTrigger asChild>

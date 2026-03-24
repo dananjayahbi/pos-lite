@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Trash2 } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -65,8 +65,12 @@ export function RetrieveHeldSalesSheet({
 }: RetrieveHeldSalesSheetProps) {
   const queryClient = useQueryClient();
   const replaceCart = useCartStore((s) => s.replaceCart);
+  const evaluatePromotions = useCartStore((s) => s.evaluatePromotions);
+  const setHeldSaleId = useCartStore((s) => s.setHeldSaleId);
   const [confirmSale, setConfirmSale] = useState<HeldSale | null>(null);
   const [saving, setSaving] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['held-sales', shiftId],
@@ -93,15 +97,16 @@ export function RetrieveHeldSalesSheet({
           shiftId,
           lines: state.items.map((i) => ({
             variantId: i.variantId,
-            quantity: i.quantity,
-            discountPercent: i.discountPercent,
+            quantity: Number(i.quantity),
+            discountPercent: Number(i.discountPercent),
             productNameSnapshot: i.productName,
-            variantDescriptionSnapshot: i.variantDescription,
-            sku: i.sku,
-            unitPrice: i.unitPrice,
+            variantDescriptionSnapshot: i.variantDescription || 'Default',
+            sku: i.sku || 'UNKNOWN',
+            unitPrice: Number(i.unitPrice),
           })),
-          cartDiscountAmount: state.cartDiscountAmount,
-          cartDiscountPercent: state.cartDiscountPercent,
+          cartDiscountAmount: Number(state.cartDiscountAmount),
+          cartDiscountPercent: Number(state.cartDiscountPercent),
+          ...(state.heldSaleId ? { saleId: state.heldSaleId } : {}),
         }),
       });
       return res.ok;
@@ -138,17 +143,22 @@ export function RetrieveHeldSalesSheet({
   }
 
   function applyToCart(sale: HeldSale) {
+    // Prisma Decimal fields arrive as strings in JSON; cast to number
     const mapped = sale.lines.map((l) => ({
       variantId: l.variantId,
       productName: l.productNameSnapshot,
-      variantDescription: l.variantDescriptionSnapshot,
-      sku: l.sku,
-      unitPrice: l.unitPrice,
-      quantity: l.quantity,
-      discountPercent: l.discountPercent,
+      variantDescription: l.variantDescriptionSnapshot || 'Default',
+      sku: l.sku || 'UNKNOWN',
+      unitPrice: Number(l.unitPrice),
+      quantity: Number(l.quantity),
+      discountPercent: Number(l.discountPercent),
     }));
 
-    replaceCart(mapped, 0, sale.discountAmount);
+    replaceCart(mapped, 0, Number(sale.discountAmount));
+    setHeldSaleId(sale.id);
+
+    // Re-evaluate promotions so cart totals reflect any active promotions
+    evaluatePromotions();
 
     queryClient.invalidateQueries({ queryKey: ['held-sales-count'] });
     queryClient.invalidateQueries({ queryKey: ['held-sales'] });
@@ -156,6 +166,26 @@ export function RetrieveHeldSalesSheet({
 
     const shortId = sale.id.slice(0, 6).toUpperCase();
     toast.success(`Sale ${shortId} restored to cart`);
+  }
+
+  async function deleteSale(saleId: string) {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/store/sales/${saleId}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error?.message ?? 'Failed to delete held sale');
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: ['held-sales'] });
+      queryClient.invalidateQueries({ queryKey: ['held-sales-count'] });
+      toast.success('Held sale deleted');
+    } catch {
+      toast.error('Network error. Please try again.');
+    } finally {
+      setDeleting(false);
+      setConfirmDeleteId(null);
+    }
   }
 
   return (
@@ -181,25 +211,60 @@ export function RetrieveHeldSalesSheet({
               sales.map((sale) => {
                 const shortId = sale.id.slice(0, 6).toUpperCase();
                 return (
-                  <button
+                  <div
                     key={sale.id}
-                    type="button"
-                    onClick={() => retrieveSale(sale)}
-                    className="w-full text-left rounded-lg border border-mist/50 p-3 hover:border-sand hover:bg-sand/10 transition-colors"
+                    className="w-full rounded-lg border border-mist/50 p-3 hover:border-sand transition-colors"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-sm text-espresso font-semibold">
-                        {shortId}
-                      </span>
-                      <span className="font-body text-xs text-mist">
-                        {relativeTime(sale.createdAt)}
-                      </span>
+                    <div className="flex items-start gap-2">
+                      <button
+                        type="button"
+                        onClick={() => retrieveSale(sale)}
+                        className="flex-1 text-left hover:opacity-80 transition-opacity"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-sm text-espresso font-semibold">
+                            {shortId}
+                          </span>
+                          <span className="font-body text-xs text-mist">
+                            {relativeTime(sale.createdAt)}
+                          </span>
+                        </div>
+                        <p className="font-body text-xs text-espresso/70 mt-1">
+                          {sale.lines.length} item{sale.lines.length !== 1 ? 's' : ''}{' '}
+                          &bull; {formatRupee(sale.totalAmount)}
+                        </p>
+                      </button>
+
+                      {confirmDeleteId === sale.id ? (
+                        <div className="flex gap-1 shrink-0 items-center">
+                          <button
+                            type="button"
+                            disabled={deleting}
+                            onClick={() => deleteSale(sale.id)}
+                            className="px-2 py-1 text-xs rounded bg-red-600 text-white font-body hover:bg-red-700 disabled:opacity-50"
+                          >
+                            {deleting ? '…' : 'Confirm'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="px-2 py-1 text-xs rounded border border-mist/50 text-espresso font-body hover:bg-sand/20"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(sale.id)}
+                          className="shrink-0 p-1 rounded text-mist hover:text-red-500 hover:bg-red-50 transition-colors"
+                          title="Delete held sale"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
-                    <p className="font-body text-xs text-espresso/70 mt-1">
-                      {sale.lines.length} item{sale.lines.length !== 1 ? 's' : ''}{' '}
-                      &bull; {formatRupee(sale.totalAmount)}
-                    </p>
-                  </button>
+                  </div>
                 );
               })
             )}

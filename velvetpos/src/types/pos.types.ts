@@ -13,6 +13,7 @@ export interface CreateSalePayload {
   customerId?: string | undefined;
   appliedStoreCredit?: string | undefined;
   appliedPromotions?: unknown | undefined;
+  promoCode?: string | undefined;
 }
 
 /** Sale object returned by POST /api/store/sales on success */

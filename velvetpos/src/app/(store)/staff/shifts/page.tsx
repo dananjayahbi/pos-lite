@@ -40,7 +40,7 @@ interface ShiftRow {
   openedAt: string;
   closedAt: string | null;
   openingFloat: number | string;
-  cashier: { id: string; email: string; role: string };
+  cashier: { id: string; email: string; role: string } | null;
   closure?: {
     expectedCash?: number | string;
     cashDifference?: number | string;
@@ -324,8 +324,8 @@ export default function StaffShiftsPage() {
                   <TableRow key={shift.id}>
                     <TableCell>
                       <div>
-                        <p className="font-medium text-espresso">{shift.cashier.email}</p>
-                        <p className="text-xs uppercase tracking-[0.2em] text-sand">{shift.cashier.role.replace(/_/g, ' ')}</p>
+                        <p className="font-medium text-espresso">{shift.cashier?.email ?? '—'}</p>
+                        <p className="text-xs uppercase tracking-[0.2em] text-sand">{shift.cashier?.role.replace(/_/g, ' ') ?? ''}</p>
                       </div>
                     </TableCell>
                     <TableCell>

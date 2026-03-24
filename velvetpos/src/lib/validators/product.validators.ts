@@ -129,7 +129,7 @@ export const ProductListQuerySchema = z.object({
     .string()
     .default('20')
     .transform(Number)
-    .pipe(z.number().int().positive().max(100)),
+    .pipe(z.number().int().positive().max(1000)),
 });
 
 // ── Stock Adjustment Schema ──────────────────────────────────────────────────

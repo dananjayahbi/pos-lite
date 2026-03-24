@@ -303,11 +303,18 @@ export default function StoreSidebar({
                   {visibleItems.map((item) => {
                     const isActive = isActivePath(pathname, item.href, item.match);
 
+                    const isPosLink =
+                      item.href === '/pos' &&
+                      (userRole === 'OWNER' || userRole === 'MANAGER');
+
                     return (
                       <li key={item.href}>
                         <Link
                           href={item.href}
                           {...(onNavigate ? { onClick: onNavigate } : {})}
+                          {...(isPosLink
+                            ? { target: '_blank', rel: 'noopener noreferrer' }
+                            : {})}
                           className={`block rounded-r-md border-l-[3px] px-3 py-2 text-sm font-medium transition-colors ${
                             isActive
                               ? 'border-terracotta bg-linen text-espresso'

@@ -19,7 +19,7 @@ export function ProductGrid() {
   const [scanNotification, setScanNotification] = useState<{ type: 'success' | 'warning' | 'error'; message: string } | null>(null);
 
   const addItem = useCartStore((s) => s.addItem);
-  const { data, isLoading } = usePOSProducts();
+  const { data, isLoading, isError } = usePOSProducts();
 
   // Barcode scanner integration
   const handleScan = useCallback((productName: string, variantDescription: string) => {
@@ -133,6 +133,11 @@ export function ProductGrid() {
             {Array.from({ length: 8 }).map((_, i) => (
               <Skeleton key={i} className="h-[165px] rounded-lg bg-linen" />
             ))}
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center justify-center h-full text-mist">
+            <ShoppingBag className="h-12 w-12 mb-2" />
+            <p className="font-body text-sm">Failed to load products. Please refresh.</p>
           </div>
         ) : filteredProducts.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-mist">

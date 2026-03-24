@@ -452,6 +452,112 @@ export async function createHeldSale(
 
 // ── Void Sale ────────────────────────────────────────────────────────────────
 
+export async function updateHeldSale(
+  tenantId: string,
+  saleId: string,
+  input: HoldSaleInput & { cashierId: string },
+) {
+  return prisma.$transaction(async (tx: TxClient) => {
+    const existing = await tx.sale.findFirst({
+      where: { id: saleId, tenantId, status: 'OPEN' },
+    });
+    if (!existing) throw new Error('Held sale not found or already completed');
+
+    const lineData = input.lines.map((line) => {
+      const unitPrice = new Decimal(line.unitPrice);
+      const quantity = new Decimal(line.quantity);
+      const discountPercent = new Decimal(line.discountPercent);
+      const lineTotalBeforeDiscount = unitPrice
+        .mul(quantity)
+        .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      const discountAmount = lineTotalBeforeDiscount
+        .mul(discountPercent)
+        .div(100)
+        .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      const lineTotalAfterDiscount = lineTotalBeforeDiscount
+        .minus(discountAmount)
+        .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+      return {
+        variantId: line.variantId,
+        productNameSnapshot: line.productNameSnapshot,
+        variantDescriptionSnapshot: line.variantDescriptionSnapshot,
+        sku: line.sku,
+        unitPrice: unitPrice.toNumber(),
+        quantity: line.quantity,
+        discountPercent: discountPercent.toNumber(),
+        discountAmount: discountAmount.toNumber(),
+        lineTotalBeforeDiscount: lineTotalBeforeDiscount.toNumber(),
+        lineTotalAfterDiscount: lineTotalAfterDiscount.toNumber(),
+      };
+    });
+
+    const subtotal = lineData
+      .reduce((sum, l) => sum.plus(l.lineTotalAfterDiscount), new Decimal(0))
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+    let cartDiscount: Decimal;
+    if (input.cartDiscountPercent > 0) {
+      cartDiscount = subtotal
+        .mul(input.cartDiscountPercent)
+        .div(100)
+        .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    } else {
+      cartDiscount = new Decimal(input.cartDiscountAmount);
+    }
+
+    const totalAmount = subtotal
+      .minus(cartDiscount)
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+    // Replace lines atomically
+    await tx.saleLine.deleteMany({ where: { saleId: existing.id } });
+
+    const sale = await tx.sale.update({
+      where: { id: existing.id },
+      data: {
+        subtotal: subtotal.toNumber(),
+        discountAmount: cartDiscount.toNumber(),
+        taxAmount: 0,
+        totalAmount: totalAmount.toNumber(),
+        updatedAt: new Date(),
+        lines: {
+          create: lineData.map((l) => ({
+            variantId: l.variantId,
+            productNameSnapshot: l.productNameSnapshot,
+            variantDescriptionSnapshot: l.variantDescriptionSnapshot,
+            sku: l.sku,
+            unitPrice: l.unitPrice,
+            quantity: l.quantity,
+            discountPercent: l.discountPercent,
+            discountAmount: l.discountAmount,
+            lineTotalBeforeDiscount: l.lineTotalBeforeDiscount,
+            lineTotalAfterDiscount: l.lineTotalAfterDiscount,
+          })),
+        },
+      },
+      include: { lines: true },
+    });
+
+    return sale;
+  });
+}
+
+export async function deleteHeldSale(tenantId: string, saleId: string) {
+  const sale = await prisma.sale.findFirst({
+    where: { id: saleId, tenantId, status: 'OPEN' },
+  });
+
+  if (!sale) {
+    throw new Error('Held sale not found');
+  }
+
+  await prisma.$transaction([
+    prisma.saleLine.deleteMany({ where: { saleId } }),
+    prisma.sale.delete({ where: { id: saleId } }),
+  ]);
+}
+
 export async function voidSale(tenantId: string, saleId: string, actorId: string) {
   const result = await prisma.$transaction(async (tx: TxClient) => {
     const sale = await tx.sale.findFirst({

@@ -14,13 +14,16 @@ interface OfflineSyncState {
 const MAX_RETRIES = 3;
 
 export function useOfflineSync(): OfflineSyncState {
-  const [isOnline, setIsOnline] = useState(() =>
-    typeof navigator !== 'undefined' ? navigator.onLine : true,
-  );
+  const [isOnline, setIsOnline] = useState(true); // always start as online (safe SSR default)
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasPendingSale, setHasPendingSale] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const prevOnlineRef = useRef(isOnline);
+
+  // Sync initial value from navigator.onLine after hydration
+  useEffect(() => {
+    setIsOnline(navigator.onLine);
+  }, []);
 
   // Check for pending sales on mount
   const checkPending = useCallback(async () => {

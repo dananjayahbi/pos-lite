@@ -15,6 +15,7 @@ export function HoldSaleButton({ shiftId }: HoldSaleButtonProps) {
   const cartDiscountAmount = useCartStore((s) => s.cartDiscountAmount);
   const authorizingManagerId = useCartStore((s) => s.authorizingManagerId);
   const clearCart = useCartStore((s) => s.clearCart);
+  const heldSaleId = useCartStore((s) => s.heldSaleId);
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
 
@@ -36,15 +37,16 @@ export function HoldSaleButton({ shiftId }: HoldSaleButtonProps) {
           shiftId,
           lines: items.map((i) => ({
             variantId: i.variantId,
-            quantity: i.quantity,
-            discountPercent: i.discountPercent,
+            quantity: Number(i.quantity),
+            discountPercent: Number(i.discountPercent),
             productNameSnapshot: i.productName,
-            variantDescriptionSnapshot: i.variantDescription,
-            sku: i.sku,
-            unitPrice: i.unitPrice,
+            variantDescriptionSnapshot: i.variantDescription || 'Default',
+            sku: i.sku || 'UNKNOWN',
+            unitPrice: Number(i.unitPrice),
           })),
-          cartDiscountAmount,
-          cartDiscountPercent,
+          cartDiscountAmount: Number(cartDiscountAmount),
+          cartDiscountPercent: Number(cartDiscountPercent),
+          ...(heldSaleId ? { saleId: heldSaleId } : {}),
         }),
       });
 

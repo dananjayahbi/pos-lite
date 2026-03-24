@@ -19,6 +19,7 @@ export const CreateSaleSchema = z.object({
   customerId: z.string().min(1).optional(),
   appliedStoreCredit: z.string().optional().default('0'),
   appliedPromotions: z.any().optional(),
+  promoCode: z.string().max(50).optional(),
 }).superRefine((data, ctx) => {
   if (data.paymentMethod === 'CASH') {
     if (data.cashReceived === undefined || data.cashReceived <= 0) {
@@ -62,6 +63,7 @@ const HoldSaleLineSchema = z.object({
 });
 
 export const HoldSaleSchema = z.object({
+  saleId: z.string().optional(),
   shiftId: z.string().min(1),
   lines: z.array(HoldSaleLineSchema).min(1),
   cartDiscountAmount: z.number().min(0).default(0),
