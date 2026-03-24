@@ -72,7 +72,7 @@ export function SaleDetailModal({
   if (!sale) return null;
 
   const shortId = sale.id.slice(0, 8).toUpperCase();
-  const lineDiscountTotal = sale.lines.reduce(
+  const lineDiscountTotal = (sale.lines ?? []).reduce(
     (sum, l) => sum + l.discountAmount,
     0,
   );
@@ -127,7 +127,7 @@ export function SaleDetailModal({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sale.lines.map((line, idx) => (
+            {(sale.lines ?? []).map((line, idx) => (
               <TableRow
                 key={line.id}
                 className={idx % 2 === 0 ? 'bg-linen/30' : 'bg-pearl'}

@@ -178,7 +178,7 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
           <SheetTitle className="font-display text-espresso">Process Return</SheetTitle>
         </SheetHeader>
 
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto py-4 pr-1">
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
           {/* Sale lookup */}
           <div>
             <Label htmlFor="sale-id-input" className="mb-1.5 block text-xs font-semibold text-espresso">

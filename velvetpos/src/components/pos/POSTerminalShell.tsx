@@ -63,7 +63,6 @@ export function POSTerminalShell({
   children,
 }: POSTerminalShellProps) {
   const [closeModalOpen, setCloseModalOpen] = useState(false);
-  const [returningToLogin, setReturningToLogin] = useState(false);
   const { isOnline, isSyncing } = useOfflineSync();
 
   return (
@@ -116,18 +115,7 @@ export function POSTerminalShell({
               <span className="hidden sm:inline">Dashboard</span>
             </Link>
           )}
-          <button
-            type="button"
-            onClick={async () => {
-              setReturningToLogin(true);
-              await signOut({ callbackUrl: '/login' });
-            }}
-            disabled={returningToLogin}
-            className="inline-flex items-center gap-1 rounded-md border border-terracotta/40 px-2 py-1 text-xs font-medium text-terracotta transition-colors hover:border-pearl hover:text-pearl disabled:cursor-not-allowed disabled:opacity-60"
-            aria-label="Back to login"
-          >
-            <span>{returningToLogin ? 'Opening…' : 'Login'}</span>
-          </button>
+
           <Link
             href="/pos/returns"
             className="text-terracotta hover:text-pearl transition-colors p-1.5"

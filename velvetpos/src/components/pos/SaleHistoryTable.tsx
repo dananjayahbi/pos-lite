@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, Ban, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
+import { Eye, Ban, ChevronLeft, ChevronRight, RotateCcw, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatRupee } from '@/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -123,6 +123,16 @@ export function SaleHistoryTable() {
 
   // Return wizard
   const [returnSaleId, setReturnSaleId] = useState<string | null>(null);
+
+  // Copy ID feedback
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  function copyToClipboard(id: string) {
+    void navigator.clipboard.writeText(id).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((prev) => (prev === id ? null : prev)), 1500);
+    });
+  }
 
   // Void dialog
   const [voidSaleTarget, setVoidSaleTarget] = useState<Sale | null>(null);
@@ -267,7 +277,7 @@ export function SaleHistoryTable() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="font-body text-xs">Ref</TableHead>
+              <TableHead className="font-body text-xs">Sale ID</TableHead>
               <TableHead className="font-body text-xs">Time</TableHead>
               <TableHead className="font-body text-xs text-center">
                 Items
@@ -286,14 +296,29 @@ export function SaleHistoryTable() {
             {filteredSales.map((sale) => (
               <TableRow key={sale.id} className="hover:bg-linen/50">
                 <TableCell>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedSaleId(sale.id)}
-                    className="font-mono text-xs text-espresso hover:text-terracotta transition-colors"
-                    title={sale.id}
-                  >
-                    {getShortId(sale.id)}
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSaleId(sale.id)}
+                      className="font-mono text-xs text-espresso hover:text-terracotta transition-colors"
+                      title="Click to view sale details"
+                    >
+                      {sale.id}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(sale.id)}
+                      className="shrink-0 p-0.5 text-mist hover:text-espresso transition-colors"
+                      aria-label="Copy sale ID"
+                      title="Copy sale ID"
+                    >
+                      {copiedId === sale.id ? (
+                        <Check className="h-3 w-3 text-[#2D6A4F]" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                    </button>
+                  </div>
                 </TableCell>
                 <TableCell className="font-body text-xs text-espresso">
                   {formatTime(sale.createdAt)}
