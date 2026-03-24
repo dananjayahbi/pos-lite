@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { CloseShiftSchema } from '@/lib/validators/shift.validators';
 import { closeShift } from '@/lib/services/shift.service';
+import { prisma } from '@/lib/prisma';
 
 export async function POST(_request: Request, props: { params: Promise<{ id: string }> }) {
   try {
@@ -49,6 +50,34 @@ export async function POST(_request: Request, props: { params: Promise<{ id: str
       closingCashCount: parsed.data.closingCashCount,
       ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes } : {}),
     });
+
+    // Notification side-effect — non-blocking
+    try {
+      const recipients = await prisma.user.findMany({
+        where: { tenantId, role: { in: ['OWNER', 'MANAGER'] }, isActive: true, deletedAt: null },
+        select: { id: true },
+      });
+      if (recipients.length > 0) {
+        const closure = result.closure;
+        const totalSales = closure?.totalSalesCount ?? 0;
+        const difference = closure?.cashDifference !== undefined
+          ? Number(closure.cashDifference).toFixed(2)
+          : '0.00';
+        await prisma.notificationRecord.createMany({
+          data: recipients.map((r) => ({
+            tenantId,
+            recipientId: r.id,
+            type: 'SHIFT_CLOSED' as const,
+            title: 'Shift Closed',
+            body: `A shift was closed with ${totalSales} sale${totalSales !== 1 ? 's' : ''}. Cash difference: Rs. ${difference}.`,
+            relatedEntityType: 'Shift',
+            relatedEntityId: id,
+          })),
+        });
+      }
+    } catch (notifError) {
+      console.warn('Shift close notification creation failed:', notifError);
+    }
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {

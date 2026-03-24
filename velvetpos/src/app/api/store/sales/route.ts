@@ -117,6 +117,30 @@ export async function POST(request: Request) {
       console.warn('Commission record creation failed:', commissionError);
     }
 
+    // Notification side-effect — non-blocking
+    try {
+      const recipients = await prisma.user.findMany({
+        where: { tenantId, role: { in: ['OWNER', 'MANAGER'] }, isActive: true, deletedAt: null },
+        select: { id: true },
+      });
+      if (recipients.length > 0) {
+        const shortId = sale.id.slice(0, 8).toUpperCase();
+        await prisma.notificationRecord.createMany({
+          data: recipients.map((r) => ({
+            tenantId,
+            recipientId: r.id,
+            type: 'SALE_COMPLETED' as const,
+            title: 'Sale Completed',
+            body: `Sale #${shortId} completed for Rs. ${Number(sale.totalAmount).toFixed(2)}.`,
+            relatedEntityType: 'Sale',
+            relatedEntityId: sale.id,
+          })),
+        });
+      }
+    } catch (notifError) {
+      console.warn('Sale notification creation failed:', notifError);
+    }
+
     return NextResponse.json({ success: true, data: sale }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';

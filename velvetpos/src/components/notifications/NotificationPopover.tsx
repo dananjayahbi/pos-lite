@@ -8,6 +8,9 @@ import {
   CheckCircle2,
   XCircle,
   Info,
+  ShoppingCart,
+  RotateCcw,
+  Clock,
 } from 'lucide-react';
 import {
   Popover,
@@ -40,6 +43,9 @@ const TYPE_ICONS: Record<string, typeof Bell> = {
   STOCK_TAKE_APPROVED: CheckCircle2,
   STOCK_TAKE_REJECTED: XCircle,
   SYSTEM_ALERT: Info,
+  SALE_COMPLETED: ShoppingCart,
+  RETURN_PROCESSED: RotateCcw,
+  SHIFT_CLOSED: Clock,
 };
 
 function getNotificationHref(type: string, relatedEntityId: string | null): string | null {
@@ -52,6 +58,12 @@ function getNotificationHref(type: string, relatedEntityId: string | null): stri
       return relatedEntityId
         ? `/stock-control/stock-takes/${relatedEntityId}/review`
         : null;
+    case 'SALE_COMPLETED':
+      return '/sales';
+    case 'RETURN_PROCESSED':
+      return '/returns';
+    case 'SHIFT_CLOSED':
+      return relatedEntityId ? `/staff/shifts/${relatedEntityId}` : '/staff/shifts';
     default:
       return null;
   }

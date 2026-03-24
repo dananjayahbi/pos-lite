@@ -22,6 +22,7 @@ interface ShiftCloseModalProps {
 }
 
 interface ShiftSummary {
+  openingFloat: number;
   expectedCash: number;
 }
 
@@ -68,8 +69,9 @@ export function ShiftCloseModal({
         if (res.ok) {
           const json = await res.json();
           const data = json.data;
+          const openingFloat = toNumber(data.openingFloat);
           const expectedCash = toNumber(data.expectedCash);
-          setSummary({ expectedCash });
+          setSummary({ openingFloat, expectedCash });
         }
       } catch {
         // Non-critical — summary is a convenience preview
@@ -192,8 +194,23 @@ export function ShiftCloseModal({
           {summary && (
             <div className="rounded-lg bg-linen p-3 space-y-1 text-sm font-body">
               <div className="flex justify-between">
-                <span className="text-espresso/70">Expected cash</span>
+                <span className="text-espresso/70">Opening float</span>
                 <span className="text-espresso font-mono">
+                  {formatRupee(summary.openingFloat)}
+                </span>
+              </div>
+              {summary.expectedCash !== summary.openingFloat && (
+                <div className="flex justify-between">
+                  <span className="text-espresso/70">Cash sales / adjustments</span>
+                  <span className="text-espresso font-mono">
+                    {summary.expectedCash - summary.openingFloat >= 0 ? '+' : ''}
+                    {formatRupee(summary.expectedCash - summary.openingFloat)}
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-mist/40 pt-1 mt-1">
+                <span className="text-espresso/70">Expected cash</span>
+                <span className="text-espresso font-mono font-semibold">
                   {formatRupee(summary.expectedCash)}
                 </span>
               </div>

@@ -78,6 +78,30 @@ export async function POST(request: Request) {
       console.warn('Negative commission record creation failed:', commissionError);
     }
 
+    // Notification side-effect — non-blocking
+    try {
+      const recipients = await prisma.user.findMany({
+        where: { tenantId, role: { in: ['OWNER', 'MANAGER'] }, isActive: true, deletedAt: null },
+        select: { id: true },
+      });
+      if (recipients.length > 0) {
+        const shortId = data.originalSaleId.slice(0, 8).toUpperCase();
+        await prisma.notificationRecord.createMany({
+          data: recipients.map((r) => ({
+            tenantId,
+            recipientId: r.id,
+            type: 'RETURN_PROCESSED' as const,
+            title: 'Return Processed',
+            body: `A return was processed for sale #${shortId} via ${data.refundMethod.replace('_', ' ').toLowerCase()}.`,
+            relatedEntityType: 'SaleReturn',
+            relatedEntityId: result.id,
+          })),
+        });
+      }
+    } catch (notifError) {
+      console.warn('Return notification creation failed:', notifError);
+    }
+
     return NextResponse.json({ success: true, data: result }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'An unexpected error occurred';

@@ -218,7 +218,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
           <SheetTitle className="font-display text-espresso">Record Sale</SheetTitle>
         </SheetHeader>
 
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto py-4 pr-1">
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
           {/* Shift status */}
           {!shiftLoading && !hasOpenShift && (
             <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
