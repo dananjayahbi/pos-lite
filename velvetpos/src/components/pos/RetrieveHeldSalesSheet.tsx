@@ -123,7 +123,7 @@ export function RetrieveHeldSalesSheet({
       return;
     }
 
-    applyToCart(sale);
+    await applyToCart(sale);
   }
 
   async function handleConfirmRetrieve() {
@@ -138,11 +138,11 @@ export function RetrieveHeldSalesSheet({
       return;
     }
 
-    applyToCart(confirmSale);
+    await applyToCart(confirmSale);
     setConfirmSale(null);
   }
 
-  function applyToCart(sale: HeldSale) {
+  async function applyToCart(sale: HeldSale) {
     // Prisma Decimal fields arrive as strings in JSON; cast to number
     const mapped = sale.lines.map((l) => ({
       variantId: l.variantId,
@@ -155,10 +155,15 @@ export function RetrieveHeldSalesSheet({
     }));
 
     replaceCart(mapped, 0, Number(sale.discountAmount));
-    setHeldSaleId(sale.id);
+    setHeldSaleId(null);
 
     // Re-evaluate promotions so cart totals reflect any active promotions
     evaluatePromotions();
+
+    // Delete the held sale so it is removed from the list
+    await fetch(`/api/store/sales/${sale.id}`, { method: 'DELETE' }).catch(() => {
+      // Non-fatal: cart is already restored; invalidate will remove stale data
+    });
 
     queryClient.invalidateQueries({ queryKey: ['held-sales-count'] });
     queryClient.invalidateQueries({ queryKey: ['held-sales'] });

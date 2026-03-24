@@ -40,8 +40,12 @@ export function VariantSelectionModal({
     setQuantity(1);
   }, [productId]);
 
-  const cachedData = queryClient.getQueryData<{ data: ProductListItem[] }>(['pos-products']);
-  const product = cachedData?.data?.find((p) => p.id === productId) ?? null;
+  // Search all cached pos-products pages (new server-side pagination uses keyed queries)
+  const cachedEntries = queryClient.getQueriesData<{ data: ProductListItem[]; success: boolean }>({
+    queryKey: ['pos-products'],
+  });
+  const product =
+    cachedEntries.flatMap(([, data]) => data?.data ?? []).find((p) => p.id === productId) ?? null;
   const variants = product?.variants ?? [];
 
   const sizes = useMemo(
@@ -77,6 +81,8 @@ export function VariantSelectionModal({
   return (
     <Dialog open={productId !== null} onOpenChange={() => onClose()}>
       <DialogContent className="sm:max-w-md" showCloseButton={false}>
+        {/* Accessible title always present for screen readers */}
+        <DialogTitle className="sr-only">{product?.name ?? 'Select variant'}</DialogTitle>
         {product && (
           <>
             {/* Header */}
@@ -88,9 +94,9 @@ export function VariantSelectionModal({
                   </div>
                 )}
                 <div className="min-w-0">
-                  <DialogTitle className="font-display text-lg text-espresso truncate">
+                  <h2 className="font-display text-lg text-espresso truncate leading-snug">
                     {product.name}
-                  </DialogTitle>
+                  </h2>
                   {displayVariant && (
                     <p className="font-mono text-lg text-terracotta">
                       {formatRupee(displayVariant.retailPrice)}
