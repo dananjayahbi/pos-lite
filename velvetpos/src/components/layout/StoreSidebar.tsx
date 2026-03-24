@@ -11,6 +11,7 @@ interface NavItem {
   href: string;
   roles?: UserRole[];
   permission?: PermissionKey;
+  match?: 'exact' | 'prefix';
 }
 
 interface NavGroup {
@@ -33,11 +34,31 @@ const navGroups: NavGroup[] = [
         name: 'Dashboard',
         href: '/dashboard',
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
+        match: 'exact',
       },
       {
         name: 'POS Terminal',
         href: '/pos',
         permission: PERMISSIONS.SALE.createSale,
+        match: 'exact',
+      },
+      {
+        name: 'Sales',
+        href: '/sales',
+        roles: ['OWNER', 'MANAGER', 'CASHIER'],
+        permission: PERMISSIONS.SALE.viewSale,
+      },
+      {
+        name: 'Returns',
+        href: '/returns',
+        roles: ['OWNER', 'MANAGER', 'CASHIER'],
+        permission: PERMISSIONS.SALE.viewSale,
+      },
+      {
+        name: 'Shifts',
+        href: '/staff/shifts',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.STAFF.viewShift,
       },
       {
         name: 'Notifications',
@@ -55,10 +76,41 @@ const navGroups: NavGroup[] = [
         permission: PERMISSIONS.PRODUCT.viewProduct,
       },
       {
+        name: 'Purchase Orders',
+        href: '/suppliers/purchase-orders',
+        roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
+        permission: PERMISSIONS.SUPPLIER.viewSupplier,
+      },
+      {
         name: 'Stock Control',
         href: '/stock-control',
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.STOCK.viewStock,
+        match: 'exact',
+      },
+      {
+        name: 'Low Stock',
+        href: '/stock-control/low-stock',
+        roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
+        permission: PERMISSIONS.STOCK.viewStock,
+      },
+      {
+        name: 'Stock Movements',
+        href: '/stock-control/movements',
+        roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
+        permission: PERMISSIONS.STOCK.viewStock,
+      },
+      {
+        name: 'Stock Takes',
+        href: '/stock-control/stock-takes',
+        roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
+        permission: PERMISSIONS.STOCK.conductStockTake,
+      },
+      {
+        name: 'Stock Valuation',
+        href: '/stock-control/valuation',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.STOCK.viewStockValuation,
       },
       {
         name: 'Customers',
@@ -67,16 +119,30 @@ const navGroups: NavGroup[] = [
         permission: PERMISSIONS.CUSTOMER.viewCustomer,
       },
       {
+        name: 'Customer Broadcast',
+        href: '/customers/broadcast',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.CUSTOMER.viewCustomer,
+        match: 'exact',
+      },
+      {
         name: 'Suppliers',
         href: '/suppliers',
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.SUPPLIER.viewSupplier,
+        match: 'exact',
       },
       {
         name: 'Staff',
         href: '/staff',
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.STAFF.viewStaff,
+      },
+      {
+        name: 'Attendance',
+        href: '/staff/timeclock',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.STAFF.viewAttendance,
       },
     ],
   },
@@ -94,6 +160,25 @@ const navGroups: NavGroup[] = [
         href: '/expenses',
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.EXPENSE.viewExpense,
+        match: 'exact',
+      },
+      {
+        name: 'Cash Flow',
+        href: '/expenses/cash-flow',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.REPORT.viewCashflowReport,
+      },
+      {
+        name: 'Staff Commissions',
+        href: '/staff/commissions',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.STAFF.viewStaff,
+      },
+      {
+        name: 'Returns Analytics',
+        href: '/reports/return-rate',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.REPORT.viewSalesReport,
       },
       {
         name: 'Reports',
@@ -113,9 +198,28 @@ const navGroups: NavGroup[] = [
         permission: PERMISSIONS.BILLING.viewBilling,
       },
       {
+        name: 'Store Profile',
+        href: '/settings/store',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.SETTINGS.manageStoreProfile,
+      },
+      {
+        name: 'Taxes',
+        href: '/settings/taxes',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.SETTINGS.manageTax,
+      },
+      {
+        name: 'Team & Permissions',
+        href: '/settings/users',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.SETTINGS.manageUsers,
+      },
+      {
         name: 'Hardware',
         href: '/settings/hardware',
         roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.SETTINGS.manageHardware,
       },
       {
         name: 'Webhooks',
@@ -126,6 +230,12 @@ const navGroups: NavGroup[] = [
         name: 'Audit Log',
         href: '/settings/audit-log',
         roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.SETTINGS.viewSettings,
+      },
+      {
+        name: 'My Account',
+        href: '/settings/account',
+        roles: ['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK'],
       },
     ],
   },
@@ -143,7 +253,11 @@ function canAccessItem(item: NavItem, userRole: UserRole, permissions: string[])
   return true;
 }
 
-function isActivePath(pathname: string, href: string): boolean {
+function isActivePath(pathname: string, href: string, match: 'exact' | 'prefix' = 'prefix'): boolean {
+  if (match === 'exact') {
+    return pathname === href;
+  }
+
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -187,7 +301,7 @@ export default function StoreSidebar({
                 </p>
                 <ul className="space-y-1">
                   {visibleItems.map((item) => {
-                    const isActive = isActivePath(pathname, item.href);
+                    const isActive = isActivePath(pathname, item.href, item.match);
 
                     return (
                       <li key={item.href}>

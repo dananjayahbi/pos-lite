@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { createHmac } from 'crypto';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { deliverWebhook } from '@/lib/webhooks/send';
 
 export async function POST(
   _request: Request,
@@ -46,49 +46,12 @@ export async function POST(
 
     const event = 'test.ping';
     const payload = { message: 'Test webhook delivery', timestamp: new Date().toISOString() };
-    const body = JSON.stringify({ event, payload, timestamp: new Date().toISOString() });
-
-    const signature = createHmac('sha256', endpoint.secret)
-      .update(body)
-      .digest('hex');
-
-    let status: 'SUCCESS' | 'FAILED' = 'FAILED';
-    let statusCode: number | null = null;
-    let responseText: string | null = null;
-
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-
-      const res = await fetch(endpoint.url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Webhook-Signature': signature,
-          'X-Webhook-Event': event,
-        },
-        body,
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeout);
-
-      statusCode = res.status;
-      responseText = await res.text().catch(() => null);
-      status = res.ok ? 'SUCCESS' : 'FAILED';
-    } catch (err) {
-      responseText = err instanceof Error ? err.message : 'Unknown error';
-    }
-
-    const delivery = await prisma.webhookDelivery.create({
-      data: {
-        webhookEndpointId: endpoint.id,
-        event,
-        payload: payload as object,
-        statusCode,
-        response: responseText?.slice(0, 1000) ?? null,
-        status,
-      },
+    const delivery = await deliverWebhook({
+      webhookEndpointId: endpoint.id,
+      url: endpoint.url,
+      secret: endpoint.secret,
+      event,
+      payload,
     });
 
     return NextResponse.json({
@@ -97,6 +60,7 @@ export async function POST(
         deliveryId: delivery.id,
         status: delivery.status,
         statusCode: delivery.statusCode,
+        attemptedAt: delivery.attemptedAt,
       },
     });
   } catch (error) {

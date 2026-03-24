@@ -120,7 +120,7 @@ export function BroadcastPageClient() {
         toast.error(`Broadcast failed. 0/${total} delivered.`);
       }
 
-      router.push('/customers');
+      router.push('/customers/broadcast/history');
     } catch {
       toast.error('An unexpected error occurred');
     } finally {
@@ -144,6 +144,11 @@ export function BroadcastPageClient() {
           <p className="text-sm text-sand mt-0.5">
             Send targeted WhatsApp messages to your customers
           </p>
+        </div>
+        <div className="ml-auto">
+          <Button variant="outline" asChild>
+            <Link href="/customers/broadcast/history">View Delivery Analytics</Link>
+          </Button>
         </div>
       </div>
 

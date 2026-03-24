@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { ChevronDown, ChevronRight, Pencil, Trash2, Package, Printer } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, Trash2, Package, Printer, Plus } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -24,7 +24,9 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { VariantEditSheet } from '@/components/product/VariantEditSheet';
+import { VariantCreateSheet } from '@/components/product/VariantCreateSheet';
 import { BarcodeLabelDialog, type LabelVariant } from '@/components/inventory/BarcodeLabelDialog';
+import { formatRupee } from '@/lib/format';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,7 +75,7 @@ function formatPrice(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return '—';
   const num = typeof value === 'string' ? parseFloat(value) : value;
   if (isNaN(num)) return '—';
-  return num.toLocaleString('en-ZA', { style: 'currency', currency: 'ZAR' });
+  return formatRupee(num);
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -83,12 +85,14 @@ export function VariantsTab({ productId, variants, permissions, productName, bra
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Variant | null>(null);
   const [editTarget, setEditTarget] = useState<Variant | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const [selectedVariantIds, setSelectedVariantIds] = useState<Set<string>>(new Set());
   const [labelDialogOpen, setLabelDialogOpen] = useState(false);
 
   const canViewCost = permissions.includes('product:view_cost_price');
   const canEdit = permissions.includes('product:edit');
   const canDelete = permissions.includes('product:delete');
+  const canCreate = permissions.includes('product:create');
 
   const deleteMutation = useMutation({
     mutationFn: async (variantId: string) => {
@@ -162,7 +166,16 @@ export function VariantsTab({ productId, variants, permissions, productName, bra
   return (
     <>
       {/* Toolbar */}
-      <div className="flex items-center justify-end mb-3">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        {canCreate ? (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add Variant
+          </Button>
+        ) : (
+          <span />
+        )}
+
         <Button
           variant="outline"
           className="border-sand text-sand"
@@ -253,6 +266,12 @@ export function VariantsTab({ productId, variants, permissions, productName, bra
         onClose={() => setEditTarget(null)}
         variant={editTarget}
         permissions={permissions}
+        productId={productId}
+      />
+
+      <VariantCreateSheet
+        isOpen={createOpen}
+        onClose={() => setCreateOpen(false)}
         productId={productId}
       />
 

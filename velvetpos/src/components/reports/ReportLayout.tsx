@@ -85,6 +85,7 @@ function getNavItems(): NavItem[] {
     { label: "Customer Analytics", href: "/reports/customer-analytics" },
     { label: "Staff Performance", href: "/reports/staff-performance" },
     { label: "Return Rate", href: "/reports/return-rate" },
+    { label: "Saved Reports", href: "/reports/saved" },
   ];
 }
 
@@ -491,6 +492,13 @@ function ReportLayoutInner({
                     <p className="text-sm text-mist">
                       Open or remove previously saved report filters.
                     </p>
+                    <div className="flex justify-end">
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href="/reports/saved" onClick={() => setSavedReportsOpen(false)}>
+                          Manage all saved reports
+                        </Link>
+                      </Button>
+                    </div>
 
                     {savedReportsLoading ? (
                       <div className="space-y-2">

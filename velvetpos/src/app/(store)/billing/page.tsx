@@ -14,6 +14,7 @@ import BillingPageToast from "@/components/billing/BillingPageToast";
 import SubscriptionOverviewCard from "@/components/billing/SubscriptionOverviewCard";
 import InvoiceHistoryTable from "@/components/billing/InvoiceHistoryTable";
 import CancelSubscriptionButton from "@/components/billing/CancelSubscriptionButton";
+import PaymentMethodManagementCard from "@/components/billing/PaymentMethodManagementCard";
 
 export default async function BillingPage({
   searchParams,
@@ -220,6 +221,13 @@ export default async function BillingPage({
           {showCancel && (
             <CancelSubscriptionButton tenantId={tenantId} />
           )}
+
+          <PaymentMethodManagementCard
+            tenantId={tenantId}
+            planId={subscription.planId}
+            hasSavedBillingToken={Boolean(subscription.payhereSubscriptionToken)}
+            subscriptionStatus={status}
+          />
         </div>
 
         {/* ── Right column: Invoice History ── */}

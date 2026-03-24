@@ -22,6 +22,7 @@ interface UpdateStaffInput {
   isActive?: boolean | undefined;
   commissionRate?: string | undefined;
   clearPin?: boolean | undefined;
+  permissions?: string[] | undefined;
 }
 
 const STAFF_SELECT = {
@@ -29,6 +30,7 @@ const STAFF_SELECT = {
   email: true,
   role: true,
   isActive: true,
+  permissions: true,
   commissionRate: true,
   clockedInAt: true,
   createdAt: true,
@@ -86,6 +88,9 @@ export async function getStaffById(tenantId: string, id: string) {
     email: user.email,
     role: user.role,
     isActive: user.isActive,
+    permissions: Array.isArray(user.permissions)
+      ? user.permissions.filter((permission): permission is string => typeof permission === 'string')
+      : [],
     commissionRate: user.commissionRate,
     clockedInAt: user.clockedInAt,
     createdAt: user.createdAt,
@@ -118,6 +123,11 @@ export async function updateStaff(tenantId: string, id: string, data: UpdateStaf
   if (data.clearPin === true) {
     updateData.pin = null;
   }
+  if (data.permissions !== undefined) {
+    updateData.permissions = Array.from(
+      new Set(data.permissions.filter((permission): permission is string => typeof permission === 'string')),
+    ).sort();
+  }
 
   const updated = await prisma.user.update({
     where: { id },
@@ -147,6 +157,26 @@ export async function updateStaff(tenantId: string, id: string, data: UpdateStaf
       entityId: id,
       action: AUDIT_ACTIONS.STAFF_PIN_CHANGED,
       after: { pinCleared: true },
+    }).catch(() => {});
+  }
+
+  if (data.permissions !== undefined) {
+    const beforePermissions = Array.isArray(existing.permissions)
+      ? existing.permissions.filter((permission): permission is string => typeof permission === 'string')
+      : [];
+    const afterPermissions = Array.isArray(updated.permissions)
+      ? updated.permissions.filter((permission): permission is string => typeof permission === 'string')
+      : [];
+
+    void createAuditLog({
+      tenantId,
+      actorId: null,
+      actorRole: 'SYSTEM',
+      entityType: 'Staff',
+      entityId: id,
+      action: AUDIT_ACTIONS.STAFF_PERMISSION_CHANGED,
+      before: { permissions: beforePermissions },
+      after: { permissions: afterPermissions },
     }).catch(() => {});
   }
 

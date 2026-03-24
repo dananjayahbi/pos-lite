@@ -7,6 +7,7 @@ import type { AuditLogFilterState } from '@/components/audit/AuditLogFilters';
 
 const DEFAULT_FILTERS: AuditLogFilterState = {
   entityType: 'ALL',
+  action: 'ALL',
   startDate: '',
   endDate: '',
   userId: '',

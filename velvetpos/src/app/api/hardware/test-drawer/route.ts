@@ -7,6 +7,7 @@ import type { PrinterConfig } from '@/lib/hardware/printer';
 const DENIED_ROLES = new Set(['CASHIER', 'STOCK_CLERK']);
 
 export async function POST() {
+  const startedAt = Date.now();
   try {
     const session = await auth();
     if (!session?.user) {
@@ -44,7 +45,16 @@ export async function POST() {
 
     await testDrawer(printerConfig);
 
-    return NextResponse.json({ success: true, data: { message: 'Cash drawer kick sent successfully' } });
+    return NextResponse.json({
+      success: true,
+      data: {
+        message: 'Cash drawer kick sent successfully',
+        details: printerConfig.type === 'NETWORK'
+          ? `Kick pulse was sent through ${printerConfig.host ?? 'configured host'}:${printerConfig.port ?? 9100}.`
+          : 'Drawer pulse was sent using the connected USB printer.',
+        durationMs: Date.now() - startedAt,
+      },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown drawer error';
     return NextResponse.json(

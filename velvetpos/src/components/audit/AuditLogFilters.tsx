@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -15,6 +16,7 @@ import {
 
 export interface AuditLogFilterState {
   entityType: string;
+  action: string;
   startDate: string;
   endDate: string;
   userId: string;
@@ -37,6 +39,26 @@ const ENTITY_TYPES = [
   'Expense',
   'Shift',
   'Settings',
+] as const;
+
+const ACTIONS = [
+  'SALE_COMPLETED',
+  'SALE_VOIDED',
+  'RETURN_COMPLETED',
+  'CUSTOMER_CREDIT_ADJUSTED',
+  'PO_STATUS_CHANGED',
+  'STAFF_ROLE_CHANGED',
+  'STAFF_PIN_CHANGED',
+  'STAFF_PERMISSION_CHANGED',
+  'PROMOTION_CREATED',
+  'PROMOTION_UPDATED',
+  'PROMOTION_ARCHIVED',
+  'STOCK_ADJUSTED',
+  'EXPENSE_CREATED',
+  'EXPENSE_DELETED',
+  'SHIFT_CLOSED',
+  'COMMISSION_PAYOUT_CREATED',
+  'SETTINGS_CHANGED',
 ] as const;
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -76,6 +98,26 @@ export default function AuditLogFilters({ value, onFilterChange }: AuditLogFilte
         </Select>
       </div>
 
+      <div className="w-full sm:w-56">
+        <Label className="text-sm text-sand">Action</Label>
+        <Select
+          value={local.action}
+          onValueChange={(v) => setLocal((s) => ({ ...s, action: v }))}
+        >
+          <SelectTrigger className="border-mist">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All Actions</SelectItem>
+            {ACTIONS.map((action) => (
+              <SelectItem key={action} value={action}>
+                {action.replace(/_/g, ' ')}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* Date From */}
       <div className="w-full sm:w-40">
         <Label className="text-sm text-sand">From</Label>
@@ -100,7 +142,7 @@ export default function AuditLogFilters({ value, onFilterChange }: AuditLogFilte
 
       {/* Actor (userId) */}
       <div className="w-full sm:w-52">
-        <Label className="text-sm text-sand">User ID</Label>
+        <Label className="text-sm text-sand">Actor ID</Label>
         <Input
           type="text"
           placeholder="All Users"
@@ -109,6 +151,15 @@ export default function AuditLogFilters({ value, onFilterChange }: AuditLogFilte
           className="border-mist"
         />
       </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        className="sm:mb-0"
+        onClick={() => setLocal({ entityType: 'ALL', action: 'ALL', startDate: '', endDate: '', userId: '' })}
+      >
+        Clear Filters
+      </Button>
     </div>
   );
 }

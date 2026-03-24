@@ -79,13 +79,6 @@ export async function PATCH(
       );
     }
 
-    if (!hasPermission(session.user, PERMISSIONS.STAFF.manageStaff)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
-        { status: 403 },
-      );
-    }
-
     const { id } = await params;
     const body = await request.json();
     const parsed = UpdateStaffSchema.safeParse(body);
@@ -98,6 +91,25 @@ export async function PATCH(
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message: 'Validation failed', details: errors } },
         { status: 400 },
+      );
+    }
+
+    const wantsPermissionsUpdate = 'permissions' in parsed.data;
+    const wantsStaffUpdate = ['email', 'role', 'isActive', 'commissionRate', 'clearPin'].some(
+      (field) => field in parsed.data,
+    );
+
+    if (wantsPermissionsUpdate && !hasPermission(session.user, PERMISSIONS.STAFF.assignPermissions)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions to assign overrides' } },
+        { status: 403 },
+      );
+    }
+
+    if (wantsStaffUpdate && !hasPermission(session.user, PERMISSIONS.STAFF.manageStaff)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
       );
     }
 

@@ -150,9 +150,17 @@ export async function POST(request: Request) {
       data: {
         tenantId,
         message,
-        recipientCount: sent,
+        recipientCount: customers.length,
         sentById: session.user.id,
-        filters: filters ?? {},
+        filters: {
+          criteria: filters ?? {},
+          analytics: {
+            sent,
+            failed,
+            total: customers.length,
+            errors: errors.slice(0, 10),
+          },
+        },
       },
     });
 

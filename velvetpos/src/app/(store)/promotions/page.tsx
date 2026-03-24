@@ -315,6 +315,8 @@ export default function PromotionsPage() {
 
   const promotions = data ?? [];
   const activeCount = promotions.filter((p) => p.isActive).length;
+  const timedCount = promotions.filter((promotion) => promotion.startsAt || promotion.endsAt).length;
+  const promoCodeCount = promotions.filter((promotion) => promotion.type === 'PROMO_CODE').length;
 
   // Create mutation
   const createMutation = useMutation({
@@ -411,7 +413,7 @@ export default function PromotionsPage() {
               New Promotion
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="font-display text-lg text-espresso">Create Promotion</DialogTitle>
             </DialogHeader>
@@ -423,6 +425,24 @@ export default function PromotionsPage() {
             />
           </DialogContent>
         </Dialog>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-xl border border-mist/30 bg-pearl p-4">
+          <p className="font-body text-xs uppercase tracking-wide text-mist">Active now</p>
+          <p className="mt-2 font-display text-2xl text-espresso">{activeCount}</p>
+          <p className="mt-1 text-sm text-sand">Inline create/edit still covers the common workflows cleanly.</p>
+        </div>
+        <div className="rounded-xl border border-mist/30 bg-pearl p-4">
+          <p className="font-body text-xs uppercase tracking-wide text-mist">Scheduled windows</p>
+          <p className="mt-2 font-display text-2xl text-espresso">{timedCount}</p>
+          <p className="mt-1 text-sm text-sand">Timed promotions stay easy to scan without adding route sprawl.</p>
+        </div>
+        <div className="rounded-xl border border-mist/30 bg-pearl p-4">
+          <p className="font-body text-xs uppercase tracking-wide text-mist">Promo codes</p>
+          <p className="mt-2 font-display text-2xl text-espresso">{promoCodeCount}</p>
+          <p className="mt-1 text-sm text-sand">If this grows into a monster, we can graduate it to a dedicated page later.</p>
+        </div>
       </div>
 
       {/* Table */}
@@ -496,7 +516,7 @@ export default function PromotionsPage() {
 
       {/* Edit Sheet */}
       <Sheet open={!!editPromo} onOpenChange={(open) => { if (!open) setEditPromo(null); }}>
-        <SheetContent className="overflow-y-auto sm:max-w-md">
+        <SheetContent className="overflow-y-auto sm:max-w-xl">
           <SheetHeader>
             <SheetTitle className="font-display text-lg text-espresso">Edit Promotion</SheetTitle>
           </SheetHeader>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { AlertCircle, CheckCircle2, Loader2, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,6 +38,19 @@ type Props = {
   initialValues: HardwareValues;
 };
 
+type TestFeedback = {
+  status: 'idle' | 'success' | 'error';
+  message: string;
+  details?: string;
+  durationMs?: number;
+  checkedAt?: string;
+};
+
+const EMPTY_FEEDBACK: TestFeedback = {
+  status: 'idle',
+  message: 'Run a test after saving to verify connectivity.',
+};
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function HardwareSettingsForm({ initialValues }: Props) {
@@ -44,6 +58,8 @@ export default function HardwareSettingsForm({ initialValues }: Props) {
   const [saving, setSaving] = useState(false);
   const [testingPrint, setTestingPrint] = useState(false);
   const [testingDrawer, setTestingDrawer] = useState(false);
+  const [printFeedback, setPrintFeedback] = useState<TestFeedback>(EMPTY_FEEDBACK);
+  const [drawerFeedback, setDrawerFeedback] = useState<TestFeedback>(EMPTY_FEEDBACK);
 
   const isDirty =
     values.printerType !== initialValues.printerType ||
@@ -104,14 +120,34 @@ export default function HardwareSettingsForm({ initialValues }: Props) {
       const res = await fetch('/api/hardware/test-print', { method: 'POST' });
       const json = (await res.json()) as {
         success: boolean;
+        data?: { message?: string; details?: string; durationMs?: number };
         error?: { message: string };
       };
       if (!res.ok || !json.success) {
+        setPrintFeedback({
+          status: 'error',
+          message: json.error?.message ?? 'Test print failed',
+          details: 'Confirm printer power, network reachability, and configured port.',
+          checkedAt: new Date().toLocaleString(),
+        });
         toast.error(json.error?.message ?? 'Test print failed');
       } else {
+        setPrintFeedback({
+          status: 'success',
+          message: json.data?.message ?? 'Test print sent',
+          ...(json.data?.details ? { details: json.data.details } : {}),
+          ...(json.data?.durationMs !== undefined ? { durationMs: json.data.durationMs } : {}),
+          checkedAt: new Date().toLocaleString(),
+        });
         toast.success('Test print sent');
       }
     } catch {
+      setPrintFeedback({
+        status: 'error',
+        message: 'Network error — could not reach printer',
+        details: 'Verify the POS host can reach the printer on the configured IP and port.',
+        checkedAt: new Date().toLocaleString(),
+      });
       toast.error('Network error — could not reach printer');
     } finally {
       setTestingPrint(false);
@@ -124,18 +160,76 @@ export default function HardwareSettingsForm({ initialValues }: Props) {
       const res = await fetch('/api/hardware/test-drawer', { method: 'POST' });
       const json = (await res.json()) as {
         success: boolean;
+        data?: { message?: string; details?: string; durationMs?: number };
         error?: { message: string };
       };
       if (!res.ok || !json.success) {
+        setDrawerFeedback({
+          status: 'error',
+          message: json.error?.message ?? 'Drawer kick failed',
+          details: 'Check the drawer cable, printer kick port, and drawer-enabled setting.',
+          checkedAt: new Date().toLocaleString(),
+        });
         toast.error(json.error?.message ?? 'Drawer kick failed');
       } else {
+        setDrawerFeedback({
+          status: 'success',
+          message: json.data?.message ?? 'Cash drawer kicked',
+          ...(json.data?.details ? { details: json.data.details } : {}),
+          ...(json.data?.durationMs !== undefined ? { durationMs: json.data.durationMs } : {}),
+          checkedAt: new Date().toLocaleString(),
+        });
         toast.success('Cash drawer kicked');
       }
     } catch {
+      setDrawerFeedback({
+        status: 'error',
+        message: 'Network error — could not reach drawer',
+        details: 'If your drawer is connected through the printer, test the printer first and confirm the kick cable is seated.',
+        checkedAt: new Date().toLocaleString(),
+      });
       toast.error('Network error — could not reach drawer');
     } finally {
       setTestingDrawer(false);
     }
+  }
+
+  function FeedbackCard({
+    title,
+    feedback,
+    isBusy,
+  }: {
+    title: string;
+    feedback: TestFeedback;
+    isBusy: boolean;
+  }) {
+    const Icon = isBusy ? Loader2 : feedback.status === 'success' ? CheckCircle2 : feedback.status === 'error' ? AlertCircle : Wrench;
+    const iconClassName = isBusy
+      ? 'animate-spin text-terracotta'
+      : feedback.status === 'success'
+        ? 'text-green-600'
+        : feedback.status === 'error'
+          ? 'text-red-600'
+          : 'text-sand';
+
+    return (
+      <div className="rounded-lg border border-mist bg-pearl/40 p-4">
+        <div className="flex items-start gap-3">
+          <Icon className={`mt-0.5 h-5 w-5 ${iconClassName}`} />
+          <div className="space-y-1">
+            <p className="font-medium text-espresso">{title}</p>
+            <p className="text-sm text-sand">{isBusy ? 'Running live test…' : feedback.message}</p>
+            {feedback.details ? <p className="text-xs text-sand">{feedback.details}</p> : null}
+            {feedback.checkedAt ? (
+              <p className="text-xs text-sand/80">
+                Last checked {feedback.checkedAt}
+                {feedback.durationMs ? ` · ${feedback.durationMs} ms` : ''}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -262,22 +356,30 @@ export default function HardwareSettingsForm({ initialValues }: Props) {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex gap-3">
-          <Button
-            variant="outline"
-            className="flex-1"
-            disabled={isDirty || testingPrint}
-            onClick={handleTestPrint}
-          >
-            {testingPrint ? 'Printing…' : 'Test Print'}
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1"
-            disabled={isDirty || testingDrawer}
-            onClick={handleTestDrawer}
-          >
-            {testingDrawer ? 'Opening…' : 'Test Drawer'}
-          </Button>
+          <div className="grid flex-1 gap-3 md:grid-cols-2">
+            <div className="space-y-3">
+              <Button
+                variant="outline"
+                className="w-full"
+                disabled={isDirty || testingPrint}
+                onClick={handleTestPrint}
+              >
+                {testingPrint ? 'Printing…' : 'Test Print'}
+              </Button>
+              <FeedbackCard title="Printer Status" feedback={printFeedback} isBusy={testingPrint} />
+            </div>
+            <div className="space-y-3">
+              <Button
+                variant="outline"
+                className="w-full"
+                disabled={isDirty || testingDrawer}
+                onClick={handleTestDrawer}
+              >
+                {testingDrawer ? 'Opening…' : 'Test Drawer'}
+              </Button>
+              <FeedbackCard title="Drawer Status" feedback={drawerFeedback} isBusy={testingDrawer} />
+            </div>
+          </div>
         </CardContent>
       </Card>
 

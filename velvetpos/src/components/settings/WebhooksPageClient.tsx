@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -47,6 +47,15 @@ interface WebhookEndpoint {
   } | null;
 }
 
+interface WebhookDelivery {
+  id: string;
+  event: string;
+  status: 'SUCCESS' | 'FAILED' | 'PENDING';
+  statusCode: number | null;
+  response: string | null;
+  attemptedAt: string;
+}
+
 interface CreateEndpointResponse {
   id: string;
   url: string;
@@ -74,6 +83,7 @@ type AddWebhookForm = z.infer<typeof addWebhookSchema>;
 export default function WebhooksPageClient() {
   const queryClient = useQueryClient();
   const [showAddForm, setShowAddForm] = useState(false);
+  const [expandedEndpointId, setExpandedEndpointId] = useState<string | null>(null);
   const [secretDialog, setSecretDialog] = useState<{ open: boolean; secret: string }>({
     open: false,
     secret: '',
@@ -89,6 +99,18 @@ export default function WebhooksPageClient() {
       return body.data ?? [];
     },
     staleTime: 30_000,
+  });
+
+  const { data: deliveries = [] } = useQuery<WebhookDelivery[]>({
+    queryKey: ['webhook-deliveries', expandedEndpointId],
+    queryFn: async () => {
+      const res = await fetch(`/api/webhooks/endpoints/${expandedEndpointId}/deliveries?limit=15`);
+      const json: unknown = await res.json();
+      const body = json as { success: boolean; data?: WebhookDelivery[]; error?: { message: string } };
+      if (!body.success) throw new Error(body.error?.message ?? 'Failed to fetch delivery history');
+      return body.data ?? [];
+    },
+    enabled: expandedEndpointId !== null,
   });
 
   const form = useForm<AddWebhookForm>({
@@ -156,6 +178,30 @@ export default function WebhooksPageClient() {
     },
   });
 
+  const retryMutation = useMutation({
+    mutationFn: async (deliveryId: string) => {
+      const res = await fetch(`/api/webhooks/deliveries/${deliveryId}/retry`, { method: 'POST' });
+      const json: unknown = await res.json();
+      const body = json as { success: boolean; data?: { status: string }; error?: { message: string } };
+      if (!body.success) throw new Error(body.error?.message ?? 'Retry failed');
+      return body.data!;
+    },
+    onSuccess: (data) => {
+      if (expandedEndpointId) {
+        void queryClient.invalidateQueries({ queryKey: ['webhook-deliveries', expandedEndpointId] });
+      }
+      void queryClient.invalidateQueries({ queryKey: ['webhook-endpoints'] });
+      if (data.status === 'SUCCESS') {
+        toast.success('Webhook redelivered successfully');
+      } else {
+        toast.error('Webhook retry still failed');
+      }
+    },
+    onError: (err: Error) => {
+      toast.error(err.message);
+    },
+  });
+
   const selectedEvents = form.watch('events');
 
   function toggleEvent(event: KnownEvent) {
@@ -179,7 +225,10 @@ export default function WebhooksPageClient() {
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 p-6">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-bold text-espresso">Webhooks</h1>
+        <div>
+          <h1 className="font-display text-2xl font-bold text-espresso">Webhooks</h1>
+          <p className="mt-1 text-sm text-sand">Manage endpoints, run test pings, and inspect delivery history without leaving the settings area.</p>
+        </div>
         <Button
           onClick={() => setShowAddForm(!showAddForm)}
           className="bg-espresso text-pearl hover:bg-espresso/90"
@@ -272,8 +321,9 @@ export default function WebhooksPageClient() {
               </TableHeader>
               <TableBody>
                 {endpoints.map((ep) => (
+                  <Fragment key={ep.id}>
                   <TableRow key={ep.id}>
-                    <TableCell className="max-w-[200px] truncate font-mono text-xs text-espresso">
+                    <TableCell className="max-w-50 truncate font-mono text-xs text-espresso">
                       {ep.url}
                     </TableCell>
                     <TableCell>
@@ -326,6 +376,14 @@ export default function WebhooksPageClient() {
                         <Button
                           variant="outline"
                           size="sm"
+                          onClick={() => setExpandedEndpointId((current) => (current === ep.id ? null : ep.id))}
+                          className="border-mist text-espresso hover:bg-linen"
+                        >
+                          {expandedEndpointId === ep.id ? 'Hide history' : 'View history'}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
                           onClick={() => testMutation.mutate(ep.id)}
                           disabled={testMutation.isPending}
                           className="border-mist text-espresso hover:bg-linen"
@@ -344,6 +402,65 @@ export default function WebhooksPageClient() {
                       </div>
                     </TableCell>
                   </TableRow>
+                  {expandedEndpointId === ep.id && (
+                    <TableRow key={`${ep.id}-history`}>
+                      <TableCell colSpan={5} className="bg-linen/40">
+                        <div className="space-y-3 py-2">
+                          <div>
+                            <p className="text-sm font-medium text-espresso">Recent deliveries</p>
+                            <p className="text-xs text-sand">Latest attempts for this endpoint, including retries and test pings.</p>
+                          </div>
+
+                          {deliveries.length === 0 ? (
+                            <div className="rounded-md border border-dashed border-mist bg-white px-4 py-6 text-sm text-sand">
+                              No deliveries recorded yet.
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {deliveries.map((delivery) => (
+                                <div key={delivery.id} className="rounded-md border border-mist bg-white p-3">
+                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                    <div className="space-y-1">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <Badge
+                                          variant="outline"
+                                          className={delivery.status === 'SUCCESS' ? 'border-espresso text-espresso' : 'border-terracotta text-terracotta'}
+                                        >
+                                          {delivery.status}
+                                        </Badge>
+                                        <Badge variant="outline" className="font-mono text-[10px] text-sand">
+                                          {delivery.event}
+                                        </Badge>
+                                      </div>
+                                      <p className="text-xs text-sand">
+                                        {new Date(delivery.attemptedAt).toLocaleString()} · HTTP {delivery.statusCode ?? '—'}
+                                      </p>
+                                      <p className="font-mono text-[11px] text-espresso/80 break-all">
+                                        {delivery.response ?? 'No response body captured.'}
+                                      </p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      {delivery.status === 'FAILED' && (
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => retryMutation.mutate(delivery.id)}
+                                          disabled={retryMutation.isPending}
+                                        >
+                                          Retry
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  </Fragment>
                 ))}
               </TableBody>
             </Table>

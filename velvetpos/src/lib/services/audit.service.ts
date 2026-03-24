@@ -65,6 +65,8 @@ export const AUDIT_ACTIONS = {
   EXPENSE_DELETED: 'EXPENSE_DELETED',
   // Shift
   SHIFT_CLOSED: 'SHIFT_CLOSED',
+  // Commissions
+  COMMISSION_PAYOUT_CREATED: 'COMMISSION_PAYOUT_CREATED',
   // Settings
   SETTINGS_CHANGED: 'SETTINGS_CHANGED',
 } as const;
@@ -119,6 +121,7 @@ export function hashEmailForAudit(email: string): string {
 
 interface GetAuditLogsFilters {
   entityType?: string | undefined;
+  action?: string | undefined;
   startDate?: Date | undefined;
   endDate?: Date | undefined;
   userId?: string | undefined;
@@ -135,6 +138,9 @@ export async function getAuditLogs(tenantId: string, filters: GetAuditLogsFilter
 
   if (filters.entityType !== undefined) {
     where.entityType = filters.entityType;
+  }
+  if (filters.action !== undefined) {
+    where.action = filters.action;
   }
   if (filters.userId !== undefined) {
     where.actorId = filters.userId;

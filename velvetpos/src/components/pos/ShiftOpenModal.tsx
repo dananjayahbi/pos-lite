@@ -8,11 +8,13 @@ import { signOut } from 'next-auth/react';
 interface ShiftOpenModalProps {
   cashierName: string;
   showOwnerDashboardShortcut?: boolean;
+  onOpened?: () => void;
 }
 
 export function ShiftOpenModal({
   cashierName,
   showOwnerDashboardShortcut = false,
+  onOpened,
 }: ShiftOpenModalProps) {
   const router = useRouter();
   const [openingFloat, setOpeningFloat] = useState('');
@@ -47,6 +49,7 @@ export function ShiftOpenModal({
       }
 
       router.refresh();
+      onOpened?.();
     } catch {
       setError('Network error. Please try again.');
     } finally {

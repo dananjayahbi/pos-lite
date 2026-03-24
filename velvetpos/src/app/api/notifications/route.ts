@@ -22,28 +22,49 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const limit = Math.min(Math.max(parseInt(searchParams.get('limit') ?? '10', 10) || 10, 1), 50);
+    const page = Math.max(parseInt(searchParams.get('page') ?? '1', 10) || 1, 1);
     const includeRead = searchParams.get('includeRead') === 'true';
+    const statusParam = searchParams.get('status');
+    const status = statusParam === 'all' || statusParam === 'read' || statusParam === 'unread'
+      ? statusParam
+      : includeRead
+        ? 'all'
+        : 'unread';
+    const skip = (page - 1) * limit;
 
-    const where = {
+    const baseWhere = {
       tenantId,
       recipientId: session.user.id,
-      ...(includeRead ? {} : { isRead: false }),
     };
 
-    const [notifications, unreadCount] = await Promise.all([
+    const where = {
+      ...baseWhere,
+      ...(status === 'read' ? { isRead: true } : {}),
+      ...(status === 'unread' ? { isRead: false } : {}),
+    };
+
+    const [notifications, unreadCount, total] = await Promise.all([
       prisma.notificationRecord.findMany({
         where,
         orderBy: { createdAt: 'desc' },
+        skip,
         take: limit,
       }),
       prisma.notificationRecord.count({
         where: { tenantId, recipientId: session.user.id, isRead: false },
       }),
+      prisma.notificationRecord.count({ where }),
     ]);
 
     return NextResponse.json({
       success: true,
       data: { notifications, unreadCount },
+      meta: {
+        page,
+        limit,
+        total,
+        hasMore: skip + notifications.length < total,
+      },
     });
   } catch (error) {
     console.error('Notifications fetch error:', error);

@@ -6,6 +6,7 @@ import { testPrint, type PrinterConfig } from '@/lib/hardware/printer';
 const DENIED_ROLES = new Set(['CASHIER', 'STOCK_CLERK']);
 
 export async function POST() {
+  const startedAt = Date.now();
   try {
     const session = await auth();
     if (!session?.user) {
@@ -43,7 +44,16 @@ export async function POST() {
 
     await testPrint(printerConfig);
 
-    return NextResponse.json({ success: true, data: { message: 'Test print sent successfully' } });
+    return NextResponse.json({
+      success: true,
+      data: {
+        message: 'Test print sent successfully',
+        details: printerConfig.type === 'NETWORK'
+          ? `Printer responded via ${printerConfig.host ?? 'configured host'}:${printerConfig.port ?? 9100}.`
+          : 'USB printer command was dispatched from the host machine.',
+        durationMs: Date.now() - startedAt,
+      },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown printer error';
     return NextResponse.json(

@@ -19,7 +19,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { PERMISSIONS } from "@/lib/constants/permissions";
 import { ShoppingBag, TrendingUp, AlertTriangle, Users } from "lucide-react";
+import { StockSummaryWidgets } from "@/components/dashboard/StockSummaryWidgets";
+import { RecentStockMovementsCard } from "@/components/dashboard/RecentStockMovementsCard";
 
 const lkr = new Intl.NumberFormat("en-LK", {
   style: "currency",
@@ -71,6 +74,30 @@ function TableSkeleton() {
         <div key={i} className="h-10 animate-pulse rounded-md bg-linen" />
       ))}
     </div>
+  );
+}
+
+function QuickAccessCard({
+  title,
+  description,
+  href,
+}: {
+  title: string;
+  description: string;
+  href: string;
+}) {
+  return (
+    <Link href={href} className="block transition-transform hover:-translate-y-0.5">
+      <Card className="h-full border-mist bg-pearl transition-colors hover:border-terracotta/40">
+        <CardContent className="flex h-full flex-col justify-between gap-3 pt-6">
+          <div>
+            <h3 className="font-semibold text-espresso">{title}</h3>
+            <p className="mt-1 text-sm text-sand">{description}</p>
+          </div>
+          <span className="text-sm font-medium text-terracotta">Open →</span>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 
@@ -330,6 +357,89 @@ export default async function StoreDashboardPage() {
   }
 
   const { tenantId } = session.user;
+  const permissions = Array.isArray(session.user.permissions)
+    ? session.user.permissions.filter((permission): permission is string => typeof permission === 'string')
+    : [];
+  const quickLinks = [
+    {
+      title: 'Sales History',
+      description: 'Review completed sales outside the POS terminal.',
+      href: '/sales',
+      permission: PERMISSIONS.SALE.viewSale,
+    },
+    {
+      title: 'Returns',
+      description: 'Review refunds, exchanges, and restocking outcomes.',
+      href: '/returns',
+      permission: PERMISSIONS.SALE.viewSale,
+    },
+    {
+      title: 'Shifts',
+      description: 'Manage open tills, close shifts, and open Z-style reports.',
+      href: '/staff/shifts',
+      permission: PERMISSIONS.STAFF.viewShift,
+    },
+    {
+      title: 'Attendance',
+      description: 'Review staff clock events and hours from one place.',
+      href: '/staff/timeclock',
+      permission: PERMISSIONS.STAFF.viewAttendance,
+    },
+    {
+      title: 'Purchase Orders',
+      description: 'Track supplier orders, receiving, and follow-up tasks.',
+      href: '/suppliers/purchase-orders',
+      permission: PERMISSIONS.SUPPLIER.viewSupplier,
+    },
+    {
+      title: 'Low Stock Alerts',
+      description: 'Jump straight to items that need reordering.',
+      href: '/stock-control/low-stock',
+      permission: PERMISSIONS.STOCK.viewStock,
+    },
+    {
+      title: 'Stock Takes',
+      description: 'Run cycle counts and reconcile physical inventory.',
+      href: '/stock-control/stock-takes',
+      permission: PERMISSIONS.STOCK.conductStockTake,
+    },
+    {
+      title: 'Stock Valuation',
+      description: 'See the current value tied up in inventory.',
+      href: '/stock-control/valuation',
+      permission: PERMISSIONS.STOCK.viewStockValuation,
+    },
+    {
+      title: 'Customer Broadcast',
+      description: 'Send campaigns and announcements to customer segments.',
+      href: '/customers/broadcast',
+      permission: PERMISSIONS.CUSTOMER.viewCustomer,
+    },
+    {
+      title: 'Import Customers',
+      description: 'Bulk load customers from CSV without leaving the owner workflow.',
+      href: '/customers/import',
+      permission: PERMISSIONS.CUSTOMER.createCustomer,
+    },
+    {
+      title: 'Cash Flow',
+      description: 'Monitor expense movements and operating cash trends.',
+      href: '/expenses/cash-flow',
+      permission: PERMISSIONS.REPORT.viewCashflowReport,
+    },
+    {
+      title: 'Staff Commissions',
+      description: 'Review earned commissions and payout history.',
+      href: '/staff/commissions',
+      permission: PERMISSIONS.STAFF.viewStaff,
+    },
+    {
+      title: 'Returns Analytics',
+      description: 'Track refund patterns and return-rate performance.',
+      href: '/reports/return-rate',
+      permission: PERMISSIONS.REPORT.viewSalesReport,
+    },
+  ].filter((link) => permissions.includes(link.permission));
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
@@ -351,6 +461,41 @@ export default async function StoreDashboardPage() {
         <TodayStats tenantId={tenantId} />
       </Suspense>
 
+      {permissions.includes(PERMISSIONS.STOCK.viewStock) && (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-espresso">Inventory Snapshot</h2>
+            <p className="mt-1 text-sm text-sand">
+              Stock KPIs and the freshest movement trail, pulled into the owner dashboard.
+            </p>
+          </div>
+
+          <StockSummaryWidgets permissions={permissions} />
+        </div>
+      )}
+
+      {quickLinks.length > 0 && (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-espresso">Quick Access</h2>
+            <p className="mt-1 text-sm text-sand">
+              Jump into the owner pages that are now wired up for everyday operations.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {quickLinks.map((link) => (
+              <QuickAccessCard
+                key={link.href}
+                title={link.title}
+                description={link.description}
+                href={link.href}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Bottom panels */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Recent Sales */}
@@ -360,7 +505,7 @@ export default async function StoreDashboardPage() {
               Recent Sales
             </CardTitle>
             <Link
-              href="/pos/history"
+              href="/sales"
               className="text-xs text-terracotta hover:underline"
             >
               View all →
@@ -393,6 +538,8 @@ export default async function StoreDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {permissions.includes(PERMISSIONS.STOCK.viewStock) && <RecentStockMovementsCard />}
     </div>
   );
 }

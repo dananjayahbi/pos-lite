@@ -12,6 +12,7 @@ import {
   clearRateLimitBucket,
   recordFailedAttempt,
 } from '@/lib/rate-limit';
+import { getEffectivePermissions } from '@/lib/constants/permissions';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -22,14 +23,6 @@ const pinSchema = z.object({
   email: z.string().email('Invalid email address'),
   pin: z.string().regex(/^\d{4}$/, 'PIN must be exactly 4 digits'),
 });
-
-function normalizePermissions(permissions: unknown): string[] {
-  if (!Array.isArray(permissions)) {
-    return [];
-  }
-
-  return permissions.filter((value): value is string => typeof value === 'string');
-}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
@@ -141,7 +134,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           id: user.id,
           email: user.email,
           role: user.role,
-          permissions: normalizePermissions(user.permissions),
+          permissions: getEffectivePermissions(user.role, user.permissions),
           tenantId: user.tenantId,
           sessionVersion: user.sessionVersion,
         };
@@ -239,7 +232,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           id: user.id,
           email: user.email,
           role: user.role,
-          permissions: normalizePermissions(user.permissions),
+          permissions: getEffectivePermissions(user.role, user.permissions),
           tenantId: user.tenantId,
           sessionVersion: user.sessionVersion,
         };

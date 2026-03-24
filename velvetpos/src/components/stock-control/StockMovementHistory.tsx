@@ -290,6 +290,49 @@ function StockMovementHistoryInner() {
         </Button>
       </div>
 
+      {actors.length > 0 && (
+        <Card className="bg-pearl">
+          <CardContent className="space-y-3 pt-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium text-espresso">People changing stock</p>
+                <p className="mt-1 text-xs text-mist">
+                  {actors.length} staff member{actors.length === 1 ? '' : 's'} appear in the stock audit trail.
+                </p>
+              </div>
+              {actorId && (
+                <Badge variant="secondary" className="w-fit">
+                  Filtered to {actors.find((actor) => actor.id === actorId)?.email ?? actorId}
+                </Badge>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {actors.slice(0, 8).map((actor) => {
+                const active = actor.id === actorId;
+                return (
+                  <button
+                    key={actor.id}
+                    onClick={() => updateParams({ actorId: active ? null : actor.id, page: '1' })}
+                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                      active
+                        ? 'border-terracotta bg-white text-espresso'
+                        : 'border-mist/50 bg-linen/50 text-mist hover:text-espresso'
+                    }`}
+                  >
+                    {actor.email}
+                  </button>
+                );
+              })}
+              {actors.length > 8 && (
+                <span className="rounded-full border border-mist/40 px-3 py-1 text-xs text-mist">
+                  +{actors.length - 8} more in filter list
+                </span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Filter Bar */}
       <Card className="bg-pearl">
         <CardContent className="space-y-4 pt-4">
@@ -340,7 +383,7 @@ function StockMovementHistoryInner() {
             </div>
 
             {/* Search */}
-            <div className="space-y-1 flex-1 min-w-[200px]">
+            <div className="space-y-1 flex-1 min-w-50">
               <label className="text-xs font-medium text-mist">Product / SKU</label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-mist" />
@@ -354,7 +397,7 @@ function StockMovementHistoryInner() {
             </div>
 
             {/* Actor */}
-            <div className="space-y-1 min-w-[180px]">
+            <div className="space-y-1 min-w-45">
               <label className="text-xs font-medium text-mist">Staff</label>
               <Select
                 value={actorId || '__all__'}
@@ -537,7 +580,7 @@ function StockMovementHistoryInner() {
                           {m.quantityAfter}
                         </TableCell>
                         <TableCell className="text-sm text-mist">{m.actor.email}</TableCell>
-                        <TableCell className="max-w-[200px] text-sm text-mist">
+                        <TableCell className="max-w-50 text-sm text-mist">
                           {m.note ? (
                             <span title={m.note}>{truncate(m.note, 60)}</span>
                           ) : (

@@ -6,6 +6,7 @@ import { getSubscriptionForTenant } from '@/lib/billing/subscription.service';
 import StoreLayoutClient from '@/components/shared/StoreLayoutClient';
 import GracePeriodBanner from '@/components/shared/GracePeriodBanner';
 import TrialBanner from '@/components/layout/TrialBanner';
+import { getEffectivePermissions } from '@/lib/constants/permissions';
 
 export default async function StoreLayout({
   children,
@@ -22,9 +23,7 @@ export default async function StoreLayout({
   }
 
   const tenantId = session?.user?.tenantId;
-  const permissions = Array.isArray(session.user.permissions)
-    ? session.user.permissions.filter((permission): permission is string => typeof permission === 'string')
-    : [];
+  const permissions = getEffectivePermissions(session.user.role, session.user.permissions);
 
   let subscription: Awaited<ReturnType<typeof getSubscriptionForTenant>> = null;
   if (tenantId) {

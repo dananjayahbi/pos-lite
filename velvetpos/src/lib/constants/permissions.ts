@@ -1,3 +1,5 @@
+import type { UserRole } from '@/generated/prisma/client';
+
 export const PERMISSIONS = {
   SALE: {
     createSale: 'sale:create',
@@ -146,3 +148,24 @@ export const ROLE_PERMISSIONS: Record<'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_C
     PERMISSIONS.SUPPLIER.viewSupplier,
   ],
 };
+
+export function getEffectivePermissions(
+  role: UserRole | undefined,
+  assignedPermissions: unknown,
+): string[] {
+  const normalized = Array.isArray(assignedPermissions)
+    ? assignedPermissions.filter((permission): permission is string => typeof permission === 'string')
+    : [];
+
+  if (!role || role === 'SUPER_ADMIN') {
+    return normalized;
+  }
+
+  const roleDefaults = ROLE_PERMISSIONS[role] ?? [];
+
+  if (normalized.length === 0) {
+    return [...roleDefaults];
+  }
+
+  return Array.from(new Set([...roleDefaults, ...normalized]));
+}

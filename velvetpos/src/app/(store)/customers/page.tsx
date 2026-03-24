@@ -25,7 +25,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Plus, Eye, Pencil, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
 import { CustomerSheet } from '@/components/customers/CustomerSheet';
-import { ImportCustomersSheet } from '@/components/customers/ImportCustomersSheet';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -72,7 +71,6 @@ export default function CustomersPage() {
   // Sheet
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | undefined>(undefined);
-  const [importOpen, setImportOpen] = useState(false);
 
   // Debounce search
   useEffect(() => {
@@ -141,9 +139,11 @@ export default function CustomersPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="mr-2 h-4 w-4" />
-            Import Customers
+          <Button variant="outline" asChild>
+            <Link href="/customers/import">
+              <Upload className="mr-2 h-4 w-4" />
+              Import Customers
+            </Link>
           </Button>
           <Button onClick={openCreate}>
             <Plus className="mr-2 h-4 w-4" />
@@ -299,11 +299,6 @@ export default function CustomersPage() {
         customer={editingCustomer}
         open={sheetOpen}
         onOpenChange={setSheetOpen}
-        onSuccess={handleSuccess}
-      />
-      <ImportCustomersSheet
-        open={importOpen}
-        onOpenChange={setImportOpen}
         onSuccess={handleSuccess}
       />
     </div>

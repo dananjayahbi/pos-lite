@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { DownloadIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -87,6 +88,7 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
   const buildParams = useCallback(() => {
     const p = new URLSearchParams();
     if (filters.entityType !== 'ALL') p.set('entityType', filters.entityType);
+    if (filters.action !== 'ALL') p.set('action', filters.action);
     if (filters.startDate) p.set('startDate', filters.startDate);
     if (filters.endDate) p.set('endDate', filters.endDate);
     if (filters.userId) p.set('userId', filters.userId);
@@ -96,7 +98,7 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
   }, [filters, page]);
 
   const { data, isLoading } = useQuery<AuditLogResponse>({
-    queryKey: ['auditLogs', filters.entityType, filters.startDate, filters.endDate, filters.userId, page],
+    queryKey: ['auditLogs', filters.entityType, filters.action, filters.startDate, filters.endDate, filters.userId, page],
     queryFn: async () => {
       const res = await fetch(`/api/audit-logs?${buildParams()}`);
       const json = await res.json();
@@ -112,7 +114,27 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [filters.entityType, filters.startDate, filters.endDate, filters.userId]);
+  }, [filters.entityType, filters.action, filters.startDate, filters.endDate, filters.userId]);
+
+  async function handleExport() {
+    const params = new URLSearchParams(buildParams());
+    params.set('format', 'csv');
+    params.delete('page');
+    params.set('pageSize', '100');
+
+    const response = await fetch(`/api/audit-logs?${params.toString()}`);
+    if (!response.ok) {
+      throw new Error('Failed to export audit logs');
+    }
+
+    const blob = await response.blob();
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = href;
+    anchor.download = 'audit-log-export.csv';
+    anchor.click();
+    URL.revokeObjectURL(href);
+  }
 
   // ── Loading State ──
   if (isLoading) {
@@ -139,6 +161,12 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
 
   return (
     <>
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={() => void handleExport()}>
+          <DownloadIcon className="mr-2 h-4 w-4" />
+          Export filtered CSV
+        </Button>
+      </div>
       <div className="rounded-lg border border-mist">
         <Table>
           <TableHeader>

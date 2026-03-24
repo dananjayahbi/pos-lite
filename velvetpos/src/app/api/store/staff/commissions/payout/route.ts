@@ -8,6 +8,8 @@ const PayoutSchema = z.object({
   periodStart: z.string().min(1),
   periodEnd: z.string().min(1),
   notes: z.string().optional(),
+  paymentMethod: z.string().optional(),
+  proofReference: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -54,7 +56,10 @@ export async function POST(request: Request) {
       periodStart: new Date(parsed.data.periodStart),
       periodEnd: new Date(parsed.data.periodEnd),
       authorizedById: session.user.id,
+      authorizedByRole: session.user.role,
       ...(parsed.data.notes !== undefined && { notes: parsed.data.notes }),
+      ...(parsed.data.paymentMethod !== undefined && { paymentMethod: parsed.data.paymentMethod }),
+      ...(parsed.data.proofReference !== undefined && { proofReference: parsed.data.proofReference }),
     });
 
     return NextResponse.json({ success: true, data: payout }, { status: 201 });

@@ -18,17 +18,36 @@ interface NotificationsResponse {
     notifications: NotificationData[];
     unreadCount: number;
   };
+  meta?: {
+    page: number;
+    limit: number;
+    total: number;
+    hasMore: boolean;
+  };
 }
 
-export function useGetNotifications(includeRead = false) {
+type NotificationStatusFilter = 'all' | 'read' | 'unread';
+
+interface UseGetNotificationsOptions {
+  status?: NotificationStatusFilter;
+  limit?: number;
+  page?: number;
+}
+
+export function useGetNotifications(options: UseGetNotificationsOptions = {}) {
   const { data: session } = useSession();
   const userId = session?.user?.id;
+  const status = options.status ?? 'unread';
+  const limit = options.limit ?? 10;
+  const page = options.page ?? 1;
 
   return useQuery<NotificationsResponse>({
-    queryKey: ['notifications', userId],
+    queryKey: ['notifications', userId, status, limit, page],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (includeRead) params.set('includeRead', 'true');
+      params.set('status', status);
+      params.set('limit', String(limit));
+      params.set('page', String(page));
       const res = await fetch(`/api/notifications?${params.toString()}`);
       if (!res.ok) throw new Error('Failed to fetch notifications');
       return res.json();
@@ -41,6 +60,5 @@ export function useGetNotifications(includeRead = false) {
 
 export function useInvalidateNotifications() {
   const queryClient = useQueryClient();
-  const { data: session } = useSession();
-  return () => queryClient.invalidateQueries({ queryKey: ['notifications', session?.user?.id] });
+  return () => queryClient.invalidateQueries({ queryKey: ['notifications'] });
 }

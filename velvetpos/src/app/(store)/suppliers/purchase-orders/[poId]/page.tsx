@@ -33,47 +33,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatRupee } from '@/lib/format';
-import { GoodsReceivingModal } from '@/components/suppliers/GoodsReceivingModal';
+import type { PurchaseOrderDetail } from '@/components/suppliers/GoodsReceivingForm';
 
 // ── Types ────────────────────────────────────────────────────────────────────
-
-interface POLine {
-  id: string;
-  productNameSnapshot: string;
-  variantDescriptionSnapshot: string;
-  orderedQty: number;
-  receivedQty: number;
-  isFullyReceived: boolean;
-  expectedCostPrice: string | number;
-  actualCostPrice?: string | number | null;
-  variant: {
-    sku: string;
-    size?: string | null;
-    colour?: string | null;
-    costPrice: string | number;
-    stockQuantity: number;
-    imageUrls: string[];
-    product: { name: string };
-  };
-}
-
-interface PurchaseOrderDetail {
-  id: string;
-  status: string;
-  totalAmount: string | number;
-  expectedDeliveryDate?: string | null;
-  notes?: string | null;
-  createdAt: string;
-  supplier: {
-    id: string;
-    name: string;
-    phone: string;
-    whatsappNumber?: string | null;
-    contactName?: string | null;
-  };
-  createdBy: { id: string; email: string };
-  lines: POLine[];
-}
 
 // ── Status Badge ─────────────────────────────────────────────────────────────
 
@@ -110,10 +72,6 @@ export default function PurchaseOrderDetailPage({
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
-  const [receiveOpen, setReceiveOpen] = useState(false);
-  const [costPriceChanges, setCostPriceChanges] = useState<
-    Array<{ variantId: string; oldCostPrice: string; newCostPrice: string }> | null
-  >(null);
 
   const { data, isLoading } = useQuery<{ success: boolean; data: PurchaseOrderDetail }>({
     queryKey: ['purchase-order', poId],
@@ -166,27 +124,6 @@ export default function PurchaseOrderDetailPage({
     }
   }, [poId, queryClient]);
 
-  const handleReceiveGoods = useCallback(() => {
-    setReceiveOpen(true);
-  }, []);
-
-  const handleReceiveSuccess = useCallback(
-    (result: {
-      costPricesChanged: Array<{
-        variantId: string;
-        oldCostPrice: string;
-        newCostPrice: string;
-      }>;
-      costPriceChangedCount: number;
-    }) => {
-      queryClient.invalidateQueries({ queryKey: ['purchase-order', poId] });
-      if (result.costPriceChangedCount > 0) {
-        setCostPriceChanges(result.costPricesChanged);
-      }
-    },
-    [queryClient, poId],
-  );
-
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -224,7 +161,7 @@ export default function PurchaseOrderDetailPage({
           >
             <ArrowLeft className="h-3 w-3" /> Purchase Orders
           </Link>
-          <h1 className="font-display text-2xl font-semibold text-espresso font-mono">
+          <h1 className="font-mono text-2xl font-semibold text-espresso">
             {formatPORef(po.id)}
           </h1>
           <Badge className={`mt-2 ${STATUS_STYLES[status] ?? ''}`} variant="secondary">
@@ -260,9 +197,11 @@ export default function PurchaseOrderDetailPage({
           )}
           {(status === 'SENT' || status === 'PARTIALLY_RECEIVED') && (
             <>
-              <Button onClick={handleReceiveGoods}>
-                <PackageCheck className="mr-2 h-4 w-4" />
-                Receive Goods
+              <Button asChild>
+                <Link href={`/suppliers/purchase-orders/${poId}/receive`}>
+                  <PackageCheck className="mr-2 h-4 w-4" />
+                  Receive Goods
+                </Link>
               </Button>
               <Button
                 variant="outline"
@@ -389,43 +328,6 @@ export default function PurchaseOrderDetailPage({
           </div>
         </CardContent>
       </Card>
-
-      {/* Goods Receiving Modal */}
-      {po && (
-        <GoodsReceivingModal
-          po={po}
-          open={receiveOpen}
-          onOpenChange={setReceiveOpen}
-          onSuccess={handleReceiveSuccess}
-        />
-      )}
-
-      {/* Cost Price Changes Dialog */}
-      <Dialog
-        open={costPriceChanges !== null}
-        onOpenChange={(open) => {
-          if (!open) setCostPriceChanges(null);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cost Prices Updated</DialogTitle>
-            <DialogDescription>
-              The following variant cost prices were updated based on the actual cost received:
-            </DialogDescription>
-          </DialogHeader>
-          <ul className="list-disc pl-6 space-y-1 text-sm text-espresso">
-            {costPriceChanges?.map((c) => (
-              <li key={c.variantId}>
-                {c.variantId}: Rs. {c.oldCostPrice} → Rs. {c.newCostPrice}
-              </li>
-            ))}
-          </ul>
-          <DialogFooter>
-            <Button onClick={() => setCostPriceChanges(null)}>Understood</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Cancel Confirm Dialog */}
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
