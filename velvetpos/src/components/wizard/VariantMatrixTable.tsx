@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState } from 'react';
+import { memo, useState, useRef } from 'react';
 import type {
   Control,
   UseFormRegister,
@@ -10,6 +10,8 @@ import type {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { ImageOff, Plus, X, Loader2 } from 'lucide-react';
+import Image from 'next/image';
 import type { VariantFormData } from './WizardStep2Variants';
 
 interface VariantMatrixTableProps {
@@ -24,6 +26,7 @@ interface VariantMatrixTableProps {
     wholesalePrice: string;
     lowStockThreshold: number;
     selected: boolean;
+    imageUrls: string[];
   }>;
   control: Control<VariantFormData>;
   register: UseFormRegister<VariantFormData>;
@@ -49,6 +52,38 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
   const colour = watch(`variants.${index}.colour`);
   const costPrice = watch(`variants.${index}.costPrice`);
   const retailPrice = watch(`variants.${index}.retailPrice`);
+  const imageUrls: string[] = (watch(`variants.${index}.imageUrls`) as string[] | undefined) ?? [];
+
+  const [uploading, setUploading] = useState(false);
+  const [brokenUrls, setBrokenUrls] = useState<Set<string>>(new Set());
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) return;
+    if (file.size > 5 * 1024 * 1024) return;
+    const formData = new FormData();
+    formData.append('image', file);
+    const xhr = new XMLHttpRequest();
+    xhr.onload = () => {
+      setUploading(false);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const data = JSON.parse(xhr.responseText) as { url: string };
+        setValue(`variants.${index}.imageUrls`, [...imageUrls, data.url], { shouldDirty: true });
+      }
+    };
+    xhr.onerror = () => setUploading(false);
+    setUploading(true);
+    xhr.open('POST', '/api/upload');
+    xhr.send(formData);
+  }
+
+  function removeImage(url: string) {
+    setValue(`variants.${index}.imageUrls`, imageUrls.filter((u) => u !== url), { shouldDirty: true });
+  }
 
   const costNum = parseFloat(costPrice) || 0;
   const retailNum = parseFloat(retailPrice) || 0;
@@ -67,7 +102,7 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
       <td className="px-3 py-2">
         <Input
           {...register(`variants.${index}.sku`)}
-          className="font-mono text-xs h-7"
+          className="font-mono text-xs h-7 min-w-[120px]"
         />
       </td>
       <td className="px-3 py-2">
@@ -91,7 +126,7 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
             type="number"
             step="0.01"
             min="0"
-            className="text-right h-7 text-xs"
+            className="text-right h-7 text-xs min-w-[100px]"
           />
         </div>
       </td>
@@ -103,7 +138,7 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
             type="number"
             step="0.01"
             min="0"
-            className={`text-right h-7 text-xs ${retailBelowCost ? 'border-orange-500' : ''}`}
+            className={`text-right h-7 text-xs min-w-[100px] ${retailBelowCost ? 'border-orange-500' : ''}`}
           />
         </div>
       </td>
@@ -115,7 +150,7 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
             type="number"
             step="0.01"
             min="0"
-            className="text-right h-7 text-xs"
+            className="text-right h-7 text-xs min-w-[100px]"
           />
         </div>
       </td>
@@ -124,8 +159,58 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
           {...register(`variants.${index}.lowStockThreshold`, { valueAsNumber: true })}
           type="number"
           min="0"
-          className="text-right h-7 text-xs w-16"
+          className="text-right h-7 text-xs w-20"
         />
+      </td>
+      <td className="px-3 py-2">
+        <div className="flex items-center gap-1.5">
+          {imageUrls.map((url) => (
+            <div key={url} className="relative group h-8 w-8 shrink-0 rounded border border-sand/30 overflow-hidden">
+              {brokenUrls.has(url) ? (
+                <div className="flex h-full w-full items-center justify-center bg-sand/20">
+                  <ImageOff className="h-3 w-3 text-mist" />
+                </div>
+              ) : (
+                <Image
+                  src={url}
+                  alt=""
+                  fill
+                  className="object-cover"
+                  onError={() => setBrokenUrls((prev) => new Set(prev).add(url))}
+                />
+              )}
+              <button
+                type="button"
+                onClick={() => removeImage(url)}
+                className="absolute inset-0 flex items-center justify-center bg-espresso/60 opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <X className="h-2.5 w-2.5 text-pearl" />
+              </button>
+            </div>
+          ))}
+          {imageUrls.length < 3 && (
+            uploading ? (
+              <div className="flex h-8 w-8 items-center justify-center rounded border border-sand/30 bg-linen">
+                <Loader2 className="h-3 w-3 animate-spin text-mist" />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded border-2 border-dashed border-sand bg-linen hover:border-terracotta hover:bg-terracotta/5 transition-colors"
+              >
+                <Plus className="h-3 w-3 text-terracotta" />
+              </button>
+            )
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={handleFileSelect}
+          />
+        </div>
       </td>
     </tr>
   );
@@ -154,13 +239,14 @@ export function VariantMatrixTable({
         <thead>
           <tr className="bg-sand/30">
             <th className="px-3 py-2 text-left font-semibold text-espresso w-10" />
-            <th className="px-3 py-2 text-left font-semibold text-espresso">SKU</th>
-            <th className="px-3 py-2 text-left font-semibold text-espresso">Colour</th>
-            <th className="px-3 py-2 text-left font-semibold text-espresso">Size</th>
-            <th className="px-3 py-2 text-right font-semibold text-espresso">Cost Price</th>
-            <th className="px-3 py-2 text-right font-semibold text-espresso">Retail Price</th>
-            <th className="px-3 py-2 text-right font-semibold text-espresso">Wholesale Price</th>
-            <th className="px-3 py-2 text-right font-semibold text-espresso">Low Stock</th>
+            <th className="px-3 py-2 text-left font-semibold text-espresso min-w-[140px]">SKU</th>
+            <th className="px-3 py-2 text-left font-semibold text-espresso min-w-[110px]">Colour</th>
+            <th className="px-3 py-2 text-left font-semibold text-espresso min-w-[80px]">Size</th>
+            <th className="px-3 py-2 text-right font-semibold text-espresso min-w-[140px]">Cost Price</th>
+            <th className="px-3 py-2 text-right font-semibold text-espresso min-w-[140px]">Retail Price</th>
+            <th className="px-3 py-2 text-right font-semibold text-espresso min-w-[150px]">Wholesale Price</th>
+            <th className="px-3 py-2 text-right font-semibold text-espresso min-w-[90px]">Low Stock</th>
+            <th className="px-3 py-2 text-left font-semibold text-espresso min-w-[120px]">Images</th>
           </tr>
         </thead>
         <tbody>
@@ -179,7 +265,7 @@ export function VariantMatrixTable({
                   min="0"
                   value={applyCost}
                   onChange={(e) => setApplyCost(e.target.value)}
-                  className="text-right h-7 text-xs"
+                  className="text-right h-7 text-xs min-w-[100px]"
                   placeholder="Cost"
                 />
               </div>
@@ -193,7 +279,7 @@ export function VariantMatrixTable({
                   min="0"
                   value={applyRetail}
                   onChange={(e) => setApplyRetail(e.target.value)}
-                  className="text-right h-7 text-xs"
+                  className="text-right h-7 text-xs min-w-[100px]"
                   placeholder="Retail"
                 />
               </div>
@@ -208,6 +294,7 @@ export function VariantMatrixTable({
                 Apply to All
               </button>
             </td>
+            <td className="px-3 py-2" />
           </tr>
           {/* Data rows */}
           {fields.map((field, index) => (

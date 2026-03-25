@@ -34,7 +34,7 @@ export default function NewProductPage() {
 
   return (
     <main className="min-h-screen bg-linen p-6 md:p-8">
-      <div className="mx-auto max-w-[800px]">
+      <div className="mx-auto max-w-[1200px]">
         <Card className="border-mist bg-pearl p-6 md:p-8">
           <WizardProgressBar currentStep={step} />
           <div className="mt-8">

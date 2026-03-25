@@ -37,7 +37,10 @@ export function WizardStep3Review() {
         gender: step1Data.gender,
         tags: step1Data.tags,
         taxRule: step1Data.taxRule,
-        variantDefinitions: step2Data.variants,
+        variantDefinitions: step2Data.variants.map((v) => ({
+          ...v,
+          imageUrls: v.imageUrls ?? [],
+        })),
       };
 
       const res = await fetch('/api/store/products', {

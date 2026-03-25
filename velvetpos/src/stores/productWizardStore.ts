@@ -21,6 +21,7 @@ export interface Step2Data {
     lowStockThreshold: number;
     barcode?: string;
     sku?: string;
+    imageUrls?: string[];
   }>;
 }
 

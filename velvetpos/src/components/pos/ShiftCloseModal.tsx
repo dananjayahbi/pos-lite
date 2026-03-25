@@ -19,6 +19,8 @@ interface ShiftCloseModalProps {
   shiftId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** If provided, called instead of redirecting to the shift report page */
+  onSuccess?: () => void;
 }
 
 interface ShiftSummary {
@@ -43,6 +45,7 @@ export function ShiftCloseModal({
   shiftId,
   open,
   onOpenChange,
+  onSuccess,
 }: ShiftCloseModalProps) {
   const router = useRouter();
   const [closingCash, setClosingCash] = useState('');
@@ -134,8 +137,12 @@ export function ShiftCloseModal({
 
       toast.success('Shift closed successfully');
       onOpenChange(false);
-      router.push(`/pos/shift-report?shiftId=${shiftId}`);
-      router.refresh();
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.push(`/pos/shift-report?shiftId=${shiftId}`);
+        router.refresh();
+      }
     } catch {
       setError('Network error. Please try again.');
     } finally {

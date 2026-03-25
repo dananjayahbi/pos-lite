@@ -177,7 +177,7 @@ export function InventoryTable({
   }
 
   return (
-    <div className="rounded-lg border border-sand/30 bg-pearl">
+    <div className="rounded-lg border border-sand/30 bg-pearl overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow className="bg-sand/20 hover:bg-sand/20">

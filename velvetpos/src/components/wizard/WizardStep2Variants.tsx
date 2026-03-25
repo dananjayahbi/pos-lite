@@ -20,6 +20,7 @@ interface VariantRow {
   wholesalePrice: string;
   lowStockThreshold: number;
   selected: boolean;
+  imageUrls: string[];
 }
 
 export interface VariantFormData {
@@ -75,6 +76,7 @@ function generateMatrix(
           wholesalePrice: '',
           lowStockThreshold: 5,
           selected: true,
+          imageUrls: [],
         });
       }
     }
@@ -120,8 +122,7 @@ export function WizardStep2Variants() {
         retailPrice: v.retailPrice > 0 ? String(v.retailPrice) : '',
         wholesalePrice: v.wholesalePrice ? String(v.wholesalePrice) : '',
         lowStockThreshold: v.lowStockThreshold,
-        selected: true,
-      }))
+        selected: true,        imageUrls: v.imageUrls ?? [],      }))
     : generateMatrix(sizes, colours, productName, []);
 
   const { control, register, handleSubmit, setValue, watch, getValues } =
@@ -187,10 +188,12 @@ export function WizardStep2Variants() {
           colour?: string;
           wholesalePrice?: number;
           sku?: string;
+          imageUrls?: string[];
         } = {
           costPrice: parseFloat(v.costPrice),
           retailPrice: parseFloat(v.retailPrice),
           lowStockThreshold: v.lowStockThreshold,
+          imageUrls: v.imageUrls ?? [],
         };
         if (v.size) variant.size = v.size;
         if (v.colour) variant.colour = v.colour;

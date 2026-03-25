@@ -29,6 +29,7 @@ export const CreateVariantInputSchema = z
       )
       .optional(),
     sku: z.string().max(50).optional(),
+    imageUrls: z.array(z.string().url()).max(5).default([]),
   })
   .refine((data) => data.retailPrice >= data.costPrice, {
     message: 'Retail price must be greater than or equal to cost price',

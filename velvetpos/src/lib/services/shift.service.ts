@@ -339,6 +339,8 @@ export async function getShifts(tenantId: string, filters?: GetShiftsFilters) {
     prisma.shift.findMany({
       where,
       include: {
+        cashier: { select: { id: true, email: true, role: true } },
+        closure: true,
         _count: { select: { sales: true } },
       },
       orderBy: { openedAt: 'desc' },

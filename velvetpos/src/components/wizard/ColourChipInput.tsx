@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, type KeyboardEvent } from 'react';
-import { X } from 'lucide-react';
+import { X, Palette } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { ColourPickerModal } from './ColourPickerModal';
 
 interface ColourChipInputProps {
   value: string[];
@@ -11,6 +13,7 @@ interface ColourChipInputProps {
 
 export function ColourChipInput({ value, onChange }: ColourChipInputProps) {
   const [input, setInput] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const addColour = (raw: string) => {
     const colour = raw.trim();
@@ -32,6 +35,10 @@ export function ColourChipInput({ value, onChange }: ColourChipInputProps) {
     if (e.key === 'Backspace' && !input && value.length > 0) {
       removeColour(value.length - 1);
     }
+  };
+
+  const handlePickerInsert = (colours: string[]) => {
+    onChange([...value, ...colours]);
   };
 
   return (
@@ -58,12 +65,30 @@ export function ColourChipInput({ value, onChange }: ColourChipInputProps) {
           </span>
         ))}
       </div>
-      <Input
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Type a colour and press Enter"
-        className="font-body"
+      <div className="flex items-center gap-2">
+        <Input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Type a colour and press Enter"
+          className="font-body flex-1"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setPickerOpen(true)}
+          className="shrink-0 gap-1.5 border-mist text-espresso hover:bg-linen hover:border-espresso"
+        >
+          <Palette className="h-4 w-4" />
+          Browse
+        </Button>
+      </div>
+      <ColourPickerModal
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        existingColours={value}
+        onInsert={handlePickerInsert}
       />
     </div>
   );

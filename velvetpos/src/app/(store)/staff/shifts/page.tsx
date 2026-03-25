@@ -410,6 +410,10 @@ export default function StaffShiftsPage() {
               refreshAfterShiftAction();
             }
           }}
+          onSuccess={() => {
+            setCloseShiftId(null);
+            refreshAfterShiftAction();
+          }}
         />
       )}
     </div>
