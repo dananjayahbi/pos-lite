@@ -69,6 +69,7 @@ export interface CreateVariantInput {
   retailPrice: number;
   wholesalePrice?: number | undefined;
   stockQuantity?: number | undefined;
+  initialStock?: number | undefined;
   lowStockThreshold?: number | undefined;
   imageUrls?: string[] | undefined;
 }
@@ -76,8 +77,8 @@ export interface CreateVariantInput {
 export interface UpdateVariantInput {
   sku?: string | undefined;
   barcode?: string | null | undefined;
-  size?: string | undefined;
-  colour?: string | undefined;
+  size?: string | null | undefined;
+  colour?: string | null | undefined;
   costPrice?: number | undefined;
   retailPrice?: number | undefined;
   wholesalePrice?: number | null | undefined;
@@ -305,7 +306,7 @@ export async function createProductVariants(
         costPrice: v.costPrice,
         retailPrice: v.retailPrice,
         wholesalePrice: v.wholesalePrice ?? null,
-        stockQuantity: v.stockQuantity ?? 0,
+        stockQuantity: v.initialStock ?? v.stockQuantity ?? 0,
         lowStockThreshold: v.lowStockThreshold ?? 5,
         imageUrls: v.imageUrls ?? [],
       })),

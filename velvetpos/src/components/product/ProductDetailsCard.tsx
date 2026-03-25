@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
+import { ImageViewerModal } from '@/components/product/ImageViewerModal';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -44,15 +46,54 @@ interface ProductDetailsCardProps {
     createdAt: string;
     updatedAt: string;
   };
+  variants?: { imageUrls: string[] }[];
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export function ProductDetailsCard({ product }: ProductDetailsCardProps) {
+export function ProductDetailsCard({ product, variants = [] }: ProductDetailsCardProps) {
   const [descExpanded, setDescExpanded] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const descTruncated = product.description && product.description.length > 200;
 
+  // Primary image = imageUrls[0] of the first variant that has images
+  const primaryImage = variants.flatMap((v) => v.imageUrls).find(Boolean) ?? null;
+
   return (
+    <div className="space-y-5">
+      {/* Primary image */}
+      {primaryImage && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            className="group relative overflow-hidden rounded-xl border border-sand/30 bg-linen shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta"
+            onClick={() => setViewerOpen(true)}
+            aria-label="View primary product image"
+          >
+            <Image
+              src={primaryImage}
+              alt={product.name}
+              width={320}
+              height={320}
+              className="block h-64 w-64 object-cover rounded-xl transition-transform duration-300 group-hover:scale-105"
+              unoptimized
+            />
+            <div className="absolute inset-0 flex items-end justify-center pb-3 opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="rounded-full bg-espresso/70 px-3 py-1 text-xs font-body text-pearl">
+                View image
+              </span>
+            </div>
+          </button>
+          <ImageViewerModal
+            open={viewerOpen}
+            onClose={() => setViewerOpen(false)}
+            images={[primaryImage]}
+            currentIndex={0}
+            onIndexChange={() => {}}
+          />
+        </div>
+      )}
+
     <div className="rounded-lg border border-sand/30 bg-pearl p-6">
       <dl className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
         {/* Name */}
@@ -174,6 +215,7 @@ export function ProductDetailsCard({ product }: ProductDetailsCardProps) {
         {/* Last Modified */}
         <FieldRow label="Last Modified" value={formatDate(product.updatedAt)} />
       </dl>
+    </div>
     </div>
   );
 }

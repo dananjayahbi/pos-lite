@@ -30,6 +30,7 @@ export const CreateVariantInputSchema = z
       .optional(),
     sku: z.string().max(50).optional(),
     imageUrls: z.array(z.string().url()).max(5).default([]),
+    initialStock: z.number().int().min(0).default(0),
   })
   .refine((data) => data.retailPrice >= data.costPrice, {
     message: 'Retail price must be greater than or equal to cost price',
@@ -52,10 +53,7 @@ export const CreateVariantInputSchema = z
 
 export const UpdateVariantSchema = z
   .object({
-    costPrice: z.number().positive().optional(),
-    retailPrice: z.number().positive().optional(),
-    wholesalePrice: z.number().positive().nullable().optional(),
-    lowStockThreshold: z.number().int().min(0).optional(),
+    sku: z.string().max(50).optional(),
     barcode: z
       .string()
       .min(8)
@@ -66,8 +64,13 @@ export const UpdateVariantSchema = z
       )
       .nullable()
       .optional(),
+    size: z.string().min(1).max(20).nullable().optional(),
+    colour: z.string().min(1).max(50).nullable().optional(),
+    costPrice: z.number().positive().optional(),
+    retailPrice: z.number().positive().optional(),
+    wholesalePrice: z.number().positive().nullable().optional(),
+    lowStockThreshold: z.number().int().min(0).optional(),
     imageUrls: z.array(z.string().url()).optional(),
-    sku: z.string().max(50).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.costPrice !== undefined && data.retailPrice !== undefined) {

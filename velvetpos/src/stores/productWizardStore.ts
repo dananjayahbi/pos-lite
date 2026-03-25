@@ -22,6 +22,7 @@ export interface Step2Data {
     barcode?: string;
     sku?: string;
     imageUrls?: string[];
+    initialStock?: number;
   }>;
 }
 

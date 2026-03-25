@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Wand2 } from 'lucide-react';
 import { ProductImageUpload } from '@/components/product/ProductImageUpload';
+import { SizePickerPanel } from '@/components/product/SizePickerPanel';
 import {
   variantEditSchema,
   type VariantEditFormData,
@@ -212,10 +213,13 @@ export function VariantEditSheet({
 
           {/* Size */}
           <div className="space-y-1.5">
-            <Label htmlFor="size" className="font-body text-sm text-espresso">
+            <Label className="font-body text-sm text-espresso">
               Size
             </Label>
-            <Input id="size" {...register('size')} />
+            <SizePickerPanel
+              value={watch('size') ?? ''}
+              onChange={(sz) => setValue('size', sz, { shouldDirty: true, shouldValidate: true })}
+            />
             {errors.size && (
               <p className="text-xs text-red-600">{errors.size.message}</p>
             )}
@@ -226,7 +230,20 @@ export function VariantEditSheet({
             <Label htmlFor="colour" className="font-body text-sm text-espresso">
               Colour
             </Label>
-            <Input id="colour" {...register('colour')} />
+            <div className="relative">
+              {watch('colour') && (
+                <span
+                  className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full border border-mist/40 shrink-0 pointer-events-none"
+                  style={{ backgroundColor: watch('colour') ?? '' }}
+                  aria-hidden="true"
+                />
+              )}
+              <Input
+                id="colour"
+                className={watch('colour') ? 'pl-8' : ''}
+                {...register('colour')}
+              />
+            </div>
             {errors.colour && (
               <p className="text-xs text-red-600">{errors.colour.message}</p>
             )}

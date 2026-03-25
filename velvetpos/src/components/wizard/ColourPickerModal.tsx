@@ -19,7 +19,7 @@ interface ColourEntry {
   group: string;
 }
 
-const COLOUR_CATALOGUE: ColourEntry[] = [
+export const COLOUR_CATALOGUE: ColourEntry[] = [
   // Whites & Creams
   { name: 'White', hex: '#FFFFFF', group: 'White & Cream' },
   { name: 'Off White', hex: '#FAF9F6', group: 'White & Cream' },
@@ -190,9 +190,10 @@ export function ColourPickerModal({
   }
 
   function handleInsert() {
-    const toAdd = [...selected].filter(
-      (name) => !existingColours.some((c) => c.toLowerCase() === name.toLowerCase()),
-    );
+    const toAdd = [...selected]
+      .map((name) => COLOUR_CATALOGUE.find((c) => c.name === name)!)
+      .filter((c) => c && !existingColours.some((e) => e.toLowerCase() === c.hex.toLowerCase()))
+      .map((c) => c.hex);
     if (toAdd.length > 0) onInsert(toAdd);
     setSelected(new Set());
     setSearch('');
@@ -206,7 +207,9 @@ export function ColourPickerModal({
   }
 
   function isAlreadyAdded(name: string) {
-    return existingColours.some((c) => c.toLowerCase() === name.toLowerCase());
+    const entry = COLOUR_CATALOGUE.find((c) => c.name === name);
+    if (!entry) return existingColours.some((c) => c.toLowerCase() === name.toLowerCase());
+    return existingColours.some((c) => c.toLowerCase() === entry.hex.toLowerCase());
   }
 
   function getSwatchStyle(hex: string): React.CSSProperties {

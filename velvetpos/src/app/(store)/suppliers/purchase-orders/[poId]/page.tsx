@@ -30,6 +30,7 @@ import {
   PackageCheck,
   Check,
   Loader2,
+  Send,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatRupee } from '@/lib/format';
@@ -40,7 +41,7 @@ import type { PurchaseOrderDetail } from '@/components/suppliers/GoodsReceivingF
 // ── Status Badge ─────────────────────────────────────────────────────────────
 
 const STATUS_STYLES: Record<string, string> = {
-  DRAFT: 'bg-muted text-muted-foreground',
+  DRAFT: 'bg-sand/30 text-espresso',
   SENT: 'bg-blue-50 text-blue-700',
   PARTIALLY_RECEIVED: 'bg-amber-50 text-amber-700',
   RECEIVED: 'bg-green-50 text-green-700',
@@ -72,6 +73,7 @@ export default function PurchaseOrderDetailPage({
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
+  const [markingSent, setMarkingSent] = useState(false);
 
   const { data, isLoading } = useQuery<{ success: boolean; data: PurchaseOrderDetail }>({
     queryKey: ['purchase-order', poId],
@@ -101,6 +103,28 @@ export default function PurchaseOrderDetailPage({
     }
   }, [poId, po?.supplier.name, queryClient]);
 
+  const handleMarkSent = useCallback(async () => {
+    setMarkingSent(true);
+    try {
+      const res = await fetch(`/api/store/purchase-orders/${poId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'SENT' }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        toast.error(json.error?.message ?? 'Failed to update status');
+      } else {
+        toast.success('Purchase order marked as Sent');
+        queryClient.invalidateQueries({ queryKey: ['purchase-order', poId] });
+      }
+    } catch {
+      toast.error('Network error');
+    } finally {
+      setMarkingSent(false);
+    }
+  }, [poId, queryClient]);
+
   const handleCancel = useCallback(async () => {
     setCancelling(true);
     try {
@@ -126,7 +150,7 @@ export default function PurchaseOrderDetailPage({
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 p-6 md:p-8">
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-40 w-full" />
         <Skeleton className="h-60 w-full" />
@@ -136,8 +160,8 @@ export default function PurchaseOrderDetailPage({
 
   if (!po) {
     return (
-      <div className="space-y-4">
-        <p className="text-muted-foreground">Purchase order not found.</p>
+      <div className="space-y-4 p-6 md:p-8">
+        <p className="text-mist">Purchase order not found.</p>
         <Link href="/suppliers/purchase-orders">
           <Button variant="outline">
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -151,13 +175,13 @@ export default function PurchaseOrderDetailPage({
   const status = po.status;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6 md:p-8">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <Link
             href="/suppliers/purchase-orders"
-            className="text-sm text-muted-foreground hover:text-terracotta inline-flex items-center gap-1 mb-2"
+            className="text-sm text-mist hover:text-terracotta inline-flex items-center gap-1 mb-2"
           >
             <ArrowLeft className="h-3 w-3" /> Purchase Orders
           </Link>
@@ -173,6 +197,18 @@ export default function PurchaseOrderDetailPage({
         <div className="flex items-center gap-2">
           {status === 'DRAFT' && (
             <>
+              <Button
+                variant="outline"
+                onClick={handleMarkSent}
+                disabled={markingSent}
+              >
+                {markingSent ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="mr-2 h-4 w-4" />
+                )}
+                Mark as Sent
+              </Button>
               <Button
                 variant="outline"
                 onClick={handleSendWhatsApp}
@@ -231,16 +267,16 @@ export default function PurchaseOrderDetailPage({
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardContent className="pt-6">
-            <p className="text-xs text-muted-foreground">Supplier</p>
+            <p className="text-xs text-mist">Supplier</p>
             <p className="font-medium text-espresso">{po.supplier.name}</p>
             {po.supplier.contactName && (
-              <p className="text-sm text-muted-foreground">{po.supplier.contactName}</p>
+              <p className="text-sm text-mist">{po.supplier.contactName}</p>
             )}
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-xs text-muted-foreground">Expected Delivery</p>
+            <p className="text-xs text-mist">Expected Delivery</p>
             <p className="font-medium text-espresso">
               {po.expectedDeliveryDate ? formatDate(po.expectedDeliveryDate) : 'Not specified'}
             </p>
@@ -248,15 +284,15 @@ export default function PurchaseOrderDetailPage({
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-xs text-muted-foreground">Total Amount</p>
+            <p className="text-xs text-mist">Total Amount</p>
             <p className="font-mono font-medium text-espresso">{formatRupee(po.totalAmount)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-xs text-muted-foreground">Created By</p>
+            <p className="text-xs text-mist">Created By</p>
             <p className="font-medium text-espresso">{po.createdBy.email}</p>
-            <p className="text-xs text-muted-foreground">{formatDate(po.createdAt)}</p>
+            <p className="text-xs text-mist">{formatDate(po.createdAt)}</p>
           </CardContent>
         </Card>
       </div>
@@ -265,7 +301,7 @@ export default function PurchaseOrderDetailPage({
       {po.notes && (
         <Card>
           <CardContent className="pt-6">
-            <p className="text-xs text-muted-foreground mb-1">Notes</p>
+            <p className="text-xs text-mist mb-1">Notes</p>
             <p className="text-sm text-espresso whitespace-pre-wrap">{po.notes}</p>
           </CardContent>
         </Card>
@@ -277,7 +313,7 @@ export default function PurchaseOrderDetailPage({
           <CardTitle>Order Lines</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border border-mist">
+          <div className="rounded-lg border border-sand/30 bg-pearl overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -295,7 +331,7 @@ export default function PurchaseOrderDetailPage({
                   <TableRow key={line.id}>
                     <TableCell>
                       <p className="font-medium text-espresso">{line.productNameSnapshot}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-mist">
                         {line.variantDescriptionSnapshot}
                       </p>
                     </TableCell>
@@ -310,7 +346,7 @@ export default function PurchaseOrderDetailPage({
                       {line.isFullyReceived ? (
                         <Check className="inline h-4 w-4 text-green-600" />
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="text-mist">—</span>
                       )}
                     </TableCell>
                     <TableCell className="text-right font-mono">

@@ -160,7 +160,7 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 p-6 md:p-8">
         <div className="flex items-center gap-2 text-sm text-mist">
           <Skeleton className="h-4 w-16" />
           <Skeleton className="h-4 w-32" />
@@ -184,7 +184,7 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
 
   if (error || !product) {
     return (
-      <div className="flex flex-col items-center justify-center py-20">
+      <div className="flex flex-col items-center justify-center py-20 p-6 md:p-8">
         <p className="font-body text-lg text-espresso">Product not found</p>
         <Button asChild variant="outline" className="mt-4 border-sand text-espresso">
           <Link href="/inventory">
@@ -197,7 +197,7 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6 md:p-8">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1 text-sm font-body">
         <Link href="/inventory" className="text-mist hover:text-espresso transition-colors">
@@ -309,7 +309,7 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
       </div>
 
       {/* Tab content */}
-      {activeTab === 'details' && <ProductDetailsCard product={product} />}
+      {activeTab === 'details' && <ProductDetailsCard product={product} variants={product.variants ?? []} />}
       {activeTab === 'variants' && (
         <VariantsTab
           productId={productId}

@@ -3,6 +3,7 @@ import './globals.css';
 import { displayFont, bodyFont, monoFont } from '@/lib/fonts';
 import QueryProvider from '@/components/shared/QueryProvider';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { Toaster } from '@/components/ui/sonner';
 
 export const metadata: Metadata = {
   title: 'VelvetPOS',
@@ -20,6 +21,7 @@ export default function RootLayout({
         <QueryProvider>
           <TooltipProvider>{children}</TooltipProvider>
         </QueryProvider>
+        <Toaster richColors position="top-right" />
       </body>
     </html>
   );

@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { ChevronDown, ChevronRight, Pencil, Trash2, Package, Printer, Plus } from 'lucide-react';
+import { Pencil, Trash2, Package, Printer, Plus } from 'lucide-react';
+import { ImageViewerModal } from '@/components/product/ImageViewerModal';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -26,7 +27,21 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { VariantEditSheet } from '@/components/product/VariantEditSheet';
 import { VariantCreateSheet } from '@/components/product/VariantCreateSheet';
 import { BarcodeLabelDialog, type LabelVariant } from '@/components/inventory/BarcodeLabelDialog';
+import { COLOUR_CATALOGUE } from '@/components/wizard/ColourPickerModal';
 import { formatRupee } from '@/lib/format';
+
+// ── Colour helper (hex or name → CSS colour) ─────────────────────────────────
+
+function resolveColourHex(value: string | null | undefined): string {
+  if (!value) return '';
+  // Already a hex value
+  if (value.startsWith('#')) return value;
+  // Legacy name stored — look up in catalogue
+  const found = COLOUR_CATALOGUE.find(
+    (c) => c.name.toLowerCase() === value.toLowerCase()
+  );
+  return found?.hex ?? value;
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,12 +97,20 @@ function formatPrice(value: string | number | null | undefined): string {
 
 export function VariantsTab({ productId, variants, permissions, productName, brandName }: VariantsTabProps) {
   const queryClient = useQueryClient();
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Variant | null>(null);
   const [editTarget, setEditTarget] = useState<Variant | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedVariantIds, setSelectedVariantIds] = useState<Set<string>>(new Set());
   const [labelDialogOpen, setLabelDialogOpen] = useState(false);
+  const [viewerImages, setViewerImages] = useState<string[]>([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+  const [viewerOpen, setViewerOpen] = useState(false);
+
+  function openViewer(images: string[], startIndex: number) {
+    setViewerImages(images);
+    setViewerIndex(startIndex);
+    setViewerOpen(true);
+  }
 
   const canViewCost = permissions.includes('product:view_cost_price');
   const canEdit = permissions.includes('product:edit');
@@ -237,20 +260,16 @@ export function VariantsTab({ productId, variants, permissions, productName, bra
           </TableHeader>
           <TableBody>
             {variants.map((v) => {
-              const isExpanded = expandedId === v.id;
               return (
                 <VariantRows
                   key={v.id}
                   variant={v}
-                  isExpanded={isExpanded}
                   canViewCost={canViewCost}
                   canEdit={canEdit}
                   canDelete={canDelete}
                   isSelected={selectedVariantIds.has(v.id)}
                   onToggleSelect={() => toggleVariant(v.id)}
-                  onToggleExpand={() =>
-                    setExpandedId(isExpanded ? null : v.id)
-                  }
+                  onOpenViewer={(idx) => openViewer(v.imageUrls, idx)}
                   onEdit={() => setEditTarget(v)}
                   onDelete={() => setDeleteTarget(v)}
                 />
@@ -313,6 +332,15 @@ export function VariantsTab({ productId, variants, permissions, productName, bra
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Image viewer */}
+      <ImageViewerModal
+        open={viewerOpen}
+        onClose={() => setViewerOpen(false)}
+        images={viewerImages}
+        currentIndex={viewerIndex}
+        onIndexChange={setViewerIndex}
+      />
     </>
   );
 }
@@ -321,133 +349,140 @@ export function VariantsTab({ productId, variants, permissions, productName, bra
 
 interface VariantRowsProps {
   variant: Variant;
-  isExpanded: boolean;
   canViewCost: boolean;
   canEdit: boolean;
   canDelete: boolean;
   isSelected: boolean;
   onToggleSelect: () => void;
-  onToggleExpand: () => void;
+  onOpenViewer: (startIndex: number) => void;
   onEdit: () => void;
   onDelete: () => void;
 }
 
 function VariantRows({
   variant,
-  isExpanded,
   canViewCost,
   canEdit,
   canDelete,
   isSelected,
   onToggleSelect,
-  onToggleExpand,
+  onOpenViewer,
   onEdit,
   onDelete,
 }: VariantRowsProps) {
-  const colSpan = 7 + (canViewCost ? 1 : 0) + (canEdit || canDelete ? 1 : 0);
+  const MAX_VISIBLE = 3;
+  const images = variant.imageUrls;
 
   return (
-    <>
-      <TableRow className="hover:bg-sand/10">
-        <TableCell>
-          <Checkbox
-            checked={isSelected}
-            onCheckedChange={onToggleSelect}
-            aria-label={`Select variant ${variant.sku}`}
-          />
-        </TableCell>
-        <TableCell>
-          {variant.imageUrls.length > 0 ? (
-            <button
-              type="button"
-              onClick={onToggleExpand}
-              className="text-mist hover:text-espresso transition-colors"
-            >
-              {isExpanded ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
-            </button>
-          ) : (
-            <span className="inline-block h-4 w-4" />
-          )}
-        </TableCell>
-        <TableCell className="font-mono text-sm text-espresso">{variant.sku}</TableCell>
-        <TableCell className="font-mono text-sm text-espresso">
-          {variant.barcode || '—'}
-        </TableCell>
-        <TableCell className="font-body text-sm text-espresso">
-          {variant.size || '—'}
-        </TableCell>
-        <TableCell className="font-body text-sm text-espresso">
-          {variant.colour || '—'}
-        </TableCell>
-        {canViewCost && (
-          <TableCell className="font-mono text-sm text-espresso">
-            {formatPrice(variant.costPrice)}
-          </TableCell>
-        )}
-        <TableCell className="font-mono text-sm text-espresso">
-          {formatPrice(variant.retailPrice)}
-        </TableCell>
-        <TableCell className="font-mono text-sm text-espresso">
-          {formatPrice(variant.wholesalePrice)}
-        </TableCell>
-        <TableCell>
-          <StockBadge qty={variant.stockQuantity} threshold={variant.lowStockThreshold} />
-        </TableCell>
-        <TableCell className="font-body text-sm text-espresso">
-          {variant.lowStockThreshold}
-        </TableCell>
-        {(canEdit || canDelete) && (
-          <TableCell className="text-right">
-            <div className="flex items-center justify-end gap-1">
-              {canEdit && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-mist hover:text-espresso"
-                  onClick={onEdit}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-              )}
-              {canDelete && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-mist hover:text-red-600"
-                  onClick={onDelete}
-                  aria-label={`Delete variant ${variant.sku}`}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
-          </TableCell>
-        )}
-      </TableRow>
-
-      {/* Expanded row for images */}
-      {isExpanded && variant.imageUrls.length > 0 && (
-        <TableRow className="bg-linen/50 hover:bg-linen/50">
-          <TableCell colSpan={colSpan} className="py-3">
-            <div className="flex flex-wrap gap-2 pl-6">
-              {variant.imageUrls.map((url, i) => (
+    <TableRow className="hover:bg-sand/10">
+      <TableCell>
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={onToggleSelect}
+          aria-label={`Select variant ${variant.sku}`}
+        />
+      </TableCell>
+      {/* Inline image thumbnails */}
+      <TableCell>
+        {images.length > 0 ? (
+          <div className="flex items-center gap-1 flex-nowrap">
+            {images.slice(0, MAX_VISIBLE).map((url, i) => (
+              <button
+                key={`${variant.id}-thumb-${i}`}
+                type="button"
+                className={`relative flex-shrink-0 h-8 w-8 overflow-hidden rounded border transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-1 focus-visible:ring-terracotta ${
+                  i === 0 ? 'border-terracotta ring-1 ring-terracotta/40' : 'border-sand/40'
+                }`}
+                onClick={() => onOpenViewer(i)}
+                aria-label={`View image ${i + 1}`}
+              >
                 <Image
-                  key={`${variant.id}-img-${i}`}
                   src={url}
                   alt={`${variant.sku} image ${i + 1}`}
-                  width={60}
-                  height={60}
-                  className="h-[60px] w-[60px] rounded-md object-cover border border-sand/30"
+                  fill
+                  className="object-cover"
+                  unoptimized
                 />
-              ))}
-            </div>
-          </TableCell>
-        </TableRow>
+              </button>
+            ))}
+            {images.length > MAX_VISIBLE && (
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded border border-sand/40 bg-linen text-xs font-medium text-espresso hover:bg-sand/20 transition-colors"
+                onClick={() => onOpenViewer(MAX_VISIBLE)}
+                aria-label={`View all ${images.length} images`}
+              >
+                +{images.length - MAX_VISIBLE}
+              </button>
+            )}
+          </div>
+        ) : (
+          <span className="text-xs text-mist italic">—</span>
+        )}
+      </TableCell>
+      <TableCell className="font-mono text-sm text-espresso">{variant.sku}</TableCell>
+      <TableCell className="font-mono text-sm text-espresso">
+        {variant.barcode || '—'}
+      </TableCell>
+      <TableCell className="font-body text-sm text-espresso">
+        {variant.size || '—'}
+      </TableCell>
+      <TableCell className="font-body text-sm text-espresso">
+        {variant.colour ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-block h-3 w-3 rounded-full border border-espresso/20 shrink-0"
+              style={{ backgroundColor: resolveColourHex(variant.colour) }}
+              aria-hidden="true"
+            />
+            {variant.colour}
+          </span>
+        ) : '—'}
+      </TableCell>
+      {canViewCost && (
+        <TableCell className="font-mono text-sm text-espresso">
+          {formatPrice(variant.costPrice)}
+        </TableCell>
       )}
-    </>
+      <TableCell className="font-mono text-sm text-espresso">
+        {formatPrice(variant.retailPrice)}
+      </TableCell>
+      <TableCell className="font-mono text-sm text-espresso">
+        {formatPrice(variant.wholesalePrice)}
+      </TableCell>
+      <TableCell>
+        <StockBadge qty={variant.stockQuantity} threshold={variant.lowStockThreshold} />
+      </TableCell>
+      <TableCell className="font-body text-sm text-espresso">
+        {variant.lowStockThreshold}
+      </TableCell>
+      {(canEdit || canDelete) && (
+        <TableCell className="text-right">
+          <div className="flex items-center justify-end gap-1">
+            {canEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-mist hover:text-espresso"
+                onClick={onEdit}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-mist hover:text-red-600"
+                onClick={onDelete}
+                aria-label={`Delete variant ${variant.sku}`}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        </TableCell>
+      )}
+    </TableRow>
   );
 }

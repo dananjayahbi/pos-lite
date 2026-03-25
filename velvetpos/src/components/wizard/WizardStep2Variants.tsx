@@ -15,6 +15,8 @@ interface VariantRow {
   size: string;
   colour: string;
   sku: string;
+  barcode: string;
+  initialStock: string;
   costPrice: string;
   retailPrice: string;
   wholesalePrice: string;
@@ -71,6 +73,8 @@ function generateMatrix(
           size,
           colour,
           sku: generateSku(productName, size, colour),
+          barcode: '',
+          initialStock: '',
           costPrice: '',
           retailPrice: '',
           wholesalePrice: '',
@@ -118,11 +122,15 @@ export function WizardStep2Variants() {
         size: v.size ?? '',
         colour: v.colour ?? '',
         sku: v.sku ?? generateSku(productName, v.size ?? '', v.colour ?? ''),
+        barcode: v.barcode ?? '',
+        initialStock: v.initialStock != null ? String(v.initialStock) : '',
         costPrice: v.costPrice > 0 ? String(v.costPrice) : '',
         retailPrice: v.retailPrice > 0 ? String(v.retailPrice) : '',
         wholesalePrice: v.wholesalePrice ? String(v.wholesalePrice) : '',
         lowStockThreshold: v.lowStockThreshold,
-        selected: true,        imageUrls: v.imageUrls ?? [],      }))
+        selected: true,
+        imageUrls: v.imageUrls ?? [],
+      }))
     : generateMatrix(sizes, colours, productName, []);
 
   const { control, register, handleSubmit, setValue, watch, getValues } =
@@ -188,6 +196,8 @@ export function WizardStep2Variants() {
           colour?: string;
           wholesalePrice?: number;
           sku?: string;
+          barcode?: string;
+          initialStock?: number;
           imageUrls?: string[];
         } = {
           costPrice: parseFloat(v.costPrice),
@@ -199,6 +209,8 @@ export function WizardStep2Variants() {
         if (v.colour) variant.colour = v.colour;
         if (v.wholesalePrice) variant.wholesalePrice = parseFloat(v.wholesalePrice);
         if (v.sku) variant.sku = v.sku;
+        if (v.barcode) variant.barcode = v.barcode;
+        if (v.initialStock) variant.initialStock = parseInt(v.initialStock, 10);
         return variant;
       }),
     });

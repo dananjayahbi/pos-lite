@@ -156,11 +156,12 @@ export function GoodsReceivingForm({
         return {
           lineId: line.id,
           receivedQty: entry.thisQty,
-          actualCostPrice: trimmed === '' ? String(line.expectedCostPrice) : trimmed,
+          actualCostPrice: Number(trimmed !== '' ? trimmed : line.expectedCostPrice),
         };
       });
 
     if (receivedLines.length === 0) {
+      toast.error('Enter a quantity greater than 0 for at least one line before confirming.');
       return;
     }
 

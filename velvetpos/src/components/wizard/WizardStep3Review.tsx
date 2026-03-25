@@ -9,6 +9,7 @@ import { useCategories } from '@/hooks/useCategories';
 import { useBrands } from '@/hooks/useBrands';
 import { Button } from '@/components/ui/button';
 import { formatRupee } from '@/lib/format';
+import { getPendingImages, clearPendingFiles } from '@/lib/wizardPendingFiles';
 
 export function WizardStep3Review() {
   const router = useRouter();
@@ -29,6 +30,24 @@ export function WizardStep3Review() {
     mutationFn: async () => {
       if (!step1Data || !step2Data) throw new Error('Wizard data is incomplete');
 
+      // Upload pending files for each variant
+      const variantImageUrls: Record<string, { urls: string[]; primaryIndex: number }> = {};
+      for (const v of step2Data.variants) {
+        const key = `${v.size ?? ''}|${v.colour ?? ''}`;
+        const pending = getPendingImages(key);
+        const uploadedUrls: string[] = [];
+        for (const entry of pending.pending) {
+          const formData = new FormData();
+          formData.append('image', entry.file);
+          const res = await fetch('/api/upload', { method: 'POST', body: formData });
+          if (res.ok) {
+            const data = (await res.json()) as { url: string };
+            uploadedUrls.push(data.url);
+          }
+        }
+        variantImageUrls[key] = { urls: uploadedUrls, primaryIndex: pending.primaryIndex };
+      }
+
       const body = {
         name: step1Data.name,
         description: step1Data.description || undefined,
@@ -37,10 +56,17 @@ export function WizardStep3Review() {
         gender: step1Data.gender,
         tags: step1Data.tags,
         taxRule: step1Data.taxRule,
-        variantDefinitions: step2Data.variants.map((v) => ({
-          ...v,
-          imageUrls: v.imageUrls ?? [],
-        })),
+        variantDefinitions: step2Data.variants.map((v) => {
+          const key = `${v.size ?? ''}|${v.colour ?? ''}`;
+          const imgData = variantImageUrls[key];
+          const urls = imgData?.urls ?? v.imageUrls ?? [];
+          const pIdx = imgData?.primaryIndex ?? 0;
+          // Reorder so primary comes first
+          const reordered = urls.length > 0 && pIdx > 0
+            ? [urls[pIdx], ...urls.filter((_, i) => i !== pIdx)]
+            : urls;
+          return { ...v, imageUrls: reordered };
+        }),
       };
 
       const res = await fetch('/api/store/products', {
@@ -50,6 +76,7 @@ export function WizardStep3Review() {
       });
       const json = (await res.json()) as { success: boolean; error?: { message: string } };
       if (!json.success) throw new Error(json.error?.message ?? 'Failed to create product');
+      clearPendingFiles();
       return json;
     },
     onSuccess: () => {
@@ -145,6 +172,8 @@ export function WizardStep3Review() {
                 <th className="px-4 py-2 font-medium text-sand">Size</th>
                 <th className="px-4 py-2 font-medium text-sand">Colour</th>
                 <th className="px-4 py-2 font-medium text-sand">SKU</th>
+                <th className="px-4 py-2 font-medium text-sand">Barcode</th>
+                <th className="px-4 py-2 text-right font-medium text-sand">Stock</th>
                 <th className="px-4 py-2 text-right font-medium text-sand">Cost</th>
                 <th className="px-4 py-2 text-right font-medium text-sand">Retail</th>
                 <th className="px-4 py-2 text-right font-medium text-sand">Low Stock</th>
@@ -154,8 +183,20 @@ export function WizardStep3Review() {
               {step2Data.variants.map((v, i) => (
                 <tr key={i}>
                   <td className="px-4 py-2 text-espresso">{v.size ?? '—'}</td>
-                  <td className="px-4 py-2 text-espresso">{v.colour ?? '—'}</td>
+                  <td className="px-4 py-2">
+                    {v.colour ? (
+                      <span className="inline-flex items-center gap-1.5 text-espresso">
+                        <span
+                          className="inline-block h-3 w-3 rounded-full border border-espresso/20 shrink-0"
+                          style={{ backgroundColor: v.colour }}
+                        />
+                        {v.colour}
+                      </span>
+                    ) : '—'}
+                  </td>
                   <td className="px-4 py-2 font-mono text-xs text-sand">{v.sku ?? '—'}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-sand">{v.barcode ?? '—'}</td>
+                  <td className="px-4 py-2 text-right text-espresso">{v.initialStock ?? 0}</td>
                   <td className="px-4 py-2 text-right font-mono text-espresso">
                     {formatRupee(v.costPrice)}
                   </td>

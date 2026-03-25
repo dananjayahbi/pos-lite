@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,8 +21,24 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Plus, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Eye, ChevronLeft, ChevronRight, MoreHorizontal, PackageCheck, XCircle, Send } from 'lucide-react';
+import { toast } from 'sonner';
 import { formatRupee } from '@/lib/format';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -53,7 +69,7 @@ interface SupplierOption {
 // ── Status Badge ─────────────────────────────────────────────────────────────
 
 const STATUS_STYLES: Record<string, string> = {
-  DRAFT: 'bg-muted text-muted-foreground',
+  DRAFT: 'bg-sand/30 text-espresso',
   SENT: 'bg-blue-50 text-blue-700',
   PARTIALLY_RECEIVED: 'bg-amber-50 text-amber-700',
   RECEIVED: 'bg-green-50 text-green-700',
@@ -83,10 +99,59 @@ export default function PurchaseOrdersPage() {
   const [to, setTo] = useState('');
   const [page, setPage] = useState(1);
 
+  // Cancel dialog state
+  const [cancelTarget, setCancelTarget] = useState<PurchaseOrder | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+
+  const queryClient = useQueryClient();
+
   // Reset page on filter change
   useEffect(() => {
     setPage(1);
   }, [supplierId, status, from, to]);
+
+  const handleCancel = useCallback(async () => {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/store/purchase-orders/${cancelTarget.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'CANCELLED' }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        toast.error(json.error?.message ?? 'Failed to cancel');
+        return;
+      }
+      toast.success(`${formatPORef(cancelTarget.id)} cancelled`);
+      setCancelTarget(null);
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+    } catch {
+      toast.error('Network error');
+    } finally {
+      setCancelling(false);
+    }
+  }, [cancelTarget, queryClient]);
+
+  const handleMarkSent = useCallback(async (po: PurchaseOrder) => {
+    try {
+      const res = await fetch(`/api/store/purchase-orders/${po.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'SENT' }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        toast.error(json.error?.message ?? 'Failed to update status');
+        return;
+      }
+      toast.success(`${formatPORef(po.id)} marked as Sent`);
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+    } catch {
+      toast.error('Network error');
+    }
+  }, [queryClient]);
 
   // Fetch suppliers for dropdown
   const { data: suppliersData } = useQuery<{ success: boolean; data: { suppliers: SupplierOption[] } }>({
@@ -115,7 +180,7 @@ export default function PurchaseOrdersPage() {
   const totalPages = data?.data?.totalPages ?? 1;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6 md:p-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl font-semibold text-espresso">Purchase Orders</h1>
@@ -173,7 +238,7 @@ export default function PurchaseOrdersPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-md border border-mist">
+      <div className="rounded-lg border border-sand/30 bg-pearl overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -200,7 +265,7 @@ export default function PurchaseOrdersPage() {
               ))
             ) : pos.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-8 text-center text-mist">
                   No purchase orders found
                 </TableCell>
               </TableRow>
@@ -230,15 +295,54 @@ export default function PurchaseOrdersPage() {
                       ? formatDate(po.expectedDeliveryDate)
                       : '—'}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="text-mist">
                     {formatDate(po.createdAt)}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Link href={`/suppliers/purchase-orders/${po.id}`}>
-                      <Button variant="ghost" size="sm">
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    </Link>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="bg-pearl border-sand/30">
+                        <DropdownMenuItem asChild>
+                          <Link href={`/suppliers/purchase-orders/${po.id}`} className="flex items-center gap-2 cursor-pointer">
+                            <Eye className="h-4 w-4" />
+                            View Details
+                          </Link>
+                        </DropdownMenuItem>
+                        {po.status === 'DRAFT' && (
+                          <DropdownMenuItem
+                            className="flex items-center gap-2 cursor-pointer"
+                            onClick={() => handleMarkSent(po)}
+                          >
+                            <Send className="h-4 w-4" />
+                            Mark as Sent
+                          </DropdownMenuItem>
+                        )}
+                        {(po.status === 'SENT' || po.status === 'PARTIALLY_RECEIVED') && (
+                          <DropdownMenuItem asChild>
+                            <Link href={`/suppliers/purchase-orders/${po.id}/receive`} className="flex items-center gap-2 cursor-pointer">
+                              <PackageCheck className="h-4 w-4" />
+                              Receive Goods
+                            </Link>
+                          </DropdownMenuItem>
+                        )}
+                        {(po.status === 'DRAFT' || po.status === 'SENT' || po.status === 'PARTIALLY_RECEIVED') && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="flex items-center gap-2 cursor-pointer text-red-600 focus:text-red-600"
+                              onClick={() => setCancelTarget(po)}
+                            >
+                              <XCircle className="h-4 w-4" />
+                              Cancel PO
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               ))
@@ -250,7 +354,7 @@ export default function PurchaseOrdersPage() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-mist">
             Page {page} of {totalPages}
           </p>
           <div className="flex gap-2">
@@ -275,6 +379,26 @@ export default function PurchaseOrdersPage() {
           </div>
         </div>
       )}
+
+      {/* Cancel Confirm Dialog */}
+      <Dialog open={!!cancelTarget} onOpenChange={(open) => { if (!open) setCancelTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel Purchase Order?</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to cancel {cancelTarget ? formatPORef(cancelTarget.id) : ''}? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelTarget(null)} disabled={cancelling}>
+              Keep
+            </Button>
+            <Button variant="destructive" onClick={handleCancel} disabled={cancelling}>
+              {cancelling ? 'Cancelling…' : 'Cancel PO'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

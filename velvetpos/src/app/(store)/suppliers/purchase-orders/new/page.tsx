@@ -113,7 +113,7 @@ function VariantSearchInput({ index, onSelect }: VariantSearchProps) {
         }}
       />
       {open && results.length > 0 && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border border-mist bg-white shadow-lg max-h-60 overflow-y-auto">
+        <div className="absolute z-50 mt-1 w-full rounded-lg border border-sand/30 bg-pearl shadow-lg max-h-60 overflow-y-auto">
           {results.map((v) => (
             <button
               key={v.id}
@@ -123,11 +123,11 @@ function VariantSearchInput({ index, onSelect }: VariantSearchProps) {
             >
               <div>
                 <p className="font-medium text-espresso">{variantLabel(v)}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-mist">
                   SKU: {v.sku} · Stock: {v.stockQuantity}
                 </p>
               </div>
-              <span className="font-mono text-xs text-muted-foreground">
+              <span className="font-mono text-xs text-mist">
                 {formatRupee(v.costPrice)}
               </span>
             </button>
@@ -231,7 +231,7 @@ export default function NewPurchaseOrderPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6 md:p-8">
       <h1 className="font-display text-2xl font-semibold text-espresso">New Purchase Order</h1>
 
       <form onSubmit={handleSubmit(onSubmit)}>
@@ -297,7 +297,7 @@ export default function NewPurchaseOrderPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {fields.length === 0 && (
-                  <p className="text-sm text-muted-foreground py-4 text-center">
+                  <p className="text-sm text-mist py-4 text-center">
                     No lines added yet. Click &quot;Add Line&quot; to start.
                   </p>
                 )}
@@ -309,12 +309,12 @@ export default function NewPurchaseOrderPage() {
                 )}
 
                 {fields.map((field, index) => (
-                  <div key={field.id} className="rounded-md border border-mist p-4 space-y-3">
+                  <div key={field.id} className="rounded-lg border border-sand/30 bg-pearl/60 p-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium text-espresso">
                         Line {index + 1}
                         {lineLabels[index] && (
-                          <span className="ml-2 font-normal text-muted-foreground">
+                          <span className="ml-2 font-normal text-mist">
                             — {lineLabels[index]}
                           </span>
                         )}
@@ -397,7 +397,7 @@ export default function NewPurchaseOrderPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {(watchedLines ?? []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No lines added</p>
+                  <p className="text-sm text-mist">No lines added</p>
                 ) : (
                   <>
                     {(watchedLines ?? []).map((line, i) => {
@@ -407,14 +407,14 @@ export default function NewPurchaseOrderPage() {
                       const lineTotal = new Decimal(cost).times(qty);
                       return (
                         <div key={i} className="flex items-center justify-between text-sm">
-                          <span className="truncate max-w-[60%]">{label}</span>
+                          <span className="truncate max-w-[60%] text-espresso">{label}</span>
                           <span className="font-mono">
                             {qty} × {formatRupee(cost)}
                           </span>
                         </div>
                       );
                     })}
-                    <div className="border-t border-mist pt-3">
+                    <div className="border-t border-sand/30 pt-3">
                       <div className="flex items-center justify-between font-semibold">
                         <span>Total</span>
                         <span className="font-mono">{formatRupee(runningTotal.toFixed(2))}</span>

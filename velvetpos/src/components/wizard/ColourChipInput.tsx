@@ -4,11 +4,16 @@ import { useState, type KeyboardEvent } from 'react';
 import { X, Palette } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { ColourPickerModal } from './ColourPickerModal';
+import { ColourPickerModal, COLOUR_CATALOGUE } from './ColourPickerModal';
 
 interface ColourChipInputProps {
   value: string[];
   onChange: (colours: string[]) => void;
+}
+
+function getColourLabel(colour: string): string {
+  const entry = COLOUR_CATALOGUE.find((c) => c.hex.toLowerCase() === colour.toLowerCase());
+  return entry ? entry.name : colour;
 }
 
 export function ColourChipInput({ value, onChange }: ColourChipInputProps) {
@@ -54,7 +59,7 @@ export function ColourChipInput({ value, onChange }: ColourChipInputProps) {
               style={{ backgroundColor: colour }}
               aria-hidden="true"
             />
-            {colour}
+            {getColourLabel(colour)}
             <button
               type="button"
               onClick={() => removeColour(i)}

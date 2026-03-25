@@ -360,7 +360,7 @@ export async function receivePOLines(
       costPricesChanged,
       costPriceChangedCount: costPricesChanged.length,
     };
-  });
+  }, { timeout: 30000 });
 }
 
 // ── Format PO for WhatsApp ───────────────────────────────────────────────────
