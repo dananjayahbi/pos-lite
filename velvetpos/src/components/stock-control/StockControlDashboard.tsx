@@ -60,7 +60,7 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
   const canViewStockValue = permissions.includes('product:view_cost_price');
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6 md:p-8">
       {/* Page Header */}
       <div>
         <h1 className="font-display text-2xl font-bold text-espresso">Stock Control</h1>

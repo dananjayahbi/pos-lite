@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import Image from 'next/image';
 import { Pencil, Trash2, Package, Printer, Plus } from 'lucide-react';
 import { ImageViewerModal } from '@/components/product/ImageViewerModal';
@@ -30,10 +30,13 @@ import { BarcodeLabelDialog, type LabelVariant } from '@/components/inventory/Ba
 import { COLOUR_CATALOGUE } from '@/components/wizard/ColourPickerModal';
 import { formatRupee } from '@/lib/format';
 
-// ── Colour helper (hex or name → CSS colour) ─────────────────────────────────
+// ── Colour helpers ───────────────────────────────────────────────────────────
 
-function resolveColourHex(value: string | null | undefined): string {
+/** Given a stored value (hex, gradient, or name), returns a CSS-valid colour string. */
+function resolveColourCss(value: string | null | undefined): string {
   if (!value) return '';
+  // Already a CSS gradient
+  if (value.startsWith('linear-gradient') || value.startsWith('radial-gradient')) return value;
   // Already a hex value
   if (value.startsWith('#')) return value;
   // Legacy name stored — look up in catalogue
@@ -41,6 +44,24 @@ function resolveColourHex(value: string | null | undefined): string {
     (c) => c.name.toLowerCase() === value.toLowerCase()
   );
   return found?.hex ?? value;
+}
+
+/** Returns a friendly display name for a stored colour value (hex, gradient, or name). */
+function resolveColourName(value: string | null | undefined): string {
+  if (!value) return '';
+  // Reverse-lookup by hex or gradient
+  const found = COLOUR_CATALOGUE.find(
+    (c) => c.hex.toLowerCase() === value.toLowerCase() || c.name.toLowerCase() === value.toLowerCase()
+  );
+  return found?.name ?? value;
+}
+
+/** Returns CSS style object for colour swatch (handles gradients). */
+function colourSwatchStyle(css: string): React.CSSProperties {
+  if (css.startsWith('linear-gradient') || css.startsWith('radial-gradient')) {
+    return { background: css };
+  }
+  return { backgroundColor: css };
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -432,10 +453,10 @@ function VariantRows({
           <span className="inline-flex items-center gap-1.5">
             <span
               className="inline-block h-3 w-3 rounded-full border border-espresso/20 shrink-0"
-              style={{ backgroundColor: resolveColourHex(variant.colour) }}
+              style={colourSwatchStyle(resolveColourCss(variant.colour))}
               aria-hidden="true"
             />
-            {variant.colour}
+            {resolveColourName(variant.colour)}
           </span>
         ) : '—'}
       </TableCell>

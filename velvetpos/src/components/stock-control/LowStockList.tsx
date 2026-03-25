@@ -170,7 +170,7 @@ export function LowStockList({ permissions }: LowStockListProps) {
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-lg border border-sand/40">
+          <div className="overflow-x-auto rounded-lg border border-sand/30 bg-white">
             <Table>
               <TableHeader>
                 <TableRow>

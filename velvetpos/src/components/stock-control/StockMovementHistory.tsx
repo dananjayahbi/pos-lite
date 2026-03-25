@@ -52,6 +52,8 @@ const REASON_LABELS: Record<string, string> = {
   SALE_RETURN: 'Customer Return',
   PURCHASE_RECEIVED: 'Received from Purchase',
   STOCK_TAKE_ADJUSTMENT: 'Stock Take Adjustment',
+  SALE: 'Sale',
+  VOID_REVERSAL: 'Void Reversal',
 };
 
 const REASON_BADGE_VARIANT: Record<string, 'success' | 'destructive' | 'info' | 'warning'> = {
@@ -64,6 +66,8 @@ const REASON_BADGE_VARIANT: Record<string, 'success' | 'destructive' | 'info' | 
   STOCK_TAKE_ADJUSTMENT: 'info',
   RETURNED_TO_SUPPLIER: 'warning',
   SALE_RETURN: 'warning',
+  SALE: 'info',
+  VOID_REVERSAL: 'warning',
 };
 
 const REASON_DOT_COLOR: Record<string, string> = {
@@ -76,6 +80,8 @@ const REASON_DOT_COLOR: Record<string, string> = {
   STOCK_TAKE_ADJUSTMENT: 'bg-blue-500',
   RETURNED_TO_SUPPLIER: 'bg-amber-500',
   SALE_RETURN: 'bg-amber-500',
+  SALE: 'bg-blue-400',
+  VOID_REVERSAL: 'bg-amber-400',
 };
 
 const ALL_REASONS = [...STOCK_MOVEMENT_REASONS];
@@ -268,7 +274,7 @@ function StockMovementHistoryInner() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6 md:p-8">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-mist">
         <Link href="/" className="hover:text-espresso transition-colors">Dashboard</Link>
@@ -499,7 +505,7 @@ function StockMovementHistoryInner() {
       )}
 
       {/* Table */}
-      <div className="rounded-lg border border-sand overflow-x-auto">
+      <div className="rounded-lg border border-sand/30 bg-pearl overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>

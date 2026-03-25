@@ -91,6 +91,7 @@ enum StockTakeStatus {
   PENDING_APPROVAL
   APPROVED
   REJECTED
+  CANCELLED
 }
 
 enum NotificationType {

@@ -12,6 +12,7 @@ import {
   Loader2,
   Package,
   FolderOpen,
+  XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -48,6 +49,15 @@ interface StockTakeListProps {
   permissions: string[];
 }
 
+// ── Cancel modal session type ────────────────────────────────────────────────
+interface CancelTarget {
+  id: string;
+  /** number of items where countedQuantity has been filled in */
+  countedItemCount: number;
+  /** number of those counted items with a non-zero discrepancy */
+  discrepancyCount: number;
+}
+
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   IN_PROGRESS: {
     label: 'In Progress',
@@ -64,6 +74,10 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   REJECTED: {
     label: 'Rejected',
     className: 'bg-red-100 text-red-800 hover:bg-red-100',
+  },
+  CANCELLED: {
+    label: 'Cancelled',
+    className: 'bg-gray-100 text-gray-600 hover:bg-gray-100',
   },
 };
 
@@ -98,6 +112,64 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
   const sessions = sessionsRes?.data ?? [];
   const categories = categoriesRes?.data ?? [];
   const hasInProgress = sessions.some((s) => s.status === 'IN_PROGRESS');
+
+  // ── Cancel modal state ───────────────────────────────────────────────────
+  const [cancelTarget, setCancelTarget] = useState<CancelTarget | null>(null);
+  const [cancelAction, setCancelAction] = useState<'discard' | 'apply'>('discard');
+  const [cancelling, setCancelling] = useState(false);
+
+  const handleOpenCancel = useCallback(
+    async (sessionId: string) => {
+      // Fetch session detail to know how many items are counted
+      try {
+        const res = await fetch(`/api/store/stock-control/stock-takes/${sessionId}`);
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          toast.error('Failed to load session details');
+          return;
+        }
+        const items: { countedQuantity: number | null; discrepancy: number | null }[] =
+          json.data.items ?? [];
+        const counted = items.filter((i) => i.countedQuantity !== null).length;
+        const discrepancies = items.filter(
+          (i) => i.discrepancy !== null && i.discrepancy !== 0,
+        ).length;
+        setCancelTarget({ id: sessionId, countedItemCount: counted, discrepancyCount: discrepancies });
+        setCancelAction('discard');
+      } catch {
+        toast.error('Failed to load session details');
+      }
+    },
+    [],
+  );
+
+  const handleConfirmCancel = useCallback(async () => {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    try {
+      const action = cancelTarget.countedItemCount === 0 ? 'none' : cancelAction;
+      const res = await fetch(
+        `/api/store/stock-control/stock-takes/${cancelTarget.id}/cancel`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action }),
+        },
+      );
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        toast.error(json.error?.message ?? 'Failed to cancel session');
+        return;
+      }
+      toast.success('Stock take session cancelled');
+      await queryClient.invalidateQueries({ queryKey: ['stock-take-sessions'] });
+      setCancelTarget(null);
+    } catch {
+      toast.error('Failed to cancel session');
+    } finally {
+      setCancelling(false);
+    }
+  }, [cancelTarget, cancelAction, queryClient]);
 
   const handleCreateSession = useCallback(async () => {
     setCreating(true);
@@ -141,7 +213,7 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6 md:p-8">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-mist font-body">
         <Link href="/" className="hover:text-espresso transition-colors">
@@ -291,7 +363,7 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
           </p>
         </div>
       ) : (
-        <div className="rounded-lg border border-sand/30 overflow-hidden">
+        <div className="rounded-lg border border-sand/30 bg-white overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow className="bg-linen/50 hover:bg-linen/50">
@@ -358,16 +430,29 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Link
-                        href={`/stock-control/stock-takes/${s.id}`}
-                        className="font-body text-sm text-espresso underline-offset-2 hover:underline"
-                      >
-                        {s.status === 'IN_PROGRESS'
-                          ? 'Continue Counting'
-                          : s.status === 'PENDING_APPROVAL'
-                            ? 'Review'
-                            : 'View Details'}
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/stock-control/stock-takes/${s.id}`}
+                          className="font-body text-sm text-espresso underline-offset-2 hover:underline"
+                        >
+                          {s.status === 'IN_PROGRESS'
+                            ? 'Continue Counting'
+                            : s.status === 'PENDING_APPROVAL'
+                              ? 'Review'
+                              : 'View Details'}
+                        </Link>
+                        {s.status === 'IN_PROGRESS' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                            onClick={() => handleOpenCancel(s.id)}
+                          >
+                            <XCircle className="mr-1 h-3.5 w-3.5" />
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -376,6 +461,107 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
           </Table>
         </div>
       )}
+
+      {/* ── Cancel Stock Take Modal ──────────────────────────────────────── */}
+      <Dialog open={!!cancelTarget} onOpenChange={(open) => { if (!open) setCancelTarget(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display text-espresso flex items-center gap-2">
+              <XCircle className="h-5 w-5 text-red-600" />
+              Cancel Stock Take Session
+            </DialogTitle>
+            <DialogDescription className="font-body text-mist">
+              {cancelTarget?.countedItemCount === 0
+                ? 'This session has no counted items. It will be cancelled immediately with no changes to stock.'
+                : `This session has ${cancelTarget?.countedItemCount} counted item${cancelTarget?.countedItemCount === 1 ? '' : 's'}${cancelTarget?.discrepancyCount ? ` with ${cancelTarget.discrepancyCount} discrepanc${cancelTarget.discrepancyCount === 1 ? 'y' : 'ies'}` : ''}. Choose how to handle the counted data before cancelling.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          {cancelTarget && cancelTarget.countedItemCount > 0 && (
+            <div className="space-y-3 py-2">
+              <p className="text-sm font-medium text-espresso">What should happen to the counted data?</p>
+
+              <label
+                className={`flex cursor-pointer items-start gap-3 rounded-lg border-2 p-4 transition-colors ${
+                  cancelAction === 'discard'
+                    ? 'border-espresso bg-pearl'
+                    : 'border-sand/40 hover:border-sand'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="cancelAction"
+                  value="discard"
+                  checked={cancelAction === 'discard'}
+                  onChange={() => setCancelAction('discard')}
+                  className="mt-0.5 accent-espresso"
+                />
+                <div>
+                  <p className="font-body text-sm font-semibold text-espresso">Discard all progress</p>
+                  <p className="mt-0.5 font-body text-xs text-mist">
+                    All counted quantities are ignored. Stock levels remain unchanged.
+                  </p>
+                </div>
+              </label>
+
+              <label
+                className={`flex cursor-pointer items-start gap-3 rounded-lg border-2 p-4 transition-colors ${
+                  cancelAction === 'apply'
+                    ? 'border-espresso bg-pearl'
+                    : 'border-sand/40 hover:border-sand'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="cancelAction"
+                  value="apply"
+                  checked={cancelAction === 'apply'}
+                  onChange={() => setCancelAction('apply')}
+                  className="mt-0.5 accent-espresso"
+                />
+                <div>
+                  <p className="font-body text-sm font-semibold text-espresso">Apply current changes</p>
+                  <p className="mt-0.5 font-body text-xs text-mist">
+                    {cancelTarget.discrepancyCount > 0
+                      ? `${cancelTarget.discrepancyCount} stock adjustment${cancelTarget.discrepancyCount === 1 ? '' : 's'} will be applied before cancelling.`
+                      : 'All counted items match system quantities — no adjustments needed.'}
+                  </p>
+                </div>
+              </label>
+
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="font-body text-xs text-amber-700">
+                  <AlertTriangle className="mr-1 inline-block h-3.5 w-3.5" />
+                  This action cannot be undone. The session will be permanently cancelled.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCancelTarget(null)}
+              disabled={cancelling}
+              className="border-sand text-espresso"
+            >
+              Keep Session
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmCancel}
+              disabled={cancelling}
+            >
+              {cancelling && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {cancelTarget?.countedItemCount === 0
+                ? 'Cancel Session'
+                : cancelAction === 'apply'
+                  ? 'Apply & Cancel'
+                  : 'Discard & Cancel'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -33,9 +33,9 @@ export async function GET() {
 
         prisma.$queryRaw<[{ count: bigint }]>`
           SELECT COUNT(*) as count FROM product_variants
-          WHERE tenant_id = ${tenantId}
-            AND deleted_at IS NULL
-            AND stock_quantity <= low_stock_threshold
+          WHERE "tenantId" = ${tenantId}
+            AND "deletedAt" IS NULL
+            AND "stockQuantity" <= "lowStockThreshold"
         `,
 
         prisma.stockTakeSession.count({
@@ -43,10 +43,10 @@ export async function GET() {
         }),
 
         prisma.$queryRaw<[{ total: string | null }]>`
-          SELECT SUM(stock_quantity * retail_price) as total
+          SELECT SUM("stockQuantity" * "retailPrice") as total
           FROM product_variants
-          WHERE tenant_id = ${tenantId}
-            AND deleted_at IS NULL
+          WHERE "tenantId" = ${tenantId}
+            AND "deletedAt" IS NULL
         `,
       ]);
 

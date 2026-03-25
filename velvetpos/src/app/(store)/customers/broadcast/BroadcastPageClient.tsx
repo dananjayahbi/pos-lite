@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Users, ArrowLeft } from 'lucide-react';
+import { Users, ArrowLeft, Eye } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,8 +21,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 import { BroadcastFilterPanel, type BroadcastFilters } from '@/components/broadcast/BroadcastFilterPanel';
 import { BroadcastComposer } from '@/components/broadcast/BroadcastComposer';
+
+interface MatchedCustomer {
+  id: string;
+  name: string;
+  phone: string;
+  tags: string[];
+  totalSpend: string;
+  gender: string | null;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,7 +77,20 @@ export function BroadcastPageClient() {
     staleTime: 10_000,
   });
 
+  // Fetch matching customers list for preview table
+  const previewQuery = useQuery<{ success: boolean; data: MatchedCustomer[] }>({
+    queryKey: ['broadcast-preview', filters],
+    queryFn: async () => {
+      const qs = buildCountParams(filters);
+      const res = await fetch(`/api/customers/preview${qs ? `?${qs}` : ''}`);
+      if (!res.ok) throw new Error('Failed to fetch preview');
+      return res.json();
+    },
+    staleTime: 10_000,
+  });
+
   const recipientCount = countQuery.data?.data?.count ?? null;
+  const matchedCustomers = previewQuery.data?.data ?? [];
 
   const handleFiltersChange = useCallback((updated: BroadcastFilters) => {
     setFilters(updated);
@@ -129,7 +152,7 @@ export function BroadcastPageClient() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6 md:p-8">
       {/* Header */}
       <div className="flex items-center gap-3">
         <Link href="/customers">
@@ -197,6 +220,67 @@ export function BroadcastPageClient() {
           )}
         </div>
       </div>
+
+      {/* Matching customers table */}
+      {matchedCustomers.length > 0 && (
+        <Card className="border-mist">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base text-espresso">
+              Matching Customers ({matchedCustomers.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-mist bg-pearl">
+                    <th className="px-4 py-3 text-left font-medium text-sand">Name</th>
+                    <th className="px-4 py-3 text-left font-medium text-sand">Phone</th>
+                    <th className="px-4 py-3 text-left font-medium text-sand">Tags</th>
+                    <th className="px-4 py-3 text-right font-medium text-sand">Total Spend</th>
+                    <th className="px-4 py-3 text-center font-medium text-sand">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {matchedCustomers.map((c, idx) => (
+                    <tr
+                      key={c.id}
+                      className={idx % 2 === 0 ? 'bg-white' : 'bg-pearl/50'}
+                    >
+                      <td className="px-4 py-3 font-medium text-espresso">{c.name}</td>
+                      <td className="px-4 py-3 text-sand font-mono text-xs">{c.phone}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {c.tags.length > 0 ? (
+                            c.tags.map((tag) => (
+                              <Badge key={tag} variant="secondary" className="text-xs">
+                                {tag}
+                              </Badge>
+                            ))
+                          ) : (
+                            <span className="text-mist text-xs">—</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right text-espresso tabular-nums">
+                        Rs {parseFloat(c.totalSpend).toLocaleString('en-LK', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link href={`/customers/${c.id}`}>
+                            <Eye className="h-4 w-4 mr-1" />
+                            View
+                          </Link>
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Confirmation Dialog */}
       <Dialog open={showConfirm} onOpenChange={setShowConfirm}>

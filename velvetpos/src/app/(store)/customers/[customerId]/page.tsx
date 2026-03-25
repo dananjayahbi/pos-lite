@@ -161,7 +161,7 @@ export default function CustomerDetailPage({
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 p-6 md:p-8">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-32 w-full" />
         <div className="grid grid-cols-4 gap-4">
@@ -195,7 +195,7 @@ export default function CustomerDetailPage({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6 md:p-8">
       {/* Back */}
       <Button variant="ghost" size="sm" asChild>
         <Link href="/customers">

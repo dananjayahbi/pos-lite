@@ -50,28 +50,28 @@ export async function GET(request: NextRequest) {
     const [totals, categoryBreakdown] = await Promise.all([
       prisma.$queryRaw<ValuationRow[]>`
         SELECT
-          COALESCE(SUM(pv.stock_quantity * pv.retail_price), 0)::text as retail_value,
-          COALESCE(SUM(pv.stock_quantity * pv.cost_price), 0)::text as cost_value,
+          COALESCE(SUM(pv."stockQuantity" * pv."retailPrice"), 0)::text as retail_value,
+          COALESCE(SUM(pv."stockQuantity" * pv."costPrice"), 0)::text as cost_value,
           COUNT(*)::bigint as variant_count
         FROM product_variants pv
-        JOIN products p ON pv.product_id = p.id
-        WHERE pv.tenant_id = ${tenantId}
-          AND pv.deleted_at IS NULL
-          AND p.is_archived = false
+        JOIN products p ON pv."productId" = p.id
+        WHERE pv."tenantId" = ${tenantId}
+          AND pv."deletedAt" IS NULL
+          AND p."isArchived" = false
       `,
       prisma.$queryRaw<CategoryValuationRow[]>`
         SELECT
           c.id as category_id,
           c.name as category_name,
           COUNT(pv.id)::bigint as variant_count,
-          COALESCE(SUM(pv.stock_quantity * pv.retail_price), 0)::text as retail_value,
-          COALESCE(SUM(pv.stock_quantity * pv.cost_price), 0)::text as cost_value
+          COALESCE(SUM(pv."stockQuantity" * pv."retailPrice"), 0)::text as retail_value,
+          COALESCE(SUM(pv."stockQuantity" * pv."costPrice"), 0)::text as cost_value
         FROM product_variants pv
-        JOIN products p ON pv.product_id = p.id
-        JOIN categories c ON p.category_id = c.id
-        WHERE pv.tenant_id = ${tenantId}
-          AND pv.deleted_at IS NULL
-          AND p.is_archived = false
+        JOIN products p ON pv."productId" = p.id
+        JOIN categories c ON p."categoryId" = c.id
+        WHERE pv."tenantId" = ${tenantId}
+          AND pv."deletedAt" IS NULL
+          AND p."isArchived" = false
         GROUP BY c.id, c.name
         ORDER BY c.name
       `,

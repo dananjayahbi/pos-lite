@@ -262,7 +262,7 @@ export function StockValuationClient() {
           {/* Category Breakdown */}
           <div>
             <h2 className="mb-4 font-display text-lg font-semibold text-espresso">Category Breakdown</h2>
-            <div className="overflow-x-auto rounded-lg border border-sand">
+            <div className="overflow-x-auto rounded-lg border border-sand/30 bg-white">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-pearl">

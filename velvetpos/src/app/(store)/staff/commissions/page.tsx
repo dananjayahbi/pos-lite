@@ -181,7 +181,7 @@ export default function CommissionReportsPage() {
   }, [summaries, periodStart, periodEnd]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6 md:p-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold text-espresso">Commission Reports</h1>

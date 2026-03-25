@@ -55,11 +55,14 @@ export async function GET(request: NextRequest) {
 
     if (countOnly) {
       const result = await prisma.$queryRaw<[{ count: bigint }]>`
-        SELECT COUNT(*) as count FROM product_variants
-        WHERE tenant_id = ${tenantId}
-          AND deleted_at IS NULL
-          AND low_stock_threshold > 0
-          AND stock_quantity <= low_stock_threshold
+        SELECT COUNT(*) as count FROM product_variants pv
+        JOIN products p ON pv."productId" = p.id
+        WHERE pv."tenantId" = ${tenantId}
+          AND pv."deletedAt" IS NULL
+          AND p."deletedAt" IS NULL
+          AND p."isArchived" = false
+          AND pv."lowStockThreshold" > 0
+          AND pv."stockQuantity" <= pv."lowStockThreshold"
       `;
 
       return NextResponse.json({
@@ -71,18 +74,24 @@ export async function GET(request: NextRequest) {
     // Count total for pagination
     const countResult = threshold != null
       ? await prisma.$queryRaw<[{ count: bigint }]>`
-          SELECT COUNT(*) as count FROM product_variants
-          WHERE tenant_id = ${tenantId}
-            AND deleted_at IS NULL
-            AND low_stock_threshold > 0
-            AND stock_quantity <= ${threshold}
+          SELECT COUNT(*) as count FROM product_variants pv
+          JOIN products p ON pv."productId" = p.id
+          WHERE pv."tenantId" = ${tenantId}
+            AND pv."deletedAt" IS NULL
+            AND p."deletedAt" IS NULL
+            AND p."isArchived" = false
+            AND pv."lowStockThreshold" > 0
+            AND pv."stockQuantity" <= ${threshold}
         `
       : await prisma.$queryRaw<[{ count: bigint }]>`
-          SELECT COUNT(*) as count FROM product_variants
-          WHERE tenant_id = ${tenantId}
-            AND deleted_at IS NULL
-            AND low_stock_threshold > 0
-            AND stock_quantity <= low_stock_threshold
+          SELECT COUNT(*) as count FROM product_variants pv
+          JOIN products p ON pv."productId" = p.id
+          WHERE pv."tenantId" = ${tenantId}
+            AND pv."deletedAt" IS NULL
+            AND p."deletedAt" IS NULL
+            AND p."isArchived" = false
+            AND pv."lowStockThreshold" > 0
+            AND pv."stockQuantity" <= pv."lowStockThreshold"
         `;
 
     const total = Number(countResult[0].count);
@@ -94,32 +103,38 @@ export async function GET(request: NextRequest) {
 
     const variants = threshold != null
       ? await prisma.$queryRaw<LowStockRow[]>`
-          SELECT pv.id, pv.sku, pv.size, pv.colour, pv.stock_quantity, pv.low_stock_threshold,
-            pv.retail_price::text as retail_price,
+          SELECT pv.id, pv.sku, pv.size, pv.colour,
+            pv."stockQuantity" as stock_quantity, pv."lowStockThreshold" as low_stock_threshold,
+            pv."retailPrice"::text as retail_price,
             p.name as product_name, c.name as category_name,
-            (${threshold} - pv.stock_quantity) as shortfall
+            (${threshold} - pv."stockQuantity") as shortfall
           FROM product_variants pv
-          JOIN products p ON pv.product_id = p.id
-          JOIN categories c ON p.category_id = c.id
-          WHERE pv.tenant_id = ${tenantId}
-            AND pv.deleted_at IS NULL
-            AND pv.low_stock_threshold > 0
-            AND pv.stock_quantity <= ${threshold}
+          JOIN products p ON pv."productId" = p.id
+          JOIN categories c ON p."categoryId" = c.id
+          WHERE pv."tenantId" = ${tenantId}
+            AND pv."deletedAt" IS NULL
+            AND p."deletedAt" IS NULL
+            AND p."isArchived" = false
+            AND pv."lowStockThreshold" > 0
+            AND pv."stockQuantity" <= ${threshold}
           ORDER BY shortfall DESC
           LIMIT ${queryLimit} OFFSET ${queryOffset}
         `
       : await prisma.$queryRaw<LowStockRow[]>`
-          SELECT pv.id, pv.sku, pv.size, pv.colour, pv.stock_quantity, pv.low_stock_threshold,
-            pv.retail_price::text as retail_price,
+          SELECT pv.id, pv.sku, pv.size, pv.colour,
+            pv."stockQuantity" as stock_quantity, pv."lowStockThreshold" as low_stock_threshold,
+            pv."retailPrice"::text as retail_price,
             p.name as product_name, c.name as category_name,
-            (pv.low_stock_threshold - pv.stock_quantity) as shortfall
+            (pv."lowStockThreshold" - pv."stockQuantity") as shortfall
           FROM product_variants pv
-          JOIN products p ON pv.product_id = p.id
-          JOIN categories c ON p.category_id = c.id
-          WHERE pv.tenant_id = ${tenantId}
-            AND pv.deleted_at IS NULL
-            AND pv.low_stock_threshold > 0
-            AND pv.stock_quantity <= pv.low_stock_threshold
+          JOIN products p ON pv."productId" = p.id
+          JOIN categories c ON p."categoryId" = c.id
+          WHERE pv."tenantId" = ${tenantId}
+            AND pv."deletedAt" IS NULL
+            AND p."deletedAt" IS NULL
+            AND p."isArchived" = false
+            AND pv."lowStockThreshold" > 0
+            AND pv."stockQuantity" <= pv."lowStockThreshold"
           ORDER BY shortfall DESC
           LIMIT ${queryLimit} OFFSET ${queryOffset}
         `;

@@ -126,7 +126,7 @@ export default function SuppliersPage() {
   }, [archiveTarget, handleSuccess]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6 md:p-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -158,7 +158,7 @@ export default function SuppliersPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-md border border-mist">
+      <div className="rounded-lg border border-sand/30 bg-white">
         <Table>
           <TableHeader>
             <TableRow>

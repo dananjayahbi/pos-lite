@@ -248,7 +248,7 @@ export default function StaffDetailPage({
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 p-6 md:p-8">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-32 w-full" />
       </div>
@@ -270,7 +270,7 @@ export default function StaffDetailPage({
   const sessionUserId = sessionData?.user?.id ?? '';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6 md:p-8">
       {/* Breadcrumb */}
       <Button variant="ghost" size="sm" asChild>
         <Link href="/staff">

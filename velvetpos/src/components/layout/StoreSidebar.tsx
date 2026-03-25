@@ -117,6 +117,7 @@ const navGroups: NavGroup[] = [
         href: '/customers',
         roles: ['OWNER', 'MANAGER', 'CASHIER'],
         permission: PERMISSIONS.CUSTOMER.viewCustomer,
+        match: 'exact',
       },
       {
         name: 'Customer Broadcast',
@@ -137,6 +138,7 @@ const navGroups: NavGroup[] = [
         href: '/staff',
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.STAFF.viewStaff,
+        match: 'exact',
       },
       {
         name: 'Attendance',
