@@ -22,6 +22,8 @@ interface StoreLayoutClientProps {
   userEmail: string;
   userRole: UserRole;
   permissions: string[];
+  businessName: string;
+  businessLogoUrl: string | null;
 }
 
 export default function StoreLayoutClient({
@@ -29,6 +31,8 @@ export default function StoreLayoutClient({
   userEmail,
   userRole,
   permissions,
+  businessName,
+  businessLogoUrl,
 }: StoreLayoutClientProps) {
   const { resetTimer } = useInactivityTimer();
   const pathname = usePathname();
@@ -45,6 +49,8 @@ export default function StoreLayoutClient({
               userEmail={userEmail}
               userRole={userRole}
               permissions={permissions}
+              businessName={businessName}
+              businessLogoUrl={businessLogoUrl}
             />
           </aside>
 
@@ -81,14 +87,22 @@ export default function StoreLayoutClient({
                     userEmail={userEmail}
                     userRole={userRole}
                     permissions={permissions}
+                    businessName={businessName}
+                    businessLogoUrl={businessLogoUrl}
                     onNavigate={() => setMobileNavOpen(false)}
                   />
                 </SheetContent>
               </Sheet>
 
-              <div>
-                <p className="font-display text-lg font-bold text-espresso">VelvetPOS</p>
-                <p className="text-xs uppercase tracking-[0.2em] text-sand">{userRole.replace(/_/g, ' ')}</p>
+              <div className="flex items-center gap-2">
+                {businessLogoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={businessLogoUrl} alt="" className="h-6 w-6 rounded object-contain" />
+                ) : null}
+                <div>
+                  <p className="font-display text-lg font-bold text-espresso">{businessName}</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-sand">{userRole.replace(/_/g, ' ')}</p>
+                </div>
               </div>
             </header>
 

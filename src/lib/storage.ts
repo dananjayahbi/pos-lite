@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { v2 as cloudinary } from 'cloudinary';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -11,7 +12,7 @@ export type UploadOptions = {
 
 export type UploadResult = {
   url: string;
-  provider: 'supabase' | 'cloudinary';
+  provider: 'supabase' | 'cloudinary' | 'cloudflare_r2';
   path: string;
 };
 
@@ -116,6 +117,74 @@ async function uploadToCloudinary(
   };
 }
 
+// ── Cloudflare R2 Provider ─────────────────────────────────────────────────
+
+function getR2Client() {
+  const accountId = process.env.CLOUDFLARE_R2_ACCOUNT_ID;
+  const accessKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
+  const endpointUrl = process.env.CLOUDFLARE_R2_ENDPOINT_URL;
+  const region = process.env.CLOUDFLARE_R2_REGION ?? 'auto';
+
+  if (!accountId || !accessKeyId || !secretAccessKey) {
+    throw new Error(
+      'CLOUDFLARE_R2_ACCOUNT_ID, CLOUDFLARE_R2_ACCESS_KEY_ID, and CLOUDFLARE_R2_SECRET_ACCESS_KEY must be set when STORAGE_PROVIDER is "cloudflare_r2"',
+    );
+  }
+
+  return new S3Client({
+    region,
+    endpoint: endpointUrl ?? `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
+    forcePathStyle: process.env.CLOUDFLARE_R2_S3_ADDRESSING_STYLE === 'path',
+  });
+}
+
+async function uploadToR2(
+  file: Buffer,
+  path: string,
+  options: UploadOptions,
+): Promise<UploadResult> {
+  const client = getR2Client();
+  const bucket = process.env.CLOUDFLARE_R2_BUCKET_NAME;
+  const publicBase = process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL;
+
+  if (!bucket) {
+    throw new Error('CLOUDFLARE_R2_BUCKET_NAME must be set when STORAGE_PROVIDER is "cloudflare_r2"');
+  }
+
+  const key = `${path}-${Date.now()}`;
+
+  await client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: file,
+      ContentType: options.contentType,
+    }),
+  );
+
+  const url = publicBase ? `${publicBase}/${key}` : key;
+
+  return { url, provider: 'cloudflare_r2', path: key };
+}
+
+async function deleteFromR2(path: string): Promise<void> {
+  const client = getR2Client();
+  const bucket = process.env.CLOUDFLARE_R2_BUCKET_NAME;
+
+  if (!bucket) {
+    throw new Error('CLOUDFLARE_R2_BUCKET_NAME must be set');
+  }
+
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: bucket,
+      Key: path,
+    }),
+  );
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────
 
 export async function uploadFile(
@@ -125,8 +194,8 @@ export async function uploadFile(
 ): Promise<UploadResult> {
   const provider = process.env.STORAGE_PROVIDER;
 
-  if (provider !== 'supabase' && provider !== 'cloudinary') {
-    throw new Error("STORAGE_PROVIDER must be set to 'supabase' or 'cloudinary'");
+  if (provider !== 'supabase' && provider !== 'cloudinary' && provider !== 'cloudflare_r2') {
+    throw new Error("STORAGE_PROVIDER must be set to 'supabase', 'cloudinary', or 'cloudflare_r2'");
   }
 
   if (options.maxSizeBytes && file.length > options.maxSizeBytes) {
@@ -137,6 +206,10 @@ export async function uploadFile(
 
   if (provider === 'supabase') {
     return uploadToSupabase(file, path, options);
+  }
+
+  if (provider === 'cloudflare_r2') {
+    return uploadToR2(file, path, options);
   }
 
   return uploadToCloudinary(file, path, options);
@@ -155,6 +228,8 @@ export async function deleteFile(
     } else if (resolvedProvider === 'cloudinary') {
       configureCloudinary();
       await cloudinary.uploader.destroy(path);
+    } else if (resolvedProvider === 'cloudflare_r2') {
+      await deleteFromR2(path);
     }
   } catch (error) {
     console.warn(

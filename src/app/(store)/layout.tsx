@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import StoreLayoutClient from '@/components/shared/StoreLayoutClient';
 import { getEffectivePermissions } from '@/lib/constants/permissions';
+import { getTenantBranding } from '@/lib/tenant-branding';
 
 export default async function StoreLayout({
   children,
@@ -15,6 +16,7 @@ export default async function StoreLayout({
 
   const tenantId = session?.user?.tenantId;
   const permissions = getEffectivePermissions(session.user.role, session.user.permissions);
+  const branding = await getTenantBranding(tenantId);
 
   return (
     <div className="min-h-screen flex flex-col bg-linen">
@@ -29,6 +31,8 @@ export default async function StoreLayout({
           userEmail={session.user.email ?? 'signed-in-user@velvetpos.dev'}
           userRole={session.user.role}
           permissions={permissions}
+          businessName={branding.name}
+          businessLogoUrl={branding.logoUrl}
         >
           {children}
         </StoreLayoutClient>

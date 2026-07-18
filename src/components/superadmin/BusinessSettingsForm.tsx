@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import LogoUploader from '@/components/superadmin/LogoUploader';
 
 const TIMEZONES = [
   'Asia/Colombo',
@@ -118,12 +119,11 @@ export default function BusinessSettingsForm({ tenantId, initialValues }: Props)
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="logoUrl">Logo URL</Label>
-            <Input
-              id="logoUrl"
-              value={values.logoUrl}
-              onChange={(e) => update('logoUrl', e.target.value)}
-              placeholder="https://cdn.example.com/logo.png"
+            <Label>Business Logo</Label>
+            <LogoUploader
+              tenantId={tenantId}
+              currentUrl={values.logoUrl}
+              onUploaded={(url) => update('logoUrl', url)}
             />
           </div>
 

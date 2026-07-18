@@ -23,6 +23,8 @@ interface StoreSidebarProps {
   userEmail: string;
   userRole: UserRole;
   permissions: string[];
+  businessName: string;
+  businessLogoUrl: string | null;
   onNavigate?: () => void;
 }
 
@@ -259,6 +261,8 @@ export default function StoreSidebar({
   userEmail,
   userRole,
   permissions,
+  businessName,
+  businessLogoUrl,
   onNavigate,
 }: StoreSidebarProps) {
   const pathname = usePathname();
@@ -267,7 +271,13 @@ export default function StoreSidebar({
     <div className="flex h-full flex-col justify-between bg-pearl">
       <div>
         <div className="px-5 py-5">
-          <p className="font-display text-xl font-bold text-espresso">VelvetPOS</p>
+          <div className="flex items-center gap-2">
+            {businessLogoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={businessLogoUrl} alt="" className="h-7 w-7 rounded object-contain" />
+            ) : null}
+            <p className="font-display text-xl font-bold text-espresso">{businessName}</p>
+          </div>
           <p className="mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-sand">
             {formatRole(userRole)}
           </p>
