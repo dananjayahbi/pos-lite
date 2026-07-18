@@ -12,9 +12,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-const PAGE_SIZE = 20;
-
-export default async function TenantsPage({
+export default async function BusinessesPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -23,7 +21,6 @@ export default async function TenantsPage({
 
   const search = typeof params.search === 'string' ? params.search : '';
   const status = typeof params.status === 'string' ? params.status : '';
-  const page = Math.max(1, Number(params.page) || 1);
 
   const where = {
     deletedAt: null,
@@ -33,40 +30,21 @@ export default async function TenantsPage({
     ...(status && { status: status as TenantStatus }),
   };
 
-  const [tenants, total] = await Promise.all([
-    prisma.tenant.findMany({
-      where,
-      include: {
-        subscriptions: {
-          take: 1,
-          orderBy: { createdAt: 'desc' },
-          include: { plan: true },
-        },
-      },
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.tenant.count({ where }),
-  ]);
-
-  const totalPages = Math.ceil(total / PAGE_SIZE);
-  const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const to = Math.min(page * PAGE_SIZE, total);
+  const businesses = await prisma.tenant.findMany({
+    where,
+    orderBy: { createdAt: 'asc' },
+  });
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl font-bold text-espresso">
-          Tenants
+          Businesses
         </h1>
-        <Link
-          href="/superadmin/tenants/new"
-          className="rounded-md bg-espresso px-4 py-2 text-pearl"
-        >
-          New Tenant
-        </Link>
+        <span className="text-sm text-sand">
+          {businesses.length} of 2 businesses configured
+        </span>
       </div>
 
       {/* Filters */}
@@ -76,79 +54,50 @@ export default async function TenantsPage({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Store Name</TableHead>
+            <TableHead>Business Name</TableHead>
             <TableHead>Slug</TableHead>
-            <TableHead>Plan</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Created</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {tenants.map((tenant) => (
-            <TableRow key={tenant.id}>
+          {businesses.map((business) => (
+            <TableRow key={business.id}>
               <TableCell>
                 <Link
-                  href={`/superadmin/tenants/${tenant.id}`}
+                  href={`/superadmin/tenants/${business.id}`}
                   className="font-medium text-espresso hover:underline"
                 >
-                  {tenant.name}
+                  {business.name}
                 </Link>
               </TableCell>
-              <TableCell className="font-mono">{tenant.slug}</TableCell>
+              <TableCell className="font-mono">{business.slug}</TableCell>
               <TableCell>
-                {tenant.subscriptions[0]?.plan?.name ?? 'No Plan'}
+                <TenantStatusBadge status={business.status} />
               </TableCell>
               <TableCell>
-                <TenantStatusBadge status={tenant.status} />
-              </TableCell>
-              <TableCell>
-                {new Date(tenant.createdAt).toLocaleDateString()}
+                {new Date(business.createdAt).toLocaleDateString()}
               </TableCell>
               <TableCell>
                 <Link
-                  href={`/superadmin/tenants/${tenant.id}`}
+                  href={`/superadmin/tenants/${business.id}`}
                   className="text-terracotta hover:underline"
                 >
-                  View
+                  Manage
                 </Link>
               </TableCell>
             </TableRow>
           ))}
-          {tenants.length === 0 && (
+          {businesses.length === 0 && (
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-sand">
-                No tenants found.
+              <TableCell colSpan={5} className="text-center text-sand">
+                No businesses found.
               </TableCell>
             </TableRow>
           )}
         </TableBody>
       </Table>
-
-      {/* Pagination */}
-      <div className="flex items-center justify-between text-sm text-sand">
-        <span>
-          Showing {from}–{to} of {total} tenants
-        </span>
-        <div className="flex gap-2">
-          {page > 1 && (
-            <Link
-              href={`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&page=${page - 1}`}
-              className="rounded-md border px-3 py-1 text-espresso hover:bg-mist"
-            >
-              Previous
-            </Link>
-          )}
-          {page < totalPages && (
-            <Link
-              href={`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&page=${page + 1}`}
-              className="rounded-md border px-3 py-1 text-espresso hover:bg-mist"
-            >
-              Next
-            </Link>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

@@ -46,7 +46,6 @@ function isSuspensionBypassPath(pathname: string): boolean {
     pathname.startsWith('/api/') ||
     pathname.startsWith('/auth/') ||
     pathname.startsWith('/_next/') ||
-    pathname.includes('/billing') ||
     pathname.includes('/suspended') ||
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/manifest')
@@ -140,8 +139,6 @@ export default auth(async (request: NextRequest) => {
         id: true,
         status: true,
         deletedAt: true,
-        graceEndsAt: true,
-        subscriptionStatus: true,
       },
     });
 
@@ -149,35 +146,9 @@ export default auth(async (request: NextRequest) => {
       return NextResponse.next();
     }
 
-    // Subscription suspension — SUPER_ADMIN can bypass
-    if (user.role !== 'SUPER_ADMIN') {
-      if (tenant.subscriptionStatus === 'CANCELLED') {
-        const suspendedUrl = new URL('/suspended', request.url);
-        suspendedUrl.searchParams.set('reason', 'cancelled');
-        return NextResponse.redirect(suspendedUrl);
-      }
-
-      if (
-        tenant.subscriptionStatus === 'SUSPENDED' ||
-        tenant.status === 'SUSPENDED'
-      ) {
-        return NextResponse.redirect(new URL('/suspended', request.url));
-      }
-
-      if (tenant.status === 'CANCELLED') {
-        const suspendedUrl = new URL('/suspended', request.url);
-        suspendedUrl.searchParams.set('reason', 'cancelled');
-        return NextResponse.redirect(suspendedUrl);
-      }
-    }
-
-    if (tenant.status === 'GRACE_PERIOD') {
-      const response = NextResponse.next();
-      response.headers.set('x-grace-period', 'true');
-      if (tenant.graceEndsAt) {
-        response.headers.set('x-grace-ends-at', tenant.graceEndsAt.toISOString());
-      }
-      return response;
+    // Suspension check — SUPER_ADMIN can bypass
+    if (user.role !== 'SUPER_ADMIN' && tenant.status === 'SUSPENDED') {
+      return NextResponse.redirect(new URL('/suspended', request.url));
     }
   }
 

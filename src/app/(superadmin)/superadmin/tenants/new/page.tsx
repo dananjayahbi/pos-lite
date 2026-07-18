@@ -1,9 +1,6 @@
-import TenantProvisioningWizard from '@/components/superadmin/TenantProvisioningWizard';
+import { redirect } from 'next/navigation';
 
 export default function NewTenantPage() {
-  return (
-    <div>
-      <TenantProvisioningWizard />
-    </div>
-  );
+  // Business creation is disabled — limited to 2 businesses
+  redirect('/superadmin/tenants');
 }

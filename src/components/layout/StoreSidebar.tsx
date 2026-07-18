@@ -194,18 +194,6 @@ const navGroups: NavGroup[] = [
     label: 'Settings',
     items: [
       {
-        name: 'Billing',
-        href: '/billing',
-        roles: ['OWNER', 'MANAGER'],
-        permission: PERMISSIONS.BILLING.viewBilling,
-      },
-      {
-        name: 'Store Profile',
-        href: '/settings/store',
-        roles: ['OWNER', 'MANAGER'],
-        permission: PERMISSIONS.SETTINGS.manageStoreProfile,
-      },
-      {
         name: 'Taxes',
         href: '/settings/taxes',
         roles: ['OWNER', 'MANAGER'],

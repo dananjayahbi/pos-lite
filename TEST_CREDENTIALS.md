@@ -1,6 +1,6 @@
 # VelvetPOS — Test Credentials
 
-> All credentials below are seeded by `pnpm prisma db seed` using the `.env.local` seed vars.
+> All credentials below are seeded by `pnpm prisma db seed`.
 
 ---
 
@@ -16,7 +16,9 @@
 
 ---
 
-## Store Owner — Dilani Boutique
+## Business 1 — Dilani Boutique
+
+### Owner
 
 | Field    | Value                       |
 | -------- | --------------------------- |
@@ -24,12 +26,10 @@
 | Password | `owner123!`                 |
 | PIN      | `1111`                      |
 | Role     | `OWNER`                     |
-| Tenant   | Dilani Boutique             |
+| Business | Dilani Boutique             |
 | Lands on | `/dashboard`                |
 
----
-
-## Cashiers — Dilani Boutique
+### Cashiers
 
 | Field    | cashier1                    | cashier2                    |
 | -------- | --------------------------- | --------------------------- |
@@ -41,19 +41,35 @@
 
 ---
 
-## Demo Tenant Owners (Billing States)
+## Business 2 — Lanka Electronics
 
-| Email                                | Password                | PIN    | Subscription State |
-| ------------------------------------ | ----------------------- | ------ | ------------------ |
-| `demo-trial-owner@velvetpos.dev`     | `trial-demo-pass!`      | `6666` | TRIAL (14 days)    |
-| `demo-suspended-owner@velvetpos.dev` | `suspended-demo-pass!`  | `7777` | SUSPENDED          |
+### Owner
+
+| Field    | Value                            |
+| -------- | -------------------------------- |
+| Email    | `owner@lanka-electronics.lk`     |
+| Password | `owner123!`                      |
+| PIN      | `2222`                           |
+| Role     | `OWNER`                          |
+| Business | Lanka Electronics                |
+| Lands on | `/dashboard`                     |
+
+### Cashier
+
+| Field    | Value                              |
+| -------- | ---------------------------------- |
+| Email    | `cashier@lanka-electronics.lk`     |
+| Password | `cashier123!`                      |
+| PIN      | `3333`                             |
+| Role     | `CASHIER`                          |
+| Lands on | `/pos`                             |
 
 ---
 
 ## Notes
 
-- The `velvetdemo.com` users (`owner@velvetdemo.com`, `manager@velvetdemo.com`, etc.) are **not seeded** unless `SEED_DEMO_DATA=true` is set in `.env.local`.
-- To enable the full comprehensive demo dataset, add `SEED_DEMO_DATA=true` to `.env.local` and re-run `pnpm prisma db seed`.
-- The current workspace database has been updated so the seeded test users above all have PINs configured.
+- The system is configured for exactly **2 businesses** (Dilani Boutique and Lanka Electronics).
+- Only the **Super Admin** can manage business settings (name, currency, tax rates, etc.) from the superadmin dashboard.
+- Business creation is disabled — the system is limited to 2 businesses.
 - PIN-based login (for POS access) uses the hashed PIN stored on the user record.
-- If `SEED_DEMO_DATA=true` is enabled, the extra demo-only `velvetdemo.com` users receive these seeded PINs from `prisma/seed.ts`: owner `1111`, manager `2222`, cashier1 `3333`, cashier2 `4444`, stock `5555`.
+- Store profile settings have been moved to the superadmin dashboard.

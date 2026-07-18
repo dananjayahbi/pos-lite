@@ -9,10 +9,9 @@ const navGroups = [
     items: [{ name: 'Dashboard', href: '/superadmin/dashboard' }],
   },
   {
-    label: 'Platform',
+    label: 'Management',
     items: [
-      { name: 'Tenants', href: '/superadmin/tenants' },
-      { name: 'Billing', href: '/superadmin/billing' },
+      { name: 'Businesses', href: '/superadmin/tenants' },
     ],
   },
   {
