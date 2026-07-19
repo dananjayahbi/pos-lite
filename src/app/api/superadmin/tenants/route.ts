@@ -4,7 +4,6 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { createTrialSubscription } from '@/lib/billing/subscription.service';
 import type { TenantStatus } from '@/generated/prisma/client';
 
 const createTenantSchema = z.object({
@@ -14,7 +13,6 @@ const createTenantSchema = z.object({
   ownerPassword: z.string().min(8),
   timezone: z.string().min(1),
   currency: z.string().min(1),
-  planId: z.string().min(1),
 });
 
 const PAGE_SIZE = 20;
@@ -29,7 +27,6 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const search = searchParams.get('search') ?? '';
   const status = searchParams.get('status') ?? '';
-  const page = Math.max(1, Number(searchParams.get('page')) || 1);
 
   const where = {
     deletedAt: null,
@@ -39,24 +36,12 @@ export async function GET(request: NextRequest) {
     ...(status && { status: status as TenantStatus }),
   };
 
-  const [tenants, total] = await Promise.all([
-    prisma.tenant.findMany({
-      where,
-      include: {
-        subscriptions: {
-          take: 1,
-          orderBy: { createdAt: 'desc' },
-          include: { plan: true },
-        },
-      },
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.tenant.count({ where }),
-  ]);
+  const businesses = await prisma.tenant.findMany({
+    where,
+    orderBy: { createdAt: 'asc' },
+  });
 
-  return NextResponse.json({ tenants, total, page, pageSize: PAGE_SIZE });
+  return NextResponse.json({ businesses, total: businesses.length });
 }
 
 export async function POST(request: NextRequest) {
@@ -64,6 +49,15 @@ export async function POST(request: NextRequest) {
 
   if (!session || session.user?.role !== 'SUPER_ADMIN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  // Check if 2 businesses already exist
+  const existingCount = await prisma.tenant.count({ where: { deletedAt: null } });
+  if (existingCount >= 2) {
+    return NextResponse.json(
+      { error: 'Maximum of 2 businesses allowed. Cannot create more.' },
+      { status: 403 },
+    );
   }
 
   const body = await request.json();
@@ -76,8 +70,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { storeName, slug, ownerEmail, ownerPassword, timezone, currency, planId } =
-    parsed.data;
+  const { storeName, slug, ownerEmail, ownerPassword, timezone, currency } = parsed.data;
 
   try {
     const existingTenant = await prisma.tenant.findFirst({
@@ -98,38 +91,32 @@ export async function POST(request: NextRequest) {
 
     const passwordHash = await bcrypt.hash(ownerPassword, 12);
 
-    const tenant = await prisma.$transaction(async (tx) => {
-      const newTenant = await tx.tenant.create({
-        data: {
-          name: storeName,
-          slug,
-          status: 'ACTIVE',
-          settings: {
-            currency,
-            timezone,
-            vatRate: 0,
-            ssclRate: 0,
-            receiptFooter: '',
-          },
+    const tenant = await prisma.tenant.create({
+      data: {
+        name: storeName,
+        slug,
+        status: 'ACTIVE',
+        settings: {
+          currency,
+          timezone,
+          vatRate: 0,
+          ssclRate: 0,
+          receiptFooter: '',
         },
-      });
+      },
+    });
 
-      await tx.user.create({
-        data: {
-          tenantId: newTenant.id,
-          email: ownerEmail,
-          passwordHash,
-          role: 'OWNER',
-        },
-      });
-
-      await createTrialSubscription(newTenant.id, planId, tx);
-
-      return newTenant;
+    await prisma.user.create({
+      data: {
+        tenantId: tenant.id,
+        email: ownerEmail,
+        passwordHash,
+        role: 'OWNER',
+      },
     });
 
     return NextResponse.json({ id: tenant.id }, { status: 201 });
   } catch {
-    return NextResponse.json({ error: 'Failed to create tenant' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to create business' }, { status: 500 });
   }
 }

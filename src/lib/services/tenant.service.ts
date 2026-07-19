@@ -11,20 +11,17 @@ export interface CreateTenantInput {
   ownerPasswordHash: string;
   timezone: string;
   currency: string;
-  planId: string;
 }
 
 interface GetAllTenantsOptions {
   search?: string;
   status?: TenantStatus;
-  page?: number;
-  limit?: number;
 }
 
 // ── Service Functions ────────────────────────────────────────────────────────
 
 export async function getAllTenants(options: GetAllTenantsOptions = {}) {
-  const { search, status, page = 1, limit = 20 } = options;
+  const { search, status } = options;
 
   const where: Prisma.TenantWhereInput = {
     deletedAt: null,
@@ -32,25 +29,12 @@ export async function getAllTenants(options: GetAllTenantsOptions = {}) {
     ...(status && { status }),
   };
 
-  const [tenants, total] = await Promise.all([
-    prisma.tenant.findMany({
-      where,
-      include: {
-        subscriptions: {
-          where: { status: { in: ['ACTIVE', 'TRIAL'] } },
-          take: 1,
-          orderBy: { createdAt: 'desc' },
-          include: { plan: true },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    prisma.tenant.count({ where }),
-  ]);
+  const businesses = await prisma.tenant.findMany({
+    where,
+    orderBy: { createdAt: 'asc' },
+  });
 
-  return { tenants, total };
+  return { businesses, total: businesses.length };
 }
 
 export async function getTenantById(tenantId: string) {
@@ -59,26 +43,31 @@ export async function getTenantById(tenantId: string) {
       where: { id: tenantId, deletedAt: null },
       include: {
         users: { take: 5 },
-        subscriptions: {
-          orderBy: { createdAt: 'desc' },
-          include: { plan: true },
-        },
-        invoices: {
-          orderBy: { createdAt: 'desc' },
-          take: 10,
+        _count: {
+          select: {
+            users: { where: { deletedAt: null } },
+            products: { where: { deletedAt: null } },
+            sales: true,
+          },
         },
       },
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-      throw new Error('Tenant not found');
+      throw new Error('Business not found');
     }
     throw error;
   }
 }
 
 export async function createTenant(input: CreateTenantInput) {
-  const { storeName, slug, ownerEmail, ownerPasswordHash, timezone, currency, planId } = input;
+  const { storeName, slug, ownerEmail, ownerPasswordHash, timezone, currency } = input;
+
+  // Check if 2 businesses already exist
+  const existingCount = await prisma.tenant.count({ where: { deletedAt: null } });
+  if (existingCount >= 2) {
+    throw new Error('Maximum of 2 businesses allowed');
+  }
 
   try {
     return await prisma.$transaction(async (tx) => {
@@ -108,26 +97,12 @@ export async function createTenant(input: CreateTenantInput) {
         },
       });
 
-      const now = new Date();
-      const periodEnd = new Date(now);
-      periodEnd.setDate(periodEnd.getDate() + 30);
-
-      await tx.subscription.create({
-        data: {
-          tenantId: tenant.id,
-          planId,
-          status: 'TRIAL',
-          currentPeriodStart: now,
-          currentPeriodEnd: periodEnd,
-        },
-      });
-
       return tenant;
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2002') {
-        throw new Error('A tenant with this slug already exists');
+        throw new Error('A business with this slug already exists');
       }
     }
     throw error;
@@ -163,7 +138,7 @@ export async function updateTenantStatus(
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-      throw new Error('Tenant not found');
+      throw new Error('Business not found');
     }
     throw error;
   }
@@ -175,13 +150,6 @@ export async function suspendTenant(tenantId: string, actorId: string) {
 
 export async function reactivateTenant(tenantId: string, actorId: string) {
   return updateTenantStatus(tenantId, 'ACTIVE', actorId, { graceEndsAt: null });
-}
-
-export async function triggerGracePeriod(tenantId: string, actorId: string, graceDays = 14) {
-  const graceEndsAt = new Date();
-  graceEndsAt.setDate(graceEndsAt.getDate() + graceDays);
-
-  return updateTenantStatus(tenantId, 'GRACE_PERIOD', actorId, { graceEndsAt });
 }
 
 export async function getActiveTenantBySlug(slug: string) {

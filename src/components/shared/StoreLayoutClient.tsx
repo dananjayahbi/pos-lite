@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import type { UserRole } from '@/generated/prisma/client';
 import StoreSidebar from '@/components/layout/StoreSidebar';
-import ScreenLockOverlay from '@/components/shared/ScreenLockOverlay';
 import { NotificationPopover } from '@/components/notifications/NotificationPopover';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,7 +13,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { useInactivityTimer } from '@/hooks/useInactivityTimer';
 import { MenuIcon } from 'lucide-react';
 
 interface StoreLayoutClientProps {
@@ -22,6 +20,8 @@ interface StoreLayoutClientProps {
   userEmail: string;
   userRole: UserRole;
   permissions: string[];
+  businessName: string;
+  businessLogoUrl: string | null;
 }
 
 export default function StoreLayoutClient({
@@ -29,8 +29,9 @@ export default function StoreLayoutClient({
   userEmail,
   userRole,
   permissions,
+  businessName,
+  businessLogoUrl,
 }: StoreLayoutClientProps) {
-  const { resetTimer } = useInactivityTimer();
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
@@ -39,12 +40,14 @@ export default function StoreLayoutClient({
   return (
     <>
       {showSidebar ? (
-        <div className="flex min-h-0 flex-1">
-          <aside className="hidden w-64 shrink-0 border-r border-mist bg-pearl md:flex">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <aside className="hidden w-64 shrink-0 overflow-y-auto border-r border-mist bg-pearl md:flex">
             <StoreSidebar
               userEmail={userEmail}
               userRole={userRole}
               permissions={permissions}
+              businessName={businessName}
+              businessLogoUrl={businessLogoUrl}
             />
           </aside>
 
@@ -81,18 +84,26 @@ export default function StoreLayoutClient({
                     userEmail={userEmail}
                     userRole={userRole}
                     permissions={permissions}
+                    businessName={businessName}
+                    businessLogoUrl={businessLogoUrl}
                     onNavigate={() => setMobileNavOpen(false)}
                   />
                 </SheetContent>
               </Sheet>
 
-              <div>
-                <p className="font-display text-lg font-bold text-espresso">VelvetPOS</p>
-                <p className="text-xs uppercase tracking-[0.2em] text-sand">{userRole.replace(/_/g, ' ')}</p>
+              <div className="flex items-center gap-2">
+                {businessLogoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={businessLogoUrl} alt="" className="h-6 w-6 rounded object-contain" />
+                ) : null}
+                <div>
+                  <p className="font-display text-lg font-bold text-espresso">{businessName}</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-sand">{userRole.replace(/_/g, ' ')}</p>
+                </div>
               </div>
             </header>
 
-            <main id="main-content" className="min-w-0 flex-1 overflow-x-hidden bg-linen">
+            <main id="main-content" className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-linen">
               {children}
             </main>
           </div>
@@ -102,8 +113,6 @@ export default function StoreLayoutClient({
           {children}
         </main>
       )}
-
-      <ScreenLockOverlay onUnlock={resetTimer} />
     </>
   );
 }

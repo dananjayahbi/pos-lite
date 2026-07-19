@@ -52,6 +52,8 @@ interface POSTerminalShellProps {
   shiftOpenedAt: string;
   cashierName: string;
   showOwnerDashboardShortcut?: boolean;
+  businessName: string;
+  businessLogoUrl: string | null;
   children: React.ReactNode;
 }
 
@@ -60,6 +62,8 @@ export function POSTerminalShell({
   shiftOpenedAt,
   cashierName,
   showOwnerDashboardShortcut = false,
+  businessName,
+  businessLogoUrl,
   children,
 }: POSTerminalShellProps) {
   const [closeModalOpen, setCloseModalOpen] = useState(false);
@@ -69,7 +73,13 @@ export function POSTerminalShell({
     <div className="fixed inset-0 z-50 flex flex-col bg-espresso h-dvh overflow-hidden">
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 h-12 shrink-0">
-        <span className="font-display text-sand text-sm">VelvetPOS</span>
+        <div className="flex items-center gap-2">
+          {businessLogoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={businessLogoUrl} alt="" className="h-5 w-5 rounded object-contain" />
+          ) : null}
+          <span className="font-display text-sand text-sm">{businessName}</span>
+        </div>
 
         <ShiftIndicator
           cashierName={cashierName}

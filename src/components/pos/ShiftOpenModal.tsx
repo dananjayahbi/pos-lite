@@ -8,12 +8,16 @@ import { signOut } from 'next-auth/react';
 interface ShiftOpenModalProps {
   cashierName: string;
   showOwnerDashboardShortcut?: boolean;
+  businessName?: string;
+  businessLogoUrl?: string | null;
   onOpened?: () => void;
 }
 
 export function ShiftOpenModal({
   cashierName,
   showOwnerDashboardShortcut = false,
+  businessName = 'VelvetPOS',
+  businessLogoUrl,
   onOpened,
 }: ShiftOpenModalProps) {
   const router = useRouter();
@@ -65,7 +69,13 @@ export function ShiftOpenModal({
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="font-display text-espresso text-2xl">VelvetPOS</h1>
+          <div className="flex items-center gap-2">
+            {businessLogoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={businessLogoUrl} alt="" className="h-7 w-7 rounded object-contain" />
+            ) : null}
+            <h1 className="font-display text-espresso text-2xl">{businessName}</h1>
+          </div>
             <h2 className="text-lg text-espresso/80 font-display mt-1">
               Open Your Shift
             </h2>

@@ -36,13 +36,13 @@ export default function TenantAdminActions({ tenantId, currentStatus }: TenantAd
     <div className="flex flex-wrap gap-3">
       {showSuspend && (
         <ConfirmDialog
-          title="Suspend Tenant"
-          description="This will immediately suspend the tenant. All users will lose access. Are you sure?"
+          title="Suspend Business"
+          description="This will immediately suspend the business. All users will lose access. Are you sure?"
           confirmLabel="Suspend"
           variant="danger"
-          onConfirm={() => callAction('suspend', 'Tenant suspended successfully')}
+          onConfirm={() => callAction('suspend', 'Business suspended successfully')}
         >
-          <Button variant="destructive">Suspend Tenant</Button>
+          <Button variant="destructive">Suspend Business</Button>
         </ConfirmDialog>
       )}
 
@@ -51,20 +51,20 @@ export default function TenantAdminActions({ tenantId, currentStatus }: TenantAd
           className="bg-espresso text-pearl hover:bg-espresso/90"
           onClick={async () => {
             try {
-              await callAction('reactivate', 'Tenant reactivated successfully');
+              await callAction('reactivate', 'Business reactivated successfully');
             } catch (err) {
               toast.error(err instanceof Error ? err.message : 'Reactivation failed');
             }
           }}
         >
-          Reactivate Tenant
+          Reactivate Business
         </Button>
       )}
 
       {showGrace && (
         <ConfirmDialog
           title="Trigger Grace Period"
-          description="This will put the tenant into a 14-day grace period. After expiry the tenant will be suspended. Continue?"
+          description="This will put the business into a 14-day grace period. After expiry the business will be suspended. Continue?"
           confirmLabel="Trigger Grace Period"
           variant="warning"
           onConfirm={() => callAction('grace-period', 'Grace period triggered successfully')}

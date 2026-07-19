@@ -23,6 +23,8 @@ import { PERMISSIONS } from "@/lib/constants/permissions";
 import { ShoppingBag, TrendingUp, AlertTriangle, Users } from "lucide-react";
 import { StockSummaryWidgets } from "@/components/dashboard/StockSummaryWidgets";
 import { RecentStockMovementsCard } from "@/components/dashboard/RecentStockMovementsCard";
+import { QuickNav } from "@/components/dashboard/QuickNav";
+import { AnalyticsSection } from "@/components/dashboard/AnalyticsSection";
 
 const lkr = new Intl.NumberFormat("en-LK", {
   style: "currency",
@@ -77,29 +79,7 @@ function TableSkeleton() {
   );
 }
 
-function QuickAccessCard({
-  title,
-  description,
-  href,
-}: {
-  title: string;
-  description: string;
-  href: string;
-}) {
-  return (
-    <Link href={href} className="block transition-transform hover:-translate-y-0.5">
-      <Card className="h-full border-mist bg-pearl transition-colors hover:border-terracotta/40">
-        <CardContent className="flex h-full flex-col justify-between gap-3 pt-6">
-          <div>
-            <h3 className="font-semibold text-espresso">{title}</h3>
-            <p className="mt-1 text-sm text-sand">{description}</p>
-          </div>
-          <span className="text-sm font-medium text-terracotta">Open →</span>
-        </CardContent>
-      </Card>
-    </Link>
-  );
-}
+
 
 async function TodayStats({ tenantId }: { tenantId: string }) {
   const todayStart = new Date();
@@ -360,87 +340,6 @@ export default async function StoreDashboardPage() {
   const permissions = Array.isArray(session.user.permissions)
     ? session.user.permissions.filter((permission): permission is string => typeof permission === 'string')
     : [];
-  const quickLinks = [
-    {
-      title: 'Sales History',
-      description: 'Review completed sales outside the POS terminal.',
-      href: '/sales',
-      permission: PERMISSIONS.SALE.viewSale,
-    },
-    {
-      title: 'Returns',
-      description: 'Review refunds, exchanges, and restocking outcomes.',
-      href: '/returns',
-      permission: PERMISSIONS.SALE.viewSale,
-    },
-    {
-      title: 'Shifts',
-      description: 'Manage open tills, close shifts, and open Z-style reports.',
-      href: '/staff/shifts',
-      permission: PERMISSIONS.STAFF.viewShift,
-    },
-    {
-      title: 'Attendance',
-      description: 'Review staff clock events and hours from one place.',
-      href: '/staff/timeclock',
-      permission: PERMISSIONS.STAFF.viewAttendance,
-    },
-    {
-      title: 'Purchase Orders',
-      description: 'Track supplier orders, receiving, and follow-up tasks.',
-      href: '/suppliers/purchase-orders',
-      permission: PERMISSIONS.SUPPLIER.viewSupplier,
-    },
-    {
-      title: 'Low Stock Alerts',
-      description: 'Jump straight to items that need reordering.',
-      href: '/stock-control/low-stock',
-      permission: PERMISSIONS.STOCK.viewStock,
-    },
-    {
-      title: 'Stock Takes',
-      description: 'Run cycle counts and reconcile physical inventory.',
-      href: '/stock-control/stock-takes',
-      permission: PERMISSIONS.STOCK.conductStockTake,
-    },
-    {
-      title: 'Stock Valuation',
-      description: 'See the current value tied up in inventory.',
-      href: '/stock-control/valuation',
-      permission: PERMISSIONS.STOCK.viewStockValuation,
-    },
-    {
-      title: 'Customer Broadcast',
-      description: 'Send campaigns and announcements to customer segments.',
-      href: '/customers/broadcast',
-      permission: PERMISSIONS.CUSTOMER.viewCustomer,
-    },
-    {
-      title: 'Import Customers',
-      description: 'Bulk load customers from CSV without leaving the owner workflow.',
-      href: '/customers/import',
-      permission: PERMISSIONS.CUSTOMER.createCustomer,
-    },
-    {
-      title: 'Cash Flow',
-      description: 'Monitor expense movements and operating cash trends.',
-      href: '/expenses/cash-flow',
-      permission: PERMISSIONS.REPORT.viewCashflowReport,
-    },
-    {
-      title: 'Staff Commissions',
-      description: 'Review earned commissions and payout history.',
-      href: '/staff/commissions',
-      permission: PERMISSIONS.STAFF.viewStaff,
-    },
-    {
-      title: 'Returns Analytics',
-      description: 'Track refund patterns and return-rate performance.',
-      href: '/reports/return-rate',
-      permission: PERMISSIONS.REPORT.viewSalesReport,
-    },
-  ].filter((link) => permissions.includes(link.permission));
-
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
     select: { name: true },
@@ -474,27 +373,30 @@ export default async function StoreDashboardPage() {
         </div>
       )}
 
-      {quickLinks.length > 0 && (
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold text-espresso">Quick Access</h2>
-            <p className="mt-1 text-sm text-sand">
-              Jump into the owner pages that are now wired up for everyday operations.
-            </p>
-          </div>
+      {/* Quick Navigation */}
+      <QuickNav permissions={permissions} />
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {quickLinks.map((link) => (
-              <QuickAccessCard
-                key={link.href}
-                title={link.title}
-                description={link.description}
-                href={link.href}
-              />
-            ))}
-          </div>
+      {/* Analytics Charts */}
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-espresso">Business Analytics</h2>
+          <p className="mt-1 text-sm text-sand">
+            Key metrics and trends from the last 7 days.
+          </p>
         </div>
-      )}
+
+        <Suspense
+          fallback={
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <div className="lg:col-span-2 h-80 animate-pulse rounded-xl border border-mist bg-pearl" />
+              <div className="h-72 animate-pulse rounded-xl border border-mist bg-pearl" />
+              <div className="h-72 animate-pulse rounded-xl border border-mist bg-pearl" />
+            </div>
+          }
+        >
+          <AnalyticsSection tenantId={tenantId} />
+        </Suspense>
+      </div>
 
       {/* Bottom panels */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

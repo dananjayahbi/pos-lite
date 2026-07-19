@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
+    "@aws-sdk/client-s3": "^3.1090.0",
     "@hookform/resolvers": "^5.2.2",
     "@prisma/adapter-pg": "^7.5.0",
     "@prisma/client": "^7.5.0",
@@ -53,6 +54,7 @@
     "react-barcode": "^1.6.1",
     "react-dom": "19.2.3",
     "react-hook-form": "^7.71.2",
+    "recharts": "^3.9.2",
     "resend": "^6.9.4",
     "shadcn": "^4.0.8",
     "sonner": "^2.0.7",

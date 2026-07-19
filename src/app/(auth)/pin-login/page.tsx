@@ -6,6 +6,7 @@ import { getSession } from 'next-auth/react';
 import PinEntryModal from '@/components/shared/PinEntryModal';
 import { Input } from '@/components/ui/input';
 import { getDefaultRouteForRole } from '@/lib/utils/default-route';
+import { AuthLogo } from '@/components/auth/AuthLogo';
 
 export default function PinLoginPage() {
   return (
@@ -32,7 +33,7 @@ function PinLoginPageContent() {
   return (
     <div className="w-full px-4">
       <div className="mx-auto mb-4 w-full max-w-[400px] text-center">
-        <div className="mx-auto mb-3 h-10 w-10 rounded-md bg-espresso" />
+        <AuthLogo />
         <h1 className="font-display text-3xl text-espresso">VelvetPOS</h1>
         <p className="mt-1 text-sm text-terracotta">Quick PIN sign-in</p>
       </div>

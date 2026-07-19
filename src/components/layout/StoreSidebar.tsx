@@ -23,6 +23,8 @@ interface StoreSidebarProps {
   userEmail: string;
   userRole: UserRole;
   permissions: string[];
+  businessName: string;
+  businessLogoUrl: string | null;
   onNavigate?: () => void;
 }
 
@@ -194,18 +196,6 @@ const navGroups: NavGroup[] = [
     label: 'Settings',
     items: [
       {
-        name: 'Billing',
-        href: '/billing',
-        roles: ['OWNER', 'MANAGER'],
-        permission: PERMISSIONS.BILLING.viewBilling,
-      },
-      {
-        name: 'Store Profile',
-        href: '/settings/store',
-        roles: ['OWNER', 'MANAGER'],
-        permission: PERMISSIONS.SETTINGS.manageStoreProfile,
-      },
-      {
         name: 'Taxes',
         href: '/settings/taxes',
         roles: ['OWNER', 'MANAGER'],
@@ -271,22 +261,31 @@ export default function StoreSidebar({
   userEmail,
   userRole,
   permissions,
+  businessName,
+  businessLogoUrl,
   onNavigate,
 }: StoreSidebarProps) {
   const pathname = usePathname();
 
   return (
-    <div className="flex h-full flex-col justify-between bg-pearl">
-      <div>
+    <div className="flex h-full flex-col overflow-hidden bg-pearl">
+      <div className="shrink-0">
         <div className="px-5 py-5">
-          <p className="font-display text-xl font-bold text-espresso">VelvetPOS</p>
+          <div className="flex items-center gap-2">
+            {businessLogoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={businessLogoUrl} alt="" className="h-7 w-7 rounded object-contain" />
+            ) : null}
+            <p className="font-display text-xl font-bold text-espresso">{businessName}</p>
+          </div>
           <p className="mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-sand">
             {formatRole(userRole)}
           </p>
         </div>
         <div className="mx-5 border-b border-mist" />
+      </div>
 
-        <nav className="px-3 py-4">
+      <nav className="flex-1 overflow-y-auto px-3 py-4">
           {navGroups.map((group) => {
             const visibleItems = group.items.filter((item) =>
               canAccessItem(item, userRole, permissions),
@@ -333,9 +332,8 @@ export default function StoreSidebar({
             );
           })}
         </nav>
-      </div>
 
-      <div className="border-t border-mist px-4 py-4">
+      <div className="shrink-0 border-t border-mist px-4 py-4">
         <p className="truncate text-xs text-sand">{userEmail}</p>
         <button
           type="button"
