@@ -268,8 +268,8 @@ export default function StoreSidebar({
   const pathname = usePathname();
 
   return (
-    <div className="flex h-full flex-col justify-between bg-pearl">
-      <div>
+    <div className="flex h-full flex-col overflow-hidden bg-pearl">
+      <div className="shrink-0">
         <div className="px-5 py-5">
           <div className="flex items-center gap-2">
             {businessLogoUrl ? (
@@ -283,8 +283,9 @@ export default function StoreSidebar({
           </p>
         </div>
         <div className="mx-5 border-b border-mist" />
+      </div>
 
-        <nav className="px-3 py-4">
+      <nav className="flex-1 overflow-y-auto px-3 py-4">
           {navGroups.map((group) => {
             const visibleItems = group.items.filter((item) =>
               canAccessItem(item, userRole, permissions),
@@ -331,9 +332,8 @@ export default function StoreSidebar({
             );
           })}
         </nav>
-      </div>
 
-      <div className="border-t border-mist px-4 py-4">
+      <div className="shrink-0 border-t border-mist px-4 py-4">
         <p className="truncate text-xs text-sand">{userEmail}</p>
         <button
           type="button"
