@@ -116,7 +116,8 @@ async function sendReminders(
       if (existing) continue;
 
       const ownerEmail = invoice.tenant.users[0]?.email ?? "unknown";
-      const billingUrl = `${process.env.NEXTAUTH_URL}/${invoice.tenant.slug}/billing`;
+      const { getBaseUrl } = await import('@/lib/utils/url');
+      const billingUrl = `${getBaseUrl()}/${invoice.tenant.slug}/billing`;
 
       // Build message based on type
       let message: string;

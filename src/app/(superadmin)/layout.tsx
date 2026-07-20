@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
-import { auth, signOut } from '@/lib/auth';
+import { auth } from '@/lib/auth';
+import { SignOutButton } from '@/components/auth/SignOutButton';
 import SuperAdminNav from '@/components/superadmin/SuperAdminNav';
 
 export default async function SuperAdminLayout({
@@ -39,19 +40,7 @@ export default async function SuperAdminLayout({
           <p className="truncate text-xs text-pearl/50">
             {session.user?.email}
           </p>
-          <form
-            action={async () => {
-              'use server';
-              await signOut({ redirectTo: '/login' });
-            }}
-          >
-            <button
-              type="submit"
-              className="mt-2 text-xs text-pearl/40 transition-colors hover:text-red-400"
-            >
-              Log Out
-            </button>
-          </form>
+          <SignOutButton variant="button" />
         </div>
       </div>
 

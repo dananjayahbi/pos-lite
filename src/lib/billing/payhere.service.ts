@@ -2,6 +2,7 @@ import "server-only";
 
 import { type Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getBaseUrl } from "@/lib/utils/url";
 import Decimal from "decimal.js";
 
 // ─── PayHere Portal Configuration ───────────────────────────────────────────
@@ -11,7 +12,7 @@ import Decimal from "decimal.js";
 //   PAYHERE_MERCHANT_ID   — Merchant ID from PayHere dashboard
 //   PAYHERE_MERCHANT_SECRET — Used for MD5 signature verification
 //   PAYHERE_SANDBOX        — "true" to use sandbox endpoints
-//   NEXTAUTH_URL           — Base URL for return/cancel/notify URLs
+//   AUTH_URL / NEXTAUTH_URL / VERCEL_URL — Base URL for return/cancel/notify URLs
 // ────────────────────────────────────────────────────────────────────────────
 
 export const PAYHERE_PAYMENT_URL =
@@ -31,7 +32,7 @@ export function buildPayhereCheckoutPayload(
   ownerUser: { email: string },
 ): Record<string, string> {
   const amount = new Decimal(invoice.amount.toString()).toFixed(2);
-  const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  const baseUrl = getBaseUrl();
 
   return {
     merchant_id: process.env.PAYHERE_MERCHANT_ID || "",
