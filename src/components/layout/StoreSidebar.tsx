@@ -338,7 +338,7 @@ export default function StoreSidebar({
         <button
           type="button"
           onClick={() => {
-            void signOut({ callbackUrl: '/login' });
+            void signOut({ callbackUrl: `${window.location.origin}/login` });
           }}
           className="mt-2 text-xs text-terracotta transition-colors hover:text-espresso"
         >

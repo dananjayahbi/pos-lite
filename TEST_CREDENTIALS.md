@@ -5,7 +5,7 @@
 ---
 
 ## Super Admin
-
+chat.
 | Field    | Value                       |
 | -------- | --------------------------- |
 | Email    | `superadmin@velvetpos.dev`  |

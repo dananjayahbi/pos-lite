@@ -62,7 +62,7 @@ export default function StoreLayoutClient({
                 </span>
                 <button
                   type="button"
-                  onClick={() => void signOut({ callbackUrl: '/login' })}
+                  onClick={() => void signOut({ callbackUrl: `${window.location.origin}/login` })}
                   className="text-xs text-terracotta transition-colors hover:text-espresso"
                 >
                   Log Out

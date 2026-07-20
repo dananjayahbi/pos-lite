@@ -71,11 +71,8 @@ export async function POST(request: Request) {
     },
   });
 
-  const baseUrl =
-    process.env.AUTH_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    'http://localhost:3000';
-  const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+  const { getBaseUrl } = await import('@/lib/utils/url');
+  const resetUrl = `${getBaseUrl()}/reset-password?token=${token}`;
 
   await sendPasswordResetEmail(user.email, resetUrl);
 

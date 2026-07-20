@@ -94,7 +94,7 @@ export function ShiftOpenModal({
               type="button"
               onClick={async () => {
                 setReturningToLogin(true);
-                await signOut({ callbackUrl: '/login' });
+                await signOut({ callbackUrl: `${window.location.origin}/login` });
               }}
               disabled={returningToLogin}
               className="inline-flex items-center rounded-lg border border-mist px-3 py-2 text-sm font-medium text-espresso transition-colors hover:bg-linen disabled:cursor-not-allowed disabled:opacity-60"
