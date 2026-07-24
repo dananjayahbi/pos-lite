@@ -12,6 +12,8 @@ import { TestimonialsTab } from './website-tabs/TestimonialsTab';
 import { FooterTab } from './website-tabs/FooterTab';
 import { AdsTab } from './website-tabs/AdsTab';
 import { AboutContactTab } from './website-tabs/AboutContactTab';
+import { ShopTab } from './website-tabs/ShopTab';
+import { ResetConfirmDialog } from './ResetConfirmDialog';
 import type { WebsiteConfigData } from '@/types/website.types';
 
 interface WebsiteSettingsFormProps {
@@ -59,6 +61,7 @@ const TABS = [
   { value: 'footer', label: 'Footer' },
   { value: 'ads', label: 'Ads' },
   { value: 'about-contact', label: 'About & Contact' },
+  { value: 'shop', label: 'Shop' },
 ];
 
 export function WebsiteSettingsForm({
@@ -69,6 +72,7 @@ export function WebsiteSettingsForm({
     initialConfig ?? DEFAULT_CONFIG
   );
   const [saving, setSaving] = useState(false);
+  const [showResetDialog, setShowResetDialog] = useState(false);
 
   const updateConfig = useCallback((updates: Partial<WebsiteConfigData>) => {
     setConfig((prev) => ({ ...prev, ...updates }));
@@ -130,6 +134,19 @@ export function WebsiteSettingsForm({
       }
 
       toast.success('Website configuration saved successfully');
+
+      // Refetch latest config from server so state stays in sync
+      // (critical for multi-tab scenarios — Tab B sees Tab A's changes)
+      try {
+        const res = await fetch('/api/store/website');
+        const body = await res.json();
+        if (body.success && body.data) {
+          const fresh: WebsiteConfigData = JSON.parse(JSON.stringify(body.data));
+          setConfig(fresh);
+        }
+      } catch {
+        // If refetch fails, local state is still valid
+      }
     } catch {
       toast.error('An error occurred while saving');
     } finally {
@@ -192,17 +209,19 @@ export function WebsiteSettingsForm({
   return (
     <div className="space-y-4">
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="w-full justify-start overflow-x-auto border-b border-mist rounded-none bg-transparent h-auto p-0">
-          {TABS.map((tab) => (
-            <TabsTrigger
-              key={tab.value}
-              value={tab.value}
-              className="data-[state=active]:border-b-2 data-[state=active]:border-terracotta data-[state=active]:bg-transparent data-[state=active]:shadow-none rounded-none px-4 py-2 text-sm text-sand data-[state=active]:text-espresso"
-            >
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        <div className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <TabsList className="w-full min-w-max justify-start border-b border-mist rounded-none bg-transparent h-auto p-0">
+            {TABS.map((tab) => (
+              <TabsTrigger
+                key={tab.value}
+                value={tab.value}
+                className="whitespace-nowrap data-[state=active]:border-b-2 data-[state=active]:border-terracotta data-[state=active]:bg-transparent data-[state=active]:shadow-none rounded-none px-4 py-2 text-sm text-sand data-[state=active]:text-espresso"
+              >
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
         <div className="mt-6 min-h-[400px]">
           <TabsContent value="general">
@@ -244,6 +263,10 @@ export function WebsiteSettingsForm({
           <TabsContent value="about-contact">
             <AboutContactTab config={config} onChange={updateConfig} />
           </TabsContent>
+
+          <TabsContent value="shop">
+            <ShopTab config={config} onChange={updateConfig} />
+          </TabsContent>
         </div>
       </Tabs>
 
@@ -251,7 +274,7 @@ export function WebsiteSettingsForm({
       <div className="sticky bottom-0 bg-pearl border-t border-mist p-4 flex justify-end gap-3 rounded-b-lg">
         <Button
           variant="outline"
-          onClick={() => setConfig(initialConfig ?? DEFAULT_CONFIG)}
+          onClick={() => setShowResetDialog(true)}
           disabled={saving}
         >
           Reset
@@ -264,6 +287,13 @@ export function WebsiteSettingsForm({
           {saving ? 'Saving...' : 'Save All Changes'}
         </Button>
       </div>
+
+      <ResetConfirmDialog
+        open={showResetDialog}
+        onOpenChange={setShowResetDialog}
+        onConfirm={() => setConfig(initialConfig ?? DEFAULT_CONFIG)}
+        disabled={saving}
+      />
     </div>
   );
 }

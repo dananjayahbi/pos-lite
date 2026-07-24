@@ -10,6 +10,7 @@ interface StaticPageShellProps {
   title: string;
   subtitle?: string;
   description?: string;
+  heroImageUrl?: string;
   children: React.ReactNode;
 }
 
@@ -31,6 +32,7 @@ export function StaticPageShell({
   title,
   subtitle,
   description,
+  heroImageUrl,
   children,
 }: StaticPageShellProps) {
   const websiteConfig: WebsiteConfigData = config ?? {
@@ -43,21 +45,42 @@ export function StaticPageShell({
       <WebsiteHeader config={websiteConfig} tenantSlug={tenantSlug} />
 
       {/* Page title hero */}
-      <section className="bg-[var(--site-light-gray,#f5f5f5)] border-b border-black/5">
-        <div className="max-w-5xl mx-auto px-4 py-16 md:py-20 text-center">
+      <section
+        className="relative border-b border-black/5 overflow-hidden"
+        style={
+          heroImageUrl
+            ? { backgroundImage: `url(${heroImageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+            : { backgroundColor: 'var(--site-light-gray, #f5f5f5)' }
+        }
+      >
+        {/* Dark overlay for readability when hero image is set */}
+        {heroImageUrl && (
+          <div className="absolute inset-0 bg-black/40" />
+        )}
+        <div className="relative max-w-5xl mx-auto px-4 py-16 md:py-24 text-center">
           <h1
-            className="text-3xl md:text-5xl font-medium tracking-tight text-[var(--site-primary,#0a0a0a)]"
+            className={`text-3xl md:text-5xl font-medium tracking-tight ${
+              heroImageUrl ? 'text-white' : 'text-[var(--site-primary,#0a0a0a)]'
+            }`}
             style={{ fontFamily: 'var(--font-dm-serif), serif' }}
           >
             {title}
           </h1>
           {subtitle && (
-            <p className="mt-3 text-sm md:text-base text-gray-500 max-w-lg mx-auto">
+            <p
+              className={`mt-3 text-sm md:text-base max-w-lg mx-auto ${
+                heroImageUrl ? 'text-white/80' : 'text-gray-500'
+              }`}
+            >
               {subtitle}
             </p>
           )}
           {description && (
-            <p className="mt-2 text-sm text-gray-400 max-w-xl mx-auto">
+            <p
+              className={`mt-2 text-sm max-w-xl mx-auto ${
+                heroImageUrl ? 'text-white/60' : 'text-gray-400'
+              }`}
+            >
               {description}
             </p>
           )}

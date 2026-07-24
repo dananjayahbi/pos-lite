@@ -156,9 +156,14 @@ export const WebsiteConfigSchema = z.object({
   contactEmailDisplay: z.string().max(200).nullable().optional().or(z.literal('')),
   contactBusinessHours: z.string().max(1000).nullable().optional().or(z.literal('')),
   contactMapEmbedUrl: z.string().max(1000).nullable().optional().or(z.literal('')),
-});
 
-// ── Zod inferred types ──────────────────────────────────────────────────────
+  // Shop Page
+  shopPageTitle: z.string().max(200).nullable().optional().or(z.literal('')),
+  shopPageSubtitle: z.string().max(500).nullable().optional().or(z.literal('')),
+  shopHeroImageUrl: z.string().max(500).nullable().optional().or(z.literal('')),
+  shopPageDescription: z.string().max(1000).nullable().optional().or(z.literal('')),
+  shopProductsPerPage: z.number().int().min(1).max(100).nullable().optional(),
+});
 
 export type WebsiteConfigInput = z.infer<typeof WebsiteConfigSchema>;
 export type WebsiteHeroSlideInput = z.infer<typeof WebsiteHeroSlideSchema>;

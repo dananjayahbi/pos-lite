@@ -166,7 +166,7 @@ export function MediaUploader({
           {isVideo ? (
             <video
               src={value}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               controls
               muted
             />
@@ -174,7 +174,7 @@ export function MediaUploader({
             <img
               src={value}
               alt="Preview"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = 'none';
               }}

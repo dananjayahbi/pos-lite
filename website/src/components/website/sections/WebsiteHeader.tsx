@@ -32,14 +32,18 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
 
   /**
    * Resolve a CMS nav item href to a full tenant-scoped path.
-   * External URLs and already-scoped paths pass through unchanged.
+   * For the default tenant, clean paths like /about /shop /contact are used as-is.
+   * For other tenants the slug is prepended. External URLs pass through.
    */
   function resolveNavHref(href: string): string {
     if (!href || href === '#') return href;
     if (href.startsWith('http://') || href.startsWith('https://')) return href;
-    // Already tenant-scoped (e.g. /ruhunuwedagedara/about)
-    if (href.startsWith(`/${tenantSlug}`)) return href;
-    // Relative path — prepend tenant slug
+    // Already scoped (e.g. /ruhunuwedagedara/about)
+    if (href.startsWith(`/${tenantSlug}`) || href.startsWith(`/${tenantSlug}/`)) return href;
+    // Default tenant — use clean URL (no slug prefix)
+    const defaultSlug = (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_DEFAULT_TENANT_SLUG) || 'ruhunuwedagedara';
+    if (tenantSlug === defaultSlug) return href;
+    // Non-default tenant — prepend slug
     if (href.startsWith('/')) return `/${tenantSlug}${href}`;
     return href;
   }

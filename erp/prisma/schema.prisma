@@ -1168,6 +1168,13 @@ model WebsiteConfig {
   contactBusinessHours    String?  @db.Text
   contactMapEmbedUrl      String?
 
+  // Shop Page
+  shopPageTitle        String?
+  shopPageSubtitle     String?
+  shopHeroImageUrl     String?
+  shopPageDescription  String?
+  shopProductsPerPage  Int?       @default(24)
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

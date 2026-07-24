@@ -236,6 +236,13 @@ export interface WebsiteConfigData {
   contactBusinessHours?: string;
   contactMapEmbedUrl?: string;
 
+  // Shop page
+  shopPageTitle?: string;
+  shopPageSubtitle?: string;
+  shopHeroImageUrl?: string;
+  shopPageDescription?: string;
+  shopProductsPerPage?: number;
+
   // Related data
   heroSlides?: WebsiteHeroSlideData[];
   ads?: WebsiteAdData[];
