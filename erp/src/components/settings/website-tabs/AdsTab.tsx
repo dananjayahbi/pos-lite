@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2 } from 'lucide-react';
+import { MediaUploader } from '@/components/shared/MediaUploader';
 import type { WebsiteConfigData, WebsiteAdData } from '@/types/website.types';
 
 interface AdsTabProps {
@@ -108,21 +109,32 @@ export function AdsTab({ config, onChange }: AdsTabProps) {
               </div>
 
               <div className="space-y-1 md:col-span-2">
-                <Label className="text-xs">Media URL</Label>
-                <Input
+                <Label className="text-xs">Media</Label>
+                <MediaUploader
                   value={ad.mediaUrl}
-                  onChange={(e) => updateAd(i, { mediaUrl: e.target.value })}
-                  placeholder="https://..."
-                  className="h-8 text-sm"
+                  onChange={(url) => updateAd(i, { mediaUrl: url })}
+                  accept={ad.mediaType === 'video' ? 'video/*' : 'image/*'}
+                  maxSizeMB={ad.mediaType === 'video' ? 100 : 10}
+                  label={ad.mediaType === 'video' ? 'Upload Video' : 'Upload Image'}
+                  placeholder={
+                    ad.mediaType === 'video'
+                      ? 'Upload ad video (MP4/WebM)'
+                      : 'Upload ad image (JPG/PNG/WebP)'
+                  }
+                  previewHeight="h-24"
                 />
               </div>
 
               <div className="space-y-1">
-                <Label className="text-xs">Mobile Media URL (optional)</Label>
-                <Input
+                <Label className="text-xs">Mobile Media (optional)</Label>
+                <MediaUploader
                   value={ad.mobileMediaUrl ?? ''}
-                  onChange={(e) => updateAd(i, { mobileMediaUrl: e.target.value })}
-                  className="h-8 text-sm"
+                  onChange={(url) => updateAd(i, { mobileMediaUrl: url })}
+                  accept={ad.mediaType === 'video' ? 'video/*' : 'image/*'}
+                  maxSizeMB={ad.mediaType === 'video' ? 50 : 5}
+                  label="Upload Mobile Media"
+                  placeholder="Leave empty for desktop media"
+                  previewHeight="h-20"
                 />
               </div>
 

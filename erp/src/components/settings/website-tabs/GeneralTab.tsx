@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
+import { MediaUploader } from '@/components/shared/MediaUploader';
 import type { WebsiteConfigData } from '@/types/website.types';
 
 interface GeneralTabProps {
@@ -47,28 +48,27 @@ export function GeneralTab({ config, onChange }: GeneralTabProps) {
         <h3 className="text-sm font-semibold text-espresso mb-3">Logo & Favicon</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="logoUrl">Logo URL</Label>
-            <Input
-              id="logoUrl"
+            <Label>Logo</Label>
+            <MediaUploader
               value={config.logoUrl ?? ''}
-              onChange={(e) => onChange({ logoUrl: e.target.value })}
-              placeholder="https://..."
+              onChange={(url) => onChange({ logoUrl: url })}
+              accept="image/*"
+              maxSizeMB={5}
+              label="Upload Logo"
+              placeholder="Upload site logo (PNG/WebP)"
+              previewHeight="h-20"
             />
-            {config.logoUrl && (
-              <img
-                src={config.logoUrl}
-                alt="Logo preview"
-                className="h-10 mt-2 object-contain"
-              />
-            )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="faviconUrl">Favicon URL</Label>
-            <Input
-              id="faviconUrl"
+            <Label>Favicon</Label>
+            <MediaUploader
               value={config.faviconUrl ?? ''}
-              onChange={(e) => onChange({ faviconUrl: e.target.value })}
-              placeholder="https://..."
+              onChange={(url) => onChange({ faviconUrl: url })}
+              accept="image/*"
+              maxSizeMB={2}
+              label="Upload Favicon"
+              placeholder="Upload favicon (32x32 recommended)"
+              previewHeight="h-20"
             />
           </div>
         </div>
@@ -240,3 +240,4 @@ export function GeneralTab({ config, onChange }: GeneralTabProps) {
     </div>
   );
 }
+

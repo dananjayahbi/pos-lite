@@ -72,20 +72,59 @@ export function WebsiteSettingsForm({
     setConfig((prev) => ({ ...prev, ...updates }));
   }, []);
 
+  // ── Sanitize null values from the DB before sending to the API ────────────
+
+  function sanitizeCoreConfig(data: Record<string, unknown>): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value === null) {
+        result[key] = '';
+      } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        result[key] = sanitizeCoreConfig(value as Record<string, unknown>);
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+
   const handleSave = async () => {
     setSaving(true);
     try {
+      // 1. Save core website config (without heroSlides/ads — those are separate)
+      const { heroSlides, ads, ...coreConfig } = config;
+      // Sanitize: convert null → '' for string fields so zod validation passes
+      const sanitized = sanitizeCoreConfig(coreConfig);
       const res = await fetch('/api/store/website', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+        body: JSON.stringify(sanitized),
       });
 
       const data = await res.json();
 
       if (!data.success) {
-        toast.error(data.error?.message || 'Failed to save');
+        const details = data.error?.details;
+        const fieldErrors = details?.fieldErrors;
+        if (fieldErrors && Object.keys(fieldErrors).length > 0) {
+          const firstError = Object.entries(fieldErrors)
+            .map(([field, msgs]) => `${field}: ${(msgs as string[]).join(', ')}`)
+            .join('; ');
+          toast.error(`Validation error: ${firstError}`);
+        } else {
+          toast.error(data.error?.message || 'Failed to save');
+        }
         return;
+      }
+
+      // 2. Sync hero slides through dedicated endpoints
+      if (heroSlides && heroSlides.length > 0) {
+        await syncHeroSlides(heroSlides);
+      }
+
+      // 3. Sync ads through dedicated endpoints
+      if (ads && ads.length > 0) {
+        await syncAds(ads);
       }
 
       toast.success('Website configuration saved successfully');
@@ -95,6 +134,58 @@ export function WebsiteSettingsForm({
       setSaving(false);
     }
   };
+
+  // ── Inline sync helpers ──────────────────────────────────────────────────
+
+  async function syncHeroSlides(slides: WebsiteConfigData['heroSlides']) {
+    if (!slides) return;
+    for (const slide of slides) {
+      try {
+        const sanitized = sanitizeCoreConfig(slide as unknown as Record<string, unknown>) as unknown as typeof slide;
+        if (slide.id) {
+          // Update existing
+          await fetch(`/api/store/website/hero-slides/${slide.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sanitized),
+          });
+        } else {
+          // Create new
+          await fetch('/api/store/website/hero-slides', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sanitized),
+          });
+        }
+      } catch (err) {
+        console.error('Failed to sync hero slide:', err);
+      }
+    }
+  }
+
+  async function syncAds(adsList: WebsiteConfigData['ads']) {
+    if (!adsList) return;
+    for (const ad of adsList) {
+      try {
+        const sanitized = sanitizeCoreConfig(ad as unknown as Record<string, unknown>) as unknown as typeof ad;
+        if (ad.id) {
+          await fetch(`/api/store/website/ads/${ad.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sanitized),
+          });
+        } else {
+          await fetch('/api/store/website/ads', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sanitized),
+          });
+        }
+      } catch (err) {
+        console.error('Failed to sync ad:', err);
+      }
+    }
+  }
 
   return (
     <div className="space-y-4">

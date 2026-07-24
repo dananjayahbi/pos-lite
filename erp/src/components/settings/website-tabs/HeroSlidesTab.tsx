@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, GripVertical } from 'lucide-react';
 import { toast } from 'sonner';
+import { MediaUploader } from '@/components/shared/MediaUploader';
 import type { WebsiteConfigData, WebsiteHeroSlideData } from '@/types/website.types';
 
 interface HeroSlidesTabProps {
@@ -111,30 +112,33 @@ export function HeroSlidesTab({ config, onChange }: HeroSlidesTabProps) {
 
               <div className="space-y-2 md:col-span-2">
                 <Label className="text-xs">
-                  {slide.mediaType === 'video' ? 'Video' : 'Image'} URL (Desktop)
+                  {slide.mediaType === 'video' ? 'Video' : 'Image'} (Desktop)
                 </Label>
-                <Input
+                <MediaUploader
                   value={slide.mediaUrl}
-                  onChange={(e) => updateSlide(i, { mediaUrl: e.target.value })}
-                  placeholder="https://..."
-                  className="h-8 text-sm"
+                  onChange={(url) => updateSlide(i, { mediaUrl: url })}
+                  accept={slide.mediaType === 'video' ? 'video/*' : 'image/*'}
+                  maxSizeMB={slide.mediaType === 'video' ? 100 : 10}
+                  label={slide.mediaType === 'video' ? 'Upload Video' : 'Upload Image'}
+                  placeholder={
+                    slide.mediaType === 'video'
+                      ? 'Upload hero video (MP4/WebM)'
+                      : 'Upload hero image (JPG/PNG/WebP)'
+                  }
+                  previewHeight="h-24"
                 />
-                {slide.mediaUrl && (
-                  <img
-                    src={slide.mediaUrl}
-                    alt="Preview"
-                    className="h-20 mt-1 object-cover rounded"
-                  />
-                )}
               </div>
 
               <div className="space-y-2 md:col-span-2">
-                <Label className="text-xs">Mobile Media URL (optional)</Label>
-                <Input
+                <Label className="text-xs">Mobile Media (optional)</Label>
+                <MediaUploader
                   value={slide.mobileMediaUrl ?? ''}
-                  onChange={(e) => updateSlide(i, { mobileMediaUrl: e.target.value })}
+                  onChange={(url) => updateSlide(i, { mobileMediaUrl: url })}
+                  accept={slide.mediaType === 'video' ? 'video/*' : 'image/*'}
+                  maxSizeMB={slide.mediaType === 'video' ? 50 : 5}
+                  label="Upload Mobile Media"
                   placeholder="Leave empty to use desktop media"
-                  className="h-8 text-sm"
+                  previewHeight="h-20"
                 />
               </div>
 

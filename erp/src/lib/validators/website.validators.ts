@@ -3,13 +3,13 @@ import { z } from 'zod';
 // ── Social Links ─────────────────────────────────────────────────────────────
 
 export const WebsiteSocialLinksSchema = z.object({
-  facebook: z.string().url().optional().or(z.literal('')),
-  instagram: z.string().url().optional().or(z.literal('')),
-  email: z.string().email().optional().or(z.literal('')),
-  phone: z.string().optional().or(z.literal('')),
-  whatsapp: z.string().optional().or(z.literal('')),
-  tiktok: z.string().url().optional().or(z.literal('')),
-  youtube: z.string().url().optional().or(z.literal('')),
+  facebook: z.string().url().nullable().optional().or(z.literal('')),
+  instagram: z.string().url().nullable().optional().or(z.literal('')),
+  email: z.string().email().nullable().optional().or(z.literal('')),
+  phone: z.string().nullable().optional().or(z.literal('')),
+  whatsapp: z.string().nullable().optional().or(z.literal('')),
+  tiktok: z.string().url().nullable().optional().or(z.literal('')),
+  youtube: z.string().url().nullable().optional().or(z.literal('')),
 });
 
 // ── Navigation ───────────────────────────────────────────────────────────────
@@ -36,12 +36,12 @@ export const WebsiteNavItemSchema: z.ZodType<{
 export const WebsiteHeroSlideSchema = z.object({
   mediaType: z.enum(['image', 'video']),
   mediaUrl: z.string().min(1, 'Media URL is required'),
-  mobileMediaUrl: z.string().optional().or(z.literal('')),
-  title: z.string().max(200).optional().or(z.literal('')),
-  subtitle: z.string().max(300).optional().or(z.literal('')),
-  description: z.string().max(500).optional().or(z.literal('')),
-  ctaText: z.string().max(50).optional().or(z.literal('')),
-  ctaLink: z.string().max(200).optional().or(z.literal('')),
+  mobileMediaUrl: z.string().nullable().optional().or(z.literal('')),
+  title: z.string().max(200).nullable().optional().or(z.literal('')),
+  subtitle: z.string().max(300).nullable().optional().or(z.literal('')),
+  description: z.string().max(500).nullable().optional().or(z.literal('')),
+  ctaText: z.string().max(50).nullable().optional().or(z.literal('')),
+  ctaLink: z.string().max(200).nullable().optional().or(z.literal('')),
   isActive: z.boolean().default(true),
   sortOrder: z.number().int().nonnegative().default(0),
 });
@@ -54,10 +54,10 @@ export const WebsiteAdSchema = z.object({
   name: z.string().min(1, 'Ad name is required').max(100),
   mediaType: z.enum(['image', 'video']),
   mediaUrl: z.string().min(1, 'Media URL is required'),
-  mobileMediaUrl: z.string().optional().or(z.literal('')),
-  targetUrl: z.string().max(500).optional().or(z.literal('')),
+  mobileMediaUrl: z.string().nullable().optional().or(z.literal('')),
+  targetUrl: z.string().max(500).nullable().optional().or(z.literal('')),
   position: z.enum(['header', 'between_sections', 'sidebar', 'popup']),
-  displayAfterSection: z.string().optional().or(z.literal('')),
+  displayAfterSection: z.string().nullable().optional().or(z.literal('')),
   startsAt: z.string().datetime().optional().nullable(),
   endsAt: z.string().datetime().optional().nullable(),
   isActive: z.boolean().default(true),
@@ -98,19 +98,19 @@ export const FooterColumnSchema = z.object({
 
 export const WebsiteConfigSchema = z.object({
   // Branding
-  siteName: z.string().max(100).optional().or(z.literal('')),
-  tagline: z.string().max(200).optional().or(z.literal('')),
-  logoUrl: z.string().max(500).optional().or(z.literal('')),
-  faviconUrl: z.string().max(500).optional().or(z.literal('')),
+  siteName: z.string().max(100).nullable().optional().or(z.literal('')),
+  tagline: z.string().max(200).nullable().optional().or(z.literal('')),
+  logoUrl: z.string().max(500).nullable().optional().or(z.literal('')),
+  faviconUrl: z.string().max(500).nullable().optional().or(z.literal('')),
 
   // Colors
-  primaryColor: z.string().max(7).optional(),
-  accentColor: z.string().max(7).optional(),
-  bgColor: z.string().max(7).optional(),
+  primaryColor: z.string().max(7).nullable().optional(),
+  accentColor: z.string().max(7).nullable().optional(),
+  bgColor: z.string().max(7).nullable().optional(),
 
   // SEO
-  metaTitle: z.string().max(120).optional().or(z.literal('')),
-  metaDescription: z.string().max(300).optional().or(z.literal('')),
+  metaTitle: z.string().max(120).nullable().optional().or(z.literal('')),
+  metaDescription: z.string().max(300).nullable().optional().or(z.literal('')),
 
   // Social Links
   socialLinks: WebsiteSocialLinksSchema.default({}),
@@ -122,7 +122,7 @@ export const WebsiteConfigSchema = z.object({
   sections: z.record(z.string(), z.record(z.string(), z.unknown())).default({}),
 
   // Footer
-  footerAbout: z.string().max(1000).optional().or(z.literal('')),
+  footerAbout: z.string().max(1000).nullable().optional().or(z.literal('')),
   footerColumns: z.array(FooterColumnSchema).default([]),
 });
 

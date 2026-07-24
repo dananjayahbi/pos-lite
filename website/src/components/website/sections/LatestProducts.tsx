@@ -15,114 +15,8 @@ interface LatestProductsProps {
   config: Record<string, unknown>;
   websiteConfig: Record<string, unknown>;
   tenantSlug: string;
-  /** Real products from the ERP API. Falls back to placeholders when missing. */
   products?: PublicProduct[];
 }
-
-const PLACEHOLDER_PRODUCTS: PublicProduct[] = [
-  {
-    id: '1',
-    name: 'Vitamin C Brightening Cream',
-    variants: [
-      {
-        id: '1-1',
-        sku: 'VCBC-01',
-        retailPrice: 4500,
-        imageUrls: [
-          'https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?w=400&h=400&fit=crop',
-        ],
-        stockQuantity: 0,
-        productId: '1',
-      },
-    ],
-    tags: [],
-  },
-  {
-    id: '2',
-    name: 'Green Tea Face Wash',
-    variants: [
-      {
-        id: '2-1',
-        sku: 'GTFW-01',
-        retailPrice: 2800,
-        imageUrls: [
-          'https://images.unsplash.com/photo-1556228578-0d85b1a4d571?w=400&h=400&fit=crop',
-        ],
-        stockQuantity: 0,
-        productId: '2',
-      },
-    ],
-    tags: [],
-  },
-  {
-    id: '3',
-    name: 'Advanced Repair Serum',
-    variants: [
-      {
-        id: '3-1',
-        sku: 'ARS-01',
-        retailPrice: 5200,
-        imageUrls: [
-          'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?w=400&h=400&fit=crop',
-        ],
-        stockQuantity: 0,
-        productId: '3',
-      },
-    ],
-    tags: [],
-  },
-  {
-    id: '4',
-    name: 'Saffron Day Cream',
-    variants: [
-      {
-        id: '4-1',
-        sku: 'SDC-01',
-        retailPrice: 3900,
-        imageUrls: [
-          'https://images.unsplash.com/photo-1611930022073-b7a4ba5fcccd?w=400&h=400&fit=crop',
-        ],
-        stockQuantity: 0,
-        productId: '4',
-      },
-    ],
-    tags: [],
-  },
-  {
-    id: '5',
-    name: 'Sandalwood Body Lotion',
-    variants: [
-      {
-        id: '5-1',
-        sku: 'SBL-01',
-        retailPrice: 3200,
-        imageUrls: [
-          'https://images.unsplash.com/photo-1596755389378-c31d21fd1273?w=400&h=400&fit=crop',
-        ],
-        stockQuantity: 0,
-        productId: '5',
-      },
-    ],
-    tags: [],
-  },
-  {
-    id: '6',
-    name: 'Kasturi Kaha Night Cream',
-    variants: [
-      {
-        id: '6-1',
-        sku: 'KKNC-01',
-        retailPrice: 4800,
-        imageUrls: [
-          'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108?w=400&h=400&fit=crop',
-        ],
-        stockQuantity: 0,
-        productId: '6',
-      },
-    ],
-    tags: [],
-  },
-];
 
 type DisplayProduct = { id: string; name: string; price: string; image: string };
 
@@ -158,8 +52,7 @@ export function LatestProducts({
     return () => window.removeEventListener('resize', compute);
   }, []);
 
-  const source: PublicProduct[] =
-    products && products.length > 0 ? products : PLACEHOLDER_PRODUCTS;
+  const source: PublicProduct[] = products ?? [];
   const display: DisplayProduct[] = source
     .slice(0, sectionConfig.productCount || 10)
     .map((p) => ({

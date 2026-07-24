@@ -10,16 +10,8 @@ interface CategoryGridProps {
   config: Record<string, unknown>;
   websiteConfig: Record<string, unknown>;
   tenantSlug: string;
-  /** Real categories from the ERP API. Falls back to placeholder IDs when missing. */
   categories?: PublicCategory[];
 }
-
-const PLACEHOLDER_IMAGES = [
-  'https://images.unsplash.com/photo-1611930022073-b7a4ba5fcccd?w=400&h=400&fit=crop',
-  'https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?w=400&h=400&fit=crop',
-  'https://images.unsplash.com/photo-1596755389378-c31d21fd1273?w=400&h=400&fit=crop',
-  'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108?w=400&h=400&fit=crop',
-];
 
 type DisplayCategory = {
   id: string;
@@ -43,18 +35,13 @@ export function CategoryGrid({ config, tenantSlug, categories }: CategoryGridPro
         id: cat.id,
         name: cat.name,
         imageUrl:
-          cat.imageUrl ?? PLACEHOLDER_IMAGES[0] ?? PLACEHOLDER_IMAGES[0]!,
+          cat.imageUrl || '',
         href: `${tenantHomePath(tenantSlug)}/category/${cat.id}`,
-      }));
+      })).filter((cat) => cat.imageUrl);
     }
 
-    const ids = sectionConfig.categoryIds ?? [];
-    return ids.slice(0, 4).map((id, i) => ({
-      id,
-      name: `Category ${i + 1}`,
-      imageUrl: PLACEHOLDER_IMAGES[i % PLACEHOLDER_IMAGES.length]!,
-      href: `${tenantHomePath(tenantSlug)}/category/${id}`,
-    }));
+    // No data — don't render placeholder categories
+    return [];
   })();
 
   if (items.length === 0) return null;

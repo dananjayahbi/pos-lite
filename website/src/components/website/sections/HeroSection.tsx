@@ -43,21 +43,31 @@ export function HeroSection({ websiteConfig }: HeroSectionProps) {
   if (!hasSlides) {
     return (
       <section
-        className="relative bg-[#ece2d6] flex items-center justify-center"
-        style={{ minHeight: '60vh' }}
+        className="relative bg-[var(--site-bg)] flex items-center justify-center overflow-hidden"
+        style={{ minHeight: '70vh' }}
       >
-        <div className="text-center px-4">
+        {/* Decorative subtle pattern overlay */}
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage: `radial-gradient(circle at 20% 50%, var(--site-accent) 1px, transparent 1px),
+              radial-gradient(circle at 80% 50%, var(--site-accent) 1px, transparent 1px)`,
+            backgroundSize: '80px 80px',
+          }}
+        />
+        <div className="text-center px-4 relative z-10">
           <h1
-            className="text-3xl md:text-5xl lg:text-6xl mb-4"
+            className="text-3xl md:text-5xl lg:text-6xl mb-4 text-[var(--site-primary)]"
             style={{ fontFamily: 'var(--font-dm-serif), serif' }}
           >
             {websiteConfig.siteName || 'Premium Ayurveda'}
           </h1>
           {websiteConfig.tagline && (
-            <p className="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto">
+            <p className="text-lg md:text-xl text-[var(--site-primary)]/60 max-w-2xl mx-auto">
               {websiteConfig.tagline}
             </p>
           )}
+          <div className="mt-8 w-16 h-[2px] bg-[var(--site-accent)] mx-auto" />
         </div>
       </section>
     );
@@ -75,7 +85,7 @@ export function HeroSection({ websiteConfig }: HeroSectionProps) {
       onMouseLeave={() => setIsPaused(false)}
     >
       {/* Desktop media */}
-      <div className="hidden md:block">
+      <div className="hidden md:block relative">
         {isVideo ? (
           <video
             className="hero-slide-video"
@@ -84,7 +94,7 @@ export function HeroSection({ websiteConfig }: HeroSectionProps) {
             muted
             loop
             playsInline
-            style={{ maxHeight: '85vh' }}
+            style={{ maxHeight: '85vh', width: '100%' }}
           />
         ) : (
           <div
@@ -96,10 +106,12 @@ export function HeroSection({ websiteConfig }: HeroSectionProps) {
             }}
           />
         )}
+        {/* Gradient overlay for text readability */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent pointer-events-none" />
       </div>
 
       {/* Mobile media */}
-      <div className="block md:hidden">
+      <div className="block md:hidden relative">
         {isVideo ? (
           <video
             className="hero-slide-video"
@@ -108,7 +120,7 @@ export function HeroSection({ websiteConfig }: HeroSectionProps) {
             muted
             loop
             playsInline
-            style={{ maxHeight: '60vh' }}
+            style={{ maxHeight: '70vh', width: '100%' }}
           />
         ) : (
           <div
@@ -116,10 +128,12 @@ export function HeroSection({ websiteConfig }: HeroSectionProps) {
             style={{
               backgroundImage: `url(${slide.mobileMediaUrl || slide.mediaUrl})`,
               paddingTop: '100%',
-              maxHeight: '60vh',
+              maxHeight: '70vh',
             }}
           />
         )}
+        {/* Gradient overlay for text readability */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent pointer-events-none" />
       </div>
 
       {/* Text overlay */}

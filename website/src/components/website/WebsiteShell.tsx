@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { WebsiteHeader } from './sections/WebsiteHeader';
 import { HeroSection } from './sections/HeroSection';
 import { CategoryGrid } from './sections/CategoryGrid';
@@ -138,6 +138,44 @@ export function WebsiteShell({
     sections: {},
     footerColumns: [],
   };
+
+  // Apply dynamic brand colors from ERP config as CSS custom properties
+  useEffect(() => {
+    const root = document.documentElement;
+    if (websiteConfig.primaryColor) {
+      root.style.setProperty('--site-primary', websiteConfig.primaryColor);
+    }
+    if (websiteConfig.accentColor) {
+      root.style.setProperty('--site-accent', websiteConfig.accentColor);
+    }
+    if (websiteConfig.bgColor) {
+      root.style.setProperty('--site-bg', websiteConfig.bgColor);
+    }
+
+    // Set favicon
+    if (websiteConfig.faviconUrl) {
+      const link =
+        (document.querySelector("link[rel*='icon']") as HTMLLinkElement) ??
+        document.createElement('link');
+      link.type = 'image/x-icon';
+      link.rel = 'shortcut icon';
+      link.href = websiteConfig.faviconUrl;
+      if (!document.querySelector("link[rel*='icon']")) {
+        document.head.appendChild(link);
+      }
+    }
+
+    // Update page title
+    if (websiteConfig.siteName) {
+      document.title = websiteConfig.metaTitle || websiteConfig.siteName;
+    }
+
+    return () => {
+      root.style.removeProperty('--site-primary');
+      root.style.removeProperty('--site-accent');
+      root.style.removeProperty('--site-bg');
+    };
+  }, [websiteConfig.primaryColor, websiteConfig.accentColor, websiteConfig.bgColor, websiteConfig.faviconUrl, websiteConfig.metaTitle, websiteConfig.siteName]);
 
   const sortedSections = useMemo(
     () => getSortedSections(websiteConfig.sections),

@@ -12,97 +12,8 @@ interface BestSellingProps {
   config: Record<string, unknown>;
   websiteConfig: Record<string, unknown>;
   tenantSlug: string;
-  /** Real products from the ERP API. Falls back to placeholders when missing. */
   products?: PublicProduct[];
 }
-
-const PLACEHOLDER_PRODUCTS: PublicProduct[] = [
-  {
-    id: '7',
-    name: 'Bestseller Skincare Duo',
-    variants: [
-      {
-        id: '7-1',
-        sku: 'BSSD-01',
-        retailPrice: 8500,
-        imageUrls: [
-          'https://images.unsplash.com/photo-1570194065650-d99fb4ee8e3e?w=400&h=400&fit=crop',
-        ],
-        stockQuantity: 0,
-        productId: '7',
-      },
-    ],
-    tags: [],
-  },
-  {
-    id: '8',
-    name: 'Skin Glowing Starter Kit',
-    variants: [
-      {
-        id: '8-1',
-        sku: 'SGSK-01',
-        retailPrice: 6200,
-        imageUrls: [
-          'https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=400&h=400&fit=crop',
-        ],
-        stockQuantity: 0,
-        productId: '8',
-      },
-    ],
-    tags: [],
-  },
-  {
-    id: '9',
-    name: 'Kasturi Kaha Night Cream',
-    variants: [
-      {
-        id: '9-1',
-        sku: 'KKNC-01',
-        retailPrice: 4800,
-        imageUrls: [
-          'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108?w=400&h=400&fit=crop',
-        ],
-        stockQuantity: 0,
-        productId: '9',
-      },
-    ],
-    tags: [],
-  },
-  {
-    id: '10',
-    name: 'Saffron Day Cream',
-    variants: [
-      {
-        id: '10-1',
-        sku: 'SDC-01',
-        retailPrice: 3900,
-        imageUrls: [
-          'https://images.unsplash.com/photo-1611930022073-b7a4ba5fcccd?w=400&h=400&fit=crop',
-        ],
-        stockQuantity: 0,
-        productId: '10',
-      },
-    ],
-    tags: [],
-  },
-  {
-    id: '11',
-    name: 'Kasturi Kaha Face Wash',
-    variants: [
-      {
-        id: '11-1',
-        sku: 'KKFW-01',
-        retailPrice: 2800,
-        imageUrls: [
-          'https://images.unsplash.com/photo-1556228578-0d85b1a4d571?w=400&h=400&fit=crop',
-        ],
-        stockQuantity: 0,
-        productId: '11',
-      },
-    ],
-    tags: [],
-  },
-];
 
 type DisplayProduct = {
   id: string;
@@ -144,7 +55,7 @@ export function BestSelling({ config, tenantSlug, products }: BestSellingProps) 
     return () => window.removeEventListener('resize', compute);
   }, []);
 
-  const source: PublicProduct[] = products && products.length > 0 ? products : PLACEHOLDER_PRODUCTS;
+  const source: PublicProduct[] = products ?? [];
   const display: DisplayProduct[] = source
     .slice(0, sectionConfig.productCount || 10)
     .map((p) => ({
