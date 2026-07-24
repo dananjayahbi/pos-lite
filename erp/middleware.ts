@@ -21,6 +21,7 @@ const PUBLIC_PATH_PREFIXES = [
   '/reset-password',
   '/api/auth/',
   '/api/webhooks/',
+  '/api/public/',
   '/status',
   '/api/health',
   '/site',

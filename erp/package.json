@@ -4,9 +4,11 @@
   "private": true,
   "packageManager": "yarn@1.22.22",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3003",
+    "dev:3003": "next dev -p 3003",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3003",
+    "start:3003": "next start -p 3003",
     "lint": "eslint src/ --max-warnings=0",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write .",

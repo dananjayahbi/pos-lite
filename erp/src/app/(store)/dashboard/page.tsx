@@ -237,8 +237,8 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
 type LowStockRow = {
   id: string;
   sku: string;
-  size: string | null;
-  colour: string | null;
+  form: string | null;
+  packSize: string | null;
   stockQuantity: number;
   lowStockThreshold: number;
   productId: string;
@@ -250,8 +250,8 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
     SELECT
       pv."id",
       pv."sku",
-      pv."size",
-      pv."colour",
+      pv."form",
+      pv."packSize",
       pv."stockQuantity",
       pv."lowStockThreshold",
       pv."productId",
@@ -291,9 +291,9 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
           <TableRow key={v.id}>
             <TableCell className="font-medium text-espresso">
               {v.productName}
-              {(v.size ?? v.colour) && (
+              {(v.form ?? v.packSize) && (
                 <span className="ml-1 text-xs text-sand">
-                  {[v.size, v.colour].filter(Boolean).join(" / ")}
+                  {[v.form, v.packSize].filter(Boolean).join(" / ")}
                 </span>
               )}
             </TableCell>
