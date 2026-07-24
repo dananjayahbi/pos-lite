@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { InventoryListClient } from '@/components/inventory/InventoryListClient';
 
 export const metadata = {
-  title: 'Inventory | VelvetPOS',
+  title: 'Inventory | AyurPOS',
 };
 
 export default async function InventoryPage() {

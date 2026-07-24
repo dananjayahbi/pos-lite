@@ -13,8 +13,8 @@ interface BarcodeScanResult {
   id: string;
   sku: string;
   barcode: string | null;
-  size: string | null;
-  colour: string | null;
+  form: string | null;
+  packSize: string | null;
   retailPrice: number;
   stockQuantity: number;
   productName: string;
@@ -55,12 +55,13 @@ export function useBarcodeScanner({ onScan, enabled = true }: UseBarcodeScanner 
       }
 
       if (data.stockQuantity <= 0) {
-        const desc = [data.size, data.colour].filter(Boolean).join(' / ');
+        const desc = [data.form, data.packSize].filter(Boolean).join(' / ');
         toast.warning(`Out of stock: ${data.productName}${desc ? ` (${desc})` : ''}`);
         return;
       }
 
-      const variantDescription = [data.size, data.colour].filter(Boolean).join(' / ') || 'Default';
+      const variantDescription =
+        [data.form, data.packSize].filter(Boolean).join(' / ') || 'Default';
 
       addItem({
         variantId: data.id,
@@ -99,71 +100,37 @@ export function useBarcodeScanner({ onScan, enabled = true }: UseBarcodeScanner 
           e.preventDefault();
           const code = bufferRef.current;
           bufferRef.current = '';
-          lastKeyTimeRef.current = 0;
-          if (flushTimeoutRef.current !== undefined) {
-            clearTimeout(flushTimeoutRef.current);
-            flushTimeoutRef.current = undefined;
-          }
           flush(code);
         }
         return;
       }
 
-      // Only process printable characters (single character keys)
+      // Only single characters
       if (e.key.length !== 1) return;
 
-      const elapsed = now - lastKeyTimeRef.current;
-
-      if (bufferRef.current.length === 0) {
-        // Start new potential scan sequence
-        bufferRef.current = e.key;
-        lastKeyTimeRef.current = now;
-        // Set flush timeout
-        if (flushTimeoutRef.current !== undefined) clearTimeout(flushTimeoutRef.current);
-        flushTimeoutRef.current = setTimeout(() => {
-          bufferRef.current = '';
-          lastKeyTimeRef.current = 0;
-          flushTimeoutRef.current = undefined;
-        }, FLUSH_TIMEOUT_MS);
-        return;
-      }
-
-      if (elapsed <= INTER_KEY_THRESHOLD_MS) {
-        // Fast keystroke — scanner input
-        bufferRef.current += e.key;
-        lastKeyTimeRef.current = now;
-        // Reset flush timeout
-        if (flushTimeoutRef.current !== undefined) clearTimeout(flushTimeoutRef.current);
-        flushTimeoutRef.current = setTimeout(() => {
-          // Auto-flush if we have enough chars (scanner might not send Enter)
-          if (bufferRef.current.length >= MIN_BARCODE_LENGTH) {
-            const code = bufferRef.current;
-            bufferRef.current = '';
-            lastKeyTimeRef.current = 0;
-            flush(code);
-          } else {
-            bufferRef.current = '';
-            lastKeyTimeRef.current = 0;
-          }
-          flushTimeoutRef.current = undefined;
-        }, FLUSH_TIMEOUT_MS);
-      } else {
-        // Slow keystroke — human typing, clear buffer
+      // Reset buffer if too much time has passed
+      if (now - lastKeyTimeRef.current > INTER_KEY_THRESHOLD_MS) {
         bufferRef.current = '';
-        lastKeyTimeRef.current = 0;
-        if (flushTimeoutRef.current !== undefined) {
-          clearTimeout(flushTimeoutRef.current);
-          flushTimeoutRef.current = undefined;
-        }
       }
+      lastKeyTimeRef.current = now;
+
+      bufferRef.current += e.key;
+
+      // Schedule a flush in case no Enter is pressed
+      if (flushTimeoutRef.current) clearTimeout(flushTimeoutRef.current);
+      flushTimeoutRef.current = setTimeout(() => {
+        if (bufferRef.current.length >= MIN_BARCODE_LENGTH) {
+          const code = bufferRef.current;
+          bufferRef.current = '';
+          flush(code);
+        }
+      }, FLUSH_TIMEOUT_MS);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      if (flushTimeoutRef.current !== undefined) {
-        clearTimeout(flushTimeoutRef.current);
-      }
+      if (flushTimeoutRef.current) clearTimeout(flushTimeoutRef.current);
     };
-  }, [enabled, flush]);
+  }, [flush, enabled]);
 }

@@ -88,7 +88,7 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
               id="storeName"
               value={values.storeName}
               onChange={(event) => update('storeName', event.target.value)}
-              placeholder="VelvetPOS Colombo"
+              placeholder="AyurPOS Colombo"
             />
           </div>
 

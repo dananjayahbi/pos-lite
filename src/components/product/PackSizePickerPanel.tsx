@@ -3,26 +3,31 @@
 import { useState, type KeyboardEvent } from 'react';
 import { Input } from '@/components/ui/input';
 
-// ── Preset size groups ───────────────────────────────────────────────────────
+// ── Preset pack-size groups (ayurveda) ───────────────────────────────────────
 
-const SIZE_GROUPS = [
-  { label: 'Tops / Bottoms', values: ['XS', 'S', 'M', 'L', 'XL', 'XXL'] },
-  { label: 'Kids', values: ['2Y', '4Y', '6Y', '8Y', '10Y', '12Y'] },
-  { label: 'Numeric', values: ['28', '30', '32', '34', '36', '38', '40'] },
-  { label: 'Shoes (EU)', values: ['36', '37', '38', '39', '40', '41', '42', '43', '44'] },
-  { label: 'One Size', values: ['OS'] },
+const PACK_SIZE_GROUPS = [
+  { label: 'Powders', values: ['25g', '50g', '100g', '250g', '500g', '1kg'] },
+  { label: 'Capsules / Tablets', values: ['30 caps', '60 caps', '100 caps'] },
+  {
+    label: 'Oils / Liquids',
+    values: ['50ml', '100ml', '200ml', '500ml', '1L'],
+  },
+  { label: 'Sachets', values: ['10 sachets', '20 sachets', '30 sachets'] },
 ] as const;
 
-interface SizePickerPanelProps {
+interface PackSizePickerPanelProps {
   value: string;
-  onChange: (size: string) => void;
+  onChange: (packSize: string) => void;
 }
 
-export function SizePickerPanel({ value, onChange }: SizePickerPanelProps) {
+export function PackSizePickerPanel({
+  value,
+  onChange,
+}: PackSizePickerPanelProps) {
   const [customInput, setCustomInput] = useState('');
 
-  const handleSelect = (size: string) => {
-    onChange(size === value ? '' : size);
+  const handleSelect = (packSize: string) => {
+    onChange(packSize === value ? '' : packSize);
   };
 
   const handleCustomKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -47,26 +52,26 @@ export function SizePickerPanel({ value, onChange }: SizePickerPanelProps) {
   return (
     <div className="space-y-3 rounded-lg border border-sand/30 bg-linen/40 p-3">
       {/* Preset groups */}
-      {SIZE_GROUPS.map((group) => (
+      {PACK_SIZE_GROUPS.map((group) => (
         <div key={group.label}>
           <p className="mb-1.5 font-body text-[10px] font-semibold uppercase tracking-wider text-mist">
             {group.label}
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {group.values.map((size) => {
-              const isSelected = value === size;
+            {group.values.map((packSize) => {
+              const isSelected = value === packSize;
               return (
                 <button
-                  key={size}
+                  key={packSize}
                   type="button"
-                  onClick={() => handleSelect(size)}
+                  onClick={() => handleSelect(packSize)}
                   className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
                     isSelected
                       ? 'border-espresso bg-espresso text-pearl'
                       : 'border-sand/60 bg-pearl text-espresso hover:border-espresso/60 hover:bg-sand/20'
                   }`}
                 >
-                  {size}
+                  {packSize}
                 </button>
               );
             })}
@@ -74,10 +79,10 @@ export function SizePickerPanel({ value, onChange }: SizePickerPanelProps) {
         </div>
       ))}
 
-      {/* Custom size */}
+      {/* Custom pack size */}
       <div>
         <p className="mb-1.5 font-body text-[10px] font-semibold uppercase tracking-wider text-mist">
-          Custom Size
+          Custom Pack Size
         </p>
         <div className="flex gap-2">
           <Input
@@ -85,7 +90,7 @@ export function SizePickerPanel({ value, onChange }: SizePickerPanelProps) {
             onChange={(e) => setCustomInput(e.target.value)}
             onKeyDown={handleCustomKeyDown}
             onBlur={handleCustomBlur}
-            placeholder="Type &amp; press Enter"
+            placeholder="e.g. 75g — type & press Enter"
             className="font-body text-sm h-8"
           />
           {value && (

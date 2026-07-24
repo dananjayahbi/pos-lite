@@ -37,8 +37,8 @@ export async function GET(
               select: {
                 sku: true,
                 barcode: true,
-                size: true,
-                colour: true,
+                form: true,
+                packSize: true,
                 product: {
                   select: {
                     name: true,

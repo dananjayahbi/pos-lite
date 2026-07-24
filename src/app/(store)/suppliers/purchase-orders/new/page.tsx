@@ -33,8 +33,8 @@ interface SupplierOption {
 interface VariantSearchResult {
   id: string;
   sku: string;
-  size?: string | null;
-  colour?: string | null;
+  form?: string | null;
+  packSize?: string | null;
   costPrice: string | number;
   stockQuantity: number;
   product: { name: string };
@@ -94,8 +94,8 @@ function VariantSearchInput({ index, onSelect }: VariantSearchProps) {
 
   const variantLabel = (v: VariantSearchResult) => {
     const parts = [v.product.name];
-    if (v.size) parts.push(v.size);
-    if (v.colour) parts.push(v.colour);
+    if (v.form) parts.push(v.form);
+    if (v.packSize) parts.push(v.packSize);
     return parts.join(' – ');
   };
 
@@ -187,7 +187,7 @@ export default function NewPurchaseOrderPage() {
 
   const handleVariantSelect = useCallback(
     (index: number, variant: VariantSearchResult) => {
-      const label = [variant.product.name, variant.size, variant.colour]
+      const label = [variant.product.name, variant.form, variant.packSize]
         .filter(Boolean)
         .join(' – ');
       setLineLabels((prev) => ({ ...prev, [index]: label }));

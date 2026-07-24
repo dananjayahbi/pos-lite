@@ -12,7 +12,7 @@ async function main() {
   // Seed Super Admin account
   await seedSuperAdmin();
 
-  // Seed sample tenant — Dilani Boutique
+  // Seed sample tenant — Ayur Wellness Centre
   try {
     await seedSampleTenant();
   } catch (error) {
@@ -28,7 +28,7 @@ async function main() {
     throw error;
   }
 
-  // Seed sample catalog for Dilani Boutique
+  // Seed sample catalog for Ayur Wellness Centre
   try {
     await seedSampleCatalog();
   } catch (error) {
@@ -36,7 +36,7 @@ async function main() {
     throw error;
   }
 
-  // Seed initial stock movements for Dilani Boutique
+  // Seed initial stock movements for Ayur Wellness Centre
   try {
     await seedInitialStockMovements();
   } catch (error) {
@@ -44,7 +44,7 @@ async function main() {
     throw error;
   }
 
-  // Seed demo sales data for Dilani Boutique
+  // Seed demo sales data for Ayur Wellness Centre
   try {
     await seedDemoSales();
   } catch (error) {
@@ -52,7 +52,7 @@ async function main() {
     throw error;
   }
 
-  // Seed demo returns data for Dilani Boutique
+  // Seed demo returns data for Ayur Wellness Centre
   try {
     await seedDemoReturns();
   } catch (error) {
@@ -60,7 +60,7 @@ async function main() {
     throw error;
   }
 
-  // Seed CRM demo data for Dilani Boutique
+  // Seed CRM demo data for Ayur Wellness Centre
   try {
     await seedCRMData();
   } catch (error) {
@@ -68,7 +68,7 @@ async function main() {
     throw error;
   }
 
-  // Seed staff promotions & expenses for Dilani Boutique
+  // Seed staff promotions & expenses for Ayur Wellness Centre
   try {
     await seedStaffPromotionsExpenses();
   } catch (error) {
@@ -76,7 +76,7 @@ async function main() {
     throw error;
   }
 
-  // Seed hardware config and audit data for Dilani Boutique
+  // Seed hardware config and audit data for Ayur Wellness Centre
   try {
     await seedHardwareAndAuditData();
   } catch (error) {
@@ -88,7 +88,7 @@ async function main() {
 }
 
 async function seedSuperAdmin() {
-  const defaultEmail = 'superadmin@velvetpos.dev';
+  const defaultEmail = 'superadmin@ayurpos.dev';
   const defaultPassword = 'changeme123!';
   const defaultPin = '9999';
 
@@ -160,7 +160,7 @@ async function seedSampleTenant() {
 
   const tenant = await prisma.tenant.create({
     data: {
-      name: 'Dilani Boutique',
+      name: 'Ayur Wellness Centre',
       slug: 'dilani',
       status: 'ACTIVE',
       logoUrl: null,
@@ -171,7 +171,7 @@ async function seedSampleTenant() {
         timezone: 'Asia/Colombo',
         vatRate: 18,
         ssclRate: 2.5,
-        receiptFooter: 'Thank you for shopping at Dilani Boutique!',
+        receiptFooter: 'Thank you for shopping at Ayur Wellness Centre!',
       },
     },
   });
@@ -188,7 +188,7 @@ async function seedSampleTenant() {
     },
   });
 
-  console.log('Created sample tenant: Dilani Boutique');
+  console.log('Created sample tenant: Ayur Wellness Centre');
   console.log(`Created OWNER user: ${ownerEmail}`);
 }
 
@@ -274,40 +274,48 @@ async function seedSecondBusiness() {
 // ── Catalog Seed Data ────────────────────────────────────────────────────────
 
 const SEED_CATEGORIES = [
-  { name: "Men's Shirts", sortOrder: 1 },
-  { name: "Women's Dresses", sortOrder: 2 },
-  { name: 'Unisex Accessories', sortOrder: 3 },
-  { name: 'Kids Clothing', sortOrder: 4 },
-  { name: 'Sportswear', sortOrder: 5 },
+  { name: "Herbal Powders", sortOrder: 1 },
+  { name: "Herbal Capsules & Tablets", sortOrder: 2 },
+  { name: "Ayurvedic Oils", sortOrder: 3 },
+  { name: "Wellness Syrups & Tonics", sortOrder: 4 },
+  { name: "Herbal Teas & Decoctions", sortOrder: 5 },
+  { name: "Skin & Hair Care", sortOrder: 6 },
+  { name: "Immunity & Digestion", sortOrder: 7 },
 ];
 
 const SEED_BRANDS = [
-  { name: 'NovaWear', description: 'Contemporary Sri Lankan fashion brand' },
-  { name: 'UrbanThread', description: 'Urban streetwear for the modern dresser' },
-  { name: 'SilkTropic', description: 'Premium tropical occasion wear' },
-  { name: 'ActivePeak', description: 'Sportswear and performance apparel' },
+  { name: 'Himalaya Ayurveda', description: 'Trusted Ayurvedic wellness brand' },
+  { name: 'Dabur Sri Lanka', description: 'Premium herbal and Ayurvedic products' },
+  { name: 'Baidyanath', description: 'Traditional Ayurvedic formulations' },
+  { name: 'Patanjali Wellness', description: 'Natural and herbal wellness essentials' },
+  { name: 'Sri Lankan Ayurveda Co.', description: 'Locally sourced Sri Lankan herbs' },
 ];
 
-const SIZE_SETS: Record<string, string[]> = {
-  "Men's Shirts": ['S', 'M', 'L', 'XL', 'XXL'],
-  "Women's Dresses": ['XS', 'S', 'M', 'L'],
-  'Kids Clothing': ['4Y', '6Y', '8Y', '10Y', '12Y'],
-  'Sportswear': ['S', 'M', 'L', 'XL'],
-  'Unisex Accessories': ['ONE SIZE'],
+const FORM_SETS: Record<string, string[]> = {
+  'Herbal Powders': ['POWDER'],
+  'Herbal Capsules & Tablets': ['CAPSULE', 'TABLET'],
+  'Ayurvedic Oils': ['OIL'],
+  'Wellness Syrups & Tonics': ['SYRUP'],
+  'Herbal Teas & Decoctions': ['TEA'],
+  'Skin & Hair Care': ['OIL', 'CREAM', 'BALM', 'GEL'],
+  'Immunity & Digestion': ['POWDER', 'JUICE', 'SYRUP', 'TABLET'],
 };
 
-const COLOUR_SETS: Record<string, string[]> = {
-  "Men's Shirts": ['White', 'Sky Blue', 'Charcoal', 'Slate Grey', 'Navy'],
-  "Women's Dresses": ['Blush Rose', 'Ivory', 'Forest Green', 'Midnight Blue', 'Terracotta'],
-  'Kids Clothing': ['Coral', 'Yellow', 'Mint', 'Lavender'],
-  'Sportswear': ['Black', 'Cobalt Blue', 'Flame Orange', 'Slate'],
-  'Unisex Accessories': ['Tan', 'Black', 'Olive', 'Camel', 'Steel'],
+const PACK_SIZE_SETS: Record<string, string[]> = {
+  'Herbal Powders': ['100g', '250g', '500g', '1kg'],
+  'Herbal Capsules & Tablets': ['60 caps', '120 caps', '60 tabs', '120 tabs'],
+  'Ayurvedic Oils': ['100ml', '200ml', '500ml'],
+  'Wellness Syrups & Tonics': ['200ml', '450ml', '1L'],
+  'Herbal Teas & Decoctions': ['25 bags', '50 bags', '100 bags'],
+  'Skin & Hair Care': ['50ml', '100ml', '200ml', '25g', '50g'],
+  'Immunity & Digestion': ['100g', '250g', '500ml', '1L', '60 tabs'],
 };
 
 interface SeedProduct {
   name: string;
   description: string;
-  gender: 'MEN' | 'WOMEN' | 'UNISEX' | 'KIDS';
+  form: string;
+  packSizes: string[];
   taxRule: 'STANDARD_VAT' | 'SSCL';
   brandName: string;
   categoryName: string;
@@ -315,51 +323,44 @@ interface SeedProduct {
 }
 
 const SEED_PRODUCTS: SeedProduct[] = [
-  // ── Men's Shirts (8) ──
-  { name: 'Classic Oxford Button-Down', description: 'Timeless oxford cotton shirt with button-down collar', gender: 'MEN', taxRule: 'STANDARD_VAT', brandName: 'NovaWear', categoryName: "Men's Shirts", tags: ['formal', 'cotton', 'oxford'] },
-  { name: 'Slim Fit Linen Shirt', description: 'Breathable linen shirt perfect for Sri Lankan summers', gender: 'MEN', taxRule: 'STANDARD_VAT', brandName: 'NovaWear', categoryName: "Men's Shirts", tags: ['casual', 'linen', 'slim-fit'] },
-  { name: 'Mandarin Collar Kurta Shirt', description: 'Modern kurta-style shirt with mandarin collar', gender: 'MEN', taxRule: 'STANDARD_VAT', brandName: 'UrbanThread', categoryName: "Men's Shirts", tags: ['ethnic', 'kurta', 'mandarin-collar'] },
-  { name: 'Chambray Casual Shirt', description: 'Soft chambray fabric with a relaxed fit', gender: 'MEN', taxRule: 'SSCL', brandName: 'UrbanThread', categoryName: "Men's Shirts", tags: ['casual', 'chambray'] },
-  { name: 'Printed Hawaiian Shirt', description: 'Tropical print casual shirt with camp collar', gender: 'MEN', taxRule: 'STANDARD_VAT', brandName: 'NovaWear', categoryName: "Men's Shirts", tags: ['casual', 'tropical', 'camp-collar'] },
-  { name: 'Formal Dress Shirt', description: 'Crisp white cotton dress shirt for formal occasions', gender: 'MEN', taxRule: 'STANDARD_VAT', brandName: 'NovaWear', categoryName: "Men's Shirts", tags: ['formal', 'dress', 'cotton'] },
-  { name: 'Henley Neck Tee Shirt', description: 'Three-button henley neck casual shirt', gender: 'MEN', taxRule: 'SSCL', brandName: 'UrbanThread', categoryName: "Men's Shirts", tags: ['casual', 'henley', 'tee'] },
-  { name: 'Batik Print Shirt', description: 'Hand-crafted Sri Lankan batik print cotton shirt', gender: 'MEN', taxRule: 'STANDARD_VAT', brandName: 'NovaWear', categoryName: "Men's Shirts", tags: ['batik', 'handmade', 'cotton'] },
+  // ── Herbal Powders (4) ──
+  { name: 'Ashwagandha Powder', description: 'Premium ashwagandha root powder for stress relief and vitality', form: 'POWDER', packSizes: ['100g', '250g', '500g'], taxRule: 'STANDARD_VAT', brandName: 'Himalaya Ayurveda', categoryName: 'Herbal Powders', tags: ['immunity', 'stress', 'adaptogen'] },
+  { name: 'Triphala Churna', description: 'Classical three-fruit digestive powder formulation', form: 'POWDER', packSizes: ['100g', '250g', '500g'], taxRule: 'STANDARD_VAT', brandName: 'Baidyanath', categoryName: 'Herbal Powders', tags: ['digestion', 'detox', 'classical'] },
+  { name: 'Brahmi Powder', description: 'Pure brahmi (bacopa) leaf powder for memory and focus', form: 'POWDER', packSizes: ['100g', '250g'], taxRule: 'SSCL', brandName: 'Sri Lankan Ayurveda Co.', categoryName: 'Herbal Powders', tags: ['memory', 'focus', 'brain-health'] },
+  { name: 'Turmeric Powder', description: 'High-curcumin organic turmeric powder', form: 'POWDER', packSizes: ['250g', '500g', '1kg'], taxRule: 'STANDARD_VAT', brandName: 'Dabur Sri Lanka', categoryName: 'Herbal Powders', tags: ['anti-inflammatory', 'immunity', 'organic'] },
 
-  // ── Women's Dresses (8) ──
-  { name: 'Floral Wrap Dress', description: 'Elegant floral wrap dress with adjustable waist tie', gender: 'WOMEN', taxRule: 'STANDARD_VAT', brandName: 'SilkTropic', categoryName: "Women's Dresses", tags: ['floral', 'wrap', 'casual'] },
-  { name: 'Silk Evening Gown', description: 'Luxurious silk gown for special occasions', gender: 'WOMEN', taxRule: 'STANDARD_VAT', brandName: 'SilkTropic', categoryName: "Women's Dresses", tags: ['silk', 'evening', 'formal'] },
-  { name: 'Cotton A-Line Midi Dress', description: 'Comfortable A-line midi dress in soft cotton', gender: 'WOMEN', taxRule: 'SSCL', brandName: 'SilkTropic', categoryName: "Women's Dresses", tags: ['cotton', 'a-line', 'midi'] },
-  { name: 'Lace Detail Shift Dress', description: 'Modern shift dress with delicate lace accents', gender: 'WOMEN', taxRule: 'STANDARD_VAT', brandName: 'SilkTropic', categoryName: "Women's Dresses", tags: ['lace', 'shift', 'elegant'] },
-  { name: 'Tropical Maxi Dress', description: 'Floor-length maxi dress with tropical leaf print', gender: 'WOMEN', taxRule: 'STANDARD_VAT', brandName: 'SilkTropic', categoryName: "Women's Dresses", tags: ['maxi', 'tropical', 'casual'] },
-  { name: 'Pleated Cocktail Dress', description: 'Pleated cocktail dress perfect for evening events', gender: 'WOMEN', taxRule: 'STANDARD_VAT', brandName: 'SilkTropic', categoryName: "Women's Dresses", tags: ['pleated', 'cocktail', 'party'] },
-  { name: 'Batik Sarong Dress', description: 'Traditional Sri Lankan batik sarong-style dress', gender: 'WOMEN', taxRule: 'SSCL', brandName: 'SilkTropic', categoryName: "Women's Dresses", tags: ['batik', 'sarong', 'traditional'] },
-  { name: 'Office Sheath Dress', description: 'Tailored sheath dress for professional settings', gender: 'WOMEN', taxRule: 'STANDARD_VAT', brandName: 'SilkTropic', categoryName: "Women's Dresses", tags: ['office', 'sheath', 'formal'] },
+  // ── Capsules & Tablets (4) ──
+  { name: 'Ashwagandha Capsules', description: 'Standardised ashwagandha root extract 500mg capsules', form: 'CAPSULE', packSizes: ['60 caps', '120 caps'], taxRule: 'STANDARD_VAT', brandName: 'Himalaya Ayurveda', categoryName: 'Herbal Capsules & Tablets', tags: ['immunity', 'stress'] },
+  { name: 'Turmeric Curcumin Capsules', description: 'High-potency curcumin with piperine for absorption', form: 'CAPSULE', packSizes: ['60 caps', '120 caps'], taxRule: 'STANDARD_VAT', brandName: 'Dabur Sri Lanka', categoryName: 'Herbal Capsules & Tablets', tags: ['anti-inflammatory', 'joints'] },
+  { name: 'Giloy Tablets', description: 'Tinospora cordifolia tablets for immunity and fever management', form: 'TABLET', packSizes: ['60 tabs', '120 tabs'], taxRule: 'SSCL', brandName: 'Baidyanath', categoryName: 'Herbal Capsules & Tablets', tags: ['immunity', 'fever', 'tinospora'] },
+  { name: 'Triphala Tablets', description: 'Convenient tablet form of classical triphala formulation', form: 'TABLET', packSizes: ['60 tabs', '120 tabs'], taxRule: 'STANDARD_VAT', brandName: 'Patanjali Wellness', categoryName: 'Herbal Capsules & Tablets', tags: ['digestion', 'detox'] },
 
-  // ── Unisex Accessories (5) ──
-  { name: 'Leather Tote Bag', description: 'Genuine leather tote bag with multiple compartments', gender: 'UNISEX', taxRule: 'STANDARD_VAT', brandName: 'NovaWear', categoryName: 'Unisex Accessories', tags: ['leather', 'tote', 'bag'] },
-  { name: 'Woven Straw Hat', description: 'Hand-woven straw hat for sun protection', gender: 'UNISEX', taxRule: 'SSCL', brandName: 'UrbanThread', categoryName: 'Unisex Accessories', tags: ['straw', 'hat', 'handmade'] },
-  { name: 'Canvas Belt', description: 'Durable cotton canvas belt with brass buckle', gender: 'UNISEX', taxRule: 'STANDARD_VAT', brandName: 'UrbanThread', categoryName: 'Unisex Accessories', tags: ['canvas', 'belt'] },
-  { name: 'Silk Scarf', description: 'Lightweight silk scarf with abstract design', gender: 'UNISEX', taxRule: 'STANDARD_VAT', brandName: 'SilkTropic', categoryName: 'Unisex Accessories', tags: ['silk', 'scarf', 'abstract'] },
-  { name: 'Beaded Bracelet Set', description: 'Set of three handcrafted beaded bracelets', gender: 'UNISEX', taxRule: 'SSCL', brandName: 'NovaWear', categoryName: 'Unisex Accessories', tags: ['beaded', 'bracelet', 'handmade'] },
+  // ── Oils (3) ──
+  { name: 'Mahanarayan Oil', description: 'Classical Ayurvedic massage oil for joint and muscle relief', form: 'OIL', packSizes: ['100ml', '200ml', '500ml'], taxRule: 'STANDARD_VAT', brandName: 'Baidyanath', categoryName: 'Ayurvedic Oils', tags: ['joints', 'massage', 'pain-relief'] },
+  { name: 'Bhringraj Hair Oil', description: 'Traditional bhringraj oil for hair growth and scalp health', form: 'OIL', packSizes: ['100ml', '200ml', '500ml'], taxRule: 'STANDARD_VAT', brandName: 'Dabur Sri Lanka', categoryName: 'Ayurvedic Oils', tags: ['hair', 'hair-growth', 'scalp'] },
+  { name: 'Sesame Massage Oil', description: 'Cold-pressed organic sesame oil for full-body abhyanga massage', form: 'OIL', packSizes: ['200ml', '500ml', '1L'], taxRule: 'SSCL', brandName: 'Sri Lankan Ayurveda Co.', categoryName: 'Ayurvedic Oils', tags: ['massage', 'organic', 'abhyanga'] },
 
-  // ── Kids Clothing (5) ──
-  { name: 'Kids Graphic Print Tee', description: 'Fun graphic print cotton t-shirt for kids', gender: 'KIDS', taxRule: 'STANDARD_VAT', brandName: 'UrbanThread', categoryName: 'Kids Clothing', tags: ['graphic', 'cotton', 'tee'] },
-  { name: 'Kids Denim Shorts', description: 'Comfortable stretch denim shorts for active kids', gender: 'KIDS', taxRule: 'STANDARD_VAT', brandName: 'UrbanThread', categoryName: 'Kids Clothing', tags: ['denim', 'shorts', 'stretch'] },
-  { name: 'Kids Floral Sundress', description: 'Lightweight floral sundress for girls', gender: 'KIDS', taxRule: 'SSCL', brandName: 'NovaWear', categoryName: 'Kids Clothing', tags: ['floral', 'sundress', 'girls'] },
-  { name: 'Kids Polo Shirt', description: 'Classic polo shirt for everyday wear', gender: 'KIDS', taxRule: 'STANDARD_VAT', brandName: 'NovaWear', categoryName: 'Kids Clothing', tags: ['polo', 'casual'] },
-  { name: 'Kids Cargo Pants', description: 'Multi-pocket cargo pants in durable cotton', gender: 'KIDS', taxRule: 'STANDARD_VAT', brandName: 'UrbanThread', categoryName: 'Kids Clothing', tags: ['cargo', 'cotton', 'pants'] },
+  // ── Syrups & Tonics (3) ──
+  { name: 'Chyawanprash', description: 'Classic amla-based immunity tonic with herbs and spices', form: 'PASTE', packSizes: ['500g', '1kg'], taxRule: 'STANDARD_VAT', brandName: 'Dabur Sri Lanka', categoryName: 'Wellness Syrups & Tonics', tags: ['immunity', 'tonic', 'amla'] },
+  { name: 'Amla Juice', description: 'Pure amla (Indian gooseberry) juice for vitamin C and hair health', form: 'JUICE', packSizes: ['500ml', '1L'], taxRule: 'STANDARD_VAT', brandName: 'Patanjali Wellness', categoryName: 'Wellness Syrups & Tonics', tags: ['vitamin-c', 'immunity', 'hair'] },
+  { name: 'Dashmoolarishta', description: 'Classical Ayurvedic fermentation tonic for post-partum and vata balance', form: 'SYRUP', packSizes: ['200ml', '450ml'], taxRule: 'STANDARD_VAT', brandName: 'Baidyanath', categoryName: 'Wellness Syrups & Tonics', tags: ['vata', 'tonic', 'classical'] },
 
-  // ── Sportswear (4) ──
-  { name: 'Athletic Performance Tee', description: 'Moisture-wicking performance t-shirt', gender: 'UNISEX', taxRule: 'STANDARD_VAT', brandName: 'ActivePeak', categoryName: 'Sportswear', tags: ['performance', 'moisture-wicking', 'gym'] },
-  { name: 'Training Jogger Pants', description: 'Tapered jogger pants with zip pockets', gender: 'UNISEX', taxRule: 'STANDARD_VAT', brandName: 'ActivePeak', categoryName: 'Sportswear', tags: ['jogger', 'training', 'zip-pocket'] },
-  { name: 'Compression Running Shorts', description: 'Lightweight compression shorts for running', gender: 'MEN', taxRule: 'SSCL', brandName: 'ActivePeak', categoryName: 'Sportswear', tags: ['compression', 'running', 'shorts'] },
-  { name: 'Sports Hoodie Jacket', description: 'Zip-up hoodie jacket with thumb-hole cuffs', gender: 'UNISEX', taxRule: 'STANDARD_VAT', brandName: 'ActivePeak', categoryName: 'Sportswear', tags: ['hoodie', 'jacket', 'zip-up'] },
+  // ── Teas (3) ──
+  { name: 'Tulsi Green Tea', description: 'Holy basil blend with green tea leaves for daily wellness', form: 'TEA', packSizes: ['25 bags', '50 bags', '100 bags'], taxRule: 'STANDARD_VAT', brandName: 'Himalaya Ayurveda', categoryName: 'Herbal Teas & Decoctions', tags: ['immunity', 'tea', 'tulsi'] },
+  { name: 'Ginger Tulsi Tea', description: 'Warming ginger and tulsi tea for digestion and respiratory health', form: 'TEA', packSizes: ['25 bags', '50 bags'], taxRule: 'SSCL', brandName: 'Patanjali Wellness', categoryName: 'Herbal Teas & Decoctions', tags: ['digestion', 'respiratory', 'tea'] },
+  { name: 'Kashaya Decoction Mix', description: 'Traditional South Indian kashaya blend with aromatic spices', form: 'TEA', packSizes: ['100g', '250g'], taxRule: 'STANDARD_VAT', brandName: 'Sri Lankan Ayurveda Co.', categoryName: 'Herbal Teas & Decoctions', tags: ['traditional', 'kashaya', 'immunity'] },
+
+  // ── Skin & Hair Care (3) ──
+  { name: 'Kumkumadi Face Cream', description: 'Saffron-infused facial cream for radiance and skin glow', form: 'CREAM', packSizes: ['30g', '50g'], taxRule: 'STANDARD_VAT', brandName: 'Baidyanath', categoryName: 'Skin & Hair Care', tags: ['skincare', 'saffron', 'glow'] },
+  { name: 'Neem Face Wash', description: 'Neem and tulsi based purifying face wash for acne-prone skin', form: 'GEL', packSizes: ['100ml', '200ml'], taxRule: 'SSCL', brandName: 'Himalaya Ayurveda', categoryName: 'Skin & Hair Care', tags: ['skincare', 'acne', 'neem'] },
+  { name: 'Ayurvedic Pain Balm', description: 'Herbal pain-relief balm with eucalyptus and camphor', form: 'BALM', packSizes: ['25g', '50g'], taxRule: 'STANDARD_VAT', brandName: 'Dabur Sri Lanka', categoryName: 'Skin & Hair Care', tags: ['pain-relief', 'balm', 'muscle'] },
 ];
 
-function generateSku(brandName: string, colour: string, size: string, productIndex: number): string {
-  const brandCode = brandName.substring(0, 3).toUpperCase();
-  const colourAbbrev = colour.replace(/\s+/g, '').substring(0, 3).toUpperCase();
-  return `${brandCode}-${String(productIndex).padStart(2, '0')}-${colourAbbrev}-${size.replace(/\s+/g, '')}`;
+function generateSku(brandName: string, form: string, packSize: string, productIndex: number): string {
+  const brandCode = brandName.replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase();
+  const formAbbrev = form.replace(/\s+/g, '').substring(0, 3).toUpperCase();
+  const packAbbrev = packSize.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  return `${brandCode}-${String(productIndex).padStart(2, '0')}-${formAbbrev}-${packAbbrev}`;
 }
 
 async function seedSampleCatalog() {
@@ -372,7 +373,7 @@ async function seedSampleCatalog() {
 
   // Idempotency check
   const existingCategory = await prisma.category.findFirst({
-    where: { tenantId, name: "Men's Shirts" },
+    where: { tenantId, name: 'Herbal Powders' },
   });
   if (existingCategory) {
     console.log('Catalog data already seeded, skipping');
@@ -419,22 +420,20 @@ async function seedSampleCatalog() {
         description: sp.description,
         categoryId,
         brandId,
-        gender: sp.gender,
         tags: sp.tags,
         taxRule: sp.taxRule,
       },
     });
 
-    const sizes = SIZE_SETS[sp.categoryName] ?? ['ONE SIZE'];
-    const colours = COLOUR_SETS[sp.categoryName] ?? ['Default'];
+    const packSizes = sp.packSizes;
 
-    // Build variant combos, cap at 12
+    // Build variants, cap at 12
     const variantData: {
       productId: string;
       tenantId: string;
       sku: string;
-      size: string;
-      colour: string;
+      form: string;
+      packSize: string;
       costPrice: number;
       retailPrice: number;
       stockQuantity: number;
@@ -442,40 +441,37 @@ async function seedSampleCatalog() {
     }[] = [];
 
     let vi = 0;
-    for (const size of sizes) {
-      for (const colour of colours) {
-        if (vi >= 12) break;
-
-        // Deterministic pricing
-        const costPrice = Math.round((250 + pi * 88 + vi * 17) * 100) / 100;
-        const multiplier = 2.0 + ((pi * 7 + vi * 3) % 9) / 10;
-        const retailPrice = Math.round(costPrice * multiplier * 100) / 100;
-
-        // ~15% of variants below threshold: use a deterministic check
-        const isLowStock = (pi * 13 + vi * 7) % 7 === 0;
-        const stockQuantity = isLowStock
-          ? (pi + vi) % 5 // 0-4
-          : 5 + ((pi * 3 + vi * 11) % 46); // 5-50
-
-        const sku = generateSku(sp.brandName, colour, size, pi);
-
-        variantData.push({
-          productId: product.id,
-          tenantId,
-          sku,
-          size,
-          colour,
-          costPrice,
-          retailPrice,
-          stockQuantity,
-          lowStockThreshold: 5,
-        });
-
-        if (stockQuantity < 5) lowStockVariants++;
-        totalVariants++;
-        vi++;
-      }
+    for (const packSize of packSizes) {
       if (vi >= 12) break;
+
+      // Deterministic pricing
+      const costPrice = Math.round((250 + pi * 88 + vi * 17) * 100) / 100;
+      const multiplier = 2.0 + ((pi * 7 + vi * 3) % 9) / 10;
+      const retailPrice = Math.round(costPrice * multiplier * 100) / 100;
+
+      // ~15% of variants below threshold: use a deterministic check
+      const isLowStock = (pi * 13 + vi * 7) % 7 === 0;
+      const stockQuantity = isLowStock
+        ? (pi + vi) % 5 // 0-4
+        : 5 + ((pi * 3 + vi * 11) % 46); // 5-50
+
+      const sku = generateSku(sp.brandName, sp.form, packSize, pi);
+
+      variantData.push({
+        productId: product.id,
+        tenantId,
+        sku,
+        form: sp.form,
+        packSize,
+        costPrice,
+        retailPrice,
+        stockQuantity,
+        lowStockThreshold: 5,
+      });
+
+      if (stockQuantity < 5) lowStockVariants++;
+      totalVariants++;
+      vi++;
     }
 
     await prisma.productVariant.createMany({ data: variantData });
@@ -600,9 +596,9 @@ async function seedDemoSales() {
   ];
 
   const cashier1 = await prisma.user.upsert({
-    where: { email: 'cashier1@velvetpos.dev' },
+    where: { email: 'cashier1@ayurpos.dev' },
     create: {
-      email: 'cashier1@velvetpos.dev',
+      email: 'cashier1@ayurpos.dev',
       passwordHash: cashierPassword,
       pin: cashier1PinHash,
       role: 'CASHIER',
@@ -616,9 +612,9 @@ async function seedDemoSales() {
   });
 
   const cashier2 = await prisma.user.upsert({
-    where: { email: 'cashier2@velvetpos.dev' },
+    where: { email: 'cashier2@ayurpos.dev' },
     create: {
-      email: 'cashier2@velvetpos.dev',
+      email: 'cashier2@ayurpos.dev',
       passwordHash: cashierPassword,
       pin: cashier2PinHash,
       role: 'CASHIER',
@@ -760,7 +756,7 @@ async function seedDemoSales() {
       lineItemsData.push({
         variantId: variant.id,
         productNameSnapshot: variant.product.name,
-        variantDescriptionSnapshot: `${variant.colour} / ${variant.size}`,
+        variantDescriptionSnapshot: `${variant.form} / ${variant.packSize}`,
         sku: variant.sku,
         unitPrice,
         quantity,
@@ -963,7 +959,7 @@ async function seedDemoReturns() {
 
   // Find cashier1 for initiatedById
   const cashier1 = await prisma.user.findFirst({
-    where: { email: 'cashier1@velvetpos.dev', tenantId, deletedAt: null },
+    where: { email: 'cashier1@ayurpos.dev', tenantId, deletedAt: null },
   });
   if (!cashier1) {
     console.log('Cashier1 not found, skipping demo returns seed');
@@ -1193,7 +1189,7 @@ async function seedCRMData() {
   const customersData = [
     { name: 'Amara Perera', phone: '+94770000001', tags: ['VIP', 'REGULAR'], birthday: new Date('1990-03-17'), creditBalance: 1500, totalSpend: 45000, gender: 'FEMALE' as const },
     { name: 'Nimal Fernando', phone: '+94770000002', tags: ['WHOLESALE'], birthday: undefined, creditBalance: 0, totalSpend: 12000, gender: 'MALE' as const },
-    { name: 'Dilani Jayawardena', phone: '+94770000003', tags: ['VIP'], birthday: new Date('1985-06-21'), creditBalance: 0, totalSpend: 62000, gender: 'FEMALE' as const },
+    { name: 'Nimali Perera', phone: '+94770000003', tags: ['VIP'], birthday: new Date('1985-06-21'), creditBalance: 0, totalSpend: 62000, gender: 'FEMALE' as const },
     { name: 'Kasun Dissanayake', phone: '+94770000004', tags: ['REGULAR'], birthday: new Date('1995-11-08'), creditBalance: 0, totalSpend: 8000, gender: 'MALE' as const },
     { name: 'Priya Rajapaksa', phone: '+94770000005', tags: ['VIP', 'ONLINE'], birthday: new Date('1992-07-14'), creditBalance: 2000, totalSpend: 38000, gender: 'FEMALE' as const },
     { name: 'Chamara Silva', phone: '+94770000006', tags: ['REGULAR'], birthday: undefined, creditBalance: 0, totalSpend: 5000, gender: 'MALE' as const },
@@ -1273,10 +1269,10 @@ async function seedCRMData() {
     return;
   }
 
-  function buildDesc(v: { size?: string | null; colour?: string | null }): string {
+  function buildDesc(v: { form?: string | null; packSize?: string | null }): string {
     const parts: string[] = [];
-    if (v.size) parts.push(v.size);
-    if (v.colour) parts.push(v.colour);
+    if (v.form) parts.push(v.form);
+    if (v.packSize) parts.push(v.packSize);
     return parts.length > 0 ? parts.join(' / ') : 'Default';
   }
 
@@ -1671,11 +1667,11 @@ async function seedHardwareAndAuditData() {
     select: { id: true },
   });
   const cashier1 = await prisma.user.findFirst({
-    where: { tenantId, email: 'cashier1@velvetpos.dev', deletedAt: null },
+    where: { tenantId, email: 'cashier1@ayurpos.dev', deletedAt: null },
     select: { id: true },
   });
   const cashier2 = await prisma.user.findFirst({
-    where: { tenantId, email: 'cashier2@velvetpos.dev', deletedAt: null },
+    where: { tenantId, email: 'cashier2@ayurpos.dev', deletedAt: null },
     select: { id: true },
   });
 
@@ -1703,7 +1699,7 @@ async function seedHardwareAndAuditData() {
         before: Prisma.JsonNull,
         after: { totalAmount: 4500, paymentMethod: 'CASH', items: 3 },
         ipAddress: '127.0.0.1',
-        userAgent: 'VelvetPOS/Seed',
+        userAgent: 'AyurPOS/Seed',
         createdAt: new Date(now.getTime() - 13 * 24 * 60 * 60 * 1000),
       },
       {
@@ -1716,7 +1712,7 @@ async function seedHardwareAndAuditData() {
         before: Prisma.JsonNull,
         after: { totalAmount: 7800, paymentMethod: 'CARD', items: 2 },
         ipAddress: '127.0.0.1',
-        userAgent: 'VelvetPOS/Seed',
+        userAgent: 'AyurPOS/Seed',
         createdAt: new Date(now.getTime() - 12 * 24 * 60 * 60 * 1000),
       },
       {
@@ -1729,7 +1725,7 @@ async function seedHardwareAndAuditData() {
         before: Prisma.JsonNull,
         after: { refundAmount: 1250, refundMethod: 'CASH', reason: 'Defective item' },
         ipAddress: '127.0.0.1',
-        userAgent: 'VelvetPOS/Seed',
+        userAgent: 'AyurPOS/Seed',
         createdAt: new Date(now.getTime() - 11 * 24 * 60 * 60 * 1000),
       },
       {
@@ -1742,7 +1738,7 @@ async function seedHardwareAndAuditData() {
         before: { status: 'PENDING' },
         after: { status: 'COMPLETED', refundAmount: 3200, refundMethod: 'STORE_CREDIT' },
         ipAddress: '127.0.0.1',
-        userAgent: 'VelvetPOS/Seed',
+        userAgent: 'AyurPOS/Seed',
         createdAt: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000),
       },
       {
@@ -1755,7 +1751,7 @@ async function seedHardwareAndAuditData() {
         before: { creditBalance: 0 },
         after: { creditBalance: 1500, reason: 'Loyalty reward top-up' },
         ipAddress: '127.0.0.1',
-        userAgent: 'VelvetPOS/Seed',
+        userAgent: 'AyurPOS/Seed',
         createdAt: new Date(now.getTime() - 9 * 24 * 60 * 60 * 1000),
       },
       {
@@ -1768,7 +1764,7 @@ async function seedHardwareAndAuditData() {
         before: { role: 'CASHIER', permissions: ['sale:create'] },
         after: { role: 'CASHIER', permissions: ['sale:create', 'sale:discount'] },
         ipAddress: '127.0.0.1',
-        userAgent: 'VelvetPOS/Seed',
+        userAgent: 'AyurPOS/Seed',
         createdAt: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
       },
       {
@@ -1781,7 +1777,7 @@ async function seedHardwareAndAuditData() {
         before: Prisma.JsonNull,
         after: { name: 'Weekend Flash Sale', type: 'CART_PERCENTAGE', value: 15 },
         ipAddress: '127.0.0.1',
-        userAgent: 'VelvetPOS/Seed',
+        userAgent: 'AyurPOS/Seed',
         createdAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000),
       },
       {
@@ -1794,7 +1790,7 @@ async function seedHardwareAndAuditData() {
         before: { stockQuantity: 12 },
         after: { stockQuantity: 20, reason: 'Manual count correction' },
         ipAddress: '127.0.0.1',
-        userAgent: 'VelvetPOS/Seed',
+        userAgent: 'AyurPOS/Seed',
         createdAt: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000),
       },
       {
@@ -1807,7 +1803,7 @@ async function seedHardwareAndAuditData() {
         before: Prisma.JsonNull,
         after: { category: 'UTILITIES', amount: 230, description: 'Electricity bill' },
         ipAddress: '127.0.0.1',
-        userAgent: 'VelvetPOS/Seed',
+        userAgent: 'AyurPOS/Seed',
         createdAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000),
       },
       {
@@ -1820,7 +1816,7 @@ async function seedHardwareAndAuditData() {
         before: { status: 'OPEN', openedAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString() },
         after: { status: 'CLOSED', cashDifference: 0, totalSalesCount: 8 },
         ipAddress: '127.0.0.1',
-        userAgent: 'VelvetPOS/Seed',
+        userAgent: 'AyurPOS/Seed',
         createdAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000),
       },
     ];

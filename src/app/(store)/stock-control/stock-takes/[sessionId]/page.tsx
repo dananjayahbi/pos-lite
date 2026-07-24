@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { StockTakeSession } from '@/components/stock-control/StockTakeSession';
 
 export const metadata = {
-  title: 'Stock Take Session | VelvetPOS',
+  title: 'Stock Take Session | AyurPOS',
 };
 
 export default async function StockTakeSessionPage(props: {

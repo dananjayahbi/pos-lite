@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { Eye, Archive, Trash2, Plus, Shirt } from 'lucide-react';
+import { Eye, Archive, Trash2, Plus, Leaf } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -46,17 +46,8 @@ function ProductThumbnail({ variants }: { variants?: ProductListItem['variants']
 
   return (
     <div className="flex h-10 w-10 items-center justify-center rounded-md bg-mist/30">
-      <Shirt className="h-5 w-5 text-mist" />
+      <Leaf className="h-5 w-5 text-mist" />
     </div>
-  );
-}
-
-function GenderBadge({ gender }: { gender: string }) {
-  const label = gender.charAt(0) + gender.slice(1).toLowerCase();
-  return (
-    <Badge variant="outline" className="font-body text-xs capitalize">
-      {label}
-    </Badge>
   );
 }
 
@@ -84,7 +75,6 @@ function SkeletonRows() {
     </>
   );
 }
-
 function EmptyState({
   hasActiveFilters,
   onClearFilters,
@@ -201,9 +191,6 @@ export function InventoryTable({
               Gender
             </TableHead>
             <TableHead className="font-body text-xs font-semibold uppercase tracking-wider text-espresso/70">
-              Variants
-            </TableHead>
-            <TableHead className="font-body text-xs font-semibold uppercase tracking-wider text-espresso/70">
               Stock
             </TableHead>
             <TableHead className="font-body text-xs font-semibold uppercase tracking-wider text-espresso/70">
@@ -247,9 +234,6 @@ export function InventoryTable({
                   </TableCell>
                   <TableCell className="font-body text-sm text-espresso/70">
                     {product.brand?.name ?? '—'}
-                  </TableCell>
-                  <TableCell>
-                    <GenderBadge gender={product.gender} />
                   </TableCell>
                   <TableCell className="font-body text-sm text-espresso/70">
                     {product._count.variants}

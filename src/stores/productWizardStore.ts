@@ -1,20 +1,19 @@
 import { create } from 'zustand';
-import type { GenderType, TaxRule } from '@/generated/prisma/client';
+import type { TaxRule } from '@/generated/prisma/client';
 
 export interface Step1Data {
   name: string;
   description: string;
   categoryId: string;
   brandId: string;
-  gender: GenderType;
   tags: string[];
   taxRule: TaxRule;
 }
 
 export interface Step2Data {
   variants: Array<{
-    size?: string;
-    colour?: string;
+    form?: string;
+    packSize?: string;
     costPrice: number;
     retailPrice: number;
     wholesalePrice?: number;

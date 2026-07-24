@@ -11,8 +11,8 @@ interface LowStockFilters {
 interface LowStockVariant {
   id: string;
   sku: string;
-  size: string | null;
-  colour: string | null;
+  form: string | null;
+  pack_size: string | null;
   stock_quantity: number;
   low_stock_threshold: number;
   retail_price: string;

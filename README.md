@@ -1,4 +1,4 @@
-# VelvetPOS
+# AyurPOS
 
 A modern, multi-tenant SaaS Point-of-Sale platform designed for clothing and apparel retailers. Built with Next.js 15+, Prisma 7, and Tailwind CSS v4.
 
@@ -6,7 +6,7 @@ A modern, multi-tenant SaaS Point-of-Sale platform designed for clothing and app
 
 ## Project Overview
 
-VelvetPOS provides a complete POS terminal, inventory management, CRM, supplier management, staff administration, and a SuperAdmin console — all delivered as a SaaS product with per-tenant isolation.
+AyurPOS provides a complete POS terminal, inventory management, CRM, supplier management, staff administration, and a SuperAdmin console — all delivered as a SaaS product with per-tenant isolation.
 
 **Tech Stack**
 
@@ -37,7 +37,7 @@ Ensure the following are installed before continuing:
 ```bash
 # 1. Clone the repository
 git clone <repository-url>
-cd velvetpos
+cd ayurpos
 
 # 2. Install dependencies (automatically runs `prisma generate` via postinstall)
 pnpm install
@@ -129,9 +129,9 @@ The seed command is idempotent: running it multiple times will not create duplic
 
 | Variable                     | Purpose                                              |
 |------------------------------|------------------------------------------------------|
-| `SEED_SUPER_ADMIN_EMAIL`     | Super Admin email (default: `superadmin@velvetpos.dev`) |
+| `SEED_SUPER_ADMIN_EMAIL`     | Super Admin email (default: `superadmin@ayurpos.dev`) |
 | `SEED_SUPER_ADMIN_PASSWORD`  | Super Admin password (default: `changeme123!`)       |
-| `SEED_SAMPLE_TENANT`         | Set to `"true"` to seed "Dilani Boutique" tenant     |
+| `SEED_SAMPLE_TENANT`         | Set to `"true"` to seed "Ayur Wellness Centre" tenant     |
 | `SEED_OWNER_EMAIL`           | Owner email for the sample tenant                    |
 | `SEED_OWNER_PASSWORD`        | Owner password for the sample tenant                 |
 
@@ -151,9 +151,9 @@ Expected output:
 Plan already exists, updated fields: Basic POS
 Plan already exists, updated fields: Pro POS + WhatsApp
 Super Admin account already exists. Skipping creation.
-Created sample tenant: Dilani Boutique
+Created sample tenant: Ayur Wellness Centre
 Created OWNER user: owner@dilani.dev
-Created ACTIVE subscription for Dilani Boutique on Pro POS + WhatsApp plan.
+Created ACTIVE subscription for Ayur Wellness Centre on Pro POS + WhatsApp plan.
 ```
 Change these values before any staging or production deployment.
 
@@ -195,7 +195,7 @@ pnpm format
 ## Project Structure
 
 ```
-velvetpos/
+ayurpos/
 +-- prisma/               # Prisma schema, migrations, and seed script
 |   +-- schema.prisma
 |   +-- prisma.config.ts  # Prisma 7 config file (loads DATABASE_URL)

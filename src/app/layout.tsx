@@ -6,7 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
 
 export const metadata: Metadata = {
-  title: 'VelvetPOS',
+  title: 'AyurPOS',
   description: 'Point of Sale system for modern clothing retail',
 };
 

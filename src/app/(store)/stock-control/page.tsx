@@ -4,7 +4,7 @@ import { StockControlDashboard } from '@/components/stock-control/StockControlDa
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export const metadata = {
-  title: 'Stock Control | VelvetPOS',
+  title: 'Stock Control | AyurPOS',
 };
 
 export default async function StockControlPage() {

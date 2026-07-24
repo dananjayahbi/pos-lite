@@ -5,7 +5,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import TaxSettingsForm from '@/components/settings/TaxSettingsForm';
 
-export const metadata = { title: 'Tax Settings | VelvetPOS' };
+export const metadata = { title: 'Tax Settings | AyurPOS' };
 
 export default async function TaxSettingsPage() {
   const session = await auth();

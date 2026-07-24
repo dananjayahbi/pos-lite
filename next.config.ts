@@ -18,8 +18,8 @@ const nextConfig: NextConfig = {
 };
 
 export default withSentryConfig(nextConfig, {
-  org: process.env.SENTRY_ORG || "velvetpos",
-  project: process.env.SENTRY_PROJECT || "velvetpos",
+  org: process.env.SENTRY_ORG || "ayurpos",
+  project: process.env.SENTRY_PROJECT || "ayurpos",
   silent: process.env.NODE_ENV === "production",
   sourcemaps: { disable: true },
 });

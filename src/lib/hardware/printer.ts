@@ -403,7 +403,7 @@ export async function testPrint(printerConfig: PrinterConfig): Promise<void> {
   parts.push(ESC_INIT);
   parts.push(ESC_ALIGN_CENTER);
   parts.push(ESC_DOUBLE_HEIGHT);
-  parts.push(...line('VelvetPOS'));
+  parts.push(...line('AyurPOS'));
   parts.push(ESC_NORMAL);
   parts.push(...line(divider(w)));
   parts.push(...line('Printer OK'));

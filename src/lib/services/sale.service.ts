@@ -13,11 +13,11 @@ import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildVariantDescription(colour: string | null, size: string | null): string {
-  if (colour && size) return `${colour} / ${size}`;
-  if (colour) return colour;
-  if (size) return size;
-  return 'ONE SIZE';
+function buildVariantDescription(form: string | null, packSize: string | null): string {
+  if (form && packSize) return `${form} / ${packSize}`;
+  if (form) return form;
+  if (packSize) return packSize;
+  return 'Default';
 }
 
 function getTaxRate(
@@ -119,7 +119,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       lineData.push({
         variantId: variant.id,
         productNameSnapshot: variant.product.name,
-        variantDescriptionSnapshot: buildVariantDescription(variant.colour, variant.size),
+        variantDescriptionSnapshot: buildVariantDescription(variant.form, variant.packSize),
         sku: variant.sku,
         unitPrice,
         quantity: line.quantity,

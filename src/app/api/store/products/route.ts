@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
     const url = request.nextUrl;
     const rawParams: Record<string, string> = {};
-    for (const key of ['search', 'categoryId', 'brandId', 'gender', 'isArchived', 'categories', 'brands', 'genders', 'status', 'page', 'limit'] as const) {
+    for (const key of ['search', 'categoryId', 'brandId', 'isArchived', 'categories', 'brands', 'forms', 'status', 'page', 'limit'] as const) {
       const val = url.searchParams.get(key);
       if (val !== null) rawParams[key] = val;
     }
@@ -43,12 +43,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { page, limit, categories, brands, genders, status, ...filters } = parsed.data;
+    const { page, limit, categories, brands, status, ...filters } = parsed.data;
 
     // Parse multi-value params
     const categoryIds = categories?.split(',').filter(Boolean);
     const brandIds = brands?.split(',').filter(Boolean);
-    const genderValues = genders?.split(',').filter(Boolean) as import('@/generated/prisma/client').GenderType[] | undefined;
 
     // Map status to isArchived
     let isArchived = filters.isArchived;
@@ -61,7 +60,6 @@ export async function GET(request: NextRequest) {
       isArchived,
       categoryIds,
       brandIds,
-      genders: genderValues,
       page,
       limit,
     });

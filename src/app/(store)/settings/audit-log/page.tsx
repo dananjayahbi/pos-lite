@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import AuditLogPageClient from '@/components/audit/AuditLogPageClient';
 
-export const metadata = { title: 'Audit Log | VelvetPOS' };
+export const metadata = { title: 'Audit Log | AyurPOS' };
 
 const DENIED_ROLES = new Set(['CASHIER', 'STOCK_CLERK']);
 

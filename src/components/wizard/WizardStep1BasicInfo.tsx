@@ -5,16 +5,12 @@ import { useRouter } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
+import { Plus, ArrowRight } from 'lucide-react';
 
 import { useProductWizardStore } from '@/stores/productWizardStore';
 import { useCategories } from '@/hooks/useCategories';
 import { useBrands } from '@/hooks/useBrands';
-import {
-  GENDER_OPTIONS,
-  TAX_RULE,
-  TAX_RULE_OPTIONS,
-} from '@/lib/constants/product-options';
+import { TAX_RULE, TAX_RULE_OPTIONS } from '@/lib/constants/product-options';
 import {
   productStep1Schema,
   type ProductStep1FormData,
@@ -75,7 +71,6 @@ export function WizardStep1BasicInfo() {
           description: step1Data.description,
           categoryId: step1Data.categoryId,
           brandId: step1Data.brandId,
-          gender: step1Data.gender,
           tags: step1Data.tags,
           taxRule: step1Data.taxRule,
         }
@@ -84,7 +79,6 @@ export function WizardStep1BasicInfo() {
           description: '',
           categoryId: '',
           brandId: '',
-          gender: '' as ProductStep1FormData['gender'],
           tags: [],
           taxRule: TAX_RULE.STANDARD_VAT,
         },
@@ -95,10 +89,9 @@ export function WizardStep1BasicInfo() {
   const onSubmit = (data: ProductStep1FormData) => {
     setStep1Data({
       name: data.name,
-      description: data.description,
+      description: data.description ?? '',
       categoryId: data.categoryId,
-      brandId: data.brandId,
-      gender: data.gender,
+      brandId: data.brandId ?? '',
       tags: data.tags,
       taxRule: data.taxRule,
     });
@@ -162,7 +155,12 @@ export function WizardStep1BasicInfo() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-      <h2 className="font-display text-2xl text-espresso">Basic Information</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="font-display text-2xl text-espresso">Basic Information</h2>
+        <Button type="button" variant="ghost" size="sm" onClick={handleCancel}>
+          Cancel
+        </Button>
+      </div>
 
       {/* Product Name */}
       <div className="space-y-2">
@@ -171,7 +169,7 @@ export function WizardStep1BasicInfo() {
         </Label>
         <Input
           id="name"
-          placeholder="e.g. Classic Oxford Shirt"
+          placeholder="e.g. Ashwagandha Powder"
           className="font-body"
           {...register('name')}
         />
@@ -187,7 +185,7 @@ export function WizardStep1BasicInfo() {
         </Label>
         <Textarea
           id="description"
-          placeholder="Describe the product..."
+          placeholder="Describe the product — uses, ingredients, benefits…"
           className="font-body min-h-[100px]"
           {...register('description')}
         />
@@ -250,7 +248,7 @@ export function WizardStep1BasicInfo() {
               <Input
                 value={newCategoryName}
                 onChange={(e) => setNewCategoryName(e.target.value)}
-                placeholder="Category name"
+                placeholder="e.g. Hair Care"
                 className="font-body"
               />
               <Button
@@ -274,15 +272,13 @@ export function WizardStep1BasicInfo() {
           name="brandId"
           render={({ field }) => (
             <Select
-              value={field.value}
+              {...(field.value !== undefined ? { value: field.value } : {})}
               onValueChange={field.onChange}
               disabled={brandsLoading}
             >
               <SelectTrigger className="w-full font-body">
                 <SelectValue
-                  placeholder={
-                    brandsLoading ? 'Loading…' : 'Select a brand'
-                  }
+                  placeholder={brandsLoading ? 'Loading…' : 'Select a brand'}
                 />
               </SelectTrigger>
               <SelectContent>
@@ -333,36 +329,6 @@ export function WizardStep1BasicInfo() {
         </Dialog>
       </div>
 
-      {/* Gender */}
-      <div className="space-y-2">
-        <Label className="font-body text-espresso">Gender</Label>
-        <Controller
-          control={control}
-          name="gender"
-          render={({ field }) => (
-            <div className="flex flex-wrap gap-2">
-              {GENDER_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => field.onChange(opt.value)}
-                  className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                    field.value === opt.value
-                      ? 'bg-espresso text-pearl'
-                      : 'border border-mist text-espresso hover:bg-mist/20'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          )}
-        />
-        {errors.gender && (
-          <p className="text-sm text-red-600">{errors.gender.message}</p>
-        )}
-      </div>
-
       {/* Tags */}
       <div className="space-y-2">
         <Label className="font-body text-espresso">Tags</Label>
@@ -404,21 +370,10 @@ export function WizardStep1BasicInfo() {
         )}
       </div>
 
-      {/* Actions */}
-      <div className="flex justify-end gap-3 pt-4">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleCancel}
-          className="border-mist text-espresso hover:bg-mist/20"
-        >
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          className="bg-espresso text-pearl hover:bg-espresso/90"
-        >
-          Next: Add Variants →
+      <div className="flex justify-end pt-4 border-t border-mist">
+        <Button type="submit" className="gap-1.5 bg-espresso text-pearl hover:bg-espresso/90">
+          Next: Variants
+          <ArrowRight className="h-4 w-4" />
         </Button>
       </div>
     </form>

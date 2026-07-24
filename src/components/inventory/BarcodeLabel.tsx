@@ -9,8 +9,8 @@ interface BarcodeLabelProps {
   productName: string;
   sku: string;
   barcode?: string | null | undefined;
-  size?: string | null | undefined;
-  colour?: string | null | undefined;
+  form?: string | null | undefined;
+  packSize?: string | null | undefined;
   retailPrice: number;
   stockQuantity: number;
   lowStockThreshold: number;
@@ -30,8 +30,8 @@ export function BarcodeLabel({
   productName,
   sku,
   barcode,
-  size,
-  colour,
+  form,
+  packSize,
   retailPrice,
   stockQuantity,
   lowStockThreshold,
@@ -41,10 +41,10 @@ export function BarcodeLabel({
   const hasBarcodeValue = barcodeValue.length > 0;
   const isLowStock = stockQuantity <= lowStockThreshold && stockQuantity >= 0;
 
-  const sizeColourParts: string[] = [];
-  if (size) sizeColourParts.push(`Size: ${size}`);
-  if (colour) sizeColourParts.push(`Colour: ${colour}`);
-  const sizeColourText = sizeColourParts.join(' · ');
+  const formPackParts: string[] = [];
+  if (form) formPackParts.push(`Form: ${form}`);
+  if (packSize) formPackParts.push(`Pack: ${packSize}`);
+  const formPackText = formPackParts.join(' · ');
 
   if (isPreview) {
     return (
@@ -64,7 +64,7 @@ export function BarcodeLabel({
           sku={sku}
           barcodeValue={barcodeValue}
           hasBarcodeValue={hasBarcodeValue}
-          sizeColourText={sizeColourText}
+          formPackText={formPackText}
           retailPrice={retailPrice}
           isLowStock={isLowStock}
         />
@@ -87,7 +87,7 @@ export function BarcodeLabel({
         sku={sku}
         barcodeValue={barcodeValue}
         hasBarcodeValue={hasBarcodeValue}
-        sizeColourText={sizeColourText}
+        formPackText={formPackText}
         retailPrice={retailPrice}
         isLowStock={isLowStock}
       />
@@ -103,7 +103,7 @@ function LabelContent({
   sku,
   barcodeValue,
   hasBarcodeValue,
-  sizeColourText,
+  formPackText,
   retailPrice,
   isLowStock,
 }: {
@@ -112,7 +112,7 @@ function LabelContent({
   sku: string;
   barcodeValue: string;
   hasBarcodeValue: boolean;
-  sizeColourText: string;
+  formPackText: string;
   retailPrice: number;
   isLowStock: boolean;
 }) {
@@ -139,10 +139,10 @@ function LabelContent({
         <span className="text-espresso">{sku}</span>
       </div>
 
-      {/* Size & Colour */}
-      {sizeColourText && (
+      {/* Form & Pack */}
+      {formPackText && (
         <span className="font-body text-[8px] text-mist leading-tight">
-          {sizeColourText}
+          {formPackText}
         </span>
       )}
 

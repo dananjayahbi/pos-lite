@@ -10,7 +10,6 @@ import type {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { COLOUR_CATALOGUE } from './ColourPickerModal';
 import { Plus, X, Wand2, Star } from 'lucide-react';
 import Image from 'next/image';
 import type { VariantFormData } from './WizardStep2Variants';
@@ -20,17 +19,32 @@ import {
   setPrimaryIndex,
   getPendingImages,
 } from '@/lib/wizardPendingFiles';
+import {
+  PRODUCT_FORM_LABELS,
+  PRODUCT_FORM_ICONS,
+  type ProductFormValue,
+} from '@/lib/constants/product-options';
 
 function generateBarcode(): string {
   return String(Math.floor(10000000 + Math.random() * 90000000));
+}
+
+function getFormLabel(form: string): string {
+  return (
+    PRODUCT_FORM_LABELS[form as ProductFormValue] ?? form
+  );
+}
+
+function getFormIcon(form: string) {
+  return PRODUCT_FORM_ICONS[form as ProductFormValue] ?? null;
 }
 
 interface VariantMatrixTableProps {
   fields: Array<{
     id: string;
     combinationKey: string;
-    size: string;
-    colour: string;
+    form: string;
+    packSize: string;
     sku: string;
     barcode: string;
     initialStock: string;
@@ -61,14 +75,15 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
   watch,
 }: VariantMatrixRowProps) {
   const selected = watch(`variants.${index}.selected`);
-  const size = watch(`variants.${index}.size`);
-  const colour = watch(`variants.${index}.colour`);
+  const form = watch(`variants.${index}.form`);
+  const packSize = watch(`variants.${index}.packSize`);
   const combinationKey = watch(`variants.${index}.combinationKey`);
   const costPrice = watch(`variants.${index}.costPrice`);
   const retailPrice = watch(`variants.${index}.retailPrice`);
 
-  // Local state mirrors the module-level pending files store for reactivity
-  const [pendingState, setPendingState] = useState(() => getPendingImages(combinationKey));
+  const [pendingState, setPendingState] = useState(() =>
+    getPendingImages(combinationKey),
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function refreshPending() {
@@ -98,15 +113,24 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
 
   const costNum = parseFloat(costPrice) || 0;
   const retailNum = parseFloat(retailPrice) || 0;
-  const retailBelowCost = retailNum > 0 && costNum > 0 && retailNum < costNum;
+  const retailBelowCost =
+    retailNum > 0 && costNum > 0 && retailNum < costNum;
+
+  const FormIcon = getFormIcon(form);
 
   return (
-    <tr className={`bg-pearl hover:bg-terracotta/10 transition-colors ${!selected ? 'opacity-40' : ''}`}>
+    <tr
+      className={`bg-pearl hover:bg-terracotta/10 transition-colors ${
+        !selected ? 'opacity-40' : ''
+      }`}
+    >
       <td className="px-3 py-2 text-center">
         <Checkbox
           checked={selected}
           onCheckedChange={(checked) =>
-            setValue(`variants.${index}.selected`, !!checked, { shouldDirty: true })
+            setValue(`variants.${index}.selected`, !!checked, {
+              shouldDirty: true,
+            })
           }
         />
       </td>
@@ -126,7 +150,13 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
           <button
             type="button"
             title="Auto-generate barcode"
-            onClick={() => setValue(`variants.${index}.barcode`, generateBarcode(), { shouldDirty: true })}
+            onClick={() =>
+              setValue(
+                `variants.${index}.barcode`,
+                generateBarcode(),
+                { shouldDirty: true },
+              )
+            }
             className="shrink-0 rounded border border-sand p-1 text-mist hover:text-espresso hover:border-espresso transition-colors"
           >
             <Wand2 className="h-3 w-3" />
@@ -144,18 +174,14 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
         />
       </td>
       <td className="px-3 py-2">
-        {colour && (
+        {form && (
           <span className="inline-flex items-center gap-1.5 text-xs font-body">
-            <span
-              className="inline-block h-3 w-3 rounded-full border border-espresso/20 shrink-0"
-              style={{ backgroundColor: colour }}
-              aria-hidden="true"
-            />
-            {COLOUR_CATALOGUE.find((c) => c.hex.toLowerCase() === colour.toLowerCase())?.name ?? colour}
+            {FormIcon ? <FormIcon className="h-3.5 w-3.5" /> : null}
+            {getFormLabel(form)}
           </span>
         )}
       </td>
-      <td className="px-3 py-2 text-xs font-body">{size}</td>
+      <td className="px-3 py-2 text-xs font-body">{packSize}</td>
       <td className="px-3 py-2">
         <div className="flex items-center gap-1">
           <span className="text-xs text-mist shrink-0">Rs.</span>
@@ -176,7 +202,9 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
             type="number"
             step="0.01"
             min="0"
-            className={`text-right h-7 text-xs min-w-[100px] ${retailBelowCost ? 'border-orange-500' : ''}`}
+            className={`text-right h-7 text-xs min-w-[100px] ${
+              retailBelowCost ? 'border-orange-500' : ''
+            }`}
           />
         </div>
       </td>
@@ -194,7 +222,9 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
       </td>
       <td className="px-3 py-2">
         <Input
-          {...register(`variants.${index}.lowStockThreshold`, { valueAsNumber: true })}
+          {...register(`variants.${index}.lowStockThreshold`, {
+            valueAsNumber: true,
+          })}
           type="number"
           min="0"
           className="text-right h-7 text-xs w-20"
@@ -206,7 +236,9 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
             <div
               key={entry.previewUrl}
               className={`relative group h-10 w-10 shrink-0 rounded border overflow-hidden ${
-                i === pendingState.primaryIndex ? 'border-terracotta ring-1 ring-terracotta' : 'border-sand/30'
+                i === pendingState.primaryIndex
+                  ? 'border-terracotta ring-1 ring-terracotta'
+                  : 'border-sand/30'
               }`}
             >
               <Image
@@ -216,10 +248,13 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
                 unoptimized
                 className="object-cover"
               />
-              {/* Primary star */}
               <button
                 type="button"
-                title={i === pendingState.primaryIndex ? 'Primary image' : 'Set as primary'}
+                title={
+                  i === pendingState.primaryIndex
+                    ? 'Primary image'
+                    : 'Set as primary'
+                }
                 onClick={() => handleSetPrimary(i)}
                 className="absolute top-0.5 left-0.5 z-10"
               >
@@ -231,7 +266,6 @@ const VariantMatrixRow = memo(function VariantMatrixRow({
                   }`}
                 />
               </button>
-              {/* Remove */}
               <button
                 type="button"
                 onClick={() => handleRemove(i)}
@@ -275,8 +309,12 @@ export function VariantMatrixTable({
 
   const handleApplyAll = () => {
     for (let i = 0; i < fields.length; i++) {
-      if (applyCost) setValue(`variants.${i}.costPrice`, applyCost, { shouldDirty: true });
-      if (applyRetail) setValue(`variants.${i}.retailPrice`, applyRetail, { shouldDirty: true });
+      if (applyCost)
+        setValue(`variants.${i}.costPrice`, applyCost, { shouldDirty: true });
+      if (applyRetail)
+        setValue(`variants.${i}.retailPrice`, applyRetail, {
+          shouldDirty: true,
+        });
     }
   };
 
@@ -286,24 +324,45 @@ export function VariantMatrixTable({
         <thead>
           <tr className="bg-sand/30">
             <th className="px-3 py-2 text-left font-semibold text-espresso w-10" />
-            <th className="px-3 py-2 text-left font-semibold text-espresso min-w-[140px]">SKU</th>
-            <th className="px-3 py-2 text-left font-semibold text-espresso min-w-[150px]">Barcode</th>
-            <th className="px-3 py-2 text-right font-semibold text-espresso min-w-[80px]">Stock</th>
-            <th className="px-3 py-2 text-left font-semibold text-espresso min-w-[110px]">Colour</th>
-            <th className="px-3 py-2 text-left font-semibold text-espresso min-w-[80px]">Size</th>
-            <th className="px-3 py-2 text-right font-semibold text-espresso min-w-[140px]">Cost Price</th>
-            <th className="px-3 py-2 text-right font-semibold text-espresso min-w-[140px]">Retail Price</th>
-            <th className="px-3 py-2 text-right font-semibold text-espresso min-w-[150px]">Wholesale Price</th>
-            <th className="px-3 py-2 text-right font-semibold text-espresso min-w-[90px]">Low Stock</th>
-            <th className="px-3 py-2 text-left font-semibold text-espresso min-w-[120px]">Images</th>
+            <th className="px-3 py-2 text-left font-semibold text-espresso min-w-[140px]">
+              SKU
+            </th>
+            <th className="px-3 py-2 text-left font-semibold text-espresso min-w-[150px]">
+              Barcode
+            </th>
+            <th className="px-3 py-2 text-right font-semibold text-espresso min-w-[80px]">
+              Stock
+            </th>
+            <th className="px-3 py-2 text-left font-semibold text-espresso min-w-[110px]">
+              Form
+            </th>
+            <th className="px-3 py-2 text-left font-semibold text-espresso min-w-[80px]">
+              Pack Size
+            </th>
+            <th className="px-3 py-2 text-right font-semibold text-espresso min-w-[140px]">
+              Cost Price
+            </th>
+            <th className="px-3 py-2 text-right font-semibold text-espresso min-w-[140px]">
+              Retail Price
+            </th>
+            <th className="px-3 py-2 text-right font-semibold text-espresso min-w-[150px]">
+              Wholesale Price
+            </th>
+            <th className="px-3 py-2 text-right font-semibold text-espresso min-w-[90px]">
+              Low Stock
+            </th>
+            <th className="px-3 py-2 text-left font-semibold text-espresso min-w-[120px]">
+              Images
+            </th>
           </tr>
         </thead>
         <tbody>
-          {/* Apply to all row */}
           <tr className="bg-linen border-t border-sand">
             <td className="px-3 py-2" />
             <td colSpan={5} className="px-3 py-2">
-              <span className="text-xs italic text-mist">Apply to all variants</span>
+              <span className="text-xs italic text-mist">
+                Apply to all variants
+              </span>
             </td>
             <td className="px-3 py-2">
               <div className="flex items-center gap-1">
@@ -345,7 +404,6 @@ export function VariantMatrixTable({
             </td>
             <td className="px-3 py-2" />
           </tr>
-          {/* Data rows */}
           {fields.map((field, index) => (
             <VariantMatrixRow
               key={field.id}

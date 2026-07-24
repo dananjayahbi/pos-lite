@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { BrandsPageClient } from '@/components/brands/BrandsPageClient';
 
-export const metadata = { title: 'Brands | VelvetPOS' };
+export const metadata = { title: 'Brands | AyurPOS' };
 
 export default async function BrandsPage() {
   const session = await auth();

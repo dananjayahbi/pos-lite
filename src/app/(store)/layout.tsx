@@ -28,7 +28,7 @@ export default async function StoreLayout({
       </a>
       <div className="flex min-h-0 flex-1">
         <StoreLayoutClient
-          userEmail={session.user.email ?? 'signed-in-user@velvetpos.dev'}
+          userEmail={session.user.email ?? 'signed-in-user@ayurpos.dev'}
           userRole={session.user.role}
           permissions={permissions}
           businessName={branding.name}

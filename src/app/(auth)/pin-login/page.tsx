@@ -34,7 +34,7 @@ function PinLoginPageContent() {
     <div className="w-full px-4">
       <div className="mx-auto mb-4 w-full max-w-[400px] text-center">
         <AuthLogo />
-        <h1 className="font-display text-3xl text-espresso">VelvetPOS</h1>
+        <h1 className="font-display text-3xl text-espresso">AyurPOS</h1>
         <p className="mt-1 text-sm text-terracotta">Quick PIN sign-in</p>
       </div>
 

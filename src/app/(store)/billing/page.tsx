@@ -124,7 +124,7 @@ export default async function BillingPage({
               </CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-sm text-mist-foreground/70">
-                  Subscribe now to continue using VelvetPOS.
+                  Subscribe now to continue using AyurPOS.
                 </p>
                 <div className="flex flex-col gap-3">
                   <PayHereCheckoutButton
@@ -174,7 +174,7 @@ export default async function BillingPage({
                   Renew Subscription
                 </CardTitle>
                 <CardDescription>
-                  Renew to restore access to VelvetPOS.
+                  Renew to restore access to AyurPOS.
                 </CardDescription>
               </CardHeader>
               <CardContent>

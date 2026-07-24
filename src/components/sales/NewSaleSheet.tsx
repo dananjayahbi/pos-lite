@@ -15,8 +15,8 @@ import { formatRupee } from '@/lib/format';
 interface ProductVariant {
   id: string;
   sku: string;
-  size: string | null;
-  colour: string | null;
+  form: string | null;
+  packSize: string | null;
   stockQuantity: number;
   retailPrice: string;
 }
@@ -108,7 +108,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
   const total = cartSubtotal - discountAmt;
 
   const addVariant = useCallback((product: Product, variant: ProductVariant) => {
-    const desc = [variant.size, variant.colour].filter(Boolean).join(' / ') || 'Default';
+    const desc = [variant.form, variant.packSize].filter(Boolean).join(' / ') || 'Default';
     setCart((prev) => {
       const existing = prev.find((i) => i.variantId === variant.id);
       if (existing) {
@@ -263,9 +263,9 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                     >
                       <div className="min-w-0">
                         <span className="font-medium text-espresso">{product.name}</span>
-                        {(variant.size ?? variant.colour) && (
+                        {(variant.form ?? variant.packSize) && (
                           <span className="ml-1.5 text-xs text-sand">
-                            {[variant.size, variant.colour].filter(Boolean).join(' / ')}
+                            {[variant.form, variant.packSize].filter(Boolean).join(' / ')}
                           </span>
                         )}
                         <span className="ml-1.5 text-xs text-sand/60">{variant.sku}</span>

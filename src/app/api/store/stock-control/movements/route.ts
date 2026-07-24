@@ -99,8 +99,8 @@ export async function GET(request: NextRequest) {
       variant: {
         select: {
           sku: true,
-          size: true,
-          colour: true,
+          form: true,
+          packSize: true,
           lowStockThreshold: true,
           product: {
             select: {
@@ -122,13 +122,13 @@ export async function GET(request: NextRequest) {
         include,
       });
 
-      const header = 'Date,Product,SKU,Size,Colour,Reason,Reason Label,Change,Before,After,Actor,Note';
+      const header = 'Date,Product,SKU,Form,Pack Size,Reason,Reason Label,Change,Before,After,Actor,Note';
       const rows = movements.map((m) => {
         const date = m.createdAt.toISOString();
         const product = escapeCSV(m.variant.product.name);
         const sku = escapeCSV(m.variant.sku);
-        const size = escapeCSV(m.variant.size ?? '');
-        const colour = escapeCSV(m.variant.colour ?? '');
+        const form = escapeCSV(m.variant.form ?? '');
+        const packSize = escapeCSV(m.variant.packSize ?? '');
         const reason = m.reason;
         const reasonLabel = escapeCSV(REASON_LABELS[m.reason] ?? m.reason);
         const change = m.quantityDelta > 0 ? `+${m.quantityDelta}` : String(m.quantityDelta);
@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
         const after = String(m.quantityAfter);
         const actor = escapeCSV(m.actor.email);
         const note = escapeCSV(m.note ?? '');
-        return `${date},${product},${sku},${size},${colour},${reason},${reasonLabel},${change},${before},${after},${actor},${note}`;
+        return `${date},${product},${sku},${form},${packSize},${reason},${reasonLabel},${change},${before},${after},${actor},${note}`;
       });
 
       const csv = [header, ...rows].join('\n');

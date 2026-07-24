@@ -18,8 +18,8 @@ export interface LabelVariant {
   id: string;
   sku: string;
   barcode: string | null;
-  size: string | null;
-  colour: string | null;
+  form: string | null;
+  packSize: string | null;
   retailPrice: number | string;
   stockQuantity: number;
   lowStockThreshold: number;
@@ -200,8 +200,8 @@ export function BarcodeLabelDialog({
                   productName={firstVariant.productName}
                   sku={firstVariant.sku}
                   barcode={firstVariant.barcode}
-                  size={firstVariant.size}
-                  colour={firstVariant.colour}
+                  form={firstVariant.form}
+                  packSize={firstVariant.packSize}
                   retailPrice={toNum(firstVariant.retailPrice)}
                   stockQuantity={firstVariant.stockQuantity}
                   lowStockThreshold={firstVariant.lowStockThreshold}
@@ -264,9 +264,9 @@ export function BarcodeLabelDialog({
                         <div className="font-mono text-xs text-espresso truncate">
                           {v.sku}
                         </div>
-                        {(v.size || v.colour) && (
+                        {(v.form || v.packSize) && (
                           <div className="font-body text-xs text-mist truncate">
-                            {[v.size, v.colour].filter(Boolean).join(' · ')}
+                            {[v.form, v.packSize].filter(Boolean).join(' · ')}
                           </div>
                         )}
                       </div>
@@ -351,8 +351,8 @@ export function BarcodeLabelDialog({
                   productName={v.productName}
                   sku={v.sku}
                   barcode={v.barcode}
-                  size={v.size}
-                  colour={v.colour}
+                  form={v.form}
+                  packSize={v.packSize}
                   retailPrice={toNum(v.retailPrice)}
                   stockQuantity={v.stockQuantity}
                   lowStockThreshold={v.lowStockThreshold}

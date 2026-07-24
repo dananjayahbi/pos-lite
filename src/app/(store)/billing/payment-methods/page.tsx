@@ -4,7 +4,7 @@ import { getSubscriptionForTenant } from '@/lib/billing/subscription.service';
 import PaymentMethodManagementCard from '@/components/billing/PaymentMethodManagementCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-export const metadata = { title: 'Payment Methods | VelvetPOS' };
+export const metadata = { title: 'Payment Methods | AyurPOS' };
 
 export default async function BillingPaymentMethodsPage() {
   const session = await auth();
@@ -43,7 +43,7 @@ export default async function BillingPaymentMethodsPage() {
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-sand">
           <p>• Card details stay inside PayHere’s hosted checkout flow.</p>
-          <p>• VelvetPOS can show whether a recurring billing token exists, but not raw card numbers or brand details.</p>
+          <p>• AyurPOS can show whether a recurring billing token exists, but not raw card numbers or brand details.</p>
           <p>• To replace a billing card, run a fresh hosted checkout from this page or the main billing dashboard.</p>
         </CardContent>
       </Card>

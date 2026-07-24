@@ -1,4 +1,4 @@
-# VelvetPOS — Test Credentials
+# AyurPOS — Test Credentials
 
 > All credentials below are seeded by `pnpm prisma db seed`.
 
@@ -8,7 +8,7 @@
 chat.
 | Field    | Value                       |
 | -------- | --------------------------- |
-| Email    | `superadmin@velvetpos.dev`  |
+| Email    | `superadmin@ayurpos.dev`  |
 | Password | `changeme123!`              |
 | PIN      | `9999`                      |
 | Role     | `SUPER_ADMIN`               |
@@ -16,7 +16,7 @@ chat.
 
 ---
 
-## Business 1 — Dilani Boutique
+## Business 1 — Ayur Wellness Centre
 
 ### Owner
 
@@ -26,14 +26,14 @@ chat.
 | Password | `owner123!`                 |
 | PIN      | `1111`                      |
 | Role     | `OWNER`                     |
-| Business | Dilani Boutique             |
+| Business | Ayur Wellness Centre             |
 | Lands on | `/dashboard`                |
 
 ### Cashiers
 
 | Field    | cashier1                    | cashier2                    |
 | -------- | --------------------------- | --------------------------- |
-| Email    | `cashier1@velvetpos.dev`    | `cashier2@velvetpos.dev`    |
+| Email    | `cashier1@ayurpos.dev`    | `cashier2@ayurpos.dev`    |
 | Password | `cashier123!`               | `cashier123!`               |
 | PIN      | `3333`                      | `4444`                      |
 | Role     | `CASHIER`                   | `CASHIER`                   |
@@ -68,7 +68,7 @@ chat.
 
 ## Notes
 
-- The system is configured for exactly **2 businesses** (Dilani Boutique and Lanka Electronics).
+- The system is configured for exactly **2 businesses** (Ayur Wellness Centre and Lanka Electronics).
 - Only the **Super Admin** can manage business settings (name, currency, tax rates, etc.) from the superadmin dashboard.
 - Business creation is disabled — the system is limited to 2 businesses.
 - PIN-based login (for POS access) uses the hashed PIN stored on the user record.

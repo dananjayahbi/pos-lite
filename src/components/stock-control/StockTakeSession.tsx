@@ -430,7 +430,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
           </TableHeader>
           <TableBody>
             {paginatedItems.map((item) => {
-              const variantInfo = [item.variant.size, item.variant.colour]
+              const variantInfo = [item.variant.form, item.variant.packSize]
                 .filter(Boolean)
                 .join(' / ');
               const isHighlighted = highlightedItemId === item.id;

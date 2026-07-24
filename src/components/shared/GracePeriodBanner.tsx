@@ -12,7 +12,7 @@ export default function GracePeriodBanner({
   if (!visible) return null;
 
   const supportEmail =
-    process.env.SUPPORT_EMAIL ?? 'support@velvetpos.com';
+    process.env.SUPPORT_EMAIL ?? 'support@ayurpos.com';
 
   let dateText = 'soon';
   if (graceEndsAt) {

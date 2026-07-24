@@ -5,14 +5,7 @@ import { X } from 'lucide-react';
 import { useCategories } from '@/hooks/useCategories';
 import { useBrands } from '@/hooks/useBrands';
 import { mergeSearchParams } from '@/lib/urlUtils';
-
-const GENDER_LABELS: Record<string, string> = {
-  MEN: 'Men',
-  WOMEN: 'Women',
-  UNISEX: 'Unisex',
-  KIDS: 'Kids',
-  TODDLERS: 'Toddlers',
-};
+import { PRODUCT_FORM_LABELS } from '@/lib/constants/product-options';
 
 const STATUS_LABELS: Record<string, string> = {
   active: 'Active',
@@ -30,7 +23,7 @@ export function ActiveFilterChips() {
 
   const activeCategories = searchParams.get('categories')?.split(',').filter(Boolean) ?? [];
   const activeBrands = searchParams.get('brands')?.split(',').filter(Boolean) ?? [];
-  const activeGenders = searchParams.get('genders')?.split(',').filter(Boolean) ?? [];
+  const activeForms = searchParams.get('forms')?.split(',').filter(Boolean) ?? [];
   const activeStatus = searchParams.get('status') ?? '';
 
   const categories = catData?.data ?? [];
@@ -39,7 +32,7 @@ export function ActiveFilterChips() {
   const hasFilters =
     activeCategories.length > 0 ||
     activeBrands.length > 0 ||
-    activeGenders.length > 0 ||
+    activeForms.length > 0 ||
     !!activeStatus;
 
   if (!hasFilters) return null;
@@ -66,7 +59,7 @@ export function ActiveFilterChips() {
     const merged = mergeSearchParams(searchParams, {
       categories: null,
       brands: null,
-      genders: null,
+      forms: null,
       status: null,
       page: '1',
     });
@@ -99,12 +92,12 @@ export function ActiveFilterChips() {
         );
       })}
 
-      {activeGenders.map((g) => (
+      {activeForms.map((f) => (
         <Chip
-          key={`gender-${g}`}
-          label={GENDER_LABELS[g] ?? g}
-          group="Gender"
-          onRemove={() => removeFilter('genders', g)}
+          key={`form-${f}`}
+          label={(PRODUCT_FORM_LABELS as Record<string, string>)[f] ?? f}
+          group="Form"
+          onRemove={() => removeFilter('forms', f)}
         />
       ))}
 

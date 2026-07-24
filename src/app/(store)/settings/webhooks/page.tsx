@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import WebhooksPageClient from '@/components/settings/WebhooksPageClient';
 
-export const metadata = { title: 'Webhooks | VelvetPOS' };
+export const metadata = { title: 'Webhooks | AyurPOS' };
 
 const DENIED_ROLES = new Set(['CASHIER', 'STOCK_CLERK']);
 

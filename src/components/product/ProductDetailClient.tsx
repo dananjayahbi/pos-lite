@@ -70,7 +70,6 @@ const editProductSchema = z.object({
   description: z.string().max(1000, 'Description must be at most 1000 characters'),
   categoryId: z.string().min(1, 'Category is required'),
   brandId: z.string(),
-  gender: z.enum(['MEN', 'WOMEN', 'UNISEX', 'KIDS', 'TODDLERS']),
   tags: z.array(z.string()).max(20, 'Maximum 20 tags'),
   taxRule: z.enum(['STANDARD_VAT', 'SSCL', 'EXEMPT']),
 });
@@ -86,16 +85,6 @@ const TABS = [
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
-
-// ── Gender display ───────────────────────────────────────────────────────────
-
-const GENDER_LABELS: Record<string, string> = {
-  MEN: 'Men',
-  WOMEN: 'Women',
-  UNISEX: 'Unisex',
-  KIDS: 'Kids',
-  TODDLERS: 'Toddlers',
-};
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -222,11 +211,6 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
             {product.brand && (
               <span className="inline-flex items-center rounded-full bg-mist/20 px-2.5 py-0.5 text-xs font-medium text-espresso">
                 {product.brand.name}
-              </span>
-            )}
-            {product.gender && (
-              <span className="inline-flex items-center rounded-full bg-linen px-2.5 py-0.5 text-xs font-medium text-espresso">
-                {GENDER_LABELS[product.gender] ?? product.gender}
               </span>
             )}
             <ProductStatusBadge
@@ -394,7 +378,6 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
       description: (product.description as string) ?? '',
       categoryId: (product.categoryId as string) ?? '',
       brandId: (product.brandId as string) ?? '',
-      gender: (product.gender as EditProductFormData['gender']) ?? 'UNISEX',
       tags: (product.tags as string[]) ?? [],
       taxRule: (product.taxRule as EditProductFormData['taxRule']) ?? 'STANDARD_VAT',
     },
@@ -510,28 +493,6 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
                     {b.name}
                   </SelectItem>
                 ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Gender */}
-          <div className="space-y-1.5">
-            <Label className="font-body text-sm text-espresso">Gender</Label>
-            <Select
-              value={form.watch('gender')}
-              onValueChange={(v) =>
-                form.setValue('gender', v as EditProductFormData['gender'], { shouldValidate: true })
-              }
-            >
-              <SelectTrigger className="border-sand">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="MEN">Men</SelectItem>
-                <SelectItem value="WOMEN">Women</SelectItem>
-                <SelectItem value="UNISEX">Unisex</SelectItem>
-                <SelectItem value="KIDS">Kids</SelectItem>
-                <SelectItem value="TODDLERS">Toddlers</SelectItem>
               </SelectContent>
             </Select>
           </div>

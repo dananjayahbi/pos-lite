@@ -23,8 +23,8 @@ interface MovementItem {
   note: string | null;
   variant: {
     sku: string;
-    size: string | null;
-    colour: string | null;
+    form: string | null;
+    packSize: string | null;
     lowStockThreshold: number;
     product: { id: string; name: string; category: { name: string } };
   };

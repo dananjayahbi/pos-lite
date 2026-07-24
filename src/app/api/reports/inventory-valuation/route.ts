@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
     const allRows: VariantRow[] = variants.map((v) => {
       const cost = new Decimal(v.costPrice.toString());
       const value = cost.times(v.stockQuantity);
-      const parts = [v.size, v.colour].filter(Boolean);
+      const parts = [v.form, v.packSize].filter(Boolean);
       const lastSale = lastSaleMap.get(v.id) ?? null;
 
       return {

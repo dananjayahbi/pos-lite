@@ -16,7 +16,7 @@ interface ShiftOpenModalProps {
 export function ShiftOpenModal({
   cashierName,
   showOwnerDashboardShortcut = false,
-  businessName = 'VelvetPOS',
+  businessName = 'AyurPOS',
   businessLogoUrl,
   onOpened,
 }: ShiftOpenModalProps) {

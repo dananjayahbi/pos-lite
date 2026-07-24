@@ -148,7 +148,7 @@ function LoginPageContent() {
       <Card className="mx-auto w-full max-w-[400px] border-mist bg-linen p-6 shadow-lg md:p-8">
         <div className="mb-6 flex flex-col items-center">
           <AuthLogo />
-          <h1 className="font-display text-3xl text-espresso">VelvetPOS</h1>
+          <h1 className="font-display text-3xl text-espresso">AyurPOS</h1>
           <p className="mt-1 text-sm text-terracotta">Sign in to your account</p>
         </div>
 

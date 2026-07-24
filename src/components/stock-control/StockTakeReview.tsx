@@ -531,7 +531,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
                   </TableRow>
                 ) : (
                   displayItems.map((item) => {
-                    const variantParts = [item.variant.size, item.variant.colour]
+                    const variantParts = [item.variant.form, item.variant.packSize]
                       .filter(Boolean)
                       .join(' / ');
                     return (

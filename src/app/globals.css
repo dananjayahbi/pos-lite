@@ -37,7 +37,7 @@
   --font-body-var: '';
   --font-mono-var: '';
 
-  /* ── ShadCN/UI CSS Variables — mapped to VelvetPOS tokens ── */
+  /* ── ShadCN/UI CSS Variables — mapped to AyurPOS tokens ── */
   --background: #F1EDE6;
   --foreground: #1A1210;
   --primary: #3A2D28;
@@ -57,7 +57,7 @@
   --popover: #F1EDE6;
   --popover-foreground: #1A1210;
 
-  /* ── Sidebar (mapped to VelvetPOS tones) ────────────────────── */
+  /* ── Sidebar (mapped to AyurPOS tones) ────────────────────── */
   --sidebar: #EBE3DB;
   --sidebar-foreground: #1A1210;
   --sidebar-primary: #3A2D28;
@@ -67,7 +67,7 @@
   --sidebar-border: #D1C7BD;
   --sidebar-ring: #CBAD8D;
 
-  /* ── Charts (VelvetPOS brand palette) ───────────────────────── */
+  /* ── Charts (AyurPOS brand palette) ───────────────────────── */
   --chart-1: #3A2D28;
   --chart-2: #A48374;
   --chart-3: #CBAD8D;

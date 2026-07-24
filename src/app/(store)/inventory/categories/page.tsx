@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { CategoriesPageClient } from '@/components/categories/CategoriesPageClient';
 
-export const metadata = { title: 'Categories | VelvetPOS' };
+export const metadata = { title: 'Categories | AyurPOS' };
 
 export default async function CategoriesPage() {
   const session = await auth();

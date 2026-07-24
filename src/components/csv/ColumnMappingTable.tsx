@@ -25,11 +25,10 @@ const EXPECTED_FIELDS = [
   { key: 'barcode', label: 'Barcode', required: false },
   { key: 'brand', label: 'Brand', required: false },
   { key: 'description', label: 'Description', required: false },
-  { key: 'gender', label: 'Gender', required: false },
   { key: 'tags', label: 'Tags', required: false },
   { key: 'costPrice', label: 'Cost Price', required: false },
-  { key: 'size', label: 'Size', required: false },
-  { key: 'colour', label: 'Colour', required: false },
+  { key: 'form', label: 'Form', required: false },
+  { key: 'packSize', label: 'Pack Size', required: false },
   { key: 'lowStockThreshold', label: 'Low Stock Threshold', required: false },
   { key: 'wholesalePrice', label: 'Wholesale Price', required: false },
 ] as const;
@@ -102,7 +101,7 @@ export function ColumnMappingTable({
           <thead>
             <tr className="border-b border-sand bg-linen">
               <th className="px-4 py-2 text-left font-body font-semibold text-espresso">
-                VelvetPOS Field
+                AyurPOS Field
               </th>
               <th className="px-4 py-2 text-left font-body font-semibold text-espresso">
                 CSV Column

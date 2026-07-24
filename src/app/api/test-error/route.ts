@@ -6,6 +6,6 @@ export function GET() {
   }
 
   throw new Error(
-    `VelvetPOS Sentry test error — triggered deliberately from /api/test-error at ${new Date().toISOString()}`
+    `AyurPOS Sentry test error — triggered deliberately from /api/test-error at ${new Date().toISOString()}`
   );
 }

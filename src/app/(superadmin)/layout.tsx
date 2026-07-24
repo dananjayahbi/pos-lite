@@ -26,7 +26,7 @@ export default async function SuperAdminLayout({
         <div>
           <div className="px-6 py-6">
             <p className="font-display text-xl font-bold text-pearl">
-              VelvetPOS
+              AyurPOS
             </p>
           </div>
           <div className="mx-6 border-b border-mist/30" />
@@ -48,7 +48,7 @@ export default async function SuperAdminLayout({
       <main className="flex-1 overflow-y-auto bg-pearl p-6">
         {/* Mobile warning */}
         <div className="mb-4 rounded-md border border-yellow-600 bg-yellow-600/10 p-3 text-sm text-yellow-700 md:hidden">
-          The VelvetPOS Super Admin portal is designed for desktop use. Please
+          The AyurPOS Super Admin portal is designed for desktop use. Please
           switch to a desktop or laptop computer.
         </div>
 

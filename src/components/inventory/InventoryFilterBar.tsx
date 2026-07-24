@@ -11,14 +11,17 @@ import { useCategories } from '@/hooks/useCategories';
 import { useBrands } from '@/hooks/useBrands';
 import { mergeSearchParams } from '@/lib/urlUtils';
 
-// ── Gender & Status constants ────────────────────────────────────────────────
+// ── Form & Status constants ────────────────────────────────────────────────
 
-const GENDERS = [
-  { value: 'MEN', label: 'Men' },
-  { value: 'WOMEN', label: 'Women' },
-  { value: 'UNISEX', label: 'Unisex' },
-  { value: 'KIDS', label: 'Kids' },
-  { value: 'TODDLERS', label: 'Toddlers' },
+const FORMS = [
+  { value: 'POWDER', label: 'Powder' },
+  { value: 'CAPSULE', label: 'Capsule' },
+  { value: 'TABLET', label: 'Tablet' },
+  { value: 'OIL', label: 'Oil' },
+  { value: 'SYRUP', label: 'Syrup' },
+  { value: 'TEA', label: 'Tea' },
+  { value: 'BALM', label: 'Balm' },
+  { value: 'CREAM', label: 'Cream' },
 ] as const;
 
 const STATUSES = [
@@ -71,14 +74,14 @@ export function InventoryFilterBar({ totalCount }: InventoryFilterBarProps) {
   // Active filter values
   const activeCategories = searchParams.get('categories')?.split(',').filter(Boolean) ?? [];
   const activeBrands = searchParams.get('brands')?.split(',').filter(Boolean) ?? [];
-  const activeGenders = searchParams.get('genders')?.split(',').filter(Boolean) ?? [];
+  const activeForms = searchParams.get('forms')?.split(',').filter(Boolean) ?? [];
   const activeStatus = searchParams.get('status') ?? '';
 
   // Filter count
   const filterCount =
     activeCategories.length +
     activeBrands.length +
-    activeGenders.length +
+    activeForms.length +
     (activeStatus ? 1 : 0);
 
   // Bi-modal font for search
@@ -135,19 +138,19 @@ export function InventoryFilterBar({ totalCount }: InventoryFilterBarProps) {
 
           <div className="mx-1 h-6 w-px bg-sand/50" />
 
-          {/* Gender chips */}
-          {GENDERS.map((g) => {
-            const isActive = activeGenders.includes(g.value);
+          {/* Form chips */}
+          {FORMS.map((f) => {
+            const isActive = activeForms.includes(f.value);
             return (
               <button
-                key={g.value}
+                key={f.value}
                 type="button"
                 onClick={() => {
                   const next = isActive
-                    ? activeGenders.filter((v) => v !== g.value)
-                    : [...activeGenders, g.value];
+                    ? activeForms.filter((v) => v !== f.value)
+                    : [...activeForms, f.value];
                   const merged = mergeSearchParams(searchParams, {
-                    genders: next.length > 0 ? next.join(',') : null,
+                    forms: next.length > 0 ? next.join(',') : null,
                     page: '1',
                   });
                   router.push(`/inventory?${merged}`);
@@ -158,7 +161,7 @@ export function InventoryFilterBar({ totalCount }: InventoryFilterBarProps) {
                     : 'border border-sand text-espresso hover:bg-sand/10'
                 }`}
               >
-                {g.label}
+                {f.label}
               </button>
             );
           })}

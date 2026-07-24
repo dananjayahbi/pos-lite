@@ -85,7 +85,7 @@ export function useOfflineSync(): OfflineSyncState {
           setHasPendingSale(false);
           setIsSyncing(false);
           window.dispatchEvent(
-            new CustomEvent('velvetpos:offlineSaleSynced', { detail: json.data }),
+            new CustomEvent('ayurpos:offlineSaleSynced', { detail: json.data }),
           );
           toast.success('Offline sale synced successfully');
         } else if (res.status === 410) {

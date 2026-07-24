@@ -21,7 +21,7 @@ export function composeDailySummaryEmail(data: DailySummaryData): string {
     tenantSlug,
   } = data;
 
-  const reportsUrl = `https://${tenantSlug}.velvetpos.com/reports`;
+  const reportsUrl = `https://${tenantSlug}.ayurpos.com/reports`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -38,7 +38,7 @@ export function composeDailySummaryEmail(data: DailySummaryData): string {
           <!-- Header -->
           <tr>
             <td style="background-color:#3A2D28;padding:24px 32px;">
-              <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">VelvetPOS</h1>
+              <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">AyurPOS</h1>
               <p style="margin:4px 0 0;color:#CBAD8D;font-size:14px;">${tenantName}</p>
             </td>
           </tr>
@@ -98,7 +98,7 @@ export function composeDailySummaryEmail(data: DailySummaryData): string {
           <!-- Footer -->
           <tr>
             <td style="background-color:#EBE3DB;padding:20px 32px;">
-              <p style="margin:0;color:#6b6b6b;font-size:12px;text-align:center;">This is an automated summary from VelvetPOS. You receive this because you are an owner of ${tenantName}.</p>
+              <p style="margin:0;color:#6b6b6b;font-size:12px;text-align:center;">This is an automated summary from AyurPOS. You receive this because you are an owner of ${tenantName}.</p>
             </td>
           </tr>
         </table>

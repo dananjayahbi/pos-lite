@@ -25,8 +25,8 @@ export interface POLine {
   actualCostPrice?: string | number | null;
   variant: {
     sku: string;
-    size?: string | null;
-    colour?: string | null;
+    form?: string | null;
+    packSize?: string | null;
     costPrice: string | number;
     stockQuantity: number;
     imageUrls: string[];

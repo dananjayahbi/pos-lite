@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { StockTakeList } from '@/components/stock-control/StockTakeList';
 
 export const metadata = {
-  title: 'Stock Takes | VelvetPOS',
+  title: 'Stock Takes | AyurPOS',
 };
 
 export default async function StockTakesPage() {

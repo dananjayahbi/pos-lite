@@ -78,7 +78,7 @@ export function InlineCategoryForm({ categories, onClose }: InlineCategoryFormPr
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Dresses"
+            placeholder="e.g. Hair Care"
             className="h-9 bg-pearl"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && isValid) createMutation.mutate();

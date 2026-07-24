@@ -81,8 +81,8 @@ export async function GET(request: NextRequest) {
       select: {
         id: true,
         sku: true,
-        size: true,
-        colour: true,
+        form: true,
+        packSize: true,
         product: { select: { name: true } },
       },
     });
@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
       grandUnits += units;
 
       const variant = variantMap.get(g.variantId);
-      const variantDesc = [variant?.size, variant?.colour]
+      const variantDesc = [variant?.form, variant?.packSize]
         .filter(Boolean)
         .join(" / ");
 

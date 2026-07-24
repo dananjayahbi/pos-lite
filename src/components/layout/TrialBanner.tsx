@@ -48,7 +48,7 @@ export default function TrialBanner({
   if (daysRemaining === 0) {
     bgClass = 'bg-espresso';
     textClass = 'text-pearl';
-    message = 'Your trial has ended. Subscribe now to continue using VelvetPOS.';
+    message = 'Your trial has ended. Subscribe now to continue using AyurPOS.';
   } else if (daysRemaining <= 7) {
     bgClass = 'bg-terracotta';
     textClass = 'text-white';

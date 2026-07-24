@@ -5,7 +5,7 @@ import { saveCartSnapshot, loadCartSnapshot, clearCartSnapshot } from '@/lib/idb
 import { useCartStore } from '@/stores/cartStore';
 import type { CartItem } from '@/stores/cartStore';
 
-const CART_STORE_KEY = 'velvetpos_cart_default';
+const CART_STORE_KEY = 'ayurpos_cart_default';
 
 interface PersistedCartState {
   items: CartItem[];

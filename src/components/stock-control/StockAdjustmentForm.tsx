@@ -45,8 +45,8 @@ interface VariantData {
   id: string;
   sku: string | null;
   barcode: string | null;
-  size: string | null;
-  colour: string | null;
+  form: string | null;
+  packSize: string | null;
   stockQuantity: number;
   lowStockThreshold: number;
   costPrice: string;
@@ -455,7 +455,7 @@ function AdjustmentFormInner() {
                       <SelectItem key={v.id} value={v.id}>
                         <span className="font-mono text-xs">{v.sku ?? '—'}</span>
                         <span className="ml-1">
-                          — {v.size ?? '—'} / {v.colour ?? '—'}
+                          — {v.form ?? '—'} / {v.packSize ?? '—'}
                         </span>
                         <span className="ml-1 text-mist">
                           (Stock: {v.stockQuantity})

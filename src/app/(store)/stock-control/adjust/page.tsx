@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { StockAdjustmentForm } from '@/components/stock-control/StockAdjustmentForm';
 
 export const metadata = {
-  title: 'Stock Adjustment | VelvetPOS',
+  title: 'Stock Adjustment | AyurPOS',
 };
 
 export default async function StockAdjustmentPage() {

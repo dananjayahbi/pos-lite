@@ -9,7 +9,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
-import type { GenderType, TaxRule } from '@/generated/prisma/client';
+import type { TaxRule } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -32,8 +32,6 @@ export interface ProductFilters {
   categoryIds?: string[] | undefined;
   brandId?: string | undefined;
   brandIds?: string[] | undefined;
-  gender?: GenderType | undefined;
-  genders?: GenderType[] | undefined;
   isArchived?: boolean | undefined;
   page?: number | undefined;
   limit?: number | undefined;
@@ -44,7 +42,6 @@ export interface CreateProductInput {
   description?: string | undefined;
   categoryId: string;
   brandId?: string | undefined;
-  gender: GenderType;
   tags?: string[] | undefined;
   taxRule?: TaxRule | undefined;
 }
@@ -54,7 +51,6 @@ export interface UpdateProductInput {
   description?: string | undefined;
   categoryId?: string | undefined;
   brandId?: string | null | undefined;
-  gender?: GenderType | undefined;
   tags?: string[] | undefined;
   taxRule?: TaxRule | undefined;
   isArchived?: boolean | undefined;
@@ -63,8 +59,8 @@ export interface UpdateProductInput {
 export interface CreateVariantInput {
   sku?: string | undefined;
   barcode?: string | undefined;
-  size?: string | undefined;
-  colour?: string | undefined;
+  form?: string | undefined;
+  packSize?: string | undefined;
   costPrice: number;
   retailPrice: number;
   wholesalePrice?: number | undefined;
@@ -77,8 +73,8 @@ export interface CreateVariantInput {
 export interface UpdateVariantInput {
   sku?: string | undefined;
   barcode?: string | null | undefined;
-  size?: string | null | undefined;
-  colour?: string | null | undefined;
+  form?: string | null | undefined;
+  packSize?: string | null | undefined;
   costPrice?: number | undefined;
   retailPrice?: number | undefined;
   wholesalePrice?: number | null | undefined;
@@ -115,18 +111,18 @@ export interface UpdateBrandInput {
 
 // ── SKU Generation (private) ─────────────────────────────────────────────────
 
-function generateSku(brandName: string | null, colour: string | undefined | null, size: string | undefined | null): string {
+function generateSku(brandName: string | null, form: string | undefined | null, packSize: string | undefined | null): string {
   const brandCode = brandName ? brandName.replace(/\s/g, '').slice(0, 4).toUpperCase() : 'GEN';
-  const colourCode = colour ? colour.replace(/\s/g, '').slice(0, 3).toUpperCase() : 'UNI';
-  const sizeCode = size ? size.replace(/\s/g, '').slice(0, 4).toUpperCase() : 'OS';
+  const formCode = form ? form.replace(/\s/g, '').slice(0, 3).toUpperCase() : 'UNI';
+  const packCode = packSize ? packSize.replace(/\s/g, '').slice(0, 4).toUpperCase() : 'OS';
   const random = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `${brandCode}-${colourCode}-${sizeCode}-${random}`;
+  return `${brandCode}-${formCode}-${packCode}-${random}`;
 }
 
 // ── Product Functions ────────────────────────────────────────────────────────
 
 export async function getAllProducts(tenantId: string, filters: ProductFilters = {}) {
-  const { search, categoryId, categoryIds, brandId, brandIds, gender, genders, isArchived, page = 1, limit = 20 } = filters;
+  const { search, categoryId, categoryIds, brandId, brandIds, isArchived, page = 1, limit = 20 } = filters;
 
   const where: Prisma.ProductWhereInput = {
     tenantId,
@@ -153,12 +149,6 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
     where.brandId = brandId;
   }
 
-  if (genders && genders.length > 0) {
-    where.gender = { in: genders };
-  } else if (gender) {
-    where.gender = gender;
-  }
-
   if (isArchived !== undefined) {
     where.isArchived = isArchived;
   }
@@ -175,8 +165,8 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
             id: true,
             sku: true,
             barcode: true,
-            size: true,
-            colour: true,
+            form: true,
+            packSize: true,
             stockQuantity: true,
             lowStockThreshold: true,
             imageUrls: true,
@@ -225,7 +215,6 @@ export async function createProduct(tenantId: string, actorId: string, data: Cre
       description: data.description ?? null,
       categoryId: data.categoryId,
       brandId: data.brandId ?? null,
-      gender: data.gender,
       tags: data.tags ?? [],
       taxRule: data.taxRule ?? 'STANDARD_VAT',
     },
@@ -267,7 +256,7 @@ export async function createProductVariants(
   // Resolve SKUs
   const resolvedVariants = variants.map((v) => ({
     ...v,
-    sku: v.sku || generateSku(brandName, v.colour, v.size),
+    sku: v.sku || generateSku(brandName, v.form, v.packSize),
   }));
 
   // Check for duplicate SKUs within the batch
@@ -301,8 +290,8 @@ export async function createProductVariants(
         tenantId,
         sku: v.sku,
         barcode: v.barcode ?? null,
-        size: v.size ?? null,
-        colour: v.colour ?? null,
+        form: v.form ?? null,
+        packSize: v.packSize ?? null,
         costPrice: v.costPrice,
         retailPrice: v.retailPrice,
         wholesalePrice: v.wholesalePrice ?? null,
@@ -494,7 +483,7 @@ export async function getVariantById(tenantId: string, variantId: string) {
   const variant = await prisma.productVariant.findUnique({
     where: { id: variantId, deletedAt: null },
     include: {
-      product: { select: { id: true, name: true, categoryId: true, gender: true, taxRule: true } },
+      product: { select: { id: true, name: true, categoryId: true, taxRule: true } },
     },
   });
 
@@ -514,7 +503,7 @@ export async function getVariantByBarcode(tenantId: string, barcode: string) {
     },
     include: {
       product: {
-        select: { id: true, name: true, gender: true, taxRule: true, categoryId: true },
+        select: { id: true, name: true, taxRule: true, categoryId: true },
       },
     },
   });

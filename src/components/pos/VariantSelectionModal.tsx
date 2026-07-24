@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
-import { X, Minus, Plus } from 'lucide-react';
+import { X, Minus, Plus, type LucideIcon } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -12,8 +12,8 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { formatRupee } from '@/lib/format';
-import { resolveDisplayColor } from '@/lib/colorUtils';
 import { useCartStore } from '@/stores/cartStore';
+import { PRODUCT_FORM_LABELS, PRODUCT_FORM_ICONS } from '@/lib/constants/product-options';
 import type { ProductListItem } from '@/hooks/useProducts';
 
 interface VariantSelectionModalProps {
@@ -48,25 +48,25 @@ export function VariantSelectionModal({
     cachedEntries.flatMap(([, data]) => data?.data ?? []).find((p) => p.id === productId) ?? null;
   const variants = product?.variants ?? [];
 
-  const sizes = useMemo(
-    () => [...new Set(variants.map((v) => v.size).filter(Boolean))] as string[],
+  const packSizes = useMemo(
+    () => [...new Set(variants.map((v) => v.packSize).filter(Boolean))] as string[],
     [variants],
   );
-  const colours = useMemo(
-    () => [...new Set(variants.map((v) => v.colour).filter(Boolean))] as string[],
+  const forms = useMemo(
+    () => [...new Set(variants.map((v) => v.form).filter(Boolean))] as string[],
     [variants],
   );
 
-  const isMatrixMode = sizes.length >= 2 && colours.length >= 2;
-  const colourAsCols = colours.length <= sizes.length;
-  const rowAxis = isMatrixMode ? (colourAsCols ? 'size' : 'colour') : null;
-  const rowValues = isMatrixMode ? (colourAsCols ? sizes : colours) : null;
-  const colValues = isMatrixMode ? (colourAsCols ? colours : sizes) : null;
+  const isMatrixMode = packSizes.length >= 2 && forms.length >= 2;
+  const formAsCols = forms.length <= packSizes.length;
+  const rowAxis = isMatrixMode ? (formAsCols ? 'packSize' : 'form') : null;
+  const rowValues = isMatrixMode ? (formAsCols ? packSizes : forms) : null;
+  const colValues = isMatrixMode ? (formAsCols ? forms : packSizes) : null;
 
   const findVariant = (rowValue: string, colValue: string): VariantItem | undefined =>
     variants.find((v) => {
-      if (rowAxis === 'size') return v.size === rowValue && v.colour === colValue;
-      return v.colour === rowValue && v.size === colValue;
+      if (rowAxis === 'packSize') return v.packSize === rowValue && v.form === colValue;
+      return v.form === rowValue && v.packSize === colValue;
     });
 
   const selectedVariant = variants.find((v) => v.id === selectedVariantId);
@@ -75,7 +75,7 @@ export function VariantSelectionModal({
   const thumbnail = displayVariant?.imageUrls?.[0];
 
   const variantDescriptor = selectedVariant
-    ? [selectedVariant.size, selectedVariant.colour].filter(Boolean).join(' / ')
+    ? [selectedVariant.form, selectedVariant.packSize].filter(Boolean).join(' / ')
     : '';
 
   return (
@@ -143,7 +143,7 @@ export function VariantSelectionModal({
             {/* Variant selection */}
             <div className="mt-1">
               {isMatrixMode && rowValues && colValues ? (
-                /* Matrix grid: row axis (sizes) × column axis (colours) */
+                /* Matrix grid: row axis (pack sizes) × column axis (forms) */
                 <div
                   className="grid gap-1.5"
                   style={{ gridTemplateColumns: `auto repeat(${colValues.length}, 1fr)` }}
@@ -187,7 +187,13 @@ export function VariantSelectionModal({
                 /* Single-axis: flat chip list */
                 <div className="flex flex-wrap gap-2">
                   {variants.map((variant) => {
-                    const parts = [variant.size, variant.colour].filter(Boolean);
+                    const FormIcon = variant.form
+                      ? (PRODUCT_FORM_ICONS as Record<string, LucideIcon>)[variant.form]
+                      : null;
+                    const formLabel = variant.form
+                      ? (PRODUCT_FORM_LABELS as Record<string, string>)[variant.form] ?? variant.form
+                      : null;
+                    const parts = [formLabel, variant.packSize].filter(Boolean);
                     const label = parts.length > 0 ? parts.join(' / ') : variant.sku;
                     const inStock = variant.stockQuantity > 0;
                     const lowStock = variant.stockQuantity > 0 && variant.stockQuantity <= 10;
@@ -209,11 +215,8 @@ export function VariantSelectionModal({
                               : 'bg-linen/50 text-espresso/40 cursor-not-allowed line-through border border-mist/50'
                         }`}
                       >
-                        {resolveDisplayColor(variant.colour) && (
-                          <span
-                            className="inline-block h-4 w-4 rounded-full border border-black/10 shadow-sm shrink-0"
-                            style={{ backgroundColor: resolveDisplayColor(variant.colour) ?? undefined }}
-                          />
+                        {FormIcon && (
+                          <FormIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
                         )}
                         {label}
                         {lowStock && !isSelected && (
@@ -242,18 +245,18 @@ export function VariantSelectionModal({
               disabled={!selectedVariant}
               onClick={() => {
                 if (!selectedVariant) return;
+                const desc =
+                  [selectedVariant.form, selectedVariant.packSize].filter(Boolean).join(' / ') ||
+                  'Default';
                 addItem({
                   variantId: selectedVariant.id,
                   productName: product.name,
-                  variantDescription:
-                    [selectedVariant.size, selectedVariant.colour].filter(Boolean).join(' / ') || 'Default',
+                  variantDescription: desc,
                   sku: selectedVariant.sku,
                   unitPrice: Number(selectedVariant.retailPrice),
                   quantity,
                 });
-                toast.success(
-                  `Added ${quantity}× ${product.name} ${[selectedVariant.size, selectedVariant.colour].filter(Boolean).join(' / ')} to cart`,
-                );
+                toast.success(`Added ${quantity}× ${product.name} ${desc} to cart`);
                 onClose();
               }}
               className="w-full bg-espresso text-pearl font-body py-2.5 rounded-lg hover:bg-espresso/90 disabled:opacity-50"
@@ -289,6 +292,9 @@ function VariantCell({
 
   const inStock = variant.stockQuantity > 0;
   const lowStock = variant.stockQuantity > 0 && variant.stockQuantity <= 10;
+  const FormIcon = variant.form
+    ? (PRODUCT_FORM_ICONS as Record<string, LucideIcon>)[variant.form]
+    : null;
 
   return (
     <button
@@ -305,11 +311,11 @@ function VariantCell({
             : 'bg-linen/30 text-espresso/30 border border-dashed border-mist/40 cursor-not-allowed'
       }`}
     >
-      {/* Color dot – top-right corner */}
-      {resolveDisplayColor(variant.colour) && (
-        <span
-          className="absolute top-1 right-1 h-4 w-4 rounded-full border border-black/10 shadow-sm pointer-events-none"
-          style={{ backgroundColor: resolveDisplayColor(variant.colour) ?? undefined }}
+      {/* Form icon – top-right corner */}
+      {FormIcon && (
+        <FormIcon
+          className="absolute top-1 right-1 h-3.5 w-3.5 pointer-events-none"
+          aria-hidden
         />
       )}
       {!inStock && (

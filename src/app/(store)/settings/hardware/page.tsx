@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { redirect } from 'next/navigation';
 import HardwareSettingsForm from '@/components/settings/HardwareSettingsForm';
 
-export const metadata = { title: 'Hardware Settings | VelvetPOS' };
+export const metadata = { title: 'Hardware Settings | AyurPOS' };
 
 const DENIED_ROLES = new Set(['CASHIER', 'STOCK_CLERK']);
 

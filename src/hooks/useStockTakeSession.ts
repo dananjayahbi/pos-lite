@@ -5,8 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 export interface StockTakeItemVariant {
   sku: string;
   barcode: string | null;
-  size: string | null;
-  colour: string | null;
+  form: string | null;
+  packSize: string | null;
   product: {
     name: string;
     category: { name: string };
@@ -50,6 +50,6 @@ export function useStockTakeSession(sessionId: string) {
       if (!res.ok) throw new Error('Failed to fetch stock take session');
       return res.json();
     },
-    staleTime: 15_000,
+    staleTime: 10_000,
   });
 }

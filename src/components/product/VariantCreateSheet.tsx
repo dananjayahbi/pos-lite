@@ -18,6 +18,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { PRODUCT_FORM_OPTIONS } from '@/lib/constants/product-options';
 
 const variantCreateSchema = z
   .object({
@@ -27,8 +35,8 @@ const variantCreateSchema = z
       .regex(/^[a-zA-Z0-9-]{8,20}$/, 'Barcode must be 8-20 alphanumeric characters')
       .optional()
       .or(z.literal('')),
-    size: z.string().max(10).optional().or(z.literal('')),
-    colour: z.string().max(50).optional().or(z.literal('')),
+    form: z.string().max(30).optional().or(z.literal('')),
+    packSize: z.string().max(20).optional().or(z.literal('')),
     costPrice: z.number().positive('Cost price must be positive'),
     retailPrice: z.number().positive('Retail price must be positive'),
     wholesalePrice: z.number().positive().optional().nullable(),
@@ -83,8 +91,8 @@ export function VariantCreateSheet({
     defaultValues: {
       sku: '',
       barcode: '',
-      size: '',
-      colour: '',
+      form: '',
+      packSize: '',
       lowStockThreshold: 5,
     },
   });
@@ -94,8 +102,8 @@ export function VariantCreateSheet({
       const payload = {
         ...(data.sku ? { sku: data.sku } : {}),
         ...(data.barcode ? { barcode: data.barcode } : {}),
-        ...(data.size ? { size: data.size } : {}),
-        ...(data.colour ? { colour: data.colour } : {}),
+        ...(data.form ? { form: data.form } : {}),
+        ...(data.packSize ? { packSize: data.packSize } : {}),
         costPrice: data.costPrice,
         retailPrice: data.retailPrice,
         ...(data.wholesalePrice != null ? { wholesalePrice: data.wholesalePrice } : {}),
@@ -148,7 +156,7 @@ export function VariantCreateSheet({
         <SheetHeader className="border-b border-sand/30 px-6 py-4">
           <SheetTitle className="font-display text-lg text-espresso">Add Variant</SheetTitle>
           <SheetDescription className="font-body text-sm text-mist">
-            Create a new size, colour, or pricing combination for this product.
+            Create a new form/pack-size variant with its own pricing.
           </SheetDescription>
         </SheetHeader>
 
@@ -179,14 +187,34 @@ export function VariantCreateSheet({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="create-size" className="font-body text-sm text-espresso">Size</Label>
-              <Input id="create-size" {...register('size')} />
-              {errors.size && <p className="text-xs text-red-600">{errors.size.message}</p>}
+              <Label className="font-body text-sm text-espresso">Form</Label>
+              <Select
+                value={watch('form') || '__none__'}
+                onValueChange={(v) =>
+                  setValue('form', v === '__none__' ? '' : v, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+              >
+                <SelectTrigger className="border-sand">
+                  <SelectValue placeholder="Select form" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No form</SelectItem>
+                  {PRODUCT_FORM_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.form && <p className="text-xs text-red-600">{errors.form.message}</p>}
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="create-colour" className="font-body text-sm text-espresso">Colour</Label>
-              <Input id="create-colour" {...register('colour')} />
-              {errors.colour && <p className="text-xs text-red-600">{errors.colour.message}</p>}
+              <Label htmlFor="create-pack-size" className="font-body text-sm text-espresso">Pack Size</Label>
+              <Input id="create-pack-size" placeholder="e.g. 100g" {...register('packSize')} />
+              {errors.packSize && <p className="text-xs text-red-600">{errors.packSize.message}</p>}
             </div>
           </div>
 

@@ -43,8 +43,8 @@ export function BulkActionBar({ permissions }: BulkActionBarProps) {
           id: string;
           sku: string;
           barcode: string | null;
-          size: string | null;
-          colour: string | null;
+          form: string | null;
+          packSize: string | null;
           retailPrice: string | number;
           stockQuantity: number;
           lowStockThreshold: number;
@@ -53,8 +53,8 @@ export function BulkActionBar({ permissions }: BulkActionBarProps) {
           id: v.id,
           sku: v.sku,
           barcode: v.barcode,
-          size: v.size,
-          colour: v.colour,
+          form: v.form,
+          packSize: v.packSize,
           retailPrice:
             typeof v.retailPrice === 'string'
               ? parseFloat(v.retailPrice)

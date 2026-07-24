@@ -4,7 +4,7 @@ import { StockMovementHistory } from '@/components/stock-control/StockMovementHi
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export const metadata = {
-  title: 'Movement History | VelvetPOS',
+  title: 'Movement History | AyurPOS',
 };
 
 export default async function MovementHistoryPage() {

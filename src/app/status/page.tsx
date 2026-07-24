@@ -165,7 +165,7 @@ export default function StatusPage() {
       <header className="px-6 pt-10 pb-6 text-center">
         <h1>
           <span className="font-heading text-espresso text-[32px] font-bold">
-            Velvet
+            AyurPOS
           </span>
           <span className="text-espresso text-[32px] font-light">POS</span>
         </h1>

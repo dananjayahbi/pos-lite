@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { StockTakeReview } from '@/components/stock-control/StockTakeReview';
 
 export const metadata = {
-  title: 'Review Stock Take | VelvetPOS',
+  title: 'Review Stock Take | AyurPOS',
 };
 
 export default async function StockTakeReviewPage(props: {

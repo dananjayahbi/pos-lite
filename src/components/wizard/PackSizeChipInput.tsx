@@ -3,20 +3,40 @@
 import { useState, type KeyboardEvent } from 'react';
 import { X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { PACK_SIZE_PRESETS } from '@/lib/constants/product-options';
 
-const SIZE_PRESETS = [
-  { label: 'S / M / L / XL', values: ['S', 'M', 'L', 'XL'] },
-  { label: 'XS – XXL', values: ['XS', 'S', 'M', 'L', 'XL', 'XXL'] },
-  { label: '2Y / 4Y / 6Y / 8Y / 10Y', values: ['2Y', '4Y', '6Y', '8Y', '10Y'] },
-  { label: 'One Size', values: ['OS'] },
-] as const;
+/**
+ * Pack-size chip input — replaces the clothing size-chip input.
+ *
+ * Pack sizes in ayurveda products are free-text (`100g`, `200ml`, `60 caps`,
+ * `30 sachets`, etc.) so this is a tag-style input with preset chips.
+ */
 
-interface SizeChipInputProps {
+interface PackSizeChipInputProps {
   value: string[];
   onChange: (sizes: string[]) => void;
 }
 
-export function SizeChipInput({ value, onChange }: SizeChipInputProps) {
+const PRESETS = [
+  {
+    label: 'Powder 50–500g',
+    values: ['50g', '100g', '250g', '500g'],
+  },
+  {
+    label: 'Capsules 30–100',
+    values: ['30 caps', '60 caps', '100 caps'],
+  },
+  {
+    label: 'Oils 50–500ml',
+    values: ['50ml', '100ml', '200ml', '500ml'],
+  },
+  {
+    label: 'Syrups 100–500ml',
+    values: ['100ml', '200ml', '500ml'],
+  },
+] as const;
+
+export function PackSizeChipInput({ value, onChange }: PackSizeChipInputProps) {
   const [input, setInput] = useState('');
 
   const addSize = (raw: string) => {
@@ -48,7 +68,7 @@ export function SizeChipInput({ value, onChange }: SizeChipInputProps) {
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-3">
-        {SIZE_PRESETS.map((preset) => (
+        {PRESETS.map((preset) => (
           <button
             key={preset.label}
             type="button"
@@ -80,9 +100,12 @@ export function SizeChipInput({ value, onChange }: SizeChipInputProps) {
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Type a size and press Enter"
+        placeholder="Type a pack size (e.g. 75g, 200ml) and press Enter"
         className="font-body"
       />
+      <p className="mt-1 text-xs text-mist">
+        Common presets: {PACK_SIZE_PRESETS.slice(0, 6).join(', ')}, …
+      </p>
     </div>
   );
 }

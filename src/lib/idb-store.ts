@@ -1,7 +1,7 @@
 import { openDB } from 'idb';
 import type { IDBPDatabase } from 'idb';
 
-const DB_NAME = 'velvetpos_offline_db';
+const DB_NAME = 'ayurpos_offline_db';
 export const CART_PERSIST_STORE = 'cart_persist';
 export const SALE_QUEUE_STORE = 'sale_queue';
 

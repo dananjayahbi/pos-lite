@@ -16,7 +16,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Wand2 } from 'lucide-react';
 import { ProductImageUpload } from '@/components/product/ProductImageUpload';
-import { SizePickerPanel } from '@/components/product/SizePickerPanel';
+import { PackSizePickerPanel } from '@/components/product/PackSizePickerPanel';
+import {
+  PRODUCT_FORM_OPTIONS,
+} from '@/lib/constants/product-options';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   variantEditSchema,
   type VariantEditFormData,
@@ -29,8 +39,8 @@ interface VariantData {
   id: string;
   sku: string;
   barcode: string | null;
-  size: string | null;
-  colour: string | null;
+  form: string | null;
+  packSize: string | null;
   costPrice: string | number;
   retailPrice: string | number;
   wholesalePrice: string | number | null;
@@ -95,8 +105,8 @@ export function VariantEditSheet({
       reset({
         sku: variant.sku,
         barcode: variant.barcode,
-        size: variant.size ?? '',
-        colour: variant.colour ?? '',
+        form: variant.form ?? '',
+        packSize: variant.packSize ?? '',
         costPrice: toNum(variant.costPrice),
         retailPrice: toNum(variant.retailPrice),
         wholesalePrice: variant.wholesalePrice != null ? toNum(variant.wholesalePrice) : null,
@@ -211,42 +221,43 @@ export function VariantEditSheet({
             )}
           </div>
 
-          {/* Size */}
+          {/* Form */}
           <div className="space-y-1.5">
-            <Label className="font-body text-sm text-espresso">
-              Size
+            <Label htmlFor="form" className="font-body text-sm text-espresso">
+              Form
             </Label>
-            <SizePickerPanel
-              value={watch('size') ?? ''}
-              onChange={(sz) => setValue('size', sz, { shouldDirty: true, shouldValidate: true })}
-            />
-            {errors.size && (
-              <p className="text-xs text-red-600">{errors.size.message}</p>
-            )}
+            <Select
+              value={watch('form') || '__none__'}
+              onValueChange={(v) =>
+                setValue('form', v === '__none__' ? '' : v, {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
+            >
+              <SelectTrigger className="border-sand">
+                <SelectValue placeholder="Select form" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">No form</SelectItem>
+                {PRODUCT_FORM_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
-          {/* Colour */}
+          {/* Pack Size */}
           <div className="space-y-1.5">
-            <Label htmlFor="colour" className="font-body text-sm text-espresso">
-              Colour
+            <Label className="font-body text-sm text-espresso">
+              Pack Size
             </Label>
-            <div className="relative">
-              {watch('colour') && (
-                <span
-                  className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full border border-mist/40 shrink-0 pointer-events-none"
-                  style={{ backgroundColor: watch('colour') ?? '' }}
-                  aria-hidden="true"
-                />
-              )}
-              <Input
-                id="colour"
-                className={watch('colour') ? 'pl-8' : ''}
-                {...register('colour')}
-              />
-            </div>
-            {errors.colour && (
-              <p className="text-xs text-red-600">{errors.colour.message}</p>
-            )}
+            <PackSizePickerPanel
+              value={watch('packSize') ?? ''}
+              onChange={(sz) => setValue('packSize', sz, { shouldDirty: true, shouldValidate: true })}
+            />
           </div>
 
           {/* Cost Price */}

@@ -4,7 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
-import { GenderType, TaxRule, Prisma } from '@/generated/prisma/client';
+import { TaxRule, Prisma } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
 
 const ImportRowSchema = z.object({
@@ -15,11 +15,10 @@ const ImportRowSchema = z.object({
   barcode: z.string().optional(),
   brand: z.string().optional(),
   description: z.string().optional(),
-  gender: z.string().optional(),
   tags: z.string().optional(),
   costPrice: z.number().positive().optional(),
-  size: z.string().optional(),
-  colour: z.string().optional(),
+  form: z.string().optional(),
+  packSize: z.string().optional(),
   lowStockThreshold: z.number().int().min(0).optional(),
   wholesalePrice: z.number().positive().optional(),
 });
@@ -27,26 +26,6 @@ const ImportRowSchema = z.object({
 const ImportPayloadSchema = z.object({
   rows: z.array(ImportRowSchema).min(1).max(5000),
 });
-
-function mapGender(value?: string): GenderType {
-  if (!value) return 'UNISEX';
-  const v = value.toLowerCase().trim();
-  const map: Record<string, GenderType> = {
-    men: 'MEN',
-    man: 'MEN',
-    male: 'MEN',
-    women: 'WOMEN',
-    woman: 'WOMEN',
-    female: 'WOMEN',
-    unisex: 'UNISEX',
-    kids: 'KIDS',
-    kid: 'KIDS',
-    children: 'KIDS',
-    toddlers: 'TODDLERS',
-    toddler: 'TODDLERS',
-  };
-  return map[v] ?? 'UNISEX';
-}
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -140,7 +119,6 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const genderValue = mapGender(firstRow.gender);
         const tags = firstRow.tags
           ? firstRow.tags.split(',').map((t) => t.trim()).filter(Boolean)
           : [];
@@ -152,7 +130,6 @@ export async function POST(req: NextRequest) {
             description: firstRow.description?.trim() || null,
             categoryId,
             brandId,
-            gender: genderValue,
             tags,
             taxRule: 'STANDARD_VAT' satisfies TaxRule,
           },
@@ -169,8 +146,8 @@ export async function POST(req: NextRequest) {
             tenantId,
             sku,
             barcode: row.barcode?.trim() || null,
-            size: row.size?.trim() || null,
-            colour: row.colour?.trim() || null,
+            form: row.form?.trim() || null,
+            packSize: row.packSize?.trim() || null,
             costPrice: new Prisma.Decimal(row.costPrice ?? 0),
             retailPrice: new Prisma.Decimal(row.retailPrice),
             wholesalePrice: row.wholesalePrice

@@ -13,7 +13,7 @@ export async function generateMetadata({ params }: Props) {
     where: { id: productId, deletedAt: null },
     select: { name: true },
   });
-  return { title: product ? `${product.name} | VelvetPOS` : 'Product | VelvetPOS' };
+  return { title: product ? `${product.name} | AyurPOS` : 'Product | AyurPOS' };
 }
 
 export default async function ProductDetailPage({ params }: Props) {

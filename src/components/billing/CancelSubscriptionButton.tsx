@@ -62,7 +62,7 @@ export default function CancelSubscriptionButton({
           <DialogTitle>Cancel Subscription</DialogTitle>
           <DialogDescription>
             Are you sure you want to cancel your subscription? You will lose
-            access to VelvetPOS features at the end of your current billing
+            access to AyurPOS features at the end of your current billing
             period.
           </DialogDescription>
         </DialogHeader>

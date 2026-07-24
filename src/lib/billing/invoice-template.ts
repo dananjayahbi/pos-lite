@@ -270,7 +270,7 @@ export function generateInvoiceHtml(data: InvoiceTemplateData): string {
   <div class="invoice-container">
     <div class="header">
       <div>
-        <h1>VelvetPOS</h1>
+        <h1>AyurPOS</h1>
         <p style="font-size:13px; opacity:0.7; margin-top:4px;">Point of Sale Platform</p>
       </div>
       <div>
@@ -332,7 +332,7 @@ export function generateInvoiceHtml(data: InvoiceTemplateData): string {
     </div>
 
     <div class="footer">
-      <p>VelvetPOS &middot; Subscription Invoice</p>
+      <p>AyurPOS &middot; Subscription Invoice</p>
       <p style="margin-top:4px;">Thank you for your business. Use Ctrl+P / Cmd+P to save as PDF.</p>
     </div>
   </div>

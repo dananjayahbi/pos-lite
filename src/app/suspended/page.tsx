@@ -7,7 +7,7 @@ export default async function SuspendedPage() {
   const session = await auth();
 
   const supportEmail =
-    process.env.SUPPORT_EMAIL ?? 'support@velvetpos.com';
+    process.env.SUPPORT_EMAIL ?? 'support@ayurpos.com';
   const supportPhone =
     process.env.SUPPORT_PHONE ?? '+94 11 234 5678';
 
@@ -17,7 +17,7 @@ export default async function SuspendedPage() {
         {/* Wordmark */}
         <div className="flex flex-col items-center gap-2">
           <span className="font-display text-xl font-bold text-espresso">
-            VelvetPOS
+            AyurPOS
           </span>
           <div className="w-12 h-px bg-espresso/20" />
         </div>

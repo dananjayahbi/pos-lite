@@ -56,8 +56,8 @@ export async function GET(request: Request) {
       select: {
         id: true,
         sku: true,
-        size: true,
-        colour: true,
+        form: true,
+        packSize: true,
         costPrice: true,
         stockQuantity: true,
         product: { select: { name: true } },

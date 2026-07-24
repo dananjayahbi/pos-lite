@@ -1,7 +1,7 @@
 /**
  * Audit Logging Service
  *
- * VelvetPOS uses a dual audit architecture:
+ * AyurPOS uses a dual audit architecture:
  *
  * 1. StockMovement table — source of truth for all inventory quantity changes.
  *    Every adjustment, stock take correction, purchase, and sale creates a

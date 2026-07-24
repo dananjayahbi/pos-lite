@@ -1,16 +1,22 @@
 import { z } from 'zod';
-import {
-  GenderType,
-  TaxRule,
-  StockMovementReason,
-} from '@/generated/prisma/client';
+import { TaxRule, StockMovementReason } from '@/generated/prisma/client';
 
 // ── Variant Schemas ──────────────────────────────────────────────────────────
 
+/**
+ * Create-variant input — replaces clothing `size` and `colour` with ayurveda
+ * `packSize` (free text like "100g", "60 caps") and `form` (POWDER, OIL, etc.).
+ */
 export const CreateVariantInputSchema = z
   .object({
-    size: z.string().max(10).optional(),
-    colour: z.string().max(50).optional(),
+    form: z
+      .string()
+      .max(30, 'Form must be at most 30 characters')
+      .optional(),
+    packSize: z
+      .string()
+      .max(20, 'Pack size must be at most 20 characters')
+      .optional(),
     costPrice: z
       .number()
       .positive({ message: 'Cost price must be a positive number' }),
@@ -51,6 +57,9 @@ export const CreateVariantInputSchema = z
     },
   );
 
+/**
+ * Update-variant schema — same shape as Create but every field optional.
+ */
 export const UpdateVariantSchema = z
   .object({
     sku: z.string().max(50).optional(),
@@ -64,8 +73,8 @@ export const UpdateVariantSchema = z
       )
       .nullable()
       .optional(),
-    size: z.string().min(1).max(20).nullable().optional(),
-    colour: z.string().min(1).max(50).nullable().optional(),
+    form: z.string().max(30).nullable().optional(),
+    packSize: z.string().max(20).nullable().optional(),
     costPrice: z.number().positive().optional(),
     retailPrice: z.number().positive().optional(),
     wholesalePrice: z.number().positive().nullable().optional(),
@@ -87,6 +96,9 @@ export const UpdateVariantSchema = z
 
 // ── Product Schemas ──────────────────────────────────────────────────────────
 
+/**
+ * Create-product schema. `gender` removed (clothing-only).
+ */
 export const CreateProductSchema = z.object({
   name: z
     .string()
@@ -99,7 +111,6 @@ export const CreateProductSchema = z.object({
     .optional()
     .transform((val) => (val === '' ? undefined : val))
     .pipe(z.string().cuid().optional()),
-  gender: z.nativeEnum(GenderType),
   tags: z.array(z.string().max(30)).default([]),
   taxRule: z.nativeEnum(TaxRule).default('STANDARD_VAT'),
   variantDefinitions: z.array(CreateVariantInputSchema).optional(),
@@ -117,9 +128,7 @@ export const ProductListQuerySchema = z.object({
   brandId: z.string().cuid().optional(),
   categories: z.string().optional(),
   brands: z.string().optional(),
-  genders: z.string().optional(),
   status: z.enum(['active', 'archived', 'low_stock', 'out_of_stock']).optional(),
-  gender: z.nativeEnum(GenderType).optional(),
   isArchived: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')

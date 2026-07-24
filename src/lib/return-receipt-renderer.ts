@@ -202,7 +202,7 @@ ${refundDetailHtml}
 
 <div class="footer">
   ${esc(receiptFooter)}
-  <div class="powered">Powered by VelvetPOS</div>
+  <div class="powered">Powered by AyurPOS</div>
   <div style="font-size:9px;color:#aaa;margin-top:2px;">Printed: ${printTimestamp}</div>
 </div>
 

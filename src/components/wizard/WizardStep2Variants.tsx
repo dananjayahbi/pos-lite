@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useProductWizardStore } from '@/stores/productWizardStore';
-import { SizeChipInput } from './SizeChipInput';
-import { ColourChipInput } from './ColourChipInput';
+import { PackSizeChipInput } from './PackSizeChipInput';
+import { FormChipInput } from './FormChipInput';
 import { VariantMatrixTable } from './VariantMatrixTable';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -12,8 +12,8 @@ import { ArrowLeft, ArrowRight, AlertCircle } from 'lucide-react';
 
 interface VariantRow {
   combinationKey: string;
-  size: string;
-  colour: string;
+  form: string;
+  packSize: string;
   sku: string;
   barcode: string;
   initialStock: string;
@@ -29,11 +29,21 @@ export interface VariantFormData {
   variants: VariantRow[];
 }
 
-function generateSku(productName: string, size: string, colour: string): string {
-  const nameCode = productName.replace(/\s/g, '').slice(0, 3).toUpperCase() || 'PRD';
-  const sizeCode = size.replace(/\s/g, '').toUpperCase() || 'OS';
-  const colourCode = colour.replace(/\s/g, '').slice(0, 4).toUpperCase() || 'UNI';
-  return `${nameCode}-${sizeCode}-${colourCode}`;
+/**
+ * Generates a deterministic SKU from a (form, packSize) combination.
+ *
+ * Format: `NAME-FORM-PACKSIZE` (uppercase, no spaces) — e.g. `ASH-POW-100G`.
+ */
+function generateSku(
+  productName: string,
+  form: string,
+  packSize: string,
+): string {
+  const nameCode =
+    productName.replace(/\s/g, '').slice(0, 3).toUpperCase() || 'PRD';
+  const formCode = form.replace(/\s/g, '').slice(0, 4).toUpperCase() || 'UNI';
+  const packCode = packSize.replace(/\s/g, '').slice(0, 4).toUpperCase() || 'OS';
+  return `${nameCode}-${formCode}-${packCode}`;
 }
 
 function deduplicateSkus(variants: VariantRow[]): VariantRow[] {
@@ -50,29 +60,29 @@ function deduplicateSkus(variants: VariantRow[]): VariantRow[] {
 }
 
 function generateMatrix(
-  sizes: string[],
-  colours: string[],
+  forms: string[],
+  packSizes: string[],
   productName: string,
   existing: VariantRow[],
 ): VariantRow[] {
   const existingMap = new Map(existing.map((v) => [v.combinationKey, v]));
 
-  const effectiveSizes = sizes.length > 0 ? sizes : [''];
-  const effectiveColours = colours.length > 0 ? colours : [''];
+  const effectiveForms = forms.length > 0 ? forms : [''];
+  const effectivePackSizes = packSizes.length > 0 ? packSizes : [''];
 
   const rows: VariantRow[] = [];
-  for (const size of effectiveSizes) {
-    for (const colour of effectiveColours) {
-      const key = `${size}|${colour}`;
+  for (const form of effectiveForms) {
+    for (const packSize of effectivePackSizes) {
+      const key = `${form}|${packSize}`;
       const prev = existingMap.get(key);
       if (prev) {
         rows.push(prev);
       } else {
         rows.push({
           combinationKey: key,
-          size,
-          colour,
-          sku: generateSku(productName, size, colour),
+          form,
+          packSize,
+          sku: generateSku(productName, form, packSize),
           barcode: '',
           initialStock: '',
           costPrice: '',
@@ -96,18 +106,21 @@ export function WizardStep2Variants() {
 
   const productName = step1Data?.name ?? '';
 
-  // Restore sizes/colours from step2Data when navigating back
-  const [sizes, setSizes] = useState<string[]>(() => {
+  const [forms, setForms] = useState<string[]>(() => {
     if (step2Data?.variants.length) {
-      const unique = [...new Set(step2Data.variants.map((v) => v.size).filter(Boolean))] as string[];
+      const unique = [
+        ...new Set(step2Data.variants.map((v) => v.form).filter(Boolean)),
+      ] as string[];
       return unique;
     }
     return [];
   });
 
-  const [colours, setColours] = useState<string[]>(() => {
+  const [packSizes, setPackSizes] = useState<string[]>(() => {
     if (step2Data?.variants.length) {
-      const unique = [...new Set(step2Data.variants.map((v) => v.colour).filter(Boolean))] as string[];
+      const unique = [
+        ...new Set(step2Data.variants.map((v) => v.packSize).filter(Boolean)),
+      ] as string[];
       return unique;
     }
     return [];
@@ -115,13 +128,18 @@ export function WizardStep2Variants() {
 
   const [error, setError] = useState<string | null>(null);
 
-  // Build initial variants from step2Data if available
   const initialVariants: VariantRow[] = step2Data?.variants.length
     ? step2Data.variants.map((v) => ({
-        combinationKey: `${v.size ?? ''}|${v.colour ?? ''}`,
-        size: v.size ?? '',
-        colour: v.colour ?? '',
-        sku: v.sku ?? generateSku(productName, v.size ?? '', v.colour ?? ''),
+        combinationKey: `${v.form ?? ''}|${v.packSize ?? ''}`,
+        form: v.form ?? '',
+        packSize: v.packSize ?? '',
+        sku:
+          v.sku ??
+          generateSku(
+            productName,
+            v.form ?? '',
+            v.packSize ?? '',
+          ),
         barcode: v.barcode ?? '',
         initialStock: v.initialStock != null ? String(v.initialStock) : '',
         costPrice: v.costPrice > 0 ? String(v.costPrice) : '',
@@ -131,7 +149,7 @@ export function WizardStep2Variants() {
         selected: true,
         imageUrls: v.imageUrls ?? [],
       }))
-    : generateMatrix(sizes, colours, productName, []);
+    : generateMatrix(forms, packSizes, productName, []);
 
   const { control, register, handleSubmit, setValue, watch, getValues } =
     useForm<VariantFormData>({
@@ -143,25 +161,34 @@ export function WizardStep2Variants() {
     name: 'variants',
   });
 
-  // Regenerate matrix when sizes or colours change
-  const handleSizesChange = useCallback(
-    (newSizes: string[]) => {
-      setSizes(newSizes);
+  const handleFormsChange = useCallback(
+    (newForms: string[]) => {
+      setForms(newForms);
       const currentVariants = getValues('variants');
-      const matrix = generateMatrix(newSizes, colours, productName, currentVariants);
+      const matrix = generateMatrix(
+        newForms,
+        packSizes,
+        productName,
+        currentVariants,
+      );
       replace(matrix);
     },
-    [colours, productName, getValues, replace],
+    [packSizes, productName, getValues, replace],
   );
 
-  const handleColoursChange = useCallback(
-    (newColours: string[]) => {
-      setColours(newColours);
+  const handlePackSizesChange = useCallback(
+    (newPackSizes: string[]) => {
+      setPackSizes(newPackSizes);
       const currentVariants = getValues('variants');
-      const matrix = generateMatrix(sizes, newColours, productName, currentVariants);
+      const matrix = generateMatrix(
+        forms,
+        newPackSizes,
+        productName,
+        currentVariants,
+      );
       replace(matrix);
     },
-    [sizes, productName, getValues, replace],
+    [forms, productName, getValues, replace],
   );
 
   const onSubmit = (data: VariantFormData) => {
@@ -176,12 +203,16 @@ export function WizardStep2Variants() {
     for (const v of selected) {
       const cost = parseFloat(v.costPrice);
       if (!cost || cost <= 0) {
-        setError(`Variant ${v.sku || v.combinationKey} must have a cost price greater than 0.`);
+        setError(
+          `Variant ${v.sku || v.combinationKey} must have a cost price greater than 0.`,
+        );
         return;
       }
       const retail = parseFloat(v.retailPrice);
       if (!retail || retail < cost) {
-        setError(`Variant ${v.sku || v.combinationKey} retail price must be ≥ cost price.`);
+        setError(
+          `Variant ${v.sku || v.combinationKey} retail price must be ≥ cost price.`,
+        );
         return;
       }
     }
@@ -192,8 +223,8 @@ export function WizardStep2Variants() {
           costPrice: number;
           retailPrice: number;
           lowStockThreshold: number;
-          size?: string;
-          colour?: string;
+          form?: string;
+          packSize?: string;
           wholesalePrice?: number;
           sku?: string;
           barcode?: string;
@@ -205,9 +236,10 @@ export function WizardStep2Variants() {
           lowStockThreshold: v.lowStockThreshold,
           imageUrls: v.imageUrls ?? [],
         };
-        if (v.size) variant.size = v.size;
-        if (v.colour) variant.colour = v.colour;
-        if (v.wholesalePrice) variant.wholesalePrice = parseFloat(v.wholesalePrice);
+        if (v.form) variant.form = v.form;
+        if (v.packSize) variant.packSize = v.packSize;
+        if (v.wholesalePrice)
+          variant.wholesalePrice = parseFloat(v.wholesalePrice);
         if (v.sku) variant.sku = v.sku;
         if (v.barcode) variant.barcode = v.barcode;
         if (v.initialStock) variant.initialStock = parseInt(v.initialStock, 10);
@@ -225,7 +257,7 @@ export function WizardStep2Variants() {
           Step 2: Variant Matrix
         </h2>
         <p className="text-sm text-mist font-body">
-          Define sizes and colours, then configure pricing for each variant.
+          Define dosage forms and pack sizes, then configure pricing for each variant.
         </p>
       </div>
 
@@ -239,15 +271,15 @@ export function WizardStep2Variants() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <Label className="font-body font-semibold text-espresso mb-2 block">
-            Sizes
+            Forms
           </Label>
-          <SizeChipInput value={sizes} onChange={handleSizesChange} />
+          <FormChipInput value={forms} onChange={handleFormsChange} />
         </div>
         <div>
           <Label className="font-body font-semibold text-espresso mb-2 block">
-            Colours
+            Pack Sizes
           </Label>
-          <ColourChipInput value={colours} onChange={handleColoursChange} />
+          <PackSizeChipInput value={packSizes} onChange={handlePackSizesChange} />
         </div>
       </div>
 
@@ -265,7 +297,7 @@ export function WizardStep2Variants() {
 
       {fields.length === 0 && (
         <div className="text-center text-mist py-8 font-body text-sm">
-          Add sizes or colours above to generate the variant matrix.
+          Add forms or pack sizes above to generate the variant matrix.
         </div>
       )}
 
@@ -279,7 +311,7 @@ export function WizardStep2Variants() {
           <ArrowLeft className="h-4 w-4" />
           Back
         </Button>
-        <Button type="submit" className="gap-1.5">
+        <Button type="submit" className="gap-1.5 bg-espresso text-pearl hover:bg-espresso/90">
           Next: Review
           <ArrowRight className="h-4 w-4" />
         </Button>

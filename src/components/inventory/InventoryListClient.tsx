@@ -39,15 +39,15 @@ export function InventoryListClient({ initialCount, permissions }: InventoryList
   const search = searchParams.get('search') ?? undefined;
   const categories = searchParams.get('categories') ?? undefined;
   const brands = searchParams.get('brands') ?? undefined;
-  const genders = searchParams.get('genders') ?? undefined;
+  const forms = searchParams.get('forms') ?? undefined;
   const status = searchParams.get('status') ?? undefined;
 
   const filters = useMemo(
-    () => ({ search, categories, brands, genders, status, page, limit }),
-    [search, categories, brands, genders, status, page, limit],
+    () => ({ search, categories, brands, forms, status, page, limit }),
+    [search, categories, brands, forms, status, page, limit],
   );
 
-  const hasActiveFilters = !!(search || categories || brands || genders || status);
+  const hasActiveFilters = !!(search || categories || brands || forms || status);
 
   const { data, isLoading } = useProducts(filters);
 
@@ -131,7 +131,7 @@ export function InventoryListClient({ initialCount, permissions }: InventoryList
           <ExportPopover
             permissions={permissions}
             totalCount={displayCount}
-            activeFilters={{ search, categories, brands, genders, status }}
+            activeFilters={{ search, categories, brands, forms, status }}
           />
           {permissions.includes('product:import') && (
             <Button variant="outline" className="border-sand text-espresso" asChild>

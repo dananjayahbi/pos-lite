@@ -128,7 +128,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
 
   const handleNewSale = () => {
     clearCart();
-    clearCartSnapshot('velvetpos_cart_default').catch(() => {});
+    clearCartSnapshot('ayurpos_cart_default').catch(() => {});
     setReceiptOpen(false);
     setCompletedSale(null);
     setChangeAmount(null);
@@ -146,7 +146,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
     const snapDiscPct = cartDiscountPercent;
     const snapDiscAmt = cartDiscountAmount;
     clearCart();
-    clearCartSnapshot('velvetpos_cart_default').catch(() => {});
+    clearCartSnapshot('ayurpos_cart_default').catch(() => {});
     toast('Cart cleared', {
       action: {
         label: 'Undo',

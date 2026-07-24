@@ -66,7 +66,6 @@ export async function GET(
       ...(canViewCost ? { costPrice: variant.costPrice } : {}),
       productId: product.id,
       productName: product.name,
-      gender: product.gender,
       taxRule: product.taxRule,
       categoryId: product.categoryId,
     };

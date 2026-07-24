@@ -27,7 +27,7 @@ export default function PaymentMethodManagementCard({
           <div>
             <CardTitle className="text-espresso">Payment Method Management</CardTitle>
             <CardDescription>
-              VelvetPOS keeps card collection inside PayHere’s hosted flow so card data never touches your store app.
+              AyurPOS keeps card collection inside PayHere’s hosted flow so card data never touches your store app.
             </CardDescription>
           </div>
           <Badge variant="outline" className={hasSavedBillingToken ? 'border-green-300 text-green-700' : 'border-amber-300 text-amber-700'}>

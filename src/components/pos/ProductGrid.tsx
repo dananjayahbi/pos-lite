@@ -138,7 +138,7 @@ export function ProductGrid() {
                       addItem({
                         variantId: variant.id,
                         productName: prod.name,
-                        variantDescription: [variant.size, variant.colour].filter(Boolean).join(' / ') || 'Default',
+                        variantDescription: [variant.form, variant.packSize].filter(Boolean).join(' / ') || 'Default',
                         sku: variant.sku,
                         unitPrice: Number(variant.retailPrice),
                         quantity: 1,

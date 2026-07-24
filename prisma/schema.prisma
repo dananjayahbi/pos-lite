@@ -58,14 +58,6 @@ enum PaymentReminderSendStatus {
   FAILED
 }
 
-enum GenderType {
-  MEN
-  WOMEN
-  UNISEX
-  KIDS
-  TODDLERS
-}
-
 enum TaxRule {
   STANDARD_VAT
   SSCL
@@ -465,7 +457,6 @@ model Product {
   category    Category   @relation(fields: [categoryId], references: [id])
   brandId     String?
   brand       Brand?     @relation(fields: [brandId], references: [id])
-  gender      GenderType
   tags        String[]   @default([])
   taxRule     TaxRule    @default(STANDARD_VAT)
   isArchived  Boolean    @default(false)
@@ -489,8 +480,8 @@ model ProductVariant {
   tenant            Tenant    @relation(fields: [tenantId], references: [id])
   sku               String
   barcode           String?
-  size              String?
-  colour            String?
+  form              String?
+  packSize          String?
   costPrice         Decimal   @db.Decimal(12, 2)
   retailPrice       Decimal   @db.Decimal(12, 2)
   wholesalePrice    Decimal?  @db.Decimal(12, 2)

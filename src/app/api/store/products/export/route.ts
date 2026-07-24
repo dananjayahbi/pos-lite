@@ -4,12 +4,19 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 
-const GENDER_LABELS: Record<string, string> = {
-  MEN: 'Men',
-  WOMEN: 'Women',
-  UNISEX: 'Unisex',
-  KIDS: 'Kids',
-  TODDLERS: 'Toddlers',
+const PRODUCT_FORM_LABELS: Record<string, string> = {
+  POWDER: 'Powder',
+  CAPSULE: 'Capsule',
+  TABLET: 'Tablet',
+  OIL: 'Oil',
+  SYRUP: 'Syrup',
+  TEA: 'Tea',
+  BALM: 'Balm',
+  CREAM: 'Cream',
+  GEL: 'Gel',
+  PASTE: 'Paste',
+  TINCTURE: 'Tincture',
+  JUICE: 'Juice',
 };
 
 function escapeCsv(value: string): string {
@@ -80,7 +87,6 @@ export async function GET(request: NextRequest) {
       select: {
         name: true,
         description: true,
-        gender: true,
         isArchived: true,
         tags: true,
         createdAt: true,
@@ -91,8 +97,8 @@ export async function GET(request: NextRequest) {
           select: {
             sku: true,
             barcode: true,
-            size: true,
-            colour: true,
+            form: true,
+            packSize: true,
             costPrice: true,
             retailPrice: true,
             wholesalePrice: true,
@@ -106,8 +112,8 @@ export async function GET(request: NextRequest) {
     });
 
     const headersWithCost = [
-      'Product Name', 'Category', 'Brand', 'Gender', 'SKU', 'Barcode',
-      'Size', 'Colour', 'Cost Price', 'Retail Price', 'Wholesale Price',
+      'Product Name', 'Category', 'Brand', 'SKU', 'Barcode',
+      'Form', 'Pack Size', 'Cost Price', 'Retail Price', 'Wholesale Price',
       'Stock Quantity', 'Low Stock Threshold', 'Status', 'Tags', 'Description', 'Created At',
     ];
     const headersWithoutCost = headersWithCost.filter((h) => h !== 'Cost Price');
@@ -121,11 +127,10 @@ export async function GET(request: NextRequest) {
           escapeCsv(product.name),
           escapeCsv(product.category.name),
           escapeCsv(product.brand?.name ?? ''),
-          GENDER_LABELS[product.gender] ?? product.gender,
           escapeCsv(variant.sku),
           escapeCsv(variant.barcode ?? ''),
-          escapeCsv(variant.size ?? ''),
-          escapeCsv(variant.colour ?? ''),
+          escapeCsv(variant.form ? (PRODUCT_FORM_LABELS[variant.form] ?? variant.form) : ''),
+          escapeCsv(variant.packSize ?? ''),
         ];
 
         if (includeCostPrices) {
@@ -154,7 +159,7 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': 'text/csv;charset=utf-8',
-        'Content-Disposition': `attachment;filename="velvetpos-inventory-${date}.csv"`,
+        'Content-Disposition': `attachment;filename="ayurpos-inventory-${date}.csv"`,
       },
     });
   } catch (error) {

@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { LowStockList } from '@/components/stock-control/LowStockList';
 
 export const metadata = {
-  title: 'Low Stock | VelvetPOS',
+  title: 'Low Stock | AyurPOS',
 };
 
 export default async function LowStockPage() {

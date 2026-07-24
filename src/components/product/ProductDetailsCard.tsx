@@ -7,14 +7,6 @@ import { ImageViewerModal } from '@/components/product/ImageViewerModal';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const GENDER_LABELS: Record<string, string> = {
-  MEN: 'Men',
-  WOMEN: 'Women',
-  UNISEX: 'Unisex',
-  KIDS: 'Kids',
-  TODDLERS: 'Toddlers',
-};
-
 const TAX_LABELS: Record<string, string> = {
   STANDARD_VAT: 'Standard VAT (15%)',
   SSCL: 'SSCL',
@@ -38,7 +30,6 @@ interface ProductDetailsCardProps {
   product: {
     name: string;
     description: string | null;
-    gender: string;
     tags: string[];
     taxRule: string;
     category: { id: string; name: string } | null;
@@ -137,12 +128,6 @@ export function ProductDetailsCard({ product, variants = [] }: ProductDetailsCar
             )}
           </dd>
         </div>
-
-        {/* Gender */}
-        <FieldRow
-          label="Gender"
-          value={GENDER_LABELS[product.gender] ?? product.gender}
-        />
 
         {/* Tax Rule */}
         <FieldRow

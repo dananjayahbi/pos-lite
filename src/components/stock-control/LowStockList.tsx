@@ -198,9 +198,9 @@ export function LowStockList({ permissions }: LowStockListProps) {
                       </TableCell>
                       <TableCell>
                         <p className="font-mono text-sm text-espresso">{v.sku}</p>
-                        {(v.size || v.colour) && (
+                        {(v.form || v.pack_size) && (
                           <p className="font-body text-xs text-mist">
-                            {[v.size, v.colour].filter(Boolean).join(' / ')}
+                            {[v.form, v.pack_size].filter(Boolean).join(' / ')}
                           </p>
                         )}
                       </TableCell>

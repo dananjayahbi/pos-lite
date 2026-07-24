@@ -24,7 +24,7 @@ interface ValidatedRow {
   errors: string[];
 }
 
-const VALID_GENDERS = ['men', 'man', 'male', 'women', 'woman', 'female', 'unisex', 'kids', 'kid', 'children', 'toddlers', 'toddler'];
+const VALID_FORMS = ['powder', 'capsule', 'tablet', 'oil', 'syrup', 'tea', 'balm', 'cream', 'gel', 'paste', 'tincture', 'juice', 'powder'];
 const ROWS_PER_PAGE = 25;
 
 function getMappedValue(row: Record<string, string>, mapping: Record<string, string>, field: string): string {
@@ -94,8 +94,8 @@ export function ImportPreviewTable({ data, mapping, onBack }: ImportPreviewTable
           errors.push(`Brand "${mapped.brand}" will be created`);
           status = 'warning';
         }
-        if (mapped.gender && !VALID_GENDERS.includes(mapped.gender.toLowerCase())) {
-          errors.push(`Gender "${mapped.gender}" is unrecognized, will default to UNISEX`);
+        if (mapped.form && !VALID_FORMS.includes(mapped.form.toLowerCase())) {
+          errors.push(`Form "${mapped.form}" is unrecognized, will default to POWDER`);
           status = 'warning';
         }
       }
@@ -126,11 +126,10 @@ export function ImportPreviewTable({ data, mapping, onBack }: ImportPreviewTable
         if (d.barcode) row.barcode = d.barcode;
         if (d.brand) row.brand = d.brand;
         if (d.description) row.description = d.description;
-        if (d.gender) row.gender = d.gender;
         if (d.tags) row.tags = d.tags;
         if (d.costPrice) row.costPrice = parseFloat(d.costPrice as string);
-        if (d.size) row.size = d.size;
-        if (d.colour) row.colour = d.colour;
+        if (d.form) row.form = d.form;
+        if (d.packSize) row.packSize = d.packSize;
         if (d.lowStockThreshold) row.lowStockThreshold = parseInt(d.lowStockThreshold, 10);
         if (d.wholesalePrice) row.wholesalePrice = parseFloat(d.wholesalePrice);
         return row;

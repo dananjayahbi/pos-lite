@@ -565,9 +565,9 @@ function StockMovementHistoryInner() {
                         </TableCell>
                         <TableCell>
                           <span className="font-mono text-xs">{m.variant.sku}</span>
-                          {(m.variant.size || m.variant.colour) && (
+                          {(m.variant.form || m.variant.packSize) && (
                             <span className="ml-1.5 text-xs text-mist">
-                              {[m.variant.size, m.variant.colour].filter(Boolean).join(' / ')}
+                              {[m.variant.form, m.variant.packSize].filter(Boolean).join(' / ')}
                             </span>
                           )}
                         </TableCell>

@@ -6,7 +6,7 @@ export type TenantBranding = {
 };
 
 const DEFAULT_BRANDING: TenantBranding = {
-  name: 'VelvetPOS',
+  name: 'AyurPOS',
   logoUrl: null,
 };
 

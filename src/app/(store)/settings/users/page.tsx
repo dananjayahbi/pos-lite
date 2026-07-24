@@ -4,7 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import UserPermissionsSettingsClient from '@/components/settings/UserPermissionsSettingsClient';
 
-export const metadata = { title: 'Team & Permissions | VelvetPOS' };
+export const metadata = { title: 'Team & Permissions | AyurPOS' };
 
 export default async function UsersSettingsPage() {
   const session = await auth();

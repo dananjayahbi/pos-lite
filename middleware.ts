@@ -11,7 +11,7 @@ import {
 export const runtime = 'nodejs';
 
 const tenantSlugCache = new Map<string, boolean>();
-const TENANT_DOMAIN_SUFFIX = '.velvetpos.com';
+const TENANT_DOMAIN_SUFFIX = '.ayurpos.com';
 const RESERVED_SUBDOMAINS = new Set(['', 'www', 'app']);
 
 const PUBLIC_PATH_PREFIXES = [
@@ -182,7 +182,7 @@ export default auth(async (request: NextRequest) => {
 
       if (process.env.NODE_ENV === 'production') {
         return NextResponse.redirect(
-          new URL('https://velvetpos.com/not-found'),
+          new URL('https://ayurpos.com/not-found'),
         );
       }
     }

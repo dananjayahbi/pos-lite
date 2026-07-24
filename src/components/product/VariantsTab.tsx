@@ -27,41 +27,25 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { VariantEditSheet } from '@/components/product/VariantEditSheet';
 import { VariantCreateSheet } from '@/components/product/VariantCreateSheet';
 import { BarcodeLabelDialog, type LabelVariant } from '@/components/inventory/BarcodeLabelDialog';
-import { COLOUR_CATALOGUE } from '@/components/wizard/ColourPickerModal';
 import { formatRupee } from '@/lib/format';
+import {
+  PRODUCT_FORM_LABELS,
+  PRODUCT_FORM_ICONS,
+  type ProductFormValue,
+} from '@/lib/constants/product-options';
 
-// ── Colour helpers ───────────────────────────────────────────────────────────
+// ── Form helpers ─────────────────────────────────────────────────────────────
 
-/** Given a stored value (hex, gradient, or name), returns a CSS-valid colour string. */
-function resolveColourCss(value: string | null | undefined): string {
+/** Returns a friendly display label for a stored form value. */
+function resolveFormLabel(value: string | null | undefined): string {
   if (!value) return '';
-  // Already a CSS gradient
-  if (value.startsWith('linear-gradient') || value.startsWith('radial-gradient')) return value;
-  // Already a hex value
-  if (value.startsWith('#')) return value;
-  // Legacy name stored — look up in catalogue
-  const found = COLOUR_CATALOGUE.find(
-    (c) => c.name.toLowerCase() === value.toLowerCase()
-  );
-  return found?.hex ?? value;
+  return PRODUCT_FORM_LABELS[value as ProductFormValue] ?? value;
 }
 
-/** Returns a friendly display name for a stored colour value (hex, gradient, or name). */
-function resolveColourName(value: string | null | undefined): string {
-  if (!value) return '';
-  // Reverse-lookup by hex or gradient
-  const found = COLOUR_CATALOGUE.find(
-    (c) => c.hex.toLowerCase() === value.toLowerCase() || c.name.toLowerCase() === value.toLowerCase()
-  );
-  return found?.name ?? value;
-}
-
-/** Returns CSS style object for colour swatch (handles gradients). */
-function colourSwatchStyle(css: string): React.CSSProperties {
-  if (css.startsWith('linear-gradient') || css.startsWith('radial-gradient')) {
-    return { background: css };
-  }
-  return { backgroundColor: css };
+/** Returns the Lucide icon component for a stored form value (or null). */
+function resolveFormIcon(value: string | null | undefined) {
+  if (!value) return null;
+  return PRODUCT_FORM_ICONS[value as ProductFormValue] ?? null;
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -70,8 +54,8 @@ interface Variant {
   id: string;
   sku: string;
   barcode: string | null;
-  size: string | null;
-  colour: string | null;
+  form: string | null;
+  packSize: string | null;
   costPrice: string | number;
   retailPrice: string | number;
   wholesalePrice: string | number | null;
@@ -198,8 +182,8 @@ export function VariantsTab({ productId, variants, permissions, productName, bra
       id: v.id,
       sku: v.sku,
       barcode: v.barcode,
-      size: v.size,
-      colour: v.colour,
+      packSize: v.packSize,
+      form: v.form,
       retailPrice: typeof v.retailPrice === 'string' ? parseFloat(v.retailPrice) : v.retailPrice,
       stockQuantity: v.stockQuantity,
       lowStockThreshold: v.lowStockThreshold,
@@ -250,10 +234,10 @@ export function VariantsTab({ productId, variants, permissions, productName, bra
                 Barcode
               </TableHead>
               <TableHead className="font-body text-xs font-semibold uppercase tracking-wider text-espresso/70">
-                Size
+                Pack Size
               </TableHead>
               <TableHead className="font-body text-xs font-semibold uppercase tracking-wider text-espresso/70">
-                Colour
+                Form
               </TableHead>
               {canViewCost && (
                 <TableHead className="font-body text-xs font-semibold uppercase tracking-wider text-espresso/70">
@@ -446,19 +430,20 @@ function VariantRows({
         {variant.barcode || '—'}
       </TableCell>
       <TableCell className="font-body text-sm text-espresso">
-        {variant.size || '—'}
+        {variant.packSize || '—'}
       </TableCell>
       <TableCell className="font-body text-sm text-espresso">
-        {variant.colour ? (
+        {variant.form ? (
           <span className="inline-flex items-center gap-1.5">
-            <span
-              className="inline-block h-3 w-3 rounded-full border border-espresso/20 shrink-0"
-              style={colourSwatchStyle(resolveColourCss(variant.colour))}
-              aria-hidden="true"
-            />
-            {resolveColourName(variant.colour)}
+            {(() => {
+              const Icon = resolveFormIcon(variant.form);
+              return Icon ? <Icon className="h-3.5 w-3.5" /> : null;
+            })()}
+            {resolveFormLabel(variant.form)}
           </span>
-        ) : '—'}
+        ) : (
+          '—'
+        )}
       </TableCell>
       {canViewCost && (
         <TableCell className="font-mono text-sm text-espresso">
