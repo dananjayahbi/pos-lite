@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getTenantInfo, getPublicWebsiteConfig } from '@/lib/api/website';
-import { tenantHomePath } from '@/lib/tenant';
 import { SITE } from '@/config/site';
 import { StaticPageShell } from '@/components/website/static-pages/StaticPageShell';
 import { ContactForm } from '@/components/website/static-pages/ContactForm';
+import { ContactInfoCards } from '@/components/website/static-pages/ContactInfoCards';
+import { MapEmbed } from '@/components/website/static-pages/MapEmbed';
 
 interface ContactPageProps {
   params: Promise<{ tenantSlug: string }>;
@@ -22,124 +23,82 @@ export default async function ContactPage({ params }: ContactPageProps) {
 
   const config = configResponse?.config;
   const siteName = config?.siteName || tenant.name;
-  const socialLinks = config?.socialLinks ?? {};
-  const socialEntries = Object.entries(socialLinks).filter(
-    ([, value]) => value && typeof value === 'string' && value.length > 0,
-  );
+  const contactTitle = config?.contactPageTitle || 'Contact Us';
+  const contactSubtitle =
+    config?.contactPageSubtitle || "We'd love to hear from you. Get in touch with us.";
+  const contactHeroImageUrl = config?.contactHeroImageUrl;
 
   return (
     <StaticPageShell
       tenantName={tenant.name}
       tenantSlug={tenantSlug}
       config={config}
-      title="Contact Us"
-      description="We'd love to hear from you. Get in touch with us."
+      title={contactTitle}
+      subtitle={contactSubtitle}
     >
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-        {/* Contact info */}
-        <div>
-          <h2
-            className="text-xl font-medium mb-4"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-          >
-            Get In Touch
-          </h2>
-          <p className="text-gray-600 text-sm leading-relaxed mb-6">
-            Have a question, feedback, or need assistance? Reach out to us
-            through any of the channels below and we&apos;ll get back to you
-            as soon as possible.
-          </p>
-
-          {/* Contact details from social links */}
-          <div className="space-y-4">
-            {socialLinks.email && (
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 h-2 w-2 rounded-full bg-gray-400 flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Email</p>
-                  <a
-                    href={`mailto:${socialLinks.email}`}
-                    className="text-sm text-gray-600 hover:text-black transition-colors"
-                  >
-                    {socialLinks.email}
-                  </a>
-                </div>
-              </div>
-            )}
-            {socialLinks.phone && (
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 h-2 w-2 rounded-full bg-gray-400 flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Phone</p>
-                  <a
-                    href={`tel:${socialLinks.phone}`}
-                    className="text-sm text-gray-600 hover:text-black transition-colors"
-                  >
-                    {socialLinks.phone}
-                  </a>
-                </div>
-              </div>
-            )}
-            {socialLinks.whatsapp && (
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 h-2 w-2 rounded-full bg-gray-400 flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-gray-900">WhatsApp</p>
-                  <a
-                    href={`https://wa.me/${socialLinks.whatsapp}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-gray-600 hover:text-black transition-colors"
-                  >
-                    Chat on WhatsApp
-                  </a>
-                </div>
-              </div>
-            )}
-            {socialEntries
-              .filter(
-                ([key]) =>
-                  !['email', 'phone', 'whatsapp'].includes(key),
-              )
-              .map(([key, value]) => (
-                <div key={key} className="flex items-start gap-3">
-                  <span className="mt-0.5 h-2 w-2 rounded-full bg-gray-400 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-gray-900 capitalize">
-                      {key}
-                    </p>
-                    <a
-                      href={value as string}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-gray-600 hover:text-black transition-colors"
-                    >
-                      Visit our {key}
-                    </a>
-                  </div>
-                </div>
-              ))}
+      <div className="space-y-0">
+        {/* Hero image if configured */}
+        {contactHeroImageUrl && (
+          <div className="mb-12 -mt-4 rounded-xl overflow-hidden shadow-md">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={contactHeroImageUrl}
+              alt={contactTitle}
+              className="w-full h-auto max-h-[300px] object-cover"
+            />
           </div>
+        )}
 
-          {/* No contact info fallback */}
-          {socialEntries.length === 0 && (
-            <p className="text-sm text-gray-500 italic">
-              Contact information is not yet available. Please check back
-              later.
-            </p>
+        {/* Contact info cards */}
+        <ContactInfoCards
+          title={config?.contactInfoTitle ?? ''}
+          address={config?.contactAddress ?? ''}
+          phone={config?.contactPhoneDisplay ?? ''}
+          email={config?.contactEmailDisplay ?? ''}
+          businessHours={config?.contactBusinessHours ?? ''}
+        />
+
+        {/* Default contact info fallback when none configured */}
+        {!config?.contactAddress &&
+          !config?.contactPhoneDisplay &&
+          !config?.contactEmailDisplay &&
+          !config?.contactBusinessHours && (
+            <ContactInfoCards
+              title="Get In Touch"
+              address=""
+              phone={config?.socialLinks?.phone ?? ''}
+              email={config?.socialLinks?.email ?? ''}
+              businessHours={
+                config?.socialLinks?.whatsapp
+                  ? `WhatsApp: ${config.socialLinks.whatsapp}`
+                  : ''
+              }
+            />
           )}
-        </div>
 
-        {/* Contact form */}
-        <div>
-          <h2
-            className="text-xl font-medium mb-4"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-          >
-            Send a Message
-          </h2>
-          <ContactForm />
-        </div>
+        {/* Map */}
+        <MapEmbed
+          embedUrl={config?.contactMapEmbedUrl ?? ''}
+          address={config?.contactAddress ?? ''}
+        />
+
+        {/* Contact form section */}
+        <section className="py-8">
+          <div className="bg-[var(--site-light-gray,#f5f5f5)] rounded-xl p-6 md:p-10">
+            <h2
+              className="text-xl md:text-2xl font-medium mb-2 text-center text-[var(--site-primary,#0a0a0a)]"
+              style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+            >
+              Send a Message
+            </h2>
+            <p className="text-sm text-gray-500 mb-6 text-center">
+              Fill out the form below and we&apos;ll get back to you as soon as possible.
+            </p>
+            <div className="max-w-lg mx-auto">
+              <ContactForm />
+            </div>
+          </div>
+        </section>
       </div>
     </StaticPageShell>
   );
@@ -159,7 +118,9 @@ export async function generateMetadata({
     if (!tenant) return { title: 'Not Found' };
 
     const siteName = configResponse?.config?.siteName || tenant.name;
-    const title = `Contact — ${siteName}`;
+    const title =
+      configResponse?.config?.contactPageTitle ||
+      `Contact — ${siteName}`;
     const description = `Get in touch with ${siteName}.`;
 
     return {

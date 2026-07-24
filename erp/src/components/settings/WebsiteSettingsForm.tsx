@@ -11,6 +11,7 @@ import { SectionsTab } from './website-tabs/SectionsTab';
 import { TestimonialsTab } from './website-tabs/TestimonialsTab';
 import { FooterTab } from './website-tabs/FooterTab';
 import { AdsTab } from './website-tabs/AdsTab';
+import { AboutContactTab } from './website-tabs/AboutContactTab';
 import type { WebsiteConfigData } from '@/types/website.types';
 
 interface WebsiteSettingsFormProps {
@@ -57,6 +58,7 @@ const TABS = [
   { value: 'testimonials', label: 'Testimonials' },
   { value: 'footer', label: 'Footer' },
   { value: 'ads', label: 'Ads' },
+  { value: 'about-contact', label: 'About & Contact' },
 ];
 
 export function WebsiteSettingsForm({
@@ -237,6 +239,10 @@ export function WebsiteSettingsForm({
               config={config}
               onChange={updateConfig}
             />
+          </TabsContent>
+
+          <TabsContent value="about-contact">
+            <AboutContactTab config={config} onChange={updateConfig} />
           </TabsContent>
         </div>
       </Tabs>

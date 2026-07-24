@@ -1145,6 +1145,29 @@ model WebsiteConfig {
   footerAbout     String?  @db.Text
   footerColumns   Json     @default("[]")
 
+  // About Page
+  aboutPageTitle          String?
+  aboutPageSubtitle       String?
+  aboutHeroImageUrl       String?
+  aboutStoryTitle         String?
+  aboutStoryContent       String?  @db.Text
+  aboutStoryImageUrl      String?
+  aboutMissionTitle       String?
+  aboutMissionContent     String?  @db.Text
+  aboutValuesSectionTitle String?
+  aboutValues             Json     @default("[]")
+
+  // Contact Page
+  contactPageTitle        String?
+  contactPageSubtitle     String?
+  contactHeroImageUrl     String?
+  contactInfoTitle        String?
+  contactAddress          String?
+  contactPhoneDisplay     String?
+  contactEmailDisplay     String?
+  contactBusinessHours    String?  @db.Text
+  contactMapEmbedUrl      String?
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

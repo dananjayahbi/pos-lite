@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getTenantInfo, getPublicWebsiteConfig } from '@/lib/api/website';
-import { tenantHomePath } from '@/lib/tenant';
 import { SITE } from '@/config/site';
 import { StaticPageShell } from '@/components/website/static-pages/StaticPageShell';
+import { AboutStorySection } from '@/components/website/static-pages/AboutStorySection';
+import { AboutMissionSection } from '@/components/website/static-pages/AboutMissionSection';
+import { AboutValuesSection } from '@/components/website/static-pages/AboutValuesSection';
 
 interface AboutPageProps {
   params: Promise<{ tenantSlug: string }>;
@@ -21,7 +23,12 @@ export default async function AboutPage({ params }: AboutPageProps) {
 
   const config = configResponse?.config;
   const siteName = config?.siteName || tenant.name;
-  const aboutText = config?.footerAbout;
+
+  const aboutTitle = config?.aboutPageTitle || `About ${siteName}`;
+  const aboutSubtitle = config?.aboutPageSubtitle || 'Learn more about our story and what drives us.';
+  const aboutHeroImageUrl = config?.aboutHeroImageUrl;
+
+  // Social links for connect section
   const socialLinks = config?.socialLinks ?? {};
   const socialEntries = Object.entries(socialLinks).filter(
     ([, value]) => value && typeof value === 'string' && value.length > 0,
@@ -32,93 +39,94 @@ export default async function AboutPage({ params }: AboutPageProps) {
       tenantName={tenant.name}
       tenantSlug={tenantSlug}
       config={config}
-      title={`About ${siteName}`}
-      description="Learn more about our story and what drives us."
+      title={aboutTitle}
+      subtitle={aboutSubtitle}
     >
-      <div className="prose prose-gray max-w-none mx-auto">
-        {aboutText ? (
-          <p className="text-base leading-relaxed text-gray-700">
-            {aboutText}
-          </p>
-        ) : (
-          <p className="text-base leading-relaxed text-gray-700">
-            {siteName} offers premium products crafted with care and
-            dedication. We are committed to delivering the highest quality to
-            our customers.
-          </p>
+      <div className="space-y-0">
+        {/* Hero image if configured */}
+        {aboutHeroImageUrl && (
+          <div className="mb-12 -mt-4 rounded-xl overflow-hidden shadow-md">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={aboutHeroImageUrl}
+              alt={aboutTitle}
+              className="w-full h-auto max-h-[400px] object-cover"
+            />
+          </div>
         )}
 
-        {/* Mission */}
-        <div className="mt-10">
-          <h2
-            className="text-xl font-medium mb-3"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-          >
-            Our Mission
-          </h2>
-          <p className="text-base leading-relaxed text-gray-700">
-            Our mission is to provide exceptional products that enhance your
-            daily life. Every item in our collection is thoughtfully selected
-            to meet our rigorous standards for quality and value.
-          </p>
+        {/* Story section */}
+        <AboutStorySection
+          title={config?.aboutStoryTitle ?? ''}
+          content={config?.aboutStoryContent ?? ''}
+          imageUrl={config?.aboutStoryImageUrl ?? ''}
+          imagePosition="right"
+        />
+
+        {/* Divider */}
+        <div className="my-4 flex justify-center">
+          <div className="w-16 h-px bg-[var(--site-accent,#b4946e)]" />
         </div>
 
-        {/* Values */}
-        <div className="mt-10">
-          <h2
-            className="text-xl font-medium mb-3"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-          >
-            What We Stand For
-          </h2>
-          <ul className="space-y-3 text-gray-700">
-            <li className="flex items-start gap-3">
-              <span className="mt-1 h-2 w-2 rounded-full bg-gray-400 flex-shrink-0" />
-              <span>
-                <strong>Quality First</strong> — Every product meets our
-                uncompromising standards.
-              </span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="mt-1 h-2 w-2 rounded-full bg-gray-400 flex-shrink-0" />
-              <span>
-                <strong>Customer Commitment</strong> — Your satisfaction is at
-                the heart of everything we do.
-              </span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="mt-1 h-2 w-2 rounded-full bg-gray-400 flex-shrink-0" />
-              <span>
-                <strong>Authenticity</strong> — We stay true to our values and
-                our promises.
-              </span>
-            </li>
-          </ul>
-        </div>
+        {/* Mission section */}
+        <AboutMissionSection
+          title={config?.aboutMissionTitle ?? ''}
+          content={config?.aboutMissionContent ?? ''}
+        />
 
-        {/* Social links */}
+        {/* Values section */}
+        <AboutValuesSection
+          title={config?.aboutValuesSectionTitle ?? ''}
+          values={config?.aboutValues ?? []}
+        />
+
+        {/* Default values as fallback */}
+        {(!config?.aboutValues || config.aboutValues.length === 0) && !config?.aboutMissionContent && !config?.aboutStoryContent && (
+          <AboutValuesSection
+            title="What We Stand For"
+            values={[
+              {
+                title: 'Quality First',
+                description:
+                  'Every product meets our uncompromising standards for purity and excellence.',
+              },
+              {
+                title: 'Customer Commitment',
+                description:
+                  'Your satisfaction is at the heart of everything we do.',
+              },
+              {
+                title: 'Authenticity',
+                description:
+                  'We stay true to our values, our heritage, and our promises.',
+              },
+            ]}
+          />
+        )}
+
+        {/* Connect section */}
         {socialEntries.length > 0 && (
-          <div className="mt-10">
+          <section className="py-12">
             <h2
-              className="text-xl font-medium mb-3"
+              className="text-2xl font-medium mb-6 text-center text-[var(--site-primary,#0a0a0a)]"
               style={{ fontFamily: 'var(--font-dm-serif), serif' }}
             >
               Connect With Us
             </h2>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap justify-center gap-3">
               {socialEntries.map(([key, value]) => (
                 <a
                   key={key}
                   href={value as string}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:border-gray-400 hover:text-black transition-colors capitalize"
+                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-5 py-2.5 text-sm text-gray-600 hover:border-[var(--site-accent,#b4946e)] hover:text-[var(--site-primary,#0a0a0a)] transition-all duration-300 capitalize bg-white hover:shadow-sm"
                 >
                   {key}
                 </a>
               ))}
             </div>
-          </div>
+          </section>
         )}
       </div>
     </StaticPageShell>
@@ -139,7 +147,9 @@ export async function generateMetadata({
     if (!tenant) return { title: 'Not Found' };
 
     const siteName = configResponse?.config?.siteName || tenant.name;
-    const title = `About — ${siteName}`;
+    const title =
+      configResponse?.config?.aboutPageTitle ||
+      `About — ${siteName}`;
     const description =
       configResponse?.config?.metaDescription ||
       `Learn more about ${siteName}.`;

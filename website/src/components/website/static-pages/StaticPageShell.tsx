@@ -1,6 +1,6 @@
 import React from 'react';
-import Link from 'next/link';
-import { tenantHomePath } from '@/lib/tenant';
+import { WebsiteHeader } from '../sections/WebsiteHeader';
+import { WebsiteFooter } from '../sections/WebsiteFooter';
 import type { WebsiteConfigData } from '@/types/website.types';
 
 interface StaticPageShellProps {
@@ -8,77 +8,73 @@ interface StaticPageShellProps {
   tenantSlug: string;
   config?: WebsiteConfigData | null | undefined;
   title: string;
+  subtitle?: string;
   description?: string;
   children: React.ReactNode;
 }
 
+const DEFAULT_CONFIG: WebsiteConfigData = {
+  socialLinks: {},
+  navItems: [],
+  sections: {},
+  footerColumns: [],
+};
+
 /**
  * Shared layout for static CMS-like pages (About, Contact, etc.).
- * Provides a consistent header, title section, and footer.
+ * Uses the consistent WebsiteHeader + WebsiteFooter from the main site.
  */
 export function StaticPageShell({
   tenantName,
   tenantSlug,
   config,
   title,
+  subtitle,
   description,
   children,
 }: StaticPageShellProps) {
-  const homeHref = tenantHomePath(tenantSlug);
+  const websiteConfig: WebsiteConfigData = config ?? {
+    ...DEFAULT_CONFIG,
+    siteName: tenantName,
+  };
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="border-b border-gray-100">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 py-3">
-          <Link
-            href={homeHref}
-            className="text-lg font-medium"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-          >
-            {tenantName}
-          </Link>
-          <Link
-            href={homeHref}
-            className="text-sm text-gray-500 hover:text-black transition-colors"
-          >
-            ← Back to store
-          </Link>
-        </div>
-      </header>
+    <div className="site-wrapper">
+      <WebsiteHeader config={websiteConfig} tenantSlug={tenantSlug} />
 
-      {/* Page content */}
-      <main className="max-w-4xl mx-auto px-4 py-12">
-        {/* Page title */}
-        <div className="mb-10 text-center">
+      {/* Page title hero */}
+      <section className="bg-[var(--site-light-gray,#f5f5f5)] border-b border-black/5">
+        <div className="max-w-5xl mx-auto px-4 py-16 md:py-20 text-center">
           <h1
-            className="text-3xl md:text-4xl font-medium mb-3"
+            className="text-3xl md:text-5xl font-medium tracking-tight text-[var(--site-primary,#0a0a0a)]"
             style={{ fontFamily: 'var(--font-dm-serif), serif' }}
           >
             {title}
           </h1>
+          {subtitle && (
+            <p className="mt-3 text-sm md:text-base text-gray-500 max-w-lg mx-auto">
+              {subtitle}
+            </p>
+          )}
           {description && (
-            <p className="text-gray-500 text-sm max-w-xl mx-auto">
+            <p className="mt-2 text-sm text-gray-400 max-w-xl mx-auto">
               {description}
             </p>
           )}
-          <div className="mt-4 mx-auto w-16 h-px bg-gray-300" />
         </div>
+      </section>
 
+      {/* Page content */}
+      <main className="max-w-5xl mx-auto px-4 py-12 md:py-16">
         {children}
       </main>
 
       {/* Footer */}
-      {config && (
-        <footer className="border-t border-gray-100 py-8">
-          <div className="max-w-7xl mx-auto px-4 text-center text-sm text-gray-500">
-            <p>
-              © {new Date().getFullYear()} {config.siteName || tenantName}. All
-              rights reserved.
-            </p>
-          </div>
-        </footer>
-      )}
+      <WebsiteFooter
+        config={{}}
+        websiteConfig={websiteConfig}
+        tenantSlug={tenantSlug}
+      />
     </div>
   );
 }

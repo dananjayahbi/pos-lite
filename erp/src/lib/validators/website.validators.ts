@@ -124,6 +124,38 @@ export const WebsiteConfigSchema = z.object({
   // Footer
   footerAbout: z.string().max(1000).nullable().optional().or(z.literal('')),
   footerColumns: z.array(FooterColumnSchema).default([]),
+
+  // About Page
+  aboutPageTitle: z.string().max(200).nullable().optional().or(z.literal('')),
+  aboutPageSubtitle: z.string().max(500).nullable().optional().or(z.literal('')),
+  aboutHeroImageUrl: z.string().max(500).nullable().optional().or(z.literal('')),
+  aboutStoryTitle: z.string().max(200).nullable().optional().or(z.literal('')),
+  aboutStoryContent: z.string().max(5000).nullable().optional().or(z.literal('')),
+  aboutStoryImageUrl: z.string().max(500).nullable().optional().or(z.literal('')),
+  aboutMissionTitle: z.string().max(200).nullable().optional().or(z.literal('')),
+  aboutMissionContent: z.string().max(5000).nullable().optional().or(z.literal('')),
+  aboutValuesSectionTitle: z.string().max(200).nullable().optional().or(z.literal('')),
+  aboutValues: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(200),
+        description: z.string().min(1).max(500),
+      })
+    )
+    .nullable()
+    .optional()
+    .default([]),
+
+  // Contact Page
+  contactPageTitle: z.string().max(200).nullable().optional().or(z.literal('')),
+  contactPageSubtitle: z.string().max(500).nullable().optional().or(z.literal('')),
+  contactHeroImageUrl: z.string().max(500).nullable().optional().or(z.literal('')),
+  contactInfoTitle: z.string().max(200).nullable().optional().or(z.literal('')),
+  contactAddress: z.string().max(500).nullable().optional().or(z.literal('')),
+  contactPhoneDisplay: z.string().max(200).nullable().optional().or(z.literal('')),
+  contactEmailDisplay: z.string().max(200).nullable().optional().or(z.literal('')),
+  contactBusinessHours: z.string().max(1000).nullable().optional().or(z.literal('')),
+  contactMapEmbedUrl: z.string().max(1000).nullable().optional().or(z.literal('')),
 });
 
 // ── Zod inferred types ──────────────────────────────────────────────────────

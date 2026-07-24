@@ -213,6 +213,29 @@ export interface WebsiteConfigData {
   footerAbout?: string;
   footerColumns: FooterColumn[];
 
+  // About page
+  aboutPageTitle?: string;
+  aboutPageSubtitle?: string;
+  aboutHeroImageUrl?: string;
+  aboutStoryTitle?: string;
+  aboutStoryContent?: string;
+  aboutStoryImageUrl?: string;
+  aboutMissionTitle?: string;
+  aboutMissionContent?: string;
+  aboutValuesSectionTitle?: string;
+  aboutValues?: { title: string; description: string }[];
+
+  // Contact page
+  contactPageTitle?: string;
+  contactPageSubtitle?: string;
+  contactHeroImageUrl?: string;
+  contactInfoTitle?: string;
+  contactAddress?: string;
+  contactPhoneDisplay?: string;
+  contactEmailDisplay?: string;
+  contactBusinessHours?: string;
+  contactMapEmbedUrl?: string;
+
   // Related data
   heroSlides?: WebsiteHeroSlideData[];
   ads?: WebsiteAdData[];

@@ -47,7 +47,6 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
   return (
     <>
       <header className={`site-header${scrolled ? ' scrolled' : ''}`}>
-        {/* Top bar */}
         <div className="site-header-inner">
           {/* Mobile hamburger */}
           <button
@@ -58,44 +57,34 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
             <Menu size={24} />
           </button>
 
-          {/* Logo */}
-          <Link href={homeHref} className="flex-shrink-0">
-            {logoUrl ? (
-              <img src={logoUrl} alt={siteName} className="site-logo" />
-            ) : (
-              <span
-                className="text-xl font-semibold tracking-wider uppercase"
-                style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-              >
-                {siteName}
-              </span>
+          {/* Logo + Desktop nav in a single row */}
+          <div className="flex items-center gap-8">
+            {/* Logo */}
+            <Link href={homeHref} className="flex-shrink-0">
+              {logoUrl ? (
+                <img src={logoUrl} alt={siteName} className="site-logo" />
+              ) : (
+                <span
+                  className="text-xl font-semibold tracking-wider uppercase"
+                  style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+                >
+                  {siteName}
+                </span>
+              )}
+            </Link>
+
+            {/* Desktop nav — inline with logo, not absolute */}
+            {navItems.length > 0 && (
+              <nav className="site-nav hidden md:flex">
+                {navItems.map((item, i) => (
+                  <Link key={i} href={resolveNavHref(item.href)}>
+                    {item.label}
+                  </Link>
+                ))}
+              </nav>
             )}
-          </Link>
-
-          {/* Desktop nav */}
-          {navItems.length > 0 && (
-            <nav className="site-nav hidden md:flex absolute left-1/2 -translate-x-1/2">
-              {navItems.map((item, i) => (
-                <Link key={i} href={resolveNavHref(item.href)}>
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-          )}
-        </div>
-
-        {/* Desktop bottom nav bar (if items exist) */}
-        {navItems.length > 0 && (
-          <div className="hidden md:flex justify-center border-t border-black/5 py-2">
-            <nav className="site-nav">
-              {navItems.map((item, i) => (
-                <Link key={i} href={resolveNavHref(item.href)}>
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
           </div>
-        )}
+        </div>
       </header>
 
       {/* Mobile menu overlay */}
