@@ -322,6 +322,7 @@ model Tenant {
   savedReports         SavedReport[]
   dailySummaryLogs     DailySummaryLog[]
   webhookEndpoints     WebhookEndpoint[]
+  websiteConfig       WebsiteConfig?
 
   @@map("tenants")
 }
@@ -1102,4 +1103,111 @@ model WebhookDelivery {
 
   @@index([webhookEndpointId])
   @@map("webhook_deliveries")
+}
+
+// ── Customer-Facing Website Models ───────────────────────────────────────────
+
+model WebsiteConfig {
+  id              String   @id @default(cuid())
+  tenantId        String   @unique
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Branding
+  siteName        String?
+  tagline         String?
+  logoUrl         String?
+  faviconUrl      String?
+
+  // Colors
+  primaryColor    String?  @default("#0a0a0a")
+  accentColor     String?  @default("#b4946e")
+  bgColor         String?  @default("#ece2d6")
+
+  // SEO
+  metaTitle       String?
+  metaDescription String?
+
+  // Social Links — { facebook, instagram, email, phone, whatsapp }
+  socialLinks     Json     @default("{}")
+
+  // Navigation menu items — [{ label, href, children? }]
+  navItems        Json     @default("[]")
+
+  // Section-level configuration stored as JSON keyed by sectionKey
+  // Each key maps to: { isActive, sortOrder, ...sectionSpecificFields }
+  // sectionKeys:
+  //   hero, categories, solutionsByConcern, shopByConcern,
+  //   giftBox, latestProducts, promoBanner, bestSelling,
+  //   testimonials, storesBanner, footer
+  sections        Json     @default("{}")
+
+  // Footer
+  footerAbout     String?  @db.Text
+  footerColumns   Json     @default("[]")
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  heroSlides      WebsiteHeroSlide[]
+  ads             WebsiteAd[]
+
+  @@map("website_configs")
+}
+
+model WebsiteHeroSlide {
+  id             String        @id @default(cuid())
+  tenantId       String
+  configId       String
+  config         WebsiteConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  mediaType      String        @default("image") // "image" | "video"
+  mediaUrl       String
+  mobileMediaUrl String?       // optional mobile-optimized variant
+
+  title          String?
+  subtitle       String?
+  description    String?
+
+  ctaText        String?
+  ctaLink        String?
+
+  isActive       Boolean       @default(true)
+  sortOrder      Int           @default(0)
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([configId])
+  @@index([tenantId])
+  @@map("website_hero_slides")
+}
+
+model WebsiteAd {
+  id              String        @id @default(cuid())
+  tenantId        String
+  configId        String
+  config          WebsiteConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  name            String
+  mediaType       String        @default("image") // "image" | "video"
+  mediaUrl        String
+  mobileMediaUrl  String?
+
+  targetUrl       String?
+
+  // position: "header" | "between_sections" | "sidebar" | "popup"
+  position               String  @default("between_sections")
+  // sectionKey to display after (e.g. "latestProducts"); only used when position = "between_sections"
+  displayAfterSection    String?
+
+  startsAt        DateTime?
+  endsAt          DateTime?
+  isActive        Boolean       @default(true)
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([configId])
+  @@index([tenantId])
+  @@map("website_ads")
 }

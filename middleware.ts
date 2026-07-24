@@ -23,6 +23,11 @@ const PUBLIC_PATH_PREFIXES = [
   '/api/webhooks/',
   '/status',
   '/api/health',
+  '/site',
+  '/_next',
+  '/fonts',
+  '/icons',
+  '/images',
 ];
 
 function isPublicPath(pathname: string): boolean {

@@ -214,6 +214,11 @@ const navGroups: NavGroup[] = [
         permission: PERMISSIONS.SETTINGS.manageHardware,
       },
       {
+        name: 'Website',
+        href: '/settings/website',
+        roles: ['OWNER', 'MANAGER'],
+      },
+      {
         name: 'Webhooks',
         href: '/settings/webhooks',
         roles: ['OWNER', 'MANAGER'],
