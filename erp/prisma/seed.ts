@@ -335,25 +335,9 @@ const SEED_PRODUCTS: SeedProduct[] = [
   { name: 'Giloy Tablets', description: 'Tinospora cordifolia tablets for immunity and fever management', form: 'TABLET', packSizes: ['60 tabs', '120 tabs'], taxRule: 'SSCL', brandName: 'Baidyanath', categoryName: 'Herbal Capsules & Tablets', tags: ['immunity', 'fever', 'tinospora'] },
   { name: 'Triphala Tablets', description: 'Convenient tablet form of classical triphala formulation', form: 'TABLET', packSizes: ['60 tabs', '120 tabs'], taxRule: 'STANDARD_VAT', brandName: 'Patanjali Wellness', categoryName: 'Herbal Capsules & Tablets', tags: ['digestion', 'detox'] },
 
-  // ── Oils (3) ──
+  // ── Oils (2) ──
   { name: 'Mahanarayan Oil', description: 'Classical Ayurvedic massage oil for joint and muscle relief', form: 'OIL', packSizes: ['100ml', '200ml', '500ml'], taxRule: 'STANDARD_VAT', brandName: 'Baidyanath', categoryName: 'Ayurvedic Oils', tags: ['joints', 'massage', 'pain-relief'] },
   { name: 'Bhringraj Hair Oil', description: 'Traditional bhringraj oil for hair growth and scalp health', form: 'OIL', packSizes: ['100ml', '200ml', '500ml'], taxRule: 'STANDARD_VAT', brandName: 'Dabur Sri Lanka', categoryName: 'Ayurvedic Oils', tags: ['hair', 'hair-growth', 'scalp'] },
-  { name: 'Sesame Massage Oil', description: 'Cold-pressed organic sesame oil for full-body abhyanga massage', form: 'OIL', packSizes: ['200ml', '500ml', '1L'], taxRule: 'SSCL', brandName: 'Sri Lankan Ayurveda Co.', categoryName: 'Ayurvedic Oils', tags: ['massage', 'organic', 'abhyanga'] },
-
-  // ── Syrups & Tonics (3) ──
-  { name: 'Chyawanprash', description: 'Classic amla-based immunity tonic with herbs and spices', form: 'PASTE', packSizes: ['500g', '1kg'], taxRule: 'STANDARD_VAT', brandName: 'Dabur Sri Lanka', categoryName: 'Wellness Syrups & Tonics', tags: ['immunity', 'tonic', 'amla'] },
-  { name: 'Amla Juice', description: 'Pure amla (Indian gooseberry) juice for vitamin C and hair health', form: 'JUICE', packSizes: ['500ml', '1L'], taxRule: 'STANDARD_VAT', brandName: 'Patanjali Wellness', categoryName: 'Wellness Syrups & Tonics', tags: ['vitamin-c', 'immunity', 'hair'] },
-  { name: 'Dashmoolarishta', description: 'Classical Ayurvedic fermentation tonic for post-partum and vata balance', form: 'SYRUP', packSizes: ['200ml', '450ml'], taxRule: 'STANDARD_VAT', brandName: 'Baidyanath', categoryName: 'Wellness Syrups & Tonics', tags: ['vata', 'tonic', 'classical'] },
-
-  // ── Teas (3) ──
-  { name: 'Tulsi Green Tea', description: 'Holy basil blend with green tea leaves for daily wellness', form: 'TEA', packSizes: ['25 bags', '50 bags', '100 bags'], taxRule: 'STANDARD_VAT', brandName: 'Himalaya Ayurveda', categoryName: 'Herbal Teas & Decoctions', tags: ['immunity', 'tea', 'tulsi'] },
-  { name: 'Ginger Tulsi Tea', description: 'Warming ginger and tulsi tea for digestion and respiratory health', form: 'TEA', packSizes: ['25 bags', '50 bags'], taxRule: 'SSCL', brandName: 'Patanjali Wellness', categoryName: 'Herbal Teas & Decoctions', tags: ['digestion', 'respiratory', 'tea'] },
-  { name: 'Kashaya Decoction Mix', description: 'Traditional South Indian kashaya blend with aromatic spices', form: 'TEA', packSizes: ['100g', '250g'], taxRule: 'STANDARD_VAT', brandName: 'Sri Lankan Ayurveda Co.', categoryName: 'Herbal Teas & Decoctions', tags: ['traditional', 'kashaya', 'immunity'] },
-
-  // ── Skin & Hair Care (3) ──
-  { name: 'Kumkumadi Face Cream', description: 'Saffron-infused facial cream for radiance and skin glow', form: 'CREAM', packSizes: ['30g', '50g'], taxRule: 'STANDARD_VAT', brandName: 'Baidyanath', categoryName: 'Skin & Hair Care', tags: ['skincare', 'saffron', 'glow'] },
-  { name: 'Neem Face Wash', description: 'Neem and tulsi based purifying face wash for acne-prone skin', form: 'GEL', packSizes: ['100ml', '200ml'], taxRule: 'SSCL', brandName: 'Himalaya Ayurveda', categoryName: 'Skin & Hair Care', tags: ['skincare', 'acne', 'neem'] },
-  { name: 'Ayurvedic Pain Balm', description: 'Herbal pain-relief balm with eucalyptus and camphor', form: 'BALM', packSizes: ['25g', '50g'], taxRule: 'STANDARD_VAT', brandName: 'Dabur Sri Lanka', categoryName: 'Skin & Hair Care', tags: ['pain-relief', 'balm', 'muscle'] },
 ];
 
 function generateSku(brandName: string, form: string, packSize: string, productIndex: number): string {
@@ -371,12 +355,30 @@ async function seedSampleCatalog() {
   }
   const tenantId = tenant.id;
 
-  // Idempotency check
-  const existingCategory = await prisma.category.findFirst({
-    where: { tenantId, name: 'Herbal Powders' },
+  // Remove legacy clothing catalog records from the customer-facing catalog.
+  // Products are archived instead of deleted because sales and stock history
+  // may still reference their variants.
+  await prisma.product.updateMany({
+    where: {
+      tenantId,
+      isArchived: false,
+      deletedAt: null,
+      name: { notIn: SEED_PRODUCTS.map((product) => product.name) },
+    },
+    data: { isArchived: true },
   });
-  if (existingCategory) {
-    console.log('Catalog data already seeded, skipping');
+
+  // Idempotency check: only skip when the complete ten-product Ayurveda
+  // catalog is already present.
+  const seededProductCount = await prisma.product.count({
+    where: {
+      tenantId,
+      deletedAt: null,
+      name: { in: SEED_PRODUCTS.map((product) => product.name) },
+    },
+  });
+  if (seededProductCount === SEED_PRODUCTS.length) {
+    console.log('Ayurvedic catalog data already seeded, skipping');
     return;
   }
 

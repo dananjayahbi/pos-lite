@@ -11,15 +11,8 @@ interface CategoryProductGridProps {
   tenantSlug: string;
 }
 
-const FALLBACK_IMAGE =
-  'https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?w=400&h=400&fit=crop';
-
-function pickImage(p: PublicProduct): string {
-  return (
-    p.variants?.[0]?.imageUrls?.[0] ??
-    p.primaryVariant?.imageUrls?.[0] ??
-    FALLBACK_IMAGE
-  );
+function pickImage(p: PublicProduct): string | null {
+  return p.variants?.[0]?.imageUrls?.[0] ?? p.primaryVariant?.imageUrls?.[0] ?? null;
 }
 
 function pickPrice(p: PublicProduct): number {
@@ -47,13 +40,19 @@ export function CategoryProductGrid({ products, tenantSlug }: CategoryProductGri
           className="product-card group block"
         >
           <div className="product-card-image">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={pickImage(p)}
-              alt={p.name}
-              className="primary"
-              loading="lazy"
-            />
+            {pickImage(p) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={pickImage(p) ?? undefined}
+                alt={p.name}
+                className="primary object-contain"
+                loading="lazy"
+              />
+            ) : (
+              <div className="flex aspect-square items-center justify-center text-xs text-gray-400">
+                Image unavailable
+              </div>
+            )}
           </div>
           <div className="p-3 text-center">
             <h4 className="text-xs md:text-sm font-medium mb-1 line-clamp-2">

@@ -11,12 +11,8 @@ interface ShopProductGridProps {
   tenantSlug: string;
 }
 
-function pickImage(product: PublicProduct): string {
-  return (
-    product.primaryVariant?.imageUrls?.[0] ??
-    product.variants?.[0]?.imageUrls?.[0] ??
-    'https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?w=400&h=400&fit=crop'
-  );
+function pickImage(product: PublicProduct): string | null {
+  return product.primaryVariant?.imageUrls?.[0] ?? product.variants?.[0]?.imageUrls?.[0] ?? null;
 }
 
 function pickPrice(product: PublicProduct): number {
@@ -50,12 +46,18 @@ export function ShopProductGrid({ products, tenantSlug }: ShopProductGridProps) 
           className="product-card group"
         >
           <div className="product-card-image aspect-square overflow-hidden rounded-lg bg-gray-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={pickImage(product)}
-              alt={product.name}
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-            />
+            {pickImage(product) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={pickImage(product) ?? undefined}
+                alt={product.name}
+                className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-xs text-gray-400">
+                Image unavailable
+              </div>
+            )}
           </div>
           <div className="mt-3">
             <h3 className="text-sm font-medium text-gray-900 truncate">

@@ -69,7 +69,9 @@ export async function GET(
     },
   });
 
-  const payload = categories.map((cat) => ({
+  const payload = categories
+    .filter((cat) => cat._count.products > 0)
+    .map((cat) => ({
     id: cat.id,
     name: cat.name,
     description: cat.description,

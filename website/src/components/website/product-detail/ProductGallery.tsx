@@ -8,9 +8,6 @@ interface ProductGalleryProps {
   productName: string;
 }
 
-const FALLBACK_IMAGE =
-  'https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?w=600&h=600&fit=crop';
-
 /**
  * Image gallery with thumbnail strip. Collects all unique image URLs
  * across every variant and lets the visitor browse them.
@@ -21,7 +18,13 @@ export function ProductGallery({ variants, productName }: ProductGalleryProps) {
     new Set(safeVariants.flatMap((v) => v.imageUrls ?? [])),
   );
 
-  if (images.length === 0) images.push(FALLBACK_IMAGE);
+  if (images.length === 0) {
+    return (
+      <div className="flex aspect-square items-center justify-center rounded-lg bg-gray-100 text-sm text-gray-400">
+        Image unavailable
+      </div>
+    );
+  }
 
   const [active, setActive] = useState(0);
 
@@ -31,7 +34,7 @@ export function ProductGallery({ variants, productName }: ProductGalleryProps) {
       <div className="aspect-square overflow-hidden rounded-lg bg-gray-100">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={images[active] ?? FALLBACK_IMAGE}
+          src={images[active]}
           alt={productName}
           className="h-full w-full object-cover"
         />
