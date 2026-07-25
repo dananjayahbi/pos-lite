@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { MediaUploader } from '@/components/shared/MediaUploader';
+import { DeferredMediaUploader } from '@/components/shared/DeferredMediaUploader';
 import type { WebsiteConfigData } from '@/types/website.types';
 
 interface GeneralTabProps {
@@ -49,26 +49,30 @@ export function GeneralTab({ config, onChange }: GeneralTabProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Logo</Label>
-            <MediaUploader
+            <DeferredMediaUploader
               value={config.logoUrl ?? ''}
               onChange={(url) => onChange({ logoUrl: url })}
+              uploadKey="general_logo"
               accept="image/*"
               maxSizeMB={5}
               label="Upload Logo"
               placeholder="Upload site logo (PNG/WebP)"
               previewHeight="h-20"
+              currentRealUrl={config.logoUrl ?? ''}
             />
           </div>
           <div className="space-y-2">
             <Label>Favicon</Label>
-            <MediaUploader
+            <DeferredMediaUploader
               value={config.faviconUrl ?? ''}
               onChange={(url) => onChange({ faviconUrl: url })}
+              uploadKey="general_favicon"
               accept="image/*"
               maxSizeMB={2}
               label="Upload Favicon"
               placeholder="Upload favicon (32x32 recommended)"
               previewHeight="h-20"
+              currentRealUrl={config.faviconUrl ?? ''}
             />
           </div>
         </div>
@@ -127,6 +131,69 @@ export function GeneralTab({ config, onChange }: GeneralTabProps) {
               <Input
                 value={config.bgColor ?? '#ece2d6'}
                 onChange={(e) => onChange({ bgColor: e.target.value })}
+                className="flex-1"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <Separator />
+
+      {/* Typography */}
+      <div>
+        <h3 className="text-sm font-semibold text-espresso mb-3">Typography</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="headingFont">Heading Font Family</Label>
+            <Input
+              id="headingFont"
+              value={config.headingFontFamily ?? ''}
+              onChange={(e) => onChange({ headingFontFamily: e.target.value })}
+              placeholder="e.g. Georgia, serif"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="bodyFont">Body Font Family</Label>
+            <Input
+              id="bodyFont"
+              value={config.bodyFontFamily ?? ''}
+              onChange={(e) => onChange({ bodyFontFamily: e.target.value })}
+              placeholder="e.g. Inter, sans-serif"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="headingColor">Heading Color</Label>
+            <div className="flex gap-2">
+              <Input
+                id="headingColor"
+                type="color"
+                value={config.headingColor ?? '#0a0a0a'}
+                onChange={(e) => onChange({ headingColor: e.target.value })}
+                className="w-12 h-10 p-1 cursor-pointer"
+              />
+              <Input
+                value={config.headingColor ?? ''}
+                onChange={(e) => onChange({ headingColor: e.target.value })}
+                placeholder="#0a0a0a"
+                className="flex-1"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="bodyColor">Body Text Color</Label>
+            <div className="flex gap-2">
+              <Input
+                id="bodyColor"
+                type="color"
+                value={config.bodyColor ?? '#555555'}
+                onChange={(e) => onChange({ bodyColor: e.target.value })}
+                className="w-12 h-10 p-1 cursor-pointer"
+              />
+              <Input
+                value={config.bodyColor ?? ''}
+                onChange={(e) => onChange({ bodyColor: e.target.value })}
+                placeholder="#555555"
                 className="flex-1"
               />
             </div>

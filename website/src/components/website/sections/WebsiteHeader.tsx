@@ -28,7 +28,7 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
 
   const navItems = config.navItems ?? [];
   const logoUrl = config.logoUrl;
-  const siteName = config.siteName || 'Ayurveda';
+  const siteName = config.siteName || tenantSlug;
   const homeHref = tenantHomePath(tenantSlug);
 
   /**
@@ -71,7 +71,7 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
               ) : (
                 <span
                   className="text-xl font-semibold tracking-wider uppercase"
-                  style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+                  style={{ fontFamily: 'var(--site-heading-font), serif' }}
                 >
                   {siteName}
                 </span>

@@ -23,7 +23,7 @@ export function PromoBanner({ config }: PromoBannerProps) {
         className="hidden md:block site-banner site-banner-bg"
         style={{
           backgroundImage: `url(${sectionConfig.desktopImageUrl})`,
-          paddingTop: '250px',
+          minHeight: '380px',
         }}
       />
       {/* Mobile */}
@@ -31,7 +31,7 @@ export function PromoBanner({ config }: PromoBannerProps) {
         className="block md:hidden site-banner site-banner-bg"
         style={{
           backgroundImage: `url(${sectionConfig.mobileImageUrl || sectionConfig.desktopImageUrl})`,
-          paddingTop: '56.25%',
+          minHeight: '220px',
         }}
       />
     </>
@@ -39,13 +39,21 @@ export function PromoBanner({ config }: PromoBannerProps) {
 
   if (sectionConfig.link) {
     return (
-      <section>
-        <Link href={sectionConfig.link} className="block">
-          {BannerContent}
-        </Link>
+      <section className="website-section">
+        <div className="max-w-7xl mx-auto px-4 md:px-8">
+          <Link href={sectionConfig.link} className="site-banner-link">
+            <div className="site-banner rounded-lg overflow-hidden shadow-md">{BannerContent}</div>
+          </Link>
+        </div>
       </section>
     );
   }
 
-  return <section>{BannerContent}</section>;
+  return (
+    <section className="website-section">
+      <div className="max-w-7xl mx-auto px-4 md:px-8">
+        <div className="site-banner rounded-lg overflow-hidden shadow-md">{BannerContent}</div>
+      </div>
+    </section>
+  );
 }

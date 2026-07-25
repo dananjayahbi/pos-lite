@@ -108,6 +108,12 @@ export const WebsiteConfigSchema = z.object({
   accentColor: z.string().max(7).nullable().optional(),
   bgColor: z.string().max(7).nullable().optional(),
 
+  // Typography
+  headingFontFamily: z.string().max(200).nullable().optional().or(z.literal('')),
+  bodyFontFamily: z.string().max(200).nullable().optional().or(z.literal('')),
+  headingColor: z.string().max(7).nullable().optional(),
+  bodyColor: z.string().max(7).nullable().optional(),
+
   // SEO
   metaTitle: z.string().max(120).nullable().optional().or(z.literal('')),
   metaDescription: z.string().max(300).nullable().optional().or(z.literal('')),

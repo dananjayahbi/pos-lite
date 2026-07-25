@@ -18,32 +18,35 @@ export function GiftBoxSection({ config }: GiftBoxSectionProps) {
   if (!sectionConfig.leftImageUrl && !sectionConfig.rightImageUrl) return null;
 
   return (
-    <section className="gift-box-section">
-      <div className="flex flex-col md:flex-row items-stretch">
+    <section className="website-section">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex flex-col md:flex-row items-stretch rounded-lg overflow-hidden shadow-sm">
         {/* Left image */}
-        <div className="md:w-1/2 bg-black">
+        <div className="md:w-1/2">
           {sectionConfig.leftImageUrl && (
-            <div
-              className="w-full bg-cover bg-center"
-              style={{
-                backgroundImage: `url(${sectionConfig.leftImageUrl})`,
-                paddingTop: '100%',
-              }}
-            />
+            <div className="gift-box-image-wrapper h-full min-h-[400px]">
+              <div
+                className="w-full h-full bg-cover bg-center"
+                style={{
+                  backgroundImage: `url(${sectionConfig.leftImageUrl})`,
+                  minHeight: '400px',
+                }}
+              />
+            </div>
           )}
         </div>
 
         {/* Right content */}
-        <div className="md:w-1/2 flex flex-col items-center justify-center py-10 md:py-20 px-6 md:px-12 bg-[#ece2d6]">
+        <div className="md:w-1/2 flex flex-col items-center justify-center py-12 md:py-20 px-8 md:px-16 bg-[var(--site-light-gray)]">
           {sectionConfig.rightImageUrl && (
             <Link
               href={sectionConfig.link || '#'}
-              className="block max-w-sm mx-auto overflow-hidden"
+              className="block max-w-xs mx-auto overflow-hidden rounded-lg"
             >
               <img
                 src={sectionConfig.rightImageUrl}
                 alt={sectionConfig.title || 'Gift Box'}
-                className="w-full h-auto transition-transform duration-500 hover:scale-105"
+                className="w-full h-auto"
                 loading="lazy"
               />
             </Link>
@@ -51,15 +54,15 @@ export function GiftBoxSection({ config }: GiftBoxSectionProps) {
 
           {sectionConfig.title && (
             <h3
-              className="text-xl md:text-2xl mt-6 mb-2 text-center"
-              style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+              className="text-2xl md:text-3xl mt-8 mb-3 text-center"
+              style={{ fontFamily: 'var(--site-heading-font), serif' }}
             >
               {sectionConfig.title}
             </h3>
           )}
 
           {sectionConfig.subtitle && (
-            <p className="text-sm text-gray-600 text-center mb-4">
+            <p className="text-sm text-gray-600 text-center mb-5 max-w-sm">
               {sectionConfig.subtitle}
             </p>
           )}
@@ -67,12 +70,13 @@ export function GiftBoxSection({ config }: GiftBoxSectionProps) {
           {sectionConfig.link && sectionConfig.title && (
             <Link
               href={sectionConfig.link}
-              className="inline-block px-6 py-2 border border-black text-xs uppercase tracking-wider hover:bg-black hover:text-white transition-colors"
+              className="inline-block px-7 py-2.5 border-2 border-black text-xs uppercase tracking-wider font-semibold hover:bg-black hover:text-white transition-colors"
             >
               Shop Now
             </Link>
           )}
         </div>
+      </div>
       </div>
     </section>
   );

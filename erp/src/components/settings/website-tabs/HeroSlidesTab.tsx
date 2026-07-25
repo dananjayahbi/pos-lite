@@ -45,9 +45,9 @@ export function HeroSlidesTab({ config, onChange }: HeroSlidesTabProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-espresso">Hero Slides</h3>
+          <h3 className="text-sm font-semibold text-espresso">Hero Banner</h3>
           <p className="text-xs text-sand mt-1">
-            These appear as the main banner slider/video at the top of the website.
+            The first active slide is displayed as the main hero banner (single image or video).
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={addSlide}>
@@ -198,7 +198,7 @@ export function HeroSlidesTab({ config, onChange }: HeroSlidesTabProps) {
 
         {slides.length === 0 && (
           <div className="text-center py-8 text-sand text-sm border border-dashed border-mist rounded-lg">
-            No hero slides yet. Click &quot;Add Slide&quot; to create one.
+            No hero banner configured yet. Click &quot;Add Slide&quot; to upload an image or video.
           </div>
         )}
       </div>

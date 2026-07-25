@@ -25,6 +25,14 @@ import type {
 } from '@/types/website.types';
 import { DEFAULT_SECTION_ORDER } from '@/types/website.types';
 
+/** Format a kebab-case slug into a Title Case display name. */
+function formatSlugName(slug: string): string {
+  return slug
+    .split(/[-_]/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 interface WebsiteShellProps {
   tenantName: string;
   tenantSlug: string;
@@ -88,14 +96,20 @@ function getSortedSections(
   sections: WebsiteConfigData['sections'],
 ): Array<{ key: SectionKey; config: SectionConfig }> {
   const entries: Array<{ key: SectionKey; config: SectionConfig }> = [];
-  const raw = sections ?? {};
-  for (const key of Object.keys(raw) as SectionKey[]) {
+  const raw = (sections ?? {}) as Record<string, SectionConfig | undefined>;
+
+  // Always iterate ALL known section keys so a section with no stored config
+  // still renders with its default isActive + sortOrder values.
+  const allKeys = Object.keys(DEFAULT_SECTION_ORDER) as SectionKey[];
+  for (const key of allKeys) {
+    const stored = raw[key];
     entries.push({
       key,
-      config: (raw[key] ?? {
+      config: {
         isActive: true,
         sortOrder: DEFAULT_SECTION_ORDER[key] ?? 99,
-      }) as SectionConfig,
+        ...stored,
+      } as SectionConfig,
     });
   }
 
@@ -132,7 +146,7 @@ export function WebsiteShell({
   categories,
 }: WebsiteShellProps) {
   const websiteConfig: WebsiteConfigData = config ?? {
-    siteName: tenantName,
+    siteName: tenantName || formatSlugName(tenantSlug),
     tagline: '',
     socialLinks: {},
     navItems: [],
@@ -140,7 +154,7 @@ export function WebsiteShell({
     footerColumns: [],
   };
 
-  // Apply dynamic brand colors from ERP config as CSS custom properties
+  // Apply dynamic brand colors and typography from ERP config as CSS custom properties
   useEffect(() => {
     const root = document.documentElement;
     if (websiteConfig.primaryColor) {
@@ -151,6 +165,18 @@ export function WebsiteShell({
     }
     if (websiteConfig.bgColor) {
       root.style.setProperty('--site-bg', websiteConfig.bgColor);
+    }
+    if (websiteConfig.headingFontFamily) {
+      root.style.setProperty('--site-heading-font', websiteConfig.headingFontFamily);
+    }
+    if (websiteConfig.bodyFontFamily) {
+      root.style.setProperty('--site-body-font', websiteConfig.bodyFontFamily);
+    }
+    if (websiteConfig.headingColor) {
+      root.style.setProperty('--site-heading-color', websiteConfig.headingColor);
+    }
+    if (websiteConfig.bodyColor) {
+      root.style.setProperty('--site-body-color', websiteConfig.bodyColor);
     }
 
     // Set favicon
@@ -175,8 +201,12 @@ export function WebsiteShell({
       root.style.removeProperty('--site-primary');
       root.style.removeProperty('--site-accent');
       root.style.removeProperty('--site-bg');
+      root.style.removeProperty('--site-heading-font');
+      root.style.removeProperty('--site-body-font');
+      root.style.removeProperty('--site-heading-color');
+      root.style.removeProperty('--site-body-color');
     };
-  }, [websiteConfig.primaryColor, websiteConfig.accentColor, websiteConfig.bgColor, websiteConfig.faviconUrl, websiteConfig.metaTitle, websiteConfig.siteName]);
+  }, [websiteConfig.primaryColor, websiteConfig.accentColor, websiteConfig.bgColor, websiteConfig.faviconUrl, websiteConfig.metaTitle, websiteConfig.siteName, websiteConfig.headingFontFamily, websiteConfig.bodyFontFamily, websiteConfig.headingColor, websiteConfig.bodyColor]);
 
   const sortedSections = useMemo(
     () => getSortedSections(websiteConfig.sections),

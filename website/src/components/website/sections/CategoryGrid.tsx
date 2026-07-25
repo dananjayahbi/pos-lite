@@ -47,24 +47,27 @@ export function CategoryGrid({ config, tenantSlug, categories }: CategoryGridPro
   if (items.length === 0) return null;
 
   return (
-    <section className="py-12 md:py-16 bg-white">
-      <div className="max-w-7xl mx-auto px-4">
+    <section className="website-section website-section-alt">
+      <div className="max-w-7xl mx-auto px-4 md:px-8">
         {sectionConfig.title && (
           <div className="section-title">
             <h3 className="section-title-main">{sectionConfig.title}</h3>
           </div>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
           {items.map((cat) => (
             <Link key={cat.id} href={cat.href} className="category-card group">
               <div className="category-card-image">
                 <img src={cat.imageUrl} alt={cat.name} loading="lazy" />
+                {/* Overlay on hover */}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500 z-10" />
               </div>
-              <div className="p-3 text-center bg-white">
-                <h4 className="text-xs md:text-sm uppercase tracking-wider font-medium">
+              <div className="category-card-label">
+                <h4 className="text-xs md:text-sm uppercase tracking-wider font-semibold">
                   {cat.name}
                 </h4>
+                <span className="category-card-arrow">→</span>
               </div>
             </Link>
           ))}

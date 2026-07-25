@@ -35,7 +35,7 @@ export function TestimonialsSection({ config }: TestimonialsSectionProps) {
 
   return (
     <section
-      className="py-16 md:py-20 relative overflow-hidden"
+      className="website-section relative overflow-hidden"
       style={{ backgroundColor: 'var(--site-testimonial-bg)' }}
     >
       {/* Decorative circles */}
@@ -61,7 +61,7 @@ export function TestimonialsSection({ config }: TestimonialsSectionProps) {
             <h3
               className="text-2xl md:text-4xl font-light mb-4"
               style={{
-                fontFamily: 'var(--font-cormorant), serif',
+                fontFamily: 'var(--site-heading-font), serif',
                 color: 'var(--site-dark-brown)',
               }}
             >
@@ -103,7 +103,7 @@ export function TestimonialsSection({ config }: TestimonialsSectionProps) {
           <blockquote
             className="text-base md:text-lg italic leading-relaxed mb-6 px-4"
             style={{
-              fontFamily: 'var(--font-cormorant), serif',
+              fontFamily: 'var(--site-heading-font), serif',
               color: 'var(--site-dark-brown)',
             }}
           >
@@ -112,7 +112,7 @@ export function TestimonialsSection({ config }: TestimonialsSectionProps) {
 
           <div
             className="text-xs uppercase tracking-[0.2em]"
-            style={{ fontFamily: 'var(--font-jost), sans-serif', color: 'var(--site-accent)' }}
+            style={{ fontFamily: 'var(--site-body-font), sans-serif', color: 'var(--site-accent)' }}
           >
             <span
               className="inline-block w-6 h-px align-middle mr-2"
@@ -127,7 +127,7 @@ export function TestimonialsSection({ config }: TestimonialsSectionProps) {
           {testimonial.customerTitle && (
             <p
               className="text-xs text-gray-500 mt-1"
-              style={{ fontFamily: 'var(--font-jost), sans-serif' }}
+              style={{ fontFamily: 'var(--site-body-font), sans-serif' }}
             >
               {testimonial.customerTitle}
             </p>

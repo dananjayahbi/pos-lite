@@ -26,7 +26,7 @@ export function WebsiteFooter({ websiteConfig }: WebsiteFooterProps) {
   const footerColumns = websiteConfig.footerColumns ?? [];
   const socialLinks = websiteConfig.socialLinks ?? {};
   const footerAbout = websiteConfig.footerAbout;
-  const siteName = websiteConfig.siteName || 'Ayurveda';
+  const siteName = websiteConfig.siteName || 'Our Store';
 
   const socialEntries = Object.entries(socialLinks).filter(
     ([, value]) => value && typeof value === 'string' && value.length > 0,
@@ -34,10 +34,10 @@ export function WebsiteFooter({ websiteConfig }: WebsiteFooterProps) {
 
   return (
     <footer className="site-footer">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="max-w-7xl mx-auto px-4 md:px-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
           {/* Footer columns */}
-          {footerColumns.slice(0, 2).map((col, i) => (
+          {footerColumns.slice(0, 3).map((col, i) => (
             <div key={i}>
               <h4 className="site-footer-title">{col.title}</h4>
               <ul className="space-y-2">
@@ -52,15 +52,14 @@ export function WebsiteFooter({ websiteConfig }: WebsiteFooterProps) {
             </div>
           ))}
 
-          {/* About column */}
-          <div>
-            <h4 className="site-footer-title">About Us</h4>
+          {/* About column — always last */}
+          <div className={footerColumns.length > 0 ? '' : 'sm:col-span-2 lg:col-span-1'}>
+            <h4 className="site-footer-title">About</h4>
             {footerAbout ? (
               <p className="text-sm leading-relaxed mb-4">{footerAbout}</p>
             ) : (
               <p className="text-sm leading-relaxed mb-4">
-                {siteName} offers premium Ayurveda products crafted with natural
-                ingredients and ancient wisdom.
+                {siteName} — premium products crafted with care and tradition.
               </p>
             )}
 

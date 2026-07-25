@@ -1123,6 +1123,12 @@ model WebsiteConfig {
   accentColor     String?  @default("#b4946e")
   bgColor         String?  @default("#ece2d6")
 
+  // Typography
+  headingFontFamily  String?
+  bodyFontFamily     String?
+  headingColor       String?  @default("#0a0a0a")
+  bodyColor          String?  @default("#555555")
+
   // SEO
   metaTitle       String?
   metaDescription String?

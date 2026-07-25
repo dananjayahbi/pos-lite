@@ -22,7 +22,7 @@ chat.
 
 | Field    | Value                       |
 | -------- | --------------------------- |
-| Email    | `owner@dilani-boutique.lk`  |
+| Email    | `owner@dilani-ayurwellness.lk`  |
 | Password | `owner123!`                 |
 | PIN      | `1111`                      |
 | Role     | `OWNER`                     |

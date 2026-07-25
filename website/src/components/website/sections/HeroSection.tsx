@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import type { WebsiteConfigData, WebsiteHeroSlideData } from '@/types/website.types';
 
@@ -11,79 +11,53 @@ interface HeroSectionProps {
 }
 
 /**
- * Full-bleed hero slider with auto-advance, mouse-pause, and dot navigation.
- * Renders a graceful fallback when no slides are configured.
+ * Full-bleed hero banner with a single image or video.
+ * Uses only the first active hero slide (no slider/carousel behavior).
+ * Renders a graceful fallback when no slide is configured.
  */
 export function HeroSection({ websiteConfig }: HeroSectionProps) {
   const slides = (websiteConfig.heroSlides ?? []) as WebsiteHeroSlideData[];
-  const [currentSlide, setCurrentSlide] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
 
-  const activeSlides = slides.filter((s) => s.isActive);
-  const hasSlides = activeSlides.length > 0;
+  // Take only the first active slide — single image/video, not a slider
+  const slide = slides.find((s) => s.isActive) ?? null;
 
-  const goToSlide = useCallback(
-    (index: number) => {
-      setCurrentSlide((index + activeSlides.length) % activeSlides.length);
-    },
-    [activeSlides.length],
-  );
-
-  const nextSlide = useCallback(() => {
-    setCurrentSlide((prev) => (prev + 1) % activeSlides.length);
-  }, [activeSlides.length]);
-
-  // Auto-play every 4s; pause on hover or when only one slide exists.
-  useEffect(() => {
-    if (!hasSlides || activeSlides.length <= 1 || isPaused) return;
-    const timer = setInterval(nextSlide, 4000);
-    return () => clearInterval(timer);
-  }, [hasSlides, activeSlides.length, isPaused, nextSlide]);
-
-  if (!hasSlides) {
+  if (!slide) {
     return (
       <section
-        className="relative bg-[var(--site-bg)] flex items-center justify-center overflow-hidden"
-        style={{ minHeight: '70vh' }}
+        className="relative bg-gradient-to-br from-[#f9f5f0] via-[#f0ebe3] to-[#e8dfd5] flex items-center justify-center overflow-hidden"
+        style={{ minHeight: '80vh' }}
       >
         {/* Decorative subtle pattern overlay */}
         <div
-          className="absolute inset-0 opacity-[0.03]"
+          className="absolute inset-0 opacity-[0.04]"
           style={{
-            backgroundImage: `radial-gradient(circle at 20% 50%, var(--site-accent) 1px, transparent 1px),
-              radial-gradient(circle at 80% 50%, var(--site-accent) 1px, transparent 1px)`,
-            backgroundSize: '80px 80px',
+            backgroundImage: `radial-gradient(circle at 25% 30%, var(--site-accent) 1px, transparent 1px),
+              radial-gradient(circle at 75% 70%, var(--site-accent) 1px, transparent 1px)`,
+            backgroundSize: '60px 60px',
           }}
         />
         <div className="text-center px-4 relative z-10">
           <h1
-            className="text-3xl md:text-5xl lg:text-6xl mb-4 text-[var(--site-primary)]"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+            className="text-4xl md:text-5xl lg:text-6xl mb-6 text-[var(--site-dark-brown)] leading-tight"
+            style={{ fontFamily: 'var(--site-heading-font), serif' }}
           >
-            {websiteConfig.siteName || 'Premium Ayurveda'}
+            {websiteConfig.siteName || 'Welcome'}
           </h1>
           {websiteConfig.tagline && (
-            <p className="text-lg md:text-xl text-[var(--site-primary)]/60 max-w-2xl mx-auto">
+            <p className="text-lg md:text-xl text-[var(--site-body-color)] max-w-2xl mx-auto leading-relaxed">
               {websiteConfig.tagline}
             </p>
           )}
-          <div className="mt-8 w-16 h-[2px] bg-[var(--site-accent)] mx-auto" />
+          <div className="mt-10 w-20 h-[2px] bg-[var(--site-accent)] mx-auto opacity-60" />
         </div>
       </section>
     );
   }
 
-  const slide = activeSlides[currentSlide];
-  if (!slide) return null;
-
   const isVideo = slide.mediaType === 'video';
 
   return (
-    <section
-      className="hero-slide relative"
-      onMouseEnter={() => setIsPaused(true)}
-      onMouseLeave={() => setIsPaused(false)}
-    >
+    <section className="hero-slide relative">
       {/* Desktop media */}
       <div className="hidden md:block relative">
         {isVideo ? (
@@ -107,7 +81,7 @@ export function HeroSection({ websiteConfig }: HeroSectionProps) {
           />
         )}
         {/* Gradient overlay for text readability */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/30 to-black/10 pointer-events-none" />
       </div>
 
       {/* Mobile media */}
@@ -133,7 +107,7 @@ export function HeroSection({ websiteConfig }: HeroSectionProps) {
           />
         )}
         {/* Gradient overlay for text readability */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/30 to-black/10 pointer-events-none" />
       </div>
 
       {/* Text overlay */}
@@ -143,7 +117,7 @@ export function HeroSection({ websiteConfig }: HeroSectionProps) {
             {slide.subtitle && (
               <p
                 className="text-xs md:text-sm uppercase tracking-[0.25em] mb-3 text-white/80"
-                style={{ fontFamily: 'var(--font-jost), sans-serif' }}
+                style={{ fontFamily: 'var(--site-body-font), sans-serif' }}
               >
                 {slide.subtitle}
               </p>
@@ -151,7 +125,7 @@ export function HeroSection({ websiteConfig }: HeroSectionProps) {
             {slide.title && (
               <h2
                 className="text-2xl md:text-4xl lg:text-5xl mb-4 leading-tight"
-                style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+                style={{ fontFamily: 'var(--site-heading-font), serif' }}
               >
                 {slide.title}
               </h2>
@@ -164,26 +138,12 @@ export function HeroSection({ websiteConfig }: HeroSectionProps) {
             {slide.ctaText && slide.ctaLink && (
               <Link
                 href={slide.ctaLink}
-                className="inline-block px-8 py-3 border-2 border-white text-white uppercase text-xs tracking-wider hover:bg-white hover:text-black transition-colors"
+                className="cta-button"
               >
                 {slide.ctaText}
               </Link>
             )}
           </div>
-        </div>
-      )}
-
-      {/* Navigation dots */}
-      {activeSlides.length > 1 && (
-        <div className="flickity-dots absolute bottom-4 left-0 right-0">
-          {activeSlides.map((_, i) => (
-            <button
-              key={i}
-              className={`flickity-dot${i === currentSlide ? ' active' : ''}`}
-              onClick={() => goToSlide(i)}
-              aria-label={`Go to slide ${i + 1}`}
-            />
-          ))}
         </div>
       )}
     </section>

@@ -196,6 +196,12 @@ export interface WebsiteConfigData {
   accentColor?: string;
   bgColor?: string;
 
+  // Typography
+  headingFontFamily?: string;
+  bodyFontFamily?: string;
+  headingColor?: string;
+  bodyColor?: string;
+
   // SEO
   metaTitle?: string;
   metaDescription?: string;

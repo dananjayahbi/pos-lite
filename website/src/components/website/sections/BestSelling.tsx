@@ -60,8 +60,8 @@ export function BestSelling({ config, tenantSlug, products }: BestSellingProps) 
   if (display.length === 0) return null;
 
   return (
-    <section className="py-12 md:py-16 bg-white">
-      <div className="max-w-7xl mx-auto px-4">
+    <section className="website-section website-section-alt">
+      <div className="max-w-7xl mx-auto px-4 md:px-8">
         {sectionConfig.title && (
           <div className="section-title">
             <h3 className="section-title-main">{sectionConfig.title}</h3>

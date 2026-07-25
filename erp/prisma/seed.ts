@@ -151,7 +151,7 @@ async function seedSampleTenant() {
     return;
   }
 
-  const ownerEmail = 'owner@dilani-boutique.lk';
+  const ownerEmail = 'owner@dilani-ayurwellness.lk';
   const ownerPassword = 'owner123!';
   const ownerPin = '1111';
 

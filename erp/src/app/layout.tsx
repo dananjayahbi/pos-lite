@@ -7,7 +7,7 @@ import { Toaster } from '@/components/ui/sonner';
 
 export const metadata: Metadata = {
   title: 'AyurPOS',
-  description: 'Point of Sale system for modern clothing retail',
+  description: 'AyurPOS — Point of Sale & Inventory Management',
 };
 
 export default function RootLayout({
