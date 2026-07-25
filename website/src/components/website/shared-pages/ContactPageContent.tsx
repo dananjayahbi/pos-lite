@@ -23,6 +23,8 @@ export async function ContactPageContent({ tenantSlug }: ContactPageContentProps
     config?.contactPageSubtitle || "We'd love to hear from you. Get in touch with us.";
   const contactHeroImageUrl = config?.contactHeroImageUrl;
 
+  const heroProps = contactHeroImageUrl ? { heroImageUrl: contactHeroImageUrl } : {};
+
   return (
     <StaticPageShell
       tenantName={tenant.name}
@@ -30,7 +32,7 @@ export async function ContactPageContent({ tenantSlug }: ContactPageContentProps
       config={config}
       title={contactTitle}
       subtitle={contactSubtitle}
-      heroImageUrl={contactHeroImageUrl}
+      {...heroProps}
     >
       <div className="space-y-0">
         <ContactInfoCards

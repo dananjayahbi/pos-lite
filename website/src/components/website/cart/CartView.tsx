@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { ShoppingBag, ArrowLeft } from 'lucide-react';
 import { ROUTES } from '@/config/site';
 import { useCartStore } from '@/stores/cartStore';
+import type { CartLine } from '@/stores/cartStore';
 import { computeCartTotals } from '@/lib/cart';
 import { CartLineItem } from '@/components/website/cart/CartLineItem';
 import { CartSummary } from '@/components/website/cart/CartSummary';
@@ -31,7 +32,7 @@ const EMPTY_LINES: ReadonlyArray<any> = Object.freeze([]) as ReadonlyArray<any>;
 export function CartView({ tenantSlug }: CartViewProps) {
   const lines = useCartStore((s) => s.carts[tenantSlug]?.lines ?? EMPTY_LINES);
 
-  const totals = computeCartTotals(lines);
+  const totals = computeCartTotals(lines as CartLine[]);
 
   if (lines.length === 0) {
     return (

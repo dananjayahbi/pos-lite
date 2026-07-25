@@ -71,7 +71,7 @@ export async function POST(request: Request): Promise<Response> {
 
   for (const tag of tags) {
     try {
-      revalidateTag(tag);
+      revalidateTag(tag, {});
       results.tags.push(tag);
     } catch (err) {
       console.error(`[revalidate] Failed to revalidate tag "${tag}":`, err);

@@ -3,15 +3,13 @@
 import React, { useMemo, useEffect } from 'react';
 import { WebsiteHeader } from './sections/WebsiteHeader';
 import { HeroSection } from './sections/HeroSection';
-import { CategoryGrid } from './sections/CategoryGrid';
-import { SolutionsByConcern } from './sections/SolutionsByConcern';
-import { ShopByConcern } from './sections/ShopByConcern';
-import { GiftBoxSection } from './sections/GiftBoxSection';
-import { LatestProducts } from './sections/LatestProducts';
-import { PromoBanner } from './sections/PromoBanner';
+import { ImageSliderSection } from './sections/ImageSliderSection';
 import { BestSelling } from './sections/BestSelling';
+import { InfoAdSection } from './sections/InfoAdSection';
+import { CategoryGrid } from './sections/CategoryGrid';
+import { LatestProducts } from './sections/LatestProducts';
 import { TestimonialsSection } from './sections/TestimonialsSection';
-import { StoresBanner } from './sections/StoresBanner';
+import { StoreReferenceSection } from './sections/StoreReferenceSection';
 import { WebsiteFooter } from './sections/WebsiteFooter';
 import { AdBanner } from './sections/AdBanner';
 import { BackToTop } from './sections/BackToTop';
@@ -54,37 +52,32 @@ type SectionProps = {
   config: Record<string, unknown>;
   websiteConfig: Record<string, unknown>;
   tenantSlug: string;
-  // Optional real data for sections that display products / categories.
-  latestProducts?: PublicProduct[];
-  bestSellingProducts?: PublicProduct[];
-  categories?: PublicCategory[];
+  latestProducts?: PublicProduct[] | undefined;
+  bestSellingProducts?: PublicProduct[] | undefined;
+  categories?: PublicCategory[] | undefined;
 };
 
-/** Map of section key → component. Sections that need real data receive it. */
+/** Map of section key → component. */
 function getSectionComponent(
   key: SectionKey,
 ): React.ComponentType<SectionProps> | null {
   switch (key) {
     case 'hero':
       return HeroSection as unknown as React.ComponentType<SectionProps>;
-    case 'categories':
-      return CategoryGrid as unknown as React.ComponentType<SectionProps>;
-    case 'solutionsByConcern':
-      return SolutionsByConcern as unknown as React.ComponentType<SectionProps>;
-    case 'shopByConcern':
-      return ShopByConcern as unknown as React.ComponentType<SectionProps>;
-    case 'giftBox':
-      return GiftBoxSection as unknown as React.ComponentType<SectionProps>;
-    case 'latestProducts':
-      return LatestProducts as unknown as React.ComponentType<SectionProps>;
-    case 'promoBanner':
-      return PromoBanner as unknown as React.ComponentType<SectionProps>;
+    case 'imageSlider':
+      return ImageSliderSection as unknown as React.ComponentType<SectionProps>;
     case 'bestSelling':
       return BestSelling as unknown as React.ComponentType<SectionProps>;
+    case 'infoAd':
+      return InfoAdSection as unknown as React.ComponentType<SectionProps>;
+    case 'categories':
+      return CategoryGrid as unknown as React.ComponentType<SectionProps>;
+    case 'latestProducts':
+      return LatestProducts as unknown as React.ComponentType<SectionProps>;
     case 'testimonials':
       return TestimonialsSection as unknown as React.ComponentType<SectionProps>;
-    case 'storesBanner':
-      return StoresBanner as unknown as React.ComponentType<SectionProps>;
+    case 'storeReference':
+      return StoreReferenceSection as unknown as React.ComponentType<SectionProps>;
     case 'footer':
       return WebsiteFooter as unknown as React.ComponentType<SectionProps>;
     default:
@@ -238,16 +231,10 @@ export function WebsiteShell({
           config: sectionConfig as Record<string, unknown>,
           websiteConfig: websiteConfig as unknown as Record<string, unknown>,
           tenantSlug,
+          latestProducts,
+          bestSellingProducts,
+          categories,
         };
-        if (key === 'latestProducts' && latestProducts) {
-          sectionProps.latestProducts = latestProducts;
-        }
-        if (key === 'bestSelling' && bestSellingProducts) {
-          sectionProps.bestSellingProducts = bestSellingProducts;
-        }
-        if (key === 'categories' && categories) {
-          sectionProps.categories = categories;
-        }
 
         return (
           <React.Fragment key={key}>

@@ -1,36 +1,19 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import {
-  Menu,
-  Image,
-  Layers,
-  MessageSquareQuote,
-  Footprints,
-  Megaphone,
-  FileText,
-  Store,
-  Palette,
-} from 'lucide-react';
+import { Palette, Layout, Layers, Footprints, ShoppingBag, FileText, Phone, AlertTriangle } from 'lucide-react';
 import { GeneralTab } from './website-tabs/GeneralTab';
-import { NavigationTab } from './website-tabs/NavigationTab';
-import { HeroSlidesTab } from './website-tabs/HeroSlidesTab';
-import { SectionsTab } from './website-tabs/SectionsTab';
-import { TestimonialsTab } from './website-tabs/TestimonialsTab';
+import { HeaderTab } from './website-tabs/HeaderTab';
+import { LandingPageTab } from './website-tabs/LandingPageTab';
 import { FooterTab } from './website-tabs/FooterTab';
-import { AdsTab } from './website-tabs/AdsTab';
-import { AboutContactTab } from './website-tabs/AboutContactTab';
+import { AboutPageTab } from './website-tabs/AboutPageTab';
+import { ContactPageTab } from './website-tabs/ContactPageTab';
 import { ShopTab } from './website-tabs/ShopTab';
 import { ResetConfirmDialog } from './ResetConfirmDialog';
 import { pendingUploads, removedUrls, processPendingUploads, deleteRemovedUrls, resetUploadState } from './uploadState';
 import type { WebsiteConfigData } from '@/types/website.types';
-
-interface WebsiteSettingsFormProps {
-  tenantId: string;
-  initialConfig: WebsiteConfigData | null;
-}
 
 const DEFAULT_CONFIG: WebsiteConfigData = {
   siteName: '',
@@ -46,51 +29,112 @@ const DEFAULT_CONFIG: WebsiteConfigData = {
   navItems: [],
   sections: {
     hero: { isActive: true, sortOrder: 1 },
-    categories: { isActive: true, sortOrder: 2 },
-    solutionsByConcern: { isActive: true, sortOrder: 3 },
-    shopByConcern: { isActive: true, sortOrder: 4 },
-    giftBox: { isActive: true, sortOrder: 5 },
-    latestProducts: { isActive: true, sortOrder: 6 },
-    promoBanner: { isActive: true, sortOrder: 7 },
-    bestSelling: { isActive: true, sortOrder: 8 },
-    testimonials: { isActive: true, sortOrder: 9 },
-    storesBanner: { isActive: true, sortOrder: 10 },
-    footer: { isActive: true, sortOrder: 11 },
+    imageSlider: { isActive: true, sortOrder: 2, images: [] },
+    bestSelling: { isActive: true, sortOrder: 3, title: 'Top Selling Items This Week', productCount: 7, productIds: [] },
+    infoAd: { isActive: true, sortOrder: 4, desktopImageUrl: '', title: '', subtitle: '' },
+    categories: { isActive: true, sortOrder: 5, title: 'Top Categories', categoryIds: [], categoryImages: {} },
+    latestProducts: { isActive: true, sortOrder: 6, title: 'Latest Products', productCount: 7, productIds: [] },
+    testimonials: { isActive: true, sortOrder: 7, title: 'Testimonials', subtitle: 'What Our Community Says', items: [] },
+    storeReference: { isActive: true, sortOrder: 8, desktopImageUrl: '', title: '', subtitle: '' },
+    footer: { isActive: true, sortOrder: 9 },
   },
   footerAbout: '',
   footerColumns: [],
   heroSlides: [],
-  ads: [],
 };
 
 const TABS = [
   { value: 'general', label: 'General', icon: Palette },
-  { value: 'navigation', label: 'Navigation', icon: Menu },
-  { value: 'hero', label: 'Hero Banner', icon: Image },
-  { value: 'sections', label: 'Sections', icon: Layers },
-  { value: 'testimonials', label: 'Testimonials', icon: MessageSquareQuote },
+  { value: 'header', label: 'Header', icon: Layout },
+  { value: 'landing', label: 'Landing Page', icon: Layers },
   { value: 'footer', label: 'Footer', icon: Footprints },
-  { value: 'ads', label: 'Ads', icon: Megaphone },
-  { value: 'about-contact', label: 'About & Contact', icon: FileText },
-  { value: 'shop', label: 'Shop', icon: Store },
-];
+  { value: 'shop', label: 'Shop Page', icon: ShoppingBag },
+  { value: 'about', label: 'About Page', icon: FileText },
+  { value: 'contact', label: 'Contact Page', icon: Phone },
+] as const;
 
-export function WebsiteSettingsForm({
-  tenantId,
-  initialConfig,
-}: WebsiteSettingsFormProps) {
-  const [config, setConfig] = useState<WebsiteConfigData>(
-    initialConfig ?? DEFAULT_CONFIG
-  );
-  const [saving, setSaving] = useState(false);
+type TabValue = (typeof TABS)[number]['value'];
+
+export default function WebsiteSettingsForm() {
+  const [config, setConfig] = useState<WebsiteConfigData>(DEFAULT_CONFIG);
+  const [activeTab, setActiveTab] = useState<TabValue>('general');
+  const [isDirty, setIsDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
 
-  const updateConfig = useCallback((updates: Partial<WebsiteConfigData>) => {
-    setConfig((prev) => ({ ...prev, ...updates }));
+  const initialConfigRef = useRef<string>('');
+  const pendingTabRef = useRef<TabValue | null>(null);
+
+  // Load config from API on mount
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const res = await fetch('/api/store/website');
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && body.data) {
+            const merged = { ...DEFAULT_CONFIG, ...body.data };
+            setConfig(merged);
+            initialConfigRef.current = JSON.stringify(merged);
+            return;
+          }
+        }
+        initialConfigRef.current = JSON.stringify(DEFAULT_CONFIG);
+      } catch {
+        initialConfigRef.current = JSON.stringify(DEFAULT_CONFIG);
+        toast.error('Failed to load website configuration');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadConfig();
   }, []);
 
-  // ── Sanitize null values from the DB before sending to the API ────────────
+  // Beforeunload listener for unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
 
+  const updateConfig = useCallback((updates: Partial<WebsiteConfigData>) => {
+    setConfig((prev) => {
+      const next = { ...prev, ...updates };
+      setIsDirty(JSON.stringify(next) !== initialConfigRef.current);
+      return next;
+    });
+  }, []);
+
+  const handleTabChange = (tab: TabValue) => {
+    if (tab === activeTab) return;
+    if (isDirty) {
+      pendingTabRef.current = tab;
+      setShowUnsavedDialog(true);
+    } else {
+      setActiveTab(tab);
+    }
+  };
+
+  const handleDiscard = () => {
+    const initial = JSON.parse(initialConfigRef.current) as WebsiteConfigData;
+    setConfig(initial);
+    setIsDirty(false);
+    setShowUnsavedDialog(false);
+    resetUploadState();
+    if (pendingTabRef.current) {
+      setActiveTab(pendingTabRef.current);
+      pendingTabRef.current = null;
+    }
+  };
+
+  // ── Sanitize null values from the DB before sending to the API ────────────
   function sanitizeCoreConfig(data: Record<string, unknown>): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
@@ -118,7 +162,6 @@ export function WebsiteSettingsForm({
     for (const [key, { objectUrl }] of pendingUploads.entries()) {
       const realUrl = uploaded.get(key);
       if (realUrl && objectUrl) {
-        // Replace the ObjectURL with the real Cloudflare URL
         resolved = resolved.split(objectUrl).join(realUrl);
       }
     }
@@ -127,17 +170,16 @@ export function WebsiteSettingsForm({
   }
 
   const handleSave = async () => {
-    setSaving(true);
+    setIsSaving(true);
     try {
-      // 0. Process deferred media uploads (upload pending files to Cloudflare)
+      // Process deferred media uploads (upload pending files to Cloudflare)
       let uploadedUrls: Map<string, string> = new Map();
       if (pendingUploads.size > 0) {
         try {
           uploadedUrls = await processPendingUploads();
-        } catch (uploadErr) {
+        } catch {
           toast.error('Failed to upload media files. Please try again.');
-          console.error('Upload error:', uploadErr);
-          setSaving(false);
+          setIsSaving(false);
           return;
         }
       }
@@ -145,10 +187,8 @@ export function WebsiteSettingsForm({
       // Replace ObjectURLs with real Cloudflare URLs in the config
       const resolvedConfig = resolvePendingUrls(config, uploadedUrls);
 
-      // 1. Save core website config (without heroSlides/ads — those are separate)
-      const { heroSlides, ads, ...coreConfig } = resolvedConfig;
-      // Sanitize: convert null → '' for string fields so zod validation passes
-      const sanitized = sanitizeCoreConfig(coreConfig);
+      // Save entire config (heroSlides are now embedded in the config)
+      const sanitized = sanitizeCoreConfig(resolvedConfig as unknown as Record<string, unknown>);
       const res = await fetch('/api/store/website', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -171,129 +211,81 @@ export function WebsiteSettingsForm({
         return;
       }
 
-      // 2. Sync hero slides through dedicated endpoints
-      if (heroSlides && heroSlides.length > 0) {
-        await syncHeroSlides(heroSlides);
-      }
-
-      // 3. Sync ads through dedicated endpoints
-      if (ads && ads.length > 0) {
-        await syncAds(ads);
-      }
-
-      // 4. Delete removed media from Cloudflare
+      // Delete removed media from Cloudflare
       if (removedUrls.size > 0) {
         try {
           await deleteRemovedUrls();
-        } catch (delErr) {
-          console.warn('Failed to delete some media files:', delErr);
+        } catch {
+          console.warn('Failed to delete some media files');
         }
       }
 
-      // 5. Clear upload state
+      // Reset upload state and mark clean
       resetUploadState();
+      initialConfigRef.current = JSON.stringify(resolvedConfig);
+      setConfig(resolvedConfig);
+      setIsDirty(false);
 
-      toast.success('Website configuration saved successfully');
-
-      // Refetch latest config from server so state stays in sync
-      // (critical for multi-tab scenarios — Tab B sees Tab A's changes)
-      try {
-        const res = await fetch('/api/store/website');
-        const body = await res.json();
-        if (body.success && body.data) {
-          const fresh: WebsiteConfigData = JSON.parse(JSON.stringify(body.data));
-          setConfig(fresh);
-        }
-      } catch {
-        // If refetch fails, local state is still valid
-      }
+      toast.success('Website settings saved successfully');
     } catch {
       toast.error('An error occurred while saving');
     } finally {
-      setSaving(false);
+      setIsSaving(false);
     }
   };
 
-  // ── Inline sync helpers ──────────────────────────────────────────────────
-
-  async function syncHeroSlides(slides: WebsiteConfigData['heroSlides']) {
-    if (!slides) return;
-    for (const slide of slides) {
-      try {
-        const sanitized = sanitizeCoreConfig(slide as unknown as Record<string, unknown>) as unknown as typeof slide;
-        if (slide.id) {
-          // Update existing
-          await fetch(`/api/store/website/hero-slides/${slide.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(sanitized),
-          });
-        } else {
-          // Create new
-          await fetch('/api/store/website/hero-slides', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(sanitized),
-          });
-        }
-      } catch (err) {
-        console.error('Failed to sync hero slide:', err);
-      }
+  const handleSaveAndLeave = async () => {
+    await handleSave();
+    setShowUnsavedDialog(false);
+    if (pendingTabRef.current) {
+      setActiveTab(pendingTabRef.current);
+      pendingTabRef.current = null;
     }
-  }
+  };
 
-  async function syncAds(adsList: WebsiteConfigData['ads']) {
-    if (!adsList) return;
-    for (const ad of adsList) {
-      try {
-        const sanitized = sanitizeCoreConfig(ad as unknown as Record<string, unknown>) as unknown as typeof ad;
-        if (ad.id) {
-          await fetch(`/api/store/website/ads/${ad.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(sanitized),
-          });
-        } else {
-          await fetch('/api/store/website/ads', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(sanitized),
-          });
-        }
-      } catch (err) {
-        console.error('Failed to sync ad:', err);
-      }
+  const handleReset = async () => {
+    try {
+      const res = await fetch('/api/store/website', { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to reset');
+      setConfig(DEFAULT_CONFIG);
+      initialConfigRef.current = JSON.stringify(DEFAULT_CONFIG);
+      setIsDirty(false);
+      resetUploadState();
+      setShowResetDialog(false);
+      toast.success('Website settings reset to defaults');
+    } catch {
+      toast.error('Failed to reset configuration');
     }
-  }
-
-  const [activeTab, setActiveTab] = useState('general');
-
-  // ── Tab content map ─────────────────────────────────────────────────────
+  };
 
   const renderTabContent = () => {
     switch (activeTab) {
       case 'general':
         return <GeneralTab config={config} onChange={updateConfig} />;
-      case 'navigation':
-        return <NavigationTab config={config} onChange={updateConfig} />;
-      case 'hero':
-        return <HeroSlidesTab tenantId={tenantId} config={config} onChange={updateConfig} />;
-      case 'sections':
-        return <SectionsTab config={config} onChange={updateConfig} />;
-      case 'testimonials':
-        return <TestimonialsTab config={config} onChange={updateConfig} />;
+      case 'header':
+        return <HeaderTab config={config} onChange={updateConfig} />;
+      case 'landing':
+        return <LandingPageTab config={config} onChange={updateConfig} />;
       case 'footer':
         return <FooterTab config={config} onChange={updateConfig} />;
-      case 'ads':
-        return <AdsTab tenantId={tenantId} config={config} onChange={updateConfig} />;
-      case 'about-contact':
-        return <AboutContactTab config={config} onChange={updateConfig} />;
       case 'shop':
         return <ShopTab config={config} onChange={updateConfig} />;
+      case 'about':
+        return <AboutPageTab config={config} onChange={updateConfig} />;
+      case 'contact':
+        return <ContactPageTab config={config} onChange={updateConfig} />;
       default:
         return null;
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-espresso border-t-transparent" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex gap-0 min-h-[600px] border border-mist rounded-xl bg-white overflow-hidden">
@@ -312,7 +304,7 @@ export function WebsiteSettingsForm({
               <button
                 key={tab.value}
                 type="button"
-                onClick={() => setActiveTab(tab.value)}
+                onClick={() => handleTabChange(tab.value)}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150 text-left ${
                   isActive
                     ? 'bg-white text-espresso font-medium border-r-2 border-terracotta shadow-sm'
@@ -334,31 +326,69 @@ export function WebsiteSettingsForm({
         </div>
 
         {/* Save bar */}
-        <div className="sticky bottom-0 bg-white border-t border-mist px-6 py-4 flex justify-end gap-3">
+        <div className="sticky bottom-0 bg-white border-t border-mist px-6 py-4 flex items-center justify-between">
           <Button
-            variant="outline"
-            onClick={() => setShowResetDialog(true)}
-            disabled={saving}
+            variant="ghost"
             size="sm"
+            className="text-terracotta hover:text-terracotta/80"
+            onClick={() => setShowResetDialog(true)}
+            disabled={isSaving}
+            type="button"
           >
             Reset to Defaults
           </Button>
-          <Button
-            onClick={handleSave}
-            disabled={saving}
-            className="bg-espresso hover:bg-espresso/90"
-            size="sm"
-          >
-            {saving ? 'Saving...' : 'Save All Changes'}
-          </Button>
+
+          <div className="flex items-center gap-3">
+            {isDirty && (
+              <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
+            )}
+            <Button
+              size="sm"
+              className="bg-espresso hover:bg-espresso/90"
+              onClick={handleSave}
+              disabled={isSaving || !isDirty}
+              type="button"
+            >
+              {isSaving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
         </div>
       </div>
 
+      {/* Unsaved changes dialog */}
+      {showUnsavedDialog && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-espresso">Unsaved Changes</h3>
+            </div>
+            <p className="text-sm text-sand mb-6">
+              You have unsaved changes. Do you want to save before leaving?
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" size="sm" onClick={() => setShowUnsavedDialog(false)}>
+                Cancel
+              </Button>
+              <Button variant="ghost" size="sm" className="text-terracotta" onClick={handleDiscard}>
+                Discard
+              </Button>
+              <Button size="sm" className="bg-espresso hover:bg-espresso/90" onClick={handleSaveAndLeave}>
+                Save
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset confirmation dialog */}
       <ResetConfirmDialog
         open={showResetDialog}
         onOpenChange={setShowResetDialog}
-        onConfirm={() => setConfig(initialConfig ?? DEFAULT_CONFIG)}
-        disabled={saving}
+        onConfirm={handleReset}
+        disabled={isSaving}
       />
     </div>
   );

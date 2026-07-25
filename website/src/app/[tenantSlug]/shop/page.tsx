@@ -15,8 +15,8 @@ export default async function ShopPage({ params, searchParams }: ShopPageProps) 
   return (
     <ShopPageContent
       tenantSlug={tenantSlug}
-      category={category}
-      sort={sort}
+      category={category ?? ''}
+      sort={sort ?? ''}
     />
   );
 }

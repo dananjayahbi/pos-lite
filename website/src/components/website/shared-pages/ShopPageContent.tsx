@@ -30,14 +30,17 @@ export async function ShopPageContent({ tenantSlug, category, sort }: ShopPageCo
   const shopTitle = config?.shopPageTitle || 'Shop';
   const shopSubtitle = config?.shopPageSubtitle;
 
+  const subtitleProps = shopSubtitle ? { subtitle: shopSubtitle } : {};
+  const heroProps = config?.shopHeroImageUrl ? { heroImageUrl: config.shopHeroImageUrl } : {};
+
   return (
     <StaticPageShell
       tenantName={tenant.name}
       tenantSlug={tenantSlug}
       config={config}
       title={shopTitle}
-      subtitle={shopSubtitle}
-      heroImageUrl={config?.shopHeroImageUrl}
+      {...subtitleProps}
+      {...heroProps}
     >
       <div className="space-y-6">
         <ShopFilters

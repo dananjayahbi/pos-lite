@@ -40,43 +40,51 @@ export interface CategoriesSection {
   isActive: boolean;
   sortOrder: number;
   title?: string;
-  /** Category IDs to display (empty = auto-select from store categories) */
+  /** Category IDs to display (max 5, empty = auto-select from store categories) */
   categoryIds: string[];
+  /** Optional override images per category: { [categoryId]: imageUrl } */
+  categoryImages?: Record<string, string>;
 }
 
-/** Solutions by concern section config */
-export interface SolutionsByConcernSection {
+/** Image slider section config (Section 02) — up to 7 configurable images */
+export interface ImageSliderSection {
+  isActive: boolean;
+  sortOrder: number;
+  /** Up to 7 image URLs for the slider */
+  images: ImageSliderItem[];
+}
+
+export interface ImageSliderItem {
+  imageUrl: string;
+  alt?: string;
+  linkUrl?: string;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+/** Info/advertisement section config (Section 04) — 2-column info block */
+export interface InfoAdSection {
   isActive: boolean;
   sortOrder: number;
   desktopImageUrl: string;
   mobileImageUrl?: string;
-  link?: string;
+  title: string;
+  subtitle: string;
+  buttonText?: string;
+  buttonLink?: string;
 }
 
-/** Shop by concern carousel section config */
-export interface ShopByConcernSection {
+/** Store reference section config (Section 08) — store image + details */
+export interface StoreReferenceSection {
   isActive: boolean;
   sortOrder: number;
-  title?: string;
-  items: ShopByConcernItem[];
-}
-
-export interface ShopByConcernItem {
-  name: string;
-  imageUrl: string;
-  link?: string;
-  sortOrder: number;
-}
-
-/** Gift box split section config */
-export interface GiftBoxSection {
-  isActive: boolean;
-  sortOrder: number;
-  leftImageUrl: string;
-  rightImageUrl: string;
-  title?: string;
-  subtitle?: string;
-  link?: string;
+  desktopImageUrl: string;
+  mobileImageUrl?: string;
+  title: string;
+  subtitle: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  mapEmbedUrl?: string;
 }
 
 /** Latest products section config */
@@ -84,19 +92,10 @@ export interface LatestProductsSection {
   isActive: boolean;
   sortOrder: number;
   title: string;
-  /** Number of products to show (default 10) */
+  /** Number of products to show (max 7, default 7) */
   productCount: number;
-  /** Specific product variant IDs (empty = auto-select latest) */
-  productVariantIds: string[];
-}
-
-/** Promotional banner section config */
-export interface PromoBannerSection {
-  isActive: boolean;
-  sortOrder: number;
-  desktopImageUrl: string;
-  mobileImageUrl: string;
-  link?: string;
+  /** Specific product IDs (max 7, empty = auto-select latest) */
+  productIds: string[];
 }
 
 /** Best selling products section config */
@@ -104,10 +103,10 @@ export interface BestSellingSection {
   isActive: boolean;
   sortOrder: number;
   title: string;
-  /** Number of products to show (default 10) */
+  /** Number of products to show (max 7, default 7) */
   productCount: number;
-  /** Specific product variant IDs (empty = auto-select best selling) */
-  productVariantIds: string[];
+  /** Specific product IDs (max 7, empty = auto-select best selling) */
+  productIds: string[];
 }
 
 /** Testimonial */
@@ -151,33 +150,88 @@ export interface FooterColumn {
   links: FooterColumnLink[];
 }
 
+// ── Deprecated sections (kept for ERP WebsiteShell preview compat) ──────────
+
+/** @deprecated Use ImageSliderSection or InfoAdSection */
+export interface SolutionsByConcernSection {
+  isActive: boolean;
+  sortOrder: number;
+  desktopImageUrl: string;
+  mobileImageUrl?: string;
+  link?: string;
+}
+
+/** @deprecated Use CategoriesSection */
+export interface ShopByConcernSection {
+  isActive: boolean;
+  sortOrder: number;
+  title?: string;
+  items: ShopByConcernItem[];
+}
+
+/** @deprecated Use CategoriesSection */
+export interface ShopByConcernItem {
+  name: string;
+  imageUrl: string;
+  link?: string;
+  sortOrder: number;
+}
+
+/** @deprecated */
+export interface GiftBoxSection {
+  isActive: boolean;
+  sortOrder: number;
+  leftImageUrl: string;
+  rightImageUrl: string;
+  title?: string;
+  subtitle?: string;
+  link?: string;
+}
+
+/** @deprecated Use InfoAdSection */
+export interface PromoBannerSection {
+  isActive: boolean;
+  sortOrder: number;
+  desktopImageUrl: string;
+  mobileImageUrl: string;
+  link?: string;
+}
+
 // ── Combined sections map ────────────────────────────────────────────────────
 
 export type SectionKey =
   | 'hero'
+  | 'imageSlider'
+  | 'bestSelling'
+  | 'infoAd'
   | 'categories'
+  | 'latestProducts'
+  | 'testimonials'
+  | 'storeReference'
+  | 'footer'
+  // Deprecated — kept for backward compat with ERP preview shell
   | 'solutionsByConcern'
   | 'shopByConcern'
   | 'giftBox'
-  | 'latestProducts'
   | 'promoBanner'
-  | 'bestSelling'
-  | 'testimonials'
-  | 'storesBanner'
-  | 'footer';
+  | 'storesBanner';
 
 export const DEFAULT_SECTION_ORDER: Record<SectionKey, number> = {
   hero: 1,
-  categories: 2,
-  solutionsByConcern: 3,
-  shopByConcern: 4,
-  giftBox: 5,
+  imageSlider: 2,
+  bestSelling: 3,
+  infoAd: 4,
+  categories: 5,
   latestProducts: 6,
-  promoBanner: 7,
-  bestSelling: 8,
-  testimonials: 9,
-  storesBanner: 10,
-  footer: 11,
+  testimonials: 7,
+  storeReference: 8,
+  footer: 9,
+  // Deprecated defaults
+  solutionsByConcern: 99,
+  shopByConcern: 99,
+  giftBox: 99,
+  promoBanner: 99,
+  storesBanner: 99,
 };
 
 /** Full website configuration */

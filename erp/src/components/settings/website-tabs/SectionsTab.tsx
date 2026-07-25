@@ -11,7 +11,7 @@ interface SectionsTabProps {
   onChange: (updates: Partial<WebsiteConfigData>) => void;
 }
 
-const SECTION_LABELS: Record<SectionKey, string> = {
+const SECTION_LABELS: Partial<Record<SectionKey, string>> = {
   hero: 'Hero Banner',
   categories: 'Category Grid',
   solutionsByConcern: 'Solutions by Concern Banner',

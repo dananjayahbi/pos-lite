@@ -1,118 +1,116 @@
 'use client';
 
-import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import type { BestSellingSection, PublicProduct } from '@/types/website.types';
+import type {
+  BestSellingSection,
+  PublicProduct,
+} from '@/types/website.types';
 import { ProductCard } from '@/components/website/cart/ProductCard';
+import { CarouselSlider } from '@/components/website/sections/CarouselSlider';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function pickDisplayImage(product: PublicProduct): string | undefined {
+  return (
+    product.variants?.[0]?.imageUrls?.[0] ??
+    product.primaryVariant?.imageUrls?.[0]
+  );
+}
+
+function pickDisplayPrice(product: PublicProduct): number {
+  return (
+    product.variants?.[0]?.retailPrice ??
+    product.primaryVariant?.retailPrice ??
+    0
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
 
 interface BestSellingProps {
   config: Record<string, unknown>;
   websiteConfig: Record<string, unknown>;
   tenantSlug: string;
-  products?: PublicProduct[];
+  /** Real product data passed from the parent page / data-fetching layer. */
+  bestSellingProducts?: PublicProduct[];
 }
 
-function pickDisplayImage(p: PublicProduct): string {
-  return (
-    p.variants?.[0]?.imageUrls?.[0] ??
-    p.primaryVariant?.imageUrls?.[0] ??
-    'https://images.unsplash.com/photo-1611930022073-b7a4ba5fcccd?w=400&h=400&fit=crop'
-  );
-}
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
-function pickDisplayPrice(p: PublicProduct): number {
-  return (
-    p.variants?.[0]?.retailPrice ??
-    p.primaryVariant?.retailPrice ??
-    0
-  );
-}
-
-/**
- * Best-selling products carousel. When `products` is provided (from the ERP
- * API) it is rendered; otherwise falls back to placeholder fixtures.
- */
-export function BestSelling({ config, tenantSlug, products }: BestSellingProps) {
+export function BestSelling({
+  config,
+  websiteConfig: _websiteConfig,
+  tenantSlug,
+  bestSellingProducts,
+}: BestSellingProps) {
   const sectionConfig = config as unknown as BestSellingSection;
-  const [scrollIndex, setScrollIndex] = useState(0);
-  const [itemsPerView, setItemsPerView] = useState(2);
 
-  // Responsive items per view
-  React.useEffect(() => {
-    const compute = () => setItemsPerView(window.innerWidth >= 768 ? 5 : 2);
-    compute();
-    window.addEventListener('resize', compute);
-    return () => window.removeEventListener('resize', compute);
-  }, []);
+  // ── Data source ──────────────────────────────────────────────────────
+  let source = bestSellingProducts ?? [];
 
-  const source: PublicProduct[] = products ?? [];
-  const display = source.slice(0, sectionConfig.productCount || 10);
+  // If specific product IDs are configured, filter to only those.
+  if (sectionConfig.productIds && sectionConfig.productIds.length > 0) {
+    const idSet = new Set(sectionConfig.productIds);
+    source = source.filter((p) => idSet.has(p.id));
+  }
 
-  const maxIndex = Math.max(0, display.length - itemsPerView);
-
-  const scroll = (direction: 'left' | 'right') => {
-    setScrollIndex((prev) => {
-      if (direction === 'left') return Math.max(0, prev - 1);
-      return Math.min(maxIndex, prev + 1);
-    });
-  };
+  const display = source.slice(0, sectionConfig.productCount || 7);
 
   if (display.length === 0) return null;
 
+  const title = sectionConfig.title || 'Top Selling Items This Week';
+
+  // ── Render ────────────────────────────────────────────────────────────
   return (
-    <section className="website-section website-section-alt">
-      <div className="max-w-7xl mx-auto px-4 md:px-8">
-        {sectionConfig.title && (
-          <div className="section-title">
-            <h3 className="section-title-main">{sectionConfig.title}</h3>
-          </div>
-        )}
+    <section className="best-selling-section max-h-[525px] overflow-hidden mb-[8px]">
+      {/* Section title */}
+      <h2 className="section-title">{title}</h2>
 
-        <div className="relative">
-          <div className="overflow-hidden">
-            <div
-              className="flex transition-transform duration-500 ease-out"
-              style={{ transform: `translateX(-${scrollIndex * (100 / itemsPerView)}%)` }}
-            >
-              {display.map((product) => (
-                <div
-                  key={product.id}
-                  className="flex-shrink-0 px-2"
-                  style={{ width: `${100 / itemsPerView}%` }}
-                >
-                  <ProductCard
-                    product={product}
-                    tenantSlug={tenantSlug}
-                    imageOverride={pickDisplayImage(product)}
-                    priceOverride={pickDisplayPrice(product)}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
+      <CarouselSlider
+        sliderId="best-selling"
+        desktopCards={4}
+        tabletCards={3}
+        mobileCards={2}
+        gap={16}
+        className="mt-4"
+      >
+        {display.map((product) => {
+          const img = pickDisplayImage(product);
+          return (
+            <ProductCard
+              key={product.id}
+              product={product}
+              tenantSlug={tenantSlug}
+              {...(img ? { imageOverride: img } : {})}
+              priceOverride={pickDisplayPrice(product)}
+            />
+          );
+        })}
+      </CarouselSlider>
 
-          {display.length > itemsPerView && (
-            <>
-              <button
-                onClick={() => scroll('left')}
-                disabled={scrollIndex === 0}
-                className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 w-10 h-10 rounded-full bg-white shadow-lg flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors z-10"
-                aria-label="Previous products"
-              >
-                <ChevronLeft size={20} />
-              </button>
-              <button
-                onClick={() => scroll('right')}
-                disabled={scrollIndex >= maxIndex}
-                className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 w-10 h-10 rounded-full bg-white shadow-lg flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors z-10"
-                aria-label="Next products"
-              >
-                <ChevronRight size={20} />
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+      {/* ── Section-title styling ─────────────────────────────────────── */}
+      <style jsx>{`
+        .section-title {
+          font-size: 22px;
+          font-weight: 700;
+          letter-spacing: 0.5px;
+          color: #1a1a1a;
+          margin-bottom: 4px;
+          padding: 0 16px;
+        }
+
+        @media (max-width: 768px) {
+          .section-title {
+            font-size: 18px;
+            padding: 0 12px;
+          }
+        }
+      `}</style>
     </section>
   );
 }

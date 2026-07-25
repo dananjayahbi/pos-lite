@@ -25,7 +25,7 @@ export interface DeferredMediaUploaderProps {
   /** Disabled state */
   disabled?: boolean;
   /** Current real URL (to detect removals) */
-  currentRealUrl?: string;
+  currentRealUrl?: string | undefined;
 }
 
 /**

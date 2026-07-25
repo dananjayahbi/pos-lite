@@ -9,11 +9,12 @@ interface ShopPageProps {
 }
 
 export default async function ShopRootPage({ searchParams }: ShopPageProps) {
+  const sp = await searchParams;
   return (
     <ShopPageContent
       tenantSlug={SITE.defaultTenantSlug}
-      category={await searchParams.then((s) => s.category)}
-      sort={await searchParams.then((s) => s.sort)}
+      category={sp.category ?? ''}
+      sort={sp.sort ?? ''}
     />
   );
 }

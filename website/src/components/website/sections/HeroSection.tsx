@@ -11,141 +11,326 @@ interface HeroSectionProps {
 }
 
 /**
- * Full-bleed hero banner with a single image or video.
- * Uses only the first active hero slide (no slider/carousel behavior).
- * Renders a graceful fallback when no slide is configured.
+ * Section 01 — Full-width hero banner.
+ * - 100% width, max-height 600px (responsive)
+ * - Video or image background from first active heroSlide
+ * - Dark gradient overlay for text readability
+ * - Centered text overlay: Title (serif heading) + Subtitle (body)
+ * - Fallback gradient background when no active slide exists
+ * - 8px gap below via mb-[8px]
  */
 export function HeroSection({ websiteConfig }: HeroSectionProps) {
   const slides = (websiteConfig.heroSlides ?? []) as WebsiteHeroSlideData[];
-
-  // Take only the first active slide — single image/video, not a slider
   const slide = slides.find((s) => s.isActive) ?? null;
 
+  const headingFont = 'var(--site-heading-font), serif';
+  const bodyFont = 'var(--site-body-font), sans-serif';
+
+  // ── Fallback: no active slide ────────────────────────────────────────────
   if (!slide) {
     return (
-      <section
-        className="relative bg-gradient-to-br from-[#f9f5f0] via-[#f0ebe3] to-[#e8dfd5] flex items-center justify-center overflow-hidden"
-        style={{ minHeight: '80vh' }}
-      >
-        {/* Decorative subtle pattern overlay */}
-        <div
-          className="absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage: `radial-gradient(circle at 25% 30%, var(--site-accent) 1px, transparent 1px),
-              radial-gradient(circle at 75% 70%, var(--site-accent) 1px, transparent 1px)`,
-            backgroundSize: '60px 60px',
-          }}
-        />
-        <div className="text-center px-4 relative z-10">
-          <h1
-            className="text-4xl md:text-5xl lg:text-6xl mb-6 text-[var(--site-dark-brown)] leading-tight"
-            style={{ fontFamily: 'var(--site-heading-font), serif' }}
-          >
+      <section className="hero-fallback mb-[8px]">
+        <div className="hero-fallback-bg" />
+        <div className="hero-fallback-content">
+          <h1 className="hero-fallback-title">
             {websiteConfig.siteName || 'Welcome'}
           </h1>
           {websiteConfig.tagline && (
-            <p className="text-lg md:text-xl text-[var(--site-body-color)] max-w-2xl mx-auto leading-relaxed">
-              {websiteConfig.tagline}
-            </p>
+            <p className="hero-fallback-subtitle">{websiteConfig.tagline}</p>
           )}
-          <div className="mt-10 w-20 h-[2px] bg-[var(--site-accent)] mx-auto opacity-60" />
+          <div className="hero-fallback-divider" />
         </div>
+        <style jsx>{`
+          .hero-fallback {
+            position: relative;
+            width: 100%;
+            min-height: 60vh;
+            max-height: 600px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+          }
+          .hero-fallback-bg {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(
+              135deg,
+              #f9f5f0 0%,
+              #f0ebe3 30%,
+              #e8dfd5 70%,
+              #ddd4c5 100%
+            );
+          }
+          .hero-fallback-bg::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            opacity: 0.04;
+            background-image: radial-gradient(
+                circle at 20% 30%,
+                var(--site-accent, #8b5e3c) 1px,
+                transparent 1px
+              ),
+              radial-gradient(
+                circle at 80% 70%,
+                var(--site-accent, #8b5e3c) 1px,
+                transparent 1px
+              );
+            background-size: 60px 60px;
+          }
+          .hero-fallback-content {
+            position: relative;
+            z-index: 10;
+            text-align: center;
+            padding: 2rem;
+          }
+          .hero-fallback-title {
+            font-family: ${headingFont};
+            font-size: clamp(2rem, 5vw, 3.5rem);
+            color: var(--site-dark-brown, #3e2723);
+            margin-bottom: 1rem;
+            line-height: 1.15;
+          }
+          .hero-fallback-subtitle {
+            font-family: ${bodyFont};
+            font-size: clamp(1rem, 2.5vw, 1.25rem);
+            color: var(--site-body-color, #5d4037);
+            max-width: 600px;
+            margin: 0 auto;
+            line-height: 1.6;
+          }
+          .hero-fallback-divider {
+            width: 80px;
+            height: 2px;
+            background: var(--site-accent, #8b5e3c);
+            margin: 1.5rem auto 0;
+            opacity: 0.5;
+          }
+          @media (max-width: 768px) {
+            .hero-fallback {
+              min-height: 50vh;
+              max-height: 400px;
+            }
+          }
+          @media (max-width: 480px) {
+            .hero-fallback {
+              min-height: 40vh;
+              max-height: 320px;
+            }
+          }
+        `}</style>
       </section>
     );
   }
 
+  // ── Active slide ─────────────────────────────────────────────────────────
   const isVideo = slide.mediaType === 'video';
+  const desktopMedia = slide.mediaUrl;
+  const mobileMedia = slide.mobileMediaUrl || desktopMedia;
 
   return (
-    <section className="hero-slide relative">
-      {/* Desktop media */}
-      <div className="hidden md:block relative">
+    <section className="hero-section mb-[8px]">
+      {/* Desktop background */}
+      <div className="hero-bg-desktop">
         {isVideo ? (
           <video
-            className="hero-slide-video"
-            src={slide.mediaUrl}
+            src={desktopMedia}
             autoPlay
             muted
             loop
             playsInline
-            style={{ maxHeight: '85vh', width: '100%' }}
+            className="hero-media"
           />
         ) : (
           <div
-            className="hero-slide-image"
-            style={{
-              backgroundImage: `url(${slide.mediaUrl})`,
-              paddingTop: '56.25%',
-              maxHeight: '85vh',
-            }}
+            className="hero-media hero-bg-image"
+            style={{ backgroundImage: `url(${desktopMedia})` }}
           />
         )}
-        {/* Gradient overlay for text readability */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/30 to-black/10 pointer-events-none" />
+        <div className="hero-overlay" />
       </div>
 
-      {/* Mobile media */}
-      <div className="block md:hidden relative">
+      {/* Mobile background */}
+      <div className="hero-bg-mobile">
         {isVideo ? (
           <video
-            className="hero-slide-video"
-            src={slide.mobileMediaUrl || slide.mediaUrl}
+            src={mobileMedia}
             autoPlay
             muted
             loop
             playsInline
-            style={{ maxHeight: '70vh', width: '100%' }}
+            className="hero-media"
           />
         ) : (
           <div
-            className="hero-slide-image"
-            style={{
-              backgroundImage: `url(${slide.mobileMediaUrl || slide.mediaUrl})`,
-              paddingTop: '100%',
-              maxHeight: '70vh',
-            }}
+            className="hero-media hero-bg-image"
+            style={{ backgroundImage: `url(${mobileMedia})` }}
           />
         )}
-        {/* Gradient overlay for text readability */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/30 to-black/10 pointer-events-none" />
+        <div className="hero-overlay" />
       </div>
 
       {/* Text overlay */}
-      {(slide.title || slide.subtitle || slide.description) && (
-        <div className="hero-slide-overlay">
-          <div className="max-w-2xl mx-auto">
-            {slide.subtitle && (
-              <p
-                className="text-xs md:text-sm uppercase tracking-[0.25em] mb-3 text-white/80"
-                style={{ fontFamily: 'var(--site-body-font), sans-serif' }}
-              >
-                {slide.subtitle}
-              </p>
-            )}
-            {slide.title && (
-              <h2
-                className="text-2xl md:text-4xl lg:text-5xl mb-4 leading-tight"
-                style={{ fontFamily: 'var(--site-heading-font), serif' }}
-              >
-                {slide.title}
-              </h2>
-            )}
-            {slide.description && (
-              <p className="text-sm md:text-base text-white/80 mb-6 max-w-lg mx-auto">
-                {slide.description}
-              </p>
-            )}
-            {slide.ctaText && slide.ctaLink && (
-              <Link
-                href={slide.ctaLink}
-                className="cta-button"
-              >
-                {slide.ctaText}
-              </Link>
-            )}
-          </div>
+      {(slide.title || slide.subtitle || slide.description || slide.ctaText) && (
+        <div className="hero-text-overlay">
+          {slide.subtitle && (
+            <p className="hero-subtitle">{slide.subtitle}</p>
+          )}
+          {slide.title && <h1 className="hero-title">{slide.title}</h1>}
+          {slide.description && (
+            <p className="hero-description">{slide.description}</p>
+          )}
+          {slide.ctaText && slide.ctaLink && (
+            <Link href={slide.ctaLink} className="hero-cta">
+              {slide.ctaText}
+            </Link>
+          )}
         </div>
       )}
+
+      <style jsx>{`
+        .hero-section {
+          position: relative;
+          width: 100%;
+          max-height: 600px;
+          overflow: hidden;
+        }
+
+        /* Background containers */
+        .hero-bg-desktop {
+          display: none;
+          position: relative;
+        }
+        .hero-bg-mobile {
+          display: block;
+          position: relative;
+        }
+
+        .hero-media {
+          width: 100%;
+          max-height: 600px;
+          object-fit: cover;
+          display: block;
+        }
+
+        .hero-bg-image {
+          height: 60vh;
+          max-height: 600px;
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
+        }
+
+        /* Dark gradient overlay */
+        .hero-overlay {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            to top,
+            rgba(0, 0, 0, 0.65) 0%,
+            rgba(0, 0, 0, 0.25) 40%,
+            rgba(0, 0, 0, 0.05) 100%
+          );
+          pointer-events: none;
+        }
+
+        /* Text overlay — centered vertically & horizontally */
+        .hero-text-overlay {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          padding: 2rem;
+          z-index: 2;
+        }
+
+        .hero-subtitle {
+          font-family: ${bodyFont};
+          font-size: 0.75rem;
+          text-transform: uppercase;
+          letter-spacing: 0.25em;
+          color: rgba(255, 255, 255, 0.85);
+          margin-bottom: 0.75rem;
+        }
+
+        .hero-title {
+          font-family: ${headingFont};
+          font-size: clamp(1.75rem, 5vw, 3.5rem);
+          color: #ffffff;
+          line-height: 1.12;
+          margin-bottom: 1rem;
+          max-width: 800px;
+          text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .hero-description {
+          font-family: ${bodyFont};
+          font-size: clamp(0.875rem, 2vw, 1.125rem);
+          color: rgba(255, 255, 255, 0.9);
+          max-width: 560px;
+          line-height: 1.6;
+          margin-bottom: 1.5rem;
+        }
+
+        .hero-cta {
+          display: inline-block;
+          padding: 0.75rem 2rem;
+          background: var(--site-accent, #8b5e3c);
+          color: #fff;
+          font-family: ${bodyFont};
+          font-size: 0.9375rem;
+          font-weight: 500;
+          border-radius: 4px;
+          text-decoration: none;
+          transition: opacity 0.2s ease;
+        }
+        .hero-cta:hover {
+          opacity: 0.9;
+        }
+
+        /* Responsive */
+        @media (min-width: 768px) {
+          .hero-bg-desktop {
+            display: block;
+          }
+          .hero-bg-mobile {
+            display: none;
+          }
+          .hero-bg-image {
+            height: 600px;
+          }
+        }
+
+        @media (max-width: 767px) {
+          .hero-section {
+            max-height: 400px;
+          }
+          .hero-media {
+            max-height: 70vh;
+          }
+          .hero-bg-image {
+            height: 60vh;
+            max-height: 400px;
+          }
+          .hero-text-overlay {
+            padding: 1.25rem;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .hero-section {
+            max-height: 320px;
+          }
+          .hero-bg-image {
+            height: 55vh;
+            max-height: 320px;
+          }
+        }
+      `}</style>
     </section>
   );
 }

@@ -14,6 +14,7 @@ import React, { useEffect, useRef } from 'react';
 import { X, ShoppingBag } from 'lucide-react';
 import { useCartStore } from '@/stores/cartStore';
 import { computeCartTotals } from '@/lib/cart';
+import type { CartLine } from '@/stores/cartStore';
 import { CartLineItem } from './CartLineItem';
 import { CartSummary } from './CartSummary';
 
@@ -60,7 +61,7 @@ export function CartDrawer({ tenantSlug }: CartDrawerProps) {
 
   if (!isOpen) return null;
 
-  const totals = computeCartTotals(lines);
+  const totals = computeCartTotals(lines as CartLine[]);
 
   return (
     <div

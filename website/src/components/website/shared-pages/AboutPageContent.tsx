@@ -29,6 +29,8 @@ export async function AboutPageContent({ tenantSlug }: AboutPageContentProps) {
     ([, value]) => value && typeof value === 'string' && value.length > 0,
   );
 
+  const heroProps = aboutHeroImageUrl ? { heroImageUrl: aboutHeroImageUrl } : {};
+
   return (
     <StaticPageShell
       tenantName={tenant.name}
@@ -36,7 +38,7 @@ export async function AboutPageContent({ tenantSlug }: AboutPageContentProps) {
       config={config}
       title={aboutTitle}
       subtitle={aboutSubtitle}
-      heroImageUrl={aboutHeroImageUrl}
+      {...heroProps}
     >
       <div className="space-y-0">
         <AboutStorySection
