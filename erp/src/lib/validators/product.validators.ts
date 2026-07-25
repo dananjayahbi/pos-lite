@@ -35,7 +35,7 @@ export const CreateVariantInputSchema = z
       )
       .optional(),
     sku: z.string().max(50).optional(),
-    imageUrls: z.array(z.string().url()).max(5).default([]),
+    imageUrls: z.array(z.string().url()).max(10).default([]),
     initialStock: z.number().int().min(0).default(0),
   })
   .refine((data) => data.retailPrice >= data.costPrice, {

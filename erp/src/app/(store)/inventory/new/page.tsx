@@ -34,16 +34,14 @@ export default function NewProductPage() {
 
   return (
     <main className="min-h-screen bg-linen p-6 md:p-8">
-      <div className="mx-auto max-w-[1200px]">
-        <Card className="border-mist bg-pearl p-6 md:p-8">
-          <WizardProgressBar currentStep={step} />
-          <div className="mt-8">
-            {step === 1 && <WizardStep1BasicInfo />}
-            {step === 2 && <WizardStep2Variants />}
-            {step === 3 && <WizardStep3Review />}
-          </div>
-        </Card>
-      </div>
+      <Card className="border-mist bg-pearl p-6 md:p-8">
+        <WizardProgressBar currentStep={step} />
+        <div className="mt-8">
+          {step === 1 && <WizardStep1BasicInfo />}
+          {step === 2 && <WizardStep2Variants />}
+          {step === 3 && <WizardStep3Review />}
+        </div>
+      </Card>
     </main>
   );
 }

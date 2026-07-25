@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { Eye, Archive, Trash2, Plus, Leaf } from 'lucide-react';
+import { Plus, Leaf } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -14,8 +14,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
 import { ProductStatusBadge } from '@/components/inventory/ProductStatusBadge';
+import { InventoryRowActions } from '@/components/inventory/InventoryRowActions';
 import { useInventorySelectionStore } from '@/stores/inventorySelectionStore';
 import type { ProductListItem } from '@/hooks/useProducts';
 
@@ -248,43 +248,15 @@ export function InventoryTable({
                     />
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-espresso/60 hover:text-espresso"
-                        asChild
-                      >
-                        <Link href={`/inventory/${product.id}`}>
-                          <Eye className="h-4 w-4" />
-                          <span className="sr-only">View {product.name}</span>
-                        </Link>
-                      </Button>
-                      {canArchive && onArchive && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-espresso/60 hover:text-espresso"
-                          onClick={() => onArchive(product.id, !product.isArchived)}
-                        >
-                          <Archive className="h-4 w-4" />
-                          <span className="sr-only">
-                            {product.isArchived ? 'Unarchive' : 'Archive'} {product.name}
-                          </span>
-                        </Button>
-                      )}
-                      {canDelete && onDelete && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-espresso/60 hover:text-destructive"
-                          onClick={() => onDelete(product.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          <span className="sr-only">Delete {product.name}</span>
-                        </Button>
-                      )}
-                    </div>
+                    <InventoryRowActions
+                      productId={product.id}
+                      productName={product.name}
+                      isArchived={product.isArchived}
+                      canArchive={canArchive}
+                      canDelete={canDelete}
+                      onArchive={onArchive}
+                      onDelete={onDelete}
+                    />
                   </TableCell>
                 </TableRow>
               );

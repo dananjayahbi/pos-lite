@@ -26,7 +26,7 @@ export function setPendingImages(combinationKey: string, data: VariantPendingIma
 
 export function addPendingFile(combinationKey: string, file: File): void {
   const current = getPendingImages(combinationKey);
-  if (current.pending.length >= 3) return;
+  if (current.pending.length >= 10) return;
   const previewUrl = URL.createObjectURL(file);
   store.set(combinationKey, {
     ...current,

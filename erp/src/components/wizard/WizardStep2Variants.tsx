@@ -5,7 +5,7 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { useProductWizardStore } from '@/stores/productWizardStore';
 import { PackSizeChipInput } from './PackSizeChipInput';
 import { FormChipInput } from './FormChipInput';
-import { VariantMatrixTable } from './VariantMatrixTable';
+import { VariantsEditor } from './VariantsEditor';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft, ArrowRight, AlertCircle } from 'lucide-react';
@@ -284,15 +284,14 @@ export function WizardStep2Variants() {
       </div>
 
       {fields.length > 0 && (
-        <div className="border border-mist rounded-lg overflow-hidden">
-          <VariantMatrixTable
-            fields={fields as Array<VariantRow & { id: string }>}
-            control={control}
-            register={register}
-            setValue={setValue}
-            watch={watch}
-          />
-        </div>
+        <VariantsEditor
+          fields={fields as Array<VariantRow & { id: string }>}
+          control={control}
+          register={register}
+          setValue={setValue}
+          watch={watch}
+          canViewCost
+        />
       )}
 
       {fields.length === 0 && (

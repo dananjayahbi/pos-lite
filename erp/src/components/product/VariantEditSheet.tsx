@@ -355,7 +355,7 @@ export function VariantEditSheet({
             <ProductImageUpload
               imageUrls={watchedImageUrls}
               onImagesChange={(urls) => setValue('imageUrls', urls, { shouldDirty: true })}
-              maxImages={5}
+              maxImages={10}
             />
           </div>
         </form>
