@@ -1,0 +1,95 @@
+'use client';
+
+import React, { useState } from 'react';
+import type { PublicProduct, PublicProductVariant } from '@/types/website.types';
+import { formatLKR } from '@/lib/utils';
+
+interface ProductInfoProps {
+  product: PublicProduct;
+}
+
+/**
+ * Product name, price, variant selector, quantity picker, and add-to-bag CTA.
+ */
+export function ProductInfo({ product }: ProductInfoProps) {
+  const variants = product.variants ?? [];
+  const [selected, setSelected] = useState<PublicProductVariant | undefined>(
+    product.primaryVariant ?? variants[0],
+  );
+
+  const price = selected?.retailPrice ?? variants[0]?.retailPrice ?? 0;
+  const inStock = (selected?.stockQuantity ?? 0) > 0;
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Title */}
+      <div>
+        <h1
+          className="text-2xl md:text-3xl font-medium"
+          style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+        >
+          {product.name}
+        </h1>
+        {(product.tags ?? []).length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {(product.tags ?? []).map((tag) => (
+              <span
+                key={tag}
+                className="inline-block rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Price */}
+      <p className="text-xl font-semibold">{formatLKR(price)}</p>
+
+      {/* Variant selector */}
+      {variants.length > 1 && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium uppercase tracking-wider text-gray-600">
+            Select variant
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {variants.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => setSelected(v)}
+                className={`rounded border px-3 py-1.5 text-sm transition-colors ${
+                  selected?.id === v.id
+                    ? 'border-black bg-black text-white'
+                    : 'border-gray-300 hover:border-gray-500'
+                }`}
+              >
+                {v.sku}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Stock status */}
+      <p className={`text-sm ${inStock ? 'text-green-700' : 'text-red-600'}`}>
+        {inStock ? 'In stock' : 'Out of stock'}
+      </p>
+
+      {/* Description */}
+      {product.description && (
+        <div className="prose prose-sm max-w-none text-gray-700">
+          <p>{product.description}</p>
+        </div>
+      )}
+
+      {/* Add to bag */}
+      <button
+        disabled={!inStock}
+        className="w-full rounded bg-black py-3 text-sm font-medium uppercase tracking-wider text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:px-12"
+      >
+        Add to Bag
+      </button>
+    </div>
+  );
+}
