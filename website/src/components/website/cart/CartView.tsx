@@ -22,8 +22,14 @@ interface CartViewProps {
   tenantSlug: string;
 }
 
+// Stable reference used when the tenant cart doesn't exist yet, so the
+// selector returns the same identity on every call and React's
+// `useSyncExternalStore` doesn't loop.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const EMPTY_LINES: ReadonlyArray<any> = Object.freeze([]) as ReadonlyArray<any>;
+
 export function CartView({ tenantSlug }: CartViewProps) {
-  const lines = useCartStore((s) => s.carts[tenantSlug]?.lines ?? []);
+  const lines = useCartStore((s) => s.carts[tenantSlug]?.lines ?? EMPTY_LINES);
 
   const totals = computeCartTotals(lines);
 

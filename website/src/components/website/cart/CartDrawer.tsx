@@ -21,8 +21,17 @@ interface CartDrawerProps {
   tenantSlug: string;
 }
 
+// Stable reference used when the tenant has no cart yet, so the
+// selector returns the same identity every render and React's
+// `useSyncExternalStore` does not loop.
+const EMPTY_LINES: ReadonlyArray<never> = Object.freeze([]) as ReadonlyArray<never>;
+
 export function CartDrawer({ tenantSlug }: CartDrawerProps) {
-  const lines = useCartStore((s) => s.carts[tenantSlug]?.lines ?? []);
+  // Select the raw `lines` array (or undefined) so the selector returns a
+  // stable reference. Returning a fresh `[]` on every call would defeat
+  // the snapshot caching in `useSyncExternalStore` and trigger the
+  // "getServerSnapshot should be cached" infinite-loop error.
+  const lines = useCartStore((s) => s.carts[tenantSlug]?.lines ?? EMPTY_LINES);
   const closeDrawer = useCartStore((s) => s.closeDrawer);
   const isOpen = useCartStore((s) => s.drawerTenant === tenantSlug);
 
