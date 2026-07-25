@@ -222,11 +222,10 @@ export function WebsiteShell({
       <WebsiteHeader config={websiteConfig} tenantSlug={tenantSlug} />
 
       {/* Sections */}
-      {sortedSections.map(({ key, config: sectionConfig }) => {
+      {sortedSections.map(({ key, config: sectionConfig }, idx) => {
         const SectionComponent = getSectionComponent(key);
         if (!SectionComponent) return null;
 
-        // Pass per-section real data only to sections that consume it.
         const sectionProps: SectionProps = {
           config: sectionConfig as Record<string, unknown>,
           websiteConfig: websiteConfig as unknown as Record<string, unknown>,
@@ -236,14 +235,23 @@ export function WebsiteShell({
           categories,
         };
 
+        // Alternating backgrounds for visual separation
+        const isEven = idx % 2 === 0;
+        const bgClass = isEven ? 'bg-white' : 'bg-stone-50/60';
+        // Hero is full-bleed — only bottom gap, no internal padding
+        const isHero = key === 'hero';
+
         return (
-          <React.Fragment key={key}>
+          <div
+            key={key}
+            className={`section-wrapper ${bgClass} ${isHero ? 'pt-0 pb-0' : 'py-6 md:py-8'} mb-[10px]`}
+          >
             <SectionComponent {...sectionProps} />
             {/* Inject ads after this section */}
             {getAdsForSection(websiteConfig.ads, key).map((ad) => (
               <AdBanner key={ad.id} ad={ad} />
             ))}
-          </React.Fragment>
+          </div>
         );
       })}
 

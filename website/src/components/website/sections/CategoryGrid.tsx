@@ -55,7 +55,7 @@ export function CategoryGrid({
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
-    <section className="category-grid-section mb-[8px]">
+    <section className="category-grid-section">
       {/* Section title */}
       <h2 className="section-title">{title}</h2>
 

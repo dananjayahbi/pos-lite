@@ -67,7 +67,7 @@ export function BestSelling({
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
-    <section className="best-selling-section max-h-[525px] overflow-hidden mb-[8px]">
+    <section className="best-selling-section max-h-[525px] overflow-hidden">
       {/* Section title */}
       <h2 className="section-title">{title}</h2>
 

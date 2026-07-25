@@ -67,7 +67,7 @@ export function LatestProducts({
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
-    <section className="latest-products-section mb-[8px]">
+    <section className="latest-products-section">
       {/* Section title */}
       <h2 className="section-title">{title}</h2>
 

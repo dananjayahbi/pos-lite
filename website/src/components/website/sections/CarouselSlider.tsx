@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useEffect, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface CarouselSliderProps {
@@ -18,6 +18,8 @@ interface CarouselSliderProps {
   gap?: number;
   /** Optional class for the outer wrapper */
   className?: string;
+  /** Enable infinite scroll via triple-duplicate technique (default false) */
+  infinite?: boolean;
 }
 
 /**
@@ -33,8 +35,54 @@ export function CarouselSlider({
   mobileCards = 2,
   gap = 16,
   className = '',
+  infinite = false,
 }: CarouselSliderProps) {
   const sliderRef = useRef<HTMLDivElement>(null);
+
+  // Triple children for infinite scroll (3 copies: [children, children, children])
+  const childrenArray = useMemo(() => React.Children.toArray(children), [children]);
+  const tripledChildren = useMemo(
+    () => [
+      ...childrenArray.map((child, i) =>
+        React.cloneElement(child as React.ReactElement, { key: `dup1-${i}` }),
+      ),
+      ...childrenArray.map((child, i) =>
+        React.cloneElement(child as React.ReactElement, { key: `dup2-${i}` }),
+      ),
+      ...childrenArray.map((child, i) =>
+        React.cloneElement(child as React.ReactElement, { key: `dup3-${i}` }),
+      ),
+    ],
+    [childrenArray],
+  );
+
+  // Infinite scroll: set initial position to middle copy and handle boundary jumps
+  useEffect(() => {
+    if (!infinite || childrenArray.length === 0) return;
+    const slider = sliderRef.current;
+    if (!slider) return;
+
+    // Set initial scroll to the middle copy after layout
+    const raf = requestAnimationFrame(() => {
+      const oneSetWidth = slider.scrollWidth / 3;
+      slider.scrollLeft = oneSetWidth;
+    });
+
+    const handleScroll = () => {
+      const oneSetWidth = slider.scrollWidth / 3;
+      if (slider.scrollLeft < 50) {
+        slider.scrollLeft += oneSetWidth;
+      } else if (slider.scrollLeft + slider.clientWidth > slider.scrollWidth - 50) {
+        slider.scrollLeft -= oneSetWidth;
+      }
+    };
+
+    slider.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      cancelAnimationFrame(raf);
+      slider.removeEventListener('scroll', handleScroll);
+    };
+  }, [infinite, childrenArray]);
 
   const getScrollAmount = useCallback(() => {
     const slider = sliderRef.current;
@@ -62,7 +110,7 @@ export function CarouselSlider({
   const mobileCols = `calc(${100 / mobileCards}% - ${gap - gap / mobileCards}px)`;
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative ${className} px-0 md:px-0`}> 
       {/* Prev button */}
       <button
         onClick={() => scroll('prev')}
@@ -95,7 +143,7 @@ export function CarouselSlider({
           '--mobile-cols': mobileCols,
         } as React.CSSProperties}
       >
-        {children}
+        {infinite ? tripledChildren : children}
       </div>
 
       <style jsx>{`
@@ -122,10 +170,10 @@ export function CarouselSlider({
           transform: translateY(-50%) scale(1.05);
         }
         .nav-btn-prev {
-          left: -20px;
+          left: 0;
         }
         .nav-btn-next {
-          right: -20px;
+          right: 0;
         }
         .carousel-track {
           display: grid;
@@ -147,12 +195,6 @@ export function CarouselSlider({
         @media (max-width: 900px) {
           .carousel-track {
             grid-auto-columns: var(--tablet-cols);
-          }
-          .nav-btn-prev {
-            left: -10px;
-          }
-          .nav-btn-next {
-            right: -10px;
           }
         }
         @media (max-width: 600px) {

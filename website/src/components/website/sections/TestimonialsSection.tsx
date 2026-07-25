@@ -56,7 +56,7 @@ export function TestimonialsSection({ config }: TestimonialsSectionProps) {
   };
 
   return (
-    <section className="website-section mb-[8px]">
+    <section className="website-section">
       <div className="testimonial-section">
         <div className="max-w-[850px] mx-auto px-4 md:px-8">
           {/* Subtitle */}

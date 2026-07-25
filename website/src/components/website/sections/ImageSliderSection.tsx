@@ -21,7 +21,6 @@ interface ImageSliderSectionProps {
  * - Up to 7 configurable images, filtered to active only
  * - Each card fills its container with object-fit: cover
  * - Optional linkUrl wraps image in anchor tag
- * - 8px gap below via mb-[8px]
  */
 export function ImageSliderSection({ config }: ImageSliderSectionProps) {
   const section = config as unknown as ImageSliderSectionConfig;
@@ -65,13 +64,14 @@ export function ImageSliderSection({ config }: ImageSliderSectionProps) {
   });
 
   return (
-    <section className="image-slider-section mb-[8px]">
+    <section className="image-slider-section">
       <CarouselSlider
         sliderId="image-slider"
         desktopCards={3}
         tabletCards={2}
         mobileCards={1}
         gap={8}
+        infinite
       >
         {cards}
       </CarouselSlider>

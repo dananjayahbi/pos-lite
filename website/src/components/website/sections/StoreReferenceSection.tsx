@@ -24,7 +24,7 @@ export function StoreReferenceSection({ config }: StoreReferenceSectionProps) {
   const mapUrl = sectionConfig.mapEmbedUrl || '';
 
   return (
-    <section className="website-section mb-[8px]">
+    <section className="website-section">
       <div className="store-reference">
         {/* Background image container */}
         <div

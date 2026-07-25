@@ -17,7 +17,6 @@ interface InfoAdSectionProps {
  * - Mobile: image on top, text on bottom
  * - Right-side content centered vertically & horizontally
  * - Button styled with site accent color
- * - 8px gap below via mb-[8px]
  */
 export function InfoAdSection({ config }: InfoAdSectionProps) {
   const section = config as unknown as InfoAdSectionConfig;
@@ -30,7 +29,7 @@ export function InfoAdSection({ config }: InfoAdSectionProps) {
   const mobileImage = section.mobileImageUrl || section.desktopImageUrl;
 
   return (
-    <section className="info-ad-section mb-[8px]">
+    <section className="info-ad-section">
       {/* Desktop layout: side-by-side */}
       <div className="info-ad-desktop">
         {/* Left: Image */}

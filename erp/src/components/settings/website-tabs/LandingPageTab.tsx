@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
   Plus,
   Trash2,
@@ -20,6 +20,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DeferredMediaUploader } from '@/components/shared/DeferredMediaUploader';
+import { CategoryPicker } from '@/components/settings/website-tabs/CategoryPicker';
+import { ProductPicker } from '@/components/settings/website-tabs/ProductPicker';
 import { toast } from 'sonner';
 import type {
   WebsiteConfigData,
@@ -54,6 +56,58 @@ function updateSection(
   };
   sections[key] = { ...existing, ...updates };
   return { sections: sections as Partial<Record<SectionKey, Record<string, unknown>>> };
+}
+
+// ── Module-level section chrome (extracted to prevent focus loss) ────────────
+
+interface SectionHeaderProps {
+  sectionKey: string;
+  title: string;
+  description: string;
+  expandedSections: Record<string, boolean>;
+  onToggle: (key: string) => void;
+}
+
+function SectionHeader({
+  sectionKey,
+  title,
+  description,
+  expandedSections,
+  onToggle,
+}: SectionHeaderProps) {
+  const isExpanded = expandedSections[sectionKey] ?? true;
+  return (
+    <div
+      className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-cream/30"
+      onClick={() => onToggle(sectionKey)}
+    >
+      <div>
+        <h3 className="text-sm font-semibold text-espresso">{title}</h3>
+        <p className="mt-0.5 text-xs text-sand">{description}</p>
+      </div>
+      {isExpanded ? (
+        <ChevronDown className="h-4 w-4 shrink-0 text-sand" />
+      ) : (
+        <ChevronRight className="h-4 w-4 shrink-0 text-sand" />
+      )}
+    </div>
+  );
+}
+
+interface SectionBodyProps {
+  sectionKey: string;
+  children: React.ReactNode;
+  expandedSections: Record<string, boolean>;
+}
+
+function SectionBody({
+  sectionKey,
+  children,
+  expandedSections,
+}: SectionBodyProps) {
+  const isExpanded = expandedSections[sectionKey] ?? true;
+  if (!isExpanded) return null;
+  return <div className="px-4 pb-4 pt-0 space-y-3">{children}</div>;
 }
 
 export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
@@ -257,46 +311,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
   // ===========================================================================
   // RENDER
   // ===========================================================================
-
-  function SectionHeader({
-    sectionKey,
-    title,
-    description,
-  }: {
-    sectionKey: string;
-    title: string;
-    description: string;
-  }) {
-    const isExpanded = expandedSections[sectionKey] ?? true;
-    return (
-      <div
-        className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-cream/30"
-        onClick={() => toggleSection(sectionKey)}
-      >
-        <div>
-          <h3 className="text-sm font-semibold text-espresso">{title}</h3>
-          <p className="mt-0.5 text-xs text-sand">{description}</p>
-        </div>
-        {isExpanded ? (
-          <ChevronDown className="h-4 w-4 shrink-0 text-sand" />
-        ) : (
-          <ChevronRight className="h-4 w-4 shrink-0 text-sand" />
-        )}
-      </div>
-    );
-  }
-
-  function SectionBody({
-    sectionKey,
-    children,
-  }: {
-    sectionKey: string;
-    children: React.ReactNode;
-  }) {
-    const isExpanded = expandedSections[sectionKey] ?? true;
-    if (!isExpanded) return null;
-    return <div className="px-4 pb-4 pt-0 space-y-3">{children}</div>;
-  }
+  // NOTE: SectionHeader and SectionBody are defined at module level below
 
   return (
     <div className="space-y-3">
@@ -308,9 +323,11 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           sectionKey="hero"
           title="Hero Banner"
           description="Full-width hero section with image or video. First active slide is displayed."
+          expandedSections={expandedSections}
+          onToggle={toggleSection}
         />
 
-        <SectionBody sectionKey="hero">
+        <SectionBody sectionKey="hero" expandedSections={expandedSections}>
           {heroSlides.length === 0 ? (
             <p className="text-xs text-sand italic">No hero slides configured.</p>
           ) : (
@@ -492,9 +509,11 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           sectionKey="imageSlider"
           title="Image Slider"
           description="Horizontal image slider. Up to 7 images. 100% width, max 400px."
+          expandedSections={expandedSections}
+          onToggle={toggleSection}
         />
 
-        <SectionBody sectionKey="imageSlider">
+        <SectionBody sectionKey="imageSlider" expandedSections={expandedSections}>
           {imageSliderItems.length === 0 ? (
             <p className="text-xs text-sand italic">No images configured.</p>
           ) : (
@@ -592,9 +611,11 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           sectionKey="bestSelling"
           title="Top Selling Items"
           description="Horizontal product slider. Displays up to 7 products. Section label: 'Top Selling Items This Week'."
+          expandedSections={expandedSections}
+          onToggle={toggleSection}
         />
 
-        <SectionBody sectionKey="bestSelling">
+        <SectionBody sectionKey="bestSelling" expandedSections={expandedSections}>
           <div className="space-y-1.5">
             <Label className="text-xs text-sand">Section Title</Label>
             <Input
@@ -619,6 +640,18 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
               className="h-9 text-sm w-24"
             />
           </div>
+
+          <div className="pt-1">
+            <ProductPicker
+              selectedIds={bestSellingSection?.productIds ?? []}
+              onChange={(ids) =>
+                onChange(
+                  updateSection(config, 'bestSelling', { productIds: ids }),
+                )
+              }
+              max={7}
+            />
+          </div>
         </SectionBody>
       </div>
 
@@ -630,9 +663,11 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           sectionKey="infoAd"
           title="Info Ad (Section 04)"
           description="Two-column info/ad block. Left: image. Right: title + subtitle + button. Mobile: stacks vertically. Max height 950px."
+          expandedSections={expandedSections}
+          onToggle={toggleSection}
         />
 
-        <SectionBody sectionKey="infoAd">
+        <SectionBody sectionKey="infoAd" expandedSections={expandedSections}>
           <div>
             <DeferredMediaUploader
               uploadKey="infoAd_desktop"
@@ -713,9 +748,11 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           sectionKey="categories"
           title="Top Categories"
           description="Horizontal category slider. Up to 5 categories. Section label: 'Top Categories'."
+          expandedSections={expandedSections}
+          onToggle={toggleSection}
         />
 
-        <SectionBody sectionKey="categories">
+        <SectionBody sectionKey="categories" expandedSections={expandedSections}>
           <div className="space-y-1.5">
             <Label className="text-xs text-sand">Section Title</Label>
             <Input
@@ -723,6 +760,17 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
               onChange={(e) => handleCategoriesChange('title', e.target.value)}
               placeholder="Top Categories"
               className="h-9 text-sm"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs text-sand">Select Categories</Label>
+            <CategoryPicker
+              selectedIds={categoriesSection?.categoryIds ?? []}
+              onChange={(ids) =>
+                onChange(updateSection(config, 'categories', { categoryIds: ids }))
+              }
+              max={5}
             />
           </div>
         </SectionBody>
@@ -736,9 +784,11 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           sectionKey="latestProducts"
           title="Latest Products"
           description="Horizontal product slider. Displays up to 7 latest products."
+          expandedSections={expandedSections}
+          onToggle={toggleSection}
         />
 
-        <SectionBody sectionKey="latestProducts">
+        <SectionBody sectionKey="latestProducts" expandedSections={expandedSections}>
           <div className="space-y-1.5">
             <Label className="text-xs text-sand">Section Title</Label>
             <Input
@@ -765,6 +815,18 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
               className="h-9 text-sm w-24"
             />
           </div>
+
+          <div className="pt-1">
+            <ProductPicker
+              selectedIds={latestProductsSection?.productIds ?? []}
+              onChange={(ids) =>
+                onChange(
+                  updateSection(config, 'latestProducts', { productIds: ids }),
+                )
+              }
+              max={7}
+            />
+          </div>
         </SectionBody>
       </div>
 
@@ -776,9 +838,11 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           sectionKey="testimonials"
           title="Testimonials"
           description="Auto-rotating customer testimonials. Up to 3 testimonials."
+          expandedSections={expandedSections}
+          onToggle={toggleSection}
         />
 
-        <SectionBody sectionKey="testimonials">
+        <SectionBody sectionKey="testimonials" expandedSections={expandedSections}>
           <div className="space-y-1.5">
             <Label className="text-xs text-sand">Section Title</Label>
             <Input
@@ -933,9 +997,11 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           sectionKey="storeReference"
           title="Store Reference"
           description="Full-width background image section with store info + Google Map. Max height 800px."
+          expandedSections={expandedSections}
+          onToggle={toggleSection}
         />
 
-        <SectionBody sectionKey="storeReference">
+        <SectionBody sectionKey="storeReference" expandedSections={expandedSections}>
           <div>
             <DeferredMediaUploader
               uploadKey="storeRef_desktop"

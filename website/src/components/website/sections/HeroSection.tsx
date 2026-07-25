@@ -17,7 +17,6 @@ interface HeroSectionProps {
  * - Dark gradient overlay for text readability
  * - Centered text overlay: Title (serif heading) + Subtitle (body)
  * - Fallback gradient background when no active slide exists
- * - 8px gap below via mb-[8px]
  */
 export function HeroSection({ websiteConfig }: HeroSectionProps) {
   const slides = (websiteConfig.heroSlides ?? []) as WebsiteHeroSlideData[];
@@ -29,7 +28,7 @@ export function HeroSection({ websiteConfig }: HeroSectionProps) {
   // ── Fallback: no active slide ────────────────────────────────────────────
   if (!slide) {
     return (
-      <section className="hero-fallback mb-[8px]">
+      <section className="hero-fallback">
         <div className="hero-fallback-bg" />
         <div className="hero-fallback-content">
           <h1 className="hero-fallback-title">
@@ -130,7 +129,7 @@ export function HeroSection({ websiteConfig }: HeroSectionProps) {
   const mobileMedia = slide.mobileMediaUrl || desktopMedia;
 
   return (
-    <section className="hero-section mb-[8px]">
+    <section className="hero-section">
       {/* Desktop background */}
       <div className="hero-bg-desktop">
         {isVideo ? (

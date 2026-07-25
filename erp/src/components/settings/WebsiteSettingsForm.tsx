@@ -58,14 +58,29 @@ type TabValue = (typeof TABS)[number]['value'];
 export default function WebsiteSettingsForm() {
   const [config, setConfig] = useState<WebsiteConfigData>(DEFAULT_CONFIG);
   const [activeTab, setActiveTab] = useState<TabValue>('general');
-  const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  // Cheap O(1) dirty tracking — avoids expensive JSON.stringify on every keystroke
+  const [dirtyCount, setDirtyCount] = useState(0);
 
   const initialConfigRef = useRef<string>('');
   const pendingTabRef = useRef<TabValue | null>(null);
+
+  const isDirty = dirtyCount > 0;
+
+  // Beforeunload listener — read from reliable state, stable closure
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (dirtyCount > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirtyCount]);
 
   // Load config from API on mount
   useEffect(() => {
@@ -92,24 +107,10 @@ export default function WebsiteSettingsForm() {
     loadConfig();
   }, []);
 
-  // Beforeunload listener for unsaved changes
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (isDirty) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [isDirty]);
-
+  // Pure state updater — increments dirty counter on every change
   const updateConfig = useCallback((updates: Partial<WebsiteConfigData>) => {
-    setConfig((prev) => {
-      const next = { ...prev, ...updates };
-      setIsDirty(JSON.stringify(next) !== initialConfigRef.current);
-      return next;
-    });
+    setConfig((prev) => ({ ...prev, ...updates }));
+    setDirtyCount((c) => c + 1);
   }, []);
 
   const handleTabChange = (tab: TabValue) => {
@@ -125,7 +126,7 @@ export default function WebsiteSettingsForm() {
   const handleDiscard = () => {
     const initial = JSON.parse(initialConfigRef.current) as WebsiteConfigData;
     setConfig(initial);
-    setIsDirty(false);
+    setDirtyCount(0);
     setShowUnsavedDialog(false);
     resetUploadState();
     if (pendingTabRef.current) {
@@ -220,11 +221,11 @@ export default function WebsiteSettingsForm() {
         }
       }
 
-      // Reset upload state and mark clean
+      // Reset upload state
       resetUploadState();
       initialConfigRef.current = JSON.stringify(resolvedConfig);
       setConfig(resolvedConfig);
-      setIsDirty(false);
+      setDirtyCount(0);
 
       toast.success('Website settings saved successfully');
     } catch {
@@ -248,8 +249,8 @@ export default function WebsiteSettingsForm() {
       const res = await fetch('/api/store/website', { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to reset');
       setConfig(DEFAULT_CONFIG);
+      setDirtyCount(0);
       initialConfigRef.current = JSON.stringify(DEFAULT_CONFIG);
-      setIsDirty(false);
       resetUploadState();
       setShowResetDialog(false);
       toast.success('Website settings reset to defaults');

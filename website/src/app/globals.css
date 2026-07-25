@@ -28,6 +28,7 @@
   min-height: 100vh;
   color: var(--site-body-color);
   font-family: var(--site-body-font);
+  overflow-x: hidden;
 }
 
 .site-wrapper h1,
@@ -169,6 +170,16 @@
 .hero-slide-overlay .cta-button:hover {
   background-color: #ffffff;
   color: var(--site-dark-brown);
+}
+
+/* ── Section Wrapper ────────────────────────────────────────────────────────── */
+
+/* Each section is wrapped in this container.
+   Internal padding gives content breathing room.
+   External margins between wrappers are set via Tailwind (mb-6 md:mb-10).
+   Alternating backgrounds set via Tailwind (bg-white / bg-stone-50/60). */
+.section-wrapper {
+  overflow-x: hidden;
 }
 
 /* ── Section Spacing ───────────────────────────────────────────────────────── */
@@ -323,24 +334,8 @@ section:not(.website-section) + section.website-section {
   transition: transform 0.8s ease;
 }
 
-.product-card:hover .product-card-image img.primary {
-  opacity: 0;
-}
-
-.product-card-image img.secondary {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  transition: opacity 0.5s ease, transform 0.8s ease;
-}
-
-.product-card:hover .product-card-image img.secondary {
-  opacity: 1;
-  transform: scale(1.1);
-}
-
-.product-card:hover .product-card-image img.primary {
-  opacity: 0;
+.product-card:hover .product-card-image img {
+  transform: scale(1.05);
 }
 
 .product-card-body {
@@ -648,24 +643,8 @@ section:not(.website-section) + section.website-section {
   transition: transform 0.6s ease;
 }
 
-.product-card:hover .product-card-image img.primary {
-  opacity: 0;
-}
-
-.product-card-image img.secondary {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  transition: opacity 0.4s ease, transform 0.6s ease;
-}
-
-.product-card:hover .product-card-image img.secondary {
-  opacity: 1;
-  transform: scale(1.08);
-}
-
-.product-card:hover .product-card-image img.primary {
-  opacity: 0;
+.product-card:hover .product-card-image img {
+  transform: scale(1.05);
 }
 
 /* ── Section Title ─────────────────────────────────────────────────────────── */
