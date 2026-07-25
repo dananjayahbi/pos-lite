@@ -86,14 +86,12 @@ export interface UpdateVariantInput {
 export interface CreateCategoryInput {
   name: string;
   description?: string;
-  parentId?: string;
   sortOrder?: number;
 }
 
 export interface UpdateCategoryInput {
   name?: string;
   description?: string;
-  parentId?: string | null;
   sortOrder?: number;
 }
 
@@ -583,22 +581,11 @@ export async function createCategory(tenantId: string, data: CreateCategoryInput
     throw new Error('A category with this name already exists');
   }
 
-  // Verify parent if provided
-  if (data.parentId) {
-    const parent = await prisma.category.findUnique({
-      where: { id: data.parentId, deletedAt: null },
-    });
-    if (!parent || parent.tenantId !== tenantId) {
-      throw new Error('Parent category not found');
-    }
-  }
-
   return prisma.category.create({
     data: {
       tenantId,
       name: data.name,
       description: data.description ?? null,
-      parentId: data.parentId ?? null,
       sortOrder: data.sortOrder ?? 0,
     },
   });
@@ -624,16 +611,6 @@ export async function updateCategory(
     });
     if (conflict) {
       throw new Error('A category with this name already exists');
-    }
-  }
-
-  // Verify parent if changing
-  if (data.parentId) {
-    const parent = await prisma.category.findUnique({
-      where: { id: data.parentId, deletedAt: null },
-    });
-    if (!parent || parent.tenantId !== tenantId) {
-      throw new Error('Parent category not found');
     }
   }
 
@@ -684,6 +661,13 @@ export async function softDeleteCategory(tenantId: string, categoryId: string, a
 export async function getBrandById(tenantId: string, brandId: string) {
   const brand = await prisma.brand.findUnique({
     where: { id: brandId, deletedAt: null },
+    include: {
+      _count: {
+        select: {
+          products: { where: { deletedAt: null } },
+        },
+      },
+    },
   });
 
   if (!brand || brand.tenantId !== tenantId) {

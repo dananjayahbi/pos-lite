@@ -78,6 +78,20 @@ const navGroups: NavGroup[] = [
         permission: PERMISSIONS.PRODUCT.viewProduct,
       },
       {
+        name: 'Brands',
+        href: '/brands',
+        roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
+        permission: PERMISSIONS.PRODUCT.viewProduct,
+        match: 'exact',
+      },
+      {
+        name: 'Categories',
+        href: '/categories',
+        roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
+        permission: PERMISSIONS.PRODUCT.viewProduct,
+        match: 'exact',
+      },
+      {
         name: 'Purchase Orders',
         href: '/suppliers/purchase-orders',
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],

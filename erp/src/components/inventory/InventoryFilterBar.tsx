@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Search, X, Filter, ChevronRight } from 'lucide-react';
+import { Search, X, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -235,23 +235,10 @@ function CategoryFilterPopover({ activeIds, onChange }: FilterPopoverProps) {
 
   const categories = data?.data ?? [];
 
-  // Build tree: top-level then children indented
-  const tree = useMemo(() => {
-    const topLevel = categories.filter((c) => !c.parentId);
-    const result: Array<{ id: string; name: string; depth: number }> = [];
-    for (const parent of topLevel) {
-      result.push({ id: parent.id, name: parent.name, depth: 0 });
-      const children = categories.filter((c) => c.parentId === parent.id);
-      for (const child of children) {
-        result.push({ id: child.id, name: child.name, depth: 1 });
-      }
-    }
-    return result;
-  }, [categories]);
-
+  // Flat list — no nested subcategories
   const filtered = search
-    ? tree.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
-    : tree;
+    ? categories.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
+    : categories;
 
   const toggleId = (id: string) => {
     onChange(
@@ -287,11 +274,7 @@ function CategoryFilterPopover({ activeIds, onChange }: FilterPopoverProps) {
             <label
               key={c.id}
               className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-sand/10"
-              style={{ paddingLeft: c.depth > 0 ? '2rem' : undefined }}
             >
-              {c.depth > 0 && (
-                <ChevronRight className="h-3 w-3 text-mist -ml-3" />
-              )}
               <Checkbox
                 checked={activeIds.includes(c.id)}
                 onCheckedChange={() => toggleId(c.id)}
