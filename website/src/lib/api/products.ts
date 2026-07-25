@@ -47,17 +47,23 @@ export async function getPublicProducts(
 
 /**
  * Fetch a single product by id (or slug).
+ *
+ * The ERP wraps the resource in an envelope (`{ product: ... }`) for
+ * forward-compatibility (lets the API add sibling fields like metadata
+ * without breaking clients). We unwrap it here so callers receive a
+ * `PublicProduct` directly.
  */
 export async function getPublicProduct(
   tenantSlug: string,
   productId: string,
 ): Promise<PublicProduct | null> {
-  return apiGet<PublicProduct | null>(
+  const res = await apiGet<{ product: PublicProduct | null }>(
     `/api/public/site/${encodeURIComponent(tenantSlug)}/products/${encodeURIComponent(productId)}`,
     {
       tags: [`product:${productId}`, `products:${tenantSlug}`],
     },
   );
+  return res?.product ?? null;
 }
 
 /** Convenience — best-selling products for a tenant. */

@@ -80,7 +80,10 @@ export default async function ProductPage({ params }: ProductPageProps) {
             variants={product.variants}
             productName={product.name}
           />
-          <ProductInfo product={product} />
+          <ProductInfo
+            product={product}
+            tenantSlug={tenantSlug}
+          />
         </div>
       </main>
 

@@ -36,4 +36,5 @@ export const ROUTES = {
     `/${tenantSlug}/product/${productId}`,
   category: (tenantSlug: string, categoryId: string) =>
     `/${tenantSlug}/category/${categoryId}`,
+  cart: (tenantSlug: string) => `/${tenantSlug}/cart`,
 } as const;

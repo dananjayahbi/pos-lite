@@ -1,15 +1,12 @@
-/* eslint-disable @next/next/no-img-element */
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type {
   LatestProductsSection,
   PublicProduct,
 } from '@/types/website.types';
-import { tenantHomePath } from '@/lib/tenant';
-import { formatLKR } from '@/lib/utils';
+import { ProductCard } from '@/components/website/cart/ProductCard';
 
 interface LatestProductsProps {
   config: Record<string, unknown>;
@@ -17,8 +14,6 @@ interface LatestProductsProps {
   tenantSlug: string;
   products?: PublicProduct[];
 }
-
-type DisplayProduct = { id: string; name: string; price: string; image: string };
 
 function pickImage(p: PublicProduct): string {
   return (
@@ -53,14 +48,7 @@ export function LatestProducts({
   }, []);
 
   const source: PublicProduct[] = products ?? [];
-  const display: DisplayProduct[] = source
-    .slice(0, sectionConfig.productCount || 10)
-    .map((p) => ({
-      id: p.id,
-      name: p.name,
-      price: formatLKR(pickPrice(p)),
-      image: pickImage(p),
-    }));
+  const display = source.slice(0, sectionConfig.productCount || 10);
 
   const maxIndex = Math.max(0, display.length - itemsPerView);
 
@@ -94,28 +82,12 @@ export function LatestProducts({
                   className="flex-shrink-0 px-2"
                   style={{ width: `${100 / itemsPerView}%` }}
                 >
-                  <Link
-                    href={`${tenantHomePath(tenantSlug)}/product/${product.id}`}
-                    className="product-card group block"
-                  >
-                    <div className="product-card-image">
-                      <img
-                        src={product.image}
-                        alt={product.name}
-                        className="primary"
-                        loading="lazy"
-                      />
-                    </div>
-                    <div className="p-3 text-center">
-                      <h4 className="text-xs md:text-sm font-medium mb-1 line-clamp-2">
-                        {product.name}
-                      </h4>
-                      <p className="text-sm font-semibold">{product.price}</p>
-                      <button className="mt-2 w-full py-2 border border-black text-xs uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black hover:text-white">
-                        Add to Bag
-                      </button>
-                    </div>
-                  </Link>
+                  <ProductCard
+                    product={product}
+                    tenantSlug={tenantSlug}
+                    imageOverride={pickImage(product)}
+                    priceOverride={pickPrice(product)}
+                  />
                 </div>
               ))}
             </div>

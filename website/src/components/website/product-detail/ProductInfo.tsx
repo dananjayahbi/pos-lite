@@ -3,15 +3,19 @@
 import React, { useState } from 'react';
 import type { PublicProduct, PublicProductVariant } from '@/types/website.types';
 import { formatLKR } from '@/lib/utils';
+import { useCartStore, selectLineQuantity } from '@/stores/cartStore';
+import { AddToCartButton } from '@/components/website/cart/AddToCartButton';
+import { QuantityStepper } from '@/components/website/cart/QuantityStepper';
 
 interface ProductInfoProps {
   product: PublicProduct;
+  tenantSlug: string;
 }
 
 /**
- * Product name, price, variant selector, quantity picker, and add-to-bag CTA.
+ * Product name, price, variant selector, quantity picker, and add-to-cart CTA.
  */
-export function ProductInfo({ product }: ProductInfoProps) {
+export function ProductInfo({ product, tenantSlug }: ProductInfoProps) {
   const variants = product.variants ?? [];
   const [selected, setSelected] = useState<PublicProductVariant | undefined>(
     product.primaryVariant ?? variants[0],
@@ -19,6 +23,12 @@ export function ProductInfo({ product }: ProductInfoProps) {
 
   const price = selected?.retailPrice ?? variants[0]?.retailPrice ?? 0;
   const inStock = (selected?.stockQuantity ?? 0) > 0;
+  const currentQtyInCart = useCartStore(
+    selected
+      ? selectLineQuantity(tenantSlug, selected.id)
+      : () => 0,
+  );
+  const [qty, setQty] = useState(1);
 
   return (
     <div className="flex flex-col gap-6">
@@ -57,6 +67,7 @@ export function ProductInfo({ product }: ProductInfoProps) {
             {variants.map((v) => (
               <button
                 key={v.id}
+                type="button"
                 onClick={() => setSelected(v)}
                 className={`rounded border px-3 py-1.5 text-sm transition-colors ${
                   selected?.id === v.id
@@ -73,7 +84,9 @@ export function ProductInfo({ product }: ProductInfoProps) {
 
       {/* Stock status */}
       <p className={`text-sm ${inStock ? 'text-green-700' : 'text-red-600'}`}>
-        {inStock ? 'In stock' : 'Out of stock'}
+        {inStock
+          ? `In stock (${selected?.stockQuantity} available)`
+          : 'Out of stock'}
       </p>
 
       {/* Description */}
@@ -83,13 +96,42 @@ export function ProductInfo({ product }: ProductInfoProps) {
         </div>
       )}
 
-      {/* Add to bag */}
-      <button
-        disabled={!inStock}
-        className="w-full rounded bg-black py-3 text-sm font-medium uppercase tracking-wider text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:px-12"
-      >
-        Add to Bag
-      </button>
+      {/* Quantity + Add to cart */}
+      {inStock && selected && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <QuantityStepper
+            value={qty}
+            min={1}
+            max={selected.stockQuantity}
+            onChange={setQty}
+            ariaLabel="Quantity"
+          />
+          <div className="sm:ml-2">
+            <AddToCartButton
+              tenantSlug={tenantSlug}
+              variant={selected}
+              product={{ id: product.id, name: product.name }}
+              quantity={qty}
+              size="lg"
+            />
+          </div>
+        </div>
+      )}
+
+      {!inStock && (
+        <AddToCartButton
+          tenantSlug={tenantSlug}
+          variant={selected}
+          product={{ id: product.id, name: product.name }}
+          size="lg"
+        />
+      )}
+
+      {currentQtyInCart > 0 && (
+        <p className="text-xs text-gray-500">
+          {currentQtyInCart} of this item {currentQtyInCart === 1 ? 'is' : 'are'} already in your cart.
+        </p>
+      )}
     </div>
   );
 }

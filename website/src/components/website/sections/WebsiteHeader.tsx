@@ -6,6 +6,7 @@ import { Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import type { WebsiteConfigData } from '@/types/website.types';
 import { tenantHomePath } from '@/lib/tenant';
+import { CartIcon } from '@/components/website/cart/CartIcon';
 
 interface WebsiteHeaderProps {
   config: WebsiteConfigData;
@@ -87,6 +88,11 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
                 ))}
               </nav>
             )}
+          </div>
+
+          {/* Cart icon (right-aligned in header) */}
+          <div className="ml-auto flex items-center pr-4">
+            <CartIcon tenantSlug={tenantSlug} />
           </div>
         </div>
       </header>

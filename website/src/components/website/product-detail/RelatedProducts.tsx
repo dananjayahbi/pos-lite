@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import type { PublicProduct } from '@/types/website.types';
-import { tenantHomePath } from '@/lib/tenant';
+import { ROUTES } from '@/config/site';
 import { formatLKR } from '@/lib/utils';
 
 interface RelatedProductsProps {
@@ -46,7 +46,7 @@ export function RelatedProducts({ products, tenantSlug }: RelatedProductsProps) 
           {products.map((p) => (
             <Link
               key={p.id}
-              href={`${tenantHomePath(tenantSlug)}/product/${p.id}`}
+              href={ROUTES.product(tenantSlug, p.id)}
               className="product-card group block"
             >
               <div className="product-card-image">

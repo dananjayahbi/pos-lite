@@ -15,6 +15,7 @@ import { StoresBanner } from './sections/StoresBanner';
 import { WebsiteFooter } from './sections/WebsiteFooter';
 import { AdBanner } from './sections/AdBanner';
 import { BackToTop } from './sections/BackToTop';
+import { CartDrawerHost } from './cart/CartDrawerHost';
 import type {
   WebsiteConfigData,
   SectionKey,
@@ -231,6 +232,9 @@ export function WebsiteShell({
 
       {/* Back to Top */}
       <BackToTop />
+
+      {/* Cart drawer (fixed overlay; toggled by header cart icon) */}
+      <CartDrawerHost tenantSlug={tenantSlug} />
     </div>
   );
 }

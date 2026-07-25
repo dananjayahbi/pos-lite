@@ -4,7 +4,7 @@
 import React from 'react';
 import Link from 'next/link';
 import type { CategoriesSection, PublicCategory } from '@/types/website.types';
-import { tenantHomePath } from '@/lib/tenant';
+import { ROUTES } from '@/config/site';
 
 interface CategoryGridProps {
   config: Record<string, unknown>;
@@ -36,7 +36,7 @@ export function CategoryGrid({ config, tenantSlug, categories }: CategoryGridPro
         name: cat.name,
         imageUrl:
           cat.imageUrl || '',
-        href: `${tenantHomePath(tenantSlug)}/category/${cat.id}`,
+        href: ROUTES.category(tenantSlug, cat.id),
       })).filter((cat) => cat.imageUrl);
     }
 
