@@ -289,108 +289,119 @@ export default function WebsiteSettingsForm() {
   }
 
   return (
-    <div className="flex gap-0 min-h-[600px] border border-mist rounded-xl bg-white overflow-hidden">
-      {/* ── Vertical Sidebar Navigation ─────────────────────────────────── */}
-      <nav className="w-56 shrink-0 border-r border-mist bg-cream/20 flex flex-col">
-        <div className="p-4 border-b border-mist/50">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-sand">
-            Settings
-          </p>
+    <div className="w-full">
+      <div className="bg-white">
+        {/* ── Page header (inside card, full width) ──────────────────────────── */}
+        <div className="px-6 py-3.5 border-b border-mist">
+          <h1 className="text-2xl font-bold text-espresso">
+            Website Configuration
+          </h1>
         </div>
-        <div className="flex-1 py-2">
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.value;
-            return (
-              <button
-                key={tab.value}
+
+        <div className="flex gap-0 min-h-[600px]">
+          {/* ── Vertical Sidebar Navigation ─────────────────────────────────── */}
+          <nav className="w-56 shrink-0 border-r border-mist bg-cream/20 flex flex-col">
+            <div className="p-4 border-b border-mist/50">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-sand">
+                Settings
+              </p>
+            </div>
+            <div className="flex-1 py-2">
+              {TABS.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.value;
+                return (
+                  <button
+                    key={tab.value}
+                    type="button"
+                    onClick={() => handleTabChange(tab.value)}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150 text-left ${
+                      isActive
+                        ? 'bg-white text-espresso font-medium border-r-2 border-terracotta shadow-sm'
+                        : 'text-sand hover:text-espresso hover:bg-white/60'
+                    }`}
+                  >
+                    <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-terracotta' : 'text-sand/60'}`} />
+                    <span className="truncate">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+
+          {/* ── Main Content Area ────────────────────────────────────────────── */}
+          <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex-1 p-6 lg:p-8 overflow-y-auto">
+              {renderTabContent()}
+            </div>
+
+            {/* Save bar */}
+            <div className="sticky bottom-0 bg-white border-t border-mist px-6 py-4 flex items-center justify-between">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-terracotta hover:text-terracotta/80"
+                onClick={() => setShowResetDialog(true)}
+                disabled={isSaving}
                 type="button"
-                onClick={() => handleTabChange(tab.value)}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150 text-left ${
-                  isActive
-                    ? 'bg-white text-espresso font-medium border-r-2 border-terracotta shadow-sm'
-                    : 'text-sand hover:text-espresso hover:bg-white/60'
-                }`}
               >
-                <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-terracotta' : 'text-sand/60'}`} />
-                <span className="truncate">{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+                Reset to Defaults
+              </Button>
 
-      {/* ── Main Content Area ────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex-1 p-6 lg:p-8 overflow-y-auto">
-          {renderTabContent()}
-        </div>
-
-        {/* Save bar */}
-        <div className="sticky bottom-0 bg-white border-t border-mist px-6 py-4 flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-terracotta hover:text-terracotta/80"
-            onClick={() => setShowResetDialog(true)}
-            disabled={isSaving}
-            type="button"
-          >
-            Reset to Defaults
-          </Button>
-
-          <div className="flex items-center gap-3">
-            {isDirty && (
-              <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
-            )}
-            <Button
-              size="sm"
-              className="bg-espresso hover:bg-espresso/90"
-              onClick={handleSave}
-              disabled={isSaving || !isDirty}
-              type="button"
-            >
-              {isSaving ? 'Saving...' : 'Save Changes'}
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Unsaved changes dialog */}
-      {showUnsavedDialog && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
-                <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <div className="flex items-center gap-3">
+                {isDirty && (
+                  <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
+                )}
+                <Button
+                  size="sm"
+                  className="bg-espresso hover:bg-espresso/90"
+                  onClick={handleSave}
+                  disabled={isSaving || !isDirty}
+                  type="button"
+                >
+                  {isSaving ? 'Saving...' : 'Save Changes'}
+                </Button>
               </div>
-              <h3 className="text-lg font-semibold text-espresso">Unsaved Changes</h3>
-            </div>
-            <p className="text-sm text-sand mb-6">
-              You have unsaved changes. Do you want to save before leaving?
-            </p>
-            <div className="flex justify-end gap-3">
-              <Button variant="outline" size="sm" onClick={() => setShowUnsavedDialog(false)}>
-                Cancel
-              </Button>
-              <Button variant="ghost" size="sm" className="text-terracotta" onClick={handleDiscard}>
-                Discard
-              </Button>
-              <Button size="sm" className="bg-espresso hover:bg-espresso/90" onClick={handleSaveAndLeave}>
-                Save
-              </Button>
             </div>
           </div>
         </div>
-      )}
 
-      {/* Reset confirmation dialog */}
-      <ResetConfirmDialog
-        open={showResetDialog}
-        onOpenChange={setShowResetDialog}
-        onConfirm={handleReset}
-        disabled={isSaving}
-      />
+        {/* Unsaved changes dialog */}
+        {showUnsavedDialog && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
+                  <AlertTriangle className="h-5 w-5 text-amber-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-espresso">Unsaved Changes</h3>
+              </div>
+              <p className="text-sm text-sand mb-6">
+                You have unsaved changes. Do you want to save before leaving?
+              </p>
+              <div className="flex justify-end gap-3">
+                <Button variant="outline" size="sm" onClick={() => setShowUnsavedDialog(false)}>
+                  Cancel
+                </Button>
+                <Button variant="ghost" size="sm" className="text-terracotta" onClick={handleDiscard}>
+                  Discard
+                </Button>
+                <Button size="sm" className="bg-espresso hover:bg-espresso/90" onClick={handleSaveAndLeave}>
+                  Save
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Reset confirmation dialog */}
+        <ResetConfirmDialog
+          open={showResetDialog}
+          onOpenChange={setShowResetDialog}
+          onConfirm={handleReset}
+          disabled={isSaving}
+        />
+      </div>
     </div>
   );
 }

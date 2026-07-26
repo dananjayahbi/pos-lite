@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Search, X, Check } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Search, X, Check, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
@@ -58,6 +59,7 @@ export function ProductPicker({ selectedIds, onChange, max = 7 }: ProductPickerP
   const [selectedProducts, setSelectedProducts] = useState<ProductOption[]>([]);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const debouncedSearch = useDebouncedValue(search, 300);
 
   // ── Fetch results on debounced search ────────────────────────────────────
@@ -106,7 +108,12 @@ export function ProductPicker({ selectedIds, onChange, max = 7 }: ProductPickerP
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node) &&
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setIsOpen(false);
       }
     }
@@ -161,6 +168,21 @@ export function ProductPicker({ selectedIds, onChange, max = 7 }: ProductPickerP
 
   const atMax = selectedIds.length >= max;
 
+  // ── Dropdown position (fixed via portal) ────────────────────────────────
+
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
+
+  useEffect(() => {
+    if (isOpen && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      setDropdownPos({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+      });
+    }
+  }, [isOpen]);
+
   // ── Render ──────────────────────────────────────────────────────────────
 
   return (
@@ -210,35 +232,91 @@ export function ProductPicker({ selectedIds, onChange, max = 7 }: ProductPickerP
         />
       </div>
 
-      {/* Dropdown */}
-      {isOpen && (
-        <div className="absolute z-50 mt-1 w-full rounded-lg border border-mist bg-white shadow-lg">
-          <div className="max-h-64 overflow-y-auto">
-            {isLoading ? (
-              <div className="flex items-center justify-center px-4 py-8">
-                <span className="text-xs text-sand animate-pulse">Searching products...</span>
-              </div>
-            ) : results.length === 0 ? (
-              <div className="flex items-center justify-center px-4 py-8">
-                <span className="text-xs text-sand">
-                  {debouncedSearch ? 'No products found' : 'Type to search products'}
-                </span>
-              </div>
-            ) : (
-              <>
-                {/* Already selected (shown at top, with check) */}
-                {results
-                  .filter((r) => selectedIdSet.has(r.id))
-                  .map((product) => (
-                    <button
+      {/* Dropdown via portal — escapes overflow-hidden ancestors */}
+      {isOpen &&
+        createPortal(
+          <div
+            ref={dropdownRef}
+            className="fixed z-[9999] mt-1 rounded-lg border border-mist bg-white shadow-lg"
+            style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
+          >
+            <div className="max-h-64 overflow-y-auto">
+              {isLoading ? (
+                <div className="flex items-center justify-center px-4 py-8">
+                  <span className="text-xs text-sand animate-pulse">Searching products...</span>
+                </div>
+              ) : results.length === 0 ? (
+                <div className="flex items-center justify-center px-4 py-8">
+                  <span className="text-xs text-sand">
+                    {debouncedSearch ? 'No products found' : 'Type to search products'}
+                  </span>
+                </div>
+              ) : (
+                <>
+                  {/* Already selected (shown at top, with check) */}
+                  {results
+                    .filter((r) => selectedIdSet.has(r.id))
+                    .map((product) => (
+                      <div
+                        key={product.id}
+                        role="button"
+                        tabIndex={0}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-cream/30 transition-colors cursor-pointer"
+                        onClick={() => toggleProduct(product)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleProduct(product);
+                          }
+                        }}
+                      >
+                        <Checkbox checked disabled={false} className="pointer-events-none" />
+                        <div className="flex-1 min-w-0">
+                          <span className="block truncate text-espresso font-medium">
+                            {product.name}
+                          </span>
+                        </div>
+                        {product.primaryVariant && (
+                          <span className="shrink-0 text-xs text-sand">
+                            {formatLKR(product.primaryVariant.retailPrice)}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+
+                  {/* Divider */}
+                  {results.some((r) => selectedIdSet.has(r.id)) &&
+                    filteredResults.length > 0 && (
+                      <div className="border-t border-mist" />
+                    )}
+
+                  {/* Unselected results */}
+                  {filteredResults.map((product) => (
+                    <div
                       key={product.id}
-                      type="button"
-                      className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-cream/30 transition-colors"
+                      role="button"
+                      tabIndex={0}
+                      className={cn(
+                        'flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors',
+                        atMax
+                          ? 'cursor-not-allowed opacity-40'
+                          : 'hover:bg-cream/30 cursor-pointer',
+                      )}
                       onClick={() => toggleProduct(product)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          toggleProduct(product);
+                        }
+                      }}
                     >
-                      <Checkbox checked disabled={false} className="pointer-events-none" />
+                      <Checkbox
+                        checked={false}
+                        disabled={atMax}
+                        className="pointer-events-none"
+                      />
                       <div className="flex-1 min-w-0">
-                        <span className="block truncate text-espresso font-medium">
+                        <span className="block truncate text-espresso">
                           {product.name}
                         </span>
                       </div>
@@ -247,58 +325,21 @@ export function ProductPicker({ selectedIds, onChange, max = 7 }: ProductPickerP
                           {formatLKR(product.primaryVariant.retailPrice)}
                         </span>
                       )}
-                    </button>
-                  ))}
-
-                {/* Divider */}
-                {results.some((r) => selectedIdSet.has(r.id)) &&
-                  filteredResults.length > 0 && (
-                    <div className="border-t border-mist" />
-                  )}
-
-                {/* Unselected results */}
-                {filteredResults.map((product) => (
-                  <button
-                    key={product.id}
-                    type="button"
-                    className={cn(
-                      'flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors',
-                      atMax
-                        ? 'cursor-not-allowed opacity-40'
-                        : 'hover:bg-cream/30',
-                    )}
-                    onClick={() => toggleProduct(product)}
-                    disabled={atMax}
-                  >
-                    <Checkbox
-                      checked={false}
-                      disabled={atMax}
-                      className="pointer-events-none"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <span className="block truncate text-espresso">
-                        {product.name}
-                      </span>
                     </div>
-                    {product.primaryVariant && (
-                      <span className="shrink-0 text-xs text-sand">
-                        {formatLKR(product.primaryVariant.retailPrice)}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </>
-            )}
-          </div>
-
-          {/* Max hint */}
-          {atMax && (
-            <div className="border-t border-mist px-3 py-1.5">
-              <p className="text-xs text-sand">Max {max} products selected</p>
+                  ))}
+                </>
+              )}
             </div>
-          )}
-        </div>
-      )}
+
+            {/* Max hint */}
+            {atMax && (
+              <div className="border-t border-mist px-3 py-1.5">
+                <p className="text-xs text-sand">Max {max} products selected</p>
+              </div>
+            )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
