@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import NextAuth from 'next-auth';
-import { authConfig } from '@/lib/auth.config';
 
 /**
  * Calls the internal middleware API to perform database operations that are
@@ -19,7 +18,34 @@ async function middlewareApi(
   });
 }
 
-const { auth } = NextAuth(authConfig);
+const { auth } = NextAuth({
+  session: { strategy: 'jwt' as const },
+  pages: { signIn: '/login' },
+  providers: [],
+  callbacks: {
+    async jwt({ token, user }: { token: any; user?: any }) {
+      if (user) {
+        token.id = user.id;
+        token.role = user.role;
+        token.permissions = user.permissions;
+        token.tenantId = user.tenantId;
+        token.sessionVersion = user.sessionVersion;
+      }
+      return token;
+    },
+    async session({ session, token }: { session: any; token: any }) {
+      type UserRole = 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK';
+      if (token && session.user) {
+        session.user.id = token.id as string;
+        session.user.role = token.role as UserRole;
+        session.user.permissions = token.permissions as string[];
+        session.user.tenantId = token.tenantId as string | null;
+        session.user.sessionVersion = token.sessionVersion as number;
+      }
+      return session;
+    },
+  },
+});
 
 // ── In-memory session-version cache (Edge-compatible) ─────────────────────
 // Inlined from @/lib/auth/session-version-cache to avoid cross-module
