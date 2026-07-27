@@ -2,10 +2,6 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import NextAuth from 'next-auth';
 import { authConfig } from '@/lib/auth.config';
-import {
-  getCachedSessionVersion,
-  setCachedSessionVersion,
-} from '@/lib/auth/session-version-cache';
 
 /**
  * Calls the internal middleware API to perform database operations that are
@@ -24,6 +20,31 @@ async function middlewareApi(
 }
 
 const { auth } = NextAuth(authConfig);
+
+// ── In-memory session-version cache (Edge-compatible) ─────────────────────
+// Inlined from @/lib/auth/session-version-cache to avoid cross-module
+// bundler issues on Vercel's Edge Runtime.
+interface SessionVersionCacheEntry {
+  sessionVersion: number;
+  cachedAt: number;
+}
+
+const SESSION_VERSION_CACHE_TTL_MS = 5_000;
+const sessionVersionCache = new Map<string, SessionVersionCacheEntry>();
+
+function getCachedSessionVersion(userId: string): number | null {
+  const cached = sessionVersionCache.get(userId);
+  if (!cached) return null;
+  if (Date.now() - cached.cachedAt > SESSION_VERSION_CACHE_TTL_MS) {
+    sessionVersionCache.delete(userId);
+    return null;
+  }
+  return cached.sessionVersion;
+}
+
+function setCachedSessionVersion(userId: string, sessionVersion: number): void {
+  sessionVersionCache.set(userId, { sessionVersion, cachedAt: Date.now() });
+}
 
 const tenantSlugCache = new Map<string, boolean>();
 const TENANT_DOMAIN_SUFFIX = '.ayurpos.com';

@@ -5,11 +5,14 @@
  * - `auth.ts` (Node.js runtime — used by API routes with PrismaAdapter)
  * - Middleware (Edge Runtime — lightweight, no database adapter)
  *
- * IMPORTANT: Do NOT import any Node.js-specific modules (Prisma, bcrypt, crypto, etc.)
- * here. Only use `import type` for Prisma types (erased at compile time).
+ * IMPORTANT: Do NOT import any Node.js-specific modules or Prisma-generated
+ * files here. Only import type-only from packages that support Edge Runtime.
  */
-import type { UserRole } from '@/generated/prisma/client';
 import type { NextAuthConfig } from 'next-auth';
+
+// Inlined Prisma enum — avoids importing @/generated/prisma/client which pulls
+// in node:process/node:path/node:url and breaks the Edge Runtime bundler.
+type UserRole = 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK';
 
 export const authConfig: NextAuthConfig = {
   session: { strategy: 'jwt' as const },
