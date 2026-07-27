@@ -1,9 +1,210 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { jwtDecrypt, calculateJwkThumbprint, base64url } from 'jose';
-import { hkdf } from '@panva/hkdf';
 
-// ── In-memory caches (Edge-compatible) ────────────────────────────────────
+/**
+ * JWE decryption using only Web Crypto API (zero dependencies).
+ * NextAuth v5 encrypts JWTs as JWE (JSON Web Encryption) with:
+ *   - alg: "dir" (direct encryption)
+ *   - enc: "A256CBC-HS512" (AES-256-CBC + HMAC-SHA-512)
+ *
+ * This implementation is a minimal, self-contained replacement for the
+ * `decode()` function from `@auth/core/jwt`, targeting Vercel's Edge Runtime.
+ */
+
+// ── Base64URL helpers ──────────────────────────────────────────────────────
+
+function b64uToBytes(b64u: string): Uint8Array {
+  return new Uint8Array(
+    Uint8Array.from(
+      atob(b64u.replace(/-/g, '+').replace(/_/g, '/')),
+      (c) => c.charCodeAt(0),
+    ),
+  );
+}
+
+function bytesToB64u(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+// ── JWE structure parsing / decryption ─────────────────────────────────────
+
+async function deriveEncryptionKey(
+  keyMaterial: string,
+  salt: string,
+  length: number,
+): Promise<Uint8Array> {
+  const enc = new TextEncoder();
+  const keyBytes = enc.encode(keyMaterial);
+
+  const importedKey = await crypto.subtle.importKey(
+    'raw',
+    new Uint8Array(keyBytes),
+    { name: 'HKDF' },
+    false,
+    ['deriveBits'],
+  );
+
+  const info = enc.encode(`Auth.js Generated Encryption Key (${salt})`);
+
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: enc.encode(salt),
+      info,
+    },
+    importedKey,
+    length * 8,
+  );
+
+  return new Uint8Array(derivedBits);
+}
+
+// ── JWE decryption ─────────────────────────────────────────────────────────
+
+async function decryptA256CbcHs512(
+  encryptionKey: Uint8Array,
+  headerB64: string, // base64url-encoded JWE Protected Header
+  iv: Uint8Array,
+  ciphertext: Uint8Array,
+  tag: Uint8Array,
+): Promise<Uint8Array | null> {
+  // The 64-byte CEK is split: first 32 for HMAC-SHA-512, last 32 for AES-256-CBC
+  const macKey = encryptionKey.slice(0, 32);
+  const encKey = encryptionKey.slice(32, 64);
+
+  // Additional Authenticated Data: ASCII of the base64url-encoded header
+  const aad = new TextEncoder().encode(headerB64);
+
+  // AAD length in bits as 64-bit big-endian
+  const al = new Uint8Array(8);
+  new DataView(al.buffer).setBigUint64(0, BigInt(aad.length * 8), false);
+
+  // HMAC input: AAD || IV || ciphertext || AL
+  const hmacInput = new Uint8Array(aad.length + iv.length + ciphertext.length + 8);
+  hmacInput.set(aad, 0);
+  hmacInput.set(iv, aad.length);
+  hmacInput.set(ciphertext, aad.length + iv.length);
+  hmacInput.set(al, aad.length + iv.length + ciphertext.length);
+
+  const hmacKey = await crypto.subtle.importKey(
+    'raw',
+    new Uint8Array(macKey),
+    { name: 'HMAC', hash: 'SHA-512' },
+    false,
+    ['sign'],
+  );
+
+  const computedTag = new Uint8Array(
+    await crypto.subtle.sign('HMAC', hmacKey, hmacInput),
+  );
+  // Authentication tag is the first half (16 bytes) of the HMAC output
+  const halfTag = computedTag.slice(0, 16);
+
+  // Constant-time comparison
+  if (halfTag.length !== tag.length) return null;
+  let diff = 0;
+  for (let i = 0; i < tag.length; i++) {
+    diff |= (halfTag[i] ?? 0) ^ (tag[i] ?? 0);
+  }
+  if (diff !== 0) return null;
+
+  // AES-256-CBC decryption
+  const aesKey = await crypto.subtle.importKey(
+    'raw',
+    new Uint8Array(encKey),
+    { name: 'AES-CBC', length: 256 },
+    false,
+    ['decrypt'],
+  );
+
+  try {
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-CBC', iv: new Uint8Array(iv) },
+      aesKey,
+      new Uint8Array(ciphertext),
+    );
+    return new Uint8Array(decrypted);
+  } catch {
+    return null;
+  }
+}
+
+async function decryptToken(
+  token: string,
+  secret: string,
+  salt: string,
+): Promise<Record<string, unknown> | null> {
+  const parts = token.split('.');
+  if (parts.length !== 5) return null;
+
+  const headerB64 = parts[0]!;
+  let header: Record<string, string>;
+  try {
+    header = JSON.parse(new TextDecoder().decode(b64uToBytes(headerB64)));
+  } catch {
+    return null;
+  }
+
+  const iv = b64uToBytes(parts[2]!);
+  const ciphertext = b64uToBytes(parts[3]!);
+  const tag = b64uToBytes(parts[4]!);
+
+  const enc = header.enc ?? 'A256CBC-HS512';
+
+  let keyLength: number;
+  switch (enc) {
+    case 'A256CBC-HS512':
+      keyLength = 64;
+      break;
+    case 'A256GCM':
+      keyLength = 32;
+      break;
+    default:
+      return null;
+  }
+
+  const encryptionKey = await deriveEncryptionKey(secret, salt, keyLength);
+
+  let plaintext: Uint8Array | null = null;
+
+  if (enc === 'A256CBC-HS512') {
+    plaintext = await decryptA256CbcHs512(encryptionKey, headerB64, iv, ciphertext, tag);
+  } else if (enc === 'A256GCM') {
+    // A256GCM uses the full key for AES-GCM
+    try {
+      const aesGcmKey = await crypto.subtle.importKey(
+        'raw',
+        new Uint8Array(encryptionKey),
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['decrypt'],
+      );
+      const decrypted = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: new Uint8Array(iv), tagLength: 128 },
+        aesGcmKey,
+        new Uint8Array(ciphertext),
+      );
+      plaintext = new Uint8Array(decrypted);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!plaintext) return null;
+
+  try {
+    return JSON.parse(new TextDecoder().decode(plaintext));
+  } catch {
+    return null;
+  }
+}
+
+// ── In-memory caches ───────────────────────────────────────────────────────
+
 interface SessionVersionCacheEntry {
   sessionVersion: number;
   cachedAt: number;
@@ -77,66 +278,6 @@ function setCachedSessionVersion(userId: string, sessionVersion: number): void {
   sessionVersionCache.set(userId, { sessionVersion, cachedAt: Date.now() });
 }
 
-// ── JWT helpers (replicated from @auth/core/jwt to avoid bundling issues) ─
-
-const JWT_ALG = 'dir';
-const JWT_ENC = 'A256CBC-HS512';
-
-async function getDerivedEncryptionKey(
-  enc: string,
-  keyMaterial: string,
-  salt: string,
-): Promise<Uint8Array> {
-  let length: number;
-  switch (enc) {
-    case 'A256CBC-HS512':
-      length = 64;
-      break;
-    case 'A256GCM':
-      length = 32;
-      break;
-    default:
-      throw new Error('Unsupported JWT Content Encryption Algorithm');
-  }
-  return hkdf('sha256', keyMaterial, salt, `Auth.js Generated Encryption Key (${salt})`, length);
-}
-
-async function decryptSessionToken(
-  token: string,
-  secret: string,
-  salt: string,
-): Promise<Record<string, unknown> | null> {
-  if (!token) return null;
-  try {
-    const { payload } = await jwtDecrypt(
-      token,
-      async ({ kid, enc }) => {
-        const encryptionSecret = await getDerivedEncryptionKey(enc, secret, salt);
-        if (kid === undefined) return encryptionSecret;
-        const hashAlg = (
-          encryptionSecret.byteLength === 32 ? 'sha256' :
-          encryptionSecret.byteLength === 48 ? 'sha384' :
-          'sha512'
-        ) as 'sha256' | 'sha384' | 'sha512';
-        const thumbprint = await calculateJwkThumbprint(
-          { kty: 'oct', k: base64url.encode(encryptionSecret) },
-          hashAlg,
-        );
-        if (kid === thumbprint) return encryptionSecret;
-        throw new Error('no matching decryption secret');
-      },
-      {
-        clockTolerance: 15,
-        keyManagementAlgorithms: [JWT_ALG],
-        contentEncryptionAlgorithms: [JWT_ENC, 'A256GCM'],
-      },
-    );
-    return payload as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
 interface SessionUser {
   id: string;
   role: string;
@@ -144,52 +285,33 @@ interface SessionUser {
   sessionVersion: number;
 }
 
-/**
- * Reads and decrypts the NextAuth JWT session token from cookies using jose.
- * Avoids importing @auth/core/jwt (which pulls in SessionStore, defaultCookies
- * and other modules that crash on Vercel's Edge Runtime).
- */
 async function getSessionUser(request: NextRequest): Promise<SessionUser | null> {
+  // AUTH_SECRET / NEXTAUTH_SECRET must be defined in Vercel environment variables.
+  // At build time, Next.js inlines the value. At runtime on Edge, process.env
+  // still works for env vars that were available at build time.
   const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
   if (!secret) return null;
 
-  // Try all possible cookie names (secure + non-secure, both naming conventions)
   let tokenValue: string | undefined;
   let cookieName: string | undefined;
 
-  const secureToken = request.cookies.get('__Secure-authjs.session-token')?.value;
-  if (secureToken) {
-    tokenValue = secureToken;
-    cookieName = '__Secure-authjs.session-token';
-  }
-
-  if (!tokenValue) {
-    const nonSecureToken = request.cookies.get('authjs.session-token')?.value;
-    if (nonSecureToken) {
-      tokenValue = nonSecureToken;
-      cookieName = 'authjs.session-token';
-    }
-  }
-
-  if (!tokenValue) {
-    const legacySecureToken = request.cookies.get('__Secure-next-auth.session-token')?.value;
-    if (legacySecureToken) {
-      tokenValue = legacySecureToken;
-      cookieName = '__Secure-next-auth.session-token';
-    }
-  }
-
-  if (!tokenValue) {
-    const legacyToken = request.cookies.get('next-auth.session-token')?.value;
-    if (legacyToken) {
-      tokenValue = legacyToken;
-      cookieName = 'next-auth.session-token';
+  for (const name of [
+    '__Secure-authjs.session-token',
+    'authjs.session-token',
+    '__Secure-next-auth.session-token',
+    'next-auth.session-token',
+  ]) {
+    const val = request.cookies.get(name)?.value;
+    if (val) {
+      tokenValue = val;
+      cookieName = name;
+      break;
     }
   }
 
   if (!tokenValue || !cookieName) return null;
 
-  const payload = await decryptSessionToken(tokenValue, secret, cookieName);
+  const payload = await decryptToken(tokenValue, secret, cookieName);
   if (!payload) return null;
 
   const id = (payload.id ?? payload.sub) as string | undefined;
@@ -203,10 +325,6 @@ async function getSessionUser(request: NextRequest): Promise<SessionUser | null>
   };
 }
 
-/**
- * Calls the internal middleware API to perform database operations that are
- * not available on the Edge Runtime.
- */
 async function middlewareApi(
   request: NextRequest,
   body: Record<string, unknown>,
@@ -275,7 +393,6 @@ export default async function middleware(request: NextRequest) {
       const response = NextResponse.redirect(loginUrl);
       clearSessionCookies(response);
 
-      // Fire-and-forget audit log
       middlewareApi(request, {
         action: 'createAuditLog',
         tenantId: user.tenantId,
@@ -286,15 +403,12 @@ export default async function middleware(request: NextRequest) {
         auditAction: 'SESSION_INVALIDATED_BY_VERSION_MISMATCH',
         ipAddress: request.headers.get('x-forwarded-for') ?? 'unknown',
         userAgent: request.headers.get('user-agent') ?? undefined,
-      }).catch(() => {
-        /* audit log failure is non-blocking */
-      });
+      }).catch(() => {});
 
       return response;
     }
   }
 
-  // Tenant status enforcement
   if (!user.tenantId || isSuspensionBypassPath(pathname)) {
     return NextResponse.next();
   }
@@ -307,22 +421,18 @@ export default async function middleware(request: NextRequest) {
 
     if (res.ok) {
       const tenant = await res.json();
-
       if (tenant && tenant.deletedAt !== null) {
         return NextResponse.next();
       }
-
       if (user.role !== 'SUPER_ADMIN' && tenant?.status === 'SUSPENDED') {
         return NextResponse.redirect(new URL('/suspended', request.url));
       }
     }
   }
 
-  // Subdomain-based tenant routing
   const hostHeader = request.headers.get('host');
   const hostname = hostHeader?.split(':')[0] ?? '';
   const requestHeaders = new Headers(request.headers);
-
   requestHeaders.delete('x-tenant-slug');
 
   if (hostname.endsWith(TENANT_DOMAIN_SUFFIX)) {
