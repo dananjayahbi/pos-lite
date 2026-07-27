@@ -1,14 +1,29 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { auth } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
-import { AUTH_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
+import NextAuth from 'next-auth';
+import { authConfig } from '@/lib/auth.config';
 import {
   getCachedSessionVersion,
   setCachedSessionVersion,
 } from '@/lib/auth/session-version-cache';
 
-export const runtime = 'nodejs';
+/**
+ * Calls the internal middleware API to perform database operations that are
+ * not available on the Edge Runtime.
+ */
+async function middlewareApi(
+  request: NextRequest,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const apiUrl = new URL('/api/internal/middleware', request.url);
+  return fetch(apiUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+const { auth } = NextAuth(authConfig);
 
 const tenantSlugCache = new Map<string, boolean>();
 const TENANT_DOMAIN_SUFFIX = '.ayurpos.com';
@@ -96,14 +111,17 @@ export default auth(async (request: NextRequest) => {
     let dbSessionVersion = getCachedSessionVersion(userId);
 
     if (dbSessionVersion === null) {
-      const dbUser = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { sessionVersion: true },
+      const res = await middlewareApi(request, {
+        action: 'checkSessionVersion',
+        userId,
       });
 
-      if (dbUser) {
-        dbSessionVersion = dbUser.sessionVersion;
-        setCachedSessionVersion(userId, dbSessionVersion);
+      if (res.ok) {
+        const data = await res.json();
+        dbSessionVersion = data.sessionVersion;
+        if (typeof dbSessionVersion === 'number') {
+          setCachedSessionVersion(userId, dbSessionVersion);
+        }
       }
     }
 
@@ -118,15 +136,19 @@ export default auth(async (request: NextRequest) => {
       const response = NextResponse.redirect(loginUrl);
       clearSessionCookies(response);
 
-      await createAuditLog({
+      // Fire-and-forget audit log (don't await — avoids blocking redirect)
+      middlewareApi(request, {
+        action: 'createAuditLog',
         tenantId: user.tenantId,
         actorId: user.id,
         actorRole: user.role,
         entityType: 'User',
         entityId: user.id,
-        action: AUTH_ACTIONS.SESSION_INVALIDATED_BY_VERSION_MISMATCH,
+        auditAction: 'SESSION_INVALIDATED_BY_VERSION_MISMATCH',
         ipAddress: request.headers.get('x-forwarded-for') ?? 'unknown',
         userAgent: request.headers.get('user-agent') ?? undefined,
+      }).catch(() => {
+        /* audit log failure is non-blocking */
       });
 
       return response;
@@ -139,22 +161,22 @@ export default auth(async (request: NextRequest) => {
   }
 
   if (isStorePath(pathname)) {
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: user.tenantId },
-      select: {
-        id: true,
-        status: true,
-        deletedAt: true,
-      },
+    const res = await middlewareApi(request, {
+      action: 'checkTenantStatus',
+      tenantId: user.tenantId,
     });
 
-    if (!tenant || tenant.deletedAt !== null) {
-      return NextResponse.next();
-    }
+    if (res.ok) {
+      const tenant = await res.json();
 
-    // Suspension check — SUPER_ADMIN can bypass
-    if (user.role !== 'SUPER_ADMIN' && tenant.status === 'SUSPENDED') {
-      return NextResponse.redirect(new URL('/suspended', request.url));
+      if (tenant && tenant.deletedAt !== null) {
+        return NextResponse.next();
+      }
+
+      // Suspension check — SUPER_ADMIN can bypass
+      if (user.role !== 'SUPER_ADMIN' && tenant?.status === 'SUSPENDED') {
+        return NextResponse.redirect(new URL('/suspended', request.url));
+      }
     }
   }
 
@@ -173,12 +195,18 @@ export default auth(async (request: NextRequest) => {
       let exists = tenantSlugCache.get(slug);
 
       if (exists === undefined) {
-        const tenant = await prisma.tenant.findFirst({
-          where: { slug },
-          select: { id: true },
+        const res = await middlewareApi(request, {
+          action: 'checkTenantSlug',
+          slug,
         });
-        exists = tenant !== null;
-        tenantSlugCache.set(slug, exists);
+
+        if (res.ok) {
+          const data = await res.json();
+          exists = data.exists === true;
+          tenantSlugCache.set(slug, exists);
+        } else {
+          exists = false;
+        }
       }
 
       if (exists) {
@@ -205,6 +233,6 @@ export default auth(async (request: NextRequest) => {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|api/webhooks/|.*\\..*).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/webhooks/|api/internal/|.*\\..*).*)',
   ],
 };

@@ -3,8 +3,8 @@ import Credentials from 'next-auth/providers/credentials';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import type { UserRole } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
+import { authConfig } from '@/lib/auth.config';
 import { AUTH_ACTIONS, createAuditLog, hashEmailForAudit } from '@/lib/services/audit.service';
 import { getClientIp } from '@/lib/utils/request';
 import {
@@ -26,10 +26,7 @@ const pinSchema = z.object({
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
-  session: { strategy: 'jwt' },
-  pages: {
-    signIn: '/login',
-  },
+  ...authConfig,
   providers: [
     Credentials({
       id: 'credentials',
@@ -239,26 +236,4 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-        token.role = (user as { role: UserRole }).role;
-        token.permissions = (user as { permissions: string[] }).permissions;
-        token.tenantId = (user as { tenantId: string | null }).tenantId;
-        token.sessionVersion = (user as { sessionVersion: number }).sessionVersion;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (token && session.user) {
-        session.user.id = token.id as string;
-        session.user.role = token.role as UserRole;
-        session.user.permissions = token.permissions as string[];
-        session.user.tenantId = token.tenantId as string | null;
-        session.user.sessionVersion = token.sessionVersion as number;
-      }
-      return session;
-    },
-  },
 });
