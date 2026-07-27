@@ -10,10 +10,18 @@ interface AboutPageContentProps {
 }
 
 export async function AboutPageContent({ tenantSlug }: AboutPageContentProps) {
-  const [tenant, configResponse] = await Promise.all([
-    getTenantInfo(tenantSlug),
-    getPublicWebsiteConfig(tenantSlug),
-  ]);
+  let tenant = null;
+  let configResponse = null;
+
+  try {
+    [tenant, configResponse] = await Promise.all([
+      getTenantInfo(tenantSlug),
+      getPublicWebsiteConfig(tenantSlug),
+    ]);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[about] tenant/config fetch failed', err);
+  }
 
   if (!tenant) notFound();
 

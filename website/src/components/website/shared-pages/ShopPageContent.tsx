@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { getPublicProducts } from '@/lib/api/products';
+import { getPublicProducts, type ProductListResponse } from '@/lib/api/products';
 import { getTenantInfo, getPublicWebsiteConfig } from '@/lib/api/website';
 import { getPublicCategories } from '@/lib/api/categories';
 import { StaticPageShell } from '../static-pages/StaticPageShell';
@@ -13,16 +13,26 @@ interface ShopPageContentProps {
 }
 
 export async function ShopPageContent({ tenantSlug, category, sort }: ShopPageContentProps) {
-  const [tenant, configResponse, productResponse, categories] = await Promise.all([
-    getTenantInfo(tenantSlug),
-    getPublicWebsiteConfig(tenantSlug),
-    getPublicProducts(tenantSlug, {
-      ...(category ? { categoryId: category } : {}),
-      sort: (sort as 'latest' | 'best-selling' | 'price-asc' | 'price-desc') || 'latest',
-      limit: 40,
-    }).catch(() => ({ products: [], total: 0 })),
-    getPublicCategories(tenantSlug).catch(() => []),
-  ]);
+  let tenant = null;
+  let configResponse = null;
+  let productResponse: ProductListResponse = { products: [], total: 0 };
+  let categories: Awaited<ReturnType<typeof getPublicCategories>> = [];
+
+  try {
+    [tenant, configResponse, productResponse, categories] = await Promise.all([
+      getTenantInfo(tenantSlug),
+      getPublicWebsiteConfig(tenantSlug),
+      getPublicProducts(tenantSlug, {
+        ...(category ? { categoryId: category } : {}),
+        sort: (sort as 'latest' | 'best-selling' | 'price-asc' | 'price-desc') || 'latest',
+        limit: 40,
+      }).catch(() => ({ products: [], total: 0 })),
+      getPublicCategories(tenantSlug).catch(() => []),
+    ]);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[shop] tenant/config fetch failed', err);
+  }
 
   if (!tenant) notFound();
 

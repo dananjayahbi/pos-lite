@@ -10,10 +10,18 @@ interface ContactPageContentProps {
 }
 
 export async function ContactPageContent({ tenantSlug }: ContactPageContentProps) {
-  const [tenant, configResponse] = await Promise.all([
-    getTenantInfo(tenantSlug),
-    getPublicWebsiteConfig(tenantSlug),
-  ]);
+  let tenant = null;
+  let configResponse = null;
+
+  try {
+    [tenant, configResponse] = await Promise.all([
+      getTenantInfo(tenantSlug),
+      getPublicWebsiteConfig(tenantSlug),
+    ]);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[contact] tenant/config fetch failed', err);
+  }
 
   if (!tenant) notFound();
 

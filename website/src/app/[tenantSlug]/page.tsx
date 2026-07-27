@@ -61,6 +61,7 @@ export async function generateMetadata({
   }
 }
 
-// Enable ISR (revalidate every SITE.revalidateSeconds)
-export const revalidate = 60;
+// Dynamic rendering — this page fetches live data from the ERP backend
+// which must be reachable at request time (not build time).
+export const dynamic = 'force-dynamic';
 export const dynamicParams = true;

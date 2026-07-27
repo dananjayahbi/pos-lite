@@ -10,6 +10,6 @@ export default function RootPage() {
   return <Storefront tenantSlug={SITE.defaultTenantSlug} />;
 }
 
-// Match the storefront's ISR cadence so the home page revalidates with the
-// rest of the public content.
-export const revalidate = 60;
+// Dynamic rendering — this page fetches live data from the ERP backend
+// which must be reachable at request time (not build time).
+export const dynamic = 'force-dynamic';
