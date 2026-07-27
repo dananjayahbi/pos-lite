@@ -1,55 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import NextAuth from 'next-auth';
+import { decode } from 'next-auth/jwt';
 
-/**
- * Calls the internal middleware API to perform database operations that are
- * not available on the Edge Runtime.
- */
-async function middlewareApi(
-  request: NextRequest,
-  body: Record<string, unknown>,
-): Promise<Response> {
-  const apiUrl = new URL('/api/internal/middleware', request.url);
-  return fetch(apiUrl, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
-
-const { auth } = NextAuth({
-  session: { strategy: 'jwt' as const },
-  pages: { signIn: '/login' },
-  providers: [],
-  callbacks: {
-    async jwt({ token, user }: { token: any; user?: any }) {
-      if (user) {
-        token.id = user.id;
-        token.role = user.role;
-        token.permissions = user.permissions;
-        token.tenantId = user.tenantId;
-        token.sessionVersion = user.sessionVersion;
-      }
-      return token;
-    },
-    async session({ session, token }: { session: any; token: any }) {
-      type UserRole = 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK';
-      if (token && session.user) {
-        session.user.id = token.id as string;
-        session.user.role = token.role as UserRole;
-        session.user.permissions = token.permissions as string[];
-        session.user.tenantId = token.tenantId as string | null;
-        session.user.sessionVersion = token.sessionVersion as number;
-      }
-      return session;
-    },
-  },
-});
-
-// ── In-memory session-version cache (Edge-compatible) ─────────────────────
-// Inlined from @/lib/auth/session-version-cache to avoid cross-module
-// bundler issues on Vercel's Edge Runtime.
+// ── In-memory caches (Edge-compatible) ────────────────────────────────────
 interface SessionVersionCacheEntry {
   sessionVersion: number;
   cachedAt: number;
@@ -57,22 +10,8 @@ interface SessionVersionCacheEntry {
 
 const SESSION_VERSION_CACHE_TTL_MS = 5_000;
 const sessionVersionCache = new Map<string, SessionVersionCacheEntry>();
-
-function getCachedSessionVersion(userId: string): number | null {
-  const cached = sessionVersionCache.get(userId);
-  if (!cached) return null;
-  if (Date.now() - cached.cachedAt > SESSION_VERSION_CACHE_TTL_MS) {
-    sessionVersionCache.delete(userId);
-    return null;
-  }
-  return cached.sessionVersion;
-}
-
-function setCachedSessionVersion(userId: string, sessionVersion: number): void {
-  sessionVersionCache.set(userId, { sessionVersion, cachedAt: Date.now() });
-}
-
 const tenantSlugCache = new Map<string, boolean>();
+
 const TENANT_DOMAIN_SUFFIX = '.ayurpos.com';
 const RESERVED_SUBDOMAINS = new Set(['', 'www', 'app']);
 
@@ -93,19 +32,15 @@ const PUBLIC_PATH_PREFIXES = [
   '/images',
 ];
 
+// ── Helpers ────────────────────────────────────────────────────────────────
+
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
 function isStorePath(pathname: string): boolean {
-  if (pathname.startsWith('/superadmin')) {
-    return false;
-  }
-
-  if (pathname.startsWith('/api')) {
-    return false;
-  }
-
+  if (pathname.startsWith('/superadmin')) return false;
+  if (pathname.startsWith('/api')) return false;
   return !isPublicPath(pathname);
 }
 
@@ -127,21 +62,121 @@ function clearSessionCookies(response: NextResponse): void {
   response.cookies.delete('__Secure-next-auth.session-token');
 }
 
-export default auth(async (request: NextRequest) => {
+function getCachedSessionVersion(userId: string): number | null {
+  const cached = sessionVersionCache.get(userId);
+  if (!cached) return null;
+  if (Date.now() - cached.cachedAt > SESSION_VERSION_CACHE_TTL_MS) {
+    sessionVersionCache.delete(userId);
+    return null;
+  }
+  return cached.sessionVersion;
+}
+
+function setCachedSessionVersion(userId: string, sessionVersion: number): void {
+  sessionVersionCache.set(userId, { sessionVersion, cachedAt: Date.now() });
+}
+
+interface SessionUser {
+  id: string;
+  role: string;
+  tenantId: string | null;
+  sessionVersion: number;
+}
+
+/**
+ * Reads and decodes the NextAuth JWT session token from cookies.
+ * This replaces the NextAuth `auth()` middleware wrapper, which was crashing
+ * on Vercel's Edge Runtime when called with `providers: []`.
+ */
+async function getSessionUser(request: NextRequest): Promise<SessionUser | null> {
+  const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+  if (!secret) return null;
+
+  // Try all possible cookie names (secure + non-secure, both naming conventions)
+  let tokenValue: string | undefined;
+  let cookieName: string | undefined;
+
+  const secureToken = request.cookies.get('__Secure-authjs.session-token')?.value;
+  if (secureToken) {
+    tokenValue = secureToken;
+    cookieName = '__Secure-authjs.session-token';
+  }
+
+  if (!tokenValue) {
+    const nonSecureToken = request.cookies.get('authjs.session-token')?.value;
+    if (nonSecureToken) {
+      tokenValue = nonSecureToken;
+      cookieName = 'authjs.session-token';
+    }
+  }
+
+  if (!tokenValue) {
+    const legacySecureToken = request.cookies.get('__Secure-next-auth.session-token')?.value;
+    if (legacySecureToken) {
+      tokenValue = legacySecureToken;
+      cookieName = '__Secure-next-auth.session-token';
+    }
+  }
+
+  if (!tokenValue) {
+    const legacyToken = request.cookies.get('next-auth.session-token')?.value;
+    if (legacyToken) {
+      tokenValue = legacyToken;
+      cookieName = 'next-auth.session-token';
+    }
+  }
+
+  if (!tokenValue || !cookieName) return null;
+
+  try {
+    const token = await decode({ token: tokenValue, secret, salt: cookieName });
+    if (!token) return null;
+
+    const id = (token.id ?? token.sub) as string | undefined;
+    if (!id) return null;
+
+    return {
+      id,
+      role: (token.role as string) ?? 'UNKNOWN',
+      tenantId: (token.tenantId as string | null) ?? null,
+      sessionVersion: (token.sessionVersion as number) ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Calls the internal middleware API to perform database operations that are
+ * not available on the Edge Runtime.
+ */
+async function middlewareApi(
+  request: NextRequest,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const apiUrl = new URL('/api/internal/middleware', request.url);
+  return fetch(apiUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+// ── Middleware handler ─────────────────────────────────────────────────────
+
+export default async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
   if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
-  const session = (request as unknown as { auth?: { user?: { id: string; role: string; tenantId: string | null; sessionVersion: number } } }).auth;
-  if (!session?.user) {
+  const user = await getSessionUser(request);
+  if (!user) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(loginUrl);
   }
-
-  const user = session.user;
 
   if (pathname.startsWith('/superadmin') && user.role !== 'SUPER_ADMIN') {
     return NextResponse.redirect(new URL('/dashboard', request.url));
@@ -183,7 +218,7 @@ export default auth(async (request: NextRequest) => {
       const response = NextResponse.redirect(loginUrl);
       clearSessionCookies(response);
 
-      // Fire-and-forget audit log (don't await — avoids blocking redirect)
+      // Fire-and-forget audit log
       middlewareApi(request, {
         action: 'createAuditLog',
         tenantId: user.tenantId,
@@ -202,7 +237,7 @@ export default auth(async (request: NextRequest) => {
     }
   }
 
-  // Tenant status enforcement for store routes
+  // Tenant status enforcement
   if (!user.tenantId || isSuspensionBypassPath(pathname)) {
     return NextResponse.next();
   }
@@ -220,7 +255,6 @@ export default auth(async (request: NextRequest) => {
         return NextResponse.next();
       }
 
-      // Suspension check — SUPER_ADMIN can bypass
       if (user.role !== 'SUPER_ADMIN' && tenant?.status === 'SUSPENDED') {
         return NextResponse.redirect(new URL('/suspended', request.url));
       }
@@ -232,7 +266,6 @@ export default auth(async (request: NextRequest) => {
   const hostname = hostHeader?.split(':')[0] ?? '';
   const requestHeaders = new Headers(request.headers);
 
-  // Security: strip any incoming X-Tenant-Slug to prevent spoofing
   requestHeaders.delete('x-tenant-slug');
 
   if (hostname.endsWith(TENANT_DOMAIN_SUFFIX)) {
@@ -268,7 +301,6 @@ export default auth(async (request: NextRequest) => {
       }
     }
   } else if (process.env.NODE_ENV !== 'production') {
-    // Dev fallback: allow X-Tenant-Slug override via dev tools
     const devSlug = request.headers.get('x-tenant-slug');
     if (devSlug) {
       return NextResponse.next();
@@ -276,7 +308,7 @@ export default auth(async (request: NextRequest) => {
   }
 
   return NextResponse.next({ request: { headers: requestHeaders } });
-});
+}
 
 export const config = {
   matcher: [
