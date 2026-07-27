@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { decode } from 'next-auth/jwt';
+import { jwtDecrypt, calculateJwkThumbprint, base64url } from 'jose';
+import { hkdf } from '@panva/hkdf';
 
 // ── In-memory caches (Edge-compatible) ────────────────────────────────────
 interface SessionVersionCacheEntry {
@@ -76,6 +77,66 @@ function setCachedSessionVersion(userId: string, sessionVersion: number): void {
   sessionVersionCache.set(userId, { sessionVersion, cachedAt: Date.now() });
 }
 
+// ── JWT helpers (replicated from @auth/core/jwt to avoid bundling issues) ─
+
+const JWT_ALG = 'dir';
+const JWT_ENC = 'A256CBC-HS512';
+
+async function getDerivedEncryptionKey(
+  enc: string,
+  keyMaterial: string,
+  salt: string,
+): Promise<Uint8Array> {
+  let length: number;
+  switch (enc) {
+    case 'A256CBC-HS512':
+      length = 64;
+      break;
+    case 'A256GCM':
+      length = 32;
+      break;
+    default:
+      throw new Error('Unsupported JWT Content Encryption Algorithm');
+  }
+  return hkdf('sha256', keyMaterial, salt, `Auth.js Generated Encryption Key (${salt})`, length);
+}
+
+async function decryptSessionToken(
+  token: string,
+  secret: string,
+  salt: string,
+): Promise<Record<string, unknown> | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtDecrypt(
+      token,
+      async ({ kid, enc }) => {
+        const encryptionSecret = await getDerivedEncryptionKey(enc, secret, salt);
+        if (kid === undefined) return encryptionSecret;
+        const hashAlg = (
+          encryptionSecret.byteLength === 32 ? 'sha256' :
+          encryptionSecret.byteLength === 48 ? 'sha384' :
+          'sha512'
+        ) as 'sha256' | 'sha384' | 'sha512';
+        const thumbprint = await calculateJwkThumbprint(
+          { kty: 'oct', k: base64url.encode(encryptionSecret) },
+          hashAlg,
+        );
+        if (kid === thumbprint) return encryptionSecret;
+        throw new Error('no matching decryption secret');
+      },
+      {
+        clockTolerance: 15,
+        keyManagementAlgorithms: [JWT_ALG],
+        contentEncryptionAlgorithms: [JWT_ENC, 'A256GCM'],
+      },
+    );
+    return payload as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 interface SessionUser {
   id: string;
   role: string;
@@ -84,9 +145,9 @@ interface SessionUser {
 }
 
 /**
- * Reads and decodes the NextAuth JWT session token from cookies.
- * This replaces the NextAuth `auth()` middleware wrapper, which was crashing
- * on Vercel's Edge Runtime when called with `providers: []`.
+ * Reads and decrypts the NextAuth JWT session token from cookies using jose.
+ * Avoids importing @auth/core/jwt (which pulls in SessionStore, defaultCookies
+ * and other modules that crash on Vercel's Edge Runtime).
  */
 async function getSessionUser(request: NextRequest): Promise<SessionUser | null> {
   const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
@@ -128,22 +189,18 @@ async function getSessionUser(request: NextRequest): Promise<SessionUser | null>
 
   if (!tokenValue || !cookieName) return null;
 
-  try {
-    const token = await decode({ token: tokenValue, secret, salt: cookieName });
-    if (!token) return null;
+  const payload = await decryptSessionToken(tokenValue, secret, cookieName);
+  if (!payload) return null;
 
-    const id = (token.id ?? token.sub) as string | undefined;
-    if (!id) return null;
+  const id = (payload.id ?? payload.sub) as string | undefined;
+  if (!id) return null;
 
-    return {
-      id,
-      role: (token.role as string) ?? 'UNKNOWN',
-      tenantId: (token.tenantId as string | null) ?? null,
-      sessionVersion: (token.sessionVersion as number) ?? 0,
-    };
-  } catch {
-    return null;
-  }
+  return {
+    id,
+    role: (payload.role as string) ?? 'UNKNOWN',
+    tenantId: (payload.tenantId as string | null) ?? null,
+    sessionVersion: (payload.sessionVersion as number) ?? 0,
+  };
 }
 
 /**
