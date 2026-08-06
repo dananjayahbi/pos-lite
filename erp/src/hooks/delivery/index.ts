@@ -9,4 +9,5 @@ export { useRatePreview } from './useRatePreview';
 export { usePackaging } from './usePackaging';
 export { useReconciliation } from './useReconciliation';
 export { useCourierSettings } from './useCourierSettings';
+export { useLabelTemplate } from './useLabelTemplate';
 export { useLocations } from './useLocations';

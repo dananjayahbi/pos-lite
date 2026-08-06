@@ -3,12 +3,14 @@
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDelivery } from '@/hooks/delivery';
+import { useDelivery, useLabelTemplate } from '@/hooks/delivery';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
 import { StatusBadge } from '@/components/delivery/StatusBadge';
 import { DeliveryDetailPanel } from '@/components/delivery/DeliveryDetailPanel';
 import { DispatchSheet } from '@/components/delivery/DispatchSheet';
+import { printShippingLabel } from '@/components/delivery/labels/ShippingLabel';
 import { useState } from 'react';
 
 interface DeliveryDetailPageClientProps {
@@ -18,6 +20,7 @@ interface DeliveryDetailPageClientProps {
 export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClientProps) {
   const router = useRouter();
   const { data: delivery, isLoading } = useDelivery(deliveryId);
+  const { data: labelTemplate } = useLabelTemplate();
   const { hasPermission } = usePermissions();
   const canDispatch = hasPermission(PERMISSIONS.DELIVERY.dispatchDelivery);
 
@@ -37,6 +40,14 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
           {delivery && <StatusBadge status={delivery.status} />}
         </div>
 
+        {delivery && (
+          <Button
+            variant="outline"
+            onClick={() => printShippingLabel(delivery, labelTemplate ?? DEFAULT_LABEL_TEMPLATE)}
+          >
+            Print Label
+          </Button>
+        )}
         {canDispatch && delivery?.status === 'PENDING_DISPATCH' && (
           <Button onClick={() => setDispatchOpen(true)}>Dispatch</Button>
         )}

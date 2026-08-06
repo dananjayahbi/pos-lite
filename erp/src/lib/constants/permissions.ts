@@ -113,6 +113,7 @@ export const PERMISSIONS = {
     trackDelivery: 'delivery:track',
     manageRateCard: 'delivery:ratecard:manage',
     manageCourierSettings: 'delivery:courier:manage',
+    manageLabelTemplate: 'delivery:label:manage',
     viewReconciliation: 'delivery:recon:view',
     importRemittance: 'delivery:recon:import',
     managePackaging: 'delivery:packaging:manage',

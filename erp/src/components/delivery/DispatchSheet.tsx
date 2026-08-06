@@ -24,7 +24,8 @@ import {
 import {
   DispatchDeliverySchema,
 } from '@/lib/validators/delivery.validators';
-import { useDispatchDelivery } from '@/hooks/delivery';
+import { useDispatchDelivery, useLabelTemplate } from '@/hooks/delivery';
+import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
 import { printShippingLabel } from './labels/ShippingLabel';
 import type { DeliveryListItem } from '@/types/delivery';
 
@@ -36,6 +37,7 @@ interface DispatchSheetProps {
 
 export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
   const dispatch = useDispatchDelivery();
+  const { data: labelTemplate } = useLabelTemplate();
 
   const {
     register,
@@ -118,7 +120,7 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => printShippingLabel(delivery)}
+                onClick={() => printShippingLabel(delivery, labelTemplate ?? DEFAULT_LABEL_TEMPLATE)}
               >
                 Print Label
               </Button>

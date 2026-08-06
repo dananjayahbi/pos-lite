@@ -251,6 +251,13 @@ const navGroups: NavGroup[] = [
         permission: PERMISSIONS.DELIVERY.manageCourierSettings,
         match: 'exact',
       },
+      {
+        name: 'Label Design',
+        href: '/delivery/label',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.DELIVERY.manageLabelTemplate,
+        match: 'exact',
+      },
     ],
   },
   {

@@ -6,8 +6,11 @@ import { Button } from '@/components/ui/button';
 import { formatRupee } from '@/lib/format';
 import { StatusBadge } from './StatusBadge';
 import { DispatchSheet } from './DispatchSheet';
+import { printShippingLabel } from './labels/ShippingLabel';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useLabelTemplate } from '@/hooks/delivery';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
 import type { DeliveryListItem } from '@/types/delivery';
 
 interface DeliveryTableProps {
@@ -29,6 +32,7 @@ function formatDate(value?: string | null) {
 export function DeliveryTable({ deliveries }: DeliveryTableProps) {
   const router = useRouter();
   const { hasPermission } = usePermissions();
+  const { data: labelTemplate } = useLabelTemplate();
   const canDispatch = hasPermission(PERMISSIONS.DELIVERY.dispatchDelivery);
   const canCancel = hasPermission(PERMISSIONS.DELIVERY.cancelDelivery);
 
@@ -89,6 +93,13 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                         onClick={() => router.push(`/delivery/${d.id}`)}
                       >
                         View
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => printShippingLabel(d, labelTemplate ?? DEFAULT_LABEL_TEMPLATE)}
+                      >
+                        Print
                       </Button>
                       {canDispatch && d.status === 'PENDING_DISPATCH' && (
                         <Button size="sm" variant="outline" onClick={() => setDispatchTarget(d)}>
