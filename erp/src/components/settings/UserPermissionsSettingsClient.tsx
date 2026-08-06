@@ -33,7 +33,7 @@ import {
   type PermissionKey,
 } from '@/lib/constants/permissions';
 
-type AssignableRole = 'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK';
+type AssignableRole = 'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK' | 'DISPATCH_STAFF';
 
 interface StaffMember {
   id: string;
@@ -48,9 +48,10 @@ const ROLE_COLORS: Record<AssignableRole, string> = {
   MANAGER: 'bg-terracotta text-pearl',
   CASHIER: 'bg-sand text-espresso',
   STOCK_CLERK: 'bg-mist text-espresso',
+  DISPATCH_STAFF: 'bg-pearl text-espresso',
 };
 
-const ASSIGNABLE_ROLES: AssignableRole[] = ['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK'];
+const ASSIGNABLE_ROLES: AssignableRole[] = ['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK', 'DISPATCH_STAFF'];
 
 const GROUP_LABELS: Record<keyof typeof PERMISSIONS, string> = {
   SALE: 'Sales',
@@ -66,6 +67,7 @@ const GROUP_LABELS: Record<keyof typeof PERMISSIONS, string> = {
   BILLING: 'Billing',
   EXPENSE: 'Expenses',
   APPOINTMENT: 'Appointments',
+  DELIVERY: 'Delivery & Courier',
 };
 
 function formatPermissionLabel(permission: string) {

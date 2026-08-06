@@ -22,7 +22,6 @@ const RESERVED_SUBDOMAINS = new Set(['', 'www', 'app']);
 
 const PUBLIC_PATH_PREFIXES = [
   '/login',
-  '/pin-login',
   '/forgot-password',
   '/reset-password',
   '/api/auth/',

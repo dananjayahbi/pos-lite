@@ -95,7 +95,7 @@ export async function PATCH(
     }
 
     const wantsPermissionsUpdate = 'permissions' in parsed.data;
-    const wantsStaffUpdate = ['email', 'role', 'isActive', 'commissionRate', 'clearPin'].some(
+    const wantsStaffUpdate = ['email', 'role', 'isActive', 'commissionRate'].some(
       (field) => field in parsed.data,
     );
 

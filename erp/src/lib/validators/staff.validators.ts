@@ -23,7 +23,6 @@ export const UpdateStaffSchema = z.object({
     .string()
     .regex(/^\d+(\.\d{1,2})?$/, 'Must be a valid decimal (e.g. 5.00)')
     .optional(),
-  clearPin: z.boolean().optional(),
   permissions: z.array(PermissionValueSchema).optional(),
 });
 

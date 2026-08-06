@@ -214,6 +214,46 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    label: 'Delivery',
+    items: [
+      {
+        name: 'Deliveries',
+        href: '/delivery',
+        roles: ['OWNER', 'MANAGER', 'CASHIER', 'DISPATCH_STAFF'],
+        permission: PERMISSIONS.DELIVERY.viewDelivery,
+        match: 'exact',
+      },
+      {
+        name: 'Rate Card',
+        href: '/delivery/rate-card',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.DELIVERY.manageRateCard,
+        match: 'exact',
+      },
+      {
+        name: 'Packaging',
+        href: '/delivery/packaging',
+        roles: ['OWNER', 'MANAGER', 'DISPATCH_STAFF'],
+        permission: PERMISSIONS.DELIVERY.managePackaging,
+        match: 'exact',
+      },
+      {
+        name: 'Reconciliation',
+        href: '/delivery/reconciliation',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.DELIVERY.viewReconciliation,
+        match: 'exact',
+      },
+      {
+        name: 'Courier Settings',
+        href: '/delivery/settings',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.DELIVERY.manageCourierSettings,
+        match: 'exact',
+      },
+    ],
+  },
+  {
     label: 'Settings',
     items: [
       {
@@ -311,7 +351,7 @@ export default function StoreSidebar({
         <div className="mx-5 border-b border-mist" />
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 py-4">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
           {navGroups.map((group) => {
             const visibleItems = group.items.filter((item) =>
               canAccessItem(item, userRole, permissions),

@@ -18,6 +18,7 @@ enum UserRole {
   MANAGER
   CASHIER
   STOCK_CLERK
+  DISPATCH_STAFF
 }
 
 enum TenantStatus {
@@ -95,6 +96,14 @@ enum NotificationType {
   SALE_COMPLETED
   RETURN_PROCESSED
   SHIFT_CLOSED
+  DELIVERY_STATUS_UPDATED
+  DELIVERY_FAILED
+  DELIVERY_DISPATCHED
+  DELIVERY_DELIVERED
+  PACKAGING_LOW_STOCK
+  RECONCILIATION_DISCREPANCY
+  DELIVERY_HELD_EXPIRING
+  COD_PENDING_ALERT
 }
 
 enum PaymentMethod {
@@ -201,6 +210,107 @@ enum AppointmentReminderStatus {
   SKIPPED
 }
 
+enum DeliverySource {
+  WEBSITE_CHECKOUT
+  ERP_MANUAL
+  POS
+  IMPORT
+}
+
+enum DeliveryStatus {
+  PLACED
+  PENDING_DISPATCH
+  HOLD
+  DISPATCHED
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  CANCELED
+  RETURNED
+  PENDING_PICKUP
+}
+
+enum ShipmentStatus {
+  SUBMITTED
+  PROCESSING
+  PICKED_UP
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  RETURNED
+  CANCELED
+}
+
+enum CarrierProvider {
+  TRANSEXPRESS
+}
+
+enum WaybillMode {
+  MANUAL
+  AUTO
+}
+
+enum CourierEnv {
+  STAGING
+  PRODUCTION
+}
+
+enum DeliveryPackageStatus {
+  AWAITING_WEIGH
+  WEIGHED
+  PACKED
+  DISPATCHED
+  DELIVERED
+  RETURNED
+}
+
+enum RateType {
+  FLAT
+  BY_WEIGHT
+}
+
+enum ReconciliationStatus {
+  PENDING_SETTLEMENT
+  MATCHED
+  PARTIAL_MATCH
+  DISCREPANCY
+  CLEARED
+  DISPUTED
+}
+
+enum StatementImportStatus {
+  UPLOADED
+  PARSING
+  PARSED
+  MATCHING
+  COMPLETED
+  FAILED
+}
+
+enum RecoveryAction {
+  FOLLOW_UP_CALL
+  RESCHEDULED
+  REDELIVERED
+  CANCELLED
+}
+
+enum PackagingCategory {
+  POLYMAILER
+  TAPE
+  LABEL
+  BUBBLE_WRAP
+  OTHER
+}
+
+enum PackagingUnit {
+  PIECE
+  ROLL
+  BOX
+  METER
+}
+
 // ── Auth Models ──────────────────────────────────────────────────────────────
 
 model User {
@@ -209,7 +319,6 @@ model User {
   tenant         Tenant?   @relation(fields: [tenantId], references: [id])
   email          String    @unique
   passwordHash   String
-  pin            String?
   role           UserRole
   permissions    Json      @default("[]")
   isActive       Boolean   @default(true)
@@ -221,35 +330,39 @@ model User {
   commissionRate Decimal?  @db.Decimal(5, 2)
   clockedInAt    DateTime?
 
-  sessions       Session[]
-  stockMovements StockMovement[]
-  initiatedStockTakes StockTakeSession[] @relation("StockTakeInitiator")
-  approvedStockTakes  StockTakeSession[] @relation("StockTakeApprover")
-  notifications        NotificationRecord[]
-  salesAsCashier       Sale[]             @relation("SaleCashier")
-  salesAsAuthManager   Sale[]             @relation("SaleAuthorizingManager")
-  salesAsVoidActor     Sale[]             @relation("SaleVoidActor")
-  shiftsAsCashier      Shift[]            @relation("ShiftCashier")
-  shiftClosures        ShiftClosure[]     @relation("ShiftCloser")
-  returnsAsInitiator   Return[]           @relation("ReturnInitiator")
-  returnsAsAuthorizer  Return[]           @relation("ReturnAuthorizer")
-  purchaseOrders       PurchaseOrder[]
-  broadcasts           CustomerBroadcast[]
-  commissionRecords    CommissionRecord[]
-  commissionPayoutsAsUser CommissionPayout[] @relation("PayoutUser")
-  commissionPayoutsAsAuthorizer CommissionPayout[] @relation("PayoutAuthorizer")
-  timeClocks           TimeClock[]
-  expenses             Expense[]
-  authorizedCashMovements CashMovement[]
-  savedReports         SavedReport[]
-  appointmentSlots     AppointmentSlot[]     @relation("AppointmentSlotStaff")
-  appointmentsAsStaff  Appointment[]         @relation("AppointmentStaff")
-  staffAvailabilities   StaffAvailability[]   @relation("StaffAvailabilityUser")
-  staffTimeOffs         StaffTimeOff[]        @relation("StaffTimeOffUser")
-  staffTimeOffsApproved StaffTimeOff[]        @relation("StaffTimeOffApprover")
-  appointmentsCancelled Appointment[]         @relation("AppointmentCanceller")
-  appointmentsCheckedIn Appointment[]         @relation("AppointmentCheckIn")
-  appointmentsCreated   Appointment[]         @relation("AppointmentCreator")
+  sessions                      Session[]
+  stockMovements                StockMovement[]
+  initiatedStockTakes           StockTakeSession[]   @relation("StockTakeInitiator")
+  approvedStockTakes            StockTakeSession[]   @relation("StockTakeApprover")
+  notifications                 NotificationRecord[]
+  salesAsCashier                Sale[]               @relation("SaleCashier")
+  salesAsAuthManager            Sale[]               @relation("SaleAuthorizingManager")
+  salesAsVoidActor              Sale[]               @relation("SaleVoidActor")
+  shiftsAsCashier               Shift[]              @relation("ShiftCashier")
+  shiftClosures                 ShiftClosure[]       @relation("ShiftCloser")
+  returnsAsInitiator            Return[]             @relation("ReturnInitiator")
+  returnsAsAuthorizer           Return[]             @relation("ReturnAuthorizer")
+  purchaseOrders                PurchaseOrder[]
+  broadcasts                    CustomerBroadcast[]
+  commissionRecords             CommissionRecord[]
+  commissionPayoutsAsUser       CommissionPayout[]   @relation("PayoutUser")
+  commissionPayoutsAsAuthorizer CommissionPayout[]   @relation("PayoutAuthorizer")
+  timeClocks                    TimeClock[]
+  expenses                      Expense[]
+  authorizedCashMovements       CashMovement[]
+  savedReports                  SavedReport[]
+  appointmentSlots              AppointmentSlot[]    @relation("AppointmentSlotStaff")
+  appointmentsAsStaff           Appointment[]        @relation("AppointmentStaff")
+  staffAvailabilities           StaffAvailability[]  @relation("StaffAvailabilityUser")
+  staffTimeOffs                 StaffTimeOff[]       @relation("StaffTimeOffUser")
+  staffTimeOffsApproved         StaffTimeOff[]       @relation("StaffTimeOffApprover")
+  appointmentsCancelled         Appointment[]        @relation("AppointmentCanceller")
+  appointmentsCheckedIn         Appointment[]        @relation("AppointmentCheckIn")
+  appointmentsCreated           Appointment[]        @relation("AppointmentCreator")
+  deliveriesAssigned            Delivery[]           @relation("DeliveryAssignedStaff")
+  deliveriesCanceled            Delivery[]           @relation("DeliveryCanceller")
+  recoveryActions               DeliveryRecovery[]   @relation("RecoveryStaff")
+  statementImportsUploaded      StatementImport[]    @relation("StatementImportUploader")
 
   @@index([email])
   @@index([tenantId])
@@ -319,73 +432,86 @@ model SubscriptionPlan {
 }
 
 model Tenant {
-  id           String       @id @default(cuid())
-  name         String
-  slug         String       @unique
-  logoUrl      String?
-  status       TenantStatus @default(ACTIVE)
-  graceEndsAt  DateTime?
-  customDomain String?
-  settings     Json
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  deletedAt           DateTime?
-  subscriptionStatus  SubscriptionStatus @default(TRIAL)
+  id                 String             @id @default(cuid())
+  name               String
+  slug               String             @unique
+  logoUrl            String?
+  status             TenantStatus       @default(ACTIVE)
+  graceEndsAt        DateTime?
+  customDomain       String?
+  settings           Json
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+  subscriptionStatus SubscriptionStatus @default(TRIAL)
 
-  users         User[]
-  subscriptions Subscription[]
-  invoices      Invoice[]
-  paymentReminders PaymentReminder[]
-  categories    Category[]
-  brands        Brand[]
-  products      Product[]
-  productVariants ProductVariant[]
-  stockMovements StockMovement[]
-  stockTakeSessions StockTakeSession[]
-  notifications      NotificationRecord[]
-  sales              Sale[]
-  shifts             Shift[]
-  storeCredits       StoreCredit[]
-  customers          Customer[]
-  suppliers          Supplier[]
-  purchaseOrders     PurchaseOrder[]
-  customerBroadcasts CustomerBroadcast[]
-  birthdayGreetingLogs BirthdayGreetingLog[]
-  commissionRecords    CommissionRecord[]
-  commissionPayouts    CommissionPayout[]
-  timeClocks           TimeClock[]
-  promotions           Promotion[]
-  customerPricingRules CustomerPricingRule[]
-  expenses             Expense[]
-  cashMovements        CashMovement[]
-  savedReports         SavedReport[]
-  dailySummaryLogs     DailySummaryLog[]
-  webhookEndpoints      WebhookEndpoint[]
-  websiteConfig         WebsiteConfig?
-  appointmentServices   AppointmentService[]
-  appointmentSlots      AppointmentSlot[]
-  appointments          Appointment[]
-  appointmentReminders  AppointmentReminder[]
-  staffAvailabilities   StaffAvailability[]
-  staffTimeOffs         StaffTimeOff[]
+  users                       User[]
+  subscriptions               Subscription[]
+  invoices                    Invoice[]
+  paymentReminders            PaymentReminder[]
+  categories                  Category[]
+  brands                      Brand[]
+  products                    Product[]
+  productVariants             ProductVariant[]
+  stockMovements              StockMovement[]
+  stockTakeSessions           StockTakeSession[]
+  notifications               NotificationRecord[]
+  sales                       Sale[]
+  shifts                      Shift[]
+  storeCredits                StoreCredit[]
+  customers                   Customer[]
+  suppliers                   Supplier[]
+  purchaseOrders              PurchaseOrder[]
+  customerBroadcasts          CustomerBroadcast[]
+  birthdayGreetingLogs        BirthdayGreetingLog[]
+  commissionRecords           CommissionRecord[]
+  commissionPayouts           CommissionPayout[]
+  timeClocks                  TimeClock[]
+  promotions                  Promotion[]
+  customerPricingRules        CustomerPricingRule[]
+  expenses                    Expense[]
+  cashMovements               CashMovement[]
+  savedReports                SavedReport[]
+  dailySummaryLogs            DailySummaryLog[]
+  webhookEndpoints            WebhookEndpoint[]
+  websiteConfig               WebsiteConfig?
+  appointmentServices         AppointmentService[]
+  appointmentSlots            AppointmentSlot[]
+  appointments                Appointment[]
+  appointmentReminders        AppointmentReminder[]
+  staffAvailabilities         StaffAvailability[]
+  staffTimeOffs               StaffTimeOff[]
+  shippingAddresses           ShippingAddress[]
+  deliveries                  Delivery[]
+  courierShipments            CourierShipment[]
+  deliveryEvents              DeliveryEvent[]
+  packages                    Package[]
+  courierAccounts             CourierAccount[]
+  rateCards                   RateCard[]
+  rateCardEntries             RateCardEntry[]
+  packagingItems              PackagingItem[]
+  packagingConsumptions       PackagingConsumption[]
+  deliveryRecoveries          DeliveryRecovery[]
+  reconciliationLedgerEntries ReconciliationLedgerEntry[]
+  statementImports            StatementImport[]
 
   @@map("tenants")
 }
 
 model Subscription {
-  id                        String             @id @default(cuid())
-  tenantId                  String             @unique
-  tenant                    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  planId                    String
-  plan                      SubscriptionPlan   @relation(fields: [planId], references: [id])
-  status                    SubscriptionStatus @default(TRIAL)
-  trialEndsAt               DateTime?
-  currentPeriodStart        DateTime
-  currentPeriodEnd          DateTime
-  payhereSubscriptionToken  String?
-  cancelledAt               DateTime?
-  createdAt                 DateTime           @default(now())
-  updatedAt                 DateTime           @updatedAt
+  id                       String             @id @default(cuid())
+  tenantId                 String             @unique
+  tenant                   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  planId                   String
+  plan                     SubscriptionPlan   @relation(fields: [planId], references: [id])
+  status                   SubscriptionStatus @default(TRIAL)
+  trialEndsAt              DateTime?
+  currentPeriodStart       DateTime
+  currentPeriodEnd         DateTime
+  payhereSubscriptionToken String?
+  cancelledAt              DateTime?
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
 
   invoices Invoice[]
 
@@ -423,16 +549,16 @@ model Invoice {
 }
 
 model InvoicePaymentEvent {
-  id                 String   @id @default(cuid())
-  invoiceId          String
-  invoice            Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  payhereStatusCode  Int
-  payhereOrderId     String
-  payhereAmount      Decimal  @db.Decimal(10, 2)
-  payhereMd5sig      String
-  signatureValid     Boolean
-  rawPayload         String   @db.Text
-  createdAt          DateTime @default(now())
+  id                String   @id @default(cuid())
+  invoiceId         String
+  invoice           Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  payhereStatusCode Int
+  payhereOrderId    String
+  payhereAmount     Decimal  @db.Decimal(10, 2)
+  payhereMd5sig     String
+  signatureValid    Boolean
+  rawPayload        String   @db.Text
+  createdAt         DateTime @default(now())
 
   @@map("invoice_payment_events")
 }
@@ -454,21 +580,21 @@ model PaymentReminder {
 // ── Catalog Models ───────────────────────────────────────────────────────────
 
 model Category {
-  id          String    @id @default(cuid())
+  id          String     @id @default(cuid())
   tenantId    String
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  tenant      Tenant     @relation(fields: [tenantId], references: [id])
   name        String
   description String?
   parentId    String?
-  parent      Category? @relation("CategoryTree", fields: [parentId], references: [id])
+  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id])
   children    Category[] @relation("CategoryTree")
-  sortOrder   Int       @default(0)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  sortOrder   Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
   deletedAt   DateTime?
 
-  products    Product[]
-  promotions  Promotion[]
+  products   Product[]
+  promotions Promotion[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -486,7 +612,7 @@ model Brand {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  products    Product[]
+  products Product[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -494,23 +620,23 @@ model Brand {
 }
 
 model Product {
-  id          String     @id @default(cuid())
+  id          String    @id @default(cuid())
   tenantId    String
-  tenant      Tenant     @relation(fields: [tenantId], references: [id])
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
   name        String
   description String?
   categoryId  String
-  category    Category   @relation(fields: [categoryId], references: [id])
+  category    Category  @relation(fields: [categoryId], references: [id])
   brandId     String?
-  brand       Brand?     @relation(fields: [brandId], references: [id])
-  tags        String[]   @default([])
-  taxRule     TaxRule    @default(STANDARD_VAT)
-  isArchived  Boolean    @default(false)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  brand       Brand?    @relation(fields: [brandId], references: [id])
+  tags        String[]  @default([])
+  taxRule     TaxRule   @default(STANDARD_VAT)
+  isArchived  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  variants    ProductVariant[]
+  variants ProductVariant[]
 
   @@index([tenantId])
   @@index([tenantId, categoryId])
@@ -538,10 +664,10 @@ model ProductVariant {
   updatedAt         DateTime  @updatedAt
   deletedAt         DateTime?
 
-  stockMovements    StockMovement[]
-  stockTakeItems    StockTakeItem[]
-  saleLines         SaleLine[]
-  purchaseOrderLines PurchaseOrderLine[]
+  stockMovements       StockMovement[]
+  stockTakeItems       StockTakeItem[]
+  saleLines            SaleLine[]
+  purchaseOrderLines   PurchaseOrderLine[]
   customerPricingRules CustomerPricingRule[]
 
   @@unique([tenantId, sku])
@@ -553,22 +679,22 @@ model ProductVariant {
 }
 
 model StockMovement {
-  id                  String              @id @default(cuid())
-  tenantId            String
-  tenant              Tenant              @relation(fields: [tenantId], references: [id])
-  variantId           String
-  variant             ProductVariant      @relation(fields: [variantId], references: [id])
-  reason              StockMovementReason
-  quantityDelta       Int
-  quantityBefore      Int
-  quantityAfter       Int
-  actorId             String
-  actor               User                @relation(fields: [actorId], references: [id])
-  note                String?
-  saleId              String?
-  purchaseOrderId     String?
-  stockTakeSessionId  String?
-  createdAt           DateTime            @default(now())
+  id                 String              @id @default(cuid())
+  tenantId           String
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  variantId          String
+  variant            ProductVariant      @relation(fields: [variantId], references: [id])
+  reason             StockMovementReason
+  quantityDelta      Int
+  quantityBefore     Int
+  quantityAfter      Int
+  actorId            String
+  actor              User                @relation(fields: [actorId], references: [id])
+  note               String?
+  saleId             String?
+  purchaseOrderId    String?
+  stockTakeSessionId String?
+  createdAt          DateTime            @default(now())
 
   @@index([variantId, createdAt])
   @@index([tenantId, createdAt])
@@ -591,7 +717,7 @@ model StockTakeSession {
   approvedAt    DateTime?
   notes         String?
 
-  items         StockTakeItem[]
+  items StockTakeItem[]
 
   @@index([tenantId, status])
   @@map("stock_take_sessions")
@@ -666,13 +792,14 @@ model Sale {
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
-  lines                 SaleLine[]
-  commissionRecords     CommissionRecord[]
-  payments              Payment[]    @relation("SalePayments")
-  linkedReturnId        String?
-  linkedReturn          Return?        @relation("ExchangeLinkedSale", fields: [linkedReturnId], references: [id], onDelete: SetNull)
-  returns               Return[]       @relation("ReturnOriginalSale")
-  appointments          Appointment[]
+  lines             SaleLine[]
+  commissionRecords CommissionRecord[]
+  payments          Payment[]          @relation("SalePayments")
+  linkedReturnId    String?
+  linkedReturn      Return?            @relation("ExchangeLinkedSale", fields: [linkedReturnId], references: [id], onDelete: SetNull)
+  returns           Return[]           @relation("ReturnOriginalSale")
+  appointments      Appointment[]
+  deliveries        Delivery[]
 
   @@index([tenantId, status, createdAt])
   @@index([shiftId])
@@ -697,7 +824,7 @@ model SaleLine {
   lineTotalAfterDiscount     Decimal        @db.Decimal(12, 2)
   createdAt                  DateTime       @default(now())
 
-  returnLines           ReturnLine[]
+  returnLines ReturnLine[]
 
   @@index([saleId])
   @@index([variantId])
@@ -730,10 +857,10 @@ model Shift {
   openingFloat Decimal     @db.Decimal(12, 2)
   notes        String?
 
-  sales        Sale[]
-  closure      ShiftClosure?
-  timeClocks     TimeClock[]
-  cashMovements  CashMovement[]
+  sales         Sale[]
+  closure       ShiftClosure?
+  timeClocks    TimeClock[]
+  cashMovements CashMovement[]
 
   @@index([tenantId, status])
   @@index([cashierId, status])
@@ -764,23 +891,23 @@ model ShiftClosure {
 // ── Returns & Exchanges ──────────────────────────────────────────────────────
 
 model Return {
-  id              String             @id @default(cuid())
-  tenantId        String
-  originalSaleId  String
-  originalSale    Sale               @relation("ReturnOriginalSale", fields: [originalSaleId], references: [id], onDelete: Restrict)
-  initiatedById   String
-  initiatedBy     User               @relation("ReturnInitiator", fields: [initiatedById], references: [id])
-  authorizedById  String
-  authorizedBy    User               @relation("ReturnAuthorizer", fields: [authorizedById], references: [id])
-  refundMethod    ReturnRefundMethod
-  refundAmount    Decimal            @db.Decimal(12, 2)
-  restockItems    Boolean            @default(true)
-  reason          String
-  status          ReturnStatus       @default(COMPLETED)
-  createdAt       DateTime           @default(now())
+  id             String             @id @default(cuid())
+  tenantId       String
+  originalSaleId String
+  originalSale   Sale               @relation("ReturnOriginalSale", fields: [originalSaleId], references: [id], onDelete: Restrict)
+  initiatedById  String
+  initiatedBy    User               @relation("ReturnInitiator", fields: [initiatedById], references: [id])
+  authorizedById String?
+  authorizedBy   User?              @relation("ReturnAuthorizer", fields: [authorizedById], references: [id])
+  refundMethod   ReturnRefundMethod
+  refundAmount   Decimal            @db.Decimal(12, 2)
+  restockItems   Boolean            @default(true)
+  reason         String
+  status         ReturnStatus       @default(COMPLETED)
+  createdAt      DateTime           @default(now())
 
-  lines           ReturnLine[]
-  linkedSales     Sale[]             @relation("ExchangeLinkedSale")
+  lines       ReturnLine[]
+  linkedSales Sale[]       @relation("ExchangeLinkedSale")
 
   @@index([tenantId, createdAt])
   @@index([originalSaleId])
@@ -788,19 +915,19 @@ model Return {
 }
 
 model ReturnLine {
-  id                         String     @id @default(cuid())
+  id                         String   @id @default(cuid())
   returnId                   String
-  return                     Return     @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  return                     Return   @relation(fields: [returnId], references: [id], onDelete: Cascade)
   originalSaleLineId         String
-  originalSaleLine           SaleLine   @relation(fields: [originalSaleLineId], references: [id])
+  originalSaleLine           SaleLine @relation(fields: [originalSaleLineId], references: [id])
   variantId                  String
   productNameSnapshot        String
   variantDescriptionSnapshot String
   quantity                   Int
-  unitPrice                  Decimal    @db.Decimal(12, 2)
-  lineRefundAmount           Decimal    @db.Decimal(12, 2)
-  isRestocked                Boolean    @default(false)
-  createdAt                  DateTime   @default(now())
+  unitPrice                  Decimal  @db.Decimal(12, 2)
+  lineRefundAmount           Decimal  @db.Decimal(12, 2)
+  isRestocked                Boolean  @default(false)
+  createdAt                  DateTime @default(now())
 
   @@index([returnId])
   @@map("return_lines")
@@ -842,9 +969,11 @@ model Customer {
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 
-  sales         Sale[]
-  birthdayLogs  BirthdayGreetingLog[]
-  appointments  Appointment[]
+  sales             Sale[]
+  birthdayLogs      BirthdayGreetingLog[]
+  appointments      Appointment[]
+  shippingAddresses ShippingAddress[]
+  deliveries        Delivery[]
 
   @@index([tenantId])
   @@index([tenantId, phone])
@@ -852,20 +981,20 @@ model Customer {
 }
 
 model Supplier {
-  id             String    @id @default(cuid())
+  id             String   @id @default(cuid())
   tenantId       String
-  tenant         Tenant    @relation(fields: [tenantId], references: [id])
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
   name           String
   contactName    String?
   phone          String
   whatsappNumber String?
   email          String?
   address        String?
-  leadTimeDays   Int       @default(7)
+  leadTimeDays   Int      @default(7)
   notes          String?
-  isActive       Boolean   @default(true)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   purchaseOrders PurchaseOrder[]
 
@@ -888,7 +1017,7 @@ model PurchaseOrder {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  lines                PurchaseOrderLine[]
+  lines PurchaseOrderLine[]
 
   @@index([tenantId, status])
   @@map("purchase_orders")
@@ -897,9 +1026,9 @@ model PurchaseOrder {
 model PurchaseOrderLine {
   id                         String         @id @default(cuid())
   purchaseOrderId            String
-  purchaseOrder              PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrder              PurchaseOrder  @relation(fields: [purchaseOrderId], references: [id])
   variantId                  String
-  variant                    ProductVariant  @relation(fields: [variantId], references: [id])
+  variant                    ProductVariant @relation(fields: [variantId], references: [id])
   productNameSnapshot        String
   variantDescriptionSnapshot String
   orderedQty                 Int
@@ -946,20 +1075,20 @@ model BirthdayGreetingLog {
 // ── Staff, Promotions & Expenses Models ──────────────────────────────────────
 
 model CommissionRecord {
-  id             String   @id @default(cuid())
+  id             String            @id @default(cuid())
   tenantId       String
-  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  tenant         Tenant            @relation(fields: [tenantId], references: [id])
   saleId         String
-  sale           Sale     @relation(fields: [saleId], references: [id])
+  sale           Sale              @relation(fields: [saleId], references: [id])
   userId         String
-  user           User     @relation(fields: [userId], references: [id])
-  baseAmount     Decimal  @db.Decimal(12, 2)
-  commissionRate Decimal  @db.Decimal(5, 2)
-  earnedAmount   Decimal  @db.Decimal(12, 2)
+  user           User              @relation(fields: [userId], references: [id])
+  baseAmount     Decimal           @db.Decimal(12, 2)
+  commissionRate Decimal           @db.Decimal(5, 2)
+  earnedAmount   Decimal           @db.Decimal(12, 2)
   payoutId       String?
   payout         CommissionPayout? @relation(fields: [payoutId], references: [id])
-  isPaid         Boolean  @default(false)
-  createdAt      DateTime @default(now())
+  isPaid         Boolean           @default(false)
+  createdAt      DateTime          @default(now())
 
   @@index([tenantId, userId])
   @@index([saleId])
@@ -981,24 +1110,24 @@ model CommissionPayout {
   notes          String?
   createdAt      DateTime @default(now())
 
-  records        CommissionRecord[]
+  records CommissionRecord[]
 
   @@index([tenantId, userId])
   @@map("commission_payouts")
 }
 
 model TimeClock {
-  id          String    @id @default(cuid())
-  tenantId    String
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
-  userId      String
-  user        User      @relation(fields: [userId], references: [id])
-  clockedInAt DateTime
+  id           String    @id @default(cuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  clockedInAt  DateTime
   clockedOutAt DateTime?
-  shiftId     String?
-  shift       Shift?    @relation(fields: [shiftId], references: [id])
-  notes       String?
-  createdAt   DateTime  @default(now())
+  shiftId      String?
+  shift        Shift?    @relation(fields: [shiftId], references: [id])
+  notes        String?
+  createdAt    DateTime  @default(now())
 
   @@index([tenantId, userId])
   @@index([shiftId])
@@ -1103,7 +1232,7 @@ model DailySummaryLog {
   id             String   @id @default(cuid())
   tenantId       String
   sentAt         DateTime @default(now())
-  status         String   // "SENT" or "FAILED"
+  status         String // "SENT" or "FAILED"
   errorMessage   String?
   recipientEmail String
 
@@ -1138,15 +1267,15 @@ model WebhookEndpoint {
 }
 
 model WebhookDelivery {
-  id                 String                @id @default(cuid())
-  webhookEndpointId  String
-  webhookEndpoint    WebhookEndpoint       @relation(fields: [webhookEndpointId], references: [id], onDelete: Cascade)
-  event              String
-  payload            Json
-  statusCode         Int?
-  response           String?
-  status             WebhookDeliveryStatus
-  attemptedAt        DateTime              @default(now())
+  id                String                @id @default(cuid())
+  webhookEndpointId String
+  webhookEndpoint   WebhookEndpoint       @relation(fields: [webhookEndpointId], references: [id], onDelete: Cascade)
+  event             String
+  payload           Json
+  statusCode        Int?
+  response          String?
+  status            WebhookDeliveryStatus
+  attemptedAt       DateTime              @default(now())
 
   @@index([webhookEndpointId])
   @@map("webhook_deliveries")
@@ -1155,36 +1284,36 @@ model WebhookDelivery {
 // ── Customer-Facing Website Models ───────────────────────────────────────────
 
 model WebsiteConfig {
-  id              String   @id @default(cuid())
-  tenantId        String   @unique
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  tenantId String @unique
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   // Branding
-  siteName        String?
-  tagline         String?
-  logoUrl         String?
-  faviconUrl      String?
+  siteName   String?
+  tagline    String?
+  logoUrl    String?
+  faviconUrl String?
 
   // Colors
-  primaryColor    String?  @default("#0a0a0a")
-  accentColor     String?  @default("#b4946e")
-  bgColor         String?  @default("#ece2d6")
+  primaryColor String? @default("#0a0a0a")
+  accentColor  String? @default("#b4946e")
+  bgColor      String? @default("#ece2d6")
 
   // Typography
-  headingFontFamily  String?
-  bodyFontFamily     String?
-  headingColor       String?  @default("#0a0a0a")
-  bodyColor          String?  @default("#555555")
+  headingFontFamily String?
+  bodyFontFamily    String?
+  headingColor      String? @default("#0a0a0a")
+  bodyColor         String? @default("#555555")
 
   // SEO
   metaTitle       String?
   metaDescription String?
 
   // Social Links — { facebook, instagram, email, phone, whatsapp }
-  socialLinks     Json     @default("{}")
+  socialLinks Json @default("{}")
 
   // Navigation menu items — [{ label, href, children? }]
-  navItems        Json     @default("[]")
+  navItems Json @default("[]")
 
   // Section-level configuration stored as JSON keyed by sectionKey
   // Each key maps to: { isActive, sortOrder, ...sectionSpecificFields }
@@ -1192,73 +1321,73 @@ model WebsiteConfig {
   //   hero, categories, solutionsByConcern, shopByConcern,
   //   giftBox, latestProducts, promoBanner, bestSelling,
   //   testimonials, storesBanner, footer
-  sections        Json     @default("{}")
+  sections Json @default("{}")
 
   // Footer
-  footerAbout     String?  @db.Text
-  footerColumns   Json     @default("[]")
+  footerAbout   String? @db.Text
+  footerColumns Json    @default("[]")
 
   // About Page
   aboutPageTitle          String?
   aboutPageSubtitle       String?
   aboutHeroImageUrl       String?
   aboutStoryTitle         String?
-  aboutStoryContent       String?  @db.Text
+  aboutStoryContent       String? @db.Text
   aboutStoryImageUrl      String?
   aboutMissionTitle       String?
-  aboutMissionContent     String?  @db.Text
+  aboutMissionContent     String? @db.Text
   aboutValuesSectionTitle String?
-  aboutValues             Json     @default("[]")
+  aboutValues             Json    @default("[]")
 
   // Contact Page
-  contactPageTitle        String?
-  contactPageSubtitle     String?
-  contactHeroImageUrl     String?
-  contactInfoTitle        String?
-  contactAddress          String?
-  contactPhoneDisplay     String?
-  contactEmailDisplay     String?
-  contactBusinessHours    String?  @db.Text
-  contactMapEmbedUrl      String?
+  contactPageTitle     String?
+  contactPageSubtitle  String?
+  contactHeroImageUrl  String?
+  contactInfoTitle     String?
+  contactAddress       String?
+  contactPhoneDisplay  String?
+  contactEmailDisplay  String?
+  contactBusinessHours String? @db.Text
+  contactMapEmbedUrl   String?
 
   // Shop Page
-  shopPageTitle        String?
-  shopPageSubtitle     String?
-  shopHeroImageUrl     String?
-  shopPageDescription  String?
-  shopProductsPerPage  Int?       @default(24)
+  shopPageTitle       String?
+  shopPageSubtitle    String?
+  shopHeroImageUrl    String?
+  shopPageDescription String?
+  shopProductsPerPage Int?    @default(24)
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  heroSlides      WebsiteHeroSlide[]
-  ads             WebsiteAd[]
+  heroSlides WebsiteHeroSlide[]
+  ads        WebsiteAd[]
 
   @@map("website_configs")
 }
 
 model WebsiteHeroSlide {
-  id             String        @id @default(cuid())
-  tenantId       String
-  configId       String
-  config         WebsiteConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  id       String        @id @default(cuid())
+  tenantId String
+  configId String
+  config   WebsiteConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
 
-  mediaType      String        @default("image") // "image" | "video"
+  mediaType      String  @default("image") // "image" | "video"
   mediaUrl       String
-  mobileMediaUrl String?       // optional mobile-optimized variant
+  mobileMediaUrl String? // optional mobile-optimized variant
 
-  title          String?
-  subtitle       String?
-  description    String?
+  title       String?
+  subtitle    String?
+  description String?
 
-  ctaText        String?
-  ctaLink        String?
+  ctaText String?
+  ctaLink String?
 
-  isActive       Boolean       @default(true)
-  sortOrder      Int           @default(0)
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
 
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([configId])
   @@index([tenantId])
@@ -1266,29 +1395,29 @@ model WebsiteHeroSlide {
 }
 
 model WebsiteAd {
-  id              String        @id @default(cuid())
-  tenantId        String
-  configId        String
-  config          WebsiteConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  id       String        @id @default(cuid())
+  tenantId String
+  configId String
+  config   WebsiteConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
 
-  name            String
-  mediaType       String        @default("image") // "image" | "video"
-  mediaUrl        String
-  mobileMediaUrl  String?
+  name           String
+  mediaType      String  @default("image") // "image" | "video"
+  mediaUrl       String
+  mobileMediaUrl String?
 
-  targetUrl       String?
+  targetUrl String?
 
   // position: "header" | "between_sections" | "sidebar" | "popup"
-  position               String  @default("between_sections")
+  position            String  @default("between_sections")
   // sectionKey to display after (e.g. "latestProducts"); only used when position = "between_sections"
-  displayAfterSection    String?
+  displayAfterSection String?
 
-  startsAt        DateTime?
-  endsAt          DateTime?
-  isActive        Boolean       @default(true)
+  startsAt DateTime?
+  endsAt   DateTime?
+  isActive Boolean   @default(true)
 
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([configId])
   @@index([tenantId])
@@ -1298,21 +1427,21 @@ model WebsiteAd {
 // ── Appointments Models ──────────────────────────────────────────────────────
 
 model AppointmentService {
-  id            String    @id @default(cuid())
-  tenantId      String
-  tenant        Tenant    @relation(fields: [tenantId], references: [id])
-  name          String
-  description   String?
-  durationMins  Int
-  price         Decimal   @db.Decimal(10, 2)
-  color         String?
-  isActive      Boolean   @default(true)
-  sortOrder     Int       @default(0)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  id           String    @id @default(cuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  name         String
+  description  String?
+  durationMins Int
+  price        Decimal   @db.Decimal(10, 2)
+  color        String?
+  isActive     Boolean   @default(true)
+  sortOrder    Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
 
-  appointments  Appointment[]
+  appointments Appointment[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -1320,19 +1449,19 @@ model AppointmentService {
 }
 
 model AppointmentSlot {
-  id             String    @id @default(cuid())
-  tenantId       String
-  tenant         Tenant    @relation(fields: [tenantId], references: [id])
-  staffId        String
-  staff          User      @relation("AppointmentSlotStaff", fields: [staffId], references: [id])
-  date           DateTime  @db.Date
-  startTime      DateTime
-  endTime        DateTime
-  isBooked       Boolean   @default(false)
-  isBlocked      Boolean   @default(false)
-  appointmentId  String?   @unique
-  appointment    Appointment? @relation
-  createdAt      DateTime  @default(now())
+  id            String       @id @default(cuid())
+  tenantId      String
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  staffId       String
+  staff         User         @relation("AppointmentSlotStaff", fields: [staffId], references: [id])
+  date          DateTime     @db.Date
+  startTime     DateTime
+  endTime       DateTime
+  isBooked      Boolean      @default(false)
+  isBlocked     Boolean      @default(false)
+  appointmentId String?      @unique
+  appointment   Appointment? @relation
+  createdAt     DateTime     @default(now())
 
   @@unique([staffId, date, startTime])
   @@index([tenantId, date])
@@ -1341,59 +1470,59 @@ model AppointmentSlot {
 }
 
 model Appointment {
-  id                String                     @id @default(cuid())
-  tenantId          String
-  tenant            Tenant                     @relation(fields: [tenantId], references: [id])
-  customerId        String?
-  customer          Customer?                  @relation(fields: [customerId], references: [id])
-  serviceId         String?
-  service           AppointmentService?        @relation(fields: [serviceId], references: [id])
-  staffId           String?
-  staff             User?                      @relation("AppointmentStaff", fields: [staffId], references: [id])
-  slotId            String?                    @unique
-  slot              AppointmentSlot?           @relation(fields: [slotId], references: [id])
+  id         String              @id @default(cuid())
+  tenantId   String
+  tenant     Tenant              @relation(fields: [tenantId], references: [id])
+  customerId String?
+  customer   Customer?           @relation(fields: [customerId], references: [id])
+  serviceId  String?
+  service    AppointmentService? @relation(fields: [serviceId], references: [id])
+  staffId    String?
+  staff      User?               @relation("AppointmentStaff", fields: [staffId], references: [id])
+  slotId     String?             @unique
+  slot       AppointmentSlot?    @relation(fields: [slotId], references: [id])
 
-  title             String
-  description       String?
-  startTime         DateTime
-  endTime           DateTime
-  durationMins      Int
-  status            AppointmentStatus          @default(SCHEDULED)
+  title        String
+  description  String?
+  startTime    DateTime
+  endTime      DateTime
+  durationMins Int
+  status       AppointmentStatus @default(SCHEDULED)
 
-  price             Decimal                    @db.Decimal(10, 2)
-  depositAmount     Decimal?                   @default(0) @db.Decimal(10, 2)
-  isPaid            Boolean                    @default(false)
+  price         Decimal  @db.Decimal(10, 2)
+  depositAmount Decimal? @default(0) @db.Decimal(10, 2)
+  isPaid        Boolean  @default(false)
 
-  walkInName        String?
-  walkInPhone       String?
+  walkInName  String?
+  walkInPhone String?
 
-  notes             String?
-  customerNotes     String?
+  notes              String?
+  customerNotes      String?
   cancellationReason String?
-  cancelledAt       DateTime?
-  cancelledById     String?
-  cancelledBy       User?                      @relation("AppointmentCanceller", fields: [cancelledById], references: [id])
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelledBy        User?     @relation("AppointmentCanceller", fields: [cancelledById], references: [id])
 
-  checkedInAt       DateTime?
-  checkedInById     String?
-  checkedInBy       User?                      @relation("AppointmentCheckIn", fields: [checkedInById], references: [id])
-  completedAt       DateTime?
+  checkedInAt   DateTime?
+  checkedInById String?
+  checkedInBy   User?     @relation("AppointmentCheckIn", fields: [checkedInById], references: [id])
+  completedAt   DateTime?
 
-  recurrenceType    AppointmentRecurrenceType?
-  recurrenceEndDate DateTime?
+  recurrenceType      AppointmentRecurrenceType?
+  recurrenceEndDate   DateTime?
   parentAppointmentId String?
-  parentAppointment   Appointment?             @relation("RecurringAppointments", fields: [parentAppointmentId], references: [id])
-  childAppointments   Appointment[]            @relation("RecurringAppointments")
+  parentAppointment   Appointment?               @relation("RecurringAppointments", fields: [parentAppointmentId], references: [id])
+  childAppointments   Appointment[]              @relation("RecurringAppointments")
 
-  saleId            String?
-  sale              Sale?                      @relation(fields: [saleId], references: [id])
+  saleId String?
+  sale   Sale?   @relation(fields: [saleId], references: [id])
 
-  createdById       String
-  createdBy         User                       @relation("AppointmentCreator", fields: [createdById], references: [id])
-  updatedAt         DateTime                   @updatedAt
-  createdAt         DateTime                   @default(now())
+  createdById String
+  createdBy   User     @relation("AppointmentCreator", fields: [createdById], references: [id])
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
 
-  reminders         AppointmentReminder[]
+  reminders AppointmentReminder[]
 
   @@index([tenantId, startTime])
   @@index([tenantId, customerId])
@@ -1404,17 +1533,17 @@ model Appointment {
 }
 
 model AppointmentReminder {
-  id              String                      @id @default(cuid())
-  appointmentId   String
-  appointment     Appointment                 @relation(fields: [appointmentId], references: [id])
-  tenantId        String
-  tenant          Tenant                      @relation(fields: [tenantId], references: [id])
-  scheduledFor    DateTime
-  sentAt          DateTime?
-  channel         AppointmentReminderChannel
-  status          AppointmentReminderStatus   @default(PENDING)
-  errorMessage    String?
-  createdAt       DateTime                    @default(now())
+  id            String                     @id @default(cuid())
+  appointmentId String
+  appointment   Appointment                @relation(fields: [appointmentId], references: [id])
+  tenantId      String
+  tenant        Tenant                     @relation(fields: [tenantId], references: [id])
+  scheduledFor  DateTime
+  sentAt        DateTime?
+  channel       AppointmentReminderChannel
+  status        AppointmentReminderStatus  @default(PENDING)
+  errorMessage  String?
+  createdAt     DateTime                   @default(now())
 
   @@index([appointmentId])
   @@index([tenantId, status])
@@ -1422,16 +1551,16 @@ model AppointmentReminder {
 }
 
 model StaffAvailability {
-  id            String   @id @default(cuid())
-  tenantId      String
-  tenant        Tenant   @relation(fields: [tenantId], references: [id])
-  staffId       String
-  staff         User     @relation("StaffAvailabilityUser", fields: [staffId], references: [id])
-  dayOfWeek     Int
-  startTime     String
-  endTime       String
-  isAvailable   Boolean  @default(true)
-  slotDurationMins Int   @default(15)
+  id               String  @id @default(cuid())
+  tenantId         String
+  tenant           Tenant  @relation(fields: [tenantId], references: [id])
+  staffId          String
+  staff            User    @relation("StaffAvailabilityUser", fields: [staffId], references: [id])
+  dayOfWeek        Int
+  startTime        String
+  endTime          String
+  isAvailable      Boolean @default(true)
+  slotDurationMins Int     @default(15)
 
   @@unique([staffId, dayOfWeek])
   @@index([tenantId])
@@ -1439,21 +1568,329 @@ model StaffAvailability {
 }
 
 model StaffTimeOff {
-  id          String    @id @default(cuid())
-  tenantId    String
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
-  staffId     String
-  staff       User      @relation("StaffTimeOffUser", fields: [staffId], references: [id])
-  date        DateTime  @db.Date
-  startTime   DateTime?
-  endTime     DateTime?
-  reason      String?
-  isApproved  Boolean   @default(false)
+  id           String    @id @default(cuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  staffId      String
+  staff        User      @relation("StaffTimeOffUser", fields: [staffId], references: [id])
+  date         DateTime  @db.Date
+  startTime    DateTime?
+  endTime      DateTime?
+  reason       String?
+  isApproved   Boolean   @default(false)
   approvedById String?
-  approvedBy  User?     @relation("StaffTimeOffApprover", fields: [approvedById], references: [id])
-  createdAt   DateTime  @default(now())
+  approvedBy   User?     @relation("StaffTimeOffApprover", fields: [approvedById], references: [id])
+  createdAt    DateTime  @default(now())
 
   @@index([staffId, date])
   @@index([tenantId])
   @@map("staff_time_offs")
+}
+
+// ── Delivery / Courier Models ─────────────────────────────────────────────────
+
+model ShippingAddress {
+  id           String    @id @default(cuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  customerId   String?
+  customer     Customer? @relation(fields: [customerId], references: [id])
+  fullName     String
+  phone        String
+  phone2       String?
+  addressLine1 String
+  addressLine2 String?
+  districtId   Int?
+  districtName String?
+  cityId       Int?
+  cityName     String
+  postalCode   String?
+  isDefault    Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  deliveries Delivery[]
+
+  @@index([tenantId])
+  @@index([tenantId, customerId])
+  @@map("shipping_addresses")
+}
+
+model Delivery {
+  id              String           @id @default(cuid())
+  tenantId        String
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  source          DeliverySource   @default(ERP_MANUAL)
+  status          DeliveryStatus   @default(PLACED)
+  saleId          String?
+  sale            Sale?            @relation(fields: [saleId], references: [id])
+  customerId      String?
+  customer        Customer?        @relation(fields: [customerId], references: [id])
+  addressId       String?          @unique
+  address         ShippingAddress? @relation(fields: [addressId], references: [id])
+  orderRef        String
+  courierOrderRef String?
+  codAmount       Decimal          @default(0) @db.Decimal(12, 2)
+  declaredValue   Decimal?         @db.Decimal(12, 2)
+  itemCount       Int              @default(1)
+  totalWeightKg   Decimal?         @db.Decimal(6, 2)
+  hubWeightKg     Decimal?         @db.Decimal(6, 2)
+  shippingFee     Decimal?         @db.Decimal(12, 2)
+  deliveryFee     Decimal?         @db.Decimal(12, 2)
+  statusPipeline  Json?
+  holdExpiresAt   DateTime?
+  dispatchedAt    DateTime?
+  deliveredAt     DateTime?
+  canceledAt      DateTime?
+  canceledById    String?
+  canceledBy      User?            @relation("DeliveryCanceller", fields: [canceledById], references: [id])
+  failureReason   String?
+  notes           String?
+  assignedStaffId String?
+  assignedStaff   User?            @relation("DeliveryAssignedStaff", fields: [assignedStaffId], references: [id])
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  deletedAt       DateTime?
+
+  shipments             CourierShipment[]
+  events                DeliveryEvent[]
+  attempts              DeliveryRecovery[]
+  packages              Package[]
+  packagingConsumptions PackagingConsumption[]
+  reconciliationEntry   ReconciliationLedgerEntry?
+
+  @@index([tenantId, status])
+  @@index([tenantId, dispatchedAt])
+  @@index([tenantId, orderRef])
+  @@index([tenantId, customerId])
+  @@map("deliveries")
+}
+
+model CourierShipment {
+  id                  String          @id @default(cuid())
+  tenantId            String
+  tenant              Tenant          @relation(fields: [tenantId], references: [id])
+  deliveryId          String          @unique
+  delivery            Delivery        @relation(fields: [deliveryId], references: [id])
+  provider            CarrierProvider @default(TRANSEXPRESS)
+  env                 CourierEnv      @default(STAGING)
+  waybillId           String
+  waybillMode         WaybillMode     @default(AUTO)
+  status              ShipmentStatus  @default(SUBMITTED)
+  rawStatus           String?
+  courierOrderId      String?
+  carrierLastSyncedAt DateTime?
+  lastRawResponse     Json?
+  latestEventAt       DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  events DeliveryEvent[]
+
+  @@unique([tenantId, waybillId])
+  @@index([tenantId, status])
+  @@index([provider])
+  @@map("courier_shipments")
+}
+
+model DeliveryEvent {
+  id            String           @id @default(cuid())
+  tenantId      String
+  tenant        Tenant           @relation(fields: [tenantId], references: [id])
+  deliveryId    String
+  delivery      Delivery         @relation(fields: [deliveryId], references: [id])
+  shipmentId    String?
+  shipment      CourierShipment? @relation(fields: [shipmentId], references: [id])
+  status        DeliveryStatus
+  carrierStatus ShipmentStatus?
+  rawStatusName String?
+  remarks       String?
+  eventAt       DateTime         @default(now())
+  source        String           @default("INTERNAL")
+  createdById   String?
+  createdAt     DateTime         @default(now())
+
+  @@index([deliveryId, eventAt])
+  @@index([tenantId])
+  @@map("delivery_events")
+}
+
+model Package {
+  id         String                @id @default(cuid())
+  tenantId   String
+  tenant     Tenant                @relation(fields: [tenantId], references: [id])
+  deliveryId String
+  delivery   Delivery              @relation(fields: [deliveryId], references: [id])
+  status     DeliveryPackageStatus @default(AWAITING_WEIGH)
+  weightKg   Decimal?              @db.Decimal(6, 2)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  @@index([tenantId])
+  @@index([deliveryId])
+  @@map("packages")
+}
+
+model CourierAccount {
+  id                String          @id @default(cuid())
+  tenantId          String          @unique
+  tenant            Tenant          @relation(fields: [tenantId], references: [id])
+  provider          CarrierProvider @default(TRANSEXPRESS)
+  env               CourierEnv      @default(STAGING)
+  email             String?
+  password          String?
+  apiKey            String?
+  originDistrictId  Int?
+  originCityId      Int?
+  pickupAddress     String?
+  isActive          Boolean         @default(false)
+  lastTokenIssuedAt DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([provider])
+  @@map("courier_accounts")
+}
+
+model RateCard {
+  id                String   @id @default(cuid())
+  tenantId          String
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  name              String
+  isActive          Boolean  @default(true)
+  baseRate          Decimal  @default(0) @db.Decimal(12, 2)
+  extraKgRate       Decimal  @default(0) @db.Decimal(12, 2)
+  freeBaseWeightKg  Decimal  @default(1) @db.Decimal(6, 2)
+  coddCommissionPct Decimal? @db.Decimal(5, 2)
+  vatRatePct        Decimal? @db.Decimal(5, 2)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  entries RateCardEntry[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("rate_cards")
+}
+
+model RateCardEntry {
+  id                    String   @id @default(cuid())
+  tenantId              String
+  tenant                Tenant   @relation(fields: [tenantId], references: [id])
+  rateCardId            String
+  rateCard              RateCard @relation(fields: [rateCardId], references: [id])
+  originDistrictId      Int?
+  destinationDistrictId Int?
+  destinationCityId     Int?
+  baseRate              Decimal? @db.Decimal(12, 2)
+  extraKgRate           Decimal? @db.Decimal(12, 2)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([rateCardId])
+  @@map("rate_card_entries")
+}
+
+model PackagingItem {
+  id                   String            @id @default(cuid())
+  tenantId             String
+  tenant               Tenant            @relation(fields: [tenantId], references: [id])
+  category             PackagingCategory
+  name                 String
+  sku                  String?
+  unit                 PackagingUnit     @default(PIECE)
+  quantityOnHand       Int               @default(0)
+  lowStockThreshold    Int               @default(0)
+  autoDeduct           Boolean           @default(false)
+  consumptionPerParcel Decimal?          @db.Decimal(6, 2)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  deletedAt            DateTime?
+
+  consumptions PackagingConsumption[]
+
+  @@index([tenantId, category])
+  @@map("packaging_items")
+}
+
+model PackagingConsumption {
+  id              String        @id @default(cuid())
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+  deliveryId      String
+  delivery        Delivery      @relation(fields: [deliveryId], references: [id])
+  packagingItemId String
+  packagingItem   PackagingItem @relation(fields: [packagingItemId], references: [id])
+  quantity        Decimal       @db.Decimal(6, 2)
+  createdAt       DateTime      @default(now())
+
+  @@index([tenantId])
+  @@index([deliveryId])
+  @@map("packaging_consumptions")
+}
+
+model DeliveryRecovery {
+  id                   String         @id @default(cuid())
+  tenantId             String
+  tenant               Tenant         @relation(fields: [tenantId], references: [id])
+  deliveryId           String
+  delivery             Delivery       @relation(fields: [deliveryId], references: [id])
+  action               RecoveryAction
+  staffId              String
+  staff                User           @relation("RecoveryStaff", fields: [staffId], references: [id])
+  notes                String?
+  redeliveryShipmentId String?
+  createdAt            DateTime       @default(now())
+
+  @@index([tenantId])
+  @@index([deliveryId])
+  @@map("delivery_recoveries")
+}
+
+model ReconciliationLedgerEntry {
+  id                String               @id @default(cuid())
+  tenantId          String
+  tenant            Tenant               @relation(fields: [tenantId], references: [id])
+  deliveryId        String               @unique
+  delivery          Delivery             @relation(fields: [deliveryId], references: [id])
+  waybillId         String?
+  expectedCod       Decimal              @default(0) @db.Decimal(12, 2)
+  status            ReconciliationStatus @default(PENDING_SETTLEMENT)
+  expectedFee       Decimal?             @db.Decimal(12, 2)
+  settledAmount     Decimal?             @db.Decimal(12, 2)
+  settledAt         DateTime?
+  statementImportId String?
+  statementImport   StatementImport?     @relation(fields: [statementImportId], references: [id])
+  discrepancyNote   String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([tenantId, status])
+  @@index([waybillId])
+  @@index([tenantId, deliveryId])
+  @@map("reconciliation_ledger_entries")
+}
+
+model StatementImport {
+  id               String                @id @default(cuid())
+  tenantId         String
+  tenant           Tenant                @relation(fields: [tenantId], references: [id])
+  provider         CarrierProvider       @default(TRANSEXPRESS)
+  filename         String
+  uploadedById     String
+  uploadedBy       User                  @relation("StatementImportUploader", fields: [uploadedById], references: [id])
+  status           StatementImportStatus @default(UPLOADED)
+  rowCount         Int                   @default(0)
+  matchedCount     Int                   @default(0)
+  discrepancyCount Int                   @default(0)
+  rawRows          Json?
+  parseError       String?
+  uploadedAt       DateTime              @default(now())
+  completedAt      DateTime?
+
+  ledgerEntries ReconciliationLedgerEntry[]
+
+  @@index([tenantId, uploadedAt])
+  @@map("statement_imports")
 }

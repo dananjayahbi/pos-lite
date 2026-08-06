@@ -104,6 +104,21 @@ export const PERMISSIONS = {
     manageSchedule: 'appointment:schedule:manage',
     manageSettings: 'appointment:settings:manage',
   },
+  DELIVERY: {
+    viewDelivery: 'delivery:view',
+    createDelivery: 'delivery:create',
+    dispatchDelivery: 'delivery:dispatch',
+    editDelivery: 'delivery:edit',
+    cancelDelivery: 'delivery:cancel',
+    trackDelivery: 'delivery:track',
+    manageRateCard: 'delivery:ratecard:manage',
+    manageCourierSettings: 'delivery:courier:manage',
+    viewReconciliation: 'delivery:recon:view',
+    importRemittance: 'delivery:recon:import',
+    managePackaging: 'delivery:packaging:manage',
+    dispatchPackaging: 'delivery:packaging:dispatch',
+    manageRecovery: 'delivery:recovery:manage',
+  },
 } as const;
 
 type PermissionGroups = typeof PERMISSIONS;
@@ -132,9 +147,15 @@ const managerExcluded = new Set<PermissionKey>([
   PERMISSIONS.SUPPLIER.approvePurchaseOrder,
   PERMISSIONS.PROMOTION.deletePromotion,
   PERMISSIONS.BILLING.manageBilling,
+  PERMISSIONS.DELIVERY.manageCourierSettings,
+  PERMISSIONS.DELIVERY.importRemittance,
+  PERMISSIONS.DELIVERY.manageRateCard,
 ]);
 
-export const ROLE_PERMISSIONS: Record<'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK', PermissionKey[]> = {
+export const ROLE_PERMISSIONS: Record<
+  'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK' | 'DISPATCH_STAFF',
+  PermissionKey[]
+> = {
   OWNER: [...ALL_PERMISSIONS],
   MANAGER: ALL_PERMISSIONS.filter((permission) => !managerExcluded.has(permission)),
   CASHIER: [
@@ -159,6 +180,17 @@ export const ROLE_PERMISSIONS: Record<'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_C
     PERMISSIONS.SUPPLIER.createPurchaseOrder,
     PERMISSIONS.SUPPLIER.receivePurchaseOrder,
     PERMISSIONS.SUPPLIER.viewSupplier,
+  ],
+  DISPATCH_STAFF: [
+    PERMISSIONS.DELIVERY.viewDelivery,
+    PERMISSIONS.DELIVERY.createDelivery,
+    PERMISSIONS.DELIVERY.dispatchDelivery,
+    PERMISSIONS.DELIVERY.editDelivery,
+    PERMISSIONS.DELIVERY.cancelDelivery,
+    PERMISSIONS.DELIVERY.trackDelivery,
+    PERMISSIONS.DELIVERY.managePackaging,
+    PERMISSIONS.DELIVERY.dispatchPackaging,
+    PERMISSIONS.DELIVERY.manageRecovery,
   ],
 };
 

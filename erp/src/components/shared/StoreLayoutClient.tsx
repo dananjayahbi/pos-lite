@@ -41,7 +41,7 @@ export default function StoreLayoutClient({
     <>
       {showSidebar ? (
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          <aside className="hidden w-64 shrink-0 overflow-y-auto border-r border-mist bg-pearl md:flex">
+          <aside className="hidden w-64 shrink-0 overflow-hidden border-r border-mist bg-pearl md:flex">
             <StoreSidebar
               userEmail={userEmail}
               userRole={userRole}

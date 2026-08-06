@@ -13,7 +13,7 @@ export const ReturnCreateSchema = z.object({
   refundMethod: z.nativeEnum(ReturnRefundMethod, { error: 'Invalid refund method' }),
   restockItems: z.boolean().default(true),
   reason: z.string().max(200).default(''),
-  authorizedById: z.string().min(1),
+  authorizedById: z.string().min(1).optional(),
   cardReversalReference: z.string().max(50).optional(),
 }).superRefine((data, ctx) => {
   if (data.refundMethod === ReturnRefundMethod.CARD_REVERSAL) {

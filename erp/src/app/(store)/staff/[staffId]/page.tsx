@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, use } from 'react';
+import { useState, useCallback, use } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
@@ -36,14 +36,12 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, LogOut, Pencil, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, LogOut, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { UpdateStaffSchema } from '@/lib/validators/staff.validators';
-import { PinSchema } from '@/lib/validators/pin.validators';
 import { formatRupee } from '@/lib/format';
 import { TimeClockHistoryPanel } from '@/components/staff/TimeClockHistoryPanel';
 import type { UpdateStaffInput } from '@/lib/validators/staff.validators';
-import type { PinInput } from '@/lib/validators/pin.validators';
 
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -56,10 +54,9 @@ interface StaffDetail {
   commissionRate: string | null;
   clockedInAt: string | null;
   createdAt: string;
-  hasPinSet: boolean;
 }
 
-type Tab = 'profile' | 'pin' | 'commission' | 'timeclock';
+type Tab = 'profile' | 'commission' | 'timeclock';
 
 // ── Role Badge ───────────────────────────────────────────────────────────────
 
@@ -78,134 +75,6 @@ function RoleBadge({ role }: { role: string }) {
     <Badge className={`${ROLE_COLORS[role] ?? 'bg-mist text-espresso'} hover:opacity-90`}>
       {role.replace('_', ' ')}
     </Badge>
-  );
-}
-
-// ── PIN Management Section ───────────────────────────────────────────────────
-
-function PinManagement({
-  staffId,
-  hasPinSet,
-  sessionRole,
-}: {
-  staffId: string;
-  hasPinSet: boolean;
-  sessionRole: string;
-}) {
-  const queryClient = useQueryClient();
-
-  if (sessionRole !== 'MANAGER' && sessionRole !== 'OWNER') {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg font-display text-espresso">PIN Management</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sand text-sm">
-            Only Managers and Owners can manage staff PINs.
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg font-display text-espresso">PIN Management</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center gap-2">
-          {hasPinSet ? (
-            <>
-              <ShieldCheck className="h-5 w-5 text-green-600" />
-              <Badge variant="secondary" className="bg-green-100 text-green-800">
-                PIN is set
-              </Badge>
-            </>
-          ) : (
-            <>
-              <ShieldAlert className="h-5 w-5 text-amber-600" />
-              <Badge variant="secondary" className="bg-amber-100 text-amber-800">
-                No PIN assigned
-              </Badge>
-            </>
-          )}
-        </div>
-
-        <PinForm staffId={staffId} onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ['staff-detail', staffId] });
-        }} />
-      </CardContent>
-    </Card>
-  );
-}
-
-function PinForm({ staffId, onSuccess }: { staffId: string; onSuccess: () => void }) {
-  const form = useForm<PinInput>({
-    resolver: standardSchemaResolver(PinSchema),
-    defaultValues: { newPin: '', confirmPin: '' },
-  });
-
-  const mutation = useMutation({
-    mutationFn: async (data: PinInput) => {
-      const res = await fetch(`/api/store/staff/${staffId}/pin`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newPin: data.newPin }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err?.error?.message ?? 'Failed to update PIN');
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      toast.success('PIN updated successfully');
-      form.reset();
-      onSuccess();
-    },
-    onError: (err) => {
-      toast.error(err.message);
-    },
-  });
-
-  return (
-    <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="space-y-4 max-w-sm">
-      <div className="space-y-2">
-        <Label htmlFor="newPin">New PIN</Label>
-        <Input
-          id="newPin"
-          type="password"
-          inputMode="numeric"
-          placeholder="Enter 4–8 digit PIN"
-          maxLength={8}
-          {...form.register('newPin')}
-        />
-        {form.formState.errors.newPin && (
-          <p className="text-sm text-terracotta">{form.formState.errors.newPin.message}</p>
-        )}
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="confirmPin">Confirm PIN</Label>
-        <Input
-          id="confirmPin"
-          type="password"
-          inputMode="numeric"
-          placeholder="Re-enter PIN"
-          maxLength={8}
-          {...form.register('confirmPin')}
-        />
-        {form.formState.errors.confirmPin && (
-          <p className="text-sm text-terracotta">{form.formState.errors.confirmPin.message}</p>
-        )}
-      </div>
-
-      <Button type="submit" disabled={mutation.isPending}>
-        {mutation.isPending ? 'Updating...' : 'Set PIN'}
-      </Button>
-    </form>
   );
 }
 
@@ -241,7 +110,6 @@ export default function StaffDetailPage({
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'profile', label: 'Profile' },
-    { key: 'pin', label: 'PIN Management' },
     { key: 'commission', label: 'Commission History' },
     { key: 'timeclock', label: 'Time Clock' },
   ];
@@ -317,14 +185,6 @@ export default function StaffDetailPage({
           setEditOpen={setEditOpen}
           onSuccess={handleSuccess}
           canForceLogout={sessionRole === 'OWNER' && sessionUserId !== staffMember.id}
-        />
-      )}
-
-      {activeTab === 'pin' && (
-        <PinManagement
-          staffId={staffId}
-          hasPinSet={staffMember.hasPinSet}
-          sessionRole={sessionRole}
         />
       )}
 

@@ -90,11 +90,9 @@ async function main() {
 async function seedSuperAdmin() {
   const defaultEmail = 'superadmin@ayurpos.dev';
   const defaultPassword = 'changeme123!';
-  const defaultPin = '9999';
 
   const superAdminEmail = process.env.SEED_SUPER_ADMIN_EMAIL ?? defaultEmail;
   const superAdminPassword = process.env.SEED_SUPER_ADMIN_PASSWORD ?? defaultPassword;
-  const superAdminPin = process.env.SEED_SUPER_ADMIN_PIN ?? defaultPin;
 
   if (superAdminEmail === defaultEmail || superAdminPassword === defaultPassword) {
     console.warn('------------------------------------------------------------');
@@ -115,14 +113,8 @@ async function seedSuperAdmin() {
     },
   });
 
-  const superAdminPinHash = await bcrypt.hash(superAdminPin, 10);
-
   if (existingSuperAdmin) {
-    await prisma.user.update({
-      where: { id: existingSuperAdmin.id },
-      data: { pin: superAdminPinHash },
-    });
-    console.log('Super Admin account already exists. Updated PIN.');
+    console.log('Super Admin account already exists, skipping');
     return;
   }
 
@@ -132,7 +124,6 @@ async function seedSuperAdmin() {
     data: {
       email: superAdminEmail,
       passwordHash,
-      pin: superAdminPinHash,
       role: 'SUPER_ADMIN',
       permissions: [],
       isActive: true,
@@ -153,10 +144,8 @@ async function seedSampleTenant() {
 
   const ownerEmail = 'owner@dilani-ayurwellness.lk';
   const ownerPassword = 'owner123!';
-  const ownerPin = '1111';
 
   const ownerPasswordHash = await bcrypt.hash(ownerPassword, 12);
-  const ownerPinHash = await bcrypt.hash(ownerPin, 10);
 
   const tenant = await prisma.tenant.create({
     data: {
@@ -180,7 +169,6 @@ async function seedSampleTenant() {
     data: {
       email: ownerEmail,
       passwordHash: ownerPasswordHash,
-      pin: ownerPinHash,
       role: 'OWNER',
       tenantId: tenant.id,
       permissions: [],
@@ -203,10 +191,8 @@ async function seedSecondBusiness() {
 
   const ownerEmail = 'owner@lanka-electronics.lk';
   const ownerPassword = 'owner123!';
-  const ownerPin = '2222';
 
   const ownerPasswordHash = await bcrypt.hash(ownerPassword, 12);
-  const ownerPinHash = await bcrypt.hash(ownerPin, 10);
 
   const tenant = await prisma.tenant.create({
     data: {
@@ -229,7 +215,6 @@ async function seedSecondBusiness() {
     data: {
       email: ownerEmail,
       passwordHash: ownerPasswordHash,
-      pin: ownerPinHash,
       role: 'OWNER',
       tenantId: tenant.id,
       permissions: [],
@@ -240,16 +225,13 @@ async function seedSecondBusiness() {
   // Create a cashier user
   const cashierEmail = 'cashier@lanka-electronics.lk';
   const cashierPassword = 'cashier123!';
-  const cashierPin = '3333';
 
   const cashierPasswordHash = await bcrypt.hash(cashierPassword, 12);
-  const cashierPinHash = await bcrypt.hash(cashierPin, 10);
 
   await prisma.user.create({
     data: {
       email: cashierEmail,
       passwordHash: cashierPasswordHash,
-      pin: cashierPinHash,
       role: 'CASHIER',
       tenantId: tenant.id,
       permissions: [
@@ -584,8 +566,6 @@ async function seedDemoSales() {
 
   // ── Create 2 cashier users ──
   const cashierPassword = await bcrypt.hash('cashier123!', 12);
-  const cashier1PinHash = await bcrypt.hash('3333', 10);
-  const cashier2PinHash = await bcrypt.hash('4444', 10);
   const cashierPermissions = [
     'sale:create',
     'sale:view',
@@ -602,15 +582,12 @@ async function seedDemoSales() {
     create: {
       email: 'cashier1@ayurpos.dev',
       passwordHash: cashierPassword,
-      pin: cashier1PinHash,
       role: 'CASHIER',
       tenantId,
       permissions: cashierPermissions,
       isActive: true,
     },
-    update: {
-      pin: cashier1PinHash,
-    },
+    update: {},
   });
 
   const cashier2 = await prisma.user.upsert({
@@ -618,15 +595,12 @@ async function seedDemoSales() {
     create: {
       email: 'cashier2@ayurpos.dev',
       passwordHash: cashierPassword,
-      pin: cashier2PinHash,
       role: 'CASHIER',
       tenantId,
       permissions: cashierPermissions,
       isActive: true,
     },
-    update: {
-      pin: cashier2PinHash,
-    },
+    update: {},
   });
 
   const cashiers = [cashier1, cashier2];
@@ -1661,6 +1635,49 @@ async function seedHardwareAndAuditData() {
     console.log('Tenant hardware settings updated');
   } else {
     console.log('Tenant hardware settings already present, skipping');
+  }
+
+  // ── 1b. Enable delivery module on the primary tenant ──
+  const currentSettings = (await prisma.tenant.findUnique({ where: { id: tenantId } }))
+    ?.settings as Record<string, unknown> | null;
+  const settingsNow = currentSettings ?? {};
+  const enabledModules: string[] = Array.isArray(settingsNow.enabledModules)
+    ? (settingsNow.enabledModules as string[])
+    : [];
+  if (!enabledModules.includes('delivery')) {
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        settings: {
+          ...settingsNow,
+          enabledModules: [...enabledModules, 'delivery'],
+        },
+      },
+    });
+    console.log('Delivery module enabled on primary tenant');
+  } else {
+    console.log('Delivery module already enabled, skipping');
+  }
+
+  // ── 1c. Seed a DISPATCH_STAFF demo user for the primary tenant ──
+  const dispatchStaffEmail = 'dispatch@ayurpos.dev';
+  const existingDispatch = await prisma.user.findFirst({
+    where: { tenantId, email: dispatchStaffEmail, deletedAt: null },
+  });
+  if (!existingDispatch) {
+    await prisma.user.create({
+      data: {
+        email: dispatchStaffEmail,
+        passwordHash: await bcrypt.hash('dispatch123!', 12),
+        role: 'DISPATCH_STAFF',
+        tenantId,
+        permissions: [],
+        isActive: true,
+      },
+    });
+    console.log(`Created DISPATCH_STAFF user: ${dispatchStaffEmail}`);
+  } else {
+    console.log('DISPATCH_STAFF user already exists, skipping');
   }
 
   // Fetch demo users
