@@ -67,6 +67,7 @@ export async function GET(
     name: category.name,
     description: category.description,
     sortOrder: category.sortOrder,
+    imageUrl: category.imageUrl,
     productCount: category._count.products,
   };
 

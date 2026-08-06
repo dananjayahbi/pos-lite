@@ -76,6 +76,7 @@ export async function GET(
     name: cat.name,
     description: cat.description,
     sortOrder: cat.sortOrder,
+    imageUrl: cat.imageUrl,
     productCount: cat._count.products,
   }));
 

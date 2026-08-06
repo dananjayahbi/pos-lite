@@ -29,8 +29,17 @@ interface InventoryTableProps {
   onDelete?: (id: string) => void;
 }
 
-function ProductThumbnail({ variants }: { variants?: ProductListItem['variants'] }) {
-  const firstImage = variants?.find((v) => v.imageUrls.length > 0)?.imageUrls[0];
+function ProductThumbnail({
+  mainImageUrl,
+  variants,
+}: {
+  mainImageUrl?: ProductListItem['mainImageUrl'];
+  variants?: ProductListItem['variants'];
+}) {
+  // Prefer the product-level main image; fall back to the first variant image.
+  const firstImage =
+    mainImageUrl ??
+    variants?.find((v) => v.imageUrls.length > 0)?.imageUrls[0];
 
   if (firstImage) {
     return (
@@ -223,7 +232,10 @@ export function InventoryTable({
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      <ProductThumbnail variants={product.variants} />
+                      <ProductThumbnail
+                        mainImageUrl={product.mainImageUrl}
+                        variants={product.variants}
+                      />
                       <span className="font-body text-sm font-medium text-espresso">
                         {product.name}
                       </span>

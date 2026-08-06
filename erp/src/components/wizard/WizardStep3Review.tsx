@@ -74,6 +74,7 @@ export function WizardStep3Review() {
         brandId: step1Data.brandId || undefined,
         tags: step1Data.tags,
         taxRule: step1Data.taxRule,
+        mainImageUrl: step1Data.mainImageUrl || undefined,
         variantDefinitions: step2Data.variants.map((v) => {
           const key = `${v.form ?? ''}|${v.packSize ?? ''}`;
           const imgData = variantImageUrls[key];

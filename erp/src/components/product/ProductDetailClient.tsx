@@ -49,6 +49,7 @@ import { ProductDetailsCard } from '@/components/product/ProductDetailsCard';
 import { VariantsTab } from '@/components/product/VariantsTab';
 import { StockHistoryTab } from '@/components/product/StockHistoryTab';
 import { TagInput } from '@/components/product/TagInput';
+import { MainImageUpload } from '@/components/product/MainImageUpload';
 import { useProduct } from '@/hooks/useProduct';
 import { useCategories } from '@/hooks/useCategories';
 import { useBrands } from '@/hooks/useBrands';
@@ -72,6 +73,7 @@ const editProductSchema = z.object({
   brandId: z.string(),
   tags: z.array(z.string()).max(20, 'Maximum 20 tags'),
   taxRule: z.enum(['STANDARD_VAT', 'SSCL', 'EXEMPT']),
+  mainImageUrl: z.string().max(500).optional(),
 });
 
 type EditProductFormData = z.infer<typeof editProductSchema>;
@@ -380,6 +382,7 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
       brandId: (product.brandId as string) ?? '',
       tags: (product.tags as string[]) ?? [],
       taxRule: (product.taxRule as EditProductFormData['taxRule']) ?? 'STANDARD_VAT',
+      mainImageUrl: (product.mainImageUrl as string) ?? '',
     },
   });
 
@@ -420,6 +423,15 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
         </SheetHeader>
 
         <form onSubmit={onSubmit} className="space-y-5 p-4">
+          {/* Main Image */}
+          <div className="space-y-1.5">
+            <Label className="font-body text-sm text-espresso">Main Image</Label>
+            <MainImageUpload
+              value={form.watch('mainImageUrl') ?? ''}
+              onChange={(url) => form.setValue('mainImageUrl', url, { shouldDirty: true })}
+            />
+          </div>
+
           {/* Name */}
           <div className="space-y-1.5">
             <Label htmlFor="edit-name" className="font-body text-sm text-espresso">

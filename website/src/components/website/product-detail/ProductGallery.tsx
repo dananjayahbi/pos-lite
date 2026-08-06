@@ -6,16 +6,23 @@ import type { PublicProductVariant } from '@/types/website.types';
 interface ProductGalleryProps {
   variants: PublicProductVariant[];
   productName: string;
+  /** Product-level main image, shown first when present. */
+  mainImageUrl?: string | undefined;
 }
 
 /**
  * Image gallery with thumbnail strip. Collects all unique image URLs
  * across every variant and lets the visitor browse them.
  */
-export function ProductGallery({ variants, productName }: ProductGalleryProps) {
+export function ProductGallery({ variants, productName, mainImageUrl }: ProductGalleryProps) {
   const safeVariants = variants ?? [];
   const images = Array.from(
-    new Set(safeVariants.flatMap((v) => v.imageUrls ?? [])),
+    new Set(
+      [
+        ...(mainImageUrl ? [mainImageUrl] : []),
+        ...safeVariants.flatMap((v) => v.imageUrls ?? []),
+      ],
+    ),
   );
 
   if (images.length === 0) {

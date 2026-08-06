@@ -143,6 +143,7 @@ export async function GET(
       categoryId: product.categoryId,
       brandId: product.brandId,
       tags: product.tags,
+      mainImageUrl: product.mainImageUrl,
       primaryVariant: primary,
       variants,
       _minPrice: Number.isFinite(minPrice) ? minPrice : 0,

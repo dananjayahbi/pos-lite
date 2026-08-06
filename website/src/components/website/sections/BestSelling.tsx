@@ -13,6 +13,7 @@ import { CarouselSlider } from '@/components/website/sections/CarouselSlider';
 
 function pickDisplayImage(product: PublicProduct): string | undefined {
   return (
+    product.mainImageUrl ??
     product.variants?.[0]?.imageUrls?.[0] ??
     product.primaryVariant?.imageUrls?.[0]
   );

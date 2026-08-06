@@ -14,16 +14,6 @@ import { createAuditLog } from '@/lib/services/audit.service';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function stripUndefined<T extends object>(obj: T) {
-  const result = {} as Record<string, unknown>;
-  for (const [key, value] of Object.entries(obj)) {
-    if (value !== undefined) {
-      result[key] = value;
-    }
-  }
-  return result as { [K in keyof T]: Exclude<T[K], undefined> };
-}
-
 // ── Input Types ──────────────────────────────────────────────────────────────
 
 export interface ProductFilters {
@@ -44,6 +34,7 @@ export interface CreateProductInput {
   brandId?: string | undefined;
   tags?: string[] | undefined;
   taxRule?: TaxRule | undefined;
+  mainImageUrl?: string | null | undefined;
 }
 
 export interface UpdateProductInput {
@@ -54,6 +45,7 @@ export interface UpdateProductInput {
   tags?: string[] | undefined;
   taxRule?: TaxRule | undefined;
   isArchived?: boolean | undefined;
+  mainImageUrl?: string | null | undefined;
 }
 
 export interface CreateVariantInput {
@@ -87,12 +79,14 @@ export interface CreateCategoryInput {
   name: string;
   description?: string;
   sortOrder?: number;
+  imageUrl?: string | null;
 }
 
 export interface UpdateCategoryInput {
   name?: string;
   description?: string;
   sortOrder?: number;
+  imageUrl?: string | null;
 }
 
 export interface CreateBrandInput {
@@ -215,6 +209,7 @@ export async function createProduct(tenantId: string, actorId: string, data: Cre
       brandId: data.brandId ?? null,
       tags: data.tags ?? [],
       taxRule: data.taxRule ?? 'STANDARD_VAT',
+      mainImageUrl: data.mainImageUrl ?? null,
     },
     include: {
       category: { select: { id: true, name: true } },
@@ -335,9 +330,22 @@ export async function updateProduct(
     }
   }
 
+  const updateData: Prisma.ProductUncheckedUpdateInput = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.description !== undefined) updateData.description = data.description;
+  if (data.categoryId !== undefined) updateData.categoryId = data.categoryId;
+  if (data.brandId !== undefined) updateData.brandId = data.brandId;
+  if (data.tags !== undefined) updateData.tags = data.tags;
+  if (data.taxRule !== undefined) updateData.taxRule = data.taxRule;
+  if (data.isArchived !== undefined) updateData.isArchived = data.isArchived;
+  if (data.mainImageUrl !== undefined) updateData.mainImageUrl = data.mainImageUrl;
+
   const updated = await prisma.product.update({
     where: { id: productId },
-    data: stripUndefined(data),
+    // Explicitly-typed unchecked input so scalar FK fields (categoryId,
+    // brandId, mainImageUrl) are accepted at runtime rather than Prisma
+    // resolving to the checked relation input.
+    data: updateData,
     include: {
       category: { select: { id: true, name: true } },
       brand: { select: { id: true, name: true } },
@@ -400,9 +408,23 @@ export async function updateProductVariant(
     });
   }
 
+  const updateData: Prisma.ProductVariantUncheckedUpdateInput = {};
+  if (data.sku !== undefined) updateData.sku = data.sku;
+  if (data.barcode !== undefined) updateData.barcode = data.barcode;
+  if (data.form !== undefined) updateData.form = data.form;
+  if (data.packSize !== undefined) updateData.packSize = data.packSize;
+  if (data.costPrice !== undefined) updateData.costPrice = data.costPrice;
+  if (data.retailPrice !== undefined) updateData.retailPrice = data.retailPrice;
+  if (data.wholesalePrice !== undefined) updateData.wholesalePrice = data.wholesalePrice;
+  if (data.stockQuantity !== undefined) updateData.stockQuantity = data.stockQuantity;
+  if (data.lowStockThreshold !== undefined) updateData.lowStockThreshold = data.lowStockThreshold;
+  if (data.imageUrls !== undefined) updateData.imageUrls = data.imageUrls;
+
   const updated = await prisma.productVariant.update({
     where: { id: variantId },
-    data: stripUndefined(data),
+    // Explicitly-typed unchecked input so scalar variant fields are
+    // accepted at runtime (matches the updateProduct pattern).
+    data: updateData,
   });
 
   return updated;
@@ -587,6 +609,7 @@ export async function createCategory(tenantId: string, data: CreateCategoryInput
       name: data.name,
       description: data.description ?? null,
       sortOrder: data.sortOrder ?? 0,
+      imageUrl: data.imageUrl ?? null,
     },
   });
 }
@@ -614,9 +637,18 @@ export async function updateCategory(
     }
   }
 
+  // Build the unchecked input explicitly so scalar fields (imageUrl) are
+  // accepted at runtime rather than Prisma resolving to the checked relation
+  // input (which rejects scalar FK / image fields).
+  const updateData: Prisma.CategoryUncheckedUpdateInput = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.description !== undefined) updateData.description = data.description;
+  if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
+  if (data.imageUrl !== undefined) updateData.imageUrl = data.imageUrl;
+
   return prisma.category.update({
     where: { id: categoryId },
-    data,
+    data: updateData,
   });
 }
 
@@ -729,9 +761,17 @@ export async function updateBrand(tenantId: string, brandId: string, data: Updat
     }
   }
 
+  // Build the unchecked input explicitly so scalar fields (logoUrl) are
+  // accepted at runtime rather than Prisma resolving to the checked relation
+  // input (which rejects scalar fields).
+  const updateData: Prisma.BrandUncheckedUpdateInput = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.description !== undefined) updateData.description = data.description;
+  if (data.logoUrl !== undefined) updateData.logoUrl = data.logoUrl;
+
   return prisma.brand.update({
     where: { id: brandId },
-    data,
+    data: updateData,
   });
 }
 

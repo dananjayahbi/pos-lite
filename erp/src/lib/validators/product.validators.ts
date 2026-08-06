@@ -113,6 +113,13 @@ export const CreateProductSchema = z.object({
     .pipe(z.string().cuid().optional()),
   tags: z.array(z.string().max(30)).default([]),
   taxRule: z.nativeEnum(TaxRule).default('STANDARD_VAT'),
+  // Single representative image for storefront product cards.
+  mainImageUrl: z
+    .string()
+    .max(500)
+    .optional()
+    .transform((val) => (val === '' ? null : val))
+    .pipe(z.string().max(500).nullable().optional()),
   variantDefinitions: z.array(CreateVariantInputSchema).optional(),
 });
 

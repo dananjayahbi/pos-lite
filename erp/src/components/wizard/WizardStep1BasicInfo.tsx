@@ -35,6 +35,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { TagInput } from '@/components/product/TagInput';
+import { MainImageUpload } from '@/components/product/MainImageUpload';
 
 export function WizardStep1BasicInfo() {
   const router = useRouter();
@@ -73,6 +74,7 @@ export function WizardStep1BasicInfo() {
           brandId: step1Data.brandId,
           tags: step1Data.tags,
           taxRule: step1Data.taxRule,
+          mainImageUrl: step1Data.mainImageUrl,
         }
       : {
           name: '',
@@ -81,6 +83,7 @@ export function WizardStep1BasicInfo() {
           brandId: '',
           tags: [],
           taxRule: TAX_RULE.STANDARD_VAT,
+          mainImageUrl: '',
         },
   });
 
@@ -94,6 +97,7 @@ export function WizardStep1BasicInfo() {
       brandId: data.brandId ?? '',
       tags: data.tags,
       taxRule: data.taxRule,
+      mainImageUrl: data.mainImageUrl ?? '',
     });
     goToStep(2);
   };
@@ -367,6 +371,28 @@ export function WizardStep1BasicInfo() {
         />
         {errors.taxRule && (
           <p className="text-sm text-red-600">{errors.taxRule.message}</p>
+        )}
+      </div>
+
+      {/* Main Image */}
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-espresso">
+          Main Image{' '}
+          <span className="text-xs font-normal text-mist">(optional)</span>
+        </p>
+        <p className="text-xs text-mist">
+          A single representative image shown on storefront product cards. You
+          can still add separate images to each variant.
+        </p>
+        <Controller
+          control={control}
+          name="mainImageUrl"
+          render={({ field }) => (
+            <MainImageUpload value={field.value ?? ''} onChange={field.onChange} />
+          )}
+        />
+        {errors.mainImageUrl && (
+          <p className="text-sm text-red-600">{errors.mainImageUrl.message}</p>
         )}
       </div>
 

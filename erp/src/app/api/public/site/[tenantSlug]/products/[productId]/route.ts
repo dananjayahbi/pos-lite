@@ -93,6 +93,7 @@ export async function GET(
         categoryId: product.categoryId,
         brandId: product.brandId,
         tags: product.tags,
+        mainImageUrl: product.mainImageUrl,
         primaryVariant: variants[0] ?? null,
         variants,
       },

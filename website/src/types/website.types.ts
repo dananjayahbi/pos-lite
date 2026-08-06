@@ -328,6 +328,7 @@ export interface PublicProduct {
   categoryId?: string;
   brandId?: string;
   tags: string[];
+  mainImageUrl?: string;
   primaryVariant?: PublicProductVariant;
   variants: PublicProductVariant[];
 }

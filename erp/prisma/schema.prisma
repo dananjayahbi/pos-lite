@@ -589,6 +589,8 @@ model Category {
   parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id])
   children    Category[] @relation("CategoryTree")
   sortOrder   Int        @default(0)
+  // Image shown on the storefront's category section.
+  imageUrl    String?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   deletedAt   DateTime?
@@ -631,6 +633,9 @@ model Product {
   brand       Brand?    @relation(fields: [brandId], references: [id])
   tags        String[]  @default([])
   taxRule     TaxRule   @default(STANDARD_VAT)
+  // Single representative image shown on storefront product cards
+  // (products have variants, each with their own imageUrls).
+  mainImageUrl String?
   isArchived  Boolean   @default(false)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

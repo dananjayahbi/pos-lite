@@ -79,6 +79,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
           <ProductGallery
             variants={product.variants}
             productName={product.name}
+            mainImageUrl={product.mainImageUrl}
           />
           <ProductInfo
             product={product}
@@ -113,6 +114,7 @@ export async function generateMetadata({
       product.variants?.[0]?.retailPrice ??
       product.primaryVariant?.retailPrice;
     const image =
+      product.mainImageUrl ??
       product.variants?.[0]?.imageUrls?.[0] ??
       product.primaryVariant?.imageUrls?.[0];
     const description =

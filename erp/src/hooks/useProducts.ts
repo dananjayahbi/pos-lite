@@ -26,6 +26,7 @@ export interface ProductListItem {
   description: string | null;
   isArchived: boolean;
   tags: string[];
+  mainImageUrl: string | null;
   category: { id: string; name: string } | null;
   brand: { id: string; name: string } | null;
   _count: { variants: number };

@@ -21,6 +21,7 @@ export const productStep1Schema = z.object({
   brandId: z.string().optional(),
   tags: z.array(z.string()).max(20, 'Maximum 20 tags'),
   taxRule: z.enum(TAX_RULES),
+  mainImageUrl: z.string().max(500).optional(),
 });
 
 export type ProductStep1FormData = z.infer<typeof productStep1Schema>;

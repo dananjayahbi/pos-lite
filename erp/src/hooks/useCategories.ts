@@ -8,6 +8,7 @@ export interface Category {
   parentId: string | null;
   description: string | null;
   sortOrder: number;
+  imageUrl: string | null;
   _count: { products: number };
 }
 

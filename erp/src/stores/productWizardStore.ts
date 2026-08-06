@@ -8,6 +8,7 @@ export interface Step1Data {
   brandId: string;
   tags: string[];
   taxRule: TaxRule;
+  mainImageUrl: string;
 }
 
 export interface Step2Data {
