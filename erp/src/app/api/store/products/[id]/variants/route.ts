@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { createProductVariants } from '@/lib/services/product.service';
 import { CreateVariantInputSchema } from '@/lib/validators/product.validators';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 import { z } from 'zod';
 
 const CreateVariantsBodySchema = z.array(CreateVariantInputSchema).min(1).max(50);
@@ -53,6 +54,13 @@ export async function POST(
     }
 
     const variants = await createProductVariants(tenantId, id, parsed.data);
+
+    // Revalidate so new variants (prices, stock) show on the storefront immediately.
+    try {
+      await revalidateTenantStorefront(tenantId, { productIds: [id] });
+    } catch (revalidateErr) {
+      console.warn('[POST /api/store/products/[id]/variants] Revalidation warning:', revalidateErr);
+    }
 
     return NextResponse.json({ success: true, data: variants }, { status: 201 });
   } catch (error) {

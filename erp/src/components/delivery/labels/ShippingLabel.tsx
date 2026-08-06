@@ -204,8 +204,11 @@ export function toLabelProps(delivery: LabelDeliveryLike): {
   };
 }
 
-/** Renders a fully-formed label into a print overlay and triggers the dialog. */
-function renderLabelOverlay(labelProps: Omit<ShippingLabelProps, 'template'> & { template: DeliveryLabelTemplate }): void {
+/**
+ * Renders arbitrary label content into a print overlay and triggers the dialog.
+ * Only the content is printed; the rest of the app is hidden via print CSS.
+ */
+function renderLabelOverlay(content: React.ReactNode): void {
   const overlay = document.createElement('div');
   overlay.className = 'shipping-label-print-root';
   Object.assign(overlay.style, {
@@ -222,7 +225,7 @@ function renderLabelOverlay(labelProps: Omit<ShippingLabelProps, 'template'> & {
   // flushSync commits the label BEFORE the print dialog opens, otherwise the
   // browser may snapshot an empty overlay (createRoot.render is async).
   flushSync(() => {
-    root.render(<ShippingLabel {...labelProps} />);
+    root.render(content);
   });
 
   const style = document.createElement('style');
@@ -266,11 +269,29 @@ function renderLabelOverlay(labelProps: Omit<ShippingLabelProps, 'template'> & {
  * printed; the rest of the app is hidden via injected print CSS.
  */
 export function printShippingLabel(delivery: LabelDeliveryLike, template: DeliveryLabelTemplate): void {
-  renderLabelOverlay({ template, ...toLabelProps(delivery) });
+  renderLabelOverlay(<ShippingLabel template={template} {...toLabelProps(delivery)} />);
 }
 
 /** Renders a sample label (from the designer) into the print overlay. */
 export function printSampleLabel(template: DeliveryLabelTemplate): void {
-  renderLabelOverlay(buildSampleLabelProps(template));
+  renderLabelOverlay(<ShippingLabel {...buildSampleLabelProps(template)} />);
+}
+
+/**
+ * Renders multiple deliveries' labels stacked in a single print overlay (one
+ * label per order), so a whole batch can be printed in one dialog.
+ */
+export function printShippingLabels(
+  deliveries: LabelDeliveryLike[],
+  template: DeliveryLabelTemplate,
+): void {
+  if (deliveries.length === 0) return;
+  renderLabelOverlay(
+    <div className="space-y-6">
+      {deliveries.map((delivery) => (
+        <ShippingLabel key={delivery.orderRef} template={template} {...toLabelProps(delivery)} />
+      ))}
+    </div>,
+  );
 }
 

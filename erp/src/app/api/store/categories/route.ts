@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getAllCategories, createCategory } from '@/lib/services/product.service';
 import type { CreateCategoryInput } from '@/lib/services/product.service';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 import { CategorySchema } from '@/lib/validators/category.validators';
 
 export async function GET() {
@@ -78,6 +79,13 @@ export async function POST(request: Request) {
     }
 
     const category = await createCategory(tenantId, parsed.data as CreateCategoryInput);
+
+    // Revalidate so the new category shows as a storefront filter immediately.
+    try {
+      await revalidateTenantStorefront(tenantId, { catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[POST /api/store/categories] Revalidation warning:', revalidateErr);
+    }
 
     return NextResponse.json({ success: true, data: category }, { status: 201 });
   } catch (error) {

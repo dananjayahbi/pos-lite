@@ -84,7 +84,118 @@ async function main() {
     throw error;
   }
 
+  // Seed sample online orders (WEBSITE_CHECKOUT deliveries) for the Orders page
+  try {
+    await seedSampleOrders();
+  } catch (error) {
+    console.error('Failed to seed sample orders:', error);
+    throw error;
+  }
+
   await prisma.$disconnect();
+}
+
+async function seedSampleOrders() {
+  const tenant = await prisma.tenant.findFirst({ where: { slug: 'dilani' } });
+  if (!tenant) {
+    console.log('Sample tenant not found, skipping sample orders seed');
+    return;
+  }
+  const tenantId = tenant.id;
+
+  // Idempotency: skip if any sample online order already exists.
+  const existing = await prisma.delivery.findFirst({
+    where: { tenantId, source: 'WEBSITE_CHECKOUT', orderRef: { startsWith: 'ORD-SEED' } },
+  });
+  if (existing) {
+    console.log('Sample orders already seeded, skipping');
+    return;
+  }
+
+  const samples = [
+    {
+      orderRef: 'ORD-SEED-0001',
+      fullName: 'Priya Rajapaksa',
+      phone: '+94770000005',
+      addressLine1: '45 Temple Road',
+      cityName: 'Kandy',
+      districtName: 'Central',
+      codAmount: 12500,
+      itemCount: 3,
+      status: 'PLACED' as const,
+      daysAgo: 0,
+    },
+    {
+      orderRef: 'ORD-SEED-0002',
+      fullName: 'Amara Perera',
+      phone: '+94770000001',
+      addressLine1: '18 Galle Road',
+      cityName: 'Galle',
+      districtName: 'Southern',
+      codAmount: 8750,
+      itemCount: 2,
+      status: 'PLACED' as const,
+      daysAgo: 1,
+    },
+    {
+      orderRef: 'ORD-SEED-0003',
+      fullName: 'Kasun Dissanayake',
+      phone: '+94770000004',
+      addressLine1: '27 Station Road',
+      cityName: 'Negombo',
+      districtName: 'Western',
+      codAmount: 5400,
+      itemCount: 1,
+      status: 'PENDING_DISPATCH' as const,
+      daysAgo: 2,
+    },
+  ];
+
+  for (const sample of samples) {
+    const createdAt = new Date();
+    createdAt.setDate(createdAt.getDate() - sample.daysAgo);
+
+    const delivery = await prisma.delivery.create({
+      data: {
+        tenantId,
+        source: 'WEBSITE_CHECKOUT',
+        status: sample.status,
+        orderRef: sample.orderRef,
+        codAmount: new Decimal(sample.codAmount).toFixed(2),
+        itemCount: sample.itemCount,
+        createdAt,
+      },
+    });
+
+    const address = await prisma.shippingAddress.create({
+      data: {
+        tenantId,
+        fullName: sample.fullName,
+        phone: sample.phone,
+        addressLine1: sample.addressLine1,
+        cityName: sample.cityName,
+        districtName: sample.districtName,
+      },
+    });
+
+    await prisma.delivery.update({
+      where: { id: delivery.id },
+      data: { addressId: address.id },
+    });
+
+    await prisma.deliveryEvent.create({
+      data: {
+        tenantId,
+        deliveryId: delivery.id,
+        status: sample.status,
+        source: 'WEBSITE',
+        remarks: 'Sample order from seed',
+        eventAt: createdAt,
+      },
+    });
+  }
+
+  console.log(`Sample orders created: ${samples.length}`);
 }
 
 async function seedSuperAdmin() {

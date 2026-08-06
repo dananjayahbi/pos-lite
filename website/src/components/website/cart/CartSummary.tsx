@@ -28,7 +28,7 @@ export function CartSummary({
   onNavigate,
 }: CartSummaryProps) {
   const { itemCount, formattedSubtotal, allInStock } = totals;
-  const checkoutHref = ROUTES.cart(tenantSlug);
+  const checkoutHref = ROUTES.checkout(tenantSlug);
 
   return (
     <div className="border-t border-gray-200 bg-white pt-4">

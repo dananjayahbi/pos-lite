@@ -217,6 +217,13 @@ const navGroups: NavGroup[] = [
     label: 'Delivery',
     items: [
       {
+        name: 'Orders',
+        href: '/orders',
+        roles: ['OWNER', 'MANAGER', 'CASHIER', 'DISPATCH_STAFF'],
+        permission: PERMISSIONS.DELIVERY.viewDelivery,
+        match: 'exact',
+      },
+      {
         name: 'Deliveries',
         href: '/delivery',
         roles: ['OWNER', 'MANAGER', 'CASHIER', 'DISPATCH_STAFF'],

@@ -30,6 +30,63 @@ export interface RevalidationPayload {
  * Fails silently — a down website server or missing secret should not
  * block the ERP save operation.
  */
+/**
+ * Revalidate the storefront for a tenant after catalog/config mutations.
+ *
+ * Resolves the tenant slug from `tenantId` (the tenant must exist), then
+ * purges the relevant fetch tags and ISR paths on the customer-facing
+ * website so catalog & config changes appear immediately instead of
+ * waiting for the revalidate interval.
+ *
+ * Call from any ERP mutation route (product create/update/archive/delete,
+ * variant changes, bulk price updates, imports, hero slides, ads, etc.).
+ *
+ * @param tenantId - The tenant owning the mutated data.
+ * @param opts.productIds - Product detail pages to revalidate (if any).
+ * @param opts.config - Also purge website config (hero slides, ads, layout).
+ * @param opts.catalog - Also purge category/brand filter caches.
+ */
+export async function revalidateTenantStorefront(
+  tenantId: string,
+  opts: { productIds?: string[]; config?: boolean; catalog?: boolean } = {},
+): Promise<void> {
+  // Resolve tenant slug — required to build cache tags / paths.
+  const { prisma } = await import('@/lib/prisma');
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { slug: true },
+  });
+  if (!tenant?.slug) {
+    console.warn(
+      `[revalidate-website] Tenant ${tenantId} not found — skipping revalidation`,
+    );
+    return;
+  }
+
+  const slug = tenant.slug;
+  const tags = new Set<string>(['tenant:' + slug, 'products:' + slug]);
+  const paths = new Set<string>([`/${slug}`, `/${slug}/shop`]);
+
+  if (opts.productIds && opts.productIds.length > 0) {
+    for (const pid of opts.productIds) {
+      tags.add('product:' + pid);
+      paths.add(`/${slug}/product/${pid}`);
+    }
+  }
+
+  if (opts.config) {
+    tags.add('site-config:' + slug);
+    paths.add(`/${slug}`);
+  }
+
+  if (opts.catalog) {
+    tags.add('categories:' + slug);
+    tags.add('brands:' + slug);
+  }
+
+  await revalidateWebsiteCache({ tags: [...tags], paths: [...paths] });
+}
+
 export async function revalidateWebsiteCache(
   payload: RevalidationPayload,
 ): Promise<void> {
