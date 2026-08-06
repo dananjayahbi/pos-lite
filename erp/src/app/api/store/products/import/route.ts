@@ -179,7 +179,7 @@ export async function POST(req: NextRequest) {
 
     // Revalidate the catalog so imported products appear on the storefront immediately.
     try {
-      await revalidateTenantStorefront(tenantId, {});
+      await revalidateTenantStorefront(tenantId, { catalog: true });
     } catch (revalidateErr) {
       console.warn('[POST /api/store/products/import] Revalidation warning:', revalidateErr);
     }

@@ -107,7 +107,7 @@ export async function PATCH(
 
     // Revalidate so edits (name, price, images, etc.) appear instantly on the storefront.
     try {
-      await revalidateTenantStorefront(tenantId, { productIds: [id] });
+      await revalidateTenantStorefront(tenantId, { productIds: [id], catalog: true });
     } catch (revalidateErr) {
       console.warn('[PATCH /api/store/products/[id]] Revalidation warning:', revalidateErr);
     }
@@ -172,7 +172,7 @@ export async function DELETE(
 
     // Revalidate so the archived product disappears from the storefront immediately.
     try {
-      await revalidateTenantStorefront(tenantId, { productIds: [id] });
+      await revalidateTenantStorefront(tenantId, { productIds: [id], catalog: true });
     } catch (revalidateErr) {
       console.warn('[DELETE /api/store/products/[id]] Revalidation warning:', revalidateErr);
     }

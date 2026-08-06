@@ -13,6 +13,9 @@ interface CheckoutPageProps {
   params: Promise<{ tenantSlug: string }>;
 }
 
+// Checkout is a transactional page — never cache it.
+export const dynamic = 'force-dynamic';
+
 export default async function CheckoutPage({ params }: CheckoutPageProps) {
   const { tenantSlug } = await params;
   const tenant = await getTenantInfo(tenantSlug).catch(() => null);

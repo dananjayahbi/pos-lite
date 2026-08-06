@@ -55,6 +55,34 @@ const TABS = [
 
 type TabValue = (typeof TABS)[number]['value'];
 
+/**
+ * Recursively merge a loaded config over the defaults so nested JSON
+ * structures (sections, social links, footer columns, about values) are
+ * filled from defaults when the stored value is empty/missing, while
+ * preserving any saved values. Arrays (e.g. heroSlides) are taken from the
+ * loaded value as-is.
+ */
+function deepMergeConfig(
+  base: Record<string, unknown>,
+  overlay: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(overlay)) {
+    if (value === null || value === undefined) continue;
+    const current = result[key];
+    if (isPlainObject(current) && isPlainObject(value)) {
+      result[key] = deepMergeConfig(current, value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export default function WebsiteSettingsForm() {
   const [config, setConfig] = useState<WebsiteConfigData>(DEFAULT_CONFIG);
   const [activeTab, setActiveTab] = useState<TabValue>('general');
@@ -90,7 +118,10 @@ export default function WebsiteSettingsForm() {
         if (res.ok) {
           const body = await res.json();
           if (body.success && body.data) {
-            const merged = { ...DEFAULT_CONFIG, ...body.data };
+            const merged = deepMergeConfig(
+              DEFAULT_CONFIG as unknown as Record<string, unknown>,
+              body.data,
+            ) as unknown as WebsiteConfigData;
             setConfig(merged);
             initialConfigRef.current = JSON.stringify(merged);
             return;

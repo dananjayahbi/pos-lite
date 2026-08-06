@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
 
     // Revalidate so new prices appear on the storefront immediately.
     try {
-      await revalidateTenantStorefront(tenantId, { productIds });
+      await revalidateTenantStorefront(tenantId, { productIds, catalog: true });
     } catch (revalidateErr) {
       console.warn('[POST /api/store/products/bulk-price-update] Revalidation warning:', revalidateErr);
     }

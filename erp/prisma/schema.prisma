@@ -1318,9 +1318,8 @@ model WebsiteConfig {
   // Section-level configuration stored as JSON keyed by sectionKey
   // Each key maps to: { isActive, sortOrder, ...sectionSpecificFields }
   // sectionKeys:
-  //   hero, categories, solutionsByConcern, shopByConcern,
-  //   giftBox, latestProducts, promoBanner, bestSelling,
-  //   testimonials, storesBanner, footer
+  //   hero, imageSlider, bestSelling, infoAd, categories,
+  //   latestProducts, testimonials, storeReference, footer
   sections Json @default("{}")
 
   // Footer

@@ -54,7 +54,7 @@ export async function PATCH(
 
     // Revalidate so variant changes (price, stock, images) appear instantly.
     try {
-      await revalidateTenantStorefront(tenantId, { productIds: [id] });
+      await revalidateTenantStorefront(tenantId, { productIds: [id], catalog: true });
     } catch (revalidateErr) {
       console.warn('[PATCH /api/store/products/[id]/variants/[variantId]] Revalidation warning:', revalidateErr);
     }
@@ -112,7 +112,7 @@ export async function DELETE(
 
     // Revalidate so the removed variant disappears from the storefront immediately.
     try {
-      await revalidateTenantStorefront(tenantId, { productIds: [id] });
+      await revalidateTenantStorefront(tenantId, { productIds: [id], catalog: true });
     } catch (revalidateErr) {
       console.warn('[DELETE /api/store/products/[id]/variants/[variantId]] Revalidation warning:', revalidateErr);
     }

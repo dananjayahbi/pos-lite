@@ -68,6 +68,7 @@ export async function POST(request: Request): Promise<Response> {
 
   // 3. Revalidate tags (purges fetch cache for tagged requests)
   const results = { tags: [] as string[], paths: [] as string[] };
+  const failed = { tags: [] as string[], paths: [] as string[] };
 
   for (const tag of tags) {
     try {
@@ -75,6 +76,7 @@ export async function POST(request: Request): Promise<Response> {
       results.tags.push(tag);
     } catch (err) {
       console.error(`[revalidate] Failed to revalidate tag "${tag}":`, err);
+      failed.tags.push(tag);
     }
   }
 
@@ -85,10 +87,20 @@ export async function POST(request: Request): Promise<Response> {
       results.paths.push(path);
     } catch (err) {
       console.error(`[revalidate] Failed to revalidate path "${path}":`, err);
+      failed.paths.push(path);
     }
   }
 
   console.log(`[revalidate] Revalidated tags: [${results.tags.join(', ')}], paths: [${results.paths.join(', ')}]`);
+
+  // Report partial failures explicitly so the ERP can log/retry instead of
+  // assuming every tag/path was purged.
+  if (failed.tags.length > 0 || failed.paths.length > 0) {
+    return NextResponse.json(
+      { success: false, results, failed },
+      { status: 500 },
+    );
+  }
 
   return NextResponse.json({ success: true, results });
 }

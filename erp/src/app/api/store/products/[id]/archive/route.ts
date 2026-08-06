@@ -39,7 +39,7 @@ export async function POST(
 
     // Revalidate so archive/unarchive state is reflected on the storefront immediately.
     try {
-      await revalidateTenantStorefront(tenantId, { productIds: [id] });
+      await revalidateTenantStorefront(tenantId, { productIds: [id], catalog: true });
     } catch (revalidateErr) {
       console.warn('[POST /api/store/products/[id]/archive] Revalidation warning:', revalidateErr);
     }

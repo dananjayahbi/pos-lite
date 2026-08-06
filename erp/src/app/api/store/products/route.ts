@@ -151,7 +151,7 @@ export async function POST(request: Request) {
 
     // Revalidate the storefront catalog so the new product appears immediately.
     try {
-      await revalidateTenantStorefront(tenantId, { productIds: [product.id] });
+      await revalidateTenantStorefront(tenantId, { productIds: [product.id], catalog: true });
     } catch (revalidateErr) {
       console.warn('[POST /api/store/products] Revalidation warning:', revalidateErr);
     }

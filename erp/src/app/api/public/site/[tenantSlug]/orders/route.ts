@@ -16,6 +16,7 @@ import {
 } from '@/lib/api/cors';
 import { isModuleEnabled } from '@/lib/feature-guard';
 import { createWebsiteOrder } from '@/lib/services/order.service';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 import { WebsiteCheckoutSchema } from '@/lib/validators/checkout.validators';
 
 interface RouteContext {
@@ -66,6 +67,16 @@ export async function POST(
 
   try {
     const result = await createWebsiteOrder(tenant.id, parsed.data);
+
+    // Purge the storefront's product/catalog caches so availability & any
+    // stock-derived data reflects the new order. Best-effort — never fail
+    // the order placement if revalidation is unavailable.
+    try {
+      await revalidateTenantStorefront(tenant.id, { catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[POST /api/public/site/[tenantSlug]/orders] Revalidation warning:', revalidateErr);
+    }
+
     return jsonWithCors(request, { success: true, data: result }, { status: 201 });
   } catch (error) {
     console.error('POST /api/public/site/[tenantSlug]/orders error:', error);

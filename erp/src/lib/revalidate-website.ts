@@ -65,7 +65,9 @@ export async function revalidateTenantStorefront(
 
   const slug = tenant.slug;
   const tags = new Set<string>(['tenant:' + slug, 'products:' + slug]);
-  const paths = new Set<string>([`/${slug}`, `/${slug}/shop`]);
+  // Always include the root path so the default tenant's clean storefront
+  // home is purged too (harmless for non-default tenants).
+  const paths = new Set<string>(['/', `/${slug}`, `/${slug}/shop`]);
 
   if (opts.productIds && opts.productIds.length > 0) {
     for (const pid of opts.productIds) {
