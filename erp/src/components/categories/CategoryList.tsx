@@ -4,6 +4,7 @@ import type { Category } from '@/hooks/useCategories';
 import { Badge } from '@/components/ui/badge';
 import { Pencil } from 'lucide-react';
 import { CategoryDeleteButton } from '@/components/categories/CategoryDeleteButton';
+import { CategoryIcon } from '@/components/categories/CategoryIcon';
 
 interface CategoryListProps {
   categories: Category[];
@@ -54,6 +55,12 @@ export function CategoryList({
             }`}
             aria-pressed={isSelected}
           >
+            <CategoryIcon
+              imageUrl={cat.imageUrl}
+              name={cat.name}
+              size={22}
+            />
+
             {/* Name */}
             <span className="flex-1 truncate font-body text-sm text-espresso">
               {cat.name}
