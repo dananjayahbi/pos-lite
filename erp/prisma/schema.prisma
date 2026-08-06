@@ -170,6 +170,37 @@ enum CashMovementType {
   MANUAL_OUT
 }
 
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  CHECKED_IN
+  IN_PROGRESS
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+enum AppointmentRecurrenceType {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  CUSTOM
+}
+
+enum AppointmentReminderChannel {
+  WHATSAPP
+  EMAIL
+  BOTH
+}
+
+enum AppointmentReminderStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
 // ── Auth Models ──────────────────────────────────────────────────────────────
 
 model User {
@@ -211,6 +242,14 @@ model User {
   expenses             Expense[]
   authorizedCashMovements CashMovement[]
   savedReports         SavedReport[]
+  appointmentSlots     AppointmentSlot[]     @relation("AppointmentSlotStaff")
+  appointmentsAsStaff  Appointment[]         @relation("AppointmentStaff")
+  staffAvailabilities   StaffAvailability[]   @relation("StaffAvailabilityUser")
+  staffTimeOffs         StaffTimeOff[]        @relation("StaffTimeOffUser")
+  staffTimeOffsApproved StaffTimeOff[]        @relation("StaffTimeOffApprover")
+  appointmentsCancelled Appointment[]         @relation("AppointmentCanceller")
+  appointmentsCheckedIn Appointment[]         @relation("AppointmentCheckIn")
+  appointmentsCreated   Appointment[]         @relation("AppointmentCreator")
 
   @@index([email])
   @@index([tenantId])
@@ -321,8 +360,14 @@ model Tenant {
   cashMovements        CashMovement[]
   savedReports         SavedReport[]
   dailySummaryLogs     DailySummaryLog[]
-  webhookEndpoints     WebhookEndpoint[]
-  websiteConfig       WebsiteConfig?
+  webhookEndpoints      WebhookEndpoint[]
+  websiteConfig         WebsiteConfig?
+  appointmentServices   AppointmentService[]
+  appointmentSlots      AppointmentSlot[]
+  appointments          Appointment[]
+  appointmentReminders  AppointmentReminder[]
+  staffAvailabilities   StaffAvailability[]
+  staffTimeOffs         StaffTimeOff[]
 
   @@map("tenants")
 }
@@ -627,6 +672,7 @@ model Sale {
   linkedReturnId        String?
   linkedReturn          Return?        @relation("ExchangeLinkedSale", fields: [linkedReturnId], references: [id], onDelete: SetNull)
   returns               Return[]       @relation("ReturnOriginalSale")
+  appointments          Appointment[]
 
   @@index([tenantId, status, createdAt])
   @@index([shiftId])
@@ -798,6 +844,7 @@ model Customer {
 
   sales         Sale[]
   birthdayLogs  BirthdayGreetingLog[]
+  appointments  Appointment[]
 
   @@index([tenantId])
   @@index([tenantId, phone])
@@ -1246,4 +1293,167 @@ model WebsiteAd {
   @@index([configId])
   @@index([tenantId])
   @@map("website_ads")
+}
+
+// ── Appointments Models ──────────────────────────────────────────────────────
+
+model AppointmentService {
+  id            String    @id @default(cuid())
+  tenantId      String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  name          String
+  description   String?
+  durationMins  Int
+  price         Decimal   @db.Decimal(10, 2)
+  color         String?
+  isActive      Boolean   @default(true)
+  sortOrder     Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  appointments  Appointment[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("appointment_services")
+}
+
+model AppointmentSlot {
+  id             String    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id])
+  staffId        String
+  staff          User      @relation("AppointmentSlotStaff", fields: [staffId], references: [id])
+  date           DateTime  @db.Date
+  startTime      DateTime
+  endTime        DateTime
+  isBooked       Boolean   @default(false)
+  isBlocked      Boolean   @default(false)
+  appointmentId  String?   @unique
+  appointment    Appointment? @relation
+  createdAt      DateTime  @default(now())
+
+  @@unique([staffId, date, startTime])
+  @@index([tenantId, date])
+  @@index([staffId, date])
+  @@map("appointment_slots")
+}
+
+model Appointment {
+  id                String                     @id @default(cuid())
+  tenantId          String
+  tenant            Tenant                     @relation(fields: [tenantId], references: [id])
+  customerId        String?
+  customer          Customer?                  @relation(fields: [customerId], references: [id])
+  serviceId         String?
+  service           AppointmentService?        @relation(fields: [serviceId], references: [id])
+  staffId           String?
+  staff             User?                      @relation("AppointmentStaff", fields: [staffId], references: [id])
+  slotId            String?                    @unique
+  slot              AppointmentSlot?           @relation(fields: [slotId], references: [id])
+
+  title             String
+  description       String?
+  startTime         DateTime
+  endTime           DateTime
+  durationMins      Int
+  status            AppointmentStatus          @default(SCHEDULED)
+
+  price             Decimal                    @db.Decimal(10, 2)
+  depositAmount     Decimal?                   @default(0) @db.Decimal(10, 2)
+  isPaid            Boolean                    @default(false)
+
+  walkInName        String?
+  walkInPhone       String?
+
+  notes             String?
+  customerNotes     String?
+  cancellationReason String?
+  cancelledAt       DateTime?
+  cancelledById     String?
+  cancelledBy       User?                      @relation("AppointmentCanceller", fields: [cancelledById], references: [id])
+
+  checkedInAt       DateTime?
+  checkedInById     String?
+  checkedInBy       User?                      @relation("AppointmentCheckIn", fields: [checkedInById], references: [id])
+  completedAt       DateTime?
+
+  recurrenceType    AppointmentRecurrenceType?
+  recurrenceEndDate DateTime?
+  parentAppointmentId String?
+  parentAppointment   Appointment?             @relation("RecurringAppointments", fields: [parentAppointmentId], references: [id])
+  childAppointments   Appointment[]            @relation("RecurringAppointments")
+
+  saleId            String?
+  sale              Sale?                      @relation(fields: [saleId], references: [id])
+
+  createdById       String
+  createdBy         User                       @relation("AppointmentCreator", fields: [createdById], references: [id])
+  updatedAt         DateTime                   @updatedAt
+  createdAt         DateTime                   @default(now())
+
+  reminders         AppointmentReminder[]
+
+  @@index([tenantId, startTime])
+  @@index([tenantId, customerId])
+  @@index([tenantId, staffId])
+  @@index([tenantId, status])
+  @@index([tenantId, startTime, status])
+  @@map("appointments")
+}
+
+model AppointmentReminder {
+  id              String                      @id @default(cuid())
+  appointmentId   String
+  appointment     Appointment                 @relation(fields: [appointmentId], references: [id])
+  tenantId        String
+  tenant          Tenant                      @relation(fields: [tenantId], references: [id])
+  scheduledFor    DateTime
+  sentAt          DateTime?
+  channel         AppointmentReminderChannel
+  status          AppointmentReminderStatus   @default(PENDING)
+  errorMessage    String?
+  createdAt       DateTime                    @default(now())
+
+  @@index([appointmentId])
+  @@index([tenantId, status])
+  @@map("appointment_reminders")
+}
+
+model StaffAvailability {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  staffId       String
+  staff         User     @relation("StaffAvailabilityUser", fields: [staffId], references: [id])
+  dayOfWeek     Int
+  startTime     String
+  endTime       String
+  isAvailable   Boolean  @default(true)
+  slotDurationMins Int   @default(15)
+
+  @@unique([staffId, dayOfWeek])
+  @@index([tenantId])
+  @@map("staff_availability")
+}
+
+model StaffTimeOff {
+  id          String    @id @default(cuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  staffId     String
+  staff       User      @relation("StaffTimeOffUser", fields: [staffId], references: [id])
+  date        DateTime  @db.Date
+  startTime   DateTime?
+  endTime     DateTime?
+  reason      String?
+  isApproved  Boolean   @default(false)
+  approvedById String?
+  approvedBy  User?     @relation("StaffTimeOffApprover", fields: [approvedById], references: [id])
+  createdAt   DateTime  @default(now())
+
+  @@index([staffId, date])
+  @@index([tenantId])
+  @@map("staff_time_offs")
 }

@@ -65,6 +65,7 @@ const GROUP_LABELS: Record<keyof typeof PERMISSIONS, string> = {
   PROMOTION: 'Promotions',
   BILLING: 'Billing',
   EXPENSE: 'Expenses',
+  APPOINTMENT: 'Appointments',
 };
 
 function formatPermissionLabel(permission: string) {

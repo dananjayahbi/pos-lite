@@ -66,6 +66,13 @@ const navGroups: NavGroup[] = [
         name: 'Notifications',
         href: '/notifications',
       },
+      {
+        name: 'Appointments',
+        href: '/appointments',
+        roles: ['OWNER', 'MANAGER', 'CASHIER'],
+        permission: PERMISSIONS.APPOINTMENT.viewAppointment,
+        match: 'exact',
+      },
     ],
   },
   {

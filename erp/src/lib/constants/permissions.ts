@@ -94,6 +94,16 @@ export const PERMISSIONS = {
     viewBilling: 'billing:view',
     manageBilling: 'billing:manage',
   },
+  APPOINTMENT: {
+    viewAppointment: 'appointment:view',
+    createAppointment: 'appointment:create',
+    editAppointment: 'appointment:edit',
+    cancelAppointment: 'appointment:cancel',
+    checkInAppointment: 'appointment:checkin',
+    manageServices: 'appointment:services:manage',
+    manageSchedule: 'appointment:schedule:manage',
+    manageSettings: 'appointment:settings:manage',
+  },
 } as const;
 
 type PermissionGroups = typeof PERMISSIONS;
@@ -136,6 +146,9 @@ export const ROLE_PERMISSIONS: Record<'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_C
     PERMISSIONS.CUSTOMER.createCustomer,
     PERMISSIONS.STAFF.openShift,
     PERMISSIONS.STAFF.closeShift,
+    PERMISSIONS.APPOINTMENT.viewAppointment,
+    PERMISSIONS.APPOINTMENT.createAppointment,
+    PERMISSIONS.APPOINTMENT.checkInAppointment,
   ],
   STOCK_CLERK: [
     PERMISSIONS.PRODUCT.viewProduct,
