@@ -58,9 +58,10 @@ const ROLE_COLORS: Record<string, string> = {
   MANAGER: 'bg-terracotta text-pearl',
   CASHIER: 'bg-sand text-espresso',
   STOCK_CLERK: 'bg-mist text-espresso',
+  FACTORY_MANAGER: 'bg-mist text-espresso',
 };
 
-const ASSIGNABLE_ROLES = ['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK'] as const;
+const ASSIGNABLE_ROLES = ['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK', 'FACTORY_MANAGER'] as const;
 type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 
 function RoleBadge({ role }: { role: string }) {

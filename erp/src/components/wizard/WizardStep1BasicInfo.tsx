@@ -6,15 +6,20 @@ import { useForm, Controller } from 'react-hook-form';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus, ArrowRight } from 'lucide-react';
+import { z } from 'zod';
 
 import { useProductWizardStore } from '@/stores/productWizardStore';
 import { useCategories } from '@/hooks/useCategories';
 import { useBrands } from '@/hooks/useBrands';
 import { TAX_RULE, TAX_RULE_OPTIONS } from '@/lib/constants/product-options';
-import {
-  productStep1Schema,
-  type ProductStep1FormData,
-} from '@/lib/validators/product-wizard.validators';
+import { PRODUCT_SOURCE_OPTIONS } from '@/lib/constants/product-options';
+import { productStep1Schema } from '@/lib/validators/product-wizard.validators';
+
+// The schema uses `.default([])` on `healthConcerns`, so its INPUT type (which
+// the standard-schema resolver is keyed on) has that field optional while the
+// OUTPUT type (`ProductStep1FormData`) has it required. RHF's field-values type
+// must match the resolver, so we drive the form off the input type.
+type ProductStep1FormInput = z.input<typeof productStep1Schema>;
 
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -36,6 +41,8 @@ import {
 } from '@/components/ui/dialog';
 import { TagInput } from '@/components/product/TagInput';
 import { MainImageUpload } from '@/components/product/MainImageUpload';
+import { HealthContentFields } from '@/components/product/HealthContentFields';
+import { HealthConcernMultiSelect } from '@/components/product/HealthConcernMultiSelect';
 
 export function WizardStep1BasicInfo() {
   const router = useRouter();
@@ -64,7 +71,7 @@ export function WizardStep1BasicInfo() {
     watch,
     setValue,
     formState: { errors },
-  } = useForm<ProductStep1FormData>({
+  } = useForm<ProductStep1FormInput>({
     resolver: standardSchemaResolver(productStep1Schema),
     defaultValues: step1Data
       ? {
@@ -75,6 +82,13 @@ export function WizardStep1BasicInfo() {
           tags: step1Data.tags,
           taxRule: step1Data.taxRule,
           mainImageUrl: step1Data.mainImageUrl,
+          activeIngredients: step1Data.activeIngredients,
+          usageInstructions: step1Data.usageInstructions,
+          healthBenefits: step1Data.healthBenefits,
+          safetyPrecautions: step1Data.safetyPrecautions,
+          productSource: step1Data.productSource,
+          healthConcerns:
+            step1Data.healthConcerns as unknown as ProductStep1FormInput['healthConcerns'],
         }
       : {
           name: '',
@@ -84,12 +98,18 @@ export function WizardStep1BasicInfo() {
           tags: [],
           taxRule: TAX_RULE.STANDARD_VAT,
           mainImageUrl: '',
+          activeIngredients: '',
+          usageInstructions: '',
+          healthBenefits: '',
+          safetyPrecautions: '',
+          productSource: 'MANUFACTURED',
+          healthConcerns: [],
         },
   });
 
   const watchedDescription = watch('description') ?? '';
 
-  const onSubmit = (data: ProductStep1FormData) => {
+  const onSubmit = (data: ProductStep1FormInput) => {
     setStep1Data({
       name: data.name,
       description: data.description ?? '',
@@ -98,6 +118,12 @@ export function WizardStep1BasicInfo() {
       tags: data.tags,
       taxRule: data.taxRule,
       mainImageUrl: data.mainImageUrl ?? '',
+      activeIngredients: data.activeIngredients ?? '',
+      usageInstructions: data.usageInstructions ?? '',
+      healthBenefits: data.healthBenefits ?? '',
+      safetyPrecautions: data.safetyPrecautions ?? '',
+      productSource: data.productSource ?? 'MANUFACTURED',
+      healthConcerns: data.healthConcerns ?? [],
     });
     goToStep(2);
   };
@@ -200,6 +226,48 @@ export function WizardStep1BasicInfo() {
           <p className="text-sm text-red-600">{errors.description.message}</p>
         )}
       </div>
+
+      {/* Product Source */}
+      <div className="space-y-2">
+        <Label className="font-body text-espresso">Product Source</Label>
+        <Controller
+          control={control}
+          name="productSource"
+          render={({ field }) => (
+            <Select
+              value={field.value ?? 'MANUFACTURED'}
+              onValueChange={field.onChange}
+            >
+              <SelectTrigger className="w-full font-body">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PRODUCT_SOURCE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        />
+        <p className="text-xs text-mist">
+          Manufactured goods can be assigned a Bill of Materials and produced
+          in-house; traded goods are resold as-is through purchase/receipt.
+        </p>
+        {errors.productSource && (
+          <p className="text-sm text-red-600">{errors.productSource.message}</p>
+        )}
+      </div>
+
+      {/* Health Information */}
+      <HealthContentFields register={register} />
+
+      {/* Health Concerns */}
+      <HealthConcernMultiSelect
+        value={watch('healthConcerns') ?? []}
+        onChange={(v) => setValue('healthConcerns', v, { shouldDirty: true })}
+      />
 
       {/* Category */}
       <div className="space-y-2">

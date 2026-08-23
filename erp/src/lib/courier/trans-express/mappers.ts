@@ -2,67 +2,15 @@ import "server-only";
 
 import Decimal from "decimal.js";
 import { formatPhoneNumber } from "@/lib/whatsapp";
+import { toCourierOrderPayload } from "@/lib/courier/mappers";
 import type { CourierOrderPayload, CourierTracking, CourierTrackingEvent } from "@/lib/courier/types";
 
 /**
- * Map an internal delivery's ShippingAddress + Delivery fields to a Trans Express
- * single-order payload. Single-order endpoints use: waybill_id / order_no /
- * customer_name / address / description / phone_no / phone_no2 / cod / city_id
- * (or `city` text for without-city variants) / note.
+ * @deprecated Use the provider-agnostic `toCourierOrderPayload` from
+ * `@/lib/courier/mappers` instead. The payload shape is identical; this alias
+ * is kept so existing callers keep working during the migration.
  */
-
-interface MapperAddress {
-  fullName: string;
-  phone: string;
-  phone2?: string | null | undefined;
-  addressLine1: string;
-  addressLine2?: string | null | undefined;
-  cityId?: number | null | undefined;
-  cityName?: string | null | undefined;
-  districtId?: number | null | undefined;
-}
-
-interface MapperDelivery {
-  orderRef: string;
-  codAmount: { toString(): string };
-  notes?: string | null | undefined;
-  itemCount?: number | undefined;
-}
-
-/** Normalize an E.164/leading-0 phone for the courier payload. */
-function normalizePhone(phone: string): string {
-  try {
-    return formatPhoneNumber(phone);
-  } catch {
-    return phone.replace(/[\s\-()]/g, "");
-  }
-}
-
-/** Build the base (with-city) single-order payload. */
-export function toTransExpressPayload(
-  address: MapperAddress,
-  delivery: MapperDelivery,
-  opts: { waybillId?: string | undefined; description?: string | undefined } = {},
-): CourierOrderPayload {
-  const street = address.addressLine2
-    ? `${address.addressLine1}, ${address.addressLine2}`
-    : address.addressLine1;
-
-  return {
-    orderNo: delivery.orderRef,
-    customerName: address.fullName,
-    address: street,
-    phone: normalizePhone(address.phone),
-    phone2: address.phone2 ? normalizePhone(address.phone2) : undefined,
-    cod: Number(new Decimal(delivery.codAmount.toString()).toFixed(2)),
-    cityId: address.cityId ?? undefined,
-    cityText: address.cityId ? undefined : (address.cityName ?? undefined),
-    districtId: address.districtId ?? undefined,
-    description: opts.description ?? (delivery.itemCount ? `${delivery.itemCount} parcel(s)` : undefined),
-    note: delivery.notes ?? undefined,
-    waybillId: opts.waybillId,
-  };
-}
+export const toTransExpressPayload = toCourierOrderPayload;
 
 /** Normalize the raw tracking response body into the internal CourierTracking shape. */
 export function normalizeTracking(raw: unknown): CourierTracking {

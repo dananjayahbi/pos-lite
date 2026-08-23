@@ -12,7 +12,7 @@ import type { NextAuthConfig } from 'next-auth';
 
 // Inlined Prisma enum — avoids importing @/generated/prisma/client which pulls
 // in node:process/node:path/node:url and breaks the Edge Runtime bundler.
-type UserRole = 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK';
+type UserRole = 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK' | 'DISPATCH_STAFF' | 'FACTORY_MANAGER';
 
 export const authConfig: NextAuthConfig = {
   session: { strategy: 'jwt' as const },

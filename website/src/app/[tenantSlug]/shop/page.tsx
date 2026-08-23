@@ -5,18 +5,30 @@ import { SITE } from '@/config/site';
 
 interface ShopPageProps {
   params: Promise<{ tenantSlug: string }>;
-  searchParams: Promise<{ category?: string; sort?: string }>;
+  searchParams: Promise<{
+    category?: string;
+    sort?: string;
+    priceMin?: string;
+    priceMax?: string;
+    concern?: string;
+    form?: string;
+    q?: string;
+  }>;
 }
 
 export default async function ShopPage({ params, searchParams }: ShopPageProps) {
   const tenantSlug = (await params).tenantSlug;
-  const category = (await searchParams).category;
-  const sort = (await searchParams).sort;
+  const sp = await searchParams;
   return (
     <ShopPageContent
       tenantSlug={tenantSlug}
-      category={category ?? ''}
-      sort={sort ?? ''}
+      category={sp.category ?? ''}
+      sort={sp.sort ?? ''}
+      priceMin={sp.priceMin}
+      priceMax={sp.priceMax}
+      concern={sp.concern ?? ''}
+      form={sp.form ?? ''}
+      q={sp.q ?? ''}
     />
   );
 }

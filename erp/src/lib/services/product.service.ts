@@ -9,7 +9,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
-import type { TaxRule } from '@/generated/prisma/client';
+import type { HealthConcern, ProductSource, TaxRule } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -35,6 +35,12 @@ export interface CreateProductInput {
   tags?: string[] | undefined;
   taxRule?: TaxRule | undefined;
   mainImageUrl?: string | null | undefined;
+  activeIngredients?: string | null | undefined;
+  usageInstructions?: string | null | undefined;
+  healthBenefits?: string | null | undefined;
+  safetyPrecautions?: string | null | undefined;
+  healthConcerns?: HealthConcern[] | undefined;
+  productSource?: ProductSource | undefined;
 }
 
 export interface UpdateProductInput {
@@ -46,6 +52,12 @@ export interface UpdateProductInput {
   taxRule?: TaxRule | undefined;
   isArchived?: boolean | undefined;
   mainImageUrl?: string | null | undefined;
+  activeIngredients?: string | null | undefined;
+  usageInstructions?: string | null | undefined;
+  healthBenefits?: string | null | undefined;
+  safetyPrecautions?: string | null | undefined;
+  healthConcerns?: HealthConcern[] | undefined;
+  productSource?: ProductSource | undefined;
 }
 
 export interface CreateVariantInput {
@@ -164,6 +176,12 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
             imageUrls: true,
             retailPrice: true,
             costPrice: true,
+            // Batch/expiry summary (doc 30) — surfaced in inventory lists.
+            batchTrackings: {
+              where: { quantity: { gt: 0 } },
+              select: { id: true, batchNumber: true, expiryDate: true, quantity: true },
+              orderBy: { receivedAt: 'desc' },
+            },
           },
         },
         _count: {
@@ -210,6 +228,12 @@ export async function createProduct(tenantId: string, actorId: string, data: Cre
       tags: data.tags ?? [],
       taxRule: data.taxRule ?? 'STANDARD_VAT',
       mainImageUrl: data.mainImageUrl ?? null,
+      activeIngredients: data.activeIngredients ?? null,
+      usageInstructions: data.usageInstructions ?? null,
+      healthBenefits: data.healthBenefits ?? null,
+      safetyPrecautions: data.safetyPrecautions ?? null,
+      healthConcerns: data.healthConcerns ?? [],
+      productSource: data.productSource ?? 'MANUFACTURED',
     },
     include: {
       category: { select: { id: true, name: true } },
@@ -339,6 +363,12 @@ export async function updateProduct(
   if (data.taxRule !== undefined) updateData.taxRule = data.taxRule;
   if (data.isArchived !== undefined) updateData.isArchived = data.isArchived;
   if (data.mainImageUrl !== undefined) updateData.mainImageUrl = data.mainImageUrl;
+  if (data.activeIngredients !== undefined) updateData.activeIngredients = data.activeIngredients;
+  if (data.usageInstructions !== undefined) updateData.usageInstructions = data.usageInstructions;
+  if (data.healthBenefits !== undefined) updateData.healthBenefits = data.healthBenefits;
+  if (data.safetyPrecautions !== undefined) updateData.safetyPrecautions = data.safetyPrecautions;
+  if (data.healthConcerns !== undefined) updateData.healthConcerns = data.healthConcerns;
+  if (data.productSource !== undefined) updateData.productSource = data.productSource;
 
   const updated = await prisma.product.update({
     where: { id: productId },

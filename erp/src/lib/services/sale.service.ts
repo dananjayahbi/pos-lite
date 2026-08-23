@@ -61,6 +61,21 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       throw new Error('Shift not found or not open');
     }
 
+    // Mandatory customer enforcement (doc 32): every finalized POS sale must be
+    // linked to a customer that has a name and a mobile number.
+    if (!input.customerId) {
+      throw new Error('A customer must be linked to finalize a POS sale');
+    }
+    const linkedCustomer = await tx.customer.findFirst({
+      where: { id: input.customerId, tenantId, deletedAt: null },
+    });
+    if (!linkedCustomer) {
+      throw new Error('Linked customer not found');
+    }
+    if (!linkedCustomer.name || !linkedCustomer.phone) {
+      throw new Error('Linked customer must have a name and a mobile number');
+    }
+
     // Get tenant settings for tax
     const tenant = await tx.tenant.findUnique({
       where: { id: tenantId },
@@ -153,6 +168,37 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       .plus(totalTax)
       .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
+    // ── Zero-value verification (doc 33 / 34) ───────────────────────────
+    // A zero (or negative) total is only permitted with a recorded reason; a
+    // non-zero total must never carry a zero-value reason. PRODUCT_REPLACEMENT
+    // must resolve to an existing, non-voided historical order in this tenant.
+    const isZeroValue = totalAmount.lte(0);
+    if (isZeroValue && !input.zeroValueReason) {
+      throw new Error('A zero-value sale requires a zeroValueReason');
+    }
+    if (!isZeroValue && input.zeroValueReason) {
+      throw new Error('A zeroValueReason is only valid when the sale total is zero');
+    }
+
+    let resolvedLinkedOrderRef: string | null = null;
+    if (input.zeroValueReason === 'PRODUCT_REPLACEMENT') {
+      const ref = input.zeroValueLinkedOrderRef?.trim();
+      if (!ref) {
+        throw new Error('An original order reference is required for PRODUCT_REPLACEMENT sales');
+      }
+      const originalSale = await tx.sale.findFirst({
+        where: { id: ref, tenantId, status: { not: 'VOIDED' } },
+        select: { id: true },
+      });
+      if (!originalSale) {
+        throw new Error(`Original order ${ref} not found — replacement cannot be linked`);
+      }
+      resolvedLinkedOrderRef = ref;
+    }
+
+    // Zero-value sales settle with no payment leg.
+    const effectivePaymentMethod = isZeroValue ? 'NONE' : input.paymentMethod;
+
     // Create Sale
     const sale = await tx.sale.create({
       data: {
@@ -165,7 +211,9 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
         discountAmount: cartDiscount.toNumber(),
         taxAmount: totalTax.toNumber(),
         totalAmount: totalAmount.toNumber(),
-        paymentMethod: input.paymentMethod,
+        paymentMethod: effectivePaymentMethod,
+        zeroValueReason: input.zeroValueReason ?? null,
+        zeroValueLinkedOrderRef: resolvedLinkedOrderRef,
         authorizingManagerId: input.authorizingManagerId ?? null,
         status: 'COMPLETED',
         completedAt: new Date(),
@@ -201,10 +249,13 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       await createPayment({ saleId: sale.id, method: 'CASH', amount: totalAmount }, tx);
     } else if (input.paymentMethod === 'CARD') {
       await createPayment({ saleId: sale.id, method: 'CARD', amount: totalAmount, ...(input.cardReferenceNumber !== undefined && { cardReferenceNumber: input.cardReferenceNumber }) }, tx);
+    } else if (input.paymentMethod === 'LANKAQR') {
+      await createPayment({ saleId: sale.id, method: 'LANKAQR', amount: totalAmount, ...(input.cardReferenceNumber !== undefined && { cardReferenceNumber: input.cardReferenceNumber }) }, tx);
     } else if (input.paymentMethod === 'SPLIT') {
-      const cardAmt = new Decimal(input.cardAmount!);
-      const cashAmt = totalAmount.minus(cardAmt);
-      await createPayment({ saleId: sale.id, method: 'CARD', amount: cardAmt, ...(input.cardReferenceNumber !== undefined && { cardReferenceNumber: input.cardReferenceNumber }) }, tx);
+      const digitalAmt = new Decimal(input.cardAmount!);
+      const cashAmt = totalAmount.minus(digitalAmt);
+      const digitalLegMethod = input.splitLegMethod ?? 'CARD';
+      await createPayment({ saleId: sale.id, method: digitalLegMethod, amount: digitalAmt, ...(input.cardReferenceNumber !== undefined && { cardReferenceNumber: input.cardReferenceNumber }) }, tx);
       await createPayment({ saleId: sale.id, method: 'CASH', amount: cashAmt }, tx);
     }
 
@@ -237,14 +288,23 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     return completeSale;
   });
 
+  const zeroValue = new Decimal(result.totalAmount.toString()).lte(0);
   void createAuditLog({
     tenantId,
     actorId: input.cashierId,
     actorRole: 'CASHIER',
     entityType: 'Sale',
     entityId: result.id,
-    action: AUDIT_ACTIONS.SALE_COMPLETED,
-    after: { totalAmount: result.totalAmount, paymentMethod: result.paymentMethod, lineCount: result.lines.length },
+    action: zeroValue ? AUDIT_ACTIONS.SALE_ZERO_VALUE_COMPLETED : AUDIT_ACTIONS.SALE_COMPLETED,
+    after: {
+      totalAmount: result.totalAmount,
+      paymentMethod: result.paymentMethod,
+      lineCount: result.lines.length,
+      ...(zeroValue && {
+        zeroValueReason: result.zeroValueReason,
+        zeroValueLinkedOrderRef: result.zeroValueLinkedOrderRef,
+      }),
+    },
   }).catch(() => {});
 
   void dispatchWebhooks(tenantId, 'sale.completed', {
@@ -274,6 +334,35 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
   }
 
   return result;
+}
+
+// ── Validate Replacement Reference (doc 34) ─────────────────────────────────
+// Resolves an original order reference against historical, non-voided sales in
+// the tenant. Used by the POS UI to validate Product Replacement linkage before
+// enabling confirmation.
+export async function validateReplacementRef(
+  tenantId: string,
+  ref: string,
+): Promise<{ valid: boolean; message?: string; originalOrder?: { id: string; totalAmount: string; createdAt: Date } }> {
+  const trimmed = ref.trim();
+  if (!trimmed) {
+    return { valid: false, message: 'Enter an original order reference' };
+  }
+  const original = await prisma.sale.findFirst({
+    where: { id: trimmed, tenantId, status: { not: 'VOIDED' } },
+    select: { id: true, totalAmount: true, createdAt: true },
+  });
+  if (!original) {
+    return { valid: false, message: `Original order ${trimmed} not found` };
+  }
+  return {
+    valid: true,
+    originalOrder: {
+      id: original.id,
+      totalAmount: original.totalAmount.toString(),
+      createdAt: original.createdAt,
+    },
+  };
 }
 
 // ── Get Sale By ID ───────────────────────────────────────────────────────────

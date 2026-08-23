@@ -12,6 +12,13 @@ import type { CartLine } from '@/stores/cartStore';
 export interface PlaceOrderResult {
   deliveryId: string;
   orderRef: string;
+  /** Server-computed delivery fee (2dp string) stored on the ERP Delivery. */
+  shippingFee?: string;
+  /** Present for CARD orders — PayHere redirect target + hidden fields. */
+  payment?: {
+    payhereUrl: string;
+    payload: Record<string, string>;
+  };
 }
 
 export interface PlaceOrderError {
@@ -19,15 +26,25 @@ export interface PlaceOrderError {
   details?: { path: string; message: string }[];
 }
 
+export interface PlaceOrderOptions {
+  codAmount: number;
+  itemCount: number;
+  /** Optional total parcel weight (kg) used to price delivery. */
+  totalWeightKg?: number;
+  /** 'COD' (default) or 'CARD'. CARD returns a PayHere redirect payload. */
+  paymentMethod?: 'COD' | 'CARD';
+}
+
 /**
- * Place a website order for a tenant. Returns the generated order reference.
- * Throws on failure with a parsed error message.
+ * Place a website order for a tenant. Returns the generated order reference, the
+ * server-computed delivery fee, plus (for card orders) the PayHere redirect
+ * payload. Throws on failure with a parsed error message.
  */
 export async function placeOrder(
   tenantSlug: string,
   address: CheckoutAddressInput,
   lines: CartLine[],
-  totals: { codAmount: number; itemCount: number },
+  totals: PlaceOrderOptions,
 ): Promise<PlaceOrderResult> {
   const url = buildApiUrl(SITE.apiBaseUrl, `/api/public/site/${tenantSlug}/orders`);
   if (!url) {
@@ -46,7 +63,14 @@ export async function placeOrder(
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ ...address, lines: linePayload, ...totals }),
+    body: JSON.stringify({
+      ...address,
+      lines: linePayload,
+      codAmount: totals.codAmount,
+      itemCount: totals.itemCount,
+      ...(totals.totalWeightKg !== undefined ? { totalWeightKg: totals.totalWeightKg } : {}),
+      paymentMethod: totals.paymentMethod ?? 'COD',
+    }),
   });
 
   const json = (await response.json().catch(() => ({}))) as {

@@ -4,27 +4,20 @@ import { prisma } from '@/lib/prisma';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { updateShipmentStatus } from '@/lib/services/shipment.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
-import { transExpressAdapter } from '@/lib/courier';
+import { resolveAdapterForAccount } from '@/lib/courier/registry';
 import {
-  TRANSEXPRESS_STATUS_MAP,
   TERMINAL_DELIVERY_STATUSES,
   MIN_TRACKING_INTERVAL_MS,
   TRACKING_BATCH_SIZE,
 } from '@/lib/constants/courier';
-import type { CourierTracking } from '@/lib/courier/types';
-import type { DeliveryStatus, ShipmentStatus } from '@/generated/prisma/client';
+import type { CourierAdapter, CourierTracking } from '@/lib/courier/types';
+import type { DeliveryStatus } from '@/generated/prisma/client';
 
 /**
  * Tracking service — the no-webhook substitute. A cron route calls
  * processDueTrackingChecks() which polls non-terminal shipments in throttled
  * batches, diffs statuses, writes events, and triggers side effects.
  */
-
-function mapStatus(raw: string | undefined): { shipment: ShipmentStatus; delivery: DeliveryStatus } {
-  if (!raw) return { shipment: 'PROCESSING', delivery: 'IN_TRANSIT' };
-  const normalized = raw.trim().toLowerCase();
-  return TRANSEXPRESS_STATUS_MAP[normalized] ?? { shipment: 'PROCESSING', delivery: 'IN_TRANSIT' };
-}
 
 /**
  * Apply a single tracking payload to a shipment + delivery.
@@ -36,13 +29,14 @@ export async function applyTrackingUpdate(
   deliveryId: string,
   tenantId: string,
   tracking: CourierTracking,
+  adapter: Pick<CourierAdapter, 'mapStatus'>,
 ): Promise<{ changed: boolean; deliveryStatus: DeliveryStatus }> {
   setSentryTenantContext({ tenantId });
 
   const shipment = await prisma.courierShipment.findUnique({ where: { id: shipmentId } });
   if (!shipment) return { changed: false, deliveryStatus: 'IN_TRANSIT' };
 
-  const mapped = mapStatus(tracking.currentStatus);
+  const mapped = adapter.mapStatus(tracking.currentStatus);
   const existingEvents = await prisma.deliveryEvent.findMany({
     where: { shipmentId },
     select: { rawStatusName: true, eventAt: true },
@@ -154,37 +148,44 @@ export async function processDueTrackingChecks(): Promise<{ processed: number; f
 
   // Group by tenant so each tenant authenticates at most once per run.
   const tenantIds = Array.from(new Set(due.map((s) => s.delivery.tenantId)));
-  const tokensByTenant = new Map<string, string>();
+  const tokensByTenant = new Map<string, { token: string; adapter: CourierAdapter }>();
 
   for (const tenantId of tenantIds) {
     const account = await prisma.courierAccount.findFirst({ where: { tenantId, isActive: true } });
     if (!account) continue;
-    const auth = await transExpressAdapter.authenticate({
+    const adapter = resolveAdapterForAccount(account);
+    const auth = await adapter.authenticate({
       email: account.email ?? undefined,
       password: account.password ?? undefined,
       apiKey: account.apiKey ?? undefined,
       env: account.env,
     });
-    if (auth.ok) tokensByTenant.set(tenantId, auth.data);
+    if (auth.ok) tokensByTenant.set(tenantId, { token: auth.data, adapter });
   }
 
   let processed = 0;
   let failed = 0;
 
   for (const shipment of due) {
-    const token = tokensByTenant.get(shipment.delivery.tenantId);
-    if (!token) {
+    const entry = tokensByTenant.get(shipment.delivery.tenantId);
+    if (!entry) {
       failed++;
       continue;
     }
 
-    const result = await transExpressAdapter.track(shipment.env, token, shipment.waybillId);
+    const result = await entry.adapter.track(shipment.env, entry.token, shipment.waybillId);
     if (!result.ok) {
       failed++;
       continue;
     }
 
-    await applyTrackingUpdate(shipment.id, shipment.deliveryId, shipment.delivery.tenantId, result.data);
+    await applyTrackingUpdate(
+      shipment.id,
+      shipment.deliveryId,
+      shipment.delivery.tenantId,
+      result.data,
+      entry.adapter,
+    );
     processed++;
   }
 

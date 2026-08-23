@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Info,
+  Wallet,
   XCircle,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +27,7 @@ const TYPE_ICONS = {
   STOCK_TAKE_APPROVED: CheckCircle2,
   STOCK_TAKE_REJECTED: XCircle,
   SYSTEM_ALERT: Info,
+  PETTY_CASH_LOW: Wallet,
 } as const;
 
 function formatRelativeTime(dateStr: string): string {
@@ -47,6 +49,8 @@ function getNotificationHref(type: string, relatedEntityId: string | null): stri
   switch (type) {
     case 'LOW_STOCK_ALERT':
       return '/stock-control/low-stock';
+    case 'PETTY_CASH_LOW':
+      return '/petty-cash';
     case 'STOCK_TAKE_SUBMITTED':
     case 'STOCK_TAKE_APPROVED':
     case 'STOCK_TAKE_REJECTED':

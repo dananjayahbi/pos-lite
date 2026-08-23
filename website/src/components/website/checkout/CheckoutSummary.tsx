@@ -1,6 +1,6 @@
 "use client";
 
-/** Order summary shown during checkout (items + COD total). */
+/** Order summary shown during checkout (items + delivery fee + total). */
 
 import { formatLKR } from '@/lib/utils';
 import { computeCartTotals } from '@/lib/cart';
@@ -9,10 +9,14 @@ import type { CartLine } from '@/stores/cartStore';
 interface CheckoutSummaryProps {
   tenantSlug: string;
   lines: CartLine[];
+  /** Server-computed delivery fee (2dp string). When null, not yet priced. */
+  shippingFee?: string | null;
 }
 
-export function CheckoutSummary({ lines }: CheckoutSummaryProps) {
+export function CheckoutSummary({ lines, shippingFee }: CheckoutSummaryProps) {
   const totals = computeCartTotals(lines);
+  const fee = shippingFee !== null && shippingFee !== undefined ? Number(shippingFee) : null;
+  const orderTotal = totals.subtotal + (fee ?? 0);
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4">
@@ -54,11 +58,15 @@ export function CheckoutSummary({ lines }: CheckoutSummaryProps) {
         </div>
         <div className="flex items-center justify-between">
           <span className="text-gray-500">Delivery</span>
-          <span className="text-gray-500">Calculated on delivery</span>
+          {fee === null ? (
+            <span className="text-gray-500">Calculated on delivery</span>
+          ) : (
+            <span className="font-medium text-gray-800">{formatLKR(fee)}</span>
+          )}
         </div>
         <div className="flex items-center justify-between border-t border-gray-100 pt-2">
-          <span className="font-medium text-gray-800">COD total</span>
-          <span className="text-lg font-semibold text-gray-900">{totals.formattedSubtotal}</span>
+          <span className="font-medium text-gray-800">Order total</span>
+          <span className="text-lg font-semibold text-gray-900">{formatLKR(orderTotal)}</span>
         </div>
       </div>
 

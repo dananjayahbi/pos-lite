@@ -29,6 +29,8 @@ export interface AdjustStockOptions {
   saleId?: string | undefined;
   purchaseOrderId?: string | undefined;
   stockTakeSessionId?: string | undefined;
+  /** Optional originating batch (doc 29) for traceability of the movement. */
+  batchId?: string | undefined;
 }
 
 export interface AdjustStockInput {
@@ -113,6 +115,7 @@ export async function adjustStockInTx(
       saleId: options.saleId ?? null,
       purchaseOrderId: options.purchaseOrderId ?? null,
       stockTakeSessionId: options.stockTakeSessionId ?? null,
+      batchId: options.batchId ?? null,
     },
   });
 
@@ -163,6 +166,7 @@ export async function bulkAdjustStock(input: BulkAdjustStockInput) {
         saleId: adj.saleId,
         purchaseOrderId: adj.purchaseOrderId,
         stockTakeSessionId: adj.stockTakeSessionId,
+        batchId: adj.batchId,
       });
       results.push(result);
     }

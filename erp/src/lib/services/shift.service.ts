@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
-import type { ShiftStatus, SaleStatus, PaymentMethod, PaymentLegMethod, ReturnRefundMethod } from '@/generated/prisma/client';
+import type { ShiftStatus, SaleStatus, PaymentMethod, ReturnRefundMethod } from '@/generated/prisma/client';
+import { sumPaymentBreakdown } from '@/lib/services/paymentBreakdown';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 
 // ── Open Shift ───────────────────────────────────────────────────────────────
@@ -86,7 +87,7 @@ export async function closeShift(
   });
 
   // Aggregate COMPLETED sales
-  const [salesAggregate, cashAggregate, cardAggregate, salesCount] = await Promise.all([
+  const [salesAggregate, cashAggregate, cardAggregate, qrAggregate, salesCount] = await Promise.all([
     prisma.sale.aggregate({
       where: { shiftId, status: 'COMPLETED' satisfies SaleStatus },
       _sum: { totalAmount: true },
@@ -107,6 +108,14 @@ export async function closeShift(
       },
       _sum: { totalAmount: true },
     }),
+    prisma.sale.aggregate({
+      where: {
+        shiftId,
+        status: 'COMPLETED' satisfies SaleStatus,
+        paymentMethod: 'LANKAQR' satisfies PaymentMethod,
+      },
+      _sum: { totalAmount: true },
+    }),
     prisma.sale.count({
       where: { shiftId, status: 'COMPLETED' satisfies SaleStatus },
     }),
@@ -117,6 +126,7 @@ export async function closeShift(
   const totalSalesAmount = new Decimal(salesAggregate._sum.totalAmount?.toString() ?? '0');
   const totalCashAmount = new Decimal(cashAggregate._sum.totalAmount?.toString() ?? '0');
   const totalCardAmount = new Decimal(cardAggregate._sum.totalAmount?.toString() ?? '0');
+  const totalQrAmount = new Decimal(qrAggregate._sum.totalAmount?.toString() ?? '0');
 
   const now = new Date();
 
@@ -176,6 +186,7 @@ export async function closeShift(
         totalReturnsAmount: totalReturnsAmount.toNumber(),
         totalCashAmount: totalCashAmount.toNumber(),
         totalCardAmount: totalCardAmount.toNumber(),
+        totalQrAmount: totalQrAmount.toNumber(),
         closedById: actorId,
         closedAt: now,
       },
@@ -370,6 +381,7 @@ export interface ZReportData {
     totalSalesAmount: number;
     cashSalesAmount: number;
     cardSalesAmount: number;
+    lankaqrSalesAmount: number;
     voidedSalesCount: number;
     totalDiscountAmount: number;
   };
@@ -425,21 +437,19 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
   });
 
   let totalSalesAmount = new Decimal(0);
-  let cashSalesAmount = new Decimal(0);
-  let cardSalesAmount = new Decimal(0);
+  const paymentBreakdown = sumPaymentBreakdown(
+    completedSales.flatMap((s) => s.payments),
+  );
   let totalDiscountAmount = new Decimal(0);
 
   for (const sale of completedSales) {
     totalSalesAmount = totalSalesAmount.plus(new Decimal(sale.totalAmount.toString()));
     totalDiscountAmount = totalDiscountAmount.plus(new Decimal(sale.discountAmount.toString()));
-    for (const payment of sale.payments) {
-      if (payment.method === ('CASH' satisfies PaymentLegMethod)) {
-        cashSalesAmount = cashSalesAmount.plus(new Decimal(payment.amount.toString()));
-      } else {
-        cardSalesAmount = cardSalesAmount.plus(new Decimal(payment.amount.toString()));
-      }
-    }
   }
+
+  const cashSalesAmount = paymentBreakdown.cash;
+  const cardSalesAmount = paymentBreakdown.card;
+  const lankaqrSalesAmount = paymentBreakdown.lankaqr;
 
   // Top products sold
   const productSalesMap = new Map<string, { productName: string; variantDescription: string; totalQtySold: number; totalRevenue: Decimal }>();
@@ -544,6 +554,7 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
       totalSalesAmount: totalSalesAmount.toDecimalPlaces(2).toNumber(),
       cashSalesAmount: cashSalesAmount.toDecimalPlaces(2).toNumber(),
       cardSalesAmount: cardSalesAmount.toDecimalPlaces(2).toNumber(),
+      lankaqrSalesAmount: lankaqrSalesAmount.toDecimalPlaces(2).toNumber(),
       voidedSalesCount,
       totalDiscountAmount: totalDiscountAmount.toDecimalPlaces(2).toNumber(),
     },

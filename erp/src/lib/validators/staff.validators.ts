@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ALL_PERMISSIONS } from '@/lib/constants/permissions';
 
-const StaffRole = z.enum(['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK']);
+const StaffRole = z.enum(['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK', 'FACTORY_MANAGER']);
 const PermissionValueSchema = z.string().refine((value) => ALL_PERMISSIONS.includes(value as (typeof ALL_PERMISSIONS)[number]), {
   message: 'Invalid permission value',
 });

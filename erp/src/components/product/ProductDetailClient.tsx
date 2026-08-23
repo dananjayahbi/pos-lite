@@ -49,10 +49,14 @@ import { ProductDetailsCard } from '@/components/product/ProductDetailsCard';
 import { VariantsTab } from '@/components/product/VariantsTab';
 import { StockHistoryTab } from '@/components/product/StockHistoryTab';
 import { TagInput } from '@/components/product/TagInput';
+import { HealthContentFields } from '@/components/product/HealthContentFields';
+import { HealthConcernMultiSelect } from '@/components/product/HealthConcernMultiSelect';
 import { MainImageUpload } from '@/components/product/MainImageUpload';
 import { useProduct } from '@/hooks/useProduct';
 import { useCategories } from '@/hooks/useCategories';
 import { useBrands } from '@/hooks/useBrands';
+import type { HealthConcern } from '@/generated/prisma/client';
+import { HEALTH_CONCERNS } from '@/lib/constants/health-concerns';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +78,12 @@ const editProductSchema = z.object({
   tags: z.array(z.string()).max(20, 'Maximum 20 tags'),
   taxRule: z.enum(['STANDARD_VAT', 'SSCL', 'EXEMPT']),
   mainImageUrl: z.string().max(500).optional(),
+  activeIngredients: z.string().max(5000).optional(),
+  usageInstructions: z.string().max(5000).optional(),
+  healthBenefits: z.string().max(5000).optional(),
+  safetyPrecautions: z.string().max(5000).optional(),
+  healthConcerns: z.array(z.enum(HEALTH_CONCERNS)).optional(),
+  productSource: z.enum(['MANUFACTURED', 'TRADED']),
 });
 
 type EditProductFormData = z.infer<typeof editProductSchema>;
@@ -383,6 +393,12 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
       tags: (product.tags as string[]) ?? [],
       taxRule: (product.taxRule as EditProductFormData['taxRule']) ?? 'STANDARD_VAT',
       mainImageUrl: (product.mainImageUrl as string) ?? '',
+      activeIngredients: (product.activeIngredients as string) ?? '',
+      usageInstructions: (product.usageInstructions as string) ?? '',
+      healthBenefits: (product.healthBenefits as string) ?? '',
+      safetyPrecautions: (product.safetyPrecautions as string) ?? '',
+      healthConcerns: (product.healthConcerns as HealthConcern[] | undefined) ?? [],
+      productSource: (product.productSource as EditProductFormData['productSource']) ?? 'MANUFACTURED',
     },
   });
 
@@ -463,6 +479,17 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
             )}
           </div>
 
+          {/* Health information */}
+          <HealthContentFields register={form.register} />
+
+          {/* Health Concerns */}
+          <HealthConcernMultiSelect
+            value={form.watch('healthConcerns') ?? []}
+            onChange={(v) =>
+              form.setValue('healthConcerns', v, { shouldDirty: true })
+            }
+          />
+
           {/* Category */}
           <div className="space-y-1.5">
             <Label className="font-body text-sm text-espresso">Category</Label>
@@ -527,6 +554,29 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
                 <SelectItem value="EXEMPT">VAT Exempt</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Product Source */}
+          <div className="space-y-1.5">
+            <Label className="font-body text-sm text-espresso">Product Source</Label>
+            <Select
+              value={form.watch('productSource')}
+              onValueChange={(v) =>
+                form.setValue('productSource', v as EditProductFormData['productSource'], { shouldValidate: true })
+              }
+            >
+              <SelectTrigger className="border-sand">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="MANUFACTURED">Manufactured</SelectItem>
+                <SelectItem value="TRADED">Traded</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-mist">
+              Manufactured goods are eligible for Bill of Materials &amp;
+              production; traded goods are resold as-is.
+            </p>
           </div>
 
           {/* Tags */}

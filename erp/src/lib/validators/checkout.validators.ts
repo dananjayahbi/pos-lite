@@ -32,6 +32,8 @@ export const WebsiteCheckoutSchema = z.object({
   totalWeightKg: z.number().min(0).optional(),
   notes: z.string().max(500).optional(),
   lines: z.array(CheckoutLineSchema).max(200).optional(),
+  // Payment selection: COD (default) or CARD via PayHere.
+  paymentMethod: z.enum(['COD', 'CARD']).default('COD'),
 });
 
 export type WebsiteCheckoutInput = z.infer<typeof WebsiteCheckoutSchema>;

@@ -22,6 +22,15 @@ export function ProductCard({
 
   const firstImage = variants.find((v) => v.imageUrls.length > 0)?.imageUrls[0];
 
+  // Any variant with an expired or near-expiry batch triggers the badge.
+  const hasNearExpiry = variants.some((v) =>
+    (v.batchTrackings ?? []).some((b) => {
+      if (!b.expiryDate) return false;
+      const diff = new Date(b.expiryDate).getTime() - Date.now();
+      return diff <= 30 * 86_400_000;
+    }),
+  );
+
   const minPrice = variants.length > 0
     ? Math.min(...variants.map((v) => v.retailPrice))
     : 0;
@@ -77,6 +86,14 @@ export function ProductCard({
           <span className="absolute top-1 right-1 flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-body text-[#B7791F] bg-[#B7791F]/10">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#B7791F]" />
             Low
+          </span>
+        )}
+
+        {/* Near-expiry badge (doc 30) */}
+        {hasNearExpiry && (
+          <span className="absolute top-1 left-1 flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-body text-[#9B2226] bg-[#9B2226]/10">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#9B2226]" />
+            Expiring
           </span>
         )}
       </div>

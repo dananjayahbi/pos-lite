@@ -24,6 +24,8 @@ export function SplitPaymentModal({
   totalAmount,
   salePayload,
 }: PaymentModalProps) {
+  type DigitalLegMethod = 'CARD' | 'LANKAQR';
+  const [digitalMethod, setDigitalMethod] = useState<DigitalLegMethod>('CARD');
   const [cardAmountStr, setCardAmountStr] = useState('');
   const [cashReceived, setCashReceived] = useState('');
   const [cardReferenceNumber, setCardReferenceNumber] = useState('');
@@ -32,12 +34,15 @@ export function SplitPaymentModal({
   // Reset all state when dialog closes
   useEffect(() => {
     if (!open) {
+      setDigitalMethod('CARD');
       setCardAmountStr('');
       setCashReceived('');
       setCardReferenceNumber('');
       setIsSubmitting(false);
     }
   }, [open]);
+
+  const isQrLeg = digitalMethod === 'LANKAQR';
 
   // ── Derived values ────────────────────────────────────────────────────
 
@@ -145,6 +150,7 @@ export function SplitPaymentModal({
         body: JSON.stringify({
           ...salePayload,
           paymentMethod: 'SPLIT',
+          splitLegMethod: digitalMethod,
           cardAmount: parsedCardAmount.toNumber(),
           cardReferenceNumber,
           cashReceived: parsedCashReceived.toNumber(),
@@ -187,7 +193,8 @@ export function SplitPaymentModal({
         <DialogHeader>
           <DialogTitle className="font-display">Split Payment</DialogTitle>
           <DialogDescription className="font-body text-sm text-mist">
-            Part card, part cash — both amounts must add up to the total.
+            Part digital (card / LankaQR), part cash — both amounts must add up
+            to the total.
           </DialogDescription>
         </DialogHeader>
 
@@ -202,10 +209,41 @@ export function SplitPaymentModal({
             </p>
           </div>
 
-          {/* Card Amount */}
+          {/* Digital leg method toggle */}
           <div>
             <label className="mb-1 block text-sm font-body text-espresso">
-              Amount to charge to card
+              Digital payment method
+            </label>
+            <div className="grid grid-cols-2 gap-1 rounded-lg border border-mist bg-sand/20 p-1">
+              <button
+                type="button"
+                onClick={() => setDigitalMethod('CARD')}
+                className={`rounded-md px-3 py-2 text-sm font-body transition-colors ${
+                  digitalMethod === 'CARD'
+                    ? 'bg-espresso text-pearl'
+                    : 'text-espresso hover:bg-linen'
+                }`}
+              >
+                Card
+              </button>
+              <button
+                type="button"
+                onClick={() => setDigitalMethod('LANKAQR')}
+                className={`rounded-md px-3 py-2 text-sm font-body transition-colors ${
+                  digitalMethod === 'LANKAQR'
+                    ? 'bg-espresso text-pearl'
+                    : 'text-espresso hover:bg-linen'
+                }`}
+              >
+                LankaQR
+              </button>
+            </div>
+          </div>
+
+          {/* Digital Amount */}
+          <div>
+            <label className="mb-1 block text-sm font-body text-espresso">
+              Amount to charge to {isQrLeg ? 'LankaQR' : 'card'}
             </label>
             <div className="flex items-center gap-2">
               <span className="shrink-0 font-body text-sm text-mist">Rs.</span>
@@ -265,7 +303,8 @@ export function SplitPaymentModal({
                 <CheckCircle2 className="h-4 w-4 shrink-0" />
               )}
               <span>
-                Card: {formatRupee(parsedCardAmount.toNumber())} + Cash:{' '}
+                {isQrLeg ? 'LankaQR' : 'Card'}:{' '}
+                {formatRupee(parsedCardAmount.toNumber())} + Cash:{' '}
                 {formatRupee(cashAmount.toNumber())} ={' '}
                 {formatRupee(
                   parsedCardAmount.plus(cashAmount).toNumber(),
@@ -315,13 +354,19 @@ export function SplitPaymentModal({
             </div>
           )}
 
-          {/* Card Approval Code */}
+          {/* Digital Approval / QR Reference */}
           <div>
             <div className="mb-1 flex items-center gap-1">
               <label className="text-sm font-body text-espresso">
-                Approval Code
+                {isQrLeg ? 'QR Reference (optional)' : 'Approval Code'}
               </label>
-              <span title="Used for reconciliation with your card terminal">
+              <span
+                title={
+                  isQrLeg
+                    ? 'Used for reconciliation with your bank QR records'
+                    : 'Used for reconciliation with your card terminal'
+                }
+              >
                 <Info className="h-3.5 w-3.5 text-mist cursor-help" />
               </span>
             </div>

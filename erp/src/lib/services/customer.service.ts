@@ -124,11 +124,79 @@ export async function getCustomerById(tenantId: string, customerId: string) {
     ? totalSpend.div(visitCount).toDecimalPlaces(2)
     : new Decimal(0);
 
+  const preferredCategories = await getPreferredCategories(tenantId, customerId);
+
   return {
     ...customer,
+    orderCount: visitCount,
     visitCount,
     avgOrderValue: avgOrderValue.toString(),
+    preferredCategories,
   };
+}
+
+// ── Preferred categories (doc 21) ────────────────────────────────────────────
+
+export interface PreferredCategory {
+  categoryId: string;
+  categoryName: string;
+  /** Total quantity purchased across the customer's sales. */
+  quantity: number;
+  /** Sum of line totals (after discount) across the customer's sales. */
+  lineTotal: string;
+}
+
+/**
+ * Aggregate the customer's sales lines, joined through variant → product →
+ * category, and return categories ranked by quantity (top 5). Returns an
+ * empty array when the customer has no sale lines or none are categorized.
+ */
+export async function getPreferredCategories(
+  tenantId: string,
+  customerId: string,
+): Promise<PreferredCategory[]> {
+  const lines = await prisma.saleLine.findMany({
+    where: { sale: { tenantId, customerId } },
+    select: {
+      quantity: true,
+      lineTotalAfterDiscount: true,
+      variant: {
+        select: {
+          product: {
+            select: {
+              categoryId: true,
+              category: { select: { name: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const byCategory = new Map<string, PreferredCategory>();
+  for (const line of lines) {
+    const categoryId = line.variant.product.categoryId;
+    const categoryName = line.variant.product.category.name;
+    const lineTotal = new Decimal(line.lineTotalAfterDiscount.toString());
+    const existing = byCategory.get(categoryId);
+    if (existing) {
+      existing.quantity += line.quantity;
+      existing.lineTotal = new Decimal(existing.lineTotal)
+        .plus(lineTotal)
+        .toFixed(2);
+    } else {
+      byCategory.set(categoryId, {
+        categoryId,
+        categoryName,
+        quantity: line.quantity,
+        lineTotal: lineTotal.toFixed(2),
+      });
+    }
+  }
+
+  return [...byCategory.values()]
+    .sort((a, b) => b.quantity - a.quantity)
+    .slice(0, 5);
 }
 
 // ── List ─────────────────────────────────────────────────────────────────────
@@ -138,14 +206,37 @@ interface GetCustomersOptions {
   tag?: string | undefined;
   spendMin?: number | undefined;
   spendMax?: number | undefined;
+  /** When true, only include customers with ≥ REPEAT_ORDER_THRESHOLD orders. */
+  repeatBuyers?: boolean | undefined;
+  /** Alternative to repeatBuyers: explicit minimum order count. */
+  minOrders?: number | undefined;
   page?: number | undefined;
   limit?: number | undefined;
+}
+
+/** Collect customer ids whose sale count meets the minimum (separate query path). */
+async function getCustomerIdsWithMinOrders(
+  tenantId: string,
+  minOrders: number,
+): Promise<string[]> {
+  const grouped = await prisma.sale.groupBy({
+    by: ['customerId'],
+    where: { tenantId, customerId: { not: null } },
+    _count: { _all: true },
+  });
+  return grouped
+    .filter((g) => g.customerId !== null && g._count._all >= minOrders)
+    .map((g) => g.customerId as string);
 }
 
 export async function getCustomers(tenantId: string, options: GetCustomersOptions) {
   const page = Math.max(1, options.page ?? 1);
   const limit = Math.min(100, Math.max(1, options.limit ?? 20));
   const skip = (page - 1) * limit;
+
+  const minOrders = options.repeatBuyers
+    ? Math.max(options.minOrders ?? 1, 2)
+    : (options.minOrders ?? 0);
 
   const andConditions: Record<string, unknown>[] = [
     { tenantId },
@@ -173,6 +264,11 @@ export async function getCustomers(tenantId: string, options: GetCustomersOption
     andConditions.push({ totalSpend: { lte: options.spendMax } });
   }
 
+  if (minOrders > 0) {
+    const ids = await getCustomerIdsWithMinOrders(tenantId, minOrders);
+    andConditions.push({ id: { in: ids } });
+  }
+
   const where = { AND: andConditions };
 
   const [customers, total] = await Promise.all([
@@ -181,12 +277,17 @@ export async function getCustomers(tenantId: string, options: GetCustomersOption
       orderBy: { createdAt: 'desc' },
       skip,
       take: limit,
+      include: { _count: { select: { sales: true } } },
     }),
     prisma.customer.count({ where }),
   ]);
 
   return {
-    customers,
+    customers: customers.map((c) => ({
+      ...c,
+      orderCount: c._count.sales,
+      _count: undefined,
+    })),
     total,
     page,
     totalPages: Math.ceil(total / limit),
@@ -271,6 +372,7 @@ export async function addToSpendTotal(
     where: { id: customerId },
     data: {
       totalSpend: { increment: amount.toNumber() },
+      lastPurchaseAt: new Date(),
     },
   });
 

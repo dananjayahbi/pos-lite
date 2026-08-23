@@ -10,6 +10,7 @@ import {
   autoGenerateNextInvoice,
   generateAndEmailInvoicePdf,
 } from "@/lib/billing/invoice.service";
+import { processOrderPaymentStatus } from "@/lib/services/order-payment.service";
 
 // ─── PayHere IPN Webhook ────────────────────────────────────────────────────
 // Receives Instant Payment Notifications from PayHere payment gateway.
@@ -89,6 +90,32 @@ export async function POST(request: NextRequest) {
 
     // Stop processing if signature invalid
     if (!signatureValid) {
+      return NextResponse.json({ received: true }, { status: 200 });
+    }
+
+    // ── Customer (website) order IPN ────────────────────────────────────
+    // Order payments are sent with custom_2 = "order:<deliveryId>". Resolve
+    // the delivery and update its payment status. Billing (invoice) payments
+    // are the default path below.
+    const custom2 = params.get("custom_2") ?? "";
+    if (custom2.startsWith("order:")) {
+      const deliveryId = custom2.slice("order:".length);
+      try {
+        const { updated, status } = await processOrderPaymentStatus(
+          deliveryId,
+          parseInt(status_code) || 0,
+        );
+        if (!updated) {
+          console.warn(
+            "[PayHere IPN] Order payment not updated:",
+            deliveryId,
+            "status:",
+            status,
+          );
+        }
+      } catch (e) {
+        console.error("[PayHere IPN] Failed to process order payment:", e);
+      }
       return NextResponse.json({ received: true }, { status: 200 });
     }
 

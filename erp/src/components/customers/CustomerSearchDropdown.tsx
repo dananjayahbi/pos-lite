@@ -4,16 +4,18 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { LoyaltyBadge } from '@/components/customers/LoyaltyBadge';
 
 interface CustomerResult {
   id: string;
   name: string;
   phone: string;
   creditBalance: string;
+  orderCount: number;
 }
 
 interface CustomerSearchDropdownProps {
-  onSelect: (customer: { id: string; name: string; creditBalance: string }) => void;
+  onSelect: (customer: { id: string; name: string; phone: string; creditBalance: string }) => void;
   onClear: () => void;
 }
 
@@ -79,12 +81,15 @@ export function CustomerSearchDropdown({ onSelect, onClear }: CustomerSearchDrop
               type="button"
               className="w-full text-left px-3 py-2 hover:bg-linen transition-colors"
               onClick={() => {
-                onSelect({ id: c.id, name: c.name, creditBalance: String(c.creditBalance) });
+                onSelect({ id: c.id, name: c.name, phone: c.phone, creditBalance: String(c.creditBalance) });
                 setSearch('');
                 setOpen(false);
               }}
             >
-              <p className="font-body text-sm text-espresso font-medium">{c.name}</p>
+              <p className="font-body text-sm text-espresso font-medium flex items-center gap-1.5">
+                {c.name}
+                <LoyaltyBadge orderCount={c.orderCount} size="sm" />
+              </p>
               <p className="font-mono text-xs text-mist">{c.phone}</p>
             </button>
           ))}

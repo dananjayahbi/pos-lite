@@ -166,6 +166,7 @@ function ShiftReportPageContent() {
         <Row label="Total Sales Amount" value={formatRupee(sales.totalSalesAmount)} />
         <Row label="Cash Sales" value={formatRupee(sales.cashSalesAmount)} />
         <Row label="Card Sales" value={formatRupee(sales.cardSalesAmount)} />
+        <Row label="LankaQR Sales" value={formatRupee(sales.lankaqrSalesAmount)} />
         <Row label="Voided Sales" value={String(sales.voidedSalesCount)} />
         <Row label="Total Discounts Given" value={formatRupee(sales.totalDiscountAmount)} />
       </section>

@@ -9,6 +9,12 @@ export interface Step1Data {
   tags: string[];
   taxRule: TaxRule;
   mainImageUrl: string;
+  activeIngredients: string;
+  usageInstructions: string;
+  healthBenefits: string;
+  safetyPrecautions: string;
+  healthConcerns: string[];
+  productSource: 'MANUFACTURED' | 'TRADED';
 }
 
 export interface Step2Data {

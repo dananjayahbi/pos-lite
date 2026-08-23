@@ -11,6 +11,8 @@ import { StatusBadge } from '@/components/delivery/StatusBadge';
 import { DeliveryDetailPanel } from '@/components/delivery/DeliveryDetailPanel';
 import { DispatchSheet } from '@/components/delivery/DispatchSheet';
 import { printShippingLabel } from '@/components/delivery/labels/ShippingLabel';
+import { printOrderInvoice } from '@/components/delivery/invoices/printOrderInvoice';
+import { toast } from 'sonner';
 import { useState } from 'react';
 
 interface DeliveryDetailPageClientProps {
@@ -46,6 +48,16 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
             onClick={() => printShippingLabel(delivery, labelTemplate ?? DEFAULT_LABEL_TEMPLATE)}
           >
             Print Label
+          </Button>
+        )}
+        {delivery && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              void printOrderInvoice(delivery.id).catch((e: Error) => toast.error(e.message));
+            }}
+          >
+            Print Invoice
           </Button>
         )}
         {canDispatch && delivery?.status === 'PENDING_DISPATCH' && (

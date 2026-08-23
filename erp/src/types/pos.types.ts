@@ -11,9 +11,13 @@ export interface CreateSalePayload {
   cartDiscountAmount: number;
   authorizingManagerId?: string;
   customerId?: string | undefined;
+  splitLegMethod?: 'CARD' | 'LANKAQR' | undefined;
   appliedStoreCredit?: string | undefined;
   appliedPromotions?: unknown | undefined;
   promoCode?: string | undefined;
+  // Doc 33 / 34: zero-value reason + linked original order reference.
+  zeroValueReason?: 'BANK_PAYMENT' | 'PRODUCT_REPLACEMENT' | 'COMPLIMENTARY_GIFT' | undefined;
+  zeroValueLinkedOrderRef?: string | undefined;
 }
 
 /** Sale object returned by POST /api/store/sales on success */

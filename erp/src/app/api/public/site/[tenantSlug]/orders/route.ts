@@ -16,6 +16,7 @@ import {
 } from '@/lib/api/cors';
 import { isModuleEnabled } from '@/lib/feature-guard';
 import { createWebsiteOrder } from '@/lib/services/order.service';
+import { buildOrderPayherePayload } from '@/lib/services/order-payment.service';
 import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 import { WebsiteCheckoutSchema } from '@/lib/validators/checkout.validators';
 
@@ -39,7 +40,7 @@ export async function POST(
 
   const tenant = await prisma.tenant.findFirst({
     where: { slug: tenantSlug, deletedAt: null },
-    select: { id: true, status: true, settings: true },
+    select: { id: true, name: true, status: true, settings: true },
   });
 
   if (!tenant) {
@@ -68,6 +69,23 @@ export async function POST(
   try {
     const result = await createWebsiteOrder(tenant.id, parsed.data);
 
+    // For card orders, build the PayHere redirect payload so the storefront
+    // can submit the customer to the gateway. COD orders need no payload.
+    let payment: { payhereUrl: string; payload: Record<string, string> } | undefined;
+    if (parsed.data.paymentMethod === 'CARD') {
+      const order = await prisma.delivery.findUnique({
+        where: { id: result.deliveryId },
+        select: { id: true, codAmount: true, orderRef: true },
+      });
+      if (order) {
+        payment = buildOrderPayherePayload(order, {
+          id: tenant.id,
+          slug: tenantSlug,
+          name: tenant.name,
+        });
+      }
+    }
+
     // Purge the storefront's product/catalog caches so availability & any
     // stock-derived data reflects the new order. Best-effort — never fail
     // the order placement if revalidation is unavailable.
@@ -77,7 +95,11 @@ export async function POST(
       console.warn('[POST /api/public/site/[tenantSlug]/orders] Revalidation warning:', revalidateErr);
     }
 
-    return jsonWithCors(request, { success: true, data: result }, { status: 201 });
+    return jsonWithCors(
+      request,
+      { success: true, data: { ...result, payment } },
+      { status: 201 },
+    );
   } catch (error) {
     console.error('POST /api/public/site/[tenantSlug]/orders error:', error);
     return errorWithCors(request, 500, 'An unexpected error occurred');

@@ -7,6 +7,7 @@ import Link from 'next/link';
 import type { WebsiteConfigData } from '@/types/website.types';
 import { tenantHomePath } from '@/lib/tenant';
 import { CartIcon } from '@/components/website/cart/CartIcon';
+import { HeaderSearch } from './HeaderSearch';
 
 interface WebsiteHeaderProps {
   config: WebsiteConfigData;
@@ -33,11 +34,12 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
   const siteName = config.siteName || 'Store';
   const homeHref = tenantHomePath(tenantSlug);
 
-  // Default nav items if none configured: SHOP, ABOUT, CONTACT
+  // Default nav items if none configured: SHOP, ABOUT, CONTACT, TRACK
   const defaultNav = [
     { label: 'SHOP', href: '/shop' },
     { label: 'ABOUT', href: '/about' },
     { label: 'CONTACT', href: '/contact' },
+    { label: 'TRACK', href: '/track' },
   ];
   const navItems = (config.navItems && config.navItems.length > 0
     ? config.navItems
@@ -93,6 +95,11 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
               </Link>
             ))}
           </nav>
+
+          {/* Sitewide search — left aligned (desktop) */}
+          <div className="header-search-wrap hidden md:block">
+            <HeaderSearch tenantSlug={tenantSlug} />
+          </div>
 
           {/* Cart icon — right aligned */}
           <div className="header-cart-icon">
@@ -208,6 +215,12 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
         .header-cart-icon {
           position: absolute;
           right: 20px;
+          display: flex;
+          align-items: center;
+        }
+        .header-search-wrap {
+          position: absolute;
+          left: 20px;
           display: flex;
           align-items: center;
         }

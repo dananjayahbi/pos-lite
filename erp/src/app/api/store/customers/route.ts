@@ -39,6 +39,7 @@ export async function GET(request: Request) {
       tag: searchParams.get('tag') ?? undefined,
       spendMin: searchParams.get('spendMin') ? Number(searchParams.get('spendMin')) : undefined,
       spendMax: searchParams.get('spendMax') ? Number(searchParams.get('spendMax')) : undefined,
+      repeatBuyers: searchParams.get('repeatBuyers') === 'true' ? true : undefined,
       page: searchParams.get('page') ? Number(searchParams.get('page')) : undefined,
       limit: searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined,
     });

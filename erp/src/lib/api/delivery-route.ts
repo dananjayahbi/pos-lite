@@ -99,6 +99,7 @@ export function mapDeliveryError(error: unknown): NextResponse | null {
   if (message === 'PACKAGING_ITEM_NOT_FOUND') return notFound('Packaging item not found');
   if (message === 'DELIVERY_NOT_EDITABLE') return badRequest('Delivery can only be edited before dispatch');
   if (message === 'DELIVERY_NOT_DISPATCHABLE') return conflict('Delivery is not in a dispatchable state');
+  if (message === 'DELIVERY_NOT_RECOVERABLE') return conflict('Delivery is not in a recoverable state');
   if (message === 'DELIVERY_ALREADY_DISPATCHED') return conflict('Delivery already has an active shipment');
   if (message === 'DELIVERY_MISSING_ADDRESS') return badRequest('Delivery has no shipping address');
   if (message === 'COURIER_ACCOUNT_NOT_CONFIGURED') return conflict('Save your Trans Express account before syncing locations');

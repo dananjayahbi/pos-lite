@@ -1,6 +1,12 @@
 import "server-only";
 
-import type { CarrierProvider, CourierEnv, WaybillMode } from "@/generated/prisma/client";
+import type {
+  CarrierProvider,
+  CourierEnv,
+  DeliveryStatus,
+  ShipmentStatus,
+  WaybillMode,
+} from "@/generated/prisma/client";
 
 /**
  * Courier adapter shared types.
@@ -93,16 +99,31 @@ export interface CourierTracking {
  * The transport-adapter contract. A concrete adapter (e.g. TransExpressAdapter)
  * implements this so dispatch/tracking services stay carrier-agnostic.
  */
+/** The credential fields a provider needs to authenticate. */
+export interface CourierAuthCredentials {
+  email?: string | undefined;
+  password?: string | undefined;
+  apiKey?: string | undefined;
+}
+
+/** Normalized status result produced by each provider's own status mapping. */
+export interface CourierStatusMapping {
+  shipment: ShipmentStatus;
+  delivery: DeliveryStatus;
+}
+
+/**
+ * The transport-adapter contract. A concrete adapter (e.g. TransExpressAdapter)
+ * implements this so dispatch/tracking services stay carrier-agnostic.
+ *
+ * Every provider must implement every operation so services can resolve a
+ * provider from the registry and call the same methods regardless of carrier.
+ */
 export interface CourierAdapter {
   readonly provider: CarrierProvider;
 
   /** Log in (or validate a stored token/API key) and return an auth token. */
-  authenticate(account: {
-    email?: string | undefined;
-    password?: string | undefined;
-    apiKey?: string | undefined;
-    env: CourierEnv;
-  }): Promise<CourierResult<string>>;
+  authenticate(account: CourierAuthCredentials & { env: CourierEnv }): Promise<CourierResult<string>>;
 
   /** Upload a single order; returns the issued waybill. */
   uploadSingle(
@@ -124,4 +145,36 @@ export interface CourierAdapter {
     districts: CourierDistrict[];
     cities: CourierCity[];
   }>>;
+
+  /**
+   * Map a provider's raw status string to the internal normalized Shipment /
+   * Delivery statuses. Kept on the adapter so each provider owns its own status
+   * vocabulary — the tracking pipeline stays provider-agnostic.
+   */
+  mapStatus(raw: string | undefined): CourierStatusMapping;
+}
+
+/**
+ * Static metadata for a courier provider — used by the config seam to describe
+ * what credentials / endpoints / hooks a provider needs without hardcoding the
+ * adapter resolution. Providers that are not yet integrated carry
+ * `implemented: false` and empty endpoint maps.
+ */
+export interface CourierProviderConfig {
+  provider: CarrierProvider;
+  /** Human-readable label (e.g. "Trans Express"). */
+  label: string;
+  /** Whether a concrete adapter is registered in the registry. */
+  implemented: boolean;
+  /** Credential fields the provider accepts for authentication. */
+  authFields: Array<keyof CourierAuthCredentials>;
+  /** Per-environment API base URLs (empty when not implemented). */
+  baseUrls: Partial<Record<CourierEnv, string>>;
+  /** Callback / notification hooks the provider may call (webhooks). */
+  hooks?: {
+    /** Base path for receiving shipment status webhooks from the carrier. */
+    statusWebhook?: string | undefined;
+    /** Base path for receiving delivery confirmation / failure callbacks. */
+    confirmationWebhook?: string | undefined;
+  };
 }

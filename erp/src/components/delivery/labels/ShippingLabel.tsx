@@ -1,8 +1,7 @@
 'use client';
 
-import { createRoot, type Root } from 'react-dom/client';
-import { flushSync } from 'react-dom';
 import Barcode from 'react-barcode';
+import { renderPrintOverlay } from '@/lib/print-overlay';
 import { cn } from '@/lib/utils';
 import type { DeliveryLabelTemplate } from '@/types/delivery-label';
 import { buildSampleLabelProps } from './sampleLabel';
@@ -205,76 +204,16 @@ export function toLabelProps(delivery: LabelDeliveryLike): {
 }
 
 /**
- * Renders arbitrary label content into a print overlay and triggers the dialog.
- * Only the content is printed; the rest of the app is hidden via print CSS.
- */
-function renderLabelOverlay(content: React.ReactNode): void {
-  const overlay = document.createElement('div');
-  overlay.className = 'shipping-label-print-root';
-  Object.assign(overlay.style, {
-    position: 'fixed',
-    inset: '0',
-    zIndex: '9999',
-    background: '#ffffff',
-    overflow: 'auto',
-    padding: '16px',
-  });
-  document.body.appendChild(overlay);
-
-  const root: Root = createRoot(overlay);
-  // flushSync commits the label BEFORE the print dialog opens, otherwise the
-  // browser may snapshot an empty overlay (createRoot.render is async).
-  flushSync(() => {
-    root.render(content);
-  });
-
-  const style = document.createElement('style');
-  style.textContent = `@media print {
-    body > *:not(.shipping-label-print-root) { display: none !important; }
-    .shipping-label-print-root { display: block !important; position: static !important; overflow: visible !important; padding: 8px !important; }
-  }
-  /* Force background colors and images to print regardless of the browser's
-     "Background graphics" print setting. */
-  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }`;
-  document.head.appendChild(style);
-
-  let fallback: number | undefined;
-  const cleanup = () => {
-    root.unmount();
-    overlay.remove();
-    style.remove();
-    window.removeEventListener('afterprint', cleanup);
-    if (fallback) window.clearTimeout(fallback);
-  };
-  fallback = window.setTimeout(cleanup, 5000);
-  window.addEventListener('afterprint', cleanup);
-
-  // Wait for images (e.g. the logo) to finish loading so they appear in the
-  // print snapshot, then trigger the dialog.
-  const images = Array.from(overlay.querySelectorAll('img'));
-  const imagePromises = images.map(
-    (img) =>
-      new Promise<void>((resolve) => {
-        if (img.complete) return resolve();
-        img.addEventListener('load', () => resolve(), { once: true });
-        img.addEventListener('error', () => resolve(), { once: true });
-      }),
-  );
-
-  Promise.all(imagePromises).then(() => window.print());
-}
-
-/**
  * Renders a real delivery's label into a print overlay. Only the label is
  * printed; the rest of the app is hidden via injected print CSS.
  */
 export function printShippingLabel(delivery: LabelDeliveryLike, template: DeliveryLabelTemplate): void {
-  renderLabelOverlay(<ShippingLabel template={template} {...toLabelProps(delivery)} />);
+  renderPrintOverlay(<ShippingLabel template={template} {...toLabelProps(delivery)} />);
 }
 
 /** Renders a sample label (from the designer) into the print overlay. */
 export function printSampleLabel(template: DeliveryLabelTemplate): void {
-  renderLabelOverlay(<ShippingLabel {...buildSampleLabelProps(template)} />);
+  renderPrintOverlay(<ShippingLabel {...buildSampleLabelProps(template)} />);
 }
 
 /**
@@ -286,7 +225,7 @@ export function printShippingLabels(
   template: DeliveryLabelTemplate,
 ): void {
   if (deliveries.length === 0) return;
-  renderLabelOverlay(
+  renderPrintOverlay(
     <div className="space-y-6">
       {deliveries.map((delivery) => (
         <ShippingLabel key={delivery.orderRef} template={template} {...toLabelProps(delivery)} />

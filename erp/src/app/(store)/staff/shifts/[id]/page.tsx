@@ -200,7 +200,7 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
               <div className="rounded-lg border border-mist p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-sand">Completed sales</p>
                 <p className="mt-2 font-display text-3xl text-espresso">{report.sales.totalSalesCount}</p>
-                <p className="mt-2 text-sm text-sand">Cash {formatRupee(report.sales.cashSalesAmount)} · Card {formatRupee(report.sales.cardSalesAmount)}</p>
+                <p className="mt-2 text-sm text-sand">Cash {formatRupee(report.sales.cashSalesAmount)} · Card {formatRupee(report.sales.cardSalesAmount)} · LankaQR {formatRupee(report.sales.lankaqrSalesAmount)}</p>
               </div>
               <div className="rounded-lg border border-mist p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-sand">Returns</p>

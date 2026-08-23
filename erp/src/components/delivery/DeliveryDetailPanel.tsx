@@ -8,6 +8,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StatusBadge } from './StatusBadge';
 import { StatusTimeline } from './StatusTimeline';
+import { RecoverySection } from './recovery/RecoverySection';
 import type { DeliveryAddress, DeliveryDetail } from '@/types/delivery';
 
 interface DeliveryDetailPanelProps {
@@ -136,6 +137,8 @@ export function DeliveryDetailPanel({ delivery }: DeliveryDetailPanelProps) {
             <StatusTimeline events={delivery.events ?? []} />
           </CardContent>
         </Card>
+
+        <RecoverySection delivery={delivery} />
 
         {canCancel && isPending && (
           <Button

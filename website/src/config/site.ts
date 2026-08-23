@@ -38,4 +38,5 @@ export const ROUTES = {
     `/${tenantSlug}/category/${categoryId}`,
   cart: (tenantSlug: string) => `/${tenantSlug}/cart`,
   checkout: (tenantSlug: string) => `/${tenantSlug}/checkout`,
+  track: (tenantSlug: string) => `/${tenantSlug}/track`,
 } as const;

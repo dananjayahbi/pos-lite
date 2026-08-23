@@ -10,8 +10,9 @@ interface RemittanceUploadProps {
 }
 
 /**
- * Labeled file input for uploading a Trans Express remittance CSV statement.
- * The statement is matched against the expected-receivables ledger by waybill.
+ * Labeled file input for uploading a Trans Express remittance statement
+ * (CSV or Excel). The statement is matched against the expected-receivables
+ * ledger by waybill, order reference, or barcode.
  */
 export function RemittanceUpload({ onImport }: RemittanceUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -31,11 +32,12 @@ export function RemittanceUpload({ onImport }: RemittanceUploadProps) {
             Import Remittance Statement
           </Label>
           <p className="mt-1 max-w-md text-xs text-espresso/50">
-            Upload the Trans Express portal CSV export. Expected columns:{' '}
+            Upload the Trans Express portal export (.csv, .xlsx, or .xls).
+            Expected columns:{' '}
             <span className="font-mono text-espresso/70">
               waybill, amount, fees, status, date
             </span>
-            . Matching is by waybill ID and is idempotent — re-uploading never double-settles.
+            . Matching is by waybill, order reference, or barcode and is idempotent — re-uploading never double-settles.
           </p>
         </div>
       </div>
@@ -44,12 +46,12 @@ export function RemittanceUpload({ onImport }: RemittanceUploadProps) {
           ref={inputRef}
           id="remittance-csv"
           type="file"
-          accept=".csv"
+          accept=".csv,.xlsx,.xls"
           className="sr-only"
           onChange={(e) => handleFile(e.target.files?.[0])}
         />
         <Button type="button" variant="outline" onClick={() => inputRef.current?.click()}>
-          Choose CSV
+          Choose file
         </Button>
       </div>
     </div>

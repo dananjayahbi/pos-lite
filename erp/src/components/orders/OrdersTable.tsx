@@ -12,6 +12,7 @@ interface OrdersTableProps {
   onToggleAll: () => void;
   onView: (id: string) => void;
   onPrint: (order: DeliveryListItem) => void;
+  onPrintInvoice: (order: DeliveryListItem) => void;
 }
 
 export function OrdersTable({
@@ -21,6 +22,7 @@ export function OrdersTable({
   onToggleAll,
   onView,
   onPrint,
+  onPrintInvoice,
 }: OrdersTableProps) {
   const allSelected = orders.length > 0 && orders.every((o) => selectedIds.has(o.id));
 
@@ -80,6 +82,9 @@ export function OrdersTable({
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => onPrint(order)}>
                       Print
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => onPrintInvoice(order)}>
+                      Invoice
                     </Button>
                   </div>
                 </td>

@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Printer, Package, Tag } from 'lucide-react';
+import { Printer, Package, Tag, FileText } from 'lucide-react';
 
 interface BulkActionBarProps {
   count: number;
@@ -10,6 +10,7 @@ interface BulkActionBarProps {
   onStatusChange: () => void;
   onCreateDelivery: () => void;
   onPrint: () => void;
+  onPrintInvoices: () => void;
 }
 
 export function BulkActionBar({
@@ -19,6 +20,7 @@ export function BulkActionBar({
   onStatusChange,
   onCreateDelivery,
   onPrint,
+  onPrintInvoices,
 }: BulkActionBarProps) {
   if (count === 0) return null;
 
@@ -40,6 +42,10 @@ export function BulkActionBar({
       <Button size="sm" variant="outline" onClick={onPrint}>
         <Printer className="mr-1.5 h-4 w-4" />
         Print labels
+      </Button>
+      <Button size="sm" variant="outline" onClick={onPrintInvoices}>
+        <FileText className="mr-1.5 h-4 w-4" />
+        Print invoices
       </Button>
     </div>
   );

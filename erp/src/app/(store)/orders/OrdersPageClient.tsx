@@ -13,6 +13,8 @@ import {
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
 import { printShippingLabels } from '@/components/delivery/labels/ShippingLabel';
+import { printOrderInvoice, printOrderInvoices } from '@/components/delivery/invoices/printOrderInvoice';
+import { toast } from 'sonner';
 import { OrderFilters } from '@/components/orders/OrderFilters';
 import { OrdersTable } from '@/components/orders/OrdersTable';
 import { BulkActionBar } from '@/components/orders/BulkActionBar';
@@ -72,6 +74,15 @@ export function OrdersPageClient() {
     printShippingLabels(selectedOrders, template);
   };
 
+  const handlePrintInvoices = () => {
+    const ids = selectedOrders.map((o) => o.id);
+    void printOrderInvoices(ids).catch((e: Error) => toast.error(e.message));
+  };
+
+  const handlePrintSingleInvoice = (order: DeliveryListItem) => {
+    void printOrderInvoice(order.id).catch((e: Error) => toast.error(e.message));
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
@@ -92,6 +103,7 @@ export function OrdersPageClient() {
         onStatusChange={() => setStatusDialogOpen(true)}
         onCreateDelivery={handleCreateDelivery}
         onPrint={handlePrint}
+        onPrintInvoices={handlePrintInvoices}
       />
 
       {isLoading && (
@@ -116,6 +128,7 @@ export function OrdersPageClient() {
           onToggleAll={toggleAll}
           onView={(id) => router.push(`/delivery/${id}`)}
           onPrint={(order) => printShippingLabels([order], template)}
+          onPrintInvoice={handlePrintSingleInvoice}
         />
       )}
 

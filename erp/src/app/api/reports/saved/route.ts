@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 import type { Prisma } from '@/generated/prisma/client';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 const createSavedReportSchema = z.object({
   name: z.string().min(1).max(100),
@@ -27,6 +29,9 @@ export async function GET() {
         { status: 401 },
       );
     }
+
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewSalesReport);
+    if (forbidden) return forbidden;
 
     const reports = await prisma.savedReport.findMany({
       where: {
@@ -63,6 +68,9 @@ export async function POST(request: NextRequest) {
         { status: 401 },
       );
     }
+
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewSalesReport);
+    if (forbidden) return forbidden;
 
     const body: unknown = await request.json();
     const parsed = createSavedReportSchema.safeParse(body);

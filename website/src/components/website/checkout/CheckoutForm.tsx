@@ -5,15 +5,22 @@
  * ERP public endpoint, and shows a confirmation with the order reference.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ROUTES } from '@/config/site';
 import { useCartStore } from '@/stores/cartStore';
 import { computeCartTotals } from '@/lib/cart';
+import { formatLKR } from '@/lib/utils';
 import { placeOrder } from '@/lib/api/delivery';
+import { getShippingQuote } from '@/lib/api/shippingQuote';
+import { submitPayHereRedirect } from '@/lib/payhereRedirect';
 import { CheckoutAddressSchema } from '@/lib/validators/address';
 import { CheckoutSummary } from '@/components/website/checkout/CheckoutSummary';
 import { OrderConfirmation } from '@/components/website/checkout/OrderConfirmation';
+import {
+  PaymentMethodSelector,
+  type PaymentMethodValue,
+} from '@/components/website/checkout/PaymentMethodSelector';
 
 interface CheckoutFormProps {
   tenantSlug: string;
@@ -37,9 +44,37 @@ export function CheckoutForm({ tenantSlug }: CheckoutFormProps) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>('COD');
   const [confirmed, setConfirmed] = useState<{ orderRef: string } | null>(null);
+  // Server-computed delivery-fee estimate (2dp string), requested once the
+  // destination city is entered so the fee is visible before payment.
+  const [shippingFee, setShippingFee] = useState<string | null>(null);
 
   const totals = computeCartTotals(lines);
+  const shippingFeeNum =
+    shippingFee !== null && shippingFee !== undefined ? Number(shippingFee) : 0;
+  const orderTotalLabel = formatLKR(totals.subtotal + shippingFeeNum);
+
+  // Request a delivery-fee quote whenever the destination changes. The quote is
+  // display-only; the authoritative fee is recomputed server-side on placement.
+  useEffect(() => {
+    let active = true;
+    const city = values.cityName?.trim();
+    if (!city) {
+      setShippingFee(null);
+      return;
+    }
+    getShippingQuote(tenantSlug, {
+      cityName: city,
+      districtName: values.districtName?.trim() || undefined,
+    }).then((quote) => {
+      if (active && quote) setShippingFee(quote.shippingFee);
+    });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantSlug, values.cityName, values.districtName]);
 
   const setValue = (key: string, value: string) =>
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -62,8 +97,17 @@ export function CheckoutForm({ tenantSlug }: CheckoutFormProps) {
       const result = await placeOrder(tenantSlug, parsed.data, lines, {
         codAmount: totals.subtotal,
         itemCount: totals.itemCount,
+        paymentMethod,
       });
       clear(tenantSlug);
+
+      // Card orders redirect to PayHere to complete payment. On return/cancel
+      // the customer lands back on the shop page (return/cancel URL).
+      if (result.payment) {
+        submitPayHereRedirect(result.payment.payhereUrl, result.payment.payload);
+        return;
+      }
+
       setConfirmed({ orderRef: result.orderRef });
     } catch (error) {
       setErrors({ form: error instanceof Error ? error.message : 'Could not place your order' });
@@ -121,17 +165,29 @@ export function CheckoutForm({ tenantSlug }: CheckoutFormProps) {
           <p className="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-600">{errors.form}</p>
         )}
 
+        <div className="mt-6">
+          <PaymentMethodSelector
+            value={paymentMethod}
+            onChange={setPaymentMethod}
+            totalLabel={orderTotalLabel}
+          />
+        </div>
+
         <button
           type="submit"
           disabled={submitting}
-          className="mt-6 w-full rounded bg-black px-6 py-3 text-sm font-medium uppercase tracking-wider text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
+          className="mt-4 w-full rounded bg-black px-6 py-3 text-sm font-medium uppercase tracking-wider text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
         >
-          {submitting ? 'Placing order…' : 'Place order (COD)'}
+          {submitting
+            ? 'Placing order…'
+            : paymentMethod === 'CARD'
+              ? 'Place order & pay'
+              : 'Place order (COD)'}
         </button>
       </div>
 
       {/* Summary */}
-      <CheckoutSummary tenantSlug={tenantSlug} lines={lines} />
+      <CheckoutSummary tenantSlug={tenantSlug} lines={lines} shippingFee={shippingFee} />
     </form>
   );
 }

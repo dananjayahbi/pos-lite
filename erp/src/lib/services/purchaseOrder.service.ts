@@ -2,7 +2,6 @@ import { prisma } from '@/lib/prisma';
 import Decimal from 'decimal.js';
 import { POStatus, StockMovementReason } from '@/generated/prisma/client';
 import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
-
 // ── Private Helpers ──────────────────────────────────────────────────────────
 
 function buildVariantDescription(variant: {
@@ -233,6 +232,10 @@ interface ReceiveLineInput {
   lineId: string;
   receivedQty: number;
   actualCostPrice?: number | string | undefined;
+  /** Optional batch number captured at goods receipt (doc 29). */
+  batchNumber?: string | undefined;
+  /** Optional expiry date captured at goods receipt (doc 29). */
+  expiryDate?: string | undefined;
 }
 
 interface ReceivePOLinesInput {
@@ -283,11 +286,39 @@ export async function receivePOLines(
         );
       }
 
+      // Capture / accumulate batch record when a batch number is supplied.
+      let batchId: string | undefined;
+      if (received.batchNumber) {
+        const existing = await tx.batchTracking.findFirst({
+          where: { tenantId, variantId: line.variantId, batchNumber: received.batchNumber },
+        });
+        if (existing) {
+          await tx.batchTracking.update({
+            where: { id: existing.id },
+            data: { quantity: existing.quantity + received.receivedQty },
+          });
+          batchId = existing.id;
+        } else {
+          const created = await tx.batchTracking.create({
+            data: {
+              tenantId,
+              variantId: line.variantId,
+              batchNumber: received.batchNumber,
+              expiryDate: received.expiryDate ? new Date(received.expiryDate) : null,
+              quantity: received.receivedQty,
+              source: 'PURCHASE',
+            },
+          });
+          batchId = created.id;
+        }
+      }
+
       // Adjust stock
       await adjustStockInTx(tx, tenantId, line.variantId, actorId, {
         quantityDelta: received.receivedQty,
         reason: StockMovementReason.PURCHASE_RECEIVED,
         purchaseOrderId: poId,
+        batchId,
       });
 
       // Update line
@@ -300,6 +331,12 @@ export async function receivePOLines(
         updateData.actualCostPrice = new Decimal(received.actualCostPrice)
           .toDecimalPlaces(2)
           .toNumber();
+      }
+      if (received.batchNumber !== undefined) {
+        updateData.receivedBatchNumber = received.batchNumber;
+      }
+      if (received.expiryDate !== undefined) {
+        updateData.receivedExpiryDate = new Date(received.expiryDate);
       }
 
       await tx.purchaseOrderLine.update({

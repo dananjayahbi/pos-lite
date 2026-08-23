@@ -10,7 +10,8 @@ import type { TxClient } from '@/lib/services/inventory.service';
 import { calculateShippingFee } from '@/lib/services/rate-engine.service';
 import { createShipment } from '@/lib/services/shipment.service';
 import { autoDeductPackaging, notifyLowStock } from '@/lib/services/packaging.service';
-import { transExpressAdapter } from '@/lib/courier';
+import { resolveAdapterForAccount } from '@/lib/courier/registry';
+import { toCourierOrderPayload } from '@/lib/courier/mappers';
 import { HOLD_BUFFER_DURATION_MS } from '@/lib/constants/courier';
 import type {
   CancelDeliveryInput,
@@ -31,6 +32,10 @@ const deliveryInclude = {
   shipments: { orderBy: { createdAt: 'desc' as const } },
   events: { orderBy: { eventAt: 'asc' as const }, take: 50 },
   sale: { select: { id: true, totalAmount: true, status: true } },
+  attempts: {
+    orderBy: { createdAt: 'asc' as const },
+    include: { staff: { select: { id: true, email: true } } },
+  },
 } as const;
 
 async function generateOrderRef(tenantId: string): Promise<string> {
@@ -318,12 +323,25 @@ export async function dispatchDelivery(
   if (existing.status !== 'PENDING_DISPATCH') throw new Error('DELIVERY_NOT_DISPATCHABLE');
   if (existing.shipments.length > 0) throw new Error('DELIVERY_ALREADY_DISPATCHED');
   if (!existing.address) throw new Error('DELIVERY_MISSING_ADDRESS');
+  // Block dispatch of unpaid card orders. COD is unpaid-by-design and is the
+  // default; CARD orders must be confirmed PAID by the gateway before the
+  // courier handoff.
+  if (
+    existing.paymentMethod !== 'COD' &&
+    existing.paymentStatus !== 'PAID'
+  ) {
+    throw new Error('DELIVERY_PAYMENT_NOT_SETTLED');
+  }
 
   const account = await prisma.courierAccount.findFirst({ where: { tenantId } });
   if (!account?.isActive) throw new Error('COURIER_ACCOUNT_NOT_CONFIGURED');
 
+  // Resolve the provider adapter by the account's configured provider so the
+  // dispatch pipeline stays carrier-agnostic.
+  const adapter = resolveAdapterForAccount(account);
+
   // Authenticate (API key for prod, or login for staging).
-  const auth = await transExpressAdapter.authenticate({
+  const auth = await adapter.authenticate({
     email: account.email ?? undefined,
     password: account.password ?? undefined,
     apiKey: account.apiKey ?? undefined,
@@ -331,9 +349,8 @@ export async function dispatchDelivery(
   });
   if (!auth.ok) throw new Error(`COURIER_AUTH_FAILED:${auth.error.message}`);
 
-  // Build payload via the mapper.
-  const { toTransExpressPayload } = await import('@/lib/courier/trans-express/mappers');
-  const payload = toTransExpressPayload(
+  // Build the provider-agnostic payload via the shared mapper.
+  const payload = toCourierOrderPayload(
     {
       fullName: existing.address.fullName,
       phone: existing.address.phone,
@@ -348,7 +365,7 @@ export async function dispatchDelivery(
     { waybillId: input.waybillMode === 'MANUAL' ? input.manualWaybillId : undefined },
   );
 
-  const upload = await transExpressAdapter.uploadSingle(account.env, auth.data, {
+  const upload = await adapter.uploadSingle(account.env, auth.data, {
     waybillMode: input.waybillMode,
     payload,
   });
@@ -383,7 +400,7 @@ export async function dispatchDelivery(
         status: 'DISPATCHED',
         source: 'INTERNAL',
         createdById: userId,
-        remarks: `Dispatched via Trans Express (${input.waybillMode})`,
+        remarks: `Dispatched via ${account.provider} (${input.waybillMode})`,
       },
     });
 
@@ -424,7 +441,9 @@ export async function trackShipment(tenantId: string, shipmentId: string, userId
   const account = await prisma.courierAccount.findFirst({ where: { tenantId } });
   if (!account?.isActive) throw new Error('COURIER_ACCOUNT_NOT_CONFIGURED');
 
-  const auth = await transExpressAdapter.authenticate({
+  const adapter = resolveAdapterForAccount(account);
+
+  const auth = await adapter.authenticate({
     email: account.email ?? undefined,
     password: account.password ?? undefined,
     apiKey: account.apiKey ?? undefined,
@@ -432,11 +451,11 @@ export async function trackShipment(tenantId: string, shipmentId: string, userId
   });
   if (!auth.ok) throw new Error(`COURIER_AUTH_FAILED:${auth.error.message}`);
 
-  const result = await transExpressAdapter.track(account.env, auth.data, shipment.waybillId);
+  const result = await adapter.track(account.env, auth.data, shipment.waybillId);
   if (!result.ok) throw new Error(`COURIER_TRACKING_FAILED:${result.error.message}`);
 
   const { applyTrackingUpdate } = await import('@/lib/services/tracking.service');
-  await applyTrackingUpdate(shipment.id, shipment.deliveryId, tenantId, result.data);
+  await applyTrackingUpdate(shipment.id, shipment.deliveryId, tenantId, result.data, adapter);
 
   void createAuditLog({
     tenantId,

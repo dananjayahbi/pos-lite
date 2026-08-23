@@ -132,3 +132,31 @@ export const TAX_RULE_OPTIONS: Array<{ value: TaxRuleValue; label: string }> = [
   { value: TAX_RULE.SSCL, label: 'SSCL' },
   { value: TAX_RULE.EXEMPT, label: 'VAT Exempt' },
 ];
+
+// ── Product source (Manufactured / Traded) ──────────────────────────────────
+
+export const PRODUCT_SOURCES = ['MANUFACTURED', 'TRADED'] as const;
+
+export type ProductSourceValue = (typeof PRODUCT_SOURCES)[number];
+
+export const PRODUCT_SOURCE: Record<ProductSourceValue, ProductSourceValue> = {
+  MANUFACTURED: 'MANUFACTURED',
+  TRADED: 'TRADED',
+};
+
+export const PRODUCT_SOURCE_OPTIONS: Array<{
+  value: ProductSourceValue;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: PRODUCT_SOURCE.MANUFACTURED,
+    label: 'Manufactured',
+    description: 'Made in-house — eligible for Bill of Materials & production',
+  },
+  {
+    value: PRODUCT_SOURCE.TRADED,
+    label: 'Traded',
+    description: 'Resold as-is — goes through purchase/receipt only',
+  },
+];

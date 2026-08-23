@@ -40,6 +40,12 @@ export interface ProductListItem {
     lowStockThreshold: number;
     imageUrls: string[];
     retailPrice: number;
+    batchTrackings?: Array<{
+      id: string;
+      batchNumber: string;
+      expiryDate: string | null;
+      quantity: number;
+    }>;
   }>;
 }
 

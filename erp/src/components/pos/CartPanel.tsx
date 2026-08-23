@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ShoppingBag, ArchiveRestore, Banknote, CreditCard, Layers, X, Tag } from 'lucide-react';
+import { ShoppingBag, ArchiveRestore, Banknote, CreditCard, QrCode, UserPlus, Layers, X, Tag } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Decimal from 'decimal.js';
@@ -16,6 +16,9 @@ import { RetrieveHeldSalesSheet } from '@/components/pos/RetrieveHeldSalesSheet'
 import { CashPaymentModal } from '@/components/pos/CashPaymentModal';
 import { CardPaymentModal } from '@/components/pos/CardPaymentModal';
 import { SplitPaymentModal } from '@/components/pos/SplitPaymentModal';
+import { LankaQRPaymentModal } from '@/components/pos/LankaQRPaymentModal';
+import { ZeroValuePaymentModal } from '@/components/pos/ZeroValuePaymentModal';
+import { WalkInCustomerForm } from '@/components/pos/WalkInCustomerForm';
 import { ReceiptPreviewDialog } from '@/components/pos/ReceiptPreviewDialog';
 import type { CreateSalePayload, CompletedSale } from '@/types/pos.types';
 import { CustomerSearchDropdown } from '@/components/customers/CustomerSearchDropdown';
@@ -37,6 +40,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
   const authorizingManagerId = useCartStore((s) => s.authorizingManagerId);
   const linkedCustomerId = useCartStore((s) => s.linkedCustomerId);
   const linkedCustomerName = useCartStore((s) => s.linkedCustomerName);
+  const linkedCustomerPhone = useCartStore((s) => s.linkedCustomerPhone);
   const linkedCustomerCreditBalance = useCartStore((s) => s.linkedCustomerCreditBalance);
   const appliedStoreCredit = useCartStore((s) => s.appliedStoreCredit);
   const linkCustomer = useCartStore((s) => s.linkCustomer);
@@ -60,8 +64,10 @@ export function CartPanel({ shiftId }: CartPanelProps) {
   );
 
   const [retrieveOpen, setRetrieveOpen] = useState(false);
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'card' | 'split' | null>(null);
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'card' | 'split' | 'lankaqr' | null>(null);
   const [paymentPopoverOpen, setPaymentPopoverOpen] = useState(false);
+  const [walkInOpen, setWalkInOpen] = useState(false);
+  const [zeroValueOpen, setZeroValueOpen] = useState(false);
   const [completedSale, setCompletedSale] = useState<CompletedSale | null>(null);
   const [changeAmount, setChangeAmount] = useState<Decimal | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -83,10 +89,16 @@ export function CartPanel({ shiftId }: CartPanelProps) {
   const heldCount = heldSalesData?.total ?? 0;
 
   const hasItems = items.length > 0;
+  // Mandatory customer gate (doc 32): a finalized POS sale needs a linked
+  // customer that carries both a name and a mobile number.
+  const hasValidCustomer = !!linkedCustomerId && !!linkedCustomerPhone;
   const totalDiscount = discountEffective.toNumber();
   const appliedCreditDec = new Decimal(appliedStoreCredit);
   const promoDiscountDec = new Decimal(totalPromotionDiscount);
   const amountDue = total.minus(appliedCreditDec).minus(promoDiscountDec).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  // Zero-value gate (doc 33): a cart whose total is zero or negative must be
+  // completed through the reason-selection flow instead of a payment modal.
+  const isZeroValue = hasItems && amountDue.lte(0);
   const promoCodeError = appliedPromoCode
     ? skippedPromotions.find((s) => !appliedPromotions.some((a) => a.promotionId === s.promotionId))?.reason
     : undefined;
@@ -199,10 +211,20 @@ export function CartPanel({ shiftId }: CartPanelProps) {
       {/* Customer linking */}
       <div className="shrink-0 px-4 py-2 border-b border-mist/30">
         {!linkedCustomerId ? (
-          <CustomerSearchDropdown
-            onSelect={(c) => linkCustomer(c.id, c.name, c.creditBalance)}
-            onClear={() => {}}
-          />
+          <div className="space-y-1.5">
+            <CustomerSearchDropdown
+              onSelect={(c) => linkCustomer(c.id, c.name, c.phone, c.creditBalance)}
+              onClear={() => {}}
+            />
+            <button
+              type="button"
+              onClick={() => setWalkInOpen(true)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-sand px-3 py-1.5 font-body text-xs text-sand hover:text-espresso hover:border-terracotta transition-colors"
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+              Walk-in Customer
+            </button>
+          </div>
         ) : (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
@@ -366,12 +388,27 @@ export function CartPanel({ shiftId }: CartPanelProps) {
 
           {/* Action buttons */}
           <div className="px-4 pb-4 space-y-2">
+            {hasItems && !hasValidCustomer && (
+              <p className="rounded-md bg-[#FCE9E8] px-3 py-2 text-center font-body text-xs text-[#9B2226]">
+                Select or create a customer to finalize the sale.
+              </p>
+            )}
             <HoldSaleButton shiftId={shiftId} />
+            {isZeroValue ? (
+              <button
+                type="button"
+                disabled={!hasValidCustomer}
+                onClick={() => setZeroValueOpen(true)}
+                className="w-full py-3 rounded-lg bg-terracotta text-pearl font-body text-base font-bold hover:bg-terracotta/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Zero-Value Sale
+              </button>
+            ) : (
             <Popover open={paymentPopoverOpen} onOpenChange={setPaymentPopoverOpen}>
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  disabled={!hasItems || amountDue.lte(0)}
+                  disabled={!hasItems || !hasValidCustomer}
                   className="w-full py-3 rounded-lg bg-espresso text-pearl font-body text-base font-bold hover:bg-espresso/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Charge / Pay
@@ -406,6 +443,17 @@ export function CartPanel({ shiftId }: CartPanelProps) {
                     className="flex w-full items-center gap-2 rounded-md px-3 py-2 font-body text-sm text-espresso hover:bg-linen transition-colors"
                     onClick={() => {
                       setPaymentPopoverOpen(false);
+                      setPaymentMode('lankaqr');
+                    }}
+                  >
+                    <QrCode className="h-4 w-4 text-terracotta" />
+                    LankaQR
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 font-body text-sm text-espresso hover:bg-linen transition-colors"
+                    onClick={() => {
+                      setPaymentPopoverOpen(false);
                       setPaymentMode('split');
                     }}
                   >
@@ -415,6 +463,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
                 </div>
               </PopoverContent>
             </Popover>
+            )}
           </div>
         </div>
       )}
@@ -443,6 +492,28 @@ export function CartPanel({ shiftId }: CartPanelProps) {
         onSaleComplete={handleSaleComplete}
         totalAmount={amountDue}
         salePayload={salePayload}
+      />
+      <LankaQRPaymentModal
+        open={paymentMode === 'lankaqr'}
+        onClose={() => setPaymentMode(null)}
+        onSaleComplete={handleSaleComplete}
+        totalAmount={amountDue}
+        salePayload={salePayload}
+      />
+      <ZeroValuePaymentModal
+        open={zeroValueOpen}
+        onClose={() => setZeroValueOpen(false)}
+        onSaleComplete={handleSaleComplete}
+        totalAmount={amountDue}
+        salePayload={salePayload}
+      />
+      <WalkInCustomerForm
+        open={walkInOpen}
+        onOpenChange={setWalkInOpen}
+        onLinked={(c) => {
+          setWalkInOpen(false);
+          linkCustomer(c.id, c.name, c.phone, c.creditBalance);
+        }}
       />
       <ReceiptPreviewDialog
         open={receiptOpen}

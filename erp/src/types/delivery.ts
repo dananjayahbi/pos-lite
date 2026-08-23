@@ -51,6 +51,16 @@ export interface DeliveryShipment {
   courierOrderId?: string | null;
 }
 
+/** A single failed-order recovery attempt (doc 44/45). */
+export interface DeliveryRecoveryAttempt {
+  id: string;
+  action: 'FOLLOW_UP_CALL' | 'RESCHEDULED' | 'REDELIVERED' | 'CANCELLED';
+  notes?: string | null;
+  redeliveryShipmentId?: string | null;
+  createdAt: string;
+  staff?: { id: string; email: string } | null;
+}
+
 /** Full delivery detail payload returned by /api/store/deliveries/[id]. */
 export interface DeliveryDetail {
   id: string;
@@ -74,6 +84,7 @@ export interface DeliveryDetail {
   customer?: DeliveryCustomer | null;
   shipments?: DeliveryShipment[];
   events?: DeliveryEvent[];
+  attempts?: DeliveryRecoveryAttempt[];
 }
 
 /** A single row in the delivery list. */
@@ -87,6 +98,7 @@ export interface DeliveryListItem {
   totalWeightKg?: number | string | null;
   itemCount: number;
   dispatchedAt?: string | null;
+  failureReason?: string | null;
   waybill?: string | null;
   address?: DeliveryAddress | null;
   customer?: DeliveryCustomer | null;

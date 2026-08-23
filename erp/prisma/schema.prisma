@@ -19,6 +19,7 @@ enum UserRole {
   CASHIER
   STOCK_CLERK
   DISPATCH_STAFF
+  FACTORY_MANAGER
 }
 
 enum TenantStatus {
@@ -65,6 +66,29 @@ enum TaxRule {
   EXEMPT
 }
 
+// Curated wellness "need" taxonomy for storefront discovery. Products carry
+// zero or more concerns (Postgres enum array); the storefront filters by them.
+enum HealthConcern {
+  JOINT_PAIN
+  SKIN_CARE
+  DIGESTIVE_HEALTH
+  STRESS_RELIEF
+  IMMUNITY
+  HAIR_CARE
+  RESPIRATORY
+  CARDIOVASCULAR
+  WOMENS_HEALTH
+  MENS_HEALTH
+  CHILD_HEALTH
+  SLEEP_SUPPORT
+  ENERGY_VITALITY
+  DIABETES_SUPPORT
+  LIVER_KIDNEY_HEALTH
+  WEIGHT_MANAGEMENT
+  ORAL_CARE
+  EYE_HEALTH
+}
+
 enum StockMovementReason {
   FOUND
   DAMAGED
@@ -77,6 +101,26 @@ enum StockMovementReason {
   STOCK_TAKE_ADJUSTMENT
   SALE
   VOID_REVERSAL
+  MANUFACTURED
+}
+
+// Origin of a tracked batch — purchased/traded goods vs in-house production.
+enum BatchSource {
+  PURCHASE
+  MANUFACTURED
+}
+
+// ── Raw Material (Factory Module M8) ────────────────────────────────────────
+
+enum RawMaterialCategory {
+  OILS_LIQUIDS
+  POWDERS_HERBS
+  CHEMICALS
+}
+
+enum Unit {
+  LITERS
+  KILOGRAMS
 }
 
 enum StockTakeStatus {
@@ -104,17 +148,48 @@ enum NotificationType {
   RECONCILIATION_DISCREPANCY
   DELIVERY_HELD_EXPIRING
   COD_PENDING_ALERT
+  RAW_MATERIAL_LOW_STOCK
+  RAW_MATERIAL_CRITICAL
+  BATCH_EXPIRY_SOON
+  BATCH_EXPIRED
+  PETTY_CASH_LOW
 }
 
 enum PaymentMethod {
   CASH
   CARD
   SPLIT
+  LANKAQR
+  NONE
 }
 
 enum PaymentLegMethod {
   CASH
   CARD
+  LANKAQR
+}
+
+// Why a POS sale was completed with a zero (or negative) total. Drives the
+// fraud-prevention audit dashboard (doc 35). PRODUCT_REPLACEMENT requires the
+// original order reference stored in Sale.zeroValueLinkedOrderRef (doc 34).
+enum ZeroValueReason {
+  BANK_PAYMENT
+  PRODUCT_REPLACEMENT
+  COMPLIMENTARY_GIFT
+}
+
+// ── Customer Order (website checkout) payment model ─────────────────────────
+
+enum OrderPaymentMethod {
+  COD
+  CARD
+}
+
+enum OrderPaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
 }
 
 enum SaleStatus {
@@ -145,6 +220,12 @@ enum Gender {
   OTHER
 }
 
+// Whether a good is produced in-house (BOM/production eligible) or resold as-is.
+enum ProductSource {
+  MANUFACTURED
+  TRADED
+}
+
 enum POStatus {
   DRAFT
   SENT
@@ -170,6 +251,10 @@ enum ExpenseCategory {
   MAINTENANCE
   MISCELLANEOUS
   OTHER
+  STAFF_MEALS
+  TEA_SUGAR
+  OFFICE_STATIONERY
+  TRAVEL
 }
 
 enum CashMovementType {
@@ -245,6 +330,9 @@ enum ShipmentStatus {
 
 enum CarrierProvider {
   TRANSEXPRESS
+  DOMEX
+  PROMPTX
+  KOOMBIYO
 }
 
 enum WaybillMode {
@@ -278,6 +366,40 @@ enum ReconciliationStatus {
   DISCREPANCY
   CLEARED
   DISPUTED
+}
+
+/** How a statement row was attributed to a ledger entry. */
+enum ReconciliationMatchMethod {
+  WAYBILL
+  ORDER_REF
+  BARCODE
+  UNMATCHED
+  AMBIGUOUS
+}
+
+/** Failure mode of a discrepant reconciliation row. */
+enum DiscrepancyCategory {
+  UNPAID
+  UNDERPAID
+  UNAUTHORIZED_DEDUCTION
+  OVER_RECEIVED
+  UNKNOWN
+}
+
+/** Contract-compliance audit outcome for courier deductions. */
+enum DeductionAuditStatus {
+  COMPLIANT
+  OVER_CHARGED
+  UNDER_CHARGED
+}
+
+/** Lifecycle state of a reconciliation dispute. */
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  ACCEPTED
+  REJECTED
+  CLOSED
 }
 
 enum StatementImportStatus {
@@ -363,6 +485,9 @@ model User {
   deliveriesCanceled            Delivery[]           @relation("DeliveryCanceller")
   recoveryActions               DeliveryRecovery[]   @relation("RecoveryStaff")
   statementImportsUploaded      StatementImport[]    @relation("StatementImportUploader")
+  disputesOpened                ReconciliationDispute[] @relation("DisputeOpener")
+  disputesResolved              ReconciliationDispute[] @relation("DisputeResolver")
+  productionLogs                ProductionLog[]
 
   @@index([email])
   @@index([tenantId])
@@ -470,6 +595,7 @@ model Tenant {
   promotions                  Promotion[]
   customerPricingRules        CustomerPricingRule[]
   expenses                    Expense[]
+  pettyCashFunds              PettyCashFund[]
   cashMovements               CashMovement[]
   savedReports                SavedReport[]
   dailySummaryLogs            DailySummaryLog[]
@@ -493,7 +619,12 @@ model Tenant {
   packagingConsumptions       PackagingConsumption[]
   deliveryRecoveries          DeliveryRecovery[]
   reconciliationLedgerEntries ReconciliationLedgerEntry[]
+  reconciliationDisputes      ReconciliationDispute[]
   statementImports            StatementImport[]
+  rawMaterials                RawMaterial[]
+  billOfMaterials             BillOfMaterials[]
+  productionLogs              ProductionLog[]
+  batchTrackings              BatchTracking[]
 
   @@map("tenants")
 }
@@ -636,6 +767,16 @@ model Product {
   // Single representative image shown on storefront product cards
   // (products have variants, each with their own imageUrls).
   mainImageUrl String?
+  // Ayurvedic health/usage content — rendered as structured sections on the
+  // storefront product detail page. Nullable for backward compatibility.
+  activeIngredients String?
+  usageInstructions String?
+  healthBenefits    String?
+  safetyPrecautions String?
+  // Curated wellness concerns for storefront need-based discovery.
+  healthConcerns HealthConcern[] @default([])
+  // Whether the good is produced in-house (BOM eligible) or resold (traded).
+  productSource ProductSource @default(MANUFACTURED)
   isArchived  Boolean   @default(false)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -674,6 +815,9 @@ model ProductVariant {
   saleLines            SaleLine[]
   purchaseOrderLines   PurchaseOrderLine[]
   customerPricingRules CustomerPricingRule[]
+  billOfMaterials      BillOfMaterials[]
+  productionLogs       ProductionLog[]
+  batchTrackings       BatchTracking[]
 
   @@unique([tenantId, sku])
   @@unique([tenantId, barcode])
@@ -699,12 +843,122 @@ model StockMovement {
   saleId             String?
   purchaseOrderId    String?
   stockTakeSessionId String?
+  batchId            String?
+  batch              BatchTracking? @relation("BatchStockMovements", fields: [batchId], references: [id])
   createdAt          DateTime            @default(now())
 
   @@index([variantId, createdAt])
   @@index([tenantId, createdAt])
   @@index([actorId])
+  @@index([batchId])
   @@map("stock_movements")
+}
+
+// Batch & shelf-life tracking for perishable / lot-controlled goods.
+// A batch aggregates stock received (PURCHASE) or produced (MANUFACTURED) at
+// the same time under one identifier, carrying an optional expiry date.
+model BatchTracking {
+  id          String          @id @default(cuid())
+  tenantId    String
+  tenant      Tenant          @relation(fields: [tenantId], references: [id])
+  variantId   String
+  variant     ProductVariant  @relation(fields: [variantId], references: [id])
+  batchNumber String
+  expiryDate  DateTime?
+  quantity    Int
+  source      BatchSource     @default(PURCHASE)
+  receivedAt  DateTime        @default(now())
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  stockMovements StockMovement[] @relation("BatchStockMovements")
+  saleLines      SaleLine[]      @relation("BatchSaleLines")
+
+  @@unique([tenantId, variantId, batchNumber])
+  @@index([tenantId, variantId, expiryDate])
+  @@index([tenantId, expiryDate])
+  @@map("batch_trackings")
+}
+
+model RawMaterial {
+  id                 String             @id @default(cuid())
+  tenantId           String
+  tenant             Tenant             @relation(fields: [tenantId], references: [id])
+  name               String
+  category           RawMaterialCategory
+  unit               Unit
+  quantity           Decimal            @default(0)
+  lowStockThreshold  Decimal            @default(0)
+  description        String?
+  isActive           Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+
+  bomItems BillOfMaterialsItem[]
+
+  @@index([tenantId])
+  @@index([tenantId, category])
+  @@map("raw_materials")
+}
+
+model BillOfMaterials {
+  id         String    @id @default(cuid())
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id])
+  variantId  String
+  variant    ProductVariant @relation(fields: [variantId], references: [id])
+  name       String
+  isActive   Boolean   @default(true)
+  notes      String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  items          BillOfMaterialsItem[]
+  productionLogs ProductionLog[]
+
+  @@unique([tenantId, variantId])
+  @@index([tenantId])
+  @@index([variantId])
+  @@map("bill_of_materials")
+}
+
+model BillOfMaterialsItem {
+  id            String    @id @default(cuid())
+  bomId         String
+  bom           BillOfMaterials @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  rawMaterialId String
+  rawMaterial   RawMaterial @relation(fields: [rawMaterialId], references: [id])
+  // Quantity of the raw material consumed to produce ONE unit of the finished good.
+  quantityPerUnit Decimal   @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([bomId, rawMaterialId])
+  @@index([bomId])
+  @@index([rawMaterialId])
+  @@map("bill_of_materials_items")
+}
+
+model ProductionLog {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  bomId     String
+  bom       BillOfMaterials @relation(fields: [bomId], references: [id])
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  quantity  Int       @default(0)
+  actorId   String
+  actor     User      @relation(fields: [actorId], references: [id])
+  note      String?
+  createdAt DateTime  @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([bomId])
+  @@index([variantId])
+  @@map("production_logs")
 }
 
 model StockTakeSession {
@@ -802,11 +1056,14 @@ model Sale {
   payments          Payment[]          @relation("SalePayments")
   linkedReturnId    String?
   linkedReturn      Return?            @relation("ExchangeLinkedSale", fields: [linkedReturnId], references: [id], onDelete: SetNull)
+  zeroValueReason   ZeroValueReason?
+  zeroValueLinkedOrderRef String?
   returns           Return[]           @relation("ReturnOriginalSale")
   appointments      Appointment[]
   deliveries        Delivery[]
 
   @@index([tenantId, status, createdAt])
+  @@index([tenantId, totalAmount, createdAt])
   @@index([shiftId])
   @@index([cashierId])
   @@map("sales")
@@ -827,12 +1084,15 @@ model SaleLine {
   discountAmount             Decimal        @default(0) @db.Decimal(12, 2)
   lineTotalBeforeDiscount    Decimal        @db.Decimal(12, 2)
   lineTotalAfterDiscount     Decimal        @db.Decimal(12, 2)
+  batchId                    String?
+  batch                      BatchTracking? @relation("BatchSaleLines", fields: [batchId], references: [id])
   createdAt                  DateTime       @default(now())
 
   returnLines ReturnLine[]
 
   @@index([saleId])
   @@index([variantId])
+  @@index([batchId])
   @@map("sale_lines")
 }
 
@@ -886,6 +1146,7 @@ model ShiftClosure {
   totalReturnsAmount Decimal  @default(0) @db.Decimal(12, 2)
   totalCashAmount    Decimal  @db.Decimal(12, 2)
   totalCardAmount    Decimal  @db.Decimal(12, 2)
+  totalQrAmount      Decimal  @default(0) @db.Decimal(12, 2)
   closedById         String
   closedBy           User     @relation("ShiftCloser", fields: [closedById], references: [id])
   closedAt           DateTime @default(now())
@@ -969,6 +1230,9 @@ model Customer {
   notes                       String?
   creditBalance               Decimal   @default(0) @db.Decimal(12, 2)
   totalSpend                  Decimal   @default(0) @db.Decimal(12, 2)
+  // CRM: date of the customer's most recent finalized sale (doc 21). Nullable
+  // until a customer makes their first purchase. Maintained on sale finalization.
+  lastPurchaseAt              DateTime?
   isActive                    Boolean   @default(true)
   deletedAt                   DateTime?
   createdAt                   DateTime  @default(now())
@@ -1040,6 +1304,9 @@ model PurchaseOrderLine {
   expectedCostPrice          Decimal        @db.Decimal(12, 2)
   receivedQty                Int            @default(0)
   actualCostPrice            Decimal?       @db.Decimal(12, 2)
+  // Batch/shelf-life captured at goods receipt (mandatory for traded goods).
+  receivedBatchNumber        String?
+  receivedExpiryDate         DateTime?
   isFullyReceived            Boolean        @default(false)
   createdAt                  DateTime       @default(now())
 
@@ -1186,13 +1453,45 @@ model Expense {
   amount          Decimal         @db.Decimal(12, 2)
   description     String
   receiptImageUrl String?
+  pettyCashFundId String?
+  pettyCashFund   PettyCashFund?  @relation(fields: [pettyCashFundId], references: [id], onDelete: SetNull)
   recordedById    String
   recordedBy      User            @relation(fields: [recordedById], references: [id])
   expenseDate     DateTime
   createdAt       DateTime        @default(now())
 
   @@index([tenantId, expenseDate])
+  @@index([pettyCashFundId])
   @@map("expenses")
+}
+
+// ── Petty Cash (Module M12) ─────────────────────────────────────────────────
+
+// Standalone, tenant-scoped petty-cash float that persists independently of POS
+// shifts (doc 36). Holds the configured opening/allocation balance, a running
+// current balance, an optional low-balance threshold (doc 40), and the set of
+// tenant-enabled expense categories (doc 37). Standalone expenses can be linked
+// to a fund (doc 36 Step 4) so the balance equation can subtract spend.
+model PettyCashFund {
+  id                 String           @id @default(cuid())
+  tenantId           String
+  tenant             Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name               String           @default("Main Petty Cash")
+  currency           String           @default("LKR")
+  openingBalance     Decimal          @db.Decimal(12, 2)
+  currentBalance     Decimal          @db.Decimal(12, 2)
+  lowBalanceThreshold Decimal?         @db.Decimal(12, 2)
+  lowBalanceAlerted   Boolean          @default(false)
+  lastLowAlertAt      DateTime?
+  isActive           Boolean          @default(true)
+  activeCategories   ExpenseCategory[]
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  expenses Expense[]
+
+  @@index([tenantId])
+  @@map("petty_cash_funds")
 }
 
 model CashMovement {
@@ -1635,6 +1934,13 @@ model Delivery {
   orderRef        String
   courierOrderRef String?
   codAmount       Decimal          @default(0) @db.Decimal(12, 2)
+  // Payment method/status for customer (website) orders. COD is unpaid-by-
+  // design (settles on delivery); CARD orders remain PENDING until the
+  // PayHere gateway confirms payment.
+  paymentMethod     OrderPaymentMethod  @default(COD)
+  paymentStatus     OrderPaymentStatus  @default(PENDING)
+  // PayHere transaction/order reference linking this delivery to the gateway.
+  payhereOrderId    String?
   declaredValue   Decimal?         @db.Decimal(12, 2)
   itemCount       Int              @default(1)
   totalWeightKg   Decimal?         @db.Decimal(6, 2)
@@ -1861,19 +2167,60 @@ model ReconciliationLedgerEntry {
   waybillId         String?
   expectedCod       Decimal              @default(0) @db.Decimal(12, 2)
   status            ReconciliationStatus @default(PENDING_SETTLEMENT)
+  matchMethod       ReconciliationMatchMethod @default(UNMATCHED)
   expectedFee       Decimal?             @db.Decimal(12, 2)
+  // Net-payout breakdown (doc 15): Net = expectedCod − (fee + COD% + VAT%).
+  expectedNetPayout Decimal?             @db.Decimal(12, 2)
+  codCommissionAmount Decimal?           @db.Decimal(12, 2)
+  vatAmount           Decimal?           @db.Decimal(12, 2)
+  // Contract-compliance audit (doc 16).
+  auditStatus       DeductionAuditStatus?
+  expectedDeduction Decimal?             @db.Decimal(12, 2)
+  actualDeduction   Decimal?             @db.Decimal(12, 2)
+  deductionVariance Decimal?             @db.Decimal(12, 2)
   settledAmount     Decimal?             @db.Decimal(12, 2)
   settledAt         DateTime?
   statementImportId String?
   statementImport   StatementImport?     @relation(fields: [statementImportId], references: [id])
   discrepancyNote   String?
+  discrepancyCategory DiscrepancyCategory?
+  discrepancyAmount   Decimal?           @db.Decimal(12, 2)
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
+
+  disputes ReconciliationDispute[]
 
   @@index([tenantId, status])
   @@index([waybillId])
   @@index([tenantId, deliveryId])
+  @@index([tenantId, matchMethod])
+  @@index([tenantId, discrepancyCategory])
+  @@index([tenantId, auditStatus])
   @@map("reconciliation_ledger_entries")
+}
+
+model ReconciliationDispute {
+  id                String                  @id @default(cuid())
+  tenantId          String
+  tenant            Tenant                  @relation(fields: [tenantId], references: [id])
+  ledgerEntryId     String                  @unique
+  ledgerEntry       ReconciliationLedgerEntry @relation(fields: [ledgerEntryId], references: [id])
+  reason            String
+  disputedAmount    Decimal                 @db.Decimal(12, 2)
+  status            DisputeStatus           @default(OPEN)
+  resolutionNote    String?
+  openedById        String
+  openedBy          User                    @relation("DisputeOpener", fields: [openedById], references: [id])
+  resolvedById      String?
+  resolvedBy        User?                   @relation("DisputeResolver", fields: [resolvedById], references: [id])
+  openedAt          DateTime                @default(now())
+  resolvedAt        DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  @@index([tenantId, status])
+  @@index([ledgerEntryId])
+  @@map("reconciliation_disputes")
 }
 
 model StatementImport {

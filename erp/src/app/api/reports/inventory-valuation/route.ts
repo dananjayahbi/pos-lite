@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Decimal from "decimal.js";
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -21,6 +23,9 @@ export async function GET(request: NextRequest) {
       return errorJson("UNAUTHORIZED", "No tenant", 401);
     }
 
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewStockReport);
+    if (forbidden) return forbidden;
+
     const url = request.nextUrl;
     const lowStock = url.searchParams.get("lowStock") === "true";
     const deadStock = url.searchParams.get("deadStock") === "true";
@@ -35,6 +40,10 @@ export async function GET(request: NextRequest) {
       include: {
         product: {
           include: { category: { select: { name: true } } },
+        },
+        batchTrackings: {
+          where: { quantity: { gt: 0 } },
+          select: { expiryDate: true },
         },
       },
       orderBy: { sku: "asc" },
@@ -72,6 +81,8 @@ export async function GET(request: NextRequest) {
       costPrice: string;
       stockValue: string;
       lastSaleDate: string | null;
+      expiringBatches: number;
+      expiredBatches: number;
     }
 
     const allRows: VariantRow[] = variants.map((v) => {
@@ -79,6 +90,18 @@ export async function GET(request: NextRequest) {
       const value = cost.times(v.stockQuantity);
       const parts = [v.form, v.packSize].filter(Boolean);
       const lastSale = lastSaleMap.get(v.id) ?? null;
+
+      // Expiry summary from batch trackings (doc 30).
+      let expiringBatches = 0;
+      let expiredBatches = 0;
+      const windowMs = 30 * 86_400_000;
+      for (const batch of v.batchTrackings) {
+        const expiry = batch.expiryDate;
+        if (!expiry) continue;
+        const diff = expiry.getTime() - now.getTime();
+        if (diff <= 0) expiredBatches += 1;
+        else if (diff <= windowMs) expiringBatches += 1;
+      }
 
       return {
         id: v.id,
@@ -91,6 +114,8 @@ export async function GET(request: NextRequest) {
         costPrice: cost.toFixed(2),
         stockValue: value.toFixed(2),
         lastSaleDate: lastSale ? lastSale.toISOString() : null,
+        expiringBatches,
+        expiredBatches,
       };
     });
 

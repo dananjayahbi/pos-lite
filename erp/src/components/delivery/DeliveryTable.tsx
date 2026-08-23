@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { formatRupee } from '@/lib/format';
 import { StatusBadge } from './StatusBadge';
+import { FailureReasonTag } from './FailureReasonTag';
 import { DispatchSheet } from './DispatchSheet';
 import { printShippingLabel } from './labels/ShippingLabel';
+import { printOrderInvoice } from './invoices/printOrderInvoice';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useLabelTemplate } from '@/hooks/delivery';
 import { PERMISSIONS } from '@/lib/constants/permissions';
@@ -79,7 +81,10 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                     {d.shippingFee != null ? formatRupee(d.shippingFee) : '—'}
                   </td>
                   <td className="px-4 py-3">
-                    <StatusBadge status={d.status} />
+                    <div className="flex flex-col items-start gap-1">
+                      <StatusBadge status={d.status} />
+                      {d.status === 'FAILED' && <FailureReasonTag reason={d.failureReason} />}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-espresso/60">{waybill ?? '—'}</td>
                   <td className="px-4 py-3 text-sm text-espresso/60">
@@ -100,6 +105,18 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                         onClick={() => printShippingLabel(d, labelTemplate ?? DEFAULT_LABEL_TEMPLATE)}
                       >
                         Print
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          void printOrderInvoice(d.id).catch((e: Error) => {
+                            // best-effort; user can retry from the detail page
+                            console.error(e);
+                          });
+                        }}
+                      >
+                        Invoice
                       </Button>
                       {canDispatch && d.status === 'PENDING_DISPATCH' && (
                         <Button size="sm" variant="outline" onClick={() => setDispatchTarget(d)}>

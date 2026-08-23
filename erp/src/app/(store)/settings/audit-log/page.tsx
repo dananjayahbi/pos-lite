@@ -1,15 +1,15 @@
 import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
+import { requirePagePermission } from '@/lib/auth/page-guards';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import AuditLogPageClient from '@/components/audit/AuditLogPageClient';
 
 export const metadata = { title: 'Audit Log | AyurPOS' };
 
-const DENIED_ROLES = new Set(['CASHIER', 'STOCK_CLERK']);
-
 export default async function AuditLogPage() {
   const session = await auth();
   if (!session?.user?.tenantId) redirect('/login');
-  if (DENIED_ROLES.has(session.user.role)) redirect('/pos');
+  requirePagePermission(session.user, PERMISSIONS.SETTINGS.viewAuditLog);
 
   return <AuditLogPageClient />;
 }

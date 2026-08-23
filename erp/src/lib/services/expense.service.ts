@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import type { ExpenseCategory } from '@/generated/prisma/client';
 import type { CreateExpenseInput, UpdateExpenseInput } from '@/lib/validators/expense.validators';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { adjustFundBalance } from '@/lib/services/petty-cash.service';
 
 interface ExpenseFilters {
   category?: string | undefined;
@@ -66,10 +67,16 @@ export async function createExpense(
       description: data.description,
       expenseDate: new Date(data.expenseDate),
       ...(data.receiptImageUrl !== undefined && { receiptImageUrl: data.receiptImageUrl }),
+      ...(data.pettyCashFundId !== undefined && { pettyCashFundId: data.pettyCashFundId }),
       recordedById: data.recordedById,
     },
     include: { recordedBy: { select: { email: true } } },
   });
+
+  // A linked petty-cash expense reduces the fund's running balance.
+  if (data.pettyCashFundId) {
+    await adjustFundBalance(tenantId, data.pettyCashFundId, -data.amount);
+  }
 
   void createAuditLog({
     tenantId,
@@ -89,7 +96,12 @@ export async function updateExpense(
   id: string,
   data: UpdateExpenseInput,
 ) {
-  return prisma.expense.update({
+  const existing = await prisma.expense.findFirst({ where: { id, tenantId } });
+  if (!existing) {
+    throw new Error('Expense not found');
+  }
+
+  const expense = await prisma.expense.update({
     where: { id },
     data: {
       ...(data.category !== undefined && { category: data.category as ExpenseCategory }),
@@ -97,15 +109,36 @@ export async function updateExpense(
       ...(data.description !== undefined && { description: data.description }),
       ...(data.expenseDate !== undefined && { expenseDate: new Date(data.expenseDate) }),
       ...(data.receiptImageUrl !== undefined && { receiptImageUrl: data.receiptImageUrl }),
+      ...(data.pettyCashFundId !== undefined && { pettyCashFundId: data.pettyCashFundId }),
     },
     include: { recordedBy: { select: { email: true } } },
   });
+
+  // Keep the fund balance in sync when a linked expense's amount or fund changes.
+  if (existing.pettyCashFundId) {
+    await adjustFundBalance(tenantId, existing.pettyCashFundId, existing.amount.toNumber());
+  }
+  if (data.amount !== undefined && data.amount !== existing.amount.toNumber()) {
+    const fundId = data.pettyCashFundId ?? existing.pettyCashFundId;
+    if (fundId) {
+      await adjustFundBalance(tenantId, fundId, -data.amount);
+    }
+  } else if (data.pettyCashFundId) {
+    await adjustFundBalance(tenantId, data.pettyCashFundId, -existing.amount.toNumber());
+  }
+
+  return expense;
 }
 
 export async function deleteExpense(tenantId: string, id: string, actorId: string) {
   const expense = await prisma.expense.findFirst({ where: { id, tenantId } });
   if (!expense) {
     throw new Error('Expense not found');
+  }
+
+  // Restore the fund balance when a linked petty-cash expense is removed.
+  if (expense.pettyCashFundId) {
+    await adjustFundBalance(tenantId, expense.pettyCashFundId, expense.amount.toNumber());
   }
 
   await prisma.expense.delete({ where: { id } });

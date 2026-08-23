@@ -1,16 +1,28 @@
 import 'server-only';
 
-import Papa from 'papaparse';
-
+import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import type { ReconciliationFilters } from '@/lib/validators/reconciliation.validators';
+import {
+  parseRemittanceFile,
+  type RemittanceParsedRow,
+} from '@/lib/services/reconciliation-parser.service';
+import {
+  classifyDiscrepancy,
+  isDiscrepant,
+} from '@/lib/services/reconciliation-discrepancy.service';
+import {
+  auditDeductionCompliance,
+  computeNetPayoutBreakdown,
+} from '@/lib/services/reconciliation-finance.service';
 
 /**
- * Reconciliation service — COD settlement ledger + remittance CSV import.
+ * Reconciliation service — COD settlement ledger + remittance statement import.
  * Trans Express does not return financials via the API, so AyurPOS maintains an
- * expected-receivables ledger and reconciles it against portal CSV statements.
+ * expected-receivables ledger and reconciles it against portal CSV/Excel
+ * statements.
  */
 
 export async function getLedgerEntries(tenantId: string, filters: ReconciliationFilters) {
@@ -18,6 +30,8 @@ export async function getLedgerEntries(tenantId: string, filters: Reconciliation
 
   const where: Record<string, unknown> = { tenantId };
   if (status) where.status = status;
+  if (filters.category) where.discrepancyCategory = filters.category;
+  if (filters.matchMethod) where.matchMethod = filters.matchMethod;
   if (search) {
     where.OR = [
       { waybillId: { contains: search, mode: 'insensitive' } },
@@ -25,21 +39,37 @@ export async function getLedgerEntries(tenantId: string, filters: Reconciliation
     ];
   }
 
-  const [total, items] = await Promise.all([
+  const [total, items, discrepancySummary] = await Promise.all([
     prisma.reconciliationLedgerEntry.count({ where: where as never }),
     prisma.reconciliationLedgerEntry.findMany({
       where: where as never,
       include: {
         delivery: { select: { orderRef: true, status: true, deliveredAt: true } },
         statementImport: { select: { id: true, filename: true, uploadedAt: true } },
+        disputes: { select: { id: true, status: true }, orderBy: { openedAt: 'desc' } },
       },
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
     }),
+    getDiscrepancySummary(tenantId),
   ]);
 
-  return { items, total, page, limit };
+  return { items, total, page, limit, discrepancySummary };
+}
+
+/** Per-category counts of discrepant ledger entries (for the summary view). */
+export async function getDiscrepancySummary(tenantId: string) {
+  const grouped = await prisma.reconciliationLedgerEntry.groupBy({
+    by: ['discrepancyCategory'],
+    where: { tenantId, discrepancyCategory: { not: null } },
+    _count: { _all: true },
+  });
+  const summary: Record<string, number> = {};
+  for (const g of grouped) {
+    if (g.discrepancyCategory) summary[g.discrepancyCategory] = g._count._all;
+  }
+  return summary;
 }
 
 /** Pending-COD aging summary (delivered but unsettled). */
@@ -68,63 +98,24 @@ export async function getPendingCodAging(tenantId: string) {
   return { buckets, count, totalPendingCod: totalAmount };
 }
 
-/** Parse a Trans Express remittance CSV into rows for preview/matching. */
-export function parseRemittanceCsv(csv: string): Record<string, string>[] {
-  const parsed = Papa.parse<Record<string, string>>(csv, {
-    header: true,
-    skipEmptyLines: true,
-  });
-  return parsed.data;
-}
-
-interface NormalizedRow {
-  waybill?: string | undefined;
-  amount?: string | undefined;
-  fees?: string | undefined;
-  status?: string | undefined;
-  date?: string | undefined;
-  raw: Record<string, string>;
-}
-
-/** Tolerant column detection across portal CSV variants. */
-function normalizeRow(row: Record<string, string>): NormalizedRow {
-  const keys = Object.keys(row);
-  const lower = keys.map((k) => k.toLowerCase());
-
-  const pick = (...names: string[]): string | undefined => {
-    const idx = lower.findIndex((l) => names.some((n) => l.includes(n)));
-    if (idx < 0) return undefined;
-    const key = keys[idx];
-    if (!key) return undefined;
-    return row[key] ?? undefined;
-  };
-
-  return {
-    waybill: pick('waybill', 'way_bill', 'tracking', 'airwaybill'),
-    amount: pick('amount', 'cod', 'settled', 'paid', 'received'),
-    fees: pick('fee', 'charge', 'cost', 'commission'),
-    status: pick('status', 'state'),
-    date: pick('date', 'settled_at', 'time'),
-    raw: row,
-  };
-}
-
 /**
- * Import a remittance CSV statement and match rows to ledger entries.
+ * Import a remittance statement (CSV or Excel) and match rows to ledger entries.
  * Idempotent: re-uploading the same statement (dedup by batch + waybill) never
  * double-settles. Never auto-clears financial discrepancies.
+ *
+ * `buffer` may be a UTF-8 CSV string or an Excel workbook buffer; the file type
+ * is detected from `filename`.
  */
 export async function importRemittanceStatement(
   tenantId: string,
   userId: string,
   filename: string,
-  csv: string,
-) {
+  buffer: Buffer | string,
+): Promise<unknown> {
   setSentryTenantContext({ tenantId });
 
-  const parsed = Papa.parse<Record<string, string>>(csv, { header: true, skipEmptyLines: true });
-  const rawRows = parsed.data;
-  const rows = rawRows.map(normalizeRow);
+  const content = typeof buffer === 'string' ? Buffer.from(buffer, 'utf-8') : buffer;
+  const rows = parseRemittanceFile(filename, content);
 
   const statement = await prisma.statementImport.create({
     data: {
@@ -133,7 +124,7 @@ export async function importRemittanceStatement(
       uploadedById: userId,
       status: 'PARSED',
       rowCount: rows.length,
-      rawRows: rawRows as never,
+      rawRows: rows.map((r) => r.raw) as never,
     },
   });
 
@@ -141,44 +132,10 @@ export async function importRemittanceStatement(
   let discrepancyCount = 0;
 
   for (const row of rows) {
-    if (!row.waybill) continue;
-
-    // Match by waybill; order-ref fallback handled where available.
-    const entry = await prisma.reconciliationLedgerEntry.findFirst({
-      where: { tenantId, waybillId: row.waybill },
-    });
-    if (!entry) {
-      discrepancyCount++;
-      continue;
-    }
-    if (entry.statementImportId) continue; // already settled by a prior import → idempotent
-
-    const settledAmount = row.amount ? Number(row.amount) : null;
-    const expected = Number(entry.expectedCod.toString());
-
-    if (settledAmount !== null && Math.abs(settledAmount - expected) < 0.01) {
-      await prisma.reconciliationLedgerEntry.update({
-        where: { id: entry.id },
-        data: {
-          status: 'CLEARED',
-          settledAmount,
-          settledAt: row.date ? new Date(row.date) : new Date(),
-          statementImportId: statement.id,
-        },
-      });
-      matchedCount++;
-    } else {
-      await prisma.reconciliationLedgerEntry.update({
-        where: { id: entry.id },
-        data: {
-          status: 'PARTIAL_MATCH',
-          settledAmount: settledAmount,
-          statementImportId: statement.id,
-          discrepancyNote: settledAmount === null ? 'No settled amount on statement row' : 'Settled amount differs from expected COD',
-        },
-      });
-      discrepancyCount++;
-    }
+    const match = await matchStatementRow(tenantId, row, statement.id);
+    if (match === 'matched') matchedCount++;
+    else if (match === 'discrepancy') discrepancyCount++;
+    // 'unmatched' rows are counted in the import totals below as skipped.
   }
 
   const finalStatement = await prisma.statementImport.update({
@@ -202,4 +159,171 @@ export async function importRemittanceStatement(
   });
 
   return finalStatement;
+}
+
+type MatchOutcome = 'matched' | 'discrepancy' | 'unmatched';
+
+/**
+ * Match a single statement row to a ledger entry.
+ *
+ * Resolution order:
+ *  1. by courier waybill (primary key),
+ *  2. fallback by `Delivery.orderRef` (tenant-scoped, guarded against ambiguous
+ *     matches),
+ *  3. fallback by tracking barcode matching a delivery orderRef/waybill.
+ * The match method is recorded on the ledger entry for auditability.
+ */
+async function matchStatementRow(
+  tenantId: string,
+  row: RemittanceParsedRow,
+  statementId: string,
+): Promise<MatchOutcome> {
+  if (row.waybill) {
+    const byWaybill = await prisma.reconciliationLedgerEntry.findFirst({
+      where: { tenantId, waybillId: row.waybill },
+    });
+    if (byWaybill) {
+      if (byWaybill.statementImportId) return 'matched'; // already settled → idempotent
+      return settleEntry(byWaybill.id, row, statementId, 'WAYBILL');
+    }
+  }
+
+  // Fallback: order reference.
+  if (row.orderRef) {
+    const byOrderRef = await prisma.reconciliationLedgerEntry.findMany({
+      where: { tenantId, delivery: { orderRef: row.orderRef } },
+    });
+    if (byOrderRef.length === 1) {
+      return settleEntry(byOrderRef[0]!.id, row, statementId, 'ORDER_REF');
+    }
+    if (byOrderRef.length > 1) {
+      // Ambiguous — flag the first for manual review rather than silently picking.
+      const target = byOrderRef.find((e) => !e.statementImportId) ?? byOrderRef[0];
+      if (target) {
+        await prisma.reconciliationLedgerEntry.update({
+          where: { id: target.id },
+          data: {
+            status: 'DISCREPANCY',
+            matchMethod: 'AMBIGUOUS',
+            statementImportId: statementId,
+            discrepancyNote: `Ambiguous order reference "${row.orderRef}" matches multiple ledger entries`,
+          },
+        });
+        return 'discrepancy';
+      }
+    }
+  }
+
+  // Fallback: tracking barcode matching an orderRef/waybill.
+  if (row.barcode) {
+    const byBarcode = await prisma.reconciliationLedgerEntry.findFirst({
+      where: {
+        tenantId,
+        OR: [{ waybillId: row.barcode }, { delivery: { orderRef: row.barcode } }],
+      },
+    });
+    if (byBarcode) {
+      return settleEntry(byBarcode.id, row, statementId, 'BARCODE');
+    }
+  }
+
+  // No match — surfaced as an unreconciled row (counted in the import summary).
+  return 'unmatched';
+}
+
+/**
+ * Settle a matched ledger entry against a statement row. When the remitted
+ * amount equals expected COD, the entry clears; otherwise it is flagged as a
+ * discrepancy with a classified failure-mode category. Returns the outcome.
+ *
+ * Also computes and persists the expected net payout (doc 15) and the
+ * contract-compliance audit of courier deductions (doc 16) at match time.
+ */
+async function settleEntry(
+  entryId: string,
+  row: RemittanceParsedRow,
+  statementId: string,
+  matchMethod: 'WAYBILL' | 'ORDER_REF' | 'BARCODE',
+): Promise<MatchOutcome> {
+  const entry = await prisma.reconciliationLedgerEntry.findUnique({
+    where: { id: entryId },
+    include: { delivery: { select: { shippingFee: true } } },
+  });
+  if (!entry || entry.statementImportId) return 'matched';
+
+  const expected = Number(entry.expectedCod.toString());
+  const settledAmount = row.amount ? Number(row.amount) : null;
+  const statedFees = row.fees ? Number(row.fees) : null;
+  const deliveryFee = entry.delivery?.shippingFee ?? null;
+
+  // Doc 15: expected net payout + deduction breakdown (single source of truth).
+  const netBreakdown = await computeNetPayoutBreakdown({
+    tenantId: entry.tenantId,
+    grossCod: entry.expectedCod,
+    deliveryFee,
+  });
+
+  // Doc 16: contract-compliance audit of the courier's stated deduction.
+  const audit = await auditDeductionCompliance({
+    tenantId: entry.tenantId,
+    grossCod: entry.expectedCod,
+    deliveryFee,
+    actualDeduction: statedFees,
+  });
+
+  // Doc 14 feed: an over-charge is classified as an unauthorized deduction.
+  const effectiveCategory =
+    audit.auditStatus === 'OVER_CHARGED' ? 'UNAUTHORIZED_DEDUCTION' : null;
+
+  if (settledAmount !== null && !isDiscrepant(expected, settledAmount)) {
+    await prisma.reconciliationLedgerEntry.update({
+      where: { id: entryId },
+      data: {
+        status: 'CLEARED',
+        matchMethod,
+        expectedFee: deliveryFee ? new Prisma.Decimal(deliveryFee.toString()).toFixed(2) : null,
+        expectedNetPayout: netBreakdown.expectedNetPayout,
+        codCommissionAmount: netBreakdown.codCommissionAmount,
+        vatAmount: netBreakdown.vatAmount,
+        auditStatus: audit.auditStatus,
+        expectedDeduction: audit.expectedDeduction,
+        actualDeduction: audit.actualDeduction,
+        deductionVariance: audit.deductionVariance,
+        settledAmount,
+        settledAt: row.date ? new Date(row.date) : new Date(),
+        statementImportId: statementId,
+        discrepancyCategory: null,
+        discrepancyNote: null,
+        discrepancyAmount: null,
+      },
+    });
+    return 'matched';
+  }
+
+  const classification = classifyDiscrepancy({ expectedCod: expected, settledAmount, statedFees });
+  const category = effectiveCategory ?? classification.category;
+  await prisma.reconciliationLedgerEntry.update({
+    where: { id: entryId },
+    data: {
+      status: settledAmount === null ? 'DISCREPANCY' : 'PARTIAL_MATCH',
+      matchMethod,
+      expectedFee: deliveryFee ? new Prisma.Decimal(deliveryFee.toString()).toFixed(2) : null,
+      expectedNetPayout: netBreakdown.expectedNetPayout,
+      codCommissionAmount: netBreakdown.codCommissionAmount,
+      vatAmount: netBreakdown.vatAmount,
+      auditStatus: audit.auditStatus,
+      expectedDeduction: audit.expectedDeduction,
+      actualDeduction: audit.actualDeduction,
+      deductionVariance: audit.deductionVariance,
+      settledAmount,
+      statementImportId: statementId,
+      discrepancyCategory: category,
+      discrepancyAmount: classification.variance,
+      discrepancyNote:
+        category === 'UNAUTHORIZED_DEDUCTION' && audit.auditStatus === 'OVER_CHARGED'
+          ? `Courier over-charged ${audit.deductionVariance} above the contract terms`
+          : classification.reason,
+    },
+  });
+  return 'discrepancy';
 }

@@ -11,3 +11,4 @@ export { useReconciliation } from './useReconciliation';
 export { useCourierSettings } from './useCourierSettings';
 export { useLabelTemplate } from './useLabelTemplate';
 export { useLocations } from './useLocations';
+export { useLogRecoveryAction, useRedeliverDelivery, usePermanentCancelDelivery } from './useRecoveryActions';

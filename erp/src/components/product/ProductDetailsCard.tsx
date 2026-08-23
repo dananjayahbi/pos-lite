@@ -13,6 +13,11 @@ const TAX_LABELS: Record<string, string> = {
   EXEMPT: 'VAT Exempt',
 };
 
+const SOURCE_LABELS: Record<string, string> = {
+  MANUFACTURED: 'Manufactured',
+  TRADED: 'Traded',
+};
+
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   return new Intl.DateTimeFormat('en-GB', {
@@ -32,8 +37,13 @@ interface ProductDetailsCardProps {
     description: string | null;
     tags: string[];
     taxRule: string;
+    productSource: string;
     category: { id: string; name: string } | null;
     brand: { id: string; name: string } | null;
+    activeIngredients: string | null;
+    usageInstructions: string | null;
+    healthBenefits: string | null;
+    safetyPrecautions: string | null;
     createdAt: string;
     updatedAt: string;
   };
@@ -135,6 +145,12 @@ export function ProductDetailsCard({ product, variants = [] }: ProductDetailsCar
           value={TAX_LABELS[product.taxRule] ?? product.taxRule}
         />
 
+        {/* Product Source */}
+        <FieldRow
+          label="Source"
+          value={SOURCE_LABELS[product.productSource] ?? product.productSource}
+        />
+
         {/* Category */}
         <div>
           <dt className="font-body text-xs font-semibold uppercase tracking-wider text-mist">
@@ -194,6 +210,21 @@ export function ProductDetailsCard({ product, variants = [] }: ProductDetailsCar
           </dd>
         </div>
 
+        {/* Health information */}
+        <HealthFieldRow
+          label="Active Ingredients"
+          value={product.activeIngredients}
+        />
+        <HealthFieldRow
+          label="Usage Instructions"
+          value={product.usageInstructions}
+        />
+        <HealthFieldRow label="Health Benefits" value={product.healthBenefits} />
+        <HealthFieldRow
+          label="Safety Precautions"
+          value={product.safetyPrecautions}
+        />
+
         {/* Created At */}
         <FieldRow label="Created At" value={formatDate(product.createdAt)} />
 
@@ -214,6 +245,21 @@ function FieldRow({ label, value }: { label: string; value: string }) {
         {label}
       </dt>
       <dd className="mt-1 font-body text-sm text-espresso">{value}</dd>
+    </div>
+  );
+}
+
+// Full-width row for multi-line health content; hidden when empty.
+function HealthFieldRow({ label, value }: { label: string; value: string | null }) {
+  if (!value) return null;
+  return (
+    <div className="sm:col-span-2">
+      <dt className="font-body text-xs font-semibold uppercase tracking-wider text-mist">
+        {label}
+      </dt>
+      <dd className="mt-1 font-body text-sm text-espresso whitespace-pre-wrap">
+        {value}
+      </dd>
     </div>
   );
 }

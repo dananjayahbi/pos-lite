@@ -25,6 +25,8 @@ export const ReceivePOLineSchema = z.object({
   lineId: z.string().min(1, 'Line ID is required'),
   receivedQty: z.int().min(1, 'Received quantity must be at least 1'),
   actualCostPrice: z.number().min(0).optional(),
+  batchNumber: z.string().trim().min(1).optional(),
+  expiryDate: z.string().datetime().optional(),
 });
 
 export const ReceivePOLinesSchema = z.object({

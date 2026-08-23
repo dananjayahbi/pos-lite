@@ -69,6 +69,9 @@ export const PERMISSIONS = {
     viewTaxReport: 'report:view_tax',
     viewStockReport: 'report:view_stock',
     viewCashflowReport: 'report:view_cashflow',
+    viewZeroValueReport: 'report:view_zero_value',
+    viewRecoveryReport: 'report:view_recovery',
+    viewCustomerReport: 'report:view_customers',
   },
   SETTINGS: {
     manageSettings: 'settings:manage',
@@ -78,6 +81,7 @@ export const PERMISSIONS = {
     manageUsers: 'settings:users',
     manageReceiptTemplate: 'settings:receipt_template',
     manageStoreProfile: 'settings:store_profile',
+    viewAuditLog: 'settings:view_audit_log',
   },
   PROMOTION: {
     createPromotion: 'promotion:create',
@@ -89,6 +93,10 @@ export const PERMISSIONS = {
     createExpense: 'expense:create',
     approveExpense: 'expense:approve',
     viewExpense: 'expense:view',
+  },
+  PETTY_CASH: {
+    viewPettyCash: 'petty_cash:view',
+    managePettyCash: 'petty_cash:manage',
   },
   BILLING: {
     viewBilling: 'billing:view',
@@ -119,6 +127,33 @@ export const PERMISSIONS = {
     managePackaging: 'delivery:packaging:manage',
     dispatchPackaging: 'delivery:packaging:dispatch',
     manageRecovery: 'delivery:recovery:manage',
+  },
+  RAW_MATERIAL: {
+    viewRawMaterial: 'raw_material:view',
+    createRawMaterial: 'raw_material:create',
+    editRawMaterial: 'raw_material:edit',
+    adjustRawMaterialStock: 'raw_material:stock:adjust',
+    deleteRawMaterial: 'raw_material:delete',
+  },
+  FACTORY: {
+    viewFactoryDashboard: 'factory:dashboard:view',
+  },
+  BOM: {
+    viewBom: 'bom:view',
+    createBom: 'bom:create',
+    editBom: 'bom:edit',
+    deleteBom: 'bom:delete',
+    produceGoods: 'bom:produce',
+    viewProductionLog: 'bom:production:view',
+  },
+  RAW_MATERIAL_ALERT: {
+    viewRawMaterialAlerts: 'raw_material:alerts:view',
+    manageRawMaterialAlerts: 'raw_material:alerts:manage',
+  },
+  BATCH: {
+    viewBatch: 'batch:view',
+    viewBatchStats: 'batch:stats:view',
+    viewBatchAlerts: 'batch:alerts:view',
   },
 } as const;
 
@@ -151,10 +186,11 @@ const managerExcluded = new Set<PermissionKey>([
   PERMISSIONS.DELIVERY.manageCourierSettings,
   PERMISSIONS.DELIVERY.importRemittance,
   PERMISSIONS.DELIVERY.manageRateCard,
+  PERMISSIONS.REPORT.viewZeroValueReport,
 ]);
 
 export const ROLE_PERMISSIONS: Record<
-  'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK' | 'DISPATCH_STAFF',
+  'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK' | 'DISPATCH_STAFF' | 'FACTORY_MANAGER',
   PermissionKey[]
 > = {
   OWNER: [...ALL_PERMISSIONS],
@@ -181,6 +217,8 @@ export const ROLE_PERMISSIONS: Record<
     PERMISSIONS.SUPPLIER.createPurchaseOrder,
     PERMISSIONS.SUPPLIER.receivePurchaseOrder,
     PERMISSIONS.SUPPLIER.viewSupplier,
+    PERMISSIONS.BATCH.viewBatch,
+    PERMISSIONS.BATCH.viewBatchStats,
   ],
   DISPATCH_STAFF: [
     PERMISSIONS.DELIVERY.viewDelivery,
@@ -192,6 +230,26 @@ export const ROLE_PERMISSIONS: Record<
     PERMISSIONS.DELIVERY.managePackaging,
     PERMISSIONS.DELIVERY.dispatchPackaging,
     PERMISSIONS.DELIVERY.manageRecovery,
+    PERMISSIONS.REPORT.viewRecoveryReport,
+  ],
+  FACTORY_MANAGER: [
+    PERMISSIONS.RAW_MATERIAL.viewRawMaterial,
+    PERMISSIONS.RAW_MATERIAL.createRawMaterial,
+    PERMISSIONS.RAW_MATERIAL.editRawMaterial,
+    PERMISSIONS.RAW_MATERIAL.adjustRawMaterialStock,
+    PERMISSIONS.RAW_MATERIAL.deleteRawMaterial,
+    PERMISSIONS.FACTORY.viewFactoryDashboard,
+    PERMISSIONS.BOM.viewBom,
+    PERMISSIONS.BOM.createBom,
+    PERMISSIONS.BOM.editBom,
+    PERMISSIONS.BOM.deleteBom,
+    PERMISSIONS.BOM.produceGoods,
+    PERMISSIONS.BOM.viewProductionLog,
+    PERMISSIONS.RAW_MATERIAL_ALERT.viewRawMaterialAlerts,
+    PERMISSIONS.PRODUCT.viewProduct,
+    PERMISSIONS.BATCH.viewBatch,
+    PERMISSIONS.BATCH.viewBatchStats,
+    PERMISSIONS.BATCH.viewBatchAlerts,
   ],
 };
 
@@ -199,11 +257,18 @@ export function getEffectivePermissions(
   role: UserRole | undefined,
   assignedPermissions: unknown,
 ): string[] {
+  // SUPER_ADMIN acting within a store (tenant) context receives full store
+  // access — equivalent to the OWNER permission set. Platform-level controls
+  // remain enforced separately in the /api/admin/* routes.
+  if (role === 'SUPER_ADMIN') {
+    return [...ALL_PERMISSIONS];
+  }
+
   const normalized = Array.isArray(assignedPermissions)
     ? assignedPermissions.filter((permission): permission is string => typeof permission === 'string')
     : [];
 
-  if (!role || role === 'SUPER_ADMIN') {
+  if (!role) {
     return normalized;
   }
 

@@ -188,6 +188,13 @@ const navGroups: NavGroup[] = [
         match: 'exact',
       },
       {
+        name: 'Petty Cash',
+        href: '/petty-cash',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.PETTY_CASH.viewPettyCash,
+        match: 'exact',
+      },
+      {
         name: 'Cash Flow',
         href: '/expenses/cash-flow',
         roles: ['OWNER', 'MANAGER'],
@@ -252,6 +259,13 @@ const navGroups: NavGroup[] = [
         match: 'exact',
       },
       {
+        name: 'Recovery Performance',
+        href: '/reports/recovery-staff-performance',
+        roles: ['OWNER', 'MANAGER', 'DISPATCH_STAFF'],
+        permission: PERMISSIONS.REPORT.viewRecoveryReport,
+        match: 'exact',
+      },
+      {
         name: 'Courier Settings',
         href: '/delivery/settings',
         roles: ['OWNER', 'MANAGER'],
@@ -263,6 +277,32 @@ const navGroups: NavGroup[] = [
         href: '/delivery/label',
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.DELIVERY.manageLabelTemplate,
+        match: 'exact',
+      },
+    ],
+  },
+  {
+    label: 'Factory',
+    items: [
+      {
+        name: 'Factory Dashboard',
+        href: '/factory',
+        roles: ['OWNER', 'MANAGER', 'FACTORY_MANAGER'],
+        permission: PERMISSIONS.FACTORY.viewFactoryDashboard,
+        match: 'exact',
+      },
+      {
+        name: 'Raw Materials',
+        href: '/factory/raw-materials',
+        roles: ['OWNER', 'MANAGER', 'FACTORY_MANAGER'],
+        permission: PERMISSIONS.RAW_MATERIAL.viewRawMaterial,
+        match: 'exact',
+      },
+      {
+        name: 'Bill of Materials',
+        href: '/factory/bom',
+        roles: ['OWNER', 'MANAGER', 'FACTORY_MANAGER'],
+        permission: PERMISSIONS.BOM.viewBom,
         match: 'exact',
       },
     ],

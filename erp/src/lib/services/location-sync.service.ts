@@ -3,7 +3,7 @@ import 'server-only';
 import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import { setSentryTenantContext } from '@/lib/sentry/context';
-import { transExpressAdapter } from '@/lib/courier';
+import { resolveAdapterForAccount } from '@/lib/courier/registry';
 import { resolveCityId } from '@/lib/utils/courier';
 import type { CourierCity } from '@/lib/courier/types';
 
@@ -56,7 +56,9 @@ export async function syncLocations(tenantId: string): Promise<LocationCache> {
   if (!account) throw new Error('COURIER_ACCOUNT_NOT_CONFIGURED');
   if (!account.email && !account.apiKey) throw new Error('COURIER_CREDENTIALS_MISSING');
 
-  const auth = await transExpressAdapter.authenticate({
+  const adapter = resolveAdapterForAccount(account);
+
+  const auth = await adapter.authenticate({
     email: account.email ?? undefined,
     password: account.password ?? undefined,
     apiKey: account.apiKey ?? undefined,
@@ -64,7 +66,7 @@ export async function syncLocations(tenantId: string): Promise<LocationCache> {
   });
   if (!auth.ok) throw new Error(`COURIER_AUTH_FAILED:${auth.error.message}`);
 
-  const result = await transExpressAdapter.syncLocations(account.env, auth.data);
+  const result = await adapter.syncLocations(account.env, auth.data);
   if (!result.ok) throw new Error(`LOCATION_SYNC_FAILED:${result.error.message}`);
 
   const cache: LocationCache = {

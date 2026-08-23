@@ -1,9 +1,10 @@
 import 'server-only';
 
-import { Prisma } from '@/generated/prisma/client';
+import { Prisma, OrderPaymentMethod, OrderPaymentStatus } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { estimateWebsiteShippingFee } from '@/lib/services/shipping-fee.service';
 import type { BulkStatusChangeInput, BulkCreateDeliveryInput, BulkResultItem } from '@/lib/validators/order.validators';
 import type { WebsiteCheckoutInput } from '@/lib/validators/checkout.validators';
 import type { DeliveryStatus } from '@/generated/prisma/client';
@@ -29,10 +30,27 @@ async function generateOrderRef(tenantId: string): Promise<string> {
 export async function createWebsiteOrder(
   tenantId: string,
   input: WebsiteCheckoutInput,
-): Promise<{ deliveryId: string; orderRef: string }> {
+): Promise<{ deliveryId: string; orderRef: string; shippingFee: string | null }> {
   setSentryTenantContext({ tenantId });
 
   const orderRef = await generateOrderRef(tenantId);
+
+  // Default COD (unpaid-by-design). CARD orders start PENDING and are marked
+  // PAID once the gateway confirms via IPN.
+  const paymentMethod =
+    input.paymentMethod === 'CARD' ? OrderPaymentMethod.CARD : OrderPaymentMethod.COD;
+  const paymentStatus = OrderPaymentStatus.PENDING;
+
+  // Price the delivery from the active rate card (single source of truth).
+  // The website sends free-text city/district names + an optional total weight;
+  // this resolves names to numeric ids and computes the fee that will be stored
+  // on the Delivery and echoed back to the checkout for confirmation.
+  const shipping = await estimateWebsiteShippingFee({
+    tenantId,
+    weightKg: input.totalWeightKg,
+    cityName: input.cityName,
+    districtName: input.districtName ?? undefined,
+  });
 
   const delivery = await prisma.$transaction(async (tx) => {
     const created = await tx.delivery.create({
@@ -47,7 +65,10 @@ export async function createWebsiteOrder(
           input.totalWeightKg !== undefined
             ? new Prisma.Decimal(input.totalWeightKg.toString()).toFixed(2)
             : null,
+        shippingFee: shipping.shippingFee,
         notes: input.notes ?? null,
+        paymentMethod,
+        paymentStatus,
       },
       include: { address: true },
     });
@@ -61,7 +82,9 @@ export async function createWebsiteOrder(
         addressLine1: input.addressLine1,
         addressLine2: input.addressLine2 ?? null,
         cityName: input.cityName,
+        cityId: shipping.destinationCityId ?? null,
         districtName: input.districtName ?? null,
+        districtId: shipping.destinationDistrictId ?? null,
         postalCode: input.postalCode ?? null,
       },
     });
@@ -92,7 +115,7 @@ export async function createWebsiteOrder(
     after: { source: 'WEBSITE_CHECKOUT', orderRef } as Prisma.InputJsonValue,
   });
 
-  return { deliveryId: delivery.id, orderRef };
+  return { deliveryId: delivery.id, orderRef, shippingFee: shipping.shippingFee };
 }
 
 /**

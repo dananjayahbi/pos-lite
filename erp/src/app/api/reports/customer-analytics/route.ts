@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import Decimal from "decimal.js";
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -48,6 +50,9 @@ export async function GET(request: NextRequest) {
     if (!tenantId) {
       return errorJson("UNAUTHORIZED", "No tenant", 401);
     }
+
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewCustomerReport);
+    if (forbidden) return forbidden;
 
     const url = request.nextUrl;
     const fromParam = url.searchParams.get("from");

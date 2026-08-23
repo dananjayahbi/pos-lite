@@ -25,13 +25,33 @@ export function resolveCityId(
   cities: { id: number; text: string }[],
   cityName?: string | null,
 ): number | null {
-  if (!cityName) return null;
-  const normalized = cityName.trim().toLowerCase();
+  return resolveLocationId(cities, cityName);
+}
+
+/**
+ * Best-effort district → district_id resolver (same fuzzy-match strategy as
+ * cities, so website free-text district names map to the cached numeric id used
+ * by the shipping-fee rate engine).
+ */
+export function resolveDistrictId(
+  districts: { id: number; text: string }[],
+  districtName?: string | null,
+): number | null {
+  return resolveLocationId(districts, districtName);
+}
+
+/** Shared fuzzy matcher used by city/district resolvers. */
+function resolveLocationId(
+  locations: { id: number; text: string }[],
+  name?: string | null,
+): number | null {
+  if (!name) return null;
+  const normalized = name.trim().toLowerCase();
   if (!normalized) return null;
 
-  const exact = cities.find((c) => c.text.trim().toLowerCase() === normalized);
+  const exact = locations.find((c) => c.text.trim().toLowerCase() === normalized);
   if (exact) return exact.id;
 
-  const partial = cities.find((c) => c.text.trim().toLowerCase().includes(normalized));
+  const partial = locations.find((c) => c.text.trim().toLowerCase().includes(normalized));
   return partial?.id ?? null;
 }
