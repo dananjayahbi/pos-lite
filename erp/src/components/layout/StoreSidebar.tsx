@@ -118,6 +118,12 @@ const navGroups: NavGroup[] = [
         permission: PERMISSIONS.STOCK.viewStock,
       },
       {
+        name: 'Adjust Stock',
+        href: '/stock-control/adjust',
+        roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
+        permission: PERMISSIONS.STOCK.adjustStock,
+      },
+      {
         name: 'Stock Movements',
         href: '/stock-control/movements',
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
