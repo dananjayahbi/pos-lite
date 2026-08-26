@@ -60,19 +60,21 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       }
     }
 
-    // Mandatory customer enforcement (doc 32): every finalized POS sale must be
-    // linked to a customer that has a name and a mobile number.
-    if (!input.customerId) {
+    // POS sales must be linked to a customer. Management sales may omit the
+    // customer, but still validate the link when one is supplied.
+    if (input.shiftId && !input.customerId) {
       throw new Error('A customer must be linked to finalize a POS sale');
     }
-    const linkedCustomer = await tx.customer.findFirst({
-      where: { id: input.customerId, tenantId, deletedAt: null },
-    });
-    if (!linkedCustomer) {
-      throw new Error('Linked customer not found');
-    }
-    if (!linkedCustomer.name || !linkedCustomer.phone) {
-      throw new Error('Linked customer must have a name and a mobile number');
+    if (input.customerId) {
+      const linkedCustomer = await tx.customer.findFirst({
+        where: { id: input.customerId, tenantId, deletedAt: null },
+      });
+      if (!linkedCustomer) {
+        throw new Error('Linked customer not found');
+      }
+      if (!linkedCustomer.name || !linkedCustomer.phone) {
+        throw new Error('Linked customer must have a name and a mobile number');
+      }
     }
 
     // Get tenant settings for tax

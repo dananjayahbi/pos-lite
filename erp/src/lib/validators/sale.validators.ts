@@ -18,7 +18,7 @@ export const CreateSaleSchema = z
     cardReferenceNumber: z.string().max(20).optional(),
     cardAmount: z.number().positive().optional(),
     splitLegMethod: z.enum(['CARD', 'LANKAQR']).optional(),
-    customerId: z.string().min(1, 'A customer must be linked to finalize a POS sale'),
+    customerId: z.string().min(1).optional(),
     appliedStoreCredit: z.string().optional().default('0'),
     appliedPromotions: z.any().optional(),
     promoCode: z.string().max(50).optional(),
@@ -51,6 +51,15 @@ export const CreateSaleSchema = z
           message: 'cashReceived is required for SPLIT payments',
         });
       }
+    }
+    // POS sales must be linked to a customer. Shiftless sales are created from
+    // the owner/manager sales page, where a customer may be intentionally omitted.
+    if (data.shiftId && !data.customerId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['customerId'],
+        message: 'A customer must be linked to finalize a POS sale',
+      });
     }
     // Doc 34: a replacement must point at an original order reference.
     if (data.zeroValueReason === 'PRODUCT_REPLACEMENT') {

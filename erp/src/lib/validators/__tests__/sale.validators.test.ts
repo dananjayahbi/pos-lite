@@ -41,6 +41,16 @@ describe('CreateSaleSchema — mandatory customer (doc 32)', () => {
     expect(parsed.success).toBe(true);
   });
 
+  it('accepts a shiftless management sale without a customerId', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'CASH',
+      cashReceived: 100,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
   it('accepts LANKAQR as a payment method', () => {
     const parsed = CreateSaleSchema.safeParse({
       shiftId: 'shift-1',
