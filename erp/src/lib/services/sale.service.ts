@@ -205,10 +205,13 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     // Create Sale
     const sale = await tx.sale.create({
       data: {
-        tenantId,
-        ...(input.shiftId ? { shiftId: input.shiftId } : {}),
-        cashierId: input.cashierId,
-        ...(input.customerId ? { customerId: input.customerId } : {}),
+        tenant: { connect: { id: tenantId } },
+        cashier: { connect: { id: input.cashierId } },
+        ...(input.shiftId ? { shift: { connect: { id: input.shiftId } } } : {}),
+        ...(input.customerId ? { customer: { connect: { id: input.customerId } } } : {}),
+        ...(input.authorizingManagerId
+          ? { authorizingManager: { connect: { id: input.authorizingManagerId } } }
+          : {}),
         ...(input.appliedPromotions !== undefined && {
           appliedPromotions: input.appliedPromotions,
         }),
@@ -219,7 +222,6 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
         paymentMethod: effectivePaymentMethod,
         zeroValueReason: input.zeroValueReason ?? null,
         zeroValueLinkedOrderRef: resolvedLinkedOrderRef,
-        authorizingManagerId: input.authorizingManagerId ?? null,
         status: 'COMPLETED',
         completedAt: new Date(),
         lines: {
