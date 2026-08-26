@@ -15,7 +15,7 @@ AyurPOS provides a complete POS terminal, inventory management, CRM, supplier ma
 | Framework     | Next.js 16 (App Router, TypeScript)     |
 | Styling       | Tailwind CSS v4 + ShadCN/UI             |
 | Database ORM  | Prisma 7 + PostgreSQL 15                |
-| Auth          | NextAuth.js v5 (Auth.js, credentials + PIN) |
+| Auth          | NextAuth.js v5 (Auth.js, credentials)      |
 | Server State  | TanStack Query v5                       |
 | Client State  | Zustand v5                              |
 | Package Mgr   | pnpm                                    |
@@ -123,7 +123,7 @@ The seed command is idempotent: running it multiple times will not create duplic
 |----------------------|------------------------------------|
 | Subscription Plans   | Always (Basic POS, Pro POS + WhatsApp) |
 | Super Admin User     | Always                             |
-| Sample Tenant        | Only when `SEED_SAMPLE_TENANT=true` |
+| Sample Tenant        | Always (Ayur Wellness Centre + Lanka Electronics) |
 
 ### Environment variables
 
@@ -131,18 +131,10 @@ The seed command is idempotent: running it multiple times will not create duplic
 |------------------------------|------------------------------------------------------|
 | `SEED_SUPER_ADMIN_EMAIL`     | Super Admin email (default: `superadmin@ayurpos.dev`) |
 | `SEED_SUPER_ADMIN_PASSWORD`  | Super Admin password (default: `changeme123!`)       |
-| `SEED_SAMPLE_TENANT`         | Set to `"true"` to seed "Ayur Wellness Centre" tenant     |
-| `SEED_OWNER_EMAIL`           | Owner email for the sample tenant                    |
-| `SEED_OWNER_PASSWORD`        | Owner password for the sample tenant                 |
 
 ### Seeding with sample tenant
 
 ```bash
-# Ensure these are set in .env.local:
-# SEED_SAMPLE_TENANT="true"
-# SEED_OWNER_EMAIL="owner@dilani.dev"
-# SEED_OWNER_PASSWORD="ownerpass123!"
-
 pnpm prisma db seed
 ```
 

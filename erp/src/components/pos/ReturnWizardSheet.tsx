@@ -2,20 +2,16 @@
 
 import { useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useSession } from 'next-auth/react';
 import { useCartStore } from '@/stores/cartStore';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReturnItemSelectionStep } from '@/components/pos/ReturnItemSelectionStep';
 import { ReturnRefundOptionsStep } from '@/components/pos/ReturnRefundOptionsStep';
-import { ManagerPINStep } from '@/components/pos/ManagerPINStep';
 import { ReturnReceiptDialog } from '@/components/pos/ReturnReceiptDialog';
 import type { ReturnRefundMethod } from '@/generated/prisma/client';
 import Decimal from 'decimal.js';
-import { formatRupee } from '@/lib/format';
 import { toast } from 'sonner';
-import { CheckCircle2 } from 'lucide-react';
 
 interface SelectedLine {
   saleLineId: string;
@@ -31,14 +27,12 @@ interface ReturnWizardSheetProps {
 }
 
 export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete }: ReturnWizardSheetProps) {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2>(1);
   const [selectedLines, setSelectedLines] = useState<SelectedLine[]>([]);
   const [refundMethod, setRefundMethod] = useState<ReturnRefundMethod>('CASH');
   const [cardReversalReference, setCardReversalReference] = useState('');
   const [restockItems, setRestockItems] = useState(true);
   const [reason, setReason] = useState('');
-  const [authorizingManagerId, setAuthorizingManagerId] = useState<string | null>(null);
-  const [authorizationTimestamp, setAuthorizationTimestamp] = useState<number | null>(null);
   const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [receiptState, setReceiptState] = useState<{
@@ -47,7 +41,6 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
     refundMethod: string;
   } | null>(null);
   const queryClient = useQueryClient();
-  const { data: sessionData } = useSession();
 
   const { data: saleData, isLoading, error, refetch } = useQuery({
     queryKey: ['sale-return', saleId],
@@ -67,8 +60,6 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
     setCardReversalReference('');
     setRestockItems(true);
     setReason('');
-    setAuthorizingManagerId(null);
-    setAuthorizationTimestamp(null);
     setShowAbandonConfirm(false);
     setReceiptState(null);
   }, []);
@@ -92,14 +83,7 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
   };
 
   const handleSubmit = async () => {
-    if (!saleId || !authorizingManagerId) return;
-
-    if (authorizationTimestamp !== null && Date.now() - authorizationTimestamp > 5 * 60 * 1000) {
-      setAuthorizingManagerId(null);
-      setAuthorizationTimestamp(null);
-      toast.error('Authorization expired. Re-enter PIN.');
-      return;
-    }
+    if (!saleId) return;
 
     setIsSubmitting(true);
     try {
@@ -116,7 +100,6 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
           refundMethod,
           restockItems,
           reason,
-          authorizedById: authorizingManagerId,
           ...(refundMethod === 'CARD_REVERSAL' && cardReversalReference
             ? { cardReversalReference }
             : {}),
@@ -186,12 +169,7 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
   const refundTotal = computeRefundTotal();
   const hasSelectedItems = selectedLines.some((l) => l.quantity > 0);
 
-  const canProceedStep3 =
-    authorizingManagerId !== null &&
-    authorizationTimestamp !== null &&
-    Date.now() - authorizationTimestamp < 5 * 60 * 1000;
-
-  const stepLabels = ['Select Items', 'Refund Options', 'Authorization'];
+  const stepLabels = ['Select Items', 'Refund Options'];
 
   return (
     <>
@@ -218,7 +196,7 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
           {/* Step indicator */}
           <div className="flex items-center gap-2 mt-3">
             {stepLabels.map((label, i) => {
-              const stepNum = (i + 1) as 1 | 2 | 3;
+              const stepNum = (i + 1) as 1 | 2;
               const isActive = step === stepNum;
               const isCompleted = step > stepNum;
               return (
@@ -320,26 +298,6 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
                   }}
                 />
               )}
-              {step === 3 && (
-                <>
-                  {canProceedStep3 ? (
-                    <div className="flex flex-col items-center justify-center py-8 space-y-3">
-                      <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
-                        <CheckCircle2 className="h-6 w-6 text-green-600" />
-                      </div>
-                      <p className="font-body text-sm text-espresso font-medium">Manager Authorized</p>
-                      <p className="font-body text-xs text-mist">
-                        Authorized at {new Date(authorizationTimestamp!).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  ) : (
-                    <ManagerPINStep onAuthorized={(managerId) => {
-                      setAuthorizingManagerId(managerId);
-                      setAuthorizationTimestamp(Date.now());
-                    }} />
-                  )}
-                </>
-              )}
             </>
           ) : null}
         </div>
@@ -361,7 +319,7 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setStep((s) => (s - 1) as 1 | 2 | 3)}
+              onClick={() => setStep((s) => (s - 1) as 1 | 2)}
             >
               ← Back
             </Button>
@@ -379,16 +337,7 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
           {step === 2 && (
             <Button
               size="sm"
-              onClick={() => setStep(3)}
-              className="bg-terracotta text-white hover:bg-terracotta/90"
-            >
-              Next: Authorize →
-            </Button>
-          )}
-          {step === 3 && (
-            <Button
-              size="sm"
-              disabled={!canProceedStep3 || isSubmitting}
+              disabled={isSubmitting}
               onClick={handleSubmit}
               className="bg-terracotta text-white hover:bg-terracotta/90"
             >

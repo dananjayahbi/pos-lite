@@ -8,6 +8,7 @@ import { formatLKR } from '@/lib/utils';
 import { SITE } from '@/config/site';
 import { ProductGallery } from '@/components/website/product-detail/ProductGallery';
 import { ProductInfo } from '@/components/website/product-detail/ProductInfo';
+import { ProductHealthSections } from '@/components/website/product-detail/ProductHealthSections';
 import { RelatedProducts } from '@/components/website/product-detail/RelatedProducts';
 import { Breadcrumb } from '@/components/website/product-detail/Breadcrumb';
 import type { PublicProduct } from '@/types/website.types';
@@ -79,12 +80,16 @@ export default async function ProductPage({ params }: ProductPageProps) {
           <ProductGallery
             variants={product.variants}
             productName={product.name}
+            mainImageUrl={product.mainImageUrl}
           />
           <ProductInfo
             product={product}
             tenantSlug={tenantSlug}
           />
         </div>
+
+        {/* Structured Ayurvedic health/usage content */}
+        <ProductHealthSections product={product} />
       </main>
 
       {/* Related products */}
@@ -113,6 +118,7 @@ export async function generateMetadata({
       product.variants?.[0]?.retailPrice ??
       product.primaryVariant?.retailPrice;
     const image =
+      product.mainImageUrl ??
       product.variants?.[0]?.imageUrls?.[0] ??
       product.primaryVariant?.imageUrls?.[0];
     const description =

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PaymentMethod } from '@/generated/prisma/client';
+import { PaymentMethod, ZeroValueReason } from '@/generated/prisma/client';
 
 const CreateSaleLineSchema = z.object({
   variantId: z.string().min(1),
@@ -16,10 +16,14 @@ export const CreateSaleSchema = z.object({
   cashReceived: z.number().positive().optional(),
   cardReferenceNumber: z.string().max(20).optional(),
   cardAmount: z.number().positive().optional(),
-  customerId: z.string().min(1).optional(),
+  splitLegMethod: z.enum(['CARD', 'LANKAQR']).optional(),
+  customerId: z.string().min(1, 'A customer must be linked to finalize a POS sale'),
   appliedStoreCredit: z.string().optional().default('0'),
   appliedPromotions: z.any().optional(),
   promoCode: z.string().max(50).optional(),
+  // Doc 33 / 34: zero-value reason + original order reference for replacements.
+  zeroValueReason: z.nativeEnum(ZeroValueReason).optional(),
+  zeroValueLinkedOrderRef: z.string().trim().min(1).max(64).optional(),
 }).superRefine((data, ctx) => {
   if (data.paymentMethod === 'CASH') {
     if (data.cashReceived === undefined || data.cashReceived <= 0) {
@@ -43,6 +47,16 @@ export const CreateSaleSchema = z.object({
         code: 'custom',
         path: ['cashReceived'],
         message: 'cashReceived is required for SPLIT payments',
+      });
+    }
+  }
+  // Doc 34: a replacement must point at an original order reference.
+  if (data.zeroValueReason === 'PRODUCT_REPLACEMENT') {
+    if (!data.zeroValueLinkedOrderRef || data.zeroValueLinkedOrderRef.trim().length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['zeroValueLinkedOrderRef'],
+        message: 'An original order reference is required for PRODUCT_REPLACEMENT sales',
       });
     }
   }

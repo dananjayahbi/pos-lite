@@ -9,6 +9,7 @@ import {
 } from '@/lib/services/product.service';
 import type { UpdateBrandInput } from '@/lib/services/product.service';
 import { UpdateBrandSchema } from '@/lib/validators/brand.validators';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 
 export async function GET(
   _request: Request,
@@ -100,6 +101,13 @@ export async function PATCH(
     const { id } = await params;
     const updated = await updateBrand(tenantId, id, parsed.data as UpdateBrandInput);
 
+    // Revalidate so the brand change is reflected on the storefront filters immediately.
+    try {
+      await revalidateTenantStorefront(tenantId, { catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[PATCH /api/store/brands/[id]] Revalidation warning:', revalidateErr);
+    }
+
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
@@ -157,6 +165,13 @@ export async function DELETE(
 
     const { id } = await params;
     const deleted = await softDeleteBrand(tenantId, id, session.user.id);
+
+    // Revalidate so the deleted brand disappears from storefront filters immediately.
+    try {
+      await revalidateTenantStorefront(tenantId, { catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[DELETE /api/store/brands/[id]] Revalidation warning:', revalidateErr);
+    }
 
     return NextResponse.json({ success: true, data: deleted });
   } catch (error) {

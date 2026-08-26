@@ -5,6 +5,7 @@ import type { Category } from '@/hooks/useCategories';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Pencil, Package, CalendarClock, Hash } from 'lucide-react';
+import { CategoryIcon } from '@/components/categories/CategoryIcon';
 
 interface CategoryDetailPanelProps {
   category: Category;
@@ -61,6 +62,7 @@ export function CategoryDetailPanel({
       <div className="flex items-start justify-between gap-2 border-b border-sand bg-pearl p-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
+            <CategoryIcon imageUrl={category.imageUrl} name={category.name} size={28} />
             <h2 className="truncate font-display text-lg font-semibold text-espresso">
               {category.name}
             </h2>

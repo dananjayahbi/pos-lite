@@ -147,7 +147,7 @@ export function computeLineRefundAmounts(
 
 interface InitiateReturnInput {
   initiatedById: string;
-  authorizedById: string;
+  authorizedById: string | null;
   originalSaleId: string;
   lines: ReturnLineInput[];
   refundMethod: ReturnRefundMethod;

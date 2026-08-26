@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { TaxRule, StockMovementReason } from '@/generated/prisma/client';
+import { HealthConcern, TaxRule, StockMovementReason, ProductSource } from '@/generated/prisma/client';
 
 // ── Variant Schemas ──────────────────────────────────────────────────────────
 
@@ -113,6 +113,20 @@ export const CreateProductSchema = z.object({
     .pipe(z.string().cuid().optional()),
   tags: z.array(z.string().max(30)).default([]),
   taxRule: z.nativeEnum(TaxRule).default('STANDARD_VAT'),
+  // Single representative image for storefront product cards.
+  mainImageUrl: z
+    .string()
+    .max(500)
+    .optional()
+    .transform((val) => (val === '' ? null : val))
+    .pipe(z.string().max(500).nullable().optional()),
+  // Ayurvedic health/usage content — structured storefront sections.
+  activeIngredients: z.string().max(5000).nullable().optional(),
+  usageInstructions: z.string().max(5000).nullable().optional(),
+  healthBenefits: z.string().max(5000).nullable().optional(),
+  safetyPrecautions: z.string().max(5000).nullable().optional(),
+  healthConcerns: z.array(z.nativeEnum(HealthConcern)).default([]),
+  productSource: z.nativeEnum(ProductSource).default(ProductSource.MANUFACTURED),
   variantDefinitions: z.array(CreateVariantInputSchema).optional(),
 });
 

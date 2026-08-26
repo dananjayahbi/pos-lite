@@ -34,7 +34,7 @@ interface ProductCardProps {
 }
 
 function pickImage(p: PublicProduct): string | undefined {
-  return p.variants?.[0]?.imageUrls?.[0] ?? p.primaryVariant?.imageUrls?.[0];
+  return p.mainImageUrl ?? p.variants?.[0]?.imageUrls?.[0] ?? p.primaryVariant?.imageUrls?.[0];
 }
 
 function pickVariant(p: PublicProduct): PublicProductVariant | undefined {

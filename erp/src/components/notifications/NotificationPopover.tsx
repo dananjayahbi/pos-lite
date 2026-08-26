@@ -11,6 +11,7 @@ import {
   ShoppingCart,
   RotateCcw,
   Clock,
+  Wallet,
 } from 'lucide-react';
 import {
   Popover,
@@ -46,12 +47,15 @@ const TYPE_ICONS: Record<string, typeof Bell> = {
   SALE_COMPLETED: ShoppingCart,
   RETURN_PROCESSED: RotateCcw,
   SHIFT_CLOSED: Clock,
+  PETTY_CASH_LOW: Wallet,
 };
 
 function getNotificationHref(type: string, relatedEntityId: string | null): string | null {
   switch (type) {
     case 'LOW_STOCK_ALERT':
       return '/stock-control/low-stock';
+    case 'PETTY_CASH_LOW':
+      return '/petty-cash';
     case 'STOCK_TAKE_SUBMITTED':
     case 'STOCK_TAKE_APPROVED':
     case 'STOCK_TAKE_REJECTED':

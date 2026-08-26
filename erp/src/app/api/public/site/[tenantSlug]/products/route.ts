@@ -10,7 +10,7 @@
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
-import { Prisma } from '@/generated/prisma/client';
+import { HealthConcern, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import {
   errorWithCors,
@@ -81,6 +81,35 @@ export async function GET(
 
   const categoryId = url.searchParams.get('categoryId') ?? undefined;
   const brandId = url.searchParams.get('brandId') ?? undefined;
+  const form = url.searchParams.get('form') ?? undefined;
+  const q = url.searchParams.get('q')?.trim() || undefined;
+  const concernRaw = url.searchParams.get('concern') ?? undefined;
+
+  // Optional price range — applied in memory against the min retail price.
+  const priceMinRaw = url.searchParams.get('priceMin') ?? undefined;
+  const priceMaxRaw = url.searchParams.get('priceMax') ?? undefined;
+  const priceMin = priceMinRaw !== undefined ? Number(priceMinRaw) : undefined;
+  const priceMax = priceMaxRaw !== undefined ? Number(priceMaxRaw) : undefined;
+
+  // Validate the concern is a known enum value to avoid a runtime query error.
+  const concern = concernRaw && (Object.values(HealthConcern) as string[]).includes(concernRaw)
+    ? (concernRaw as HealthConcern)
+    : undefined;
+
+  // Keyword search across name, description, tags and the structured health
+  // content fields (case-insensitive substring on PostgreSQL).
+  const searchOr: Prisma.ProductWhereInput[] = q
+    ? [
+        { name: { contains: q, mode: 'insensitive' } },
+        { description: { contains: q, mode: 'insensitive' } },
+        { tags: { has: q } },
+        { activeIngredients: { contains: q, mode: 'insensitive' } },
+        { usageInstructions: { contains: q, mode: 'insensitive' } },
+        { healthBenefits: { contains: q, mode: 'insensitive' } },
+        { safetyPrecautions: { contains: q, mode: 'insensitive' } },
+        { variants: { some: { sku: { contains: q, mode: 'insensitive' } } } },
+      ]
+    : [];
 
   // Build the orderBy clause. "best-selling" is approximated by recent sales
   // volume; we fallback to latest for simplicity here — wire this to your
@@ -88,16 +117,19 @@ export async function GET(
   const orderBy: Prisma.ProductOrderByWithRelationInput[] = (() => {
     switch (sort) {
       case 'price-asc':
-        return [{ variants: { _count: 'desc' } }, { createdAt: 'desc' }];
       case 'price-desc':
+      default:
+        // price sorts are applied in memory against min retail price
         return [{ createdAt: 'desc' }];
       case 'best-selling':
+        return [{ createdAt: 'desc' }];
       case 'latest':
-      default:
         return [{ createdAt: 'desc' }];
     }
   })();
 
+  // Note: no `take` here — price filtering is done in memory against the min
+  // retail price, so we must fetch all matching products and slice afterwards.
   const products = await prisma.product.findMany({
     where: {
       tenantId: tenant.id,
@@ -105,12 +137,13 @@ export async function GET(
       deletedAt: null,
       ...(categoryId ? { categoryId } : {}),
       ...(brandId ? { brandId } : {}),
+      ...(concern ? { healthConcerns: { has: concern } } : {}),
+      ...(q ? { OR: searchOr } : {}),
       variants: {
-        some: { deletedAt: null },
+        some: { deletedAt: null, ...(form ? { form } : {}) },
       },
     },
     orderBy,
-    take: limit,
     include: {
       variants: {
         where: { deletedAt: null },
@@ -123,6 +156,7 @@ export async function GET(
     const variants = product.variants.map((v) => ({
       id: v.id,
       sku: v.sku,
+      form: v.form,
       retailPrice: asNumber(v.retailPrice),
       imageUrls: v.imageUrls,
       stockQuantity: v.stockQuantity,
@@ -130,7 +164,7 @@ export async function GET(
     }));
     const primary = variants[0] ?? null;
 
-    // For price sort, do an in-memory reorder using the min retail price.
+    // For price filter/sort, use the min retail price (deterministic compare).
     const minPrice = variants.reduce(
       (acc, v) => (v.retailPrice < acc ? v.retailPrice : acc),
       Number.POSITIVE_INFINITY,
@@ -143,22 +177,38 @@ export async function GET(
       categoryId: product.categoryId,
       brandId: product.brandId,
       tags: product.tags,
+      healthConcerns: product.healthConcerns,
+      mainImageUrl: product.mainImageUrl,
       primaryVariant: primary,
       variants,
       _minPrice: Number.isFinite(minPrice) ? minPrice : 0,
     };
   });
 
-  // Final sort if price-based
+  // Apply the price-range filter in memory.
+  const inPriceRange =
+    priceMin === undefined && priceMax === undefined
+      ? true
+      : (item: { _minPrice: number }) => {
+          if (priceMin !== undefined && item._minPrice < priceMin) return false;
+          if (priceMax !== undefined && item._minPrice > priceMax) return false;
+          return true;
+        };
+
+  const priceFiltered =
+    inPriceRange === true ? items : items.filter(inPriceRange);
+
+  // Final sort if price-based.
   if (sort === 'price-asc') {
-    items.sort((a, b) => a._minPrice - b._minPrice);
+    priceFiltered.sort((a, b) => a._minPrice - b._minPrice);
   } else if (sort === 'price-desc') {
-    items.sort((a, b) => b._minPrice - a._minPrice);
+    priceFiltered.sort((a, b) => b._minPrice - a._minPrice);
   }
 
-  const cleaned = items.map((item) => {
-    // Drop the internal _minPrice helper used only for sorting above.
-    void item._minPrice;
+  const paginated = priceFiltered.slice(0, limit);
+
+  const cleaned = paginated.map((item) => {
+    // Drop the internal _minPrice helper used only for filtering/sorting above.
     const { _minPrice: _drop, ...rest } = item;
     void _drop;
     return rest;
@@ -166,7 +216,7 @@ export async function GET(
 
   return jsonWithCors(
     request,
-    { products: cleaned, total: cleaned.length },
+    { products: cleaned, total: priceFiltered.length },
     {
       headers: {
         'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',

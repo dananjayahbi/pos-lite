@@ -176,6 +176,151 @@ export async function deleteAd(adId: string) {
   return prisma.websiteAd.delete({ where: { id: adId } });
 }
 
+// ── Full reconciliation (single source of truth) ─────────────────────────────
+// The storefront reads hero slides & ads from their dedicated relation rows.
+// When the settings form saves the whole config, it submits the full current
+// hero-slide / ad arrays, so we reconcile the relation rows to match exactly.
+// A full replace (delete-all + recreate) within a transaction guarantees the
+// DB rows always mirror the editor — no drift, no orphaned rows.
+
+export async function replaceHeroSlides(
+  configId: string,
+  tenantId: string,
+  slides: {
+    mediaType: string;
+    mediaUrl: string;
+    mobileMediaUrl?: string | null | undefined;
+    title?: string | null | undefined;
+    subtitle?: string | null | undefined;
+    description?: string | null | undefined;
+    ctaText?: string | null | undefined;
+    ctaLink?: string | null | undefined;
+    isActive?: boolean;
+    sortOrder?: number;
+  }[],
+) {
+  await prisma.$transaction([
+    prisma.websiteHeroSlide.deleteMany({ where: { configId } }),
+    ...slides.map((slide) =>
+      prisma.websiteHeroSlide.create({
+        data: {
+          configId,
+          tenantId,
+          mediaType: slide.mediaType ?? 'image',
+          mediaUrl: slide.mediaUrl,
+          mobileMediaUrl: slide.mobileMediaUrl ?? null,
+          title: slide.title ?? null,
+          subtitle: slide.subtitle ?? null,
+          description: slide.description ?? null,
+          ctaText: slide.ctaText ?? null,
+          ctaLink: slide.ctaLink ?? null,
+          isActive: slide.isActive ?? true,
+          sortOrder: slide.sortOrder ?? 0,
+        },
+      }),
+    ),
+  ]);
+}
+
+export async function replaceAds(
+  configId: string,
+  tenantId: string,
+  ads: {
+    name: string;
+    mediaType: string;
+    mediaUrl: string;
+    mobileMediaUrl?: string | null | undefined;
+    targetUrl?: string | null | undefined;
+    position?: string;
+    displayAfterSection?: string | null | undefined;
+    startsAt?: string | Date | null | undefined;
+    endsAt?: string | Date | null | undefined;
+    isActive?: boolean;
+  }[],
+) {
+  await prisma.$transaction([
+    prisma.websiteAd.deleteMany({ where: { configId } }),
+    ...ads.map((ad) =>
+      prisma.websiteAd.create({
+        data: {
+          configId,
+          tenantId,
+          name: ad.name,
+          mediaType: ad.mediaType ?? 'image',
+          mediaUrl: ad.mediaUrl,
+          mobileMediaUrl: ad.mobileMediaUrl ?? null,
+          targetUrl: ad.targetUrl ?? null,
+          position: ad.position ?? 'between_sections',
+          displayAfterSection: ad.displayAfterSection ?? null,
+          startsAt: ad.startsAt ? new Date(ad.startsAt as string | Date) : null,
+          endsAt: ad.endsAt ? new Date(ad.endsAt as string | Date) : null,
+          isActive: ad.isActive ?? true,
+        },
+      }),
+    ),
+  ]);
+}
+
+/**
+ * Reset a tenant's website configuration to defaults: clears the config JSON
+ * (sections, social links, nav, footer, about values) and removes all related
+ * hero slides and ads. Returns true if a config row existed and was reset.
+ */
+export async function resetWebsiteConfig(tenantId: string): Promise<boolean> {
+  const existing = await prisma.websiteConfig.findUnique({
+    where: { tenantId },
+    select: { id: true },
+  });
+  if (!existing) return false;
+
+  await prisma.$transaction([
+    prisma.websiteHeroSlide.deleteMany({ where: { tenantId } }),
+    prisma.websiteAd.deleteMany({ where: { tenantId } }),
+    prisma.websiteConfig.update({
+      where: { id: existing.id },
+      data: {
+        siteName: null,
+        tagline: null,
+        logoUrl: null,
+        faviconUrl: null,
+        metaTitle: null,
+        metaDescription: null,
+        socialLinks: {},
+        navItems: [],
+        sections: {},
+        footerAbout: null,
+        footerColumns: [],
+        aboutPageTitle: null,
+        aboutPageSubtitle: null,
+        aboutHeroImageUrl: null,
+        aboutStoryTitle: null,
+        aboutStoryContent: null,
+        aboutStoryImageUrl: null,
+        aboutMissionTitle: null,
+        aboutMissionContent: null,
+        aboutValuesSectionTitle: null,
+        aboutValues: [],
+        contactPageTitle: null,
+        contactPageSubtitle: null,
+        contactHeroImageUrl: null,
+        contactInfoTitle: null,
+        contactAddress: null,
+        contactPhoneDisplay: null,
+        contactEmailDisplay: null,
+        contactBusinessHours: null,
+        contactMapEmbedUrl: null,
+        shopPageTitle: null,
+        shopPageSubtitle: null,
+        shopHeroImageUrl: null,
+        shopPageDescription: null,
+        shopProductsPerPage: 24,
+      },
+    }),
+  ]);
+
+  return true;
+}
+
 // ── Public helpers (for customer-facing website) ─────────────────────────────
 
 export async function getPublicWebsiteConfig(tenantId: string) {

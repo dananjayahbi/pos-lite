@@ -33,7 +33,7 @@ import {
   type PermissionKey,
 } from '@/lib/constants/permissions';
 
-type AssignableRole = 'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK';
+type AssignableRole = 'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK' | 'DISPATCH_STAFF' | 'FACTORY_MANAGER';
 
 interface StaffMember {
   id: string;
@@ -48,9 +48,11 @@ const ROLE_COLORS: Record<AssignableRole, string> = {
   MANAGER: 'bg-terracotta text-pearl',
   CASHIER: 'bg-sand text-espresso',
   STOCK_CLERK: 'bg-mist text-espresso',
+  DISPATCH_STAFF: 'bg-pearl text-espresso',
+  FACTORY_MANAGER: 'bg-mist text-espresso',
 };
 
-const ASSIGNABLE_ROLES: AssignableRole[] = ['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK'];
+const ASSIGNABLE_ROLES: AssignableRole[] = ['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK', 'DISPATCH_STAFF', 'FACTORY_MANAGER'];
 
 const GROUP_LABELS: Record<keyof typeof PERMISSIONS, string> = {
   SALE: 'Sales',
@@ -65,6 +67,14 @@ const GROUP_LABELS: Record<keyof typeof PERMISSIONS, string> = {
   PROMOTION: 'Promotions',
   BILLING: 'Billing',
   EXPENSE: 'Expenses',
+  PETTY_CASH: 'Petty Cash',
+  APPOINTMENT: 'Appointments',
+  DELIVERY: 'Delivery & Courier',
+  RAW_MATERIAL: 'Raw Materials',
+  FACTORY: 'Factory',
+  BOM: 'Bill of Materials',
+  RAW_MATERIAL_ALERT: 'Raw Material Alerts',
+  BATCH: 'Batches & Expiry',
 };
 
 function formatPermissionLabel(permission: string) {

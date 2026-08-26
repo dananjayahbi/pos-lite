@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 export async function GET(
   _request: Request,
@@ -22,6 +24,9 @@ export async function GET(
         { status: 401 },
       );
     }
+
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewSalesReport);
+    if (forbidden) return forbidden;
 
     const { id } = await params;
 
@@ -66,6 +71,9 @@ export async function PUT(
         { status: 401 },
       );
     }
+
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewSalesReport);
+    if (forbidden) return forbidden;
 
     const body = (await request.json()) as { name?: string };
     const name = body.name?.trim();
@@ -119,6 +127,9 @@ export async function DELETE(
         { status: 401 },
       );
     }
+
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewSalesReport);
+    if (forbidden) return forbidden;
 
     const { id } = await params;
 

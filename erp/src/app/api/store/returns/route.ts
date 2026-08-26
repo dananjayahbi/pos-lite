@@ -48,22 +48,24 @@ export async function POST(request: Request) {
 
     const data = parsed.data;
 
-    // Verify authorizedById is a manager+ in same tenant
-    const authorizer = await prisma.user.findFirst({
-      where: { id: data.authorizedById, tenantId, isActive: true },
-      select: { role: true },
-    });
+    // If an authorizing manager was provided, verify they are a manager+ in the same tenant
+    if (data.authorizedById) {
+      const authorizer = await prisma.user.findFirst({
+        where: { id: data.authorizedById, tenantId, isActive: true },
+        select: { role: true },
+      });
 
-    if (!authorizer || !['MANAGER', 'OWNER', 'SUPER_ADMIN'].includes(authorizer.role)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Authorizing user is not a manager in this tenant' } },
-        { status: 403 },
-      );
+      if (!authorizer || !['MANAGER', 'OWNER', 'SUPER_ADMIN'].includes(authorizer.role)) {
+        return NextResponse.json(
+          { success: false, error: { code: 'FORBIDDEN', message: 'Authorizing user is not a manager in this tenant' } },
+          { status: 403 },
+        );
+      }
     }
 
     const result = await initiateReturn(tenantId, {
       initiatedById: session.user.id,
-      authorizedById: data.authorizedById,
+      authorizedById: data.authorizedById ?? null,
       originalSaleId: data.originalSaleId,
       lines: data.lines,
       refundMethod: data.refundMethod,

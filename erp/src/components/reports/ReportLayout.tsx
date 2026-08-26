@@ -48,6 +48,8 @@ import {
   type ReportColumn,
   type ReportRow,
 } from "@/lib/reports/export";
+import { usePermissions } from "@/hooks/usePermissions";
+import { PERMISSIONS, type PermissionKey } from "@/lib/constants/permissions";
 
 // ── Date helper ─────────────────────────────────────────────────
 
@@ -73,19 +75,61 @@ function defaultTo(): string {
 interface NavItem {
   label: string;
   href: string;
+  permission?: PermissionKey;
 }
 
 function getNavItems(): NavItem[] {
   return [
-    { label: "Profit & Loss", href: "/reports/profit-loss" },
-    { label: "Sales by Product", href: "/reports/sales" },
-    { label: "Revenue Trend", href: "/reports/revenue-trend" },
-    { label: "Inventory Valuation", href: "/reports/inventory-valuation" },
-    { label: "Stock Movements", href: "/reports/stock-movements" },
-    { label: "Customer Analytics", href: "/reports/customer-analytics" },
-    { label: "Staff Performance", href: "/reports/staff-performance" },
-    { label: "Return Rate", href: "/reports/return-rate" },
-    { label: "Saved Reports", href: "/reports/saved" },
+    {
+      label: "Profit & Loss",
+      href: "/reports/profit-loss",
+      permission: PERMISSIONS.REPORT.viewProfitReport,
+    },
+    {
+      label: "Sales by Product",
+      href: "/reports/sales",
+      permission: PERMISSIONS.REPORT.viewSalesReport,
+    },
+    {
+      label: "Revenue Trend",
+      href: "/reports/revenue-trend",
+      permission: PERMISSIONS.REPORT.viewSalesReport,
+    },
+    {
+      label: "Inventory Valuation",
+      href: "/reports/inventory-valuation",
+      permission: PERMISSIONS.REPORT.viewStockReport,
+    },
+    {
+      label: "Stock Movements",
+      href: "/reports/stock-movements",
+      permission: PERMISSIONS.REPORT.viewStockReport,
+    },
+    {
+      label: "Customer Analytics",
+      href: "/reports/customer-analytics",
+      permission: PERMISSIONS.REPORT.viewCustomerReport,
+    },
+    {
+      label: "Staff Performance",
+      href: "/reports/staff-performance",
+      permission: PERMISSIONS.REPORT.viewSalesReport,
+    },
+    {
+      label: "Return Rate",
+      href: "/reports/return-rate",
+      permission: PERMISSIONS.REPORT.viewSalesReport,
+    },
+    {
+      label: "Zero-Value Audit",
+      href: "/reports/zero-value-sales",
+      permission: PERMISSIONS.REPORT.viewZeroValueReport,
+    },
+    {
+      label: "Saved Reports",
+      href: "/reports/saved",
+      permission: PERMISSIONS.REPORT.viewSalesReport,
+    },
   ];
 }
 
@@ -143,6 +187,7 @@ function ReportLayoutInner({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { reportData } = useReportContext();
+  const { hasPermission } = usePermissions();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [savedReportsOpen, setSavedReportsOpen] = useState(false);
@@ -155,7 +200,9 @@ function ReportLayoutInner({
   const from = searchParams.get("from") || defaultFrom();
   const to = searchParams.get("to") || defaultTo();
 
-  const navItems = getNavItems();
+  const navItems = getNavItems().filter(
+    (item) => !item.permission || hasPermission(item.permission),
+  );
   const currentReportTitle =
     reportTitle ?? navItems.find((item) => item.href === pathname)?.label ?? "Report";
 

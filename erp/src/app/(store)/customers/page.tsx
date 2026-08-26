@@ -25,6 +25,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Plus, Eye, Pencil, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
 import { CustomerSheet } from '@/components/customers/CustomerSheet';
+import { LoyaltyBadge } from '@/components/customers/LoyaltyBadge';
+import { RepeatBuyersTabs, type RepeatBuyersFilter } from '@/components/customers/RepeatBuyersTabs';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -38,6 +40,8 @@ interface Customer {
   creditBalance: string | number;
   totalSpend: string | number;
   isActive: boolean;
+  orderCount: number;
+  lastPurchaseAt?: string | null;
 }
 
 interface CustomersResponse {
@@ -66,6 +70,7 @@ export default function CustomersPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [tag, setTag] = useState('ALL');
   const [spendBand, setSpendBand] = useState('0');
+  const [audience, setAudience] = useState<RepeatBuyersFilter>('ALL');
   const [page, setPage] = useState(1);
 
   // Sheet
@@ -84,7 +89,7 @@ export default function CustomersPage() {
   // Reset page on filter change
   useEffect(() => {
     setPage(1);
-  }, [tag, spendBand]);
+  }, [tag, spendBand, audience]);
 
   // Build query params
   const band = SPEND_BANDS[Number(spendBand)] ?? SPEND_BANDS[0];
@@ -93,11 +98,12 @@ export default function CustomersPage() {
   if (tag !== 'ALL') queryParams.set('tag', tag);
   if (band.min !== undefined) queryParams.set('spendMin', String(band.min));
   if (band.max !== undefined) queryParams.set('spendMax', String(band.max));
+  if (audience === 'REPEAT') queryParams.set('repeatBuyers', 'true');
   queryParams.set('page', String(page));
   queryParams.set('limit', '20');
 
   const { data, isLoading } = useQuery<{ success: boolean; data: CustomersResponse }>({
-    queryKey: ['customers', debouncedSearch, tag, spendBand, page],
+    queryKey: ['customers', debouncedSearch, tag, spendBand, audience, page],
     queryFn: async () => {
       const res = await fetch(`/api/store/customers?${queryParams.toString()}`);
       if (!res.ok) throw new Error('Failed to fetch customers');
@@ -128,6 +134,18 @@ export default function CustomersPage() {
     return 'text-espresso';
   };
 
+  const formatRelativeDate = (value?: string | null) => {
+    if (!value) return '—';
+    const seconds = Math.floor((Date.now() - new Date(value).getTime()) / 1000);
+    if (seconds < 60) return 'just now';
+    const days = Math.floor(seconds / 86400);
+    if (days < 1) return `${Math.floor(seconds / 3600)}h ago`;
+    if (days < 30) return `${days}d ago`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months}mo ago`;
+    return `${Math.floor(months / 12)}y ago`;
+  };
+
   return (
     <div className="space-y-6 p-6 md:p-8">
       {/* Header */}
@@ -153,7 +171,12 @@ export default function CustomersPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <RepeatBuyersTabs
+          value={audience}
+          onChange={setAudience}
+          repeatCount={result?.total}
+        />
         <Input
           placeholder="Search by name or phone..."
           value={search}
@@ -196,6 +219,7 @@ export default function CustomersPage() {
               <TableHead>Name</TableHead>
               <TableHead>Phone</TableHead>
               <TableHead>Tags</TableHead>
+              <TableHead>Last Purchase</TableHead>
               <TableHead className="text-right">Credit Balance</TableHead>
               <TableHead className="text-right">Total Spend</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -205,7 +229,7 @@ export default function CustomersPage() {
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 6 }).map((_, j) => (
+                  {Array.from({ length: 7 }).map((_, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-24" />
                     </TableCell>
@@ -214,7 +238,7 @@ export default function CustomersPage() {
               ))
             ) : result?.customers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-sand">
+                <TableCell colSpan={7} className="text-center py-12 text-sand">
                   No customers found
                 </TableCell>
               </TableRow>
@@ -222,12 +246,15 @@ export default function CustomersPage() {
               result?.customers.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell>
-                    <Link
-                      href={`/customers/${c.id}`}
-                      className="font-medium text-espresso hover:text-terracotta transition-colors"
-                    >
-                      {c.name}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/customers/${c.id}`}
+                        className="font-medium text-espresso hover:text-terracotta transition-colors"
+                      >
+                        {c.name}
+                      </Link>
+                      <LoyaltyBadge orderCount={c.orderCount} size="sm" />
+                    </div>
                   </TableCell>
                   <TableCell className="font-mono text-sm">{c.phone}</TableCell>
                   <TableCell>
@@ -238,6 +265,9 @@ export default function CustomersPage() {
                         </Badge>
                       ))}
                     </div>
+                  </TableCell>
+                  <TableCell className="text-sm text-sand">
+                    {formatRelativeDate(c.lastPurchaseAt)}
                   </TableCell>
                   <TableCell className={`text-right font-mono ${getCreditColor(c.creditBalance)}`}>
                     {formatRupee(c.creditBalance)}

@@ -7,6 +7,7 @@ import { ArrowLeft, Loader2, Package } from 'lucide-react';
 import { useProductWizardStore } from '@/stores/productWizardStore';
 import { useCategories } from '@/hooks/useCategories';
 import { useBrands } from '@/hooks/useBrands';
+import type { HealthConcern } from '@/generated/prisma/client';
 import { Button } from '@/components/ui/button';
 import { formatRupee } from '@/lib/format';
 import { getPendingImages, clearPendingFiles } from '@/lib/wizardPendingFiles';
@@ -74,6 +75,15 @@ export function WizardStep3Review() {
         brandId: step1Data.brandId || undefined,
         tags: step1Data.tags,
         taxRule: step1Data.taxRule,
+        mainImageUrl: step1Data.mainImageUrl || undefined,
+        activeIngredients: step1Data.activeIngredients || undefined,
+        usageInstructions: step1Data.usageInstructions || undefined,
+        healthBenefits: step1Data.healthBenefits || undefined,
+        safetyPrecautions: step1Data.safetyPrecautions || undefined,
+        healthConcerns:
+          (step1Data.healthConcerns as HealthConcern[] | undefined) ??
+          undefined,
+        productSource: step1Data.productSource,
         variantDefinitions: step2Data.variants.map((v) => {
           const key = `${v.form ?? ''}|${v.packSize ?? ''}`;
           const imgData = variantImageUrls[key];
@@ -157,6 +167,14 @@ export function WizardStep3Review() {
             <dt className="text-sand">Tax Rule</dt>
             <dd className="col-span-2 text-espresso">
               {step1Data.taxRule.replace(/_/g, ' ')}
+            </dd>
+          </div>
+          <div className="grid grid-cols-3 gap-2 px-4 py-2.5">
+            <dt className="text-sand">Source</dt>
+            <dd className="col-span-2 text-espresso">
+              {step1Data.productSource === 'MANUFACTURED'
+                ? 'Manufactured'
+                : 'Traded'}
             </dd>
           </div>
           {step1Data.tags.length > 0 && (

@@ -9,6 +9,7 @@ import {
 } from '@/lib/services/product.service';
 import type { UpdateCategoryInput } from '@/lib/services/product.service';
 import { UpdateCategorySchema } from '@/lib/validators/category.validators';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 
 export async function GET(
   _request: Request,
@@ -100,6 +101,13 @@ export async function PATCH(
     const { id } = await params;
     const updated = await updateCategory(tenantId, id, parsed.data as UpdateCategoryInput);
 
+    // Revalidate so the category change is reflected on the storefront filters immediately.
+    try {
+      await revalidateTenantStorefront(tenantId, { catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[PATCH /api/store/categories/[id]] Revalidation warning:', revalidateErr);
+    }
+
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
@@ -157,6 +165,13 @@ export async function DELETE(
 
     const { id } = await params;
     const deleted = await softDeleteCategory(tenantId, id, session.user.id);
+
+    // Revalidate so the deleted category disappears from storefront filters immediately.
+    try {
+      await revalidateTenantStorefront(tenantId, { catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[DELETE /api/store/categories/[id]] Revalidation warning:', revalidateErr);
+    }
 
     return NextResponse.json({ success: true, data: deleted });
   } catch (error) {

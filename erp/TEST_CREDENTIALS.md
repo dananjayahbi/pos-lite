@@ -5,12 +5,11 @@
 ---
 
 ## Super Admin
-chat.
+
 | Field    | Value                       |
 | -------- | --------------------------- |
 | Email    | `superadmin@ayurpos.dev`  |
 | Password | `changeme123!`              |
-| PIN      | `9999`                      |
 | Role     | `SUPER_ADMIN`               |
 | Lands on | `/superadmin/dashboard`     |
 
@@ -24,7 +23,6 @@ chat.
 | -------- | --------------------------- |
 | Email    | `owner@dilani-ayurwellness.lk`  |
 | Password | `owner123!`                 |
-| PIN      | `1111`                      |
 | Role     | `OWNER`                     |
 | Business | Ayur Wellness Centre             |
 | Lands on | `/dashboard`                |
@@ -35,7 +33,6 @@ chat.
 | -------- | --------------------------- | --------------------------- |
 | Email    | `cashier1@ayurpos.dev`    | `cashier2@ayurpos.dev`    |
 | Password | `cashier123!`               | `cashier123!`               |
-| PIN      | `3333`                      | `4444`                      |
 | Role     | `CASHIER`                   | `CASHIER`                   |
 | Lands on | `/pos`                      | `/pos`                      |
 
@@ -49,7 +46,6 @@ chat.
 | -------- | -------------------------------- |
 | Email    | `owner@lanka-electronics.lk`     |
 | Password | `owner123!`                      |
-| PIN      | `2222`                           |
 | Role     | `OWNER`                          |
 | Business | Lanka Electronics                |
 | Lands on | `/dashboard`                     |
@@ -60,9 +56,24 @@ chat.
 | -------- | ---------------------------------- |
 | Email    | `cashier@lanka-electronics.lk`     |
 | Password | `cashier123!`                      |
-| PIN      | `3333`                             |
 | Role     | `CASHIER`                          |
 | Lands on | `/pos`                             |
+
+---
+
+## Business 1 — Dispatch Staff (Delivery Module)
+
+### Dispatch Staff
+
+| Field    | Value                          |
+| -------- | ------------------------------ |
+| Email    | `dispatch@ayurpos.dev`         |
+| Password | `dispatch123!`                 |
+| Role     | `DISPATCH_STAFF`               |
+| Business | Ayur Wellness Centre           |
+| Lands on | `/delivery`                    |
+
+> The `delivery` module is enabled by default on the Ayur Wellness Centre tenant via the seed. To enable it on the other tenant, use the Super Admin → Tenant → Feature Modules toggle.
 
 ---
 
@@ -71,5 +82,4 @@ chat.
 - The system is configured for exactly **2 businesses** (Ayur Wellness Centre and Lanka Electronics).
 - Only the **Super Admin** can manage business settings (name, currency, tax rates, etc.) from the superadmin dashboard.
 - Business creation is disabled — the system is limited to 2 businesses.
-- PIN-based login (for POS access) uses the hashed PIN stored on the user record.
 - Store profile settings have been moved to the superadmin dashboard.

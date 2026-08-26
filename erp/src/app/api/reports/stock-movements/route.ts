@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma, StockMovementReason } from "@/generated/prisma/client";
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 const PAGE_SIZE = 50;
 
@@ -22,6 +24,9 @@ export async function GET(request: NextRequest) {
     if (!tenantId) {
       return errorJson("UNAUTHORIZED", "No tenant", 401);
     }
+
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewStockReport);
+    if (forbidden) return forbidden;
 
     const url = request.nextUrl;
     const from = url.searchParams.get("from");

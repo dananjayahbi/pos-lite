@@ -25,16 +25,18 @@ export async function getPublicCategories(
 }
 
 /**
- * Fetch a single category by ID.
- *
- * The ERP doesn't expose a dedicated single-category endpoint, so we
- * fetch the full list and filter client-side. Results are cached by
- * Next.js ISR so repeated calls are cheap.
+ * Fetch a single category by ID from the dedicated public endpoint.
+ * Cached under the tenant's category tag so it purges with the list.
  */
 export async function getPublicCategory(
   tenantSlug: string,
   categoryId: string,
 ): Promise<PublicCategory | null> {
-  const categories = await getPublicCategories(tenantSlug, { limit: 200 });
-  return categories.find((c) => c.id === categoryId) ?? null;
+  const res = await apiGet<{ category: PublicCategory }>(
+    `/api/public/site/${encodeURIComponent(tenantSlug)}/categories/${encodeURIComponent(categoryId)}`,
+    {
+      tags: [`categories:${tenantSlug}`],
+    },
+  );
+  return res.category ?? null;
 }

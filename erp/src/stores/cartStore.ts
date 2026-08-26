@@ -25,6 +25,7 @@ interface CartState {
   exchangeReturnRef: string | null;
   linkedCustomerId: string | null;
   linkedCustomerName: string | null;
+  linkedCustomerPhone: string | null;
   linkedCustomerCreditBalance: string | null;
   appliedStoreCredit: string;
 
@@ -51,7 +52,7 @@ interface CartState {
   replaceCart: (items: CartItem[], cartDiscountPercent: number, cartDiscountAmount: number) => void;
   setExchangeCredit: (returnId: string, credit: number, ref: string) => void;
   clearExchangeCredit: () => void;
-  linkCustomer: (id: string, name: string, creditBalance: string) => void;
+  linkCustomer: (id: string, name: string, phone: string, creditBalance: string) => void;
   unlinkCustomer: () => void;
   setAppliedStoreCredit: (amount: string) => void;
   evaluatePromotions: () => void;
@@ -128,6 +129,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   exchangeReturnRef: null,
   linkedCustomerId: null,
   linkedCustomerName: null,
+  linkedCustomerPhone: null,
   linkedCustomerCreditBalance: null,
   appliedStoreCredit: '0',
 
@@ -218,6 +220,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       exchangeReturnRef: null,
       linkedCustomerId: null,
       linkedCustomerName: null,
+      linkedCustomerPhone: null,
       linkedCustomerCreditBalance: null,
       appliedStoreCredit: '0',
       appliedPromotions: [],
@@ -241,13 +244,13 @@ export const useCartStore = create<CartState>((set, get) => ({
   clearExchangeCredit: () =>
     set({ linkedReturnId: null, exchangeCredit: null, exchangeReturnRef: null }),
 
-  linkCustomer: (id, name, creditBalance) => {
-    set({ linkedCustomerId: id, linkedCustomerName: name, linkedCustomerCreditBalance: creditBalance, appliedStoreCredit: '0' });
+  linkCustomer: (id, name, phone, creditBalance) => {
+    set({ linkedCustomerId: id, linkedCustomerName: name, linkedCustomerPhone: phone, linkedCustomerCreditBalance: creditBalance, appliedStoreCredit: '0' });
     sendCFDUpdate(get());
   },
 
   unlinkCustomer: () => {
-    set({ linkedCustomerId: null, linkedCustomerName: null, linkedCustomerCreditBalance: null, appliedStoreCredit: '0' });
+    set({ linkedCustomerId: null, linkedCustomerName: null, linkedCustomerPhone: null, linkedCustomerCreditBalance: null, appliedStoreCredit: '0' });
     sendCFDUpdate(get());
   },
 

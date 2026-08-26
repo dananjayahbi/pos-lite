@@ -2,6 +2,7 @@
 
 import net from 'node:net';
 import { prisma } from '@/lib/prisma';
+import { sumPaymentBreakdown } from '@/lib/services/paymentBreakdown';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -264,18 +265,19 @@ export async function printZReport(shiftId: string): Promise<void> {
 
   // Compute totals
   let totalSalesAmount = 0;
-  let totalCash = 0;
-  let totalCard = 0;
   let salesCount = 0;
 
   for (const sale of shift.sales) {
     salesCount++;
     totalSalesAmount += Number(sale.totalAmount);
-    for (const pmt of sale.payments) {
-      if (pmt.method === 'CASH') totalCash += Number(pmt.amount);
-      else totalCard += Number(pmt.amount);
-    }
   }
+
+  const breakdown = sumPaymentBreakdown(
+    shift.sales.flatMap((s) => s.payments),
+  );
+  const totalCash = breakdown.cash.toNumber();
+  const totalCard = breakdown.card.toNumber();
+  const totalQr = breakdown.lankaqr.toNumber();
 
   let cashMovementsIn = 0;
   let cashMovementsOut = 0;
@@ -341,6 +343,9 @@ export async function printZReport(shiftId: string): Promise<void> {
   parts.push(ESC_BOLD_OFF);
   parts.push(...line(padLine('Cash:', formatMoney(totalCash), w)));
   parts.push(...line(padLine('Card:', formatMoney(totalCard), w)));
+  if (totalQr > 0) {
+    parts.push(...line(padLine('LankaQR:', formatMoney(totalQr), w)));
+  }
   parts.push(...line(padLine('Total:', formatMoney(totalSalesAmount), w)));
 
   parts.push(...line(divider(w)));

@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import TenantStatusBadge from '@/components/superadmin/TenantStatusBadge';
 import TenantAdminActions from '@/components/superadmin/TenantAdminActions';
 import BusinessSettingsForm from '@/components/superadmin/BusinessSettingsForm';
+import FeatureModulesManager from '@/components/superadmin/FeatureModulesManager';
+import { getEnabledModules } from '@/lib/feature-guard';
 
 interface PageProps {
   params: Promise<{ tenantId: string }>;
@@ -109,6 +111,15 @@ export default async function BusinessDetailPage({ params }: PageProps) {
       <div className="space-y-4">
         <h2 className="font-display text-xl font-semibold text-espresso">Admin Actions</h2>
         <TenantAdminActions tenantId={tenant.id} currentStatus={tenant.status} />
+      </div>
+
+      {/* Feature Modules */}
+      <div className="space-y-4">
+        <h2 className="font-display text-xl font-semibold text-espresso">Feature Modules</h2>
+        <FeatureModulesManager
+          tenantId={tenant.id}
+          initialEnabledModules={getEnabledModules(tenant.settings as Record<string, unknown>)}
+        />
       </div>
     </div>
   );

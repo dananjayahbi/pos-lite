@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { CategoryImageUpload } from '@/components/categories/CategoryImageUpload';
 
 interface CategoryEditDialogProps {
   open: boolean;
@@ -63,6 +64,7 @@ function CategoryEditForm({
   const [name, setName] = useState(category?.name ?? '');
   const [description, setDescription] = useState(category?.description ?? '');
   const [sortOrder, setSortOrder] = useState<string>(String(category?.sortOrder ?? 0));
+  const [imageUrl, setImageUrl] = useState<string | null>(category?.imageUrl ?? null);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -72,6 +74,7 @@ function CategoryEditForm({
       const body: Record<string, unknown> = {
         name: name.trim(),
         sortOrder: Number.parseInt(sortOrder, 10) || 0,
+        imageUrl: imageUrl ?? '',
       };
       if (description.trim()) body.description = description.trim();
 
@@ -133,6 +136,11 @@ function CategoryEditForm({
             className="bg-pearl"
             maxLength={60}
           />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs text-mist">Category Image</Label>
+          <CategoryImageUpload imageUrl={imageUrl} onChange={setImageUrl} />
         </div>
 
         <div className="space-y-1.5">

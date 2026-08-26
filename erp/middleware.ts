@@ -20,9 +20,23 @@ const tenantSlugCache = new Map<string, boolean>();
 const TENANT_DOMAIN_SUFFIX = '.ayurpos.com';
 const RESERVED_SUBDOMAINS = new Set(['', 'www', 'app']);
 
+// Areas the FACTORY_MANAGER role is explicitly denied (financials, CRM,
+// sales orders, POS). Nav already hides these; this list enforces the
+// restriction on direct-URL calls too.
+const FACTORY_FORBIDDEN_PATH_PREFIXES = [
+  '/pos',
+  '/sales',
+  '/returns',
+  '/reports',
+  '/customers',
+  '/expenses',
+  '/billing',
+  '/staff',
+  '/delivery/reconciliation',
+];
+
 const PUBLIC_PATH_PREFIXES = [
   '/login',
-  '/pin-login',
   '/forgot-password',
   '/reset-password',
   '/api/auth/',
@@ -157,6 +171,16 @@ export default async function middleware(request: NextRequest) {
       return NextResponse.redirect(
         new URL('/superadmin/dashboard', request.url),
       );
+    }
+
+    if (
+      user.role === 'FACTORY_MANAGER' &&
+      !pathname.startsWith('/api') &&
+      FACTORY_FORBIDDEN_PATH_PREFIXES.some((prefix) =>
+        pathname.startsWith(prefix),
+      )
+    ) {
+      return NextResponse.redirect(new URL('/factory', request.url));
     }
 
     const userId = user.id;

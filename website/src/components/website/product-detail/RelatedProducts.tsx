@@ -16,6 +16,7 @@ const FALLBACK_IMAGE =
 
 function pickImage(p: PublicProduct): string {
   return (
+    p.mainImageUrl ??
     p.variants?.[0]?.imageUrls?.[0] ??
     p.primaryVariant?.imageUrls?.[0] ??
     FALLBACK_IMAGE

@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getAllProducts, createProduct, createProductVariants } from '@/lib/services/product.service';
 import { ProductListQuerySchema, CreateProductSchema } from '@/lib/validators/product.validators';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 
 export async function GET(request: NextRequest) {
   try {
@@ -147,6 +148,13 @@ export async function POST(request: Request) {
     const { variantDefinitions, ...productData } = parsed.data;
 
     const product = await createProduct(tenantId, session.user.id, productData);
+
+    // Revalidate the storefront catalog so the new product appears immediately.
+    try {
+      await revalidateTenantStorefront(tenantId, { productIds: [product.id], catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[POST /api/store/products] Revalidation warning:', revalidateErr);
+    }
 
     if (variantDefinitions && variantDefinitions.length > 0) {
       try {

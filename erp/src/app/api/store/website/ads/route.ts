@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { getWebsiteConfig, getAds, createAd, upsertWebsiteConfig } from '@/lib/services/website.service';
 import { WebsiteAdSchema } from '@/lib/validators/website.validators';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 
 export async function GET() {
   try {
@@ -65,6 +66,14 @@ export async function POST(request: Request) {
       existingConfig.id,
       parsed.data as unknown as Record<string, unknown>,
     );
+
+    // Revalidate the storefront config so the new ad appears immediately.
+    try {
+      await revalidateTenantStorefront(session.user.tenantId, { config: true });
+    } catch (revalidateErr) {
+      console.warn('[POST /api/store/website/ads] Revalidation warning:', revalidateErr);
+    }
+
     return NextResponse.json({ success: true, data: ad }, { status: 201 });
   } catch (error) {
     console.error('POST /api/store/website/ads error:', error);

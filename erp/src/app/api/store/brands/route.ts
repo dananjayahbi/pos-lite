@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getAllBrands, createBrand } from '@/lib/services/product.service';
 import type { CreateBrandInput } from '@/lib/services/product.service';
 import { BrandSchema } from '@/lib/validators/brand.validators';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 
 export async function GET() {
   try {
@@ -78,6 +79,13 @@ export async function POST(request: Request) {
     }
 
     const brand = await createBrand(tenantId, parsed.data as CreateBrandInput);
+
+    // Revalidate so the new brand shows as a storefront filter immediately.
+    try {
+      await revalidateTenantStorefront(tenantId, { catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[POST /api/store/brands] Revalidation warning:', revalidateErr);
+    }
 
     return NextResponse.json({ success: true, data: brand }, { status: 201 });
   } catch (error) {

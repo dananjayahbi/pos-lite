@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 import { TaxRule, Prisma } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 
 const ImportRowSchema = z.object({
   productName: z.string().min(1),
@@ -175,6 +176,13 @@ export async function POST(req: NextRequest) {
 
       return { productsCreated, variantsCreated };
     });
+
+    // Revalidate the catalog so imported products appear on the storefront immediately.
+    try {
+      await revalidateTenantStorefront(tenantId, { catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[POST /api/store/products/import] Revalidation warning:', revalidateErr);
+    }
 
     return NextResponse.json({ success: true, data: result }, { status: 201 });
   } catch (error) {

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getAuditLogs } from '@/lib/services/audit.service';
-
-const DENIED_ROLES = new Set(['CASHIER', 'STOCK_CLERK']);
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,12 +22,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (DENIED_ROLES.has(session.user.role)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
-        { status: 403 },
-      );
-    }
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.viewAuditLog);
+    if (forbidden) return forbidden;
 
     const { searchParams } = new URL(request.url);
 

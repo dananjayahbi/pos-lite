@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { updateProductVariant, softDeleteVariant } from '@/lib/services/product.service';
 import { UpdateVariantSchema } from '@/lib/validators/product.validators';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 
 export async function PATCH(
   request: Request,
@@ -34,7 +35,7 @@ export async function PATCH(
       );
     }
 
-    const { variantId } = await params;
+    const { id, variantId } = await params;
     const body = await request.json();
     const parsed = UpdateVariantSchema.safeParse(body);
 
@@ -50,6 +51,13 @@ export async function PATCH(
     }
 
     const updated = await updateProductVariant(tenantId, variantId, session.user.id, parsed.data);
+
+    // Revalidate so variant changes (price, stock, images) appear instantly.
+    try {
+      await revalidateTenantStorefront(tenantId, { productIds: [id], catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[PATCH /api/store/products/[id]/variants/[variantId]] Revalidation warning:', revalidateErr);
+    }
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
@@ -99,8 +107,15 @@ export async function DELETE(
       );
     }
 
-    const { variantId } = await params;
+    const { id, variantId } = await params;
     const deleted = await softDeleteVariant(tenantId, variantId, session.user.id);
+
+    // Revalidate so the removed variant disappears from the storefront immediately.
+    try {
+      await revalidateTenantStorefront(tenantId, { productIds: [id], catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[DELETE /api/store/products/[id]/variants/[variantId]] Revalidation warning:', revalidateErr);
+    }
 
     return NextResponse.json({
       success: true,

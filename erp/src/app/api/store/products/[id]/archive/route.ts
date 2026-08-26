@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { archiveProduct } from '@/lib/services/product.service';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 
 export async function POST(
   _request: Request,
@@ -35,6 +36,13 @@ export async function POST(
 
     const { id } = await params;
     const updated = await archiveProduct(tenantId, id, session.user.id);
+
+    // Revalidate so archive/unarchive state is reflected on the storefront immediately.
+    try {
+      await revalidateTenantStorefront(tenantId, { productIds: [id], catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[POST /api/store/products/[id]/archive] Revalidation warning:', revalidateErr);
+    }
 
     return NextResponse.json({
       success: true,

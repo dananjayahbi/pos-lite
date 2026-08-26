@@ -6,7 +6,6 @@ import type { UserRole } from '@/generated/prisma/client';
 import { useCartStore, getCartSubtotal } from '@/stores/cartStore';
 import { POS_DISCOUNT_THRESHOLDS } from '@/config/pos.config';
 import { formatRupee } from '@/lib/format';
-import { CartManagerPINModal } from '@/components/pos/CartManagerPINModal';
 
 const PRIVILEGED_ROLES: UserRole[] = ['MANAGER', 'OWNER', 'SUPER_ADMIN'];
 
@@ -14,15 +13,12 @@ export function CartDiscountControl() {
   const { data: session } = useSession();
   const items = useCartStore((s) => s.items);
   const setCartDiscount = useCartStore((s) => s.setCartDiscount);
-  const setAuthorizingManager = useCartStore((s) => s.setAuthorizingManager);
   const cartDiscountPercent = useCartStore((s) => s.cartDiscountPercent);
   const cartDiscountAmount = useCartStore((s) => s.cartDiscountAmount);
 
   const [mode, setMode] = useState<'percent' | 'fixed'>('percent');
   const [inputValue, setInputValue] = useState('');
-  const [pinModalOpen, setPinModalOpen] = useState(false);
-  // Capture discount values when override is requested to prevent race condition
-  const [pendingOverride, setPendingOverride] = useState<{ mode: 'percent' | 'fixed'; value: number } | null>(null);
+  const [overrideBlocked, setOverrideBlocked] = useState(false);
 
   const role = session?.user?.role;
   const isPrivileged = role != null && PRIVILEGED_ROLES.includes(role);
@@ -46,27 +42,18 @@ export function CartDiscountControl() {
   const handleApply = () => {
     if (exceedsTotal || parsedInput <= 0) return;
     if (needsOverride) {
-      setPendingOverride({ mode, value: parsedInput });
-      setPinModalOpen(true);
+      setOverrideBlocked(true);
       return;
     }
     setCartDiscount(mode, parsedInput);
     setInputValue('');
+    setOverrideBlocked(false);
   };
 
   const handleClear = () => {
     setCartDiscount('percent', 0);
-    setAuthorizingManager(null);
     setInputValue('');
-  };
-
-  const handlePinSuccess = (managerId: string) => {
-    const override = pendingOverride;
-    if (!override) return;
-    setCartDiscount(override.mode, override.value);
-    setAuthorizingManager(managerId);
-    setPendingOverride(null);
-    setInputValue('');
+    setOverrideBlocked(false);
   };
 
   return (
@@ -124,7 +111,7 @@ export function CartDiscountControl() {
           }`}
         />
 
-        {/* Apply / Override button */}
+        {/* Apply button */}
         <button
           type="button"
           onClick={handleApply}
@@ -135,7 +122,7 @@ export function CartDiscountControl() {
               : 'text-pearl bg-espresso hover:bg-espresso/90'
           }`}
         >
-          {needsOverride ? 'Request Override' : 'Apply'}
+          Apply
         </button>
       </div>
 
@@ -148,12 +135,11 @@ export function CartDiscountControl() {
         </p>
       )}
 
-      <CartManagerPINModal
-        open={pinModalOpen}
-        onOpenChange={setPinModalOpen}
-        description={`Authorise ${effectivePercent.toFixed(1)}% cart-level discount`}
-        onSuccess={handlePinSuccess}
-      />
+      {overrideBlocked && needsOverride && (
+        <p className="font-body text-xs mt-1 text-[#B7791F]">
+          Discounts above {POS_DISCOUNT_THRESHOLDS.cartMaxPercent}% require a Manager or Owner to apply.
+        </p>
+      )}
     </div>
   );
 }

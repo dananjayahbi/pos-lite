@@ -94,6 +94,105 @@ export const FooterColumnSchema = z.object({
   links: z.array(FooterColumnLinkSchema).default([]),
 });
 
+// ── Section Configs (validated) ─────────────────────────────────────────────
+// Each section schema uses `.partial().passthrough()` so optional/unknown
+// fields are preserved, while the shape of known fields is validated at save
+// time — preventing malformed or misspelled section values from being stored.
+
+export const HeroSectionSchema = z.object({
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+}).partial().passthrough();
+
+export const ImageSliderItemSchema = z.object({
+  imageUrl: z.string().min(1).optional(),
+  alt: z.string().optional(),
+  linkUrl: z.string().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+  isActive: z.boolean().optional(),
+}).partial().passthrough();
+
+export const ImageSliderSectionSchema = z.object({
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+  images: z.array(ImageSliderItemSchema).default([]),
+}).partial().passthrough();
+
+export const BestSellingSectionSchema = z.object({
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+  title: z.string().optional(),
+  productCount: z.number().int().min(1).max(7).optional(),
+  productIds: z.array(z.string()).default([]),
+}).partial().passthrough();
+
+export const InfoAdSectionSchema = z.object({
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+  desktopImageUrl: z.string().optional(),
+  mobileImageUrl: z.string().optional(),
+  title: z.string().optional(),
+  subtitle: z.string().optional(),
+  buttonText: z.string().optional(),
+  buttonLink: z.string().optional(),
+}).partial().passthrough();
+
+export const CategoriesSectionSchema = z.object({
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+  title: z.string().optional(),
+  categoryIds: z.array(z.string()).default([]),
+  categoryImages: z.record(z.string(), z.string()).optional(),
+}).partial().passthrough();
+
+export const LatestProductsSectionSchema = z.object({
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+  title: z.string().optional(),
+  productCount: z.number().int().min(1).max(7).optional(),
+  productIds: z.array(z.string()).default([]),
+}).partial().passthrough();
+
+export const TestimonialsSectionSchema = z.object({
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+  title: z.string().optional(),
+  subtitle: z.string().optional(),
+  items: z.array(TestimonialItemSchema).default([]),
+}).partial().passthrough();
+
+export const StoreReferenceSectionSchema = z.object({
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+  desktopImageUrl: z.string().optional(),
+  mobileImageUrl: z.string().optional(),
+  title: z.string().optional(),
+  subtitle: z.string().optional(),
+  addressLine1: z.string().optional(),
+  addressLine2: z.string().optional(),
+  mapEmbedUrl: z.string().optional(),
+}).partial().passthrough();
+
+export const FooterSectionSchema = z.object({
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+}).partial().passthrough();
+
+export const WebsiteSectionsSchema = z
+  .object({
+    hero: HeroSectionSchema,
+    imageSlider: ImageSliderSectionSchema,
+    bestSelling: BestSellingSectionSchema,
+    infoAd: InfoAdSectionSchema,
+    categories: CategoriesSectionSchema,
+    latestProducts: LatestProductsSectionSchema,
+    testimonials: TestimonialsSectionSchema,
+    storeReference: StoreReferenceSectionSchema,
+    footer: FooterSectionSchema,
+  })
+  .partial()
+  .passthrough();
+
 // ── Full Website Config ──────────────────────────────────────────────────────
 
 export const WebsiteConfigSchema = z.object({
@@ -125,7 +224,7 @@ export const WebsiteConfigSchema = z.object({
   navItems: z.array(WebsiteNavItemSchema).default([]),
 
   // Sections
-  sections: z.record(z.string(), z.record(z.string(), z.unknown())).default({}),
+  sections: WebsiteSectionsSchema.default({}),
 
   // Footer
   footerAbout: z.string().max(1000).nullable().optional().or(z.literal('')),

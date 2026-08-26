@@ -30,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useVariantPrefill } from '@/hooks/useVariantPrefill';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,9 +87,10 @@ type FormValues = z.infer<typeof FormSchema>;
 
 interface StockAdjustmentFormProps {
   permissions: string[];
+  prefillVariantId?: string | null;
 }
 
-export function StockAdjustmentForm({ permissions }: StockAdjustmentFormProps) {
+export function StockAdjustmentForm({ permissions, prefillVariantId }: StockAdjustmentFormProps) {
   // Permission check
   if (!permissions.includes('stock:adjust')) {
     return (
@@ -115,7 +117,9 @@ export function StockAdjustmentForm({ permissions }: StockAdjustmentFormProps) {
     );
   }
 
-  return <AdjustmentFormInner />;
+  return (
+    <AdjustmentFormInner prefillVariantId={prefillVariantId ?? null} />
+  );
 }
 
 // ── Breadcrumb ───────────────────────────────────────────────────────────────
@@ -138,7 +142,7 @@ function Breadcrumb() {
 
 // ── Inner form (only rendered when permitted) ────────────────────────────────
 
-function AdjustmentFormInner() {
+function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string | null }) {
   const [productSearch, setProductSearch] = useState('');
   const [searchResults, setSearchResults] = useState<ProductSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -148,6 +152,18 @@ function AdjustmentFormInner() {
   const [selectedVariant, setSelectedVariant] = useState<VariantData | null>(null);
   const [isLoadingVariants, setIsLoadingVariants] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Resolve variantId query param → product + variant (from Low Stock record)
+  const {
+    product: prefilledProduct,
+    variant: prefilledVariant,
+    isLoading: isPrefilling,
+    error: prefillError,
+  } = useVariantPrefill(prefillVariantId ?? null);
+
+  // Locked when arriving from a record (variantId present in URL).
+  // Stays locked while resolving; unlocks only if resolution fails.
+  const isLocked = Boolean(prefillVariantId) && !prefillError;
 
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -163,6 +179,34 @@ function AdjustmentFormInner() {
   const adjustmentType = form.watch('adjustmentType');
   const quantity = form.watch('quantity');
   const noteValue = form.watch('note') ?? '';
+
+  // ── Apply prefill once resolved ────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!prefilledProduct || !prefilledVariant) return;
+
+    setSelectedProduct({
+      id: prefilledProduct.id,
+      name: prefilledProduct.name,
+      category: prefilledProduct.category ?? null,
+      brand: prefilledProduct.brand ?? null,
+      isArchived: false,
+    });
+    setSelectedVariant({
+      ...prefilledVariant,
+      costPrice: '0',
+      retailPrice: '0',
+    });
+    setVariants([
+      {
+        ...prefilledVariant,
+        costPrice: '0',
+        retailPrice: '0',
+      },
+    ]);
+    form.setValue('productId', prefilledProduct.id, { shouldValidate: true });
+    form.setValue('variantId', prefilledVariant.id, { shouldValidate: true });
+  }, [prefilledProduct, prefilledVariant, form]);
 
   // ── Derived state ──────────────────────────────────────────────────────────
 
@@ -327,6 +371,24 @@ function AdjustmentFormInner() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Prefill loading / error states */}
+            {isPrefilling && (
+              <div className="flex items-center gap-2 py-2">
+                <Loader2 className="h-4 w-4 animate-spin text-mist" />
+                <span className="font-body text-sm text-mist">
+                  Loading product from record…
+                </span>
+              </div>
+            )}
+            {prefillError && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
+                <p className="font-body text-sm text-red-700">{prefillError}</p>
+                <p className="mt-1 font-body text-xs text-red-600">
+                  You can still search for a product manually below.
+                </p>
+              </div>
+            )}
+
             {/* Product Search */}
             <div className="space-y-2">
               <Label className="font-body text-sm font-medium text-espresso">
@@ -334,7 +396,13 @@ function AdjustmentFormInner() {
               </Label>
 
               {selectedProduct ? (
-                <div className="flex items-center justify-between rounded-md border border-sand/40 bg-linen/50 px-3 py-2">
+                <div
+                  className={`flex items-center justify-between rounded-md border px-3 py-2 ${
+                    isLocked
+                      ? 'border-sand/60 bg-sand/20'
+                      : 'border-sand/40 bg-linen/50'
+                  }`}
+                >
                   <div>
                     <p className="font-body text-sm font-medium text-espresso">
                       {selectedProduct.name}
@@ -345,20 +413,27 @@ function AdjustmentFormInner() {
                       </p>
                     )}
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedProduct(null);
-                      setSelectedVariant(null);
-                      setVariants([]);
-                      form.setValue('productId', '');
-                      form.setValue('variantId', '');
-                    }}
-                  >
-                    Change
-                  </Button>
+                  {isLocked ? (
+                    <span className="flex items-center gap-1.5 font-body text-xs font-medium text-mist">
+                      <Lock className="h-3.5 w-3.5" />
+                      Locked to record
+                    </span>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedProduct(null);
+                        setSelectedVariant(null);
+                        setVariants([]);
+                        form.setValue('productId', '');
+                        form.setValue('variantId', '');
+                      }}
+                    >
+                      Change
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
@@ -382,7 +457,7 @@ function AdjustmentFormInner() {
                     </div>
                   </PopoverTrigger>
                   <PopoverContent
-                    className="w-[var(--radix-popover-trigger-width)] p-0"
+                    className="w-(--radix-popover-trigger-width) p-0"
                     align="start"
                     onOpenAutoFocus={(e) => e.preventDefault()}
                   >
@@ -436,10 +511,24 @@ function AdjustmentFormInner() {
                 Variant
               </Label>
 
-              {isLoadingVariants ? (
+              {isPrefilling ? (
+                <div className="flex items-center gap-2 py-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-mist" />
+                  <span className="font-body text-sm text-mist">Loading record…</span>
+                </div>
+              ) : isLoadingVariants ? (
                 <div className="flex items-center gap-2 py-2">
                   <Loader2 className="h-4 w-4 animate-spin text-mist" />
                   <span className="font-body text-sm text-mist">Loading variants…</span>
+                </div>
+              ) : isLocked && selectedVariant ? (
+                // Locked variant chip (arrived from a Low Stock record)
+                <div className="rounded-md border border-sand/40 bg-linen/50 px-3 py-2">
+                  <p className="font-mono text-xs text-espresso">{selectedVariant.sku ?? '—'}</p>
+                  <p className="font-body text-xs text-mist">
+                    {selectedVariant.form ?? '—'} / {selectedVariant.packSize ?? '—'} · Stock:{' '}
+                    {selectedVariant.stockQuantity}
+                  </p>
                 </div>
               ) : (
                 <Select

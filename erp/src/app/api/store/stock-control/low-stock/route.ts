@@ -5,8 +5,8 @@ import { prisma } from '@/lib/prisma';
 interface LowStockRow {
   id: string;
   sku: string;
-  size: string | null;
-  colour: string | null;
+  form: string | null;
+  pack_size: string | null;
   stock_quantity: number;
   low_stock_threshold: number;
   retail_price: string;
@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
 
     const variants = threshold != null
       ? await prisma.$queryRaw<LowStockRow[]>`
-          SELECT pv.id, pv.sku, pv.size, pv.colour,
+          SELECT pv.id, pv.sku, pv.form, pv."packSize" as pack_size,
             pv."stockQuantity" as stock_quantity, pv."lowStockThreshold" as low_stock_threshold,
             pv."retailPrice"::text as retail_price,
             p.name as product_name, c.name as category_name,
@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
           LIMIT ${queryLimit} OFFSET ${queryOffset}
         `
       : await prisma.$queryRaw<LowStockRow[]>`
-          SELECT pv.id, pv.sku, pv.size, pv.colour,
+          SELECT pv.id, pv.sku, pv.form, pv."packSize" as pack_size,
             pv."stockQuantity" as stock_quantity, pv."lowStockThreshold" as low_stock_threshold,
             pv."retailPrice"::text as retail_price,
             p.name as product_name, c.name as category_name,
@@ -141,14 +141,14 @@ export async function GET(request: NextRequest) {
 
     if (isCsv) {
       const today = new Date().toISOString().split('T')[0];
-      const header = 'Product Name,Category,SKU,Size,Colour,Current Stock,Threshold,Shortfall,Retail Price';
+      const header = 'Product Name,Category,SKU,Form,Pack Size,Current Stock,Threshold,Shortfall,Retail Price';
       const rows = variants.map((v) =>
         [
           `"${v.product_name.replace(/"/g, '""')}"`,
           `"${v.category_name.replace(/"/g, '""')}"`,
           v.sku,
-          v.size ?? '',
-          v.colour ?? '',
+          v.form ?? '',
+          v.pack_size ?? '',
           v.stock_quantity,
           v.low_stock_threshold,
           v.shortfall,

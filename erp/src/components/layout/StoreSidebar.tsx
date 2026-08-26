@@ -66,6 +66,13 @@ const navGroups: NavGroup[] = [
         name: 'Notifications',
         href: '/notifications',
       },
+      {
+        name: 'Appointments',
+        href: '/appointments',
+        roles: ['OWNER', 'MANAGER', 'CASHIER'],
+        permission: PERMISSIONS.APPOINTMENT.viewAppointment,
+        match: 'exact',
+      },
     ],
   },
   {
@@ -109,6 +116,12 @@ const navGroups: NavGroup[] = [
         href: '/stock-control/low-stock',
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.STOCK.viewStock,
+      },
+      {
+        name: 'Adjust Stock',
+        href: '/stock-control/adjust',
+        roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
+        permission: PERMISSIONS.STOCK.adjustStock,
       },
       {
         name: 'Stock Movements',
@@ -181,6 +194,13 @@ const navGroups: NavGroup[] = [
         match: 'exact',
       },
       {
+        name: 'Petty Cash',
+        href: '/petty-cash',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.PETTY_CASH.viewPettyCash,
+        match: 'exact',
+      },
+      {
         name: 'Cash Flow',
         href: '/expenses/cash-flow',
         roles: ['OWNER', 'MANAGER'],
@@ -203,6 +223,93 @@ const navGroups: NavGroup[] = [
         href: '/reports/profit-loss',
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.REPORT.viewSalesReport,
+      },
+    ],
+  },
+  {
+    label: 'Delivery',
+    items: [
+      {
+        name: 'Orders',
+        href: '/orders',
+        roles: ['OWNER', 'MANAGER', 'CASHIER', 'DISPATCH_STAFF'],
+        permission: PERMISSIONS.DELIVERY.viewDelivery,
+        match: 'exact',
+      },
+      {
+        name: 'Deliveries',
+        href: '/delivery',
+        roles: ['OWNER', 'MANAGER', 'CASHIER', 'DISPATCH_STAFF'],
+        permission: PERMISSIONS.DELIVERY.viewDelivery,
+        match: 'exact',
+      },
+      {
+        name: 'Rate Card',
+        href: '/delivery/rate-card',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.DELIVERY.manageRateCard,
+        match: 'exact',
+      },
+      {
+        name: 'Packaging',
+        href: '/delivery/packaging',
+        roles: ['OWNER', 'MANAGER', 'DISPATCH_STAFF'],
+        permission: PERMISSIONS.DELIVERY.managePackaging,
+        match: 'exact',
+      },
+      {
+        name: 'Reconciliation',
+        href: '/delivery/reconciliation',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.DELIVERY.viewReconciliation,
+        match: 'exact',
+      },
+      {
+        name: 'Recovery Performance',
+        href: '/reports/recovery-staff-performance',
+        roles: ['OWNER', 'MANAGER', 'DISPATCH_STAFF'],
+        permission: PERMISSIONS.REPORT.viewRecoveryReport,
+        match: 'exact',
+      },
+      {
+        name: 'Courier Settings',
+        href: '/delivery/settings',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.DELIVERY.manageCourierSettings,
+        match: 'exact',
+      },
+      {
+        name: 'Label Design',
+        href: '/delivery/label',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.DELIVERY.manageLabelTemplate,
+        match: 'exact',
+      },
+    ],
+  },
+  {
+    label: 'Factory',
+    items: [
+      {
+        name: 'Factory Dashboard',
+        href: '/factory',
+        roles: ['OWNER', 'MANAGER', 'FACTORY_MANAGER'],
+        permission: PERMISSIONS.FACTORY.viewFactoryDashboard,
+        match: 'exact',
+      },
+      {
+        name: 'Raw Materials',
+        href: '/factory/raw-materials',
+        roles: ['OWNER', 'MANAGER', 'FACTORY_MANAGER'],
+        permission: PERMISSIONS.RAW_MATERIAL.viewRawMaterial,
+        match: 'exact',
+      },
+      {
+        name: 'Bill of Materials',
+        href: '/factory/bom',
+        roles: ['OWNER', 'MANAGER', 'FACTORY_MANAGER'],
+        permission: PERMISSIONS.BOM.viewBom,
+        match: 'exact',
       },
     ],
   },
@@ -304,7 +411,7 @@ export default function StoreSidebar({
         <div className="mx-5 border-b border-mist" />
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 py-4">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
           {navGroups.map((group) => {
             const visibleItems = group.items.filter((item) =>
               canAccessItem(item, userRole, permissions),

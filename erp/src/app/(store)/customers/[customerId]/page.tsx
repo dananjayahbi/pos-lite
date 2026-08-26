@@ -27,6 +27,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
 import { CustomerSheet } from '@/components/customers/CustomerSheet';
+import { LoyaltyBadge } from '@/components/customers/LoyaltyBadge';
+import { CustomerValueInsights } from '@/components/customers/CustomerValueInsights';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { toast } from 'sonner';
@@ -71,8 +73,16 @@ interface CustomerDetail {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  lastPurchaseAt?: string | null;
+  orderCount: number;
   visitCount: number;
   avgOrderValue: string;
+  preferredCategories: {
+    categoryId: string;
+    categoryName: string;
+    quantity: number;
+    lineTotal: string;
+  }[];
   sales: Sale[];
 }
 
@@ -214,6 +224,7 @@ export default function CustomerDetailPage({
             <h1 className="text-2xl font-display font-bold text-espresso truncate">
               {customer.name}
             </h1>
+            <LoyaltyBadge orderCount={customer.orderCount} />
             <Button variant="outline" size="sm" onClick={() => setSheetOpen(true)}>
               <Pencil className="mr-1.5 h-3.5 w-3.5" />
               Edit
@@ -297,6 +308,12 @@ export default function CustomerDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      {/* Customer Value Insights (doc 21) */}
+      <CustomerValueInsights
+        lastPurchaseAt={customer.lastPurchaseAt}
+        preferredCategories={customer.preferredCategories}
+      />
 
       {/* Manual Tabs */}
       <div className="flex gap-1 border-b border-sand/30">

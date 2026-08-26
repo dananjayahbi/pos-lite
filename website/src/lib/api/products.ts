@@ -13,6 +13,16 @@ export interface ProductListOptions {
   categoryId?: string;
   /** Filter by brand. */
   brandId?: string;
+  /** Filter by minimum retail price (inclusive). */
+  priceMin?: number | undefined;
+  /** Filter by maximum retail price (inclusive). */
+  priceMax?: number | undefined;
+  /** Filter by variant form, e.g. Powder, Capsule. */
+  form?: string;
+  /** Filter by health concern (HealthConcern enum value). */
+  concern?: string;
+  /** Keyword search term. */
+  q?: string;
   /** Sort mode. */
   sort?: 'latest' | 'best-selling' | 'price-asc' | 'price-desc';
 }
@@ -33,6 +43,11 @@ export async function getPublicProducts(
   if (options.limit) params.set('limit', String(options.limit));
   if (options.categoryId) params.set('categoryId', options.categoryId);
   if (options.brandId) params.set('brandId', options.brandId);
+  if (options.priceMin !== undefined) params.set('priceMin', String(options.priceMin));
+  if (options.priceMax !== undefined) params.set('priceMax', String(options.priceMax));
+  if (options.form) params.set('form', options.form);
+  if (options.concern) params.set('concern', options.concern);
+  if (options.q) params.set('q', options.q);
   if (options.sort) params.set('sort', options.sort);
 
   const query = params.toString();

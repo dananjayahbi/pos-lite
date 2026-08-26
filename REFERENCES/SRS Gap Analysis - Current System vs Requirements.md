@@ -1,7 +1,7 @@
 # SRS Gap Analysis — Current System vs. Customer Requirements
 
-**Client/Brand:** Ruhunu Wedagedara (Ayurvedic Products)  
-**Date:** 2026-07-26  
+**Client/Brand:** Ruhunu Wedagedara (Ayurvedic Products)
+**Date:** 2026-08-07 (revised after deep system audit)
 **System:** AyurPOS (ERP + Customer-Facing Website)
 
 ---
@@ -22,24 +22,25 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Categorized Display (e.g., Medicinal Oils, Herbal Ointments, Traditional Decoctions, Wellness Products) | ✅ | Categories are fully implemented with hierarchical tree structure (`Category.parentId`). Seed data includes Ayurveda-specific categories (Herbal Powders, Capsules, Oils, etc.). | — |
-| Detailed Product Pages — Active Ingredients listing | ❌ | `Product` model has `name`, `description`, `tags` but **no dedicated `activeIngredients` field**. | Add `activeIngredients String?` field to `Product` model. Display on product detail page. |
-| Detailed Product Pages — Usage instructions & dosage guidelines | ❌ | No `usageInstructions` or `dosageGuidelines` fields exist in the schema. | Add `usageInstructions String?` and `dosageGuidelines String?` fields to `Product` model. Display on product detail page. |
-| Detailed Product Pages — Health benefits | ❌ | No `healthBenefits` field exists in the schema. | Add `healthBenefits String?` field to `Product` model. Display on product detail page. |
-| Detailed Product Pages — Safety precautions/warnings | ❌ | No `safetyPrecautions` or `warnings` field exists in the schema. | Add `safetyPrecautions String?` field to `Product` model. Display on product detail page. |
-| Search & Dynamic Filtering — Filter by price range | ⚠️ | Website shop has category + sort filters. ERP inventory has search + category/brand/form/status filters. **No price range filter on customer-facing website.** | Add price range slider/filter to website shop page. |
-| Search & Dynamic Filtering — Filter by health concern/need | ❌ | No "health concern" or "need" taxonomy exists. Tags exist but are freeform, not structured by concern. | Create a `HealthConcern` taxonomy (e.g., Joint Pain, Skin Care, Digestive Health, Stress Relief). Link products to concerns. Add filter to website. |
-| Search & Dynamic Filtering — Filter by product type | ⚠️ | ERP has `form` filter (Powder, Capsule, Tablet, Oil, etc.). Website shop only has category + sort. | Add product type/form filter to website shop page. |
-| Search & Dynamic Filtering — Filter by category | ✅ | Website shop has category filter. ERP has category filter. | — |
+| Categorized Display | ✅ | Full hierarchical category tree (`Category.parentId`) with Ayurveda seed data. Storefront category section + category pages. | — |
+| Detailed Product Pages — Active Ingredients listing | ❌ | `Product` model has `name`, `description`, `tags`, `mainImageUrl` only. No `activeIngredients` field. | Add field + display on detail page. |
+| Detailed Product Pages — Usage instructions & dosage | ❌ | No `usageInstructions` / `dosageGuidelines` fields. | Add fields + display. |
+| Detailed Product Pages — Health benefits | ❌ | No `healthBenefits` field. | Add field + display. |
+| Detailed Product Pages — Safety precautions/warnings | ❌ | No `safetyPrecautions` field. | Add field + display. |
+| Search & Filtering — Price range | ⚠️ | Website shop has category pills + sort only. No price range slider. | Add price filter to shop. |
+| Search & Filtering — Health concern/need | ❌ | No `HealthConcern` taxonomy. Tags are freeform. | Create taxonomy + filter. |
+| Search & Filtering — Product type/form | ⚠️ | ERP inventory has `form` filter. Website shop only category + sort. Variant `form` exists but unused for filtering. | Add form filter to shop. |
+| Search & Filtering — Category | ✅ | Website shop category pills + category route. ERP category filter. | — |
+| Sitewide keyword search | ❌ | No search box on the storefront (header or shop). | Add product search. |
 
 ### 1.2 Localization & User Experience
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Multilingual Support — Sinhala and English | ❌ | **No internationalization (i18n) system exists.** All content is in English only. No Sinhala or Tamil language support. | Implement full i18n framework (e.g., `next-intl`). Add Sinhala translations for all UI strings. Add bilingual content fields to product descriptions. Structural support for Tamil. |
-| Multilingual Support — Structural support for Tamil | ❌ | No Tamil support. | Include Tamil as a future language option in i18n architecture. |
-| Mobile-Responsive Design | ✅ | Tailwind CSS responsive design throughout. Mobile sidebar uses Sheet navigation. | — |
-| WhatsApp Chat Button (floating) | ⚠️ | WhatsApp integration exists for **sending receipts and broadcasts** (Business API). Website has a **floating WhatsApp button** in the header. However, it's not explicitly a "chat" button for instant customer inquiry — it links to a phone number. | Verify the floating button opens WhatsApp chat with pre-filled message for customer inquiries. |
+| Multilingual — Sinhala and English | ❌ | No i18n system. All UI strings hardcoded English. | Implement `next-intl` + Sinhala translations. |
+| Multilingual — Structural support for Tamil | ❌ | No Tamil support. | Include Tamil as future locale in i18n architecture. |
+| Mobile-Responsive Design | ✅ | Tailwind responsive throughout; mobile Sheet navigation. | — |
+| WhatsApp Chat Button (floating) | ⚠️ | Floating WhatsApp button in website header links to a number; WhatsApp Business API used for receipts/broadcasts. Not a dedicated inquiry chat pre-fill. | Verify chat pre-fill for inquiries. |
 
 ---
 
@@ -49,16 +50,16 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Streamlined Cart & Checkout (one-page or multi-step) | ⚠️ | POS has a full cart + checkout flow. **Customer-facing website has a cart but NO checkout process** — the cart page exists but there's no order placement, address entry, or payment flow for online customers. | Implement full e-commerce checkout on the website: shipping address form, order review, payment integration. |
-| Online Payment Gateway — Credit/Debit Card | ❌ | PayHere integration exists **only for subscription billing** (SaaS plans). **No payment gateway for customer orders** on the website. | Integrate PayHere (or alternative) for customer order payments on the website checkout. |
-| Cash on Delivery (COD) | ❌ | **No COD option exists.** No delivery/pickup options at all for online orders. | Add COD as a payment method during website checkout. Include COD fee calculation if needed. |
+| Streamlined Cart & Checkout | ✅ | Full website cart (`cartStore`) + checkout page (`/[tenantSlug]/checkout`) with `CheckoutForm` (guest address form). Places COD order via public orders API (`createWebsiteOrder`). | — |
+| Online Payment Gateway — Credit/Debit Card | ❌ | PayHere exists only for subscription billing. Website checkout is COD-only (posts only `codAmount`). No payment SDK in website/erp. | Integrate gateway for customer orders. |
+| Cash on Delivery (COD) | ✅ | Checkout button "Place order (COD)"; order created with `DeliverySource.WEBSITE_CHECKOUT`, status `PLACED`. | — |
 
 ### 2.2 Live Order Tracking
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Self-Service Order Status — Customer inputs Order ID or Phone Number | ❌ | **No customer-facing order tracking portal exists.** Sales are internal POS transactions, not online orders with tracking. | Build a public order tracking page where customers can enter Order ID or phone number to view delivery status. |
-| Real-time delivery status display | ❌ | No delivery status tracking system. | Implement order status pipeline (Placed → Confirmed → Dispatched → In Transit → Delivered) with real-time updates. |
+| Self-Service Order Status (Order ID / Phone) | ❌ | No public tracking portal. `DeliveryStatus` pipeline + tracking exist internally for ERP staff only. Public orders API is POST-only. | Build public track page. |
+| Real-time delivery status display | ⚠️ | Delivery status pipeline (PLACED→PENDING_DISPATCH→…→DELIVERED) + `sync-shipments` cron feed exists internally. No customer-facing status view. | Expose status to customers via portal. |
 
 ---
 
@@ -68,9 +69,9 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Automated Dispatch Integration (Domex, PromptX, Koombiyo) | ❌ | **No courier API integration exists.** No connection to any Sri Lankan courier services. | Integrate APIs for Domex, PromptX, Koombiyo (or at least one primary courier). Create courier service configuration module. |
-| Automated Data Sync — Auto-push order details to courier | ❌ | No auto-push to courier systems. | On dispatch approval, auto-push customer address, contact, COD value to selected courier API. |
-| Dynamic Delivery Fee Calculation | ❌ | No delivery fee calculation. Shipping fees are not part of the system. | Implement delivery fee calculator based on destination area + parcel weight/dimensions. Integrate with courier rate APIs. |
+| Automated Dispatch Integration | ⚠️ | Trans Express integration implemented (`lib/courier/trans-express/*`, adapter). `dispatchDelivery` authenticates + uploads + creates `CourierShipment`. **Trans Express only**; `CarrierProvider` enum has one value. | Add provider abstraction + more couriers (Domex/PromptX/Koombiyo). |
+| Automated Data Sync — auto-push on dispatch | ✅ | `dispatchDelivery` pushes payload via `transExpressAdapter.uploadSingle` on dispatch approval, writes shipment + events in a transaction. | — |
+| Dynamic Delivery Fee Calculation | ⚠️ | Rate engine (`rate-engine.service.ts`) computes fees from `RateCard`/`RateCardEntry` (base + extraKg + zone overrides). Wired into ERP manual delivery. **Not wired into website checkout** (`createWebsiteOrder` leaves `shippingFee` null). | Wire fee calc into website order creation. |
 
 ---
 
@@ -80,25 +81,25 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| CSV/Excel Remittance Import | ❌ | **No remittance upload interface.** CSV import exists only for products and customers. | Build interface to upload courier payout statements (CSV/Excel). |
-| Automated Reconciliation Engine | ❌ | No reconciliation system. | Auto-match uploaded statement rows against internal orders using Order ID / Tracking Barcode. |
-| Status Matching (Delivered + funds match) | ❌ | Not implemented. | Validate order status and funds received against expected amounts. |
-| Discrepancy Identification | ❌ | Not implemented. | Auto-flag unpaid orders, underpaid amounts, unauthorized deductions. |
+| CSV/Excel Remittance Import | ⚠️ | `importRemittanceStatement` + `parseRemittanceCsv` (papaparse). UI `RemittanceUpload` (accept `.csv` only). | Add `.xlsx`/`.xls` parsing. |
+| Automated Reconciliation Engine | ⚠️ | Auto-matches statement rows to `ReconciliationLedgerEntry` by **waybillId only**. Idempotent on re-upload. | Add orderRef fallback matching. |
+| Status Matching (Delivered + funds match) | ⚠️ | Ledger entry auto-created on `DELIVERED` (PENDING_SETTLEMENT, expectedCod = codAmount). Matches settled≈expected → CLEARED, else PARTIAL_MATCH. | — (works at entry level) |
+| Discrepancy Identification | ⚠️ | Produces PARTIAL_MATCH / DISCREPANCY with generic note + counts. Does not sub-categorize unpaid vs underpaid vs unauthorized deductions. | Add deduction categories. |
 
 ### 4.2 Fee & Commission Deductions Management
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Courier Fee Configuration (rate cards per courier) | ❌ | No courier rate card system. | Create rate card configuration per courier: Delivery Fee, COD Commission %, VAT Rate. |
-| Net Profit Calculation per order | ❌ | No courier deduction calculation. | Implement formula: `Net Payout = Gross - (Delivery Fee + COD Commission + VAT)`. |
-| Financial Accuracy Audit | ❌ | No courier deduction verification. | System verifies courier deductions match pre-configured contract terms. |
+| Courier Fee Configuration | ✅ | `RateCard` (baseRate, extraKgRate, freeBaseWeightKg, `coddCommissionPct`, `vatRatePct`) + `RateCardEntry` zone overrides. Full UI (`rate-card/`) + validators. | — |
+| Net Profit Calculation per order | ⚠️ | Formula `computeNetPayout()` exists in `rate-engine.service.ts` but **is never called** (dead code). | Wire into order/ledger/dashboard. |
+| Financial Accuracy Audit | ⚠️ | Discrepancy flagging exists; full contract-term deduction verification not implemented. | Add audit of deductions vs contract. |
 
 ### 4.3 Pending COD & Dispute Dashboard
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Aging & Pending COD Tracker | ❌ | No COD tracking. | Build visual dashboard for delivered orders where funds not remitted beyond credit period (flag RED). |
-| Dispute Flagging Engine | ❌ | No dispute system. | Create dispute ticket system for missing COD payments or calculation errors. |
+| Aging & Pending COD Tracker | ✅ | `getPendingCodAging` buckets (under7/under14/overdue) + total. UI `ReconciliationClient` flags overdue (>14d) in red. | — |
+| Dispute Flagging Engine | ⚠️ | `DISPUTED` status exists in enum + UI styling, but **no code ever sets DISPUTED**; no dispute action or workflow. | Build dispute ticket flow. |
 
 ---
 
@@ -106,7 +107,7 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Contact Auto-Sync & Sheet Export | ❌ | Customer data exists (`Customer` model with phone, email, etc.). CSV export exists for products. **No automated daily contact list export or Google Sheet integration.** | Build automated daily/weekly customer contact export (phone numbers) to Excel/Google Sheet format. Schedule via cron job. |
+| Contact Auto-Sync & Sheet Export | ❌ | Customer data exists. No automated daily contact export or Google Sheet integration. No `xlsx`/exceljs. No export cron. | Build scheduled export to Excel/Google Sheets. |
 
 ---
 
@@ -116,18 +117,18 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Loyalty Badges — Gold Star (⭐️) for customers with ≥2 orders | ❌ | `Customer` model tracks `totalSpend` but **no order count or loyalty badge system**. No visual indicators for repeat customers. | Add `orderCount` field or compute from sales. Display gold star / repeat badge next to customer names in order lists and search results. |
-| Repeat Badge (🔁) | ❌ | No repeat badge. | Add repeat badge visual indicator for customers with ≥2 historical orders. |
+| Loyalty Badges — Gold Star / Repeat (≥2 orders) | ❌ | `Customer` has `totalSpend` but no order-count badge system. No star/repeat indicators in lists/search. | Compute order count; add badges. |
+| Repeat Badge (🔁) | ❌ | No repeat badge. | Add visual indicator for ≥2 orders. |
 
 ### 6.2 Filter & Analytics
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Dedicated "Repeat Buyers" Tab | ❌ | Customer list exists but **no repeat buyers filter/tab**. | Add "Repeat Buyers" filter tab in customer management page. |
-| Customer Value Metrics — Order frequency count | ❌ | No order frequency displayed. | Show order count per customer in customer list and detail pages. |
-| Customer Value Metrics — Total lifetime spend | ⚠️ | `Customer.totalSpend` field exists but **not prominently displayed** in the customer list. | Surface total lifetime spend in customer list columns and detail page. |
-| Customer Value Metrics — Preferred product categories | ❌ | No preferred category tracking or display. | Analyze purchase history and display top categories per customer. |
-| Customer Value Metrics — Last purchase date | ❌ | No `lastPurchaseAt` field. | Add last purchase date tracking and display. |
+| Dedicated "Repeat Buyers" Tab | ❌ | Customer list filters: search, tag, spendBand only. No repeat-buyer filter. | Add tab/filter. |
+| Order frequency count | ⚠️ | Detail page shows "Visits" (`visitCount` from `_count.sales`) + "Avg Order Value". Not in list. | Surface in list too. |
+| Total lifetime spend | ✅ | `Customer.totalSpend` shown prominently in list column + detail stat card. | — |
+| Preferred product categories | ❌ | No per-customer category aggregation. | Add analytics. |
+| Last purchase date | ❌ | No `lastPurchaseAt` field or derived last-sale display. | Add field/metric. |
 
 ---
 
@@ -137,18 +138,18 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Tracked Packaging Items — Courier Bags / Polymailers (S, M, L) | ❌ | **No packaging inventory tracking.** Current inventory is product-focused only. | Create a separate `PackagingItem` model with categories (Polymailers, Tape, Labels, Bubble Wrap). |
-| Tracked Packaging Items — Adhesive Tapes (Clear, Printed, Fragile) | ❌ | Not tracked. | Add tape variants to packaging inventory. |
-| Tracked Packaging Items — Shipping Labels & Thermal Barcode Stickers | ❌ | Not tracked. | Add label/sticker tracking to packaging inventory. |
-| Tracked Packaging Items — Bubble Wrap Rolls | ❌ | Not tracked. | Add bubble wrap tracking to packaging inventory. |
+| Packaging Items — Polymailers (S, M, L) | ⚠️ | `PackagingItem` + `PackagingCategory` (POLYMAILER/TAPE/LABEL/BUBBLE_WRAP/OTHER). Full UI (`delivery/packaging/`). **No structured S/M/L size dimension** (size via free-text `name`). | Add size/variant attribute. |
+| Tapes (Clear, Printed, Fragile) | ✅ | TAPE category tracked. | — |
+| Shipping Labels & Thermal Stickers | ✅ | LABEL category tracked. | — |
+| Bubble Wrap Rolls | ✅ | BUBBLE_WRAP category tracked. | — |
 
 ### 7.2 Access Control & Auto-Deduction
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Office-Only View (hidden from factory) | ❌ | No packaging inventory exists. No role separation between office and factory. | Implement office-only packaging dashboard. Add `DISPATCH_STAFF` or `OFFICE_STAFF` role if needed. |
-| Auto-Deduction on Dispatch | ❌ | No auto-deduction. | When an order is dispatched, auto-deduct packaging items (1 Polymailer + 1 Thermal Label per parcel). |
-| Low Stock Alerts for Packaging | ❌ | No packaging stock alerts. | Trigger notifications when packaging stock falls below thresholds (e.g., <50 polymailers). |
+| Office-Only View (hidden from factory) | ⚠️ | RBAC gate on packaging page (`managePackaging`; OWNER/MANAGER/DISPATCH_STAFF). No location/warehouse concept — role-only, and no factory role exists to distinguish. | Add location/factory dimension when factory module lands. |
+| Auto-Deduction on Dispatch | ✅ | `autoDeductPackaging` decrements + writes `PackagingConsumption` for auto-deduct items inside `dispatchDelivery`. | — |
+| Low Stock Alerts for Packaging | ⚠️ | `notifyLowStock` creates `PACKAGING_LOW_STOCK` notifications, but **only on dispatch** and only for auto-deduct items. No scheduled scan. | Add periodic low-stock scan cron. |
 
 ---
 
@@ -158,17 +159,17 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Tracked Material Categories — Bulk Herbal Oils & Liquid Drums (Liters) | ❌ | **No raw material tracking.** Inventory only tracks finished goods (ProductVariant). | Create `RawMaterial` model with unit types (Liters, Kilograms, etc.). |
-| Tracked Material Categories — Raw Medicinal Powders & Dry Herbs (Kilograms) | ❌ | Not tracked. | Add powder/herb raw material tracking. |
-| Tracked Material Categories — Preservatives, Base Ingredients & Processing Chemicals | ❌ | Not tracked. | Add chemical/preservative tracking. |
+| Bulk Oils / Liquid Drums (Liters) | ❌ | No `RawMaterial` model. `ProductVariant.stockQuantity` is Int with string `form`/`packSize`. No numeric unit handling. | Create RawMaterial + L/Kg units. |
+| Raw Powders & Dry Herbs (Kilograms) | ❌ | Not modeled. | Add. |
+| Preservatives & Chemicals | ❌ | Not modeled. | Add. |
 
 ### 8.2 Production Integration (BOM Auto-Deduction)
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Factory-Only Dashboard | ❌ | No factory dashboard. | Create factory manager dashboard visible only to `FACTORY_MANAGER` role. |
-| Bill of Materials (BOM) Auto-Deduction | ❌ | No BOM system exists. | Create `BillOfMaterials` model linking products to raw material requirements. Auto-deduct raw materials when finished goods are logged. |
-| Critical Stock Threshold Alerts for Raw Materials | ❌ | No raw material alerts. | Implement low-stock alerts for raw materials sent to factory management and procurement. |
+| Factory-Only Dashboard | ❌ | No factory route, role, or dashboard. `UserRole` has no `FACTORY_MANAGER`. | Add role + dashboard. |
+| Bill of Materials (BOM) Auto-Deduction | ❌ | No `BillOfMaterials` model; no production logging; `StockMovementReason` lacks a MANUFACTURED reason. | Add BOM + production flow. |
+| Critical Stock Threshold Alerts (raw) | ❌ | No raw-material alert mechanism. | Add low-raw alerts. |
 
 ---
 
@@ -178,15 +179,15 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Direct Stock-In (GRN / PO) | ⚠️ | Purchase Orders exist (`PurchaseOrder` model with status workflow DRAFT→SENT→RECEIVED). Goods receiving form exists. However, **no dedicated "traded goods" concept** separate from manufactured goods. | Add a `productSource` field (MANUFACTURED / TRADED) to distinguish factory-produced vs third-party sourced products. |
-| Direct Inventory Entry without BOM/factory cycle | ⚠️ | Stock adjustments and PO receiving exist. Products can be added directly. | Ensure traded goods can bypass BOM/production workflow entirely. |
+| Direct Stock-In (GRN / PO) | ⚠️ | Full PO workflow (DRAFT→SENT→PARTIALLY_RECEIVED→RECEIVED) + `GoodsReceivingForm`/`GoodsReceivingModal` + `receivePOLines` + `PURCHASE_RECEIVED` stock movement. **No `productSource` (MANUFACTURED/TRADED)** field. | Add `productSource` distinction. |
+| Direct Inventory Entry without factory cycle | ✅ | Products created directly via product wizard (`inventory/new`) with `INITIAL_STOCK`; variants edited directly. | — |
 
 ### 9.2 Expiry & Batch Control
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Batch Numbering & Expiry Dates (mandatory) | ❌ | **No batch tracking or expiry date fields** on `ProductVariant` or any inventory model. | Add `batchNumber String?` and `expiryDate DateTime?` fields to stock movements or a new `BatchTracking` model. Make mandatory for traded goods. |
-| Unified Sales Visibility with batch/expiry info | ❌ | No batch/expiry info visible in POS or inventory. | Display batch number and expiry date in POS, inventory lists, and stock reports. Add expiry-based alerts. |
+| Batch Numbering & Expiry Dates (mandatory) | ❌ | No `batchNumber`/`expiryDate` anywhere. No `BatchTracking` model. | Add batch/expiry tracking. |
+| Unified Sales Visibility (batch/expiry) | ❌ | Nothing surfaces batch/expiry in POS, inventory, or reports. | Display batch/expiry + expiry alerts. |
 
 ---
 
@@ -196,24 +197,24 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Barcodes & Fast Search | ✅ | Barcode scanner hook (`useBarcodeScanner`) with rapid keyboard input detection. Product search with debounced lookup. | — |
-| Receipt Printing (thermal) | ✅ | Thermal receipt rendering (58mm/80mm) via ESC/POS. Network printer support. | — |
+| Barcodes & Fast Search | ✅ | `useBarcodeScanner` + debounced product search (SKU/barcode). | — |
+| Receipt Printing (thermal) | ✅ | `ReceiptPreviewDialog` → `/api/store/sales/{id}/receipt`; WhatsApp receipt. ESC/POS thermal. | — |
 
 ### 10.2 Walk-in CRM Data Capture
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Mandatory Customer Contact Fields (Name + Mobile before finalizing) | ⚠️ | Customer linking exists in POS (`CustomerSearchDropdown`). **However, it is NOT mandatory** — sales can be completed without a customer. | Make customer name + mobile number mandatory before completing a POS transaction. Add validation gate in checkout flow. |
+| Mandatory Customer Contact (Name + Mobile) | ❌ | Customer linking optional (`Sale.customerId` nullable; Charge/Pay not gated on customer). | Enforce mandatory customer before sale. |
 
 ### 10.3 Real-Time Stock & Cash Settlement
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Payment Methods — Cash | ✅ | Cash payment with change calculation. | — |
-| Payment Methods — Credit/Debit Card | ✅ | Card payment with reference number. | — |
-| Payment Methods — LankaQR | ❌ | **No LankaQR payment support.** Payment methods are Cash, Card, and Split only. | Add LankaQR as a payment method option in POS. |
-| Instant Stock Deduction | ✅ | Stock deducted immediately on sale completion via `StockMovement` with reason `SALE`. | — |
-| Daily Sales & Cash Reconciliation | ✅ | Shift management with opening float, cash movements, Z-report generation. Cash difference calculation. | — |
+| Cash | ✅ | Cash with change calc. | — |
+| Credit/Debit Card | ✅ | Card with reference entry. | — |
+| LankaQR | ❌ | `PaymentMethod` enum = CASH/CARD/SPLIT. No LankaQR. | Add LankaQR method. |
+| Instant Stock Deduction | ✅ | `adjustStockInTx(… SALE)` in sale transaction. | — |
+| Daily Sales & Cash Reconciliation | ✅ | Shift open/close, Z-report, cash reconciliation, opening float, cash difference. | — |
 
 ---
 
@@ -223,20 +224,20 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Required reason classification for Rs. 0 orders | ❌ | **No zero-value order handling.** No special validation for zero-total sales. | Add validation: when sale total = Rs. 0, require selecting a reason from dropdown (Bank Payment, Product Replacement, Complimentary Gift). |
-| Mandatory drop-down with 3 reason options | ❌ | Not implemented. | Create reason selection dropdown with the 3 specified options. |
+| Required reason for Rs. 0 orders | ❌ | Zero-value sales are **blocked entirely** (Charge/Pay disabled when `amountDue ≤ 0`). No reason flow. | Enable Rs.0 with mandatory reason. |
+| Mandatory dropdown (3 reasons) | ❌ | Not implemented. | Add Bank Payment / Replacement / Gift options. |
 
 ### 11.2 Mandatory Linkage for Replacements
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Previous Order Validation for "Product Replacement" | ❌ | Returns system exists (`Return` model linked to `originalSaleId`) but **not integrated with zero-value order flow**. | When "Product Replacement" is selected, require inputting Original Order ID. Validate against historical orders. Block without valid reference. |
+| Previous Order Validation | ❌ | `Sale.linkedReturnId` exists but no zero-value replacement linkage or historical-order validation. | Add validation on Replacement. |
 
 ### 11.3 Fraud Audit Dashboard
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Owner's Daily Audit Tab for Rs. 0 orders | ❌ | No zero-value audit dashboard. | Build dedicated report showing all Rs. 0 orders in last 24 hours with Issuer Staff, Reason, Linked Order ID, Recipient Details. |
+| Owner's Daily Rs. 0 Audit Tab | ❌ | No zero-value report. | Build audit dashboard. |
 
 ---
 
@@ -246,18 +247,18 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Petty Cash Balance Tracking (configurable opening balance) | ⚠️ | `CashMovement` model exists with types `OPENING_FLOAT`, `PETTY_CASH_OUT`, `MANUAL_IN`, `MANUAL_OUT`. Shift-based petty cash section exists (`PettyCashSection` component). **However, no configurable initial petty cash allocation outside of shifts.** | Add configurable petty cash fund allocation (e.g., Rs. 30,000) independent of POS shifts. |
-| Manager Expense Entry (date, category, amount, receipt) | ⚠️ | `Expense` model exists with category, amount, description, receipt image. **But expenses are not tied to petty cash fund.** | Link expense entries to petty cash fund. Ensure petty cash deductions reflect logged expenses. |
-| Expense Categories (Staff meals, tea/sugar, office stationery) | ⚠️ | `ExpenseCategory` enum has: RENT, SALARIES, UTILITIES, ADVERTISING, MAINTENANCE, MISCELLANEOUS, OTHER. **Missing petty-cash-specific categories** like Staff Meals, Tea/Sugar, Office Stationery. | Add petty-cash-specific expense categories or make categories configurable. |
-| Receipt photo/scan upload (optional) | ✅ | `Expense.receiptImageUrl` field exists. Media upload component exists. | — |
+| Petty Cash Balance (configurable opening balance) | ⚠️ | `CashMovement` types include `PETTY_CASH_OUT`/`MANUAL_IN`/`MANUAL_OUT` + `PettyCashSection`. **Shift-bound only** (`CashMovement.shiftId` required); no standalone fund or opening balance. | Add standalone fund. |
+| Manager Expense Entry (date, category, amount, receipt) | ✅ | `Expense` model has category, amount, description, `receiptImageUrl`, `expenseDate`, `recordedById`; form covers category/amount/description/date. | — |
+| Petty-cash Expense Categories | ⚠️ | `ExpenseCategory` enum is fixed (RENT/SALARIES/UTILITIES/ADVERTISING/MAINTENANCE/MISCELLANEOUS/OTHER). No Staff Meals/Tea-Sugar/Stationery. | Make categories configurable / add petty-cash ones. |
+| Receipt photo/scan upload | ⚠️ | `receiptImageUrl` is a **manual text URL field**; no file upload component. | Add upload. |
 
 ### 12.2 Owner Supervision & Balance Calculation
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Real-time Balance Equation | ⚠️ | Basic cash flow exists but **not the exact petty cash balance formula**. | Implement: `Current Petty Cash Balance = Initial Allocation - Total Logged Expenses`. Display prominently. |
-| Low Cash Alerts (e.g., < Rs. 5,000) | ❌ | **No petty cash low balance alerts.** Low stock alerts exist but not for petty cash. | Add configurable threshold for petty cash low balance. Send alert to business owner when breached. |
-| Exportable Audit Trail (PDF/Excel) | ⚠️ | Report export (CSV/Excel) exists for other reports. **No dedicated petty cash expense report.** | Add petty cash expense report exportable in PDF/Excel format for period-end accounting. |
+| Real-time Balance Equation | ⚠️ | `PettyCashSection` computes shift net petty cash but filters out `OPENING_FLOAT` and ignores `Expense`. Formula not displayed. | Implement Initial Allocation − Expenses. |
+| Low Cash Alerts (< Rs. 5,000) | ❌ | No petty-cash low-balance alert or threshold. | Add threshold + owner alert. |
+| Exportable Audit Trail (PDF/Excel) | ❌ | Expenses/cash-flow pages are view-only; no export. | Add PDF/Excel export. |
 
 ---
 
@@ -267,15 +268,15 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Prominent Brand Header (Ruhunu Wedagedara logo on labels/invoices) | ❌ | Receipt renderer exists for POS receipts. **No shipping label or invoice template with prominent brand logo.** Barcode label printing exists (`BarcodeLabel` component) but without brand header. | Create shipping label template with centered/top-left brand logo. Update invoice template with prominent branding. |
+| Prominent Brand Header (logo on labels/invoices) | ⚠️ | `ShippingLabel.tsx` has brand header (logo + brandName + origin) + custom label designer (`label/`). **No printable order/shipping invoice template** exists. | Add invoice template with branding. |
 
 ### 13.2 Delivery Accuracy Layout
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Enlarged Customer Info (Name, Phone, Address in bold/enlarged text) | ❌ | No shipping label with enlarged customer info. | Design shipping label with enlarged, bold customer name, phone, and address for courier dispatch handlers. |
-| Dual Barcode Display — Top-Right (internal scanning) | ❌ | Barcode labels exist but **no dual barcode layout**. | Add top-right barcode for internal office scanning and packing verification. |
-| Dual Barcode Display — Center Shipping Label (courier scanning) | ❌ | No center barcode on shipping label. | Add large center barcode/QR code for courier scanning on shipping label. |
+| Enlarged Customer Info | ✅ | `ShippingLabel.tsx` renders bold/enlarged customer block (name, phone, phone2, full address). | — |
+| Dual Barcode — Top-Right (internal) | ✅ | Small white `orderRef` barcode top-right (react-barcode). | — |
+| Dual Barcode — Center (courier) | ✅ | Large center `waybillId` barcode. | — |
 
 ---
 
@@ -285,23 +286,23 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Automated Failure Feed from courier API | ❌ | **No courier integration, so no failure feed.** Returns exist but only for POS transactions, not courier failures. | Integrate courier API to auto-populate orders marked "Returned to Branch Failed". |
-| Courier Failure Reason Display | ❌ | No failure reason tags. | Display courier-provided failure reasons (Phone Switched Off, Wrong Address, Postponed, Customer Refused). |
+| Automated Failure Feed from courier | ✅ | `sync-shipments` cron → `processDueTrackingChecks` polls courier; failed statuses set `Delivery.status` + `failureReason` + `CARRIER` events. | — |
+| Courier Failure Reason Display | ⚠️ | `Delivery.failureReason` captured but **not rendered** in delivery UI (`DeliveryDetailPanel`/`DeliveryTable`). | Show failure reason in UI. |
 
 ### 14.2 Re-Engagement & Redelivery Workflow
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Follow-up Call Log | ❌ | No call-back workflow for failed deliveries. | Build follow-up call log interface for office staff to contact customers and update status. |
-| Redelivery Button (reschedule + re-push to courier) | ❌ | No redelivery system. | Add "Redeliver" action that reschedules delivery and re-pushes order payload via courier API. |
-| Permanent Cancel (return to stock) | ❌ | No permanent cancel for failed deliveries. | Add "Permanent Cancel" action that marks item as returned to stock, updating inventory. |
+| Follow-up Call Log | ❌ | `DeliveryRecovery` model + `RecoveryAction` enum + `manageRecovery` permission exist but are **completely unused** (dead scaffold). | Build recovery workflow. |
+| Redelivery Button (re-push to courier) | ❌ | No redeliver action; detail page only offers Dispatch/Print. | Add redeliver + re-push. |
+| Permanent Cancel (return to stock) | ⚠️ | `cancelDelivery` sets CANCELED + event but **does not restock** inventory or reverse packaging. | Restock on permanent cancel. |
 
 ### 14.3 Lifetime Tracking & Staff Audit
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Lifetime History Trail for failed→delivered conversions | ❌ | No failed order audit trail. | Preserve permanent audit trail for orders initially marked failed but subsequently converted to "Delivered". |
-| Staff Performance Metrics (recovery rates) | ❌ | Staff performance reports exist for sales/returns but **not for failed order recovery**. | Track per-staff: assigned failed orders, successfully recovered, permanently cancelled. |
+| Lifetime History Trail | ❌ | No `DeliveryRecovery` rows created → no attempt history. | Persist recovery attempts. |
+| Staff Performance Metrics | ❌ | No per-staff recovery metrics. | Add dashboard. |
 
 ---
 
@@ -311,111 +312,108 @@
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| **Admin / Owner** — Full Access | ✅ | `OWNER` role has full access to all modules. ~50 granular permissions. | — |
-| **Office / Dispatch Staff** — Order Processing, Courier API, Packaging Stock, POS, Customer Lists | ⚠️ | `MANAGER` and `CASHIER` roles exist. Permissions cover POS, inventory, customers, stock. **But no dedicated "Office/Dispatch Staff" role**, and no Packaging Stock or Courier API access (since those modules don't exist). | Create `DISPATCH_STAFF` role or map to existing roles once courier/packaging modules are built. |
-| **Office / Dispatch Staff** — Restricted: Financial Reports, Courier Reconciliation, Factory Raw Materials | ⚠️ | Permission-based restrictions exist. **No courier reconciliation or factory modules to restrict.** | Enforce restrictions when new modules are added. |
-| **Factory Manager** — Factory Store, Production Logging, BOM Config | ❌ | **No `FACTORY_MANAGER` role exists.** No factory-specific permissions. | Add `FACTORY_MANAGER` role with factory-only permissions. |
-| **Factory Manager** — Restricted: Financials, Customer CRM, Sales Orders, POS | ❌ | No factory role or restrictions. | Implement factory role with appropriate restrictions. |
+| **Admin / Owner** — Full Access | ✅ | `ROLE_PERMISSIONS.OWNER = ALL_PERMISSIONS`. ~70 granular keys in `permissions.ts`. | — |
+| **Office / Dispatch Staff** — Orders, Courier, Packaging, POS, Customers | ⚠️ | `DISPATCH_STAFF` role exists with delivery (view/create/dispatch/edit/cancel/track) + packaging perms. **No `sale:create` (POS denied) and no `customer:view`.** | Grant POS + customer access per SRS (business decision). |
+| **Office / Dispatch Staff** — Restricted: Financials, Reconciliation, Factory | ⚠️ | Recon restricted. **Reports API endpoints are NOT permission-gated** (nav hidden but `/api/reports/*` callable). Factory N/A. | Gate reports API. |
+| **Factory Manager** — Factory Store, Production, BOM | ❌ | No `FACTORY_MANAGER` role. | Add role + perms. |
+| **Factory Manager** — Restricted: Financials, CRM, Sales, POS | ❌ | No factory role. | Implement restrictions. |
 
 ### 15.2 System Activity & Audit Trail
 
 | Requirement | Status | Current State | Gap / Action Needed |
 |-------------|--------|---------------|---------------------|
-| Silent System Logging (non-editable) | ✅ | `AuditLog` model with before/after JSON snapshots. Covers order modifications, stock adjustments, etc. | — |
-| Audit Inspection — Who, What, When, Prior Value | ✅ | `AuditLog` has `actorId`, `actorRole`, `action`, `entityType`, `entityId`, `before`, `after`, `ipAddress`, `userAgent`, `createdAt`. Full audit trail viewer with filters. | — |
+| Silent System Logging (non-editable) | ✅ | `AuditLog` (actorId, actorRole, action, entityType/Id, before/after JSON, ip, userAgent). `audit.service.ts` `createAuditLog` swallows errors; read-only API; no update/delete. | — |
+| Audit Inspection (Who/What/When/Prior Value) | ✅ | `/settings/audit-log` page with filters + `AuditLogDetailModal` before/after diff + CSV export. | — |
 
 ---
 
-## Summary — Gap Count by Module
+## Summary — Gap Count by Module (revised 2026-08-07)
 
-| Module | SRS Requirements | ✅ Implemented | ⚠️ Partial | ❌ Missing |
-|--------|-----------------|----------------|------------|------------|
-| **M1:** Customer-Facing Front-End | 7 | 2 | 2 | 3 |
-| **M2:** Order Management & Checkout | 4 | 0 | 1 | 3 |
-| **M3:** Logistics & Courier Integration | 3 | 0 | 0 | 3 |
-| **M4:** Financial Reconciliation & Courier Payout | 7 | 0 | 0 | 7 |
+| Module | Requirements | ✅ Implemented | ⚠️ Partial | ❌ Missing |
+|--------|--------------|----------------|------------|------------|
+| **M1:** Customer-Facing Front-End | 10 | 2 | 3 | 5 |
+| **M2:** Order Management & Checkout | 4 | 2 | 1 | 1 |
+| **M3:** Logistics & Courier Integration | 3 | 1 | 2 | 0 |
+| **M4:** Financial Reconciliation & Courier Payout | 9 | 2 | 6 | 1 |
 | **M5:** Customer Contact Export | 1 | 0 | 0 | 1 |
-| **M6:** CRM & Repeat Customer Tracking | 5 | 0 | 1 | 4 |
-| **M7:** Office Packaging Inventory | 5 | 0 | 0 | 5 |
-| **M8:** Factory Store & Raw Materials | 5 | 0 | 0 | 5 |
-| **M9:** Traded & Resale Goods | 4 | 0 | 2 | 2 |
-| **M10:** POS / Counter Sale | 6 | 4 | 1 | 1 |
+| **M6:** CRM & Repeat Customer Tracking | 5 | 1 | 1 | 3 |
+| **M7:** Office Packaging Inventory | 6 | 3 | 3 | 0 |
+| **M8:** Factory Store & Raw Materials | 6 | 0 | 0 | 6 |
+| **M9:** Traded & Resale Goods | 4 | 1 | 1 | 2 |
+| **M10:** POS / Counter Sale | 6 | 5 | 0 | 1 |
 | **M11:** Zero-Value Order Verification | 4 | 0 | 0 | 4 |
-| **M12:** Petty Cash Management | 5 | 1 | 3 | 1 |
-| **M13:** Invoice & Label Printing | 4 | 0 | 0 | 4 |
-| **M14:** Failed Order & Return Recovery | 5 | 0 | 0 | 5 |
-| **M15:** Security, RBAC & Audit | 4 | 2 | 2 | 0 |
-| **TOTAL** | **69** | **9** | **12** | **48** |
+| **M12:** Petty Cash Management | 7 | 1 | 4 | 2 |
+| **M13:** Invoice & Label Printing | 4 | 3 | 1 | 0 |
+| **M14:** Failed Order & Return Recovery | 7 | 1 | 1 | 5 |
+| **M15:** Security, RBAC & Audit | 6 | 3 | 2 | 1 |
+| **TOTAL** | **82** | **25** | **25** | **32** |
 
 ---
 
 ## Priority Classification
 
-### 🔴 Critical (Core Business Operations — Missing Entirely)
+### 🔴 Critical (Core Business Operations — Missing or Blocking)
 
-1. **Module 2: Order Management & Checkout** — No online checkout, no payment gateway for orders, no COD
-2. **Module 3: Logistics & Courier Integration** — No courier API integration at all
-3. **Module 4: Financial Reconciliation** — No courier payout reconciliation engine
-4. **Module 14: Failed Order & Return Recovery** — No courier failure handling or recovery workflow
+1. **Online payment gateway for customer orders** — website is COD-only.
+2. **Module 8 — Factory Store, Raw Materials & BOM** — entirely unmodeled.
+3. **Module 11 — Zero-Value Order Verification** — Rs. 0 sales currently blocked; no fraud audit.
+4. **Module 14.2 — Failed-Order Recovery Workflow** — `DeliveryRecovery` is dead scaffold; no redeliver or restock-on-cancel.
+5. **M4.2 Net Profit + M4.3 Dispute Engine** — `computeNetPayout()` and `DISPUTED` defined but unused.
 
 ### 🟠 High (Important Business Features — Missing)
 
-5. **Module 1: Multilingual Support** — No Sinhala/Tamil language support
-6. **Module 6: CRM & Loyalty** — No repeat customer badges, no customer value metrics
-7. **Module 7: Packaging Inventory** — No packaging supply tracking
-8. **Module 8: Factory/Raw Materials** — No BOM or raw material management
-9. **Module 13: Shipping Labels** — No branded shipping label with dual barcodes
+6. **M1.1 — Detailed product health-content fields** (ingredients, usage, benefits, safety).
+7. **M1.2 — Multilingual (Sinhala/English/Tamil)** — no i18n.
+8. **Module 5 — Customer contact export** (Excel/Google Sheets automation).
+9. **Module 6 — Loyalty badges + repeat-buyer analytics**.
+10. **M9.2 — Batch & expiry tracking** (mandatory for traded goods).
+11. **Module 10 — LankaQR + mandatory customer contact in POS**.
 
-### 🟡 Medium (Enhancing Features — Partially or Not Implemented)
+### 🟡 Medium (Enhancing / Partial)
 
-10. **Module 11: Zero-Value Orders** — No fraud prevention for Rs. 0 orders
-11. **Module 12: Petty Cash** — Partially exists, needs refinement
-12. **Module 9: Batch/Expiry Tracking** — No batch or expiry date tracking
-13. **Module 1: Product Detail Fields** — Missing active ingredients, usage, health benefits, safety info
-14. **Module 10: LankaQR + Mandatory Customer** — Missing LankaQR, customer not mandatory
+12. **M3.3 — Delivery fee calc not wired into website checkout.**
+13. **M3.1 / M4.1 — Single courier provider; Excel import; orderRef match fallback.**
+14. **M7.1 — Packaging size (S/M/L) dimension + scheduled low-stock scan.**
+15. **M12 — Standalone petty-cash fund, categories, low-cash alerts, export.**
+16. **M15 — Reports API permission gating + FACTORY_MANAGER role.**
+17. **M14.1 — Failure reason not shown in delivery UI.**
 
 ### 🟢 Low (Already Well-Implemented)
 
-15. **Module 15: RBAC & Audit** — Mostly complete, needs factory role
-16. **Module 10: POS Core** — Barcode scanning, receipt printing, stock deduction, shift management all working
-17. **Module 12: Expense Tracking** — Basic expense tracking exists
+18. **Module 15 — RBAC & audit trails** (mostly complete).
+19. **Module 10 — POS core** (barcode, receipt, stock deduction, reconciliation).
+20. **Module 13 — Shipping label with dual barcodes** (fully done).
+21. **Module 7 — Packaging module + auto-deduction** (exists).
+22. **Module 2.1 — Website checkout (COD)** + **Module 3.2 — auto dispatch**.
 
 ---
 
-## Recommended Implementation Phases
+## Recommended Implementation Phases (next)
 
-### Phase 1 — E-Commerce Foundation (Modules 2, 13)
-- Website checkout flow (address → payment → confirmation)
-- PayHere integration for customer orders
-- COD option
-- Order tracking portal
-- Branded shipping labels with dual barcodes
-- **Product schema updates** (active ingredients, usage, health benefits, safety)
+### Phase 1 — E-Commerce & Checkout Completeness (M1, M2, M13)
+- Online payment gateway for customer orders (PayHere card), alongside existing COD.
+- Product detail health-content fields (ingredients, usage, benefits, safety).
+- Price / form / health-concern filters + sitewide search.
+- Public order tracking portal.
+- Printable order/shipping invoice template with branding.
 
-### Phase 2 — Logistics & Reconciliation (Modules 3, 4, 14)
-- Courier API integration (Domex/PromptX/Koombiyo)
-- Automated dispatch and delivery fee calculation
-- Remittance upload and reconciliation engine
-- COD tracking dashboard
-- Failed order queue and recovery workflow
-- Dispute management
+### Phase 2 — Reconciliation & Recovery Completion (M3, M4, M14)
+- Wire delivery fee calculation into website checkout.
+- Excel remittance import; orderRef matching fallback.
+- Net-profit calculation wiring + dispute flagging engine.
+- Failed-order recovery workflow (follow-up, redeliver, permanent-cancel restock) + staff audit.
 
-### Phase 3 — CRM & Operations (Modules 5, 6, 11)
-- Customer contact export automation
-- Loyalty badges and repeat buyer tracking
-- Customer value metrics dashboard
-- Zero-value order verification and audit
+### Phase 3 — CRM, POS & Cash (M6, M10, M11, M12)
+- Loyalty badges, repeat-buyer tab, last-purchase & category metrics.
+- LankaQR payment + mandatory customer in POS.
+- Zero-value order reason flow + owner audit dashboard.
+- Standalone petty-cash fund with categories, low-cash alerts, and export.
 
-### Phase 4 — Inventory Expansion (Modules 7, 8, 9)
-- Packaging inventory module (office-only)
-- Factory raw materials module
-- BOM configuration and auto-deduction
-- Batch numbering and expiry tracking
-- Traded goods differentiation
+### Phase 4 — Inventory Expansion (M7, M8, M9)
+- Factory manager role + raw materials (L/Kg) + BOM auto-deduction + raw alerts.
+- Packaging size dimension + scheduled low-stock scan.
+- Batch/expiry tracking + productSource (manufactured/traded) distinction.
 
-### Phase 5 — Refinements (Modules 1, 12, 15)
-- i18n implementation (Sinhala, English, Tamil structural support)
-- Petty cash standalone fund management
-- Factory manager role
-- LankaQR payment integration
-- Health concern taxonomy for product filtering
+### Phase 5 — Refinements (M1.2, M15)
+- i18n (Sinhala, English, Tamil structural support).
+- Reports API permission gating; FACTORY_MANAGER restrictions; SUPER_ADMIN store-permission nuance.

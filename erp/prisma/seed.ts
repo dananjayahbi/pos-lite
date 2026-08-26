@@ -84,17 +84,126 @@ async function main() {
     throw error;
   }
 
+  // Seed sample online orders (WEBSITE_CHECKOUT deliveries) for the Orders page
+  try {
+    await seedSampleOrders();
+  } catch (error) {
+    console.error('Failed to seed sample orders:', error);
+    throw error;
+  }
+
   await prisma.$disconnect();
+}
+
+async function seedSampleOrders() {
+  const tenant = await prisma.tenant.findFirst({ where: { slug: 'dilani' } });
+  if (!tenant) {
+    console.log('Sample tenant not found, skipping sample orders seed');
+    return;
+  }
+  const tenantId = tenant.id;
+
+  // Idempotency: skip if any sample online order already exists.
+  const existing = await prisma.delivery.findFirst({
+    where: { tenantId, source: 'WEBSITE_CHECKOUT', orderRef: { startsWith: 'ORD-SEED' } },
+  });
+  if (existing) {
+    console.log('Sample orders already seeded, skipping');
+    return;
+  }
+
+  const samples = [
+    {
+      orderRef: 'ORD-SEED-0001',
+      fullName: 'Priya Rajapaksa',
+      phone: '+94770000005',
+      addressLine1: '45 Temple Road',
+      cityName: 'Kandy',
+      districtName: 'Central',
+      codAmount: 12500,
+      itemCount: 3,
+      status: 'PLACED' as const,
+      daysAgo: 0,
+    },
+    {
+      orderRef: 'ORD-SEED-0002',
+      fullName: 'Amara Perera',
+      phone: '+94770000001',
+      addressLine1: '18 Galle Road',
+      cityName: 'Galle',
+      districtName: 'Southern',
+      codAmount: 8750,
+      itemCount: 2,
+      status: 'PLACED' as const,
+      daysAgo: 1,
+    },
+    {
+      orderRef: 'ORD-SEED-0003',
+      fullName: 'Kasun Dissanayake',
+      phone: '+94770000004',
+      addressLine1: '27 Station Road',
+      cityName: 'Negombo',
+      districtName: 'Western',
+      codAmount: 5400,
+      itemCount: 1,
+      status: 'PENDING_DISPATCH' as const,
+      daysAgo: 2,
+    },
+  ];
+
+  for (const sample of samples) {
+    const createdAt = new Date();
+    createdAt.setDate(createdAt.getDate() - sample.daysAgo);
+
+    const delivery = await prisma.delivery.create({
+      data: {
+        tenantId,
+        source: 'WEBSITE_CHECKOUT',
+        status: sample.status,
+        orderRef: sample.orderRef,
+        codAmount: new Decimal(sample.codAmount).toFixed(2),
+        itemCount: sample.itemCount,
+        createdAt,
+      },
+    });
+
+    const address = await prisma.shippingAddress.create({
+      data: {
+        tenantId,
+        fullName: sample.fullName,
+        phone: sample.phone,
+        addressLine1: sample.addressLine1,
+        cityName: sample.cityName,
+        districtName: sample.districtName,
+      },
+    });
+
+    await prisma.delivery.update({
+      where: { id: delivery.id },
+      data: { addressId: address.id },
+    });
+
+    await prisma.deliveryEvent.create({
+      data: {
+        tenantId,
+        deliveryId: delivery.id,
+        status: sample.status,
+        source: 'WEBSITE',
+        remarks: 'Sample order from seed',
+        eventAt: createdAt,
+      },
+    });
+  }
+
+  console.log(`Sample orders created: ${samples.length}`);
 }
 
 async function seedSuperAdmin() {
   const defaultEmail = 'superadmin@ayurpos.dev';
   const defaultPassword = 'changeme123!';
-  const defaultPin = '9999';
 
   const superAdminEmail = process.env.SEED_SUPER_ADMIN_EMAIL ?? defaultEmail;
   const superAdminPassword = process.env.SEED_SUPER_ADMIN_PASSWORD ?? defaultPassword;
-  const superAdminPin = process.env.SEED_SUPER_ADMIN_PIN ?? defaultPin;
 
   if (superAdminEmail === defaultEmail || superAdminPassword === defaultPassword) {
     console.warn('------------------------------------------------------------');
@@ -115,14 +224,8 @@ async function seedSuperAdmin() {
     },
   });
 
-  const superAdminPinHash = await bcrypt.hash(superAdminPin, 10);
-
   if (existingSuperAdmin) {
-    await prisma.user.update({
-      where: { id: existingSuperAdmin.id },
-      data: { pin: superAdminPinHash },
-    });
-    console.log('Super Admin account already exists. Updated PIN.');
+    console.log('Super Admin account already exists, skipping');
     return;
   }
 
@@ -132,7 +235,6 @@ async function seedSuperAdmin() {
     data: {
       email: superAdminEmail,
       passwordHash,
-      pin: superAdminPinHash,
       role: 'SUPER_ADMIN',
       permissions: [],
       isActive: true,
@@ -153,10 +255,8 @@ async function seedSampleTenant() {
 
   const ownerEmail = 'owner@dilani-ayurwellness.lk';
   const ownerPassword = 'owner123!';
-  const ownerPin = '1111';
 
   const ownerPasswordHash = await bcrypt.hash(ownerPassword, 12);
-  const ownerPinHash = await bcrypt.hash(ownerPin, 10);
 
   const tenant = await prisma.tenant.create({
     data: {
@@ -180,7 +280,6 @@ async function seedSampleTenant() {
     data: {
       email: ownerEmail,
       passwordHash: ownerPasswordHash,
-      pin: ownerPinHash,
       role: 'OWNER',
       tenantId: tenant.id,
       permissions: [],
@@ -203,10 +302,8 @@ async function seedSecondBusiness() {
 
   const ownerEmail = 'owner@lanka-electronics.lk';
   const ownerPassword = 'owner123!';
-  const ownerPin = '2222';
 
   const ownerPasswordHash = await bcrypt.hash(ownerPassword, 12);
-  const ownerPinHash = await bcrypt.hash(ownerPin, 10);
 
   const tenant = await prisma.tenant.create({
     data: {
@@ -229,7 +326,6 @@ async function seedSecondBusiness() {
     data: {
       email: ownerEmail,
       passwordHash: ownerPasswordHash,
-      pin: ownerPinHash,
       role: 'OWNER',
       tenantId: tenant.id,
       permissions: [],
@@ -240,16 +336,13 @@ async function seedSecondBusiness() {
   // Create a cashier user
   const cashierEmail = 'cashier@lanka-electronics.lk';
   const cashierPassword = 'cashier123!';
-  const cashierPin = '3333';
 
   const cashierPasswordHash = await bcrypt.hash(cashierPassword, 12);
-  const cashierPinHash = await bcrypt.hash(cashierPin, 10);
 
   await prisma.user.create({
     data: {
       email: cashierEmail,
       passwordHash: cashierPasswordHash,
-      pin: cashierPinHash,
       role: 'CASHIER',
       tenantId: tenant.id,
       permissions: [
@@ -584,8 +677,6 @@ async function seedDemoSales() {
 
   // ── Create 2 cashier users ──
   const cashierPassword = await bcrypt.hash('cashier123!', 12);
-  const cashier1PinHash = await bcrypt.hash('3333', 10);
-  const cashier2PinHash = await bcrypt.hash('4444', 10);
   const cashierPermissions = [
     'sale:create',
     'sale:view',
@@ -602,15 +693,12 @@ async function seedDemoSales() {
     create: {
       email: 'cashier1@ayurpos.dev',
       passwordHash: cashierPassword,
-      pin: cashier1PinHash,
       role: 'CASHIER',
       tenantId,
       permissions: cashierPermissions,
       isActive: true,
     },
-    update: {
-      pin: cashier1PinHash,
-    },
+    update: {},
   });
 
   const cashier2 = await prisma.user.upsert({
@@ -618,15 +706,12 @@ async function seedDemoSales() {
     create: {
       email: 'cashier2@ayurpos.dev',
       passwordHash: cashierPassword,
-      pin: cashier2PinHash,
       role: 'CASHIER',
       tenantId,
       permissions: cashierPermissions,
       isActive: true,
     },
-    update: {
-      pin: cashier2PinHash,
-    },
+    update: {},
   });
 
   const cashiers = [cashier1, cashier2];
@@ -1661,6 +1746,49 @@ async function seedHardwareAndAuditData() {
     console.log('Tenant hardware settings updated');
   } else {
     console.log('Tenant hardware settings already present, skipping');
+  }
+
+  // ── 1b. Enable delivery module on the primary tenant ──
+  const currentSettings = (await prisma.tenant.findUnique({ where: { id: tenantId } }))
+    ?.settings as Record<string, unknown> | null;
+  const settingsNow = currentSettings ?? {};
+  const enabledModules: string[] = Array.isArray(settingsNow.enabledModules)
+    ? (settingsNow.enabledModules as string[])
+    : [];
+  if (!enabledModules.includes('delivery')) {
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        settings: {
+          ...settingsNow,
+          enabledModules: [...enabledModules, 'delivery'],
+        },
+      },
+    });
+    console.log('Delivery module enabled on primary tenant');
+  } else {
+    console.log('Delivery module already enabled, skipping');
+  }
+
+  // ── 1c. Seed a DISPATCH_STAFF demo user for the primary tenant ──
+  const dispatchStaffEmail = 'dispatch@ayurpos.dev';
+  const existingDispatch = await prisma.user.findFirst({
+    where: { tenantId, email: dispatchStaffEmail, deletedAt: null },
+  });
+  if (!existingDispatch) {
+    await prisma.user.create({
+      data: {
+        email: dispatchStaffEmail,
+        passwordHash: await bcrypt.hash('dispatch123!', 12),
+        role: 'DISPATCH_STAFF',
+        tenantId,
+        permissions: [],
+        isActive: true,
+      },
+    });
+    console.log(`Created DISPATCH_STAFF user: ${dispatchStaffEmail}`);
+  } else {
+    console.log('DISPATCH_STAFF user already exists, skipping');
   }
 
   // Fetch demo users

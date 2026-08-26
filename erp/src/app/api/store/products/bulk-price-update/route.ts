@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 import { Prisma } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 
 const BulkPriceUpdateSchema = z
   .object({
@@ -128,6 +129,13 @@ export async function POST(request: NextRequest) {
         });
       }
     });
+
+    // Revalidate so new prices appear on the storefront immediately.
+    try {
+      await revalidateTenantStorefront(tenantId, { productIds, catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[POST /api/store/products/bulk-price-update] Revalidation warning:', revalidateErr);
+    }
 
     return NextResponse.json({ success: true, data: { updated, errors } });
   } catch (error) {

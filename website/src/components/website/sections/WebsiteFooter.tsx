@@ -260,6 +260,7 @@ function getDefaultColumns() {
     {
       title: 'Customer Service',
       links: [
+        { label: 'Track Order', href: '/track' },
         { label: 'Contact Us', href: '/contact' },
         { label: 'FAQ', href: '/faq' },
         { label: 'Shipping Info', href: '/shipping' },

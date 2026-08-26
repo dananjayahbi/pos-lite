@@ -55,6 +55,7 @@ const ROLE_COLORS: Record<string, string> = {
   MANAGER: 'bg-terracotta text-pearl',
   CASHIER: 'bg-sand text-espresso',
   STOCK_CLERK: 'bg-mist text-espresso',
+  FACTORY_MANAGER: 'bg-mist text-espresso',
 };
 
 function getDefaultPeriod() {

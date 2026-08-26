@@ -41,11 +41,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Pencil, Eye, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { CreateExpenseSchema } from '@/lib/validators/expense.validators';
+import { CreateExpenseSchema, EXPENSE_CATEGORIES } from '@/lib/validators/expense.validators';
 import type { CreateExpenseInput } from '@/lib/validators/expense.validators';
 import { formatRupee } from '@/lib/format';
 import Decimal from 'decimal.js';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ReceiptUploader } from '@/components/expenses/ReceiptUploader';
+import { PettyCashExportButton } from '@/components/petty-cash/PettyCashExportButton';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,6 +57,7 @@ interface Expense {
   amount: string;
   description: string;
   receiptImageUrl: string | null;
+  pettyCashFundId: string | null;
   expenseDate: string;
   recordedBy: { email: string };
   createdAt: string;
@@ -69,15 +72,21 @@ interface ExpenseListResponse {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const CATEGORIES = [
-  'RENT',
-  'SALARIES',
-  'UTILITIES',
-  'ADVERTISING',
-  'MAINTENANCE',
-  'MISCELLANEOUS',
-  'OTHER',
-] as const;
+const CATEGORIES = EXPENSE_CATEGORIES;
+
+const CATEGORY_LABEL: Record<string, string> = {
+  RENT: 'Rent',
+  SALARIES: 'Salaries',
+  UTILITIES: 'Utilities',
+  ADVERTISING: 'Advertising',
+  MAINTENANCE: 'Maintenance',
+  MISCELLANEOUS: 'Miscellaneous',
+  OTHER: 'Other',
+  STAFF_MEALS: 'Staff Meals',
+  TEA_SUGAR: 'Tea & Sugar',
+  OFFICE_STATIONERY: 'Office Stationery',
+  TRAVEL: 'Travel',
+};
 
 const CATEGORY_BADGE_COLORS: Record<string, string> = {
   RENT: 'bg-terracotta text-pearl',
@@ -87,6 +96,10 @@ const CATEGORY_BADGE_COLORS: Record<string, string> = {
   MAINTENANCE: 'bg-linen text-espresso',
   MISCELLANEOUS: 'bg-pearl text-espresso border border-mist',
   OTHER: 'bg-pearl text-espresso border border-mist',
+  STAFF_MEALS: 'bg-sand text-pearl',
+  TEA_SUGAR: 'bg-linen text-espresso',
+  OFFICE_STATIONERY: 'bg-mist text-espresso',
+  TRAVEL: 'bg-pearl text-espresso border border-mist',
 };
 
 function formatShortDate(dateStr: string) {
@@ -136,6 +149,18 @@ export default function ExpensesPage() {
     new Decimal(0),
   );
 
+  // Petty cash fund for optional linkage of standalone expenses (doc 36).
+  const { data: fund } = useQuery<{ id: string; name: string; activeCategories: string[] } | null>({
+    queryKey: ['petty-cash-fund'],
+    queryFn: async () => {
+      const res = await fetch('/api/store/petty-cash');
+      const json = await res.json();
+      if (!json.success) return null;
+      return json.data;
+    },
+    retry: false,
+  });
+
   // ── Create Form ──
   const createForm = useForm<CreateExpenseInput>({
     resolver: standardSchemaResolver(CreateExpenseSchema),
@@ -144,6 +169,7 @@ export default function ExpensesPage() {
       amount: 0,
       description: '',
       expenseDate: new Date().toISOString().slice(0, 10),
+      pettyCashFundId: undefined,
     },
   });
 
@@ -199,6 +225,7 @@ export default function ExpensesPage() {
       description: expense.description,
       expenseDate: expense.expenseDate.slice(0, 10),
       receiptImageUrl: expense.receiptImageUrl ?? undefined,
+      pettyCashFundId: expense.pettyCashFundId ?? undefined,
     });
   }
 
@@ -209,11 +236,19 @@ export default function ExpensesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl font-bold text-espresso">Expenses</h1>
-        <Link href="/expenses/cash-flow">
-          <Button variant="outline" className="border-mist text-espresso">
-            Cash Flow <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <PettyCashExportButton
+            className="border-mist text-espresso"
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            category={categoryFilter}
+          />
+          <Link href="/expenses/cash-flow">
+            <Button variant="outline" className="border-mist text-espresso">
+              Cash Flow <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}
@@ -227,7 +262,7 @@ export default function ExpensesPage() {
             <SelectContent>
               <SelectItem value="ALL">All Categories</SelectItem>
               {CATEGORIES.map((c) => (
-                <SelectItem key={c} value={c}>{c.charAt(0) + c.slice(1).toLowerCase()}</SelectItem>
+                <SelectItem key={c} value={c}>{CATEGORY_LABEL[c] ?? c}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -277,7 +312,7 @@ export default function ExpensesPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {CATEGORIES.map((c) => (
-                      <SelectItem key={c} value={c}>{c.charAt(0) + c.slice(1).toLowerCase()}</SelectItem>
+                      <SelectItem key={c} value={c}>{CATEGORY_LABEL[c] ?? c}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -306,9 +341,29 @@ export default function ExpensesPage() {
                 <Label>Date</Label>
                 <Input type="date" {...createForm.register('expenseDate')} className="border-mist" />
               </div>
+              {fund && (
+                <div>
+                  <Label>Petty Cash Fund (optional)</Label>
+                  <Select
+                    value={createForm.watch('pettyCashFundId') ?? ''}
+                    onValueChange={(v) => createForm.setValue('pettyCashFundId', v === 'none' ? undefined : v)}
+                  >
+                    <SelectTrigger className="border-mist">
+                      <SelectValue placeholder="Not linked" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not linked</SelectItem>
+                      <SelectItem value={fund.id}>{fund.name}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div>
-                <Label>Receipt URL (optional)</Label>
-                <Input {...createForm.register('receiptImageUrl')} className="border-mist" placeholder="https://..." />
+                <Label>Receipt (optional)</Label>
+                <ReceiptUploader
+                  value={createForm.watch('receiptImageUrl') ?? undefined}
+                  onChange={(url) => createForm.setValue('receiptImageUrl', url)}
+                />
               </div>
               <Button type="submit" disabled={createMutation.isPending} className="w-full bg-espresso text-pearl">
                 {createMutation.isPending ? 'Creating...' : 'Create Expense'}
@@ -353,7 +408,7 @@ export default function ExpensesPage() {
                       <TableCell className="font-mono text-sm">{formatShortDate(expense.expenseDate)}</TableCell>
                       <TableCell>
                         <Badge className={CATEGORY_BADGE_COLORS[expense.category] ?? 'bg-pearl text-espresso'}>
-                          {expense.category.charAt(0) + expense.category.slice(1).toLowerCase()}
+                          {CATEGORY_LABEL[expense.category] ?? expense.category}
                         </Badge>
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate">{expense.description}</TableCell>
@@ -439,7 +494,7 @@ export default function ExpensesPage() {
               <div className="flex justify-between">
                 <span className="text-sand">Category</span>
                 <Badge className={CATEGORY_BADGE_COLORS[viewExpense.category] ?? ''}>
-                  {viewExpense.category.charAt(0) + viewExpense.category.slice(1).toLowerCase()}
+                  {CATEGORY_LABEL[viewExpense.category] ?? viewExpense.category}
                 </Badge>
               </div>
               <div className="flex justify-between">
@@ -459,16 +514,14 @@ export default function ExpensesPage() {
                 <span className="text-sm">{viewExpense.recordedBy.email}</span>
               </div>
               {viewExpense.receiptImageUrl && (
-                <div className="flex justify-between">
+                <div>
                   <span className="text-sand">Receipt</span>
-                  <a
-                    href={viewExpense.receiptImageUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-terracotta underline"
-                  >
-                    View Receipt
-                  </a>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={viewExpense.receiptImageUrl}
+                    alt="Receipt"
+                    className="mt-2 h-32 w-full rounded border border-mist object-contain"
+                  />
                 </div>
               )}
             </div>
@@ -500,7 +553,7 @@ export default function ExpensesPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {CATEGORIES.map((c) => (
-                      <SelectItem key={c} value={c}>{c.charAt(0) + c.slice(1).toLowerCase()}</SelectItem>
+                      <SelectItem key={c} value={c}>{CATEGORY_LABEL[c] ?? c}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -523,9 +576,29 @@ export default function ExpensesPage() {
                 <Label>Date</Label>
                 <Input type="date" {...editForm.register('expenseDate')} className="border-mist" />
               </div>
+              {fund && (
+                <div>
+                  <Label>Petty Cash Fund (optional)</Label>
+                  <Select
+                    value={editForm.watch('pettyCashFundId') ?? ''}
+                    onValueChange={(v) => editForm.setValue('pettyCashFundId', v === 'none' ? undefined : v)}
+                  >
+                    <SelectTrigger className="border-mist">
+                      <SelectValue placeholder="Not linked" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not linked</SelectItem>
+                      <SelectItem value={fund.id}>{fund.name}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div>
-                <Label>Receipt URL (optional)</Label>
-                <Input {...editForm.register('receiptImageUrl')} className="border-mist" placeholder="https://..." />
+                <Label>Receipt (optional)</Label>
+                <ReceiptUploader
+                  value={editForm.watch('receiptImageUrl') ?? undefined}
+                  onChange={(url) => editForm.setValue('receiptImageUrl', url)}
+                />
               </div>
               <Button type="submit" disabled={editMutation.isPending} className="w-full bg-espresso text-pearl">
                 {editMutation.isPending ? 'Saving...' : 'Save Changes'}

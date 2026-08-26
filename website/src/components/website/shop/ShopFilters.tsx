@@ -1,15 +1,23 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
-import { tenantHomePath } from '@/lib/tenant';
-import type { PublicCategory } from '@/types/website.types';
+import { buildShopUrl } from '@/lib/api/shopQuery';
+import type { PublicCategory, PublicConcern } from '@/types/website.types';
+import { FilterPills } from './FilterPills';
+import { PriceRangeFilter } from './PriceRangeFilter';
 
 interface ShopFiltersProps {
   categories: PublicCategory[];
   tenantSlug: string;
   selectedCategory?: string | undefined;
   selectedSort?: string | undefined;
+  concerns: PublicConcern[];
+  forms: string[];
+  selectedConcern?: string | undefined;
+  selectedForm?: string | undefined;
+  priceMin?: number | undefined;
+  priceMax?: number | undefined;
+  priceBounds: { min: number; max: number };
 }
 
 const SORT_OPTIONS = [
@@ -20,71 +28,100 @@ const SORT_OPTIONS = [
 ];
 
 /**
- * Category and sort filters for the shop page.
+ * Filter panel for the shop page. Category, health-concern and form pills
+ * plus a price range and sort control all compose through the shared
+ * URL query-state model (`buildShopUrl`) so they persist and reset together.
  */
 export function ShopFilters({
   categories,
   tenantSlug,
   selectedCategory,
   selectedSort,
+  concerns,
+  forms,
+  selectedConcern,
+  selectedForm,
+  priceMin,
+  priceMax,
+  priceBounds,
 }: ShopFiltersProps) {
-  const homePath = tenantHomePath(tenantSlug);
-
-  function buildHref(categoryId?: string, sort?: string): string {
-    const params = new URLSearchParams();
-    if (categoryId) params.set('category', categoryId);
-    if (sort && sort !== 'latest') params.set('sort', sort);
-    const query = params.toString();
-    return `${homePath}/shop${query ? `?${query}` : ''}`;
+  function buildHref(overrides: {
+    category?: string | undefined;
+    sort?: string | undefined;
+    concern?: string | undefined;
+    form?: string | undefined;
+    priceMin?: number | undefined;
+    priceMax?: number | undefined;
+  }): string {
+    return buildShopUrl(tenantSlug, {
+      category: overrides.category !== undefined ? overrides.category : selectedCategory,
+      sort: overrides.sort !== undefined ? overrides.sort : selectedSort,
+      concern: overrides.concern !== undefined ? overrides.concern : selectedConcern,
+      form: overrides.form !== undefined ? overrides.form : selectedForm,
+      priceMin: overrides.priceMin !== undefined ? overrides.priceMin : priceMin,
+      priceMax: overrides.priceMax !== undefined ? overrides.priceMax : priceMax,
+    });
   }
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-4">
       {/* Category pills */}
       {categories.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={buildHref(undefined, selectedSort)}
-            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-              !selectedCategory
-                ? 'border-black bg-black text-white'
-                : 'border-gray-300 text-gray-600 hover:border-gray-500'
-            }`}
-          >
-            All
-          </Link>
-          {categories.map((cat) => (
-            <Link
-              key={cat.id}
-              href={buildHref(cat.id, selectedSort)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                selectedCategory === cat.id
-                  ? 'border-black bg-black text-white'
-                  : 'border-gray-300 text-gray-600 hover:border-gray-500'
-              }`}
-            >
-              {cat.name}
-            </Link>
-          ))}
-        </div>
+        <FilterPills
+          label="Category"
+          options={categories.map((c) => ({ id: c.id, label: c.name }))}
+          selectedId={selectedCategory}
+          buildHref={(id) => buildHref({ category: id })}
+        />
       )}
 
-      {/* Sort dropdown (as links) */}
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-500">Sort:</span>
-        <select
-          className="rounded border border-gray-300 px-2 py-1.5 text-xs bg-white focus:border-black focus:ring-1 focus:ring-black outline-none"
-          value={selectedSort || 'latest'}
-          onChange={(e) => {
-            window.location.href = buildHref(selectedCategory, e.target.value);
+      {/* Health-concern pills */}
+      {concerns.length > 0 && (
+        <FilterPills
+          label="Concern"
+          options={concerns.map((c) => ({ id: c.value, label: c.label }))}
+          selectedId={selectedConcern}
+          buildHref={(id) => buildHref({ concern: id })}
+        />
+      )}
+
+      {/* Form / type pills */}
+      {forms.length > 0 && (
+        <FilterPills
+          label="Type"
+          options={forms.map((f) => ({ id: f, label: f }))}
+          selectedId={selectedForm}
+          buildHref={(id) => buildHref({ form: id })}
+        />
+      )}
+
+      {/* Price range + sort */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <PriceRangeFilter
+          bounds={priceBounds}
+          valueMin={priceMin}
+          valueMax={priceMax}
+          onApply={(min, max) => {
+            window.location.href = buildHref({ priceMin: min, priceMax: max });
           }}
-        >
-          {SORT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+        />
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">Sort:</span>
+          <select
+            className="rounded border border-gray-300 px-2 py-1.5 text-xs bg-white focus:border-black focus:ring-1 focus:ring-black outline-none"
+            value={selectedSort || 'latest'}
+            onChange={(e) => {
+              window.location.href = buildHref({ sort: e.target.value });
+            }}
+          >
+            {SORT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
   );

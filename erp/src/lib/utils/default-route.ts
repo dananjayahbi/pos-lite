@@ -6,6 +6,8 @@ const ROLE_DEFAULT_ROUTES: Record<UserRole, string> = {
   MANAGER: '/dashboard',
   CASHIER: '/pos',
   STOCK_CLERK: '/dashboard',
+  DISPATCH_STAFF: '/delivery',
+  FACTORY_MANAGER: '/factory',
 };
 
 export function getDefaultRouteForRole(role: UserRole | null | undefined): string {

@@ -3,11 +3,10 @@
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import type { UserRole } from '@/generated/prisma/client';
-import { useCartStore, getLineTotalAfterDiscount } from '@/stores/cartStore';
+import { useCartStore } from '@/stores/cartStore';
 import type { CartItem } from '@/stores/cartStore';
 import { POS_DISCOUNT_THRESHOLDS } from '@/config/pos.config';
 import { formatRupee } from '@/lib/format';
-import { CartManagerPINModal } from '@/components/pos/CartManagerPINModal';
 
 interface LineItemDiscountControlProps {
   item: CartItem;
@@ -18,12 +17,11 @@ const PRIVILEGED_ROLES: UserRole[] = ['MANAGER', 'OWNER', 'SUPER_ADMIN'];
 export function LineItemDiscountControl({ item }: LineItemDiscountControlProps) {
   const { data: session } = useSession();
   const setLineDiscount = useCartStore((s) => s.setLineDiscount);
-  const setAuthorizingManager = useCartStore((s) => s.setAuthorizingManager);
   const setActiveLine = useCartStore((s) => s.setActiveLine);
 
   const [mode, setMode] = useState<'percent' | 'fixed'>('percent');
   const [inputValue, setInputValue] = useState('');
-  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [overrideBlocked, setOverrideBlocked] = useState(false);
 
   const role = session?.user?.role;
   const isPrivileged = role != null && PRIVILEGED_ROLES.includes(role);
@@ -46,16 +44,10 @@ export function LineItemDiscountControl({ item }: LineItemDiscountControlProps) 
   const handleApply = () => {
     if (exceedsTotal) return;
     if (needsOverride) {
-      setPinModalOpen(true);
+      setOverrideBlocked(true);
       return;
     }
     setLineDiscount(item.variantId, effectivePercent);
-    setActiveLine(null);
-  };
-
-  const handlePinSuccess = (managerId: string) => {
-    setLineDiscount(item.variantId, effectivePercent);
-    setAuthorizingManager(managerId);
     setActiveLine(null);
   };
 
@@ -101,7 +93,7 @@ export function LineItemDiscountControl({ item }: LineItemDiscountControlProps) 
           }`}
         />
 
-        {/* Apply / Override button */}
+        {/* Apply button */}
         <button
           type="button"
           onClick={handleApply}
@@ -112,7 +104,7 @@ export function LineItemDiscountControl({ item }: LineItemDiscountControlProps) 
               : 'text-pearl bg-espresso hover:bg-espresso/90'
           }`}
         >
-          {needsOverride ? 'Request Override' : 'Apply'}
+          Apply
         </button>
       </div>
 
@@ -125,12 +117,11 @@ export function LineItemDiscountControl({ item }: LineItemDiscountControlProps) 
         </p>
       )}
 
-      <CartManagerPINModal
-        open={pinModalOpen}
-        onOpenChange={setPinModalOpen}
-        description={`Authorise ${effectivePercent.toFixed(1)}% line discount on ${item.productName}${item.variantDescription ? ` / ${item.variantDescription}` : ''}`}
-        onSuccess={handlePinSuccess}
-      />
+      {overrideBlocked && needsOverride && (
+        <p className="font-body text-xs mt-1 text-[#B7791F]">
+          Discounts above {POS_DISCOUNT_THRESHOLDS.lineItemMaxPercent}% require a Manager or Owner to apply.
+        </p>
+      )}
     </div>
   );
 }

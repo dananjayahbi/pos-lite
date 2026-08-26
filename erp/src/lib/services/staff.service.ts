@@ -21,7 +21,6 @@ interface UpdateStaffInput {
   role?: UserRole | undefined;
   isActive?: boolean | undefined;
   commissionRate?: string | undefined;
-  clearPin?: boolean | undefined;
   permissions?: string[] | undefined;
 }
 
@@ -73,10 +72,7 @@ export async function getStaffMembers(tenantId: string, options?: GetStaffOption
 export async function getStaffById(tenantId: string, id: string) {
   const user = await prisma.user.findFirst({
     where: { id, tenantId, deletedAt: null },
-    select: {
-      ...STAFF_SELECT,
-      pin: true,
-    },
+    select: STAFF_SELECT,
   });
 
   if (!user) {
@@ -94,7 +90,6 @@ export async function getStaffById(tenantId: string, id: string) {
     commissionRate: user.commissionRate,
     clockedInAt: user.clockedInAt,
     createdAt: user.createdAt,
-    hasPinSet: user.pin !== null,
   };
 }
 
@@ -120,9 +115,6 @@ export async function updateStaff(tenantId: string, id: string, data: UpdateStaf
   if (data.commissionRate !== undefined) {
     updateData.commissionRate = parseFloat(data.commissionRate);
   }
-  if (data.clearPin === true) {
-    updateData.pin = null;
-  }
   if (data.permissions !== undefined) {
     updateData.permissions = Array.from(
       new Set(data.permissions.filter((permission): permission is string => typeof permission === 'string')),
@@ -145,18 +137,6 @@ export async function updateStaff(tenantId: string, id: string, data: UpdateStaf
       action: AUDIT_ACTIONS.STAFF_ROLE_CHANGED,
       before: { role: existing.role },
       after: { role: data.role },
-    }).catch(() => {});
-  }
-
-  if (data.clearPin === true) {
-    void createAuditLog({
-      tenantId,
-      actorId: null,
-      actorRole: 'SYSTEM',
-      entityType: 'Staff',
-      entityId: id,
-      action: AUDIT_ACTIONS.STAFF_PIN_CHANGED,
-      after: { pinCleared: true },
     }).catch(() => {});
   }
 

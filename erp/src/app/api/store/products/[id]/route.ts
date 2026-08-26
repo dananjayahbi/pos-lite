@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getProductById, updateProduct, softDeleteProduct } from '@/lib/services/product.service';
 import { UpdateProductSchema } from '@/lib/validators/product.validators';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 
 export async function GET(
   _request: Request,
@@ -104,6 +105,13 @@ export async function PATCH(
 
     const updated = await updateProduct(tenantId, id, session.user.id, parsed.data);
 
+    // Revalidate so edits (name, price, images, etc.) appear instantly on the storefront.
+    try {
+      await revalidateTenantStorefront(tenantId, { productIds: [id], catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[PATCH /api/store/products/[id]] Revalidation warning:', revalidateErr);
+    }
+
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
@@ -161,6 +169,13 @@ export async function DELETE(
 
     const { id } = await params;
     const deleted = await softDeleteProduct(tenantId, id, session.user.id);
+
+    // Revalidate so the archived product disappears from the storefront immediately.
+    try {
+      await revalidateTenantStorefront(tenantId, { productIds: [id], catalog: true });
+    } catch (revalidateErr) {
+      console.warn('[DELETE /api/store/products/[id]] Revalidation warning:', revalidateErr);
+    }
 
     return NextResponse.json({
       success: true,

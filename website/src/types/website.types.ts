@@ -314,6 +314,8 @@ export interface WebsiteAdData {
 export interface PublicProductVariant {
   id: string;
   sku: string;
+  /** Product type / form, e.g. Powder, Capsule, Tablet, Oil. */
+  form?: string;
   retailPrice: number;
   imageUrls: string[];
   stockQuantity: number;
@@ -328,8 +330,64 @@ export interface PublicProduct {
   categoryId?: string;
   brandId?: string;
   tags: string[];
+  /** Curated wellness concerns (HealthConcern enum values). */
+  healthConcerns: string[];
+  mainImageUrl?: string;
+  activeIngredients?: string;
+  usageInstructions?: string;
+  healthBenefits?: string;
+  safetyPrecautions?: string;
   primaryVariant?: PublicProductVariant;
   variants: PublicProductVariant[];
+}
+
+/** A health-concern filter option (value + display label). */
+export interface PublicConcern {
+  value: string;
+  label: string;
+}
+
+/** Filter options returned by the shop-filters endpoint. */
+export interface PublicShopFilters {
+  concerns: PublicConcern[];
+  forms: string[];
+}
+
+// ── Public order tracking (returned by /track) ─────────────────────────────
+
+export interface PublicTrackingStage {
+  key: string;
+  label: string;
+  stage: number;
+}
+
+export interface PublicTrackingStatus {
+  label: string;
+  isTerminal: boolean;
+  isFailure: boolean;
+  stage: PublicTrackingStage;
+}
+
+export interface PublicTrackingEvent {
+  id: string;
+  stage: string;
+  label: string;
+  remarks?: string | null;
+  isCurrent: boolean;
+  timestamp: string;
+}
+
+export interface PublicTrackingOrder {
+  orderRef: string;
+  status: PublicTrackingStatus;
+  payment: string;
+  placedAt?: string | null;
+  deliveredAt?: string | null;
+  events: PublicTrackingEvent[];
+}
+
+export interface PublicTrackingResponse {
+  orders: PublicTrackingOrder[];
 }
 
 export interface PublicCategory {
