@@ -14,10 +14,12 @@ import {
   Truck,
   Users,
 } from 'lucide-react';
+import type { UserRole } from '@/generated/prisma/client';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 
 interface QuickNavProps {
   permissions: string[];
+  userRole: UserRole;
 }
 
 const NAV_ITEMS = [
@@ -26,6 +28,7 @@ const NAV_ITEMS = [
     href: '/sales',
     icon: ShoppingCart,
     permission: PERMISSIONS.SALE.viewSale,
+    managementOnly: true,
   },
   {
     label: 'Returns',
@@ -101,9 +104,11 @@ const NAV_ITEMS = [
   },
 ] as const;
 
-export function QuickNav({ permissions }: QuickNavProps) {
-  const items = NAV_ITEMS.filter((item) =>
-    permissions.includes(item.permission),
+export function QuickNav({ permissions, userRole }: QuickNavProps) {
+  const items = NAV_ITEMS.filter(
+    (item) =>
+      permissions.includes(item.permission) &&
+      (!('managementOnly' in item) || userRole === 'OWNER' || userRole === 'MANAGER'),
   );
 
   if (items.length === 0) return null;
@@ -114,9 +119,9 @@ export function QuickNav({ permissions }: QuickNavProps) {
         <Link
           key={item.href}
           href={item.href}
-          className="flex items-center gap-2 rounded-lg border border-mist bg-pearl px-3 py-2 text-sm text-espresso transition-colors hover:border-terracotta/40 hover:bg-linen"
+          className="border-mist bg-pearl text-espresso hover:border-terracotta/40 hover:bg-linen flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors"
         >
-          <item.icon className="h-4 w-4 text-terracotta" />
+          <item.icon className="text-terracotta h-4 w-4" />
           <span>{item.label}</span>
         </Link>
       ))}

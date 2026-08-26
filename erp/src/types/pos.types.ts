@@ -2,7 +2,7 @@ import type Decimal from 'decimal.js';
 
 /** Payload assembled from the cart, ready to be sent minus payment-specific fields */
 export interface CreateSalePayload {
-  shiftId: string;
+  shiftId?: string;
   lines: Array<{
     variantId: string;
     quantity: number;

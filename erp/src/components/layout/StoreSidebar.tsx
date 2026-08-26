@@ -47,7 +47,7 @@ const navGroups: NavGroup[] = [
       {
         name: 'Sales',
         href: '/sales',
-        roles: ['OWNER', 'MANAGER', 'CASHIER'],
+        roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.SALE.viewSale,
       },
       {
@@ -371,7 +371,11 @@ function canAccessItem(item: NavItem, userRole: UserRole, permissions: string[])
   return true;
 }
 
-function isActivePath(pathname: string, href: string, match: 'exact' | 'prefix' = 'prefix'): boolean {
+function isActivePath(
+  pathname: string,
+  href: string,
+  match: 'exact' | 'prefix' = 'prefix',
+): boolean {
   if (match === 'exact') {
     return pathname === href;
   }
@@ -394,7 +398,7 @@ export default function StoreSidebar({
   const pathname = usePathname();
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-pearl">
+    <div className="bg-pearl flex h-full flex-col overflow-hidden">
       <div className="shrink-0">
         <div className="px-5 py-5">
           <div className="flex items-center gap-2">
@@ -402,71 +406,68 @@ export default function StoreSidebar({
               // eslint-disable-next-line @next/next/no-img-element
               <img src={businessLogoUrl} alt="" className="h-7 w-7 rounded object-contain" />
             ) : null}
-            <p className="font-display text-xl font-bold text-espresso">{businessName}</p>
+            <p className="font-display text-espresso text-xl font-bold">{businessName}</p>
           </div>
-          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-sand">
+          <p className="text-sand mt-1 text-xs font-semibold tracking-[0.2em] uppercase">
             {formatRole(userRole)}
           </p>
         </div>
-        <div className="mx-5 border-b border-mist" />
+        <div className="border-mist mx-5 border-b" />
       </div>
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
-          {navGroups.map((group) => {
-            const visibleItems = group.items.filter((item) =>
-              canAccessItem(item, userRole, permissions),
-            );
+        {navGroups.map((group) => {
+          const visibleItems = group.items.filter((item) =>
+            canAccessItem(item, userRole, permissions),
+          );
 
-            if (visibleItems.length === 0) {
-              return null;
-            }
+          if (visibleItems.length === 0) {
+            return null;
+          }
 
-            return (
-              <div key={group.label} className="mb-6 last:mb-0">
-                <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sand/80">
-                  {group.label}
-                </p>
-                <ul className="space-y-1">
-                  {visibleItems.map((item) => {
-                    const isActive = isActivePath(pathname, item.href, item.match);
+          return (
+            <div key={group.label} className="mb-6 last:mb-0">
+              <p className="text-sand/80 mb-2 px-3 text-xs font-semibold tracking-wider uppercase">
+                {group.label}
+              </p>
+              <ul className="space-y-1">
+                {visibleItems.map((item) => {
+                  const isActive = isActivePath(pathname, item.href, item.match);
 
-                    const isPosLink =
-                      item.href === '/pos' &&
-                      (userRole === 'OWNER' || userRole === 'MANAGER');
+                  const isPosLink =
+                    item.href === '/pos' && (userRole === 'OWNER' || userRole === 'MANAGER');
 
-                    return (
-                      <li key={item.href}>
-                        <Link
-                          href={item.href}
-                          {...(onNavigate ? { onClick: onNavigate } : {})}
-                          {...(isPosLink
-                            ? { target: '_blank', rel: 'noopener noreferrer' }
-                            : {})}
-                          className={`block rounded-r-md border-l-[3px] px-3 py-2 text-sm font-medium transition-colors ${
-                            isActive
-                              ? 'border-terracotta bg-linen text-espresso'
-                              : 'border-transparent text-espresso/70 hover:bg-linen hover:text-espresso'
-                          }`}
-                        >
-                          {item.name}
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            );
-          })}
-        </nav>
+                  return (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        {...(onNavigate ? { onClick: onNavigate } : {})}
+                        {...(isPosLink ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                        className={`block rounded-r-md border-l-[3px] px-3 py-2 text-sm font-medium transition-colors ${
+                          isActive
+                            ? 'border-terracotta bg-linen text-espresso'
+                            : 'text-espresso/70 hover:bg-linen hover:text-espresso border-transparent'
+                        }`}
+                      >
+                        {item.name}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
+      </nav>
 
-      <div className="shrink-0 border-t border-mist px-4 py-4">
-        <p className="truncate text-xs text-sand">{userEmail}</p>
+      <div className="border-mist shrink-0 border-t px-4 py-4">
+        <p className="text-sand truncate text-xs">{userEmail}</p>
         <button
           type="button"
           onClick={() => {
             void signOut({ callbackUrl: `${window.location.origin}/login` });
           }}
-          className="mt-2 text-xs text-terracotta transition-colors hover:text-espresso"
+          className="text-terracotta hover:text-espresso mt-2 text-xs transition-colors"
         >
           Log Out
         </button>

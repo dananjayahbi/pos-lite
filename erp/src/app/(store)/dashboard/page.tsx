@@ -1,15 +1,10 @@
-import { Suspense } from "react";
-import { redirect } from "next/navigation";
-import Link from "next/link";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { getDefaultRouteForRole } from "@/lib/utils/default-route";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Suspense } from 'react';
+import { redirect } from 'next/navigation';
+import Link from 'next/link';
+import { auth } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { getDefaultRouteForRole } from '@/lib/utils/default-route';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -17,18 +12,18 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { PERMISSIONS } from "@/lib/constants/permissions";
-import { ShoppingBag, TrendingUp, AlertTriangle, Users } from "lucide-react";
-import { StockSummaryWidgets } from "@/components/dashboard/StockSummaryWidgets";
-import { RecentStockMovementsCard } from "@/components/dashboard/RecentStockMovementsCard";
-import { QuickNav } from "@/components/dashboard/QuickNav";
-import { AnalyticsSection } from "@/components/dashboard/AnalyticsSection";
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { PERMISSIONS } from '@/lib/constants/permissions';
+import { ShoppingBag, TrendingUp, AlertTriangle, Users } from 'lucide-react';
+import { StockSummaryWidgets } from '@/components/dashboard/StockSummaryWidgets';
+import { RecentStockMovementsCard } from '@/components/dashboard/RecentStockMovementsCard';
+import { QuickNav } from '@/components/dashboard/QuickNav';
+import { AnalyticsSection } from '@/components/dashboard/AnalyticsSection';
 
-const lkr = new Intl.NumberFormat("en-LK", {
-  style: "currency",
-  currency: "LKR",
+const lkr = new Intl.NumberFormat('en-LK', {
+  style: 'currency',
+  currency: 'LKR',
 });
 
 function StatCard({
@@ -46,11 +41,11 @@ function StatCard({
     <Card>
       <CardContent className="flex items-start justify-between pt-6">
         <div>
-          <p className="text-sm text-sand">{label}</p>
-          <p className="mt-1 text-2xl font-bold text-espresso">{value}</p>
-          {sub && <p className="mt-1 text-xs text-mist">{sub}</p>}
+          <p className="text-sand text-sm">{label}</p>
+          <p className="text-espresso mt-1 text-2xl font-bold">{value}</p>
+          {sub && <p className="text-mist mt-1 text-xs">{sub}</p>}
         </div>
-        <div className="rounded-lg bg-linen p-2 text-terracotta">{icon}</div>
+        <div className="bg-linen text-terracotta rounded-lg p-2">{icon}</div>
       </CardContent>
     </Card>
   );
@@ -60,10 +55,7 @@ function StatsSkeleton() {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {Array.from({ length: 4 }).map((_, i) => (
-        <div
-          key={i}
-          className="h-28 animate-pulse rounded-xl border border-mist bg-pearl"
-        />
+        <div key={i} className="border-mist bg-pearl h-28 animate-pulse rounded-xl border" />
       ))}
     </div>
   );
@@ -73,32 +65,29 @@ function TableSkeleton() {
   return (
     <div className="space-y-2 px-6">
       {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="h-10 animate-pulse rounded-md bg-linen" />
+        <div key={i} className="bg-linen h-10 animate-pulse rounded-md" />
       ))}
     </div>
   );
 }
 
-
-
 async function TodayStats({ tenantId }: { tenantId: string }) {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  const [todaySales, totalCustomers, lowStockResult, openShift] =
-    await Promise.all([
-      prisma.sale.findMany({
-        where: {
-          tenantId,
-          status: "COMPLETED",
-          completedAt: { gte: todayStart },
-        },
-        select: { totalAmount: true },
-      }),
-      prisma.customer.count({
-        where: { tenantId, isActive: true, deletedAt: null },
-      }),
-      prisma.$queryRaw<[{ count: bigint }]>`
+  const [todaySales, totalCustomers, lowStockResult, openShift] = await Promise.all([
+    prisma.sale.findMany({
+      where: {
+        tenantId,
+        status: 'COMPLETED',
+        completedAt: { gte: todayStart },
+      },
+      select: { totalAmount: true },
+    }),
+    prisma.customer.count({
+      where: { tenantId, isActive: true, deletedAt: null },
+    }),
+    prisma.$queryRaw<[{ count: bigint }]>`
         SELECT COUNT(*) as count
         FROM "product_variants" pv
         JOIN "products" p ON pv."productId" = p."id"
@@ -108,21 +97,18 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
           AND p."deletedAt" IS NULL
           AND pv."stockQuantity" <= pv."lowStockThreshold"
       `,
-      prisma.shift.findFirst({
-        where: { tenantId, status: "OPEN" },
-        select: {
-          id: true,
-          openedAt: true,
-          cashier: { select: { email: true } },
-        },
-        orderBy: { openedAt: "desc" },
-      }),
-    ]);
+    prisma.shift.findFirst({
+      where: { tenantId, status: 'OPEN' },
+      select: {
+        id: true,
+        openedAt: true,
+        cashier: { select: { email: true } },
+      },
+      orderBy: { openedAt: 'desc' },
+    }),
+  ]);
 
-  const todayRevenue = todaySales.reduce(
-    (sum, s) => sum + Number(s.totalAmount),
-    0,
-  );
+  const todayRevenue = todaySales.reduce((sum, s) => sum + Number(s.totalAmount), 0);
   const lowStockCount = Number(lowStockResult[0]?.count ?? 0);
 
   return (
@@ -131,7 +117,7 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
         label="Today's Revenue"
         value={lkr.format(todayRevenue)}
         icon={<TrendingUp className="h-5 w-5" />}
-        sub={`${todaySales.length} transaction${todaySales.length !== 1 ? "s" : ""}`}
+        sub={`${todaySales.length} transaction${todaySales.length !== 1 ? 's' : ''}`}
       />
       <StatCard
         label="Today's Sales"
@@ -151,11 +137,11 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
         icon={<AlertTriangle className="h-5 w-5" />}
         sub={
           openShift
-            ? `Shift open · ${openShift.openedAt.toLocaleTimeString("en-LK", {
-                hour: "2-digit",
-                minute: "2-digit",
+            ? `Shift open · ${openShift.openedAt.toLocaleTimeString('en-LK', {
+                hour: '2-digit',
+                minute: '2-digit',
               })}`
-            : "No open shift"
+            : 'No open shift'
         }
       />
     </div>
@@ -164,8 +150,8 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
 
 async function RecentSales({ tenantId }: { tenantId: string }) {
   const sales = await prisma.sale.findMany({
-    where: { tenantId, status: "COMPLETED" },
-    orderBy: { completedAt: "desc" },
+    where: { tenantId, status: 'COMPLETED' },
+    orderBy: { completedAt: 'desc' },
     take: 8,
     select: {
       id: true,
@@ -178,11 +164,7 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
   });
 
   if (sales.length === 0) {
-    return (
-      <p className="py-8 text-center text-sm text-sand">
-        No sales recorded yet.
-      </p>
-    );
+    return <p className="text-sand py-8 text-center text-sm">No sales recorded yet.</p>;
   }
 
   return (
@@ -199,33 +181,31 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
       <TableBody>
         {sales.map((sale) => (
           <TableRow key={sale.id}>
-            <TableCell className="text-espresso">
-              {sale.customer?.name ?? "Walk-in"}
-            </TableCell>
+            <TableCell className="text-espresso">{sale.customer?.name ?? 'Walk-in'}</TableCell>
             <TableCell>{sale._count.lines}</TableCell>
             <TableCell>
               <Badge
                 className={
-                  sale.paymentMethod === "CASH"
-                    ? "bg-green-100 text-green-800"
-                    : sale.paymentMethod === "CARD"
-                      ? "bg-blue-100 text-blue-800"
-                      : "bg-purple-100 text-purple-800"
+                  sale.paymentMethod === 'CASH'
+                    ? 'bg-green-100 text-green-800'
+                    : sale.paymentMethod === 'CARD'
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'bg-purple-100 text-purple-800'
                 }
               >
-                {sale.paymentMethod ?? "—"}
+                {sale.paymentMethod ?? '—'}
               </Badge>
             </TableCell>
-            <TableCell className="font-medium text-espresso">
+            <TableCell className="text-espresso font-medium">
               {lkr.format(Number(sale.totalAmount))}
             </TableCell>
-            <TableCell className="text-sm text-sand">
+            <TableCell className="text-sand text-sm">
               {sale.completedAt
-                ? new Date(sale.completedAt).toLocaleTimeString("en-LK", {
-                    hour: "2-digit",
-                    minute: "2-digit",
+                ? new Date(sale.completedAt).toLocaleTimeString('en-LK', {
+                    hour: '2-digit',
+                    minute: '2-digit',
                   })
-                : "—"}
+                : '—'}
             </TableCell>
           </TableRow>
         ))}
@@ -268,11 +248,7 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
   `;
 
   if (rows.length === 0) {
-    return (
-      <p className="py-8 text-center text-sm text-sand">
-        All stock levels are healthy.
-      </p>
-    );
+    return <p className="text-sand py-8 text-center text-sm">All stock levels are healthy.</p>;
   }
 
   return (
@@ -289,11 +265,11 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
       <TableBody>
         {rows.map((v) => (
           <TableRow key={v.id}>
-            <TableCell className="font-medium text-espresso">
+            <TableCell className="text-espresso font-medium">
               {v.productName}
               {(v.form ?? v.packSize) && (
-                <span className="ml-1 text-xs text-sand">
-                  {[v.form, v.packSize].filter(Boolean).join(" / ")}
+                <span className="text-sand ml-1 text-xs">
+                  {[v.form, v.packSize].filter(Boolean).join(' / ')}
                 </span>
               )}
             </TableCell>
@@ -302,8 +278,8 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
               <span
                 className={
                   v.stockQuantity === 0
-                    ? "font-semibold text-red-600"
-                    : "font-semibold text-amber-600"
+                    ? 'font-semibold text-red-600'
+                    : 'font-semibold text-amber-600'
                 }
               >
                 {v.stockQuantity}
@@ -313,7 +289,7 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
             <TableCell>
               <Link
                 href={`/inventory/${v.productId}`}
-                className="text-sm text-terracotta hover:underline"
+                className="text-terracotta text-sm hover:underline"
               >
                 View
               </Link>
@@ -328,7 +304,7 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
 export default async function StoreDashboardPage() {
   const session = await auth();
   if (!session?.user?.tenantId) {
-    redirect("/login");
+    redirect('/login');
   }
 
   const defaultRoute = getDefaultRouteForRole(session.user.role);
@@ -338,7 +314,9 @@ export default async function StoreDashboardPage() {
 
   const { tenantId } = session.user;
   const permissions = Array.isArray(session.user.permissions)
-    ? session.user.permissions.filter((permission): permission is string => typeof permission === 'string')
+    ? session.user.permissions.filter(
+        (permission): permission is string => typeof permission === 'string',
+      )
     : [];
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
@@ -349,10 +327,8 @@ export default async function StoreDashboardPage() {
     <div className="space-y-8 p-6">
       {/* Header */}
       <div>
-        <h1 className="font-display text-2xl font-bold text-espresso">
-          Dashboard
-        </h1>
-        {tenant && <p className="mt-1 text-sm text-sand">{tenant.name}</p>}
+        <h1 className="font-display text-espresso text-2xl font-bold">Dashboard</h1>
+        {tenant && <p className="text-sand mt-1 text-sm">{tenant.name}</p>}
       </div>
 
       {/* KPI Cards */}
@@ -363,8 +339,8 @@ export default async function StoreDashboardPage() {
       {permissions.includes(PERMISSIONS.STOCK.viewStock) && (
         <div className="space-y-4">
           <div>
-            <h2 className="text-lg font-semibold text-espresso">Inventory Snapshot</h2>
-            <p className="mt-1 text-sm text-sand">
+            <h2 className="text-espresso text-lg font-semibold">Inventory Snapshot</h2>
+            <p className="text-sand mt-1 text-sm">
               Stock KPIs and the freshest movement trail, pulled into the owner dashboard.
             </p>
           </div>
@@ -374,23 +350,21 @@ export default async function StoreDashboardPage() {
       )}
 
       {/* Quick Navigation */}
-      <QuickNav permissions={permissions} />
+      <QuickNav permissions={permissions} userRole={session.user.role} />
 
       {/* Analytics Charts */}
       <div className="space-y-4">
         <div>
-          <h2 className="text-lg font-semibold text-espresso">Business Analytics</h2>
-          <p className="mt-1 text-sm text-sand">
-            Key metrics and trends from the last 7 days.
-          </p>
+          <h2 className="text-espresso text-lg font-semibold">Business Analytics</h2>
+          <p className="text-sand mt-1 text-sm">Key metrics and trends from the last 7 days.</p>
         </div>
 
         <Suspense
           fallback={
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <div className="lg:col-span-2 h-80 animate-pulse rounded-xl border border-mist bg-pearl" />
-              <div className="h-72 animate-pulse rounded-xl border border-mist bg-pearl" />
-              <div className="h-72 animate-pulse rounded-xl border border-mist bg-pearl" />
+              <div className="border-mist bg-pearl h-80 animate-pulse rounded-xl border lg:col-span-2" />
+              <div className="border-mist bg-pearl h-72 animate-pulse rounded-xl border" />
+              <div className="border-mist bg-pearl h-72 animate-pulse rounded-xl border" />
             </div>
           }
         >
@@ -403,13 +377,8 @@ export default async function StoreDashboardPage() {
         {/* Recent Sales */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base font-semibold text-espresso">
-              Recent Sales
-            </CardTitle>
-            <Link
-              href="/sales"
-              className="text-xs text-terracotta hover:underline"
-            >
+            <CardTitle className="text-espresso text-base font-semibold">Recent Sales</CardTitle>
+            <Link href="/sales" className="text-terracotta text-xs hover:underline">
               View all →
             </Link>
           </CardHeader>
@@ -423,12 +392,12 @@ export default async function StoreDashboardPage() {
         {/* Low Stock Alerts */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base font-semibold text-espresso">
+            <CardTitle className="text-espresso text-base font-semibold">
               Low Stock Alerts
             </CardTitle>
             <Link
               href="/stock-control/low-stock"
-              className="text-xs text-terracotta hover:underline"
+              className="text-terracotta text-xs hover:underline"
             >
               View all →
             </Link>

@@ -20,11 +20,7 @@ function buildVariantDescription(form: string | null, packSize: string | null): 
   return 'Default';
 }
 
-function getTaxRate(
-  taxRule: TaxRule,
-  vatRate: number,
-  ssclRate: number,
-): Decimal {
+function getTaxRate(taxRule: TaxRule, vatRate: number, ssclRate: number): Decimal {
   switch (taxRule) {
     case 'STANDARD_VAT':
       return new Decimal(vatRate).div(100);
@@ -53,12 +49,15 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
   });
 
   const result = await prisma.$transaction(async (tx: TxClient) => {
-    // Validate shift
-    const shift = await tx.shift.findFirst({
-      where: { id: input.shiftId, tenantId, status: 'OPEN' },
-    });
-    if (!shift) {
-      throw new Error('Shift not found or not open');
+    // POS sales must belong to an open shift. Management sales may be
+    // recorded without a shift when no shiftId is supplied.
+    if (input.shiftId) {
+      const shift = await tx.shift.findFirst({
+        where: { id: input.shiftId, tenantId, status: 'OPEN' },
+      });
+      if (!shift) {
+        throw new Error('Shift not found or not open');
+      }
     }
 
     // Mandatory customer enforcement (doc 32): every finalized POS sale must be
@@ -121,12 +120,16 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       const quantity = new Decimal(line.quantity);
       const discountPercent = new Decimal(line.discountPercent);
 
-      const lineTotalBeforeDiscount = unitPrice.mul(quantity).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      const lineTotalBeforeDiscount = unitPrice
+        .mul(quantity)
+        .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
       const discountAmount = lineTotalBeforeDiscount
         .mul(discountPercent)
         .div(100)
         .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-      const lineTotalAfterDiscount = lineTotalBeforeDiscount.minus(discountAmount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      const lineTotalAfterDiscount = lineTotalBeforeDiscount
+        .minus(discountAmount)
+        .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
       const taxRate = getTaxRate(variant.product.taxRule, vatRate, ssclRate);
       const lineTax = lineTotalAfterDiscount.mul(taxRate).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
@@ -148,20 +151,18 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     }
 
     // Compute sale totals
-    const subtotal = lineData.reduce(
-      (sum, l) => sum.plus(l.lineTotalAfterDiscount),
-      new Decimal(0),
-    ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const subtotal = lineData
+      .reduce((sum, l) => sum.plus(l.lineTotalAfterDiscount), new Decimal(0))
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
     const cartDiscount = new Decimal(input.cartDiscountAmount);
     if (cartDiscount.greaterThan(subtotal)) {
       throw new Error('Cart discount cannot exceed subtotal');
     }
 
-    const totalTax = lineData.reduce(
-      (sum, l) => sum.plus(l.lineTax),
-      new Decimal(0),
-    ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const totalTax = lineData
+      .reduce((sum, l) => sum.plus(l.lineTax), new Decimal(0))
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
     const totalAmount = subtotal
       .minus(cartDiscount)
@@ -203,10 +204,12 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     const sale = await tx.sale.create({
       data: {
         tenantId,
-        shiftId: input.shiftId,
+        ...(input.shiftId ? { shiftId: input.shiftId } : {}),
         cashierId: input.cashierId,
         ...(input.customerId ? { customerId: input.customerId } : {}),
-        ...(input.appliedPromotions !== undefined && { appliedPromotions: input.appliedPromotions }),
+        ...(input.appliedPromotions !== undefined && {
+          appliedPromotions: input.appliedPromotions,
+        }),
         subtotal: subtotal.toNumber(),
         discountAmount: cartDiscount.toNumber(),
         taxAmount: totalTax.toNumber(),
@@ -248,20 +251,53 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     if (input.paymentMethod === 'CASH') {
       await createPayment({ saleId: sale.id, method: 'CASH', amount: totalAmount }, tx);
     } else if (input.paymentMethod === 'CARD') {
-      await createPayment({ saleId: sale.id, method: 'CARD', amount: totalAmount, ...(input.cardReferenceNumber !== undefined && { cardReferenceNumber: input.cardReferenceNumber }) }, tx);
+      await createPayment(
+        {
+          saleId: sale.id,
+          method: 'CARD',
+          amount: totalAmount,
+          ...(input.cardReferenceNumber !== undefined && {
+            cardReferenceNumber: input.cardReferenceNumber,
+          }),
+        },
+        tx,
+      );
     } else if (input.paymentMethod === 'LANKAQR') {
-      await createPayment({ saleId: sale.id, method: 'LANKAQR', amount: totalAmount, ...(input.cardReferenceNumber !== undefined && { cardReferenceNumber: input.cardReferenceNumber }) }, tx);
+      await createPayment(
+        {
+          saleId: sale.id,
+          method: 'LANKAQR',
+          amount: totalAmount,
+          ...(input.cardReferenceNumber !== undefined && {
+            cardReferenceNumber: input.cardReferenceNumber,
+          }),
+        },
+        tx,
+      );
     } else if (input.paymentMethod === 'SPLIT') {
       const digitalAmt = new Decimal(input.cardAmount!);
       const cashAmt = totalAmount.minus(digitalAmt);
       const digitalLegMethod = input.splitLegMethod ?? 'CARD';
-      await createPayment({ saleId: sale.id, method: digitalLegMethod, amount: digitalAmt, ...(input.cardReferenceNumber !== undefined && { cardReferenceNumber: input.cardReferenceNumber }) }, tx);
+      await createPayment(
+        {
+          saleId: sale.id,
+          method: digitalLegMethod,
+          amount: digitalAmt,
+          ...(input.cardReferenceNumber !== undefined && {
+            cardReferenceNumber: input.cardReferenceNumber,
+          }),
+        },
+        tx,
+      );
       await createPayment({ saleId: sale.id, method: 'CASH', amount: cashAmt }, tx);
     }
 
     // Compute and save change given for CASH / SPLIT
     if (input.paymentMethod === 'CASH' || input.paymentMethod === 'SPLIT') {
-      const cashPortionAmount = input.paymentMethod === 'CASH' ? totalAmount : totalAmount.minus(new Decimal(input.cardAmount!));
+      const cashPortionAmount =
+        input.paymentMethod === 'CASH'
+          ? totalAmount
+          : totalAmount.minus(new Decimal(input.cardAmount!));
       const cashReceivedDec = new Decimal(input.cashReceived!);
       const changeGiven = cashReceivedDec.minus(cashPortionAmount);
       if (changeGiven.greaterThan(0)) {
@@ -343,7 +379,11 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
 export async function validateReplacementRef(
   tenantId: string,
   ref: string,
-): Promise<{ valid: boolean; message?: string; originalOrder?: { id: string; totalAmount: string; createdAt: Date } }> {
+): Promise<{
+  valid: boolean;
+  message?: string;
+  originalOrder?: { id: string; totalAmount: string; createdAt: Date };
+}> {
   const trimmed = ref.trim();
   if (!trimmed) {
     return { valid: false, message: 'Enter an original order reference' };
@@ -390,7 +430,7 @@ export async function getSaleById(tenantId: string, saleId: string) {
 
   return {
     ...sale,
-    lines: sale.lines.map(line => ({
+    lines: sale.lines.map((line) => ({
       ...line,
       returnedQuantity: line.returnLines.reduce((sum, rl) => sum + rl.quantity, 0),
     })),
@@ -436,9 +476,9 @@ export async function getSales(tenantId: string, filters: GetSalesFilters) {
     prisma.sale.count({ where }),
   ]);
 
-  const enrichedSales = sales.map(sale => ({
+  const enrichedSales = sales.map((sale) => ({
     ...sale,
-    lines: sale.lines.map(line => ({
+    lines: sale.lines.map((line) => ({
       ...line,
       returnedQuantity: line.returnLines.reduce((sum, rl) => sum + rl.quantity, 0),
     })),
@@ -502,9 +542,7 @@ export async function createHeldSale(
       cartDiscount = new Decimal(input.cartDiscountAmount);
     }
 
-    const totalAmount = subtotal
-      .minus(cartDiscount)
-      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const totalAmount = subtotal.minus(cartDiscount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
     const sale = await tx.sale.create({
       data: {
@@ -595,9 +633,7 @@ export async function updateHeldSale(
       cartDiscount = new Decimal(input.cartDiscountAmount);
     }
 
-    const totalAmount = subtotal
-      .minus(cartDiscount)
-      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const totalAmount = subtotal.minus(cartDiscount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
     // Replace lines atomically
     await tx.saleLine.deleteMany({ where: { saleId: existing.id } });
@@ -661,12 +697,15 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
       throw new Error('Only completed sales can be voided');
     }
 
-    // Verify shift is still open
-    const shift = await tx.shift.findFirst({
-      where: { id: sale.shiftId, tenantId, status: 'OPEN' },
-    });
-    if (!shift) {
-      throw new Error('Shift is not open');
+    // Shift-bound sales can only be voided while their shift is open.
+    // Management sales have no shift and can be voided by an authorized actor.
+    if (sale.shiftId) {
+      const shift = await tx.shift.findFirst({
+        where: { id: sale.shiftId, tenantId, status: 'OPEN' },
+      });
+      if (!shift) {
+        throw new Error('Shift is not open');
+      }
     }
 
     const updatedSale = await tx.sale.update({

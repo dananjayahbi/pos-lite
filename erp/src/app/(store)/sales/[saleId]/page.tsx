@@ -39,17 +39,16 @@ function SaleStatusBadge({ status }: { status: string }) {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function SaleDetailPage({
-  params,
-}: {
-  params: Promise<{ saleId: string }>;
-}) {
+export default async function SaleDetailPage({ params }: { params: Promise<{ saleId: string }> }) {
   const session = await auth();
   if (!session?.user) redirect('/login');
 
   const tenantId = session.user.tenantId;
   if (!tenantId) redirect('/login');
 
+  if (session.user.role !== 'OWNER' && session.user.role !== 'MANAGER') {
+    redirect('/dashboard');
+  }
   if (!hasPermission(session.user, PERMISSIONS.SALE.viewSale)) {
     redirect('/dashboard');
   }
@@ -74,7 +73,7 @@ export default async function SaleDetailPage({
       {/* Back link */}
       <Link
         href="/sales"
-        className="inline-flex items-center gap-1.5 text-sm text-sand transition-colors hover:text-espresso"
+        className="text-sand hover:text-espresso inline-flex items-center gap-1.5 text-sm transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to Sales
@@ -83,31 +82,39 @@ export default async function SaleDetailPage({
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl font-bold text-espresso">Sale Detail</h1>
-          <p className="mt-1 font-mono text-xs text-sand">{sale.id}</p>
+          <h1 className="font-display text-espresso text-2xl font-bold">Sale Detail</h1>
+          <p className="text-sand mt-1 font-mono text-xs">{sale.id}</p>
         </div>
         <SaleStatusBadge status={sale.status} />
       </div>
 
       {/* Meta */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div className="rounded-xl border border-mist bg-white px-4 py-3">
-          <p className="text-xs text-sand">Cashier</p>
-          <p className="mt-1 truncate text-sm font-medium text-espresso">{sale.cashier.email}</p>
+        <div className="border-mist rounded-xl border bg-white px-4 py-3">
+          <p className="text-sand text-xs">Cashier</p>
+          <p className="text-espresso mt-1 truncate text-sm font-medium">{sale.cashier.email}</p>
         </div>
-        <div className="rounded-xl border border-mist bg-white px-4 py-3">
-          <p className="text-xs text-sand">Date</p>
-          <p className="mt-1 text-sm font-medium text-espresso">{formatDateTime(sale.createdAt)}</p>
+        <div className="border-mist rounded-xl border bg-white px-4 py-3">
+          <p className="text-sand text-xs">Date</p>
+          <p className="text-espresso mt-1 text-sm font-medium">{formatDateTime(sale.createdAt)}</p>
         </div>
-        <div className="rounded-xl border border-mist bg-white px-4 py-3">
-          <p className="text-xs text-sand">Shift</p>
-          <p className="mt-1 font-mono text-xs text-espresso">{sale.shift.id.slice(-8).toUpperCase()}</p>
-          <p className="text-xs text-sand capitalize">{sale.shift.status.toLowerCase()}</p>
+        <div className="border-mist rounded-xl border bg-white px-4 py-3">
+          <p className="text-sand text-xs">Shift</p>
+          {sale.shift ? (
+            <>
+              <p className="text-espresso mt-1 font-mono text-xs">
+                {sale.shift.id.slice(-8).toUpperCase()}
+              </p>
+              <p className="text-sand text-xs capitalize">{sale.shift.status.toLowerCase()}</p>
+            </>
+          ) : (
+            <p className="text-espresso mt-1 text-sm font-medium">Management sale</p>
+          )}
         </div>
         {sale.authorizingManager && (
-          <div className="rounded-xl border border-mist bg-white px-4 py-3">
-            <p className="text-xs text-sand">Authorized by</p>
-            <p className="mt-1 truncate text-sm font-medium text-espresso">
+          <div className="border-mist rounded-xl border bg-white px-4 py-3">
+            <p className="text-sand text-xs">Authorized by</p>
+            <p className="text-espresso mt-1 truncate text-sm font-medium">
               {sale.authorizingManager.email}
             </p>
           </div>
@@ -115,9 +122,9 @@ export default async function SaleDetailPage({
       </div>
 
       {/* Line items */}
-      <section className="overflow-hidden rounded-2xl border border-mist/60 bg-white shadow-sm">
-        <div className="border-b border-mist px-5 py-3">
-          <h2 className="text-sm font-semibold text-espresso">Items</h2>
+      <section className="border-mist/60 overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="border-mist border-b px-5 py-3">
+          <h2 className="text-espresso text-sm font-semibold">Items</h2>
         </div>
         <Table>
           <TableHeader>
@@ -135,10 +142,10 @@ export default async function SaleDetailPage({
             {sale.lines.map((line) => (
               <TableRow key={line.id}>
                 <TableCell>
-                  <p className="font-medium text-espresso">{line.productNameSnapshot}</p>
-                  <p className="text-xs text-sand">{line.variantDescriptionSnapshot}</p>
+                  <p className="text-espresso font-medium">{line.productNameSnapshot}</p>
+                  <p className="text-sand text-xs">{line.variantDescriptionSnapshot}</p>
                 </TableCell>
-                <TableCell className="font-mono text-xs text-sand">{line.sku}</TableCell>
+                <TableCell className="text-sand font-mono text-xs">{line.sku}</TableCell>
                 <TableCell className="text-right font-mono text-sm">
                   {formatRupee(Number(line.unitPrice))}
                 </TableCell>
@@ -146,10 +153,10 @@ export default async function SaleDetailPage({
                 <TableCell className="text-right text-sm">
                   {Number(line.discountPercent) > 0 ? `${Number(line.discountPercent)}%` : '—'}
                 </TableCell>
-                <TableCell className="text-right font-mono text-sm font-medium text-espresso">
+                <TableCell className="text-espresso text-right font-mono text-sm font-medium">
                   {formatRupee(Number(line.lineTotalAfterDiscount))}
                 </TableCell>
-                <TableCell className="text-right text-sm text-sand">
+                <TableCell className="text-sand text-right text-sm">
                   {line.returnedQuantity > 0 ? (
                     <span className="text-terracotta">{line.returnedQuantity}</span>
                   ) : (
@@ -164,9 +171,9 @@ export default async function SaleDetailPage({
 
       {/* Payments */}
       {sale.payments.length > 0 && (
-        <section className="overflow-hidden rounded-2xl border border-mist/60 bg-white shadow-sm">
-          <div className="border-b border-mist px-5 py-3">
-            <h2 className="text-sm font-semibold text-espresso">Payments</h2>
+        <section className="border-mist/60 overflow-hidden rounded-2xl border bg-white shadow-sm">
+          <div className="border-mist border-b px-5 py-3">
+            <h2 className="text-espresso text-sm font-semibold">Payments</h2>
           </div>
           <Table>
             <TableHeader>
@@ -179,13 +186,13 @@ export default async function SaleDetailPage({
             <TableBody>
               {sale.payments.map((payment) => (
                 <TableRow key={payment.id}>
-                  <TableCell className="font-medium text-espresso">
+                  <TableCell className="text-espresso font-medium">
                     {payment.method.replace(/_/g, ' ')}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-sm font-medium text-espresso">
+                  <TableCell className="text-espresso text-right font-mono text-sm font-medium">
                     {formatRupee(Number(payment.amount))}
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-sand">
+                  <TableCell className="text-sand font-mono text-xs">
                     {payment.cardReferenceNumber ?? '—'}
                   </TableCell>
                 </TableRow>
@@ -197,13 +204,13 @@ export default async function SaleDetailPage({
 
       {/* Totals */}
       <div className="flex justify-end">
-        <dl className="w-full max-w-xs divide-y divide-mist/40 rounded-2xl border border-mist bg-white text-sm shadow-sm">
+        <dl className="divide-mist/40 border-mist w-full max-w-xs divide-y rounded-2xl border bg-white text-sm shadow-sm">
           <div className="flex justify-between px-5 py-2.5">
             <dt className="text-sand">Subtotal</dt>
-            <dd className="font-medium text-espresso">{formatRupee(subtotal)}</dd>
+            <dd className="text-espresso font-medium">{formatRupee(subtotal)}</dd>
           </div>
           {discountAmount > 0 && (
-            <div className="flex justify-between px-5 py-2.5 text-terracotta">
+            <div className="text-terracotta flex justify-between px-5 py-2.5">
               <dt>Discount</dt>
               <dd>−{formatRupee(discountAmount)}</dd>
             </div>
@@ -211,17 +218,17 @@ export default async function SaleDetailPage({
           {taxAmount > 0 && (
             <div className="flex justify-between px-5 py-2.5">
               <dt className="text-sand">Tax</dt>
-              <dd className="font-medium text-espresso">{formatRupee(taxAmount)}</dd>
+              <dd className="text-espresso font-medium">{formatRupee(taxAmount)}</dd>
             </div>
           )}
           <div className="flex justify-between px-5 py-3">
-            <dt className="text-base font-semibold text-espresso">Total</dt>
-            <dd className="text-base font-bold text-espresso">{formatRupee(totalAmount)}</dd>
+            <dt className="text-espresso text-base font-semibold">Total</dt>
+            <dd className="text-espresso text-base font-bold">{formatRupee(totalAmount)}</dd>
           </div>
           {changeGiven != null && changeGiven > 0 && (
             <div className="flex justify-between px-5 py-2.5">
               <dt className="text-sand">Change Given</dt>
-              <dd className="font-medium text-espresso">{formatRupee(changeGiven)}</dd>
+              <dd className="text-espresso font-medium">{formatRupee(changeGiven)}</dd>
             </div>
           )}
         </dl>

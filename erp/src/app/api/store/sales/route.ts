@@ -52,7 +52,10 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('GET /api/store/sales error:', error);
     return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
+      {
+        success: false,
+        error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' },
+      },
       { status: 500 },
     );
   }
@@ -91,8 +94,27 @@ export async function POST(request: Request) {
         message: i.message,
       }));
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Validation failed', details: errors } },
+        {
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'Validation failed', details: errors },
+        },
         { status: 400 },
+      );
+    }
+
+    // Sales created from the management page are intentionally shiftless. The
+    // POS terminal still sends a shiftId and remains available to cashiers.
+    if (
+      parsed.data.shiftId === undefined &&
+      session.user.role !== 'OWNER' &&
+      session.user.role !== 'MANAGER'
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'A POS shift is required for cashier sales' },
+        },
+        { status: 403 },
       );
     }
 
@@ -166,7 +188,10 @@ export async function POST(request: Request) {
 
     console.error('POST /api/store/sales error:', error);
     return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
+      {
+        success: false,
+        error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' },
+      },
       { status: 500 },
     );
   }
