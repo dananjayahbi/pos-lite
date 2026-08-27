@@ -5,8 +5,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, Ban, ChevronLeft, ChevronRight, RotateCcw, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatRupee } from '@/lib/format';
+import { copyTextToClipboard } from '@/lib/clipboard';
+import { defaultDateRange, type DateRangeFilterValue } from '@/lib/date-range';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { DateRangeFilter } from '@/components/pos/DateRangeFilter';
 import {
   Table,
   TableBody,
@@ -60,11 +63,6 @@ interface Sale {
   lines: SaleLine[];
 }
 
-function getToday(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 function formatTime(dateStr: string): string {
   const d = new Date(dateStr);
   return d.toLocaleTimeString('en-GB', {
@@ -113,8 +111,9 @@ export function SaleHistoryTable() {
   // Filters
   const [status, setStatus] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
-  const [fromDate, setFromDate] = useState(getToday());
-  const [toDate, setToDate] = useState('');
+  const [dateRange, setDateRange] = useState<DateRangeFilterValue>(
+    defaultDateRange,
+  );
   const [page, setPage] = useState(1);
   const limit = 20;
 
@@ -127,11 +126,14 @@ export function SaleHistoryTable() {
   // Copy ID feedback
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  function copyToClipboard(id: string) {
-    void navigator.clipboard.writeText(id).then(() => {
-      setCopiedId(id);
-      setTimeout(() => setCopiedId((prev) => (prev === id ? null : prev)), 1500);
-    });
+  async function copyToClipboard(id: string) {
+    const ok = await copyTextToClipboard(id);
+    if (!ok) {
+      toast.error('Could not copy sale ID');
+      return;
+    }
+    setCopiedId(id);
+    setTimeout(() => setCopiedId((prev) => (prev === id ? null : prev)), 1500);
   }
 
   // Void dialog
@@ -140,14 +142,16 @@ export function SaleHistoryTable() {
 
   // Fetch sales
   const { data, isLoading } = useQuery({
-    queryKey: ['sale-history', status, fromDate, toDate, page, limit],
+    queryKey: ['sale-history', status, dateRange, page, limit],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (status) params.set('status', status);
-      if (fromDate) params.set('from', new Date(fromDate).toISOString());
-      if (toDate) {
-        const to = new Date(toDate);
-        to.setHours(23, 59, 59, 999);
+      if (dateRange.from) {
+        const from = new Date(`${dateRange.from}T00:00:00`);
+        params.set('from', from.toISOString());
+      }
+      if (dateRange.to) {
+        const to = new Date(`${dateRange.to}T23:59:59.999`);
         params.set('to', to.toISOString());
       }
       params.set('page', String(page));
@@ -174,8 +178,7 @@ export function SaleHistoryTable() {
   const handleReset = () => {
     setStatus('');
     setPaymentMethod('');
-    setFromDate(getToday());
-    setToDate('');
+    setDateRange(defaultDateRange());
     setPage(1);
   };
 
@@ -235,23 +238,12 @@ export function SaleHistoryTable() {
           <option value="CARD">Card</option>
           <option value="SPLIT">Split</option>
         </select>
-        <input
-          type="date"
-          value={fromDate}
-          onChange={(e) => {
-            setFromDate(e.target.value);
+        <DateRangeFilter
+          value={dateRange}
+          onChange={(range) => {
+            setDateRange(range);
             setPage(1);
           }}
-          className="rounded-lg border border-mist bg-white px-3 py-1.5 font-body text-sm text-espresso"
-        />
-        <input
-          type="date"
-          value={toDate}
-          onChange={(e) => {
-            setToDate(e.target.value);
-            setPage(1);
-          }}
-          className="rounded-lg border border-mist bg-white px-3 py-1.5 font-body text-sm text-espresso"
         />
         <button
           type="button"

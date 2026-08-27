@@ -326,7 +326,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       include: { lines: true, payments: true },
     });
     return completeSale;
-  });
+  }, { maxWait: 10_000, timeout: 30_000 });
 
   const zeroValue = new Decimal(result.totalAmount.toString()).lte(0);
   void createAuditLog({

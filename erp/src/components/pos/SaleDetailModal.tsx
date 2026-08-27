@@ -18,6 +18,9 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Printer, MessageCircle } from 'lucide-react';
+import { useState } from 'react';
+import { CopyableText } from '@/components/shared/CopyableText';
+import { WhatsAppReceiptSender } from '@/components/pos/WhatsAppReceiptSender';
 
 interface SaleLine {
   id: string;
@@ -69,6 +72,16 @@ export function SaleDetailModal({
   open,
   onOpenChange,
 }: SaleDetailModalProps) {
+  const [showWhatsApp, setShowWhatsApp] = useState(false);
+
+  // Reset the WhatsApp panel when the target sale changes, without an effect.
+  // (React-recommended "adjust state during render" pattern.)
+  const [prevSaleId, setPrevSaleId] = useState<string | null>(null);
+  if (sale && sale.id !== prevSaleId) {
+    setPrevSaleId(sale.id);
+    setShowWhatsApp(false);
+  }
+
   if (!sale) return null;
 
   const shortId = sale.id.slice(0, 8).toUpperCase();
@@ -76,6 +89,10 @@ export function SaleDetailModal({
     (sum, l) => sum + l.discountAmount,
     0,
   );
+
+  const handlePrint = () => {
+    window.open(`/api/store/sales/${sale.id}/receipt`, '_blank', 'noopener');
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -87,6 +104,7 @@ export function SaleDetailModal({
           <p className="font-body text-xs text-mist">
             {formatDateTime(sale.createdAt)}
           </p>
+          <CopyableText value={sale.id} label="Sale ID" className="text-xs text-espresso" />
         </DialogHeader>
 
         {/* Status banners */}
@@ -204,13 +222,13 @@ export function SaleDetailModal({
           </p>
         )}
 
-        {/* Footer actions (placeholders) */}
+        {/* Footer actions */}
         <div className="flex items-center gap-2 mt-4 pt-3 border-t border-mist/30">
           <Button
             variant="outline"
             size="sm"
-            disabled
-            title="Available in the next update"
+            onClick={handlePrint}
+            disabled={sale.status !== 'COMPLETED'}
           >
             <Printer className="h-4 w-4 mr-1" />
             Print Receipt
@@ -218,13 +236,18 @@ export function SaleDetailModal({
           <Button
             variant="outline"
             size="sm"
-            disabled
-            title="Available in the next update"
+            onClick={() => setShowWhatsApp((v) => !v)}
+            disabled={sale.status !== 'COMPLETED'}
           >
             <MessageCircle className="h-4 w-4 mr-1" />
             WhatsApp Receipt
           </Button>
         </div>
+
+        {/* Inline WhatsApp send field */}
+        {showWhatsApp && (
+          <WhatsAppReceiptSender saleId={sale.id} className="mt-2 pt-2 border-t border-mist/30" />
+        )}
       </DialogContent>
     </Dialog>
   );
