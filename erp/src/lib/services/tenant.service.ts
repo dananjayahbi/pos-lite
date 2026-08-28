@@ -82,6 +82,7 @@ export async function createTenant(input: CreateTenantInput) {
             vatRate: 0,
             ssclRate: 0,
             receiptFooter: '',
+            enabledModules: ['appointments', 'delivery'],
           },
         },
       });

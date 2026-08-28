@@ -6,6 +6,7 @@ import { Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import type { WebsiteConfigData } from '@/types/website.types';
 import { tenantHomePath } from '@/lib/tenant';
+import { ROUTES } from '@/config/site';
 import { CartIcon } from '@/components/website/cart/CartIcon';
 import { HeaderSearch } from './HeaderSearch';
 
@@ -41,9 +42,16 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
     { label: 'CONTACT', href: '/contact' },
     { label: 'TRACK', href: '/track' },
   ];
-  const navItems = (config.navItems && config.navItems.length > 0
+  const baseNav = (config.navItems && config.navItems.length > 0
     ? config.navItems
     : defaultNav) as { label: string; href: string }[];
+
+  // Append the Appointments (channelling) link when the owner enables it.
+  const appointments = config.appointments;
+  const navItems =
+    appointments?.enabled && appointments.navLabel
+      ? [...baseNav, { label: appointments.navLabel, href: ROUTES.appointments(tenantSlug) }]
+      : baseNav;
 
   function resolveNavHref(href: string): string {
     if (!href || href === '#') return href;
