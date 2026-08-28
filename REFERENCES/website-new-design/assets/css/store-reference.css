@@ -1,0 +1,196 @@
+/* ======================================================== */
+/* STORE REFERENCE SECTION STYLES                           */
+/* Glassmorphic Sanctuary Portal with Parallax & Dark Map   */
+/* ======================================================== */
+
+#store-reference-section {
+  position: relative;
+  overflow: hidden;
+  background-color: #051610;
+}
+
+/* Atmospheric Full-Bleed Background Layer */
+.store-bg-layer {
+  position: absolute;
+  inset: -60px 0 -60px 0;
+  width: 100%;
+  height: calc(100% + 120px);
+  background-image: url('https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1920&q=85');
+  background-size: cover;
+  background-position: center;
+  filter: brightness(0.25) saturate(0.8);
+  will-change: transform;
+}
+
+.store-bg-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(5, 22, 16, 0.75) 0%,
+    rgba(5, 22, 16, 0.92) 65%,
+    #051610 100%
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Glassmorphic Sanctuary Portal Box */
+.store-portal-box {
+  position: relative;
+  z-index: 10;
+  background: rgba(8, 32, 23, 0.78);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 36px;
+  padding: 32px 24px;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.9), 0 0 35px rgba(151, 201, 62, 0.08);
+  overflow: hidden;
+}
+
+@media (min-width: 640px) {
+  .store-portal-box {
+    padding: 40px 36px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .store-portal-box {
+    padding: 56px 48px;
+  }
+}
+
+/* Typography Layout */
+.store-title {
+  font-family: var(--font-serif);
+  font-size: 2rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+}
+
+@media (min-width: 640px) {
+  .store-title {
+    font-size: 2.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .store-title {
+    font-size: 3rem;
+  }
+}
+
+.store-subtitle {
+  font-size: 0.9375rem;
+  color: #cbd5e1;
+  font-weight: 300;
+  line-height: 1.7;
+  font-family: var(--font-sans);
+  margin-top: 14px;
+}
+
+@media (min-width: 640px) {
+  .store-subtitle {
+    font-size: 1rem;
+  }
+}
+
+/* Address Card Container */
+.store-address-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-top: 28px;
+  padding: 18px 22px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  transition: border-color 300ms ease, background-color 300ms ease;
+}
+
+.store-address-box:hover {
+  background: rgba(151, 201, 62, 0.06);
+  border-color: rgba(151, 201, 62, 0.25);
+}
+
+.store-address-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  background: rgba(151, 201, 62, 0.15);
+  border: 1px solid rgba(151, 201, 62, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #97c93e;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.store-address-line1 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.02em;
+  font-family: var(--font-sans);
+  line-height: 1.3;
+}
+
+@media (min-width: 640px) {
+  .store-address-line1 {
+    font-size: 1.0625rem;
+  }
+}
+
+.store-address-line2 {
+  font-size: 0.8125rem;
+  color: #97c93e;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+  font-family: var(--font-sans);
+}
+
+@media (min-width: 640px) {
+  .store-address-line2 {
+    font-size: 0.875rem;
+  }
+}
+
+/* Embedded Google Map Frame */
+.store-map-frame {
+  position: relative;
+  width: 100%;
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.8);
+  height: 320px;
+}
+
+@media (min-width: 640px) {
+  .store-map-frame {
+    height: 360px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .store-map-frame {
+    height: 400px;
+  }
+}
+
+.store-map-iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  filter: grayscale(85%) invert(92%) hue-rotate(180deg) brightness(85%) contrast(110%);
+  transition: filter 500ms ease;
+}
+
+.store-map-frame:hover .store-map-iframe {
+  filter: grayscale(35%) invert(92%) hue-rotate(180deg) brightness(92%) contrast(105%);
+}

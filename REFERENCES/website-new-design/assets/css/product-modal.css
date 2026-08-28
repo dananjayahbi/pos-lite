@@ -1,0 +1,159 @@
+/* ======================================================== */
+/* PRODUCT DETAILS MODAL STYLES                             */
+/* ======================================================== */
+
+#product-details-modal {
+  transition: opacity 350ms cubic-bezier(0.16, 1, 0.3, 1), visibility 350ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#product-modal-card {
+  display: flex;
+  align-items: center; /* Strict vertical center on desktop */
+  justify-content: center;
+  transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1), opacity 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
+}
+
+#product-details-modal.modal-active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+#product-details-modal.modal-active #product-modal-card {
+  transform: scale(1) translateY(0);
+  opacity: 1;
+}
+
+/* Left Pill Container (530px on desktop with rounded 40px corners & overflow:hidden) */
+.modal-pill-left {
+  background: linear-gradient(135deg, #0d2e22 0%, #09241b 60%, #051610 100%);
+  box-shadow: -15px 12px 40px rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 40px;
+  overflow: hidden;
+  position: relative;
+}
+
+@media (min-width: 1024px) {
+  .modal-pill-left {
+    height: 530px !important;
+    min-height: 530px !important;
+    max-height: 530px !important;
+    width: 360px !important;
+  }
+}
+
+/* Shorter Right Details Body (430px on desktop, vertically centered) */
+.modal-body-right {
+  background: var(--color-emerald-card);
+  box-shadow: 15px 12px 40px rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 32px;
+}
+
+@media (min-width: 1024px) {
+  .modal-body-right {
+    height: 430px !important;
+    min-height: 430px !important;
+    max-height: 430px !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    border-radius: 0 40px 40px 0 !important;
+  }
+}
+
+/* ======================================================== */
+/* ROTATING SQUIRCLE WAVE ENGINE (User CSS Reference Match) */
+/* ======================================================== */
+
+/* Desktop Waves (Right Edge of Left Pill) */
+.rot-wave-shape {
+  position: absolute;
+  width: 620px;
+  height: 620px;
+  top: -45px;
+  right: -420px;
+  border-radius: 250px;
+  pointer-events: none;
+  filter: blur(1px);
+}
+
+.rot-wave-1 {
+  background: #c5a059;
+  opacity: 0.38;
+  z-index: 1;
+  border-radius: 230px;
+  animation: rotateBlob 24s linear infinite;
+}
+
+.rot-wave-2 {
+  background: #97c93e;
+  opacity: 0.42;
+  z-index: 2;
+  border-radius: 245px;
+  animation: rotateBlobReverse 18s linear infinite;
+}
+
+.rot-wave-3 {
+  background: #154232;
+  opacity: 0.65;
+  z-index: 3;
+  border-radius: 260px;
+  animation: rotateBlob 30s linear infinite;
+}
+
+/* Mobile Waves (Bottom Edge of Top Pill) */
+.rot-wave-shape-mob {
+  position: absolute;
+  width: 580px;
+  height: 580px;
+  bottom: -430px;
+  left: 50%;
+  margin-left: -290px;
+  border-radius: 240px;
+  pointer-events: none;
+  filter: blur(1px);
+}
+
+.rot-wave-mob-1 {
+  background: #c5a059;
+  opacity: 0.38;
+  z-index: 1;
+  border-radius: 220px;
+  animation: rotateBlob 20s linear infinite;
+}
+
+.rot-wave-mob-2 {
+  background: #97c93e;
+  opacity: 0.42;
+  z-index: 2;
+  border-radius: 235px;
+  animation: rotateBlobReverse 15s linear infinite;
+}
+
+.rot-wave-mob-3 {
+  background: #154232;
+  opacity: 0.65;
+  z-index: 3;
+  border-radius: 250px;
+  animation: rotateBlob 26s linear infinite;
+}
+
+@keyframes rotateBlob {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes rotateBlobReverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}

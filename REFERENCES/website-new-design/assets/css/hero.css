@@ -1,0 +1,73 @@
+/* ======================================================== */
+/* HERO SECTION STYLES                                      */
+/* ======================================================== */
+
+/* Hero Background Slide Transitions */
+.hero-bg-slide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transform: scale(1.06);
+  transition: opacity 1100ms cubic-bezier(0.4, 0, 0.2, 1), transform 1600ms cubic-bezier(0.25, 1, 0.5, 1);
+  will-change: opacity, transform;
+}
+
+.hero-bg-slide.active {
+  opacity: 1;
+  transform: scale(1);
+  z-index: 1;
+}
+
+/* Atmospheric Vignette Overlay */
+.hero-vignette {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(9, 34, 24, 0.35) 0%,
+    rgba(5, 22, 16, 0.75) 55%,
+    rgba(2, 10, 7, 0.94) 100%
+  );
+}
+
+/* Hero Content Fade & Slide Animations */
+.slide-text-animate {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 600ms cubic-bezier(0.16, 1, 0.3, 1), transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.slide-text-animate.animate-out {
+  opacity: 0;
+  transform: translateY(16px);
+}
+
+/* Stagger Delays */
+.delay-100 { transition-delay: 80ms; }
+.delay-200 { transition-delay: 160ms; }
+.delay-300 { transition-delay: 240ms; }
+.delay-400 { transition-delay: 320ms; }
+
+/* Custom Pagination Bullets */
+.slider-dot {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  background: transparent;
+  transition: all 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+.slider-dot:hover {
+  border-color: var(--color-primary-green);
+  transform: scale(1.2);
+}
+
+.slider-dot.active {
+  background-color: #ffffff;
+  border-color: #ffffff;
+  transform: scale(1.25);
+}

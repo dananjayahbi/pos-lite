@@ -1,0 +1,97 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,400;1,600&display=swap');
+
+:root {
+  --color-primary-green: #97c93e; /* Natural herbal leaf green */
+  --color-primary-accent: #b2db58;
+  --color-emerald-deep: #051610;
+  --color-emerald-card: #082017;
+  --color-emerald-pill: #0d2e22;
+  --color-gold-accent: #c5a059; /* Antique Ayurvedic gold */
+  --font-serif: 'Cinzel', serif;
+  --font-sans: 'Plus Jakarta Sans', sans-serif;
+  --font-accent: 'Playfair Display', serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-emerald-deep);
+  color: #f8fafc;
+  overflow-x: hidden;
+}
+
+.font-cinzel {
+  font-family: var(--font-serif);
+}
+
+.font-playfair {
+  font-family: var(--font-accent);
+}
+
+/* Vertical Text Utilities */
+.writing-vertical {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+/* No-Scrollbar Utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #051610;
+}
+::-webkit-scrollbar-thumb {
+  background: #154232;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #97c93e;
+}
+
+/* Shared Parallax Botanical Floating Elements */
+.parallax-leaf {
+  position: absolute;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.12;
+  transition: transform 100ms linear;
+  will-change: transform;
+}
+
+/* Shared Ambient Glow Halos */
+.ambient-glow {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(100px);
+  pointer-events: none;
+  opacity: 0.08;
+  z-index: 0;
+  will-change: transform;
+}
+
+/* Shared Scroll Reveal Animation */
+.reveal-on-scroll {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 700ms cubic-bezier(0.16, 1, 0.3, 1), transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.reveal-on-scroll.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Share Toast */
+#share-toast {
+  transition: opacity 300ms ease, transform 300ms ease;
+}
