@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useRevealOnScroll } from '@/hooks/useRevealOnScroll';
 
 interface ValueItem {
   title: string;
@@ -12,50 +13,48 @@ interface AboutValuesSectionProps {
   values?: ValueItem[];
 }
 
-const VALUE_ICONS = [
-  // Using simple CSS-styled icons rather than importing lucide-react
-  '✦',
-  '◆',
-  '◈',
-  '⬡',
-  '✿',
-  '❖',
-  '★',
-  '●',
-] as const;
-
+/**
+ * "Our Values" — numbered luxury card grid (reference: `#about-values`).
+ * Renders a responsive 1/2/4-column grid of cards, each with a big green
+ * index number, serif title and muted description.
+ */
 export function AboutValuesSection({
   title,
   values,
 }: AboutValuesSectionProps) {
+  const gridRef = useRevealOnScroll<HTMLDivElement>();
+  const headerRef = useRevealOnScroll<HTMLDivElement>();
+
   if (!values || values.length === 0) return null;
 
   return (
-    <section className="py-12 md:py-16 -mx-4 px-4 md:mx-0 md:px-0 md:rounded-xl">
-      <div className="max-w-4xl mx-auto">
-        {title && (
-          <h2
-            className="text-2xl md:text-3xl font-medium mb-8 text-center text-white"
-            style={{ fontFamily: 'var(--font-serif), serif' }}
-          >
-            {title}
-          </h2>
-        )}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {values.map((value, i) => (
-            <div
-              key={i}
-              className="rounded-2xl bg-[#0d2e22]/70 p-6 border border-white/10 backdrop-blur-sm transition-shadow duration-300 hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)]"
+    <section className="relative w-full py-16 sm:py-24 lg:py-32 overflow-hidden border-t border-white/5 bg-[#051610]">
+      <div className="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
+        <div ref={headerRef} className="text-center mb-14 sm:mb-20">
+          {title && (
+            <h2
+              className="text-3xl sm:text-4xl md:text-5xl font-cinzel font-bold text-white tracking-wide leading-tight"
+              style={{ fontFamily: 'var(--font-serif), serif' }}
             >
-              <div className="text-2xl text-[#97c93e] mb-3">
-                {VALUE_ICONS[i % VALUE_ICONS.length]}
+              {title}
+            </h2>
+          )}
+          <div className="w-16 h-[2px] bg-[#97c93e]/60 mx-auto mt-4" />
+        </div>
+
+        <div
+          ref={gridRef}
+          className="values-grid"
+        >
+          {values.map((value, i) => (
+            <div key={i} className="value-card group select-none">
+              <div>
+                <span className="value-num">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <h3 className="value-title">{value.title}</h3>
+                <p className="value-desc">{value.description}</p>
               </div>
-              <h3 className="text-base font-semibold text-white mb-2">
-                {value.title}
-              </h3>
-              <p className="text-sm text-[#cbd5e1] leading-relaxed">
-                {value.description}
-              </p>
             </div>
           ))}
         </div>

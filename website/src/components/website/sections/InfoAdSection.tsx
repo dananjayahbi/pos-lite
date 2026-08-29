@@ -23,6 +23,8 @@ export function InfoAdSection({ config }: InfoAdSectionProps) {
   const image = section.desktopImageUrl;
   const title = section.title?.toUpperCase() || 'FEATURED ELIXIR';
   const subtitle = section.subtitle;
+  const buttonText = section.buttonText;
+  const buttonLink = section.buttonLink;
 
   return (
     <section id="spotlight-section" className="section-dark relative w-full py-20 sm:py-28 lg:py-36 overflow-hidden">
@@ -60,9 +62,13 @@ export function InfoAdSection({ config }: InfoAdSectionProps) {
             <h2 className="spotlight-title mb-6">{title}</h2>
             {subtitle && <p className="spotlight-subtitle mb-8">{subtitle}</p>}
             <div>
-              <a href="#shop" className="spotlight-buy-btn" aria-label={`Buy ${section.title}`}>
+              <a
+                href={buttonLink || '#shop'}
+                className="spotlight-buy-btn"
+                aria-label={buttonText || 'Buy Now'}
+              >
                 <i className="fa-solid fa-bag-shopping text-sm" />
-                <span>BUY NOW</span>
+                <span>{buttonText || 'BUY NOW'}</span>
               </a>
             </div>
           </div>

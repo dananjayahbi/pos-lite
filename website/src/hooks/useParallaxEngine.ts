@@ -47,6 +47,12 @@ export function useParallaxEngine(): void {
       if (heroBg && scrollY < windowH) {
         heroBg.style.transform = `translate3d(0, ${scrollY * 0.25}px, 0) scale(${Math.min(1.08, 1 + scrollY * 0.0001)})`;
       }
+      // Static-page hero (About/Contact) background drift
+      const pageHeroBg = document.querySelector<HTMLElement>('#page-hero-bg-container');
+      if (pageHeroBg && scrollY < windowH) {
+        const speed = parseFloat(pageHeroBg.dataset.parallax || '0.25');
+        pageHeroBg.style.transform = `translate3d(0, ${scrollY * speed}px, 0) scale(${Math.min(1.08, 1 + scrollY * 0.0001)})`;
+      }
       const heroContent = document.querySelector<HTMLElement>('#hero-content');
       if (heroContent && scrollY < windowH) {
         heroContent.style.transform = `translate3d(0, ${-scrollY * 0.15}px, 0)`;

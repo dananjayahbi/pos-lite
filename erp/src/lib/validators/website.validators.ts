@@ -143,12 +143,18 @@ export const ImageSliderItemSchema = z.object({
 export const ImageSliderSectionSchema = z.object({
   isActive: z.boolean().optional(),
   sortOrder: z.number().int().nonnegative().optional(),
-  images: z.array(ImageSliderItemSchema).default([]),
+  label: z.string().max(120).optional().or(z.literal('')),
+  title: z.string().max(200).optional().or(z.literal('')),
+  subtitle: z.string().max(500).optional().or(z.literal('')),
+  productCount: z.number().int().min(1).max(7).optional(),
+  productIds: z.array(z.string()).default([]),
+  images: z.array(ImageSliderItemSchema).default([]).optional(),
 }).partial().passthrough();
 
 export const BestSellingSectionSchema = z.object({
   isActive: z.boolean().optional(),
   sortOrder: z.number().int().nonnegative().optional(),
+  label: z.string().max(120).optional().or(z.literal('')),
   title: z.string().optional(),
   productCount: z.number().int().min(1).max(7).optional(),
   productIds: z.array(z.string()).default([]),
@@ -168,6 +174,7 @@ export const InfoAdSectionSchema = z.object({
 export const CategoriesSectionSchema = z.object({
   isActive: z.boolean().optional(),
   sortOrder: z.number().int().nonnegative().optional(),
+  label: z.string().max(120).optional().or(z.literal('')),
   title: z.string().optional(),
   categoryIds: z.array(z.string()).default([]),
   categoryImages: z.record(z.string(), z.string()).optional(),
@@ -176,6 +183,7 @@ export const CategoriesSectionSchema = z.object({
 export const LatestProductsSectionSchema = z.object({
   isActive: z.boolean().optional(),
   sortOrder: z.number().int().nonnegative().optional(),
+  label: z.string().max(120).optional().or(z.literal('')),
   title: z.string().optional(),
   productCount: z.number().int().min(1).max(7).optional(),
   productIds: z.array(z.string()).default([]),
@@ -184,6 +192,7 @@ export const LatestProductsSectionSchema = z.object({
 export const TestimonialsSectionSchema = z.object({
   isActive: z.boolean().optional(),
   sortOrder: z.number().int().nonnegative().optional(),
+  label: z.string().max(120).optional().or(z.literal('')),
   title: z.string().optional(),
   subtitle: z.string().optional(),
   items: z.array(TestimonialItemSchema).default([]),
@@ -281,6 +290,8 @@ export const WebsiteConfigSchema = z.object({
     .nullable()
     .optional()
     .default([]),
+  aboutPhoneLabel: z.string().max(100).nullable().optional().or(z.literal('')),
+  aboutPhoneNumber: z.string().max(100).nullable().optional().or(z.literal('')),
 
   // Contact Page
   contactPageTitle: z.string().max(200).nullable().optional().or(z.literal('')),

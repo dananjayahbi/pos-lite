@@ -73,6 +73,8 @@ export interface WebsiteHeroSection {
 export interface CategoriesSection {
   isActive: boolean;
   sortOrder: number;
+  /** Eyebrow label above the heading (e.g. "CURATED AYURVEDIC LINEUP"). */
+  label?: string;
   title?: string;
   /** Category IDs to display (max 5, empty = auto-select from store categories) */
   categoryIds: string[];
@@ -80,12 +82,29 @@ export interface CategoriesSection {
   categoryImages?: Record<string, string>;
 }
 
-/** Image slider section config (Section 02) — up to 7 configurable images */
+/**
+ * Image slider section config (Section 02) — "AUTHENTIC AYURVEDIC CARE".
+ *
+ * Rendered as a curated "Featured products" carousel of up to 7 products.
+ * The eyebrow / heading / subtitle texts are configurable, and the cards are
+ * selected from real products (like the Top Selling section) rather than
+ * raw images.
+ */
 export interface ImageSliderSection {
   isActive: boolean;
   sortOrder: number;
-  /** Up to 7 image URLs for the slider */
-  images: ImageSliderItem[];
+  /** Eyebrow label above the heading (e.g. "AUTHENTIC AYURVEDIC CARE"). */
+  label?: string;
+  /** Section heading (e.g. "CURATED BOTANICAL COLLECTIONS"). */
+  title?: string;
+  /** Muted description under the heading. */
+  subtitle?: string;
+  /** Number of featured products to show (max 7, default 7). */
+  productCount?: number;
+  /** Specific featured product IDs (max 7; empty = auto-select latest). */
+  productIds?: string[];
+  /** @deprecated Image URLs — superseded by product selection. */
+  images?: ImageSliderItem[];
 }
 
 export interface ImageSliderItem {
@@ -125,6 +144,8 @@ export interface StoreReferenceSection {
 export interface LatestProductsSection {
   isActive: boolean;
   sortOrder: number;
+  /** Eyebrow label above the heading (e.g. "NEW HERBAL ARRIVALS"). */
+  label?: string;
   title: string;
   /** Number of products to show (max 7, default 7) */
   productCount: number;
@@ -136,6 +157,8 @@ export interface LatestProductsSection {
 export interface BestSellingSection {
   isActive: boolean;
   sortOrder: number;
+  /** Eyebrow label above the heading (e.g. "MOST LOVED BOTANICAL REMEDIES"). */
+  label?: string;
   title: string;
   /** Number of products to show (max 7, default 7) */
   productCount: number;
@@ -158,6 +181,8 @@ export interface TestimonialItem {
 export interface TestimonialsSection {
   isActive: boolean;
   sortOrder: number;
+  /** Eyebrow label above the heading (e.g. "VOICES OF HEALING"). */
+  label?: string;
   title: string;
   subtitle?: string;
   items: TestimonialItem[];
@@ -341,6 +366,10 @@ export interface WebsiteConfigData {
   aboutMissionContent?: string;
   aboutValuesSectionTitle?: string;
   aboutValues?: { title: string; description: string }[];
+  /** Label for the phone CTA button in the "Connect With Us" section. */
+  aboutPhoneLabel?: string;
+  /** Phone number for the CTA button in the "Connect With Us" section. */
+  aboutPhoneNumber?: string;
 
   // Contact page
   contactPageTitle?: string;

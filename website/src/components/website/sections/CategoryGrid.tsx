@@ -34,6 +34,9 @@ export function CategoryGrid({ config, tenantSlug, categories }: CategoryGridPro
 
   if (display.length === 0) return null;
 
+  const label = section.label || 'CURATED AYURVEDIC LINEUP';
+  const title = section.title || 'TOP CATEGORIES';
+
   const categoryImage = (cat: PublicCategory): string | undefined =>
     section.categoryImages?.[cat.id] ?? cat.imageUrl;
 
@@ -52,7 +55,7 @@ export function CategoryGrid({ config, tenantSlug, categories }: CategoryGridPro
         glows={['-top-20 left-1/4 w-96 h-96 bg-[#97c93e]/10', 'bottom-0 right-1/3 w-80 h-80 bg-emerald-500/10']}
       />
 
-      <SectionTitle label="CURATED AYURVEDIC LINEUP" title="TOP CATEGORIES" />
+      <SectionTitle label={label} title={title} />
 
       <div className="reveal-on-scroll relative w-full max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
         <div

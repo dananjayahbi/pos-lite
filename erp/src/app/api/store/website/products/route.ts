@@ -22,11 +22,14 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = request.nextUrl;
     const search = searchParams.get('search') ?? undefined;
+    const idsParam = searchParams.get('ids');
+    const ids = idsParam ? idsParam.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
     const page = Math.max(1, Number(searchParams.get('page')) || 1);
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 20));
 
     const { products, total } = await getAllProducts(tenantId, {
       search,
+      ids,
       page,
       limit,
       isArchived: false,

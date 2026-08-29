@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { MapPin, Phone, Mail, Clock } from 'lucide-react';
+import { useRevealOnScroll } from '@/hooks/useRevealOnScroll';
 
 interface ContactInfoCardsProps {
   title?: string;
@@ -11,6 +12,12 @@ interface ContactInfoCardsProps {
   businessHours?: string;
 }
 
+/**
+ * "Get in Touch" — stacked contact touchpoint cards (reference:
+ * `#contact-info-section` left column). Each entry shows a green icon chip,
+ * an uppercase green label and a white value (links when relevant).
+ * Renders nothing when no contact info is configured.
+ */
 export function ContactInfoCards({
   title,
   address,
@@ -18,13 +25,12 @@ export function ContactInfoCards({
   email,
   businessHours,
 }: ContactInfoCardsProps) {
-  const hasAny = address || phone || email || businessHours;
-  if (!hasAny) return null;
+  const sectionRef = useRevealOnScroll<HTMLDivElement>();
 
   const cards = [
     {
       icon: MapPin,
-      label: 'Address',
+      label: 'VISIT OUR SANCTUARY',
       value: address,
       href: address
         ? `https://maps.google.com/?q=${encodeURIComponent(address)}`
@@ -32,19 +38,19 @@ export function ContactInfoCards({
     },
     {
       icon: Phone,
-      label: 'Phone',
+      label: 'DIRECT PHONE LINE',
       value: phone,
       href: phone ? `tel:${phone}` : undefined,
     },
     {
       icon: Mail,
-      label: 'Email',
+      label: 'ELECTRONIC CORRESPONDENCE',
       value: email,
       href: email ? `mailto:${email}` : undefined,
     },
     {
       icon: Clock,
-      label: 'Business Hours',
+      label: 'OPERATING HOURS',
       value: businessHours,
     },
   ].filter((c) => c.value);
@@ -52,44 +58,38 @@ export function ContactInfoCards({
   if (cards.length === 0) return null;
 
   return (
-    <section className="py-8">
+    <div ref={sectionRef}>
       {title && (
-        <h2
-          className="text-2xl font-medium mb-6 text-center text-white"
-          style={{ fontFamily: 'var(--font-serif), serif' }}
-        >
-          {title}
-        </h2>
+        <h2 className="contact-section-title">{title}</h2>
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+      <div className="flex flex-col gap-4">
         {cards.map((card) => (
-          <div
-            key={card.label}
-            className="rounded-2xl bg-[#082017]/70 p-5 border border-white/10 backdrop-blur-sm transition-shadow duration-300 hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)] text-center"
-          >
-            <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[#051610] mb-3">
-              <card.icon size={18} className="text-[#97c93e]" />
+          <div key={card.label} className="contact-touchpoint-card">
+            <div className="contact-icon-wrap">
+              <card.icon size={20} />
             </div>
-            <h3 className="text-sm font-semibold text-white mb-1">
-              {card.label}
-            </h3>
-            {card.href ? (
-              <a
-                href={card.href}
-                target={card.label === 'Address' ? '_blank' : undefined}
-                rel={card.label === 'Address' ? 'noopener noreferrer' : undefined}
-                className="text-sm text-[#94a3b8] hover:text-[#97c93e] transition-colors"
-              >
-                {card.value}
-              </a>
-            ) : (
-              <p className="text-sm text-[#94a3b8] whitespace-pre-line">
-                {card.value}
-              </p>
-            )}
+            <div className="flex flex-col">
+              <span className="contact-label">{card.label}</span>
+              {card.href ? (
+                <a
+                  href={card.href}
+                  {...(card.label === 'VISIT OUR SANCTUARY'
+                    ? { target: '_blank', rel: 'noopener noreferrer' }
+                    : {})}
+                  className="contact-val"
+                >
+                  {card.value}
+                </a>
+              ) : (
+                <span className="contact-val whitespace-pre-line">
+                  {card.value}
+                </span>
+              )}
+            </div>
           </div>
         ))}
       </div>
-    </section>
+    </div>
   );
 }

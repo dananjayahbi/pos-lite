@@ -61,6 +61,7 @@ export function BestSelling({
   if (display.length === 0) return null;
 
   const title = sectionConfig.title || 'Top Selling Items';
+  const label = sectionConfig.label || 'MOST LOVED BOTANICAL REMEDIES';
 
   return (
     <section id="top-selling-section" className="section-dark relative w-full py-20 sm:py-28 lg:py-32 overflow-hidden">
@@ -75,7 +76,7 @@ export function BestSelling({
       />
 
       <SectionTitle
-        label="MOST LOVED BOTANICAL REMEDIES"
+        label={label}
         title={title}
         reveal
       />

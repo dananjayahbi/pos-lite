@@ -22,6 +22,8 @@ export interface ProductFilters {
   categoryIds?: string[] | undefined;
   brandId?: string | undefined;
   brandIds?: string[] | undefined;
+  /** Fetch a specific set of products by ID (used to hydrate pickers). */
+  ids?: string[] | undefined;
   isArchived?: boolean | undefined;
   page?: number | undefined;
   limit?: number | undefined;
@@ -126,12 +128,16 @@ function generateSku(brandName: string | null, form: string | undefined | null, 
 // ── Product Functions ────────────────────────────────────────────────────────
 
 export async function getAllProducts(tenantId: string, filters: ProductFilters = {}) {
-  const { search, categoryId, categoryIds, brandId, brandIds, isArchived, page = 1, limit = 20 } = filters;
+  const { search, categoryId, categoryIds, brandId, brandIds, ids, isArchived, page = 1, limit = 20 } = filters;
 
   const where: Prisma.ProductWhereInput = {
     tenantId,
     deletedAt: null,
   };
+
+  if (ids && ids.length > 0) {
+    where.id = { in: ids };
+  }
 
   if (search) {
     where.OR = [

@@ -1644,6 +1644,8 @@ model WebsiteConfig {
   aboutMissionContent     String? @db.Text
   aboutValuesSectionTitle String?
   aboutValues             Json    @default("[]")
+  aboutPhoneLabel         String?
+  aboutPhoneNumber        String?
 
   // Contact Page
   contactPageTitle     String?

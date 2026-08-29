@@ -1,6 +1,7 @@
 import React from 'react';
 import { WebsiteHeader } from '../sections/WebsiteHeader';
 import { WebsiteFooter } from '../sections/WebsiteFooter';
+import { PageHero } from './PageHero';
 import type { WebsiteConfigData } from '@/types/website.types';
 
 interface StaticPageShellProps {
@@ -45,47 +46,12 @@ export function StaticPageShell({
       <WebsiteHeader config={websiteConfig} tenantSlug={tenantSlug} />
 
       {/* Page title hero */}
-      <section
-        className="relative pt-[112px] border-b border-white/5 overflow-hidden"
-        style={
-          heroImageUrl
-            ? {
-                backgroundImage: `url(${heroImageUrl})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-                minHeight: '480px',
-              }
-            : { backgroundColor: 'rgba(5, 22, 16, 0.95)' }
-        }
-      >
-        {/* Vignette overlay for readability */}
-        {heroImageUrl && (
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                'radial-gradient(circle at 50% 50%, rgba(5,22,16,0.4) 0%, rgba(5,22,16,0.85) 65%, #051610 100%)',
-            }}
-          />
-        )}
-        <div className="relative z-10 max-w-5xl mx-auto px-6 py-16 md:py-24 text-center">
-          <h1
-            className="text-3xl md:text-5xl font-cinzel font-extrabold tracking-wide text-white leading-tight"
-            style={{ fontFamily: 'var(--font-serif), serif' }}
-          >
-            {title}
-          </h1>
-          {subtitle && (
-            <p className="mt-3 text-sm md:text-base text-[#cbd5e1] font-light max-w-lg mx-auto">
-              {subtitle}
-            </p>
-          )}
-          {description && (
-            <p className="mt-2 text-sm text-[#94a3b8] max-w-xl mx-auto">{description}</p>
-          )}
-          <div className="w-16 h-[2px] bg-[#97c93e]/60 mx-auto mt-6 rounded-full" />
-        </div>
-      </section>
+      <PageHero
+        title={title}
+        {...(subtitle ? { subtitle } : {})}
+        {...(description ? { description } : {})}
+        {...(heroImageUrl ? { heroImageUrl } : {})}
+      />
 
       {/* Page content */}
       <main className="max-w-7xl mx-auto px-6 py-12 md:py-16">

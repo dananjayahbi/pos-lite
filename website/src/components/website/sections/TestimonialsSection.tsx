@@ -52,6 +52,7 @@ export function TestimonialsSection({ config }: TestimonialsSectionProps) {
   if (active.length === 0) return null;
 
   const title = section.title || 'What Our Patrons Say';
+  const label = section.label || 'VOICES OF HEALING';
   const subtitle = section.subtitle;
 
   // Split into two groups & triple each for the infinite marquee.
@@ -73,7 +74,7 @@ export function TestimonialsSection({ config }: TestimonialsSectionProps) {
       />
 
       <SectionTitle
-        label="VOICES OF HEALING"
+        label={label}
         title={title}
         subtitle={
           subtitle ||

@@ -64,6 +64,13 @@ export function ContactPageTab({ config, onChange }: ContactPageTabProps) {
 
       {/* Contact Info */}
       <div className="space-y-4">
+        <div className="rounded-lg border border-cream/40 bg-cream/20 px-3 py-2">
+          <h3 className="text-sm font-semibold text-espresso">Get in Touch</h3>
+          <p className="mt-0.5 text-xs text-sand">
+            Two-column layout: stacked contact touchpoint cards (left) beside a
+            dark-themed embedded Google Map (right).
+          </p>
+        </div>
         <div>
           <Label htmlFor="contactInfoTitle" className="text-sm font-semibold text-espresso">
             Contact Info Section Title
@@ -86,7 +93,7 @@ export function ContactPageTab({ config, onChange }: ContactPageTabProps) {
             id="contactAddress"
             value={config.contactAddress ?? ''}
             onChange={(e) => onChange({ contactAddress: e.target.value })}
-            placeholder="123 Main Street, City, State 12345"
+            placeholder="No. 42, Horton Place, Colombo 07, Western Province, Sri Lanka (00700)"
             rows={2}
           />
         </div>
@@ -100,7 +107,7 @@ export function ContactPageTab({ config, onChange }: ContactPageTabProps) {
             id="contactPhone"
             value={config.contactPhoneDisplay ?? ''}
             onChange={(e) => onChange({ contactPhoneDisplay: e.target.value })}
-            placeholder="+1 (555) 000-0000"
+            placeholder="+94 (0) 11 234 5678"
           />
         </div>
 
@@ -114,7 +121,7 @@ export function ContactPageTab({ config, onChange }: ContactPageTabProps) {
             type="email"
             value={config.contactEmailDisplay ?? ''}
             onChange={(e) => onChange({ contactEmailDisplay: e.target.value })}
-            placeholder="hello@yourstore.com"
+            placeholder="care@wedagedara.lk"
           />
         </div>
 
@@ -127,7 +134,7 @@ export function ContactPageTab({ config, onChange }: ContactPageTabProps) {
             id="contactBusinessHours"
             value={config.contactBusinessHours ?? ''}
             onChange={(e) => onChange({ contactBusinessHours: e.target.value })}
-            placeholder="Mon–Fri: 9am–6pm, Sat: 10am–4pm"
+            placeholder="Monday – Sunday: 8:00 AM – 7:00 PM"
           />
         </div>
 

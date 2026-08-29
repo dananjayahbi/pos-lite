@@ -300,6 +300,8 @@ export async function resetWebsiteConfig(tenantId: string): Promise<boolean> {
         aboutMissionContent: null,
         aboutValuesSectionTitle: null,
         aboutValues: [],
+        aboutPhoneLabel: null,
+        aboutPhoneNumber: null,
         contactPageTitle: null,
         contactPageSubtitle: null,
         contactHeroImageUrl: null,

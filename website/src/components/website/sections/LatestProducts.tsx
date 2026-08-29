@@ -43,6 +43,7 @@ export function LatestProducts({ config, tenantSlug, latestProducts }: LatestPro
   if (display.length === 0) return null;
 
   const title = section.title || 'Latest Products';
+  const label = section.label || 'NEW HERBAL ARRIVALS';
 
   return (
     <section id="latest-products-section" className="section-dark relative w-full py-20 sm:py-28 lg:py-36 overflow-hidden">
@@ -55,7 +56,7 @@ export function LatestProducts({ config, tenantSlug, latestProducts }: LatestPro
         glows={['top-0 right-1/4 w-96 h-96 bg-[#97c93e]/10', 'bottom-10 left-1/3 w-80 h-80 bg-emerald-500/10']}
       />
 
-      <SectionTitle label="NEW HERBAL ARRIVALS" title={title} />
+      <SectionTitle label={label} title={title} />
 
       <div className="reveal-on-scroll relative z-10 max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
         <div className="latest-editorial-grid">

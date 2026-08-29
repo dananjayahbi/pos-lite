@@ -6,49 +6,20 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { WebsiteConfigData } from '@/types/website.types';
 import { tenantHomePath } from '@/lib/tenant';
-import { ROUTES } from '@/config/site';
+import { buildHeaderNav, resolveNavHref, isNavActive } from '@/lib/navigation';
 import { CartIcon } from '@/components/website/cart/CartIcon';
+import { HeaderNavLink } from './HeaderNavLink';
 
 interface WebsiteHeaderProps {
   config: WebsiteConfigData;
   tenantSlug: string;
 }
 
-/** Nav link with the active-state underline styling from the reference design. */
-function NavLink({
-  href,
-  label,
-  active,
-  onNavigate,
-}: {
-  href: string;
-  label: string;
-  active: boolean;
-  onNavigate?: () => void;
-}) {
-  return (
-    <Link
-      href={href}
-      {...(onNavigate ? { onClick: onNavigate } : {})}
-      className={`text-sm font-medium tracking-wider uppercase transition-colors relative py-1 ${
-        active ? 'text-white' : 'text-gray-300 hover:text-[#97c93e]'
-      }`}
-    >
-      {label}
-      <span
-        className={`absolute bottom-0 left-0 h-[2px] bg-[#97c93e] transition-all duration-300 ${
-          active ? 'w-full' : 'w-0 group-hover:w-full'
-        }`}
-      />
-    </Link>
-  );
-}
-
 /**
  * Fixed dark-glass luxury header for the storefront.
  *
  * Structure (from the reference design):
- *   - left: logo mark (rounded white tile) + "WEDAGEDARA" + "Ayurvedic Heritage"
+ *   - left: logo mark (rounded white tile) + site name + "Ayurvedic Heritage"
  *   - center (desktop): HOME / ABOUT / SHOP / CONTACT + Appointments pill
  *   - right: cart toggle + mobile hamburger
  * Gets a frosted `.glass-nav` + shrink effect when scrolled past 40px.
@@ -82,40 +53,10 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
     };
   }, [mobileMenuOpen]);
 
-  // Default nav items if none configured: SHOP, ABOUT, CONTACT, Appointments.
-  const defaultNav = [
-    { label: 'SHOP', href: '/shop' },
-    { label: 'ABOUT', href: '/about' },
-    { label: 'CONTACT', href: '/contact' },
-  ];
-  const baseNav = (config.navItems && config.navItems.length > 0
-    ? config.navItems
-    : defaultNav) as { label: string; href: string }[];
+  // Build nav from config via the shared helper.
+  const { items: navItems, appointments } = buildHeaderNav(config, tenantSlug);
 
-  // Prepend HOME (always first) and append the Appointments pill link.
-  const appointments =
-    config.appointments?.enabled && config.appointments.navLabel
-      ? { label: config.appointments.navLabel, href: ROUTES.appointments(tenantSlug) }
-      : null;
-  const navItems = [{ label: 'HOME', href: homeHref }, ...baseNav];
-
-  function resolveNavHref(href: string): string {
-    if (!href || href === '#') return href;
-    if (href.startsWith('http://') || href.startsWith('https://')) return href;
-    if (href.startsWith(`/${tenantSlug}`) || href.startsWith(`/${tenantSlug}/`)) return href;
-    const defaultSlug =
-      (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_DEFAULT_TENANT_SLUG) ||
-      'ruhunuwedagedara';
-    if (tenantSlug === defaultSlug) return href;
-    if (href.startsWith('/')) return `/${tenantSlug}${href}`;
-    return href;
-  }
-
-  const isActive = (href: string) => {
-    if (href === homeHref || href === '/') return pathname === '/' || pathname === homeHref;
-    const resolved = resolveNavHref(href).replace(/\/$/, '');
-    return pathname === resolved || pathname.startsWith(`${resolved}/`);
-  };
+  const isActive = (href: string) => isNavActive(href, pathname, tenantSlug);
 
   return (
     <>
@@ -150,21 +91,19 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
           {/* Desktop navigation */}
           <nav className="hidden md:flex items-center gap-7 lg:gap-9">
             {navItems.map((item, i) => (
-              <NavLink
+              <HeaderNavLink
                 key={i}
-                href={resolveNavHref(item.href)}
+                href={resolveNavHref(item.href, tenantSlug)}
                 label={item.label}
                 active={isActive(item.href)}
               />
             ))}
-            {appointments && (
-              <Link
-                href={resolveNavHref(appointments.href)}
-                className="text-sm font-semibold tracking-wider uppercase px-4 py-2 rounded-full border border-[#97c93e]/40 text-[#b2db58] hover:bg-[#97c93e] hover:text-black transition-all duration-300"
-              >
-                <i className="fa-regular fa-calendar-check mr-1.5 text-xs" /> {appointments.label}
-              </Link>
-            )}
+            <Link
+              href={resolveNavHref(appointments.href, tenantSlug)}
+              className="text-sm font-semibold tracking-wider uppercase px-4 py-2 rounded-full border border-[#97c93e]/40 text-[#b2db58] hover:bg-[#97c93e] hover:text-black transition-all duration-300"
+            >
+              <i className="fa-regular fa-calendar-check mr-1.5 text-xs" /> {appointments.label}
+            </Link>
           </nav>
 
           {/* Right action group: cart + mobile menu */}
@@ -225,7 +164,7 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
             {navItems.map((item, i) => (
               <Link
                 key={i}
-                href={resolveNavHref(item.href)}
+                href={resolveNavHref(item.href, tenantSlug)}
                 onClick={() => setMobileMenuOpen(false)}
                 className={`text-base font-medium flex items-center justify-between py-2 border-b border-white/5 ${
                   isActive(item.href) ? 'text-[#97c93e]' : 'text-gray-200 hover:text-[#97c93e]'
@@ -235,18 +174,16 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
                 <i className="fa-solid fa-chevron-right text-xs" />
               </Link>
             ))}
-            {appointments && (
-              <Link
-                href={resolveNavHref(appointments.href)}
-                onClick={() => setMobileMenuOpen(false)}
-                className="text-base font-medium text-[#b2db58] flex items-center justify-between py-2 mt-2 bg-[#97c93e]/10 px-3 rounded-lg border border-[#97c93e]/30"
-              >
-                <span>
-                  <i className="fa-regular fa-calendar-check mr-2" /> {appointments.label}
-                </span>
-                <i className="fa-solid fa-arrow-right text-xs" />
-              </Link>
-            )}
+            <Link
+              href={resolveNavHref(appointments.href, tenantSlug)}
+              onClick={() => setMobileMenuOpen(false)}
+              className="text-base font-medium text-[#b2db58] flex items-center justify-between py-2 mt-2 bg-[#97c93e]/10 px-3 rounded-lg border border-[#97c93e]/30"
+            >
+              <span>
+                <i className="fa-regular fa-calendar-check mr-2" /> {appointments.label}
+              </span>
+              <i className="fa-solid fa-arrow-right text-xs" />
+            </Link>
           </nav>
         </div>
 

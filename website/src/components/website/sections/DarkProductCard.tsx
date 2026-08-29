@@ -13,6 +13,10 @@ interface DarkProductCardProps {
   variant?: 'tilt' | 'pill';
   imageOverride?: string;
   priceOverride?: number;
+  /** 1-based position in the slider, used for the reference "01 / 07" badge. */
+  index?: number;
+  /** Total number of cards in the slider. */
+  total?: number;
 }
 
 function pickImage(p: PublicProduct): string | undefined {
@@ -33,10 +37,14 @@ export function DarkProductCard({
   variant = 'tilt',
   imageOverride,
   priceOverride,
+  index,
+  total,
 }: DarkProductCardProps) {
   const image = imageOverride ?? pickImage(product);
   const price = priceOverride ?? pickPrice(product);
   const href = ROUTES.product(tenantSlug, product.id);
+  const position = String(index ?? 0).padStart(2, '0');
+  const totalLabel = String(total ?? 0).padStart(2, '0');
 
   if (variant === 'pill') {
     return (
@@ -103,16 +111,34 @@ export function DarkProductCard({
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-70 group-hover:opacity-30 transition-opacity duration-500" />
           <div className="card-glare-overlay" />
+
+          {/* Category indicator badge (reference-style "01 / 07") */}
+          <div className="absolute top-3 left-3 z-20">
+            <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-[10px] tracking-widest uppercase text-[#97c93e] font-medium">
+              {position} / {totalLabel}
+            </span>
+          </div>
+
+          {/* Quick-view action button */}
+          <div className="absolute bottom-3 right-3 z-20 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0">
+            <span className="w-10 h-10 rounded-full bg-[#97c93e] text-black flex items-center justify-center text-xs shadow-xl hover:scale-110 transition-transform">
+              <i className="fa-solid fa-arrow-up-right-from-square" />
+            </span>
+          </div>
         </div>
 
-        <div className="product-card-content mt-3 px-1">
+        <div className="product-card-content mt-3 px-1 text-center flex flex-col items-center pb-2">
           <h3 className="text-sm sm:text-base lg:text-lg font-semibold tracking-[0.2em] uppercase text-white group-hover:text-[#97c93e] transition-colors line-clamp-1">
             {product.name}
           </h3>
-          <div className="flex items-center justify-between mt-2">
-            <span className="text-sm font-bold font-cinzel text-[#97c93e]">{formatLKR(price)}</span>
-            <span className="text-[10px] text-gray-400">{String(0).padStart(2, '0')} / 07</span>
-          </div>
+          {product.description && (
+            <p className="text-[11px] sm:text-xs text-gray-400 font-light mt-1.5 line-clamp-1 max-w-[90%] font-sans">
+              {product.description}
+            </p>
+          )}
+          <span className="text-sm font-bold font-cinzel text-[#97c93e] mt-2">
+            {formatLKR(price)}
+          </span>
         </div>
       </article>
     </Link>

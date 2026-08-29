@@ -31,17 +31,62 @@ const DEFAULT_CONFIG: WebsiteConfigData = {
   sections: {
     hero: { isActive: true, sortOrder: 1 },
     imageSlider: { isActive: true, sortOrder: 2, images: [] },
-    bestSelling: { isActive: true, sortOrder: 3, title: 'Top Selling Items This Week', productCount: 7, productIds: [] },
+    bestSelling: { isActive: true, sortOrder: 3, label: 'MOST LOVED BOTANICAL REMEDIES', title: 'Top Selling Items This Week', productCount: 7, productIds: [] },
     infoAd: { isActive: true, sortOrder: 4, desktopImageUrl: '', title: '', subtitle: '' },
-    categories: { isActive: true, sortOrder: 5, title: 'Top Categories', categoryIds: [], categoryImages: {} },
-    latestProducts: { isActive: true, sortOrder: 6, title: 'Latest Products', productCount: 7, productIds: [] },
-    testimonials: { isActive: true, sortOrder: 7, title: 'Testimonials', subtitle: 'What Our Community Says', items: [] },
+    categories: { isActive: true, sortOrder: 5, label: 'CURATED AYURVEDIC LINEUP', title: 'Top Categories', categoryIds: [], categoryImages: {} },
+    latestProducts: { isActive: true, sortOrder: 6, label: 'NEW HERBAL ARRIVALS', title: 'Latest Products', productCount: 7, productIds: [] },
+    testimonials: { isActive: true, sortOrder: 7, label: 'VOICES OF HEALING', title: 'Testimonials', subtitle: 'What Our Community Says', items: [] },
     storeReference: { isActive: true, sortOrder: 8, desktopImageUrl: '', title: '', subtitle: '' },
     footer: { isActive: true, sortOrder: 9 },
   },
   footerAbout: '',
   footerColumns: [],
   heroSlides: [],
+  aboutPageTitle: 'About Us',
+  aboutPageSubtitle: 'Learn more about our story and mission',
+  aboutStoryTitle: 'Our Story',
+  aboutStoryContent:
+    'It all started when our founders, direct descendants of royal Ceylon Ayurvedic physicians, recognized that modern wellness had lost touch with the pure botanical alchemy of ancestral medicine.\nRooted in centuries-old Ola Leaf manuscripts preserved through family generations, Wedagedara was born to revive authentic Ayurvedic remedies. We combine ethical forest harvesting with slow-fire earthen decoction methods to extract the unadulterated healing essence of nature.',
+  aboutMissionTitle: 'Our Mission',
+  aboutMissionContent:
+    'We believe in the timeless balance of mind, body, and spirit. Our sacred mission is to restore cellular vitality and holistic longevity by delivering purest, non-commercialized Ceylon Ayurvedic elixirs crafted with unwavering reverence for nature.',
+  aboutValuesSectionTitle: 'Our Values',
+  aboutValues: [
+    {
+      title: 'Ancestral Ola Leaf Purity',
+      description:
+        'Every formula adheres strictly to classical texts and ancestral decoction techniques without synthetic dilution.',
+    },
+    {
+      title: 'Ethical Forest Sanctuaries',
+      description:
+        'We sustainably wild-harvest herbs from certified organic Ceylon forest reserves, honoring the natural regeneration cycles of the earth.',
+    },
+    {
+      title: 'Tridosha Equilibrium',
+      description:
+        'Our remedies are carefully crafted to balance Vata, Pitta, and Kapha bio-energies for deep, holistic restoration.',
+    },
+    {
+      title: 'Sacred Sustainability',
+      description:
+        'From earthen brewing vessels to zero-waste glass bottling, every touchpoint reflects our deep reverence for mother earth.',
+    },
+  ],
+  aboutPhoneLabel: 'Call Us',
+  aboutPhoneNumber: '+94 11 234 5678',
+  contactPageTitle: 'Contact Us',
+  contactPageSubtitle: "We'd love to hear from you",
+  contactInfoTitle: 'Get in Touch',
+  contactAddress: 'No. 42, Horton Place, Colombo 07, Western Province, Sri Lanka (00700)',
+  contactPhoneDisplay: '+94 (0) 11 234 5678',
+  contactEmailDisplay: 'care@wedagedara.lk',
+  contactBusinessHours: 'Monday – Sunday: 8:00 AM – 7:00 PM',
+  shopPageTitle: 'Shop',
+  shopPageSubtitle: 'Browse our collection',
+  shopPageDescription:
+    'Discover our pure Ayurvedic elixirs, oils, and balms crafted with ancestral herbs and slow-decoction wisdom.',
+  shopProductsPerPage: 24,
   appointments: {
     enabled: false,
     navLabel: 'Appointments',

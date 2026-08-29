@@ -28,7 +28,6 @@ import type {
   WebsiteHeroSlideData,
   WebsiteHeroSection,
   ImageSliderSection,
-  ImageSliderItem,
   BestSellingSection,
   InfoAdSection,
   CategoriesSection,
@@ -208,41 +207,18 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
   }
 
   // ---------------------------------------------------------------------------
-  // 2. Image Slider
+  // 2. Image Slider — "Featured products" (AUTHENTIC AYURVEDIC CARE)
   // ---------------------------------------------------------------------------
   const imageSliderSection = config.sections?.imageSlider as ImageSliderSection | undefined;
-  const imageSliderItems: ImageSliderItem[] = imageSliderSection?.images ?? [];
   const MAX_IMAGE_SLIDER_ITEMS = 7;
 
-  function handleImageSliderItemChange(
-    index: number,
-    field: keyof ImageSliderItem,
-    value: unknown,
-  ) {
-    const updated = imageSliderItems.map((item, i) =>
-      i === index ? { ...item, [field]: value } : item,
-    );
-    onChange(updateSection(config, 'imageSlider', { images: updated }));
+  function handleImageSliderChange(field: keyof ImageSliderSection, value: unknown) {
+    onChange(updateSection(config, 'imageSlider', { [field]: value }));
   }
 
-  function handleDeleteImageSliderItem(index: number) {
-    const updated = imageSliderItems.filter((_, i) => i !== index);
-    onChange(updateSection(config, 'imageSlider', { images: updated }));
-  }
-
-  function handleAddImageSliderItem() {
-    if (imageSliderItems.length >= MAX_IMAGE_SLIDER_ITEMS) {
-      toast.info(`Maximum of ${MAX_IMAGE_SLIDER_ITEMS} images allowed.`);
-      return;
-    }
-    const newItem: ImageSliderItem = {
-      imageUrl: '',
-      alt: '',
-      linkUrl: '',
-      isActive: true,
-      sortOrder: imageSliderItems.length,
-    };
-    onChange(updateSection(config, 'imageSlider', { images: [...imageSliderItems, newItem] }));
+  function handleImageSliderProductCount(value: string) {
+    const val = Math.min(7, Math.max(1, Number(value) || 1));
+    handleImageSliderChange('productCount', val);
   }
 
   // ---------------------------------------------------------------------------
@@ -648,99 +624,65 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
       <div className="border border-mist rounded-lg bg-white overflow-hidden mb-3">
         <SectionHeader
           sectionKey="imageSlider"
-          title="Image Slider"
-          description="Horizontal image slider. Up to 7 images. 100% width, max 400px."
+          title="Image Slider (Featured Products)"
+          description="Curated featured-products carousel. Up to 7 products. Section label: 'AUTHENTIC AYURVEDIC CARE'."
           expandedSections={expandedSections}
           onToggle={toggleSection}
         />
 
         <SectionBody sectionKey="imageSlider" expandedSections={expandedSections}>
-          {imageSliderItems.length === 0 ? (
-            <p className="text-xs text-sand italic">No images configured.</p>
-          ) : (
-            <div className="space-y-4">
-              {imageSliderItems.map((item, index) => (
-                <div
-                  key={index}
-                  className="border border-mist rounded-lg bg-white p-4 space-y-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-espresso">
-                      Image {index + 1}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-sand hover:text-red-500"
-                      onClick={() => handleDeleteImageSliderItem(index)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-
-                  <DeferredMediaUploader
-                    uploadKey={`imageSlider_${index}`}
-                    accept="image/*"
-                    maxSizeMB={5}
-                    label="Image"
-                    placeholder="Upload slider image"
-                    previewHeight="h-32"
-                    value={item.imageUrl ?? ''}
-                    currentRealUrl={item.imageUrl || undefined}
-                    onChange={(url: string) =>
-                      handleImageSliderItemChange(index, 'imageUrl', url)
-                    }
-                  />
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-sand">Alt Text</Label>
-                      <Input
-                        value={item.alt ?? ''}
-                        onChange={(e) =>
-                          handleImageSliderItemChange(index, 'alt', e.target.value)
-                        }
-                        placeholder="Image alt text"
-                        className="h-9 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-sand">Link URL</Label>
-                      <Input
-                        value={item.linkUrl ?? ''}
-                        onChange={(e) =>
-                          handleImageSliderItemChange(index, 'linkUrl', e.target.value)
-                        }
-                        placeholder="e.g. /shop/some-product"
-                        className="h-9 text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={item.isActive ?? true}
-                      onCheckedChange={(checked) =>
-                        handleImageSliderItemChange(index, 'isActive', checked)
-                      }
-                    />
-                    <Label className="text-xs text-sand cursor-pointer">Active</Label>
-                  </div>
-                </div>
-              ))}
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-sand">Eyebrow Label</Label>
+              <Input
+                value={imageSliderSection?.label ?? 'AUTHENTIC AYURVEDIC CARE'}
+                onChange={(e) => handleImageSliderChange('label', e.target.value)}
+                placeholder="AUTHENTIC AYURVEDIC CARE"
+                className="h-9 text-sm"
+              />
             </div>
-          )}
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-dashed border-mist text-sand hover:text-espresso"
-            onClick={handleAddImageSliderItem}
-            disabled={imageSliderItems.length >= MAX_IMAGE_SLIDER_ITEMS}
-          >
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            Add Image
-          </Button>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-sand">Section Title</Label>
+              <Input
+                value={imageSliderSection?.title ?? 'CURATED BOTANICAL COLLECTIONS'}
+                onChange={(e) => handleImageSliderChange('title', e.target.value)}
+                placeholder="CURATED BOTANICAL COLLECTIONS"
+                className="h-9 text-sm"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-sand">Subtitle</Label>
+              <Textarea
+                value={imageSliderSection?.subtitle ?? ''}
+                onChange={(e) => handleImageSliderChange('subtitle', e.target.value)}
+                placeholder="Handcrafted formulas extracted from Ceylon medicinal herbs…"
+                className="text-sm"
+                rows={2}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-sand">Product Count (max 7)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={7}
+                value={imageSliderSection?.productCount ?? 7}
+                onChange={(e) => handleImageSliderProductCount(e.target.value)}
+                className="h-9 text-sm w-24"
+              />
+            </div>
+
+            <div className="pt-1">
+              <ProductPicker
+                selectedIds={imageSliderSection?.productIds ?? []}
+                onChange={(ids) => handleImageSliderChange('productIds', ids)}
+                max={7}
+              />
+            </div>
+          </div>
         </SectionBody>
       </div>
 
@@ -751,12 +693,22 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
         <SectionHeader
           sectionKey="bestSelling"
           title="Top Selling Items"
-          description="Horizontal product slider. Displays up to 7 products. Section label: 'Top Selling Items This Week'."
+          description="Horizontal product slider. Displays up to 7 products. Eyebrow label: 'MOST LOVED BOTANICAL REMEDIES'."
           expandedSections={expandedSections}
           onToggle={toggleSection}
         />
 
         <SectionBody sectionKey="bestSelling" expandedSections={expandedSections}>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-sand">Eyebrow Label</Label>
+            <Input
+              value={bestSellingSection?.label ?? 'MOST LOVED BOTANICAL REMEDIES'}
+              onChange={(e) => handleBestSellingChange('label', e.target.value)}
+              placeholder="MOST LOVED BOTANICAL REMEDIES"
+              className="h-9 text-sm"
+            />
+          </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs text-sand">Section Title</Label>
             <Input
@@ -888,12 +840,22 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
         <SectionHeader
           sectionKey="categories"
           title="Top Categories"
-          description="Horizontal category slider. Up to 5 categories. Section label: 'Top Categories'."
+          description="Kinetic category accordion deck. Up to 7 categories. Eyebrow label: 'CURATED AYURVEDIC LINEUP'."
           expandedSections={expandedSections}
           onToggle={toggleSection}
         />
 
         <SectionBody sectionKey="categories" expandedSections={expandedSections}>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-sand">Eyebrow Label</Label>
+            <Input
+              value={categoriesSection?.label ?? 'CURATED AYURVEDIC LINEUP'}
+              onChange={(e) => handleCategoriesChange('label', e.target.value)}
+              placeholder="CURATED AYURVEDIC LINEUP"
+              className="h-9 text-sm"
+            />
+          </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs text-sand">Section Title</Label>
             <Input
@@ -924,12 +886,22 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
         <SectionHeader
           sectionKey="latestProducts"
           title="Latest Products"
-          description="Horizontal product slider. Displays up to 7 latest products."
+          description="Asymmetric editorial product grid. Displays up to 7 products. Eyebrow label: 'NEW HERBAL ARRIVALS'."
           expandedSections={expandedSections}
           onToggle={toggleSection}
         />
 
         <SectionBody sectionKey="latestProducts" expandedSections={expandedSections}>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-sand">Eyebrow Label</Label>
+            <Input
+              value={latestProductsSection?.label ?? 'NEW HERBAL ARRIVALS'}
+              onChange={(e) => handleLatestProductsChange('label', e.target.value)}
+              placeholder="NEW HERBAL ARRIVALS"
+              className="h-9 text-sm"
+            />
+          </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs text-sand">Section Title</Label>
             <Input
@@ -978,12 +950,29 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
         <SectionHeader
           sectionKey="testimonials"
           title="Testimonials"
-          description="Auto-rotating customer testimonials. Up to 3 testimonials."
+          description="Dual-stream kinetic testimonial marquee. Up to 3 testimonials. Eyebrow label: 'VOICES OF HEALING'."
           expandedSections={expandedSections}
           onToggle={toggleSection}
         />
 
         <SectionBody sectionKey="testimonials" expandedSections={expandedSections}>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-sand">Eyebrow Label</Label>
+            <Input
+              value={testimonialsSection?.label ?? 'VOICES OF HEALING'}
+              onChange={(e) =>
+                onChange(
+                  updateSection(config, 'testimonials', {
+                    label: e.target.value,
+                    items: testimonialItems,
+                  }),
+                )
+              }
+              placeholder="VOICES OF HEALING"
+              className="h-9 text-sm"
+            />
+          </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs text-sand">Section Title</Label>
             <Input
