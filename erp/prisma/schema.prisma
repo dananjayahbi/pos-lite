@@ -1630,6 +1630,9 @@ model WebsiteConfig {
   footerAbout   String? @db.Text
   footerColumns Json    @default("[]")
 
+  // Appointments (customer-facing booking page) — mirrors WebsiteAppointmentsConfig
+  appointments Json    @default("{}")
+
   // About Page
   aboutPageTitle          String?
   aboutPageSubtitle       String?
