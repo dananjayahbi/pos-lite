@@ -26,6 +26,7 @@ import { toast } from 'sonner';
 import type {
   WebsiteConfigData,
   WebsiteHeroSlideData,
+  WebsiteHeroSection,
   ImageSliderSection,
   ImageSliderItem,
   BestSellingSection,
@@ -132,6 +133,28 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
   // 1. Hero Banner
   // ---------------------------------------------------------------------------
   const heroSlides: WebsiteHeroSlideData[] = config.heroSlides ?? [];
+
+  // Common hero editorial settings (shared across all slides).
+  const heroSection = (config.sections?.hero ?? {}) as Partial<WebsiteHeroSection>;
+
+  function handleHeroSectionChange(
+    field: keyof WebsiteHeroSection,
+    value: unknown,
+  ) {
+    onChange(updateSection(config, 'hero', { [field]: value }));
+  }
+
+  function handleHeroSectionSocialChange(
+    field: string,
+    value: string,
+  ) {
+    const currentSocial = heroSection.socialLinks ?? {};
+    onChange(
+      updateSection(config, 'hero', {
+        socialLinks: { ...currentSocial, [field]: value },
+      }),
+    );
+  }
 
   function handleHeroSlideChange(
     index: number,
@@ -498,6 +521,124 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
             <Plus className="mr-1.5 h-3.5 w-3.5" />
             Add Slide
           </Button>
+
+          {/* ── Hero common settings (shared across all slides) ─────────────── */}
+          <div className="border border-mist/70 rounded-lg bg-cream/20 p-4 mt-2 space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-sand">
+              Hero Settings
+            </p>
+
+            {/* Consult Doctor button */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-sand">Consult Doctor Button</Label>
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={heroSection.showConsultDoctor ?? true}
+                  onCheckedChange={(checked) =>
+                    handleHeroSectionChange('showConsultDoctor', checked)
+                  }
+                />
+                <span className="text-xs text-sand">Show button</span>
+              </div>
+              <Input
+                value={heroSection.consultDoctorLabel ?? ''}
+                onChange={(e) =>
+                  handleHeroSectionChange('consultDoctorLabel', e.target.value)
+                }
+                placeholder="Button label, e.g. Consult Doctor"
+                className="h-9 text-sm"
+              />
+              <Input
+                value={heroSection.consultDoctorLink ?? ''}
+                onChange={(e) =>
+                  handleHeroSectionChange('consultDoctorLink', e.target.value)
+                }
+                placeholder="Button link (leave empty for appointments page)"
+                className="h-9 text-sm"
+              />
+            </div>
+
+            {/* Crafted By line */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-sand">Crafted By Text</Label>
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={heroSection.showCraftedBy ?? true}
+                  onCheckedChange={(checked) =>
+                    handleHeroSectionChange('showCraftedBy', checked)
+                  }
+                />
+                <span className="text-xs text-sand">Show text</span>
+              </div>
+              <Input
+                value={heroSection.craftedByText ?? ''}
+                onChange={(e) =>
+                  handleHeroSectionChange('craftedByText', e.target.value)
+                }
+                placeholder="e.g. Crafted by Wedagedara Herbal Sanctuary"
+                className="h-9 text-sm"
+              />
+            </div>
+
+            {/* Social links (right vertical dock) */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-sand">Social Links (Hero Sidebar)</Label>
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={heroSection.showSocialLinks ?? true}
+                  onCheckedChange={(checked) =>
+                    handleHeroSectionChange('showSocialLinks', checked)
+                  }
+                />
+                <span className="text-xs text-sand">Show sidebar icons</span>
+              </div>
+              <p className="text-[11px] text-sand/80">
+                Only the links below appear in the hero sidebar. Leave empty to hide an icon.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Input
+                  value={heroSection.socialLinks?.twitter ?? ''}
+                  onChange={(e) =>
+                    handleHeroSectionSocialChange('twitter', e.target.value)
+                  }
+                  placeholder="Twitter URL"
+                  className="h-9 text-sm"
+                />
+                <Input
+                  value={heroSection.socialLinks?.facebook ?? ''}
+                  onChange={(e) =>
+                    handleHeroSectionSocialChange('facebook', e.target.value)
+                  }
+                  placeholder="Facebook URL"
+                  className="h-9 text-sm"
+                />
+                <Input
+                  value={heroSection.socialLinks?.instagram ?? ''}
+                  onChange={(e) =>
+                    handleHeroSectionSocialChange('instagram', e.target.value)
+                  }
+                  placeholder="Instagram URL"
+                  className="h-9 text-sm"
+                />
+                <Input
+                  value={heroSection.socialLinks?.youtube ?? ''}
+                  onChange={(e) =>
+                    handleHeroSectionSocialChange('youtube', e.target.value)
+                  }
+                  placeholder="YouTube URL"
+                  className="h-9 text-sm"
+                />
+                <Input
+                  value={heroSection.socialLinks?.whatsapp ?? ''}
+                  onChange={(e) =>
+                    handleHeroSectionSocialChange('whatsapp', e.target.value)
+                  }
+                  placeholder="WhatsApp number"
+                  className="h-9 text-sm"
+                />
+              </div>
+            </div>
+          </div>
         </SectionBody>
       </div>
 

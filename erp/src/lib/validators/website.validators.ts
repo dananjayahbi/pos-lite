@@ -114,6 +114,22 @@ export const WebsiteAppointmentsConfigSchema = z.object({
 export const HeroSectionSchema = z.object({
   isActive: z.boolean().optional(),
   sortOrder: z.number().int().nonnegative().optional(),
+  // Common hero editorial controls (shared across all slides)
+  showConsultDoctor: z.boolean().optional(),
+  consultDoctorLabel: z.string().max(50).optional().or(z.literal('')),
+  consultDoctorLink: z.string().max(200).optional().or(z.literal('')),
+  showCraftedBy: z.boolean().optional(),
+  craftedByText: z.string().max(300).optional().or(z.literal('')),
+  showSocialLinks: z.boolean().optional(),
+  socialLinks: z
+    .object({
+      twitter: z.string().url().nullable().optional().or(z.literal('')),
+      facebook: z.string().url().nullable().optional().or(z.literal('')),
+      instagram: z.string().url().nullable().optional().or(z.literal('')),
+      youtube: z.string().url().nullable().optional().or(z.literal('')),
+      whatsapp: z.string().nullable().optional().or(z.literal('')),
+    })
+    .optional(),
 }).partial().passthrough();
 
 export const ImageSliderItemSchema = z.object({

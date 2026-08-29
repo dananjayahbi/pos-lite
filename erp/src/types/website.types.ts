@@ -35,6 +35,40 @@ export interface WebsiteHeroSlideData {
 
 // ── Section-specific configurations ──────────────────────────────────────────
 
+/** Social links for the hero right vertical dock (common to all slides). */
+export interface WebsiteHeroSocialLinks {
+  twitter?: string;
+  facebook?: string;
+  instagram?: string;
+  youtube?: string;
+  whatsapp?: string;
+}
+
+/**
+ * Hero section config — shared across ALL slides (as opposed to `heroSlides`,
+ * which are per-slide). Holds the editorial controls for the hero layout:
+ * the "Consult Doctor" outline button, the "Crafted by ..." line, and the
+ * social links in the right vertical dock.
+ */
+export interface WebsiteHeroSection {
+  isActive: boolean;
+  sortOrder: number;
+  /** Show/hide the "Consult Doctor" outline button. */
+  showConsultDoctor?: boolean;
+  /** Button label, e.g. "Consult Doctor". Empty -> hidden. */
+  consultDoctorLabel?: string;
+  /** Target link for the button. Defaults to the appointments page. */
+  consultDoctorLink?: string;
+  /** Show/hide the "Crafted by ..." line. */
+  showCraftedBy?: boolean;
+  /** The crafted-by text, e.g. "Crafted by Wedagedara Herbal Sanctuary". */
+  craftedByText?: string;
+  /** Show/hide the vertical social dock. */
+  showSocialLinks?: boolean;
+  /** Vertical-dock social links (only entries with a URL render). */
+  socialLinks?: WebsiteHeroSocialLinks;
+}
+
 /** Category grid section config */
 export interface CategoriesSection {
   isActive: boolean;
