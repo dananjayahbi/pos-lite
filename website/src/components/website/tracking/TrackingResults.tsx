@@ -18,8 +18,8 @@ interface TrackingResultsProps {
 export function TrackingResults({ orders, lookupLabel }: TrackingResultsProps) {
   if (orders.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-6 text-center">
-        <p className="text-sm text-gray-500">
+      <div className="rounded-2xl border border-white/10 bg-[#082017]/70 p-6 text-center">
+        <p className="text-sm text-[#94a3b8]">
           No orders found for that {lookupLabel}. Double-check and try again.
         </p>
       </div>
@@ -31,14 +31,14 @@ export function TrackingResults({ orders, lookupLabel }: TrackingResultsProps) {
       {orders.map((order) => (
         <div
           key={order.orderRef}
-          className="rounded-lg border border-gray-200 bg-white p-6"
+          className="rounded-2xl border border-white/10 bg-[#082017]/70 p-6 backdrop-blur-sm"
         >
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-medium text-gray-900">
+              <h2 className="text-base font-medium text-white">
                 Order {order.orderRef}
               </h2>
-              <p className="text-xs text-gray-500">{order.payment}</p>
+              <p className="text-xs text-[#94a3b8]">{order.payment}</p>
             </div>
             <TrackingStatusBadge status={order.status} />
           </div>

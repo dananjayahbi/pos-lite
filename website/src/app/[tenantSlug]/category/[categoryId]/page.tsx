@@ -30,20 +30,20 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
   if (!category || !tenant) notFound();
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-[#051610] text-[#cbd5e1]">
       {/* Header */}
-      <header className="border-b border-gray-100">
+      <header className="border-b border-white/10">
         <div className="max-w-7xl mx-auto flex items-center justify-between px-4 py-3">
           <Link
             href={tenantHomePath(tenantSlug)}
-            className="text-lg font-medium"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+            className="text-lg font-medium text-white"
+            style={{ fontFamily: 'var(--font-serif), serif' }}
           >
             {tenant.name}
           </Link>
           <Link
             href={tenantHomePath(tenantSlug)}
-            className="text-sm text-gray-500 hover:text-black transition-colors"
+            className="text-sm text-[#94a3b8] hover:text-[#97c93e] transition-colors"
           >
             ← Back to store
           </Link>

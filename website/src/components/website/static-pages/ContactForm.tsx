@@ -24,12 +24,12 @@ export function ContactForm() {
 
   if (submitted) {
     return (
-      <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 mb-4">
-          <CheckCircle size={24} className="text-green-600" />
+      <div className="rounded-2xl border border-[#97c93e]/30 bg-[#082017]/70 p-8 text-center">
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#97c93e]/15 mb-4">
+          <CheckCircle size={24} className="text-[#97c93e]" />
         </div>
-        <h3 className="text-lg font-semibold text-green-800 mb-1">Thank You!</h3>
-        <p className="text-sm text-green-700 max-w-sm mx-auto">
+        <h3 className="text-lg font-semibold text-white mb-1">Thank You!</h3>
+        <p className="text-sm text-[#cbd5e1] max-w-sm mx-auto">
           Your message has been received. We&apos;ll get back to you as soon as possible.
         </p>
       </div>
@@ -41,7 +41,7 @@ export function ContactForm() {
       <div>
         <label
           htmlFor="name"
-          className="block text-sm font-medium text-[var(--site-primary,#0a0a0a)] mb-1.5"
+          className="block text-sm font-medium text-white mb-1.5"
         >
           Name
         </label>
@@ -50,14 +50,14 @@ export function ContactForm() {
           id="name"
           name="name"
           required
-          className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[var(--site-accent,#b4946e)] focus:ring-2 focus:ring-[var(--site-accent,#b4946e)]/20 outline-none transition-all duration-200"
+          className="w-full rounded-lg border border-white/12 bg-[#051610] px-4 py-3 text-sm text-white placeholder:text-[#64748b] focus:border-[#97c93e] focus:ring-2 focus:ring-[#97c93e]/20 outline-none transition-all duration-200"
           placeholder="Your name"
         />
       </div>
       <div>
         <label
           htmlFor="email"
-          className="block text-sm font-medium text-[var(--site-primary,#0a0a0a)] mb-1.5"
+          className="block text-sm font-medium text-white mb-1.5"
         >
           Email
         </label>
@@ -66,14 +66,14 @@ export function ContactForm() {
           id="email"
           name="email"
           required
-          className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[var(--site-accent,#b4946e)] focus:ring-2 focus:ring-[var(--site-accent,#b4946e)]/20 outline-none transition-all duration-200"
+          className="w-full rounded-lg border border-white/12 bg-[#051610] px-4 py-3 text-sm text-white placeholder:text-[#64748b] focus:border-[#97c93e] focus:ring-2 focus:ring-[#97c93e]/20 outline-none transition-all duration-200"
           placeholder="you@example.com"
         />
       </div>
       <div>
         <label
           htmlFor="subject"
-          className="block text-sm font-medium text-[var(--site-primary,#0a0a0a)] mb-1.5"
+          className="block text-sm font-medium text-white mb-1.5"
         >
           Subject
         </label>
@@ -81,14 +81,14 @@ export function ContactForm() {
           type="text"
           id="subject"
           name="subject"
-          className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[var(--site-accent,#b4946e)] focus:ring-2 focus:ring-[var(--site-accent,#b4946e)]/20 outline-none transition-all duration-200"
+          className="w-full rounded-lg border border-white/12 bg-[#051610] px-4 py-3 text-sm text-white placeholder:text-[#64748b] focus:border-[#97c93e] focus:ring-2 focus:ring-[#97c93e]/20 outline-none transition-all duration-200"
           placeholder="What is this about?"
         />
       </div>
       <div>
         <label
           htmlFor="message"
-          className="block text-sm font-medium text-[var(--site-primary,#0a0a0a)] mb-1.5"
+          className="block text-sm font-medium text-white mb-1.5"
         >
           Message
         </label>
@@ -97,18 +97,18 @@ export function ContactForm() {
           name="message"
           rows={5}
           required
-          className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[var(--site-accent,#b4946e)] focus:ring-2 focus:ring-[var(--site-accent,#b4946e)]/20 outline-none transition-all duration-200 resize-none"
+          className="w-full rounded-lg border border-white/12 bg-[#051610] px-4 py-3 text-sm text-white placeholder:text-[#64748b] focus:border-[#97c93e] focus:ring-2 focus:ring-[#97c93e]/20 outline-none transition-all duration-200 resize-none"
           placeholder="How can we help you?"
         />
       </div>
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-lg bg-[var(--site-primary,#0a0a0a)] py-3.5 text-sm font-medium uppercase tracking-wider text-white transition-all duration-200 hover:bg-[var(--site-accent,#b4946e)] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        className="w-full rounded-full bg-[#97c93e] py-3.5 text-sm font-semibold uppercase tracking-wider text-[#051610] transition-all duration-200 hover:bg-[#b2db58] hover:-translate-y-0.5 hover:shadow-[0_8px_25px_rgba(151,201,62,0.3)] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none flex items-center justify-center gap-2"
       >
         {loading ? (
           <>
-            <span className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full" />
+            <span className="animate-spin h-4 w-4 border-2 border-[#051610]/30 border-t-[#051610] rounded-full" />
             Sending...
           </>
         ) : (

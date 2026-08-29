@@ -23,7 +23,7 @@ export function ShopProductGrid({
   if (products.length === 0) {
     return (
       <div className="py-16 text-center">
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-[#94a3b8]">
           {query
             ? `No products found for "${query}".`
             : 'No products found.'}
@@ -35,8 +35,8 @@ export function ShopProductGrid({
   return (
     <div>
       {query && (
-        <p className="mb-4 text-sm text-gray-600">
-          Results for <span className="font-medium">&quot;{query}&quot;</span>
+        <p className="mb-4 text-sm text-[#cbd5e1]">
+          Results for <span className="font-medium text-white">&quot;{query}&quot;</span>
         </p>
       )}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 md:gap-6">

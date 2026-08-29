@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import type { StoreReferenceSection as StoreReferenceSectionType } from '@/types/website.types';
+import type { StoreReferenceSection as StoreReferenceSectionConfig } from '@/types/website.types';
+import { SectionAmbience } from '@/components/website/sections/SectionAmbience';
 
 interface StoreReferenceSectionProps {
   config: Record<string, unknown>;
@@ -10,193 +11,237 @@ interface StoreReferenceSectionProps {
 }
 
 /**
- * Section 08 — Store reference with full-width background image,
- * semi-transparent overlay on the right half, and an embedded Google Map.
+ * Section 09 — STORE REFERENCE (Glassmorphic Sanctuary Portal).
+ * Full-bleed parallax background + radial vignette containing a glass box
+ * (title, subtitle, address card) on the left and a dark-themed Google Map
+ * on the right.
  */
 export function StoreReferenceSection({ config }: StoreReferenceSectionProps) {
-  const sectionConfig = config as unknown as StoreReferenceSectionType;
+  const section = config as unknown as StoreReferenceSectionConfig;
 
-  if (!sectionConfig.isActive) return null;
+  if (!section.isActive) return null;
 
-  const bgImage = sectionConfig.desktopImageUrl;
-  if (!bgImage) return null;
-
-  const mapUrl = sectionConfig.mapEmbedUrl || '';
+  const bg = section.desktopImageUrl;
+  const mapSrc = section.mapEmbedUrl;
 
   return (
-    <section className="website-section">
-      <div className="store-reference">
-        {/* Background image container */}
-        <div
-          className="store-reference-bg"
-          style={{
-            backgroundImage: `url(${bgImage})`,
-          }}
-        />
+    <section id="store-reference-section" className="relative w-full py-24 sm:py-32 lg:py-40 overflow-hidden border-t border-white/5">
+      {/* Cinematic full-bleed background */}
+      {bg && <div className="store-bg-layer" style={{ backgroundImage: `url('${bg}')` }} />}
+      <div className="store-bg-vignette" />
 
-        {/* Content overlay — right half on desktop, full on mobile */}
-        <div className="store-reference-overlay">
-          <div className="store-reference-content">
-            {sectionConfig.title && (
-              <h2 className="store-reference-title">{sectionConfig.title}</h2>
-            )}
+      <SectionAmbience
+        leaves={[
+          { icon: 'fa-solid fa-seedling', classes: 'top-16 left-12 text-6xl text-[#97c93e]', speed: 0.22 },
+          { icon: 'fa-solid fa-leaf', classes: 'bottom-20 right-10 text-7xl text-emerald-400', speed: 0.3 },
+        ]}
+        glows={['top-1/3 right-1/4 w-96 h-96 bg-[#97c93e]/10', 'bottom-10 left-1/4 w-80 h-80 bg-emerald-500/10']}
+      />
 
-            {sectionConfig.subtitle && (
-              <p className="store-reference-subtitle">{sectionConfig.subtitle}</p>
-            )}
+      <div className="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
+        <div className="reveal-on-scroll store-portal-box">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+            {/* Left: title + subtitle + address */}
+            <div className="lg:col-span-5 flex flex-col justify-center">
+              <span className="text-xs font-semibold tracking-[0.3em] uppercase text-[#97c93e] block mb-3 font-sans">
+                PHYSICAL SANCTUARY
+              </span>
+              <h2 className="store-title">{section.title}</h2>
+              {section.subtitle && <p className="store-subtitle">{section.subtitle}</p>}
 
-            {sectionConfig.addressLine1 && (
-              <p className="store-reference-address">{sectionConfig.addressLine1}</p>
-            )}
+              {(section.addressLine1 || section.addressLine2) && (
+                <div className="store-address-box">
+                  <div className="store-address-icon">
+                    <i className="fa-solid fa-location-dot" />
+                  </div>
+                  <div className="flex flex-col">
+                    {section.addressLine1 && (
+                      <span className="store-address-line1">{section.addressLine1}</span>
+                    )}
+                    {section.addressLine2 && (
+                      <span className="store-address-line2">{section.addressLine2}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
-            {sectionConfig.addressLine2 && (
-              <p className="store-reference-address">{sectionConfig.addressLine2}</p>
-            )}
-
-            {mapUrl && (
-              <div className="store-reference-map">
-                <iframe
-                  src={mapUrl}
-                  width="100%"
-                  height="200"
-                  style={{ border: 0, borderRadius: '4px' }}
-                  allowFullScreen
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                  title="Store location map"
-                />
+            {/* Right: map */}
+            <div className="lg:col-span-7">
+              <div className="store-map-frame">
+                {mapSrc ? (
+                  <iframe
+                    title={section.title}
+                    src={mapSrc}
+                    className="store-map-iframe"
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    allowFullScreen
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">
+                    Map unavailable
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
       </div>
 
       <style jsx>{`
-        .store-reference {
-          position: relative;
-          width: 100%;
-          max-height: 800px;
-          min-height: 400px;
-          overflow: hidden;
-        }
-
-        /* Full-width background image */
-        .store-reference-bg {
+        .store-bg-layer {
           position: absolute;
-          inset: 0;
+          inset: -60px 0 -60px 0;
+          height: calc(100% + 120px);
           background-size: cover;
           background-position: center;
-          background-repeat: no-repeat;
+          filter: brightness(0.25) saturate(0.8);
+          will-change: transform;
           z-index: 0;
         }
-
-        /* Overlay — right half on desktop, full width on mobile */
-        .store-reference-overlay {
+        .store-bg-vignette {
           position: absolute;
-          top: 0;
-          bottom: 0;
-          right: 0;
-          width: 50%;
-          z-index: 1;
-          background: linear-gradient(
-            to right,
-            rgba(43, 37, 32, 0.1),
-            rgba(43, 37, 32, 0.75) 30%,
-            rgba(43, 37, 32, 0.85)
+          inset: 0;
+          background: radial-gradient(
+            circle at 50% 50%,
+            rgba(5, 22, 16, 0.75) 0%,
+            rgba(5, 22, 16, 0.92) 65%,
+            #051610 100%
           );
+          z-index: 2;
+          pointer-events: none;
+        }
+        .store-portal-box {
+          background: rgba(8, 32, 23, 0.78);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 36px;
+          padding: 32px 24px;
+          box-shadow:
+            0 25px 60px -15px rgba(0, 0, 0, 0.9),
+            0 0 35px rgba(151, 201, 62, 0.08);
+          z-index: 10;
+          position: relative;
+        }
+        @media (min-width: 640px) {
+          .store-portal-box {
+            padding: 40px 36px;
+          }
+        }
+        @media (min-width: 1024px) {
+          .store-portal-box {
+            padding: 56px 48px;
+          }
+        }
+        .store-title {
+          font-family: var(--font-serif);
+          font-size: 2rem;
+          font-weight: 700;
+          color: #ffffff;
+          letter-spacing: 0.02em;
+          line-height: 1.2;
+        }
+        @media (min-width: 640px) {
+          .store-title {
+            font-size: 2.5rem;
+          }
+        }
+        @media (min-width: 1024px) {
+          .store-title {
+            font-size: 3rem;
+          }
+        }
+        .store-subtitle {
+          font-size: 0.9375rem;
+          color: #cbd5e1;
+          font-weight: 300;
+          line-height: 1.7;
+          margin-top: 16px;
+        }
+        @media (min-width: 640px) {
+          .store-subtitle {
+            font-size: 1rem;
+          }
+        }
+        .store-address-box {
+          display: flex;
+          gap: 16px;
+          margin-top: 28px;
+          padding: 18px 22px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 20px;
+          transition: all 300ms ease;
+        }
+        .store-address-box:hover {
+          background: rgba(151, 201, 62, 0.06);
+          border-color: rgba(151, 201, 62, 0.25);
+        }
+        .store-address-icon {
+          width: 44px;
+          height: 44px;
+          border-radius: 9999px;
+          background: rgba(151, 201, 62, 0.15);
+          border: 1px solid rgba(151, 201, 62, 0.3);
           display: flex;
           align-items: center;
           justify-content: center;
+          color: #97c93e;
+          font-size: 18px;
+          flex-shrink: 0;
         }
-
-        .store-reference-content {
-          padding: 40px 32px;
-          max-width: 420px;
-          width: 100%;
-          text-align: center;
-        }
-
-        .store-reference-title {
-          font-family: 'Cormorant Garamond', 'Times New Roman', serif;
-          font-size: 36px;
-          font-weight: 400;
+        .store-address-line1 {
+          font-family: var(--font-sans);
+          font-size: 1rem;
+          font-weight: 700;
           color: #ffffff;
-          margin-bottom: 12px;
-          line-height: 1.2;
         }
-
-        .store-reference-subtitle {
-          font-size: 15px;
-          color: #f5ede3;
-          margin-bottom: 16px;
-          line-height: 1.5;
-          font-family: 'Montserrat', sans-serif;
+        @media (min-width: 640px) {
+          .store-address-line1 {
+            font-size: 1.0625rem;
+          }
         }
-
-        .store-reference-address {
-          font-size: 13px;
-          color: #d1c4b8;
-          margin-bottom: 6px;
-          line-height: 1.6;
-          font-family: 'Montserrat', sans-serif;
+        .store-address-line2 {
+          font-family: var(--font-sans);
+          font-size: 0.8125rem;
+          color: #97c93e;
+          letter-spacing: 0.04em;
+          margin-top: 2px;
         }
-
-        .store-reference-map {
-          margin-top: 20px;
+        @media (min-width: 640px) {
+          .store-address-line2 {
+            font-size: 0.875rem;
+          }
+        }
+        .store-map-frame {
+          border-radius: 24px;
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.8);
+          height: 320px;
+          overflow: hidden;
+          transform-style: preserve-3d;
+        }
+        @media (min-width: 640px) {
+          .store-map-frame {
+            height: 360px;
+          }
+        }
+        @media (min-width: 1024px) {
+          .store-map-frame {
+            height: 400px;
+          }
+        }
+        .store-map-iframe {
           width: 100%;
+          height: 100%;
+          border: 0;
+          filter: grayscale(85%) invert(92%) hue-rotate(180deg) brightness(85%) contrast(110%);
+          transition: filter 500ms ease;
         }
-
-        /* Mobile */
-        @media (max-width: 768px) {
-          .store-reference {
-            max-height: none;
-            min-height: 500px;
-          }
-
-          .store-reference-overlay {
-            position: absolute;
-            top: auto;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            width: 100%;
-            height: auto;
-            min-height: 55%;
-            background: linear-gradient(
-              to top,
-              rgba(43, 37, 32, 0.92),
-              rgba(43, 37, 32, 0.6) 60%,
-              rgba(43, 37, 32, 0.1)
-            );
-            align-items: flex-end;
-          }
-
-          .store-reference-content {
-            padding: 32px 20px 40px;
-            max-width: 100%;
-          }
-
-          .store-reference-title {
-            font-size: 28px;
-          }
-
-          .store-reference-subtitle {
-            font-size: 14px;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .store-reference {
-            min-height: 420px;
-          }
-
-          .store-reference-title {
-            font-size: 24px;
-          }
-
-          .store-reference-content {
-            padding: 24px 16px 32px;
-          }
+        .store-map-frame:hover .store-map-iframe {
+          filter: grayscale(35%) invert(92%) hue-rotate(180deg) brightness(92%) contrast(105%);
         }
       `}</style>
     </section>

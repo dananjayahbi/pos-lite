@@ -37,19 +37,19 @@ export function CartView({ tenantSlug }: CartViewProps) {
   if (lines.length === 0) {
     return (
       <div className="mx-auto flex max-w-2xl flex-col items-center justify-center gap-4 py-20 text-center">
-        <ShoppingBag size={56} className="text-gray-300" />
+        <ShoppingBag size={56} className="text-[#64748b]" />
         <h1
-          className="text-2xl font-medium"
-          style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+          className="text-2xl font-medium text-white"
+          style={{ fontFamily: 'var(--font-serif), serif' }}
         >
           Your cart is empty
         </h1>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-[#94a3b8]">
           Browse our shop and add items to start an order.
         </p>
         <Link
           href={ROUTES.shop(tenantSlug)}
-          className="mt-2 inline-flex items-center gap-2 rounded bg-black px-6 py-3 text-sm font-medium uppercase tracking-wider text-white transition-colors hover:bg-gray-800"
+          className="mt-2 inline-flex items-center gap-2 rounded-full bg-[#97c93e] px-6 py-3 text-sm font-semibold uppercase tracking-wider text-[#051610] transition-all hover:-translate-y-0.5 hover:bg-[#b2db58] hover:shadow-[0_8px_25px_rgba(151,201,62,0.3)]"
         >
           <ArrowLeft size={14} /> Continue Shopping
         </Link>
@@ -62,12 +62,12 @@ export function CartView({ tenantSlug }: CartViewProps) {
       {/* Lines */}
       <section>
         <h1
-          className="mb-4 text-2xl font-medium"
-          style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+          className="mb-4 text-2xl font-medium text-white"
+          style={{ fontFamily: 'var(--font-serif), serif' }}
         >
           Your Cart ({totals.itemCount})
         </h1>
-        <div className="rounded-lg border border-gray-200 bg-white px-4">
+        <div className="space-y-3 rounded-2xl border border-white/10 bg-[#082017]/70 p-4 backdrop-blur-sm">
           {lines.map((line) => (
             <CartLineItem
               key={line.variantId}
@@ -85,7 +85,7 @@ export function CartView({ tenantSlug }: CartViewProps) {
         </div>
         <Link
           href={ROUTES.shop(tenantSlug)}
-          className="mt-4 inline-flex items-center gap-1 text-xs uppercase tracking-wider text-gray-600 hover:text-black"
+          className="mt-4 inline-flex items-center gap-1 text-xs uppercase tracking-wider text-[#94a3b8] hover:text-[#97c93e]"
         >
           <ArrowLeft size={12} /> Continue Shopping
         </Link>
@@ -93,9 +93,9 @@ export function CartView({ tenantSlug }: CartViewProps) {
 
       {/* Summary */}
       <aside className="md:sticky md:top-6 md:self-start">
-        <div className="rounded-lg border border-gray-200 bg-white p-5">
+        <div className="rounded-2xl border border-white/10 bg-[#082017]/70 p-5 backdrop-blur-sm">
           <CartSummary tenantSlug={tenantSlug} totals={totals} variant="page" />
-          <p className="mt-3 text-[11px] leading-relaxed text-gray-500">
+          <p className="mt-3 text-[11px] leading-relaxed text-[#94a3b8]">
             Checkout is coming soon. For now, contact the store to finalize your
             order.
           </p>

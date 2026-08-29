@@ -15,6 +15,7 @@ interface ProductGalleryProps {
  * across every variant and lets the visitor browse them.
  */
 export function ProductGallery({ variants, productName, mainImageUrl }: ProductGalleryProps) {
+  const [active, setActive] = useState(0);
   const safeVariants = variants ?? [];
   const images = Array.from(
     new Set(
@@ -27,18 +28,16 @@ export function ProductGallery({ variants, productName, mainImageUrl }: ProductG
 
   if (images.length === 0) {
     return (
-      <div className="flex aspect-square items-center justify-center rounded-lg bg-gray-100 text-sm text-gray-400">
+      <div className="flex aspect-square items-center justify-center rounded-xl border border-white/10 bg-[#082017] text-sm text-[#64748b]">
         Image unavailable
       </div>
     );
   }
 
-  const [active, setActive] = useState(0);
-
   return (
     <div className="flex flex-col gap-3">
       {/* Main image */}
-      <div className="aspect-square overflow-hidden rounded-lg bg-gray-100">
+      <div className="aspect-square overflow-hidden rounded-xl border border-white/10 bg-[#082017]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={images[active]}
@@ -54,8 +53,8 @@ export function ProductGallery({ variants, productName, mainImageUrl }: ProductG
             <button
               key={src}
               onClick={() => setActive(i)}
-              className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded border-2 transition-colors ${
-                i === active ? 'border-black' : 'border-transparent opacity-60 hover:opacity-100'
+              className={`h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border-2 transition-colors ${
+                i === active ? 'border-[#97c93e]' : 'border-transparent opacity-60 hover:opacity-100'
               }`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}

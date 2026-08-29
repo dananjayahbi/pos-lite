@@ -14,7 +14,7 @@ export function MapEmbed({ embedUrl, address }: MapEmbedProps) {
   if (embedUrl) {
     return (
       <section className="py-8">
-        <div className="rounded-xl overflow-hidden shadow-md border border-black/5">
+        <div className="rounded-xl overflow-hidden shadow-md border border-white/10 bg-[#082017]">
           <iframe
             src={embedUrl}
             width="100%"
@@ -38,7 +38,7 @@ export function MapEmbed({ embedUrl, address }: MapEmbedProps) {
 
     return (
       <section className="py-8">
-        <div className="rounded-xl overflow-hidden shadow-md border border-black/5">
+        <div className="rounded-xl overflow-hidden shadow-md border border-white/10 bg-[#082017]">
           <iframe
             src={mapsUrl}
             width="100%"

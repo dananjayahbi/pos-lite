@@ -20,19 +20,19 @@ export default async function TrackPage({ params }: TrackPageProps) {
   const tenant = await getTenantInfo(tenantSlug).catch(() => null);
 
   return (
-    <div className="min-h-screen bg-white">
-      <header className="border-b border-gray-100">
+    <div className="min-h-screen bg-[#051610] text-[#cbd5e1]">
+      <header className="border-b border-white/10">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           <Link
             href={tenantHomePath(tenantSlug)}
-            className="text-lg font-medium"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+            className="text-lg font-medium text-white"
+            style={{ fontFamily: 'var(--font-serif), serif' }}
           >
             {tenant?.name ?? 'Store'}
           </Link>
           <Link
             href={tenantHomePath(tenantSlug)}
-            className="text-sm text-gray-500 transition-colors hover:text-black"
+            className="text-sm text-[#94a3b8] transition-colors hover:text-[#97c93e]"
           >
             ← Back to store
           </Link>
@@ -41,12 +41,12 @@ export default async function TrackPage({ params }: TrackPageProps) {
 
       <main className="mx-auto max-w-3xl px-4 py-10">
         <h1
-          className="mb-1 text-2xl font-medium"
-          style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+          className="mb-1 text-2xl font-medium text-white"
+          style={{ fontFamily: 'var(--font-serif), serif' }}
         >
           Track your order
         </h1>
-        <p className="mb-6 text-sm text-gray-500">
+        <p className="mb-6 text-sm text-[#94a3b8]">
           Enter your order reference or phone number to see the latest delivery
           status and timeline.
         </p>

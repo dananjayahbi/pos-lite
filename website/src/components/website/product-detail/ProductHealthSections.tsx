@@ -24,13 +24,16 @@ export function ProductHealthSections({ product }: ProductHealthSectionsProps) {
   if (sections.length === 0) return null;
 
   return (
-    <div className="mt-8 border-t border-gray-100 pt-6 space-y-6">
+    <div className="mt-8 border-t border-white/10 pt-6 space-y-6">
       {sections.map((section) => (
         <div key={section.key}>
-          <h3 className="text-base font-semibold uppercase tracking-wide text-gray-900">
+          <h3
+            className="text-base font-semibold uppercase tracking-wide text-white"
+            style={{ fontFamily: 'var(--font-serif), serif' }}
+          >
             {section.title}
           </h3>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-600">
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-[#cbd5e1]">
             {section.content}
           </p>
         </div>

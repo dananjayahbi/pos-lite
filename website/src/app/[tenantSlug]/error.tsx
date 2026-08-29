@@ -18,30 +18,30 @@ export default function StorefrontError({ error, reset }: ErrorProps) {
   const slug = params?.tenantSlug ?? 'home';
 
   return (
-    <main className="min-h-[60vh] flex flex-col items-center justify-center px-4 bg-[#ece2d6] text-center">
+    <main className="min-h-[60vh] flex flex-col items-center justify-center px-4 bg-[#051610] text-center">
       <h1
-        className="text-3xl md:text-5xl mb-4"
-        style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+        className="text-3xl md:text-5xl mb-4 text-white"
+        style={{ fontFamily: 'var(--font-serif), serif' }}
       >
         Something went wrong
       </h1>
-      <p className="text-base text-gray-700 mb-2 max-w-md">
+      <p className="text-base text-[#cbd5e1] mb-2 max-w-md">
         We couldn&apos;t load this storefront right now. Please try again in a
         moment.
       </p>
       {error.digest && (
-        <p className="text-xs text-gray-500 mb-6">Error ID: {error.digest}</p>
+        <p className="text-xs text-[#94a3b8] mb-6">Error ID: {error.digest}</p>
       )}
       <div className="flex gap-3">
         <button
           onClick={reset}
-          className="inline-block px-6 py-3 border-2 border-black text-black uppercase text-xs tracking-wider hover:bg-black hover:text-white transition-colors"
+          className="inline-block px-6 py-3 rounded-full border-2 border-[#97c93e] text-[#97c93e] uppercase text-xs tracking-wider hover:bg-[#97c93e] hover:text-[#051610] transition-colors"
         >
           Try Again
         </button>
         <Link
           href={tenantHomePath(slug)}
-          className="inline-block px-6 py-3 border-2 border-transparent text-black uppercase text-xs tracking-wider hover:underline"
+          className="inline-block px-6 py-3 rounded-full border-2 border-transparent text-[#cbd5e1] uppercase text-xs tracking-wider hover:text-[#97c93e] hover:underline"
         >
           Go Home
         </Link>

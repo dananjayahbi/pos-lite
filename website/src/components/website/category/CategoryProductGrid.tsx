@@ -15,7 +15,7 @@ interface CategoryProductGridProps {
 export function CategoryProductGrid({ products, tenantSlug }: CategoryProductGridProps) {
   if (products.length === 0) {
     return (
-      <div className="py-16 text-center text-gray-500">
+      <div className="py-16 text-center text-[#94a3b8]">
         <p>No products found in this category.</p>
       </div>
     );

@@ -28,18 +28,18 @@ export function AboutStorySection({
         <div className={imagePosition === 'left' ? 'md:[direction:ltr]' : ''}>
           {title && (
             <h2
-              className="text-2xl md:text-3xl font-medium mb-4 text-[var(--site-primary,#0a0a0a)]"
-              style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+              className="text-2xl md:text-3xl font-medium mb-4 text-white"
+              style={{ fontFamily: 'var(--font-serif), serif' }}
             >
               {title}
             </h2>
           )}
           {content && (
-            <div className="prose prose-gray max-w-none">
+            <div className="prose prose-invert max-w-none">
               {content.split('\n').map((paragraph, i) => (
                 <p
                   key={i}
-                  className="text-sm md:text-base leading-relaxed text-gray-600 mb-3"
+                  className="text-sm md:text-base leading-relaxed text-[#cbd5e1] mb-3"
                 >
                   {paragraph}
                 </p>

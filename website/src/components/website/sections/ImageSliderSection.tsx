@@ -1,107 +1,58 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
-import { CarouselSlider } from '@/components/website/sections/CarouselSlider';
-import type {
-  ImageSliderSection as ImageSliderSectionConfig,
-  ImageSliderItem,
-} from '@/types/website.types';
+import type { PublicProduct } from '@/types/website.types';
+import { DarkProductCard } from '@/components/website/sections/DarkProductCard';
+import { DarkCarousel } from '@/components/website/sections/DarkCarousel';
+import { SectionTitle } from '@/components/website/sections/SectionTitle';
+import { SectionAmbience } from '@/components/website/sections/SectionAmbience';
 
 interface ImageSliderSectionProps {
   config: Record<string, unknown>;
   websiteConfig: Record<string, unknown>;
   tenantSlug: string;
+  latestProducts?: PublicProduct[];
 }
 
 /**
- * Section 02 — Horizontal image slider.
- * - 100% width, max-height 400px
- * - Uses shared CarouselSlider for scroll-snap horizontal sliding
- * - Up to 7 configurable images, filtered to active only
- * - Each card fills its container with object-fit: cover
- * - Optional linkUrl wraps image in anchor tag
+ * Section 03 — "CURATED BOTANICAL COLLECTIONS".
+ * A full-width horizontal slider of dark tilt product cards flanked by arrows,
+ * with edge fades and a progress bar. Uses the latest/config images or products.
  */
-export function ImageSliderSection({ config }: ImageSliderSectionProps) {
-  const section = config as unknown as ImageSliderSectionConfig;
-
-  if (!section.isActive) return null;
-
-  const activeImages: ImageSliderItem[] = (section.images ?? [])
-    .filter((item) => item.isActive)
-    .sort((a, b) => a.sortOrder - b.sortOrder)
-    .slice(0, 7);
-
-  if (activeImages.length === 0) return null;
-
-  const cards = activeImages.map((item, idx) => {
-    const imgElement = (
-      <img
-        src={item.imageUrl}
-        alt={item.alt || ''}
-        className="w-full h-full object-cover"
-        loading={idx < 3 ? 'eager' : 'lazy'}
-      />
-    );
-
-    const card = (
-      <div className="image-slider-card" key={idx}>
-        {item.linkUrl ? (
-          <Link
-            href={item.linkUrl}
-            className="block w-full h-full"
-            aria-label={item.alt || 'Slider image'}
-          >
-            {imgElement}
-          </Link>
-        ) : (
-          imgElement
-        )}
-      </div>
-    );
-
-    return card;
-  });
+export function ImageSliderSection({
+  tenantSlug,
+  latestProducts,
+}: ImageSliderSectionProps) {
+  const products = latestProducts ?? [];
+  const display = products.slice(0, 7);
 
   return (
-    <section className="image-slider-section">
-      <CarouselSlider
-        sliderId="image-slider"
-        desktopCards={3}
-        tabletCards={2}
-        mobileCards={1}
-        gap={8}
-        infinite
-      >
-        {cards}
-      </CarouselSlider>
+    <section id="products-section" className="section-dark relative w-full py-20 sm:py-28 lg:py-32 overflow-hidden">
+      <SectionAmbience
+        leaves={[
+          { icon: 'fa-solid fa-leaf', classes: 'top-10 left-6 text-6xl text-[#97c93e]', speed: 0.2 },
+          { icon: 'fa-solid fa-seedling', classes: 'bottom-16 right-10 text-7xl text-emerald-400', speed: 0.32 },
+          { icon: 'fa-solid fa-spa', classes: 'top-1/2 left-1/4 text-5xl text-lime-300', speed: 0.14 },
+          { icon: 'fa-solid fa-cannabis', classes: 'top-20 right-1/4 text-4xl text-emerald-300', speed: 0.25 },
+        ]}
+      />
 
-      <style jsx>{`
-        .image-slider-section {
-          width: 100%;
-          overflow: hidden;
-        }
+      <SectionTitle
+        label="AUTHENTIC AYURVEDIC CARE"
+        title="CURATED BOTANICAL COLLECTIONS"
+        subtitle="Handcrafted formulas extracted from Ceylon medicinal herbs to balance mind, body, and spirit. Click any product to explore detailed benefits."
+      />
 
-        :global(.image-slider-card) {
-          aspect-ratio: 16 / 9;
-          max-height: 400px;
-          overflow: hidden;
-          border-radius: 4px;
-        }
-
-        :global(.image-slider-card img) {
-          display: block;
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-        }
-
-        @media (max-width: 600px) {
-          :global(.image-slider-card) {
-            max-height: 280px;
-          }
-        }
-      `}</style>
+      <DarkCarousel sliderId="products" showProgress className="relative">
+        {display.map((product) => (
+          <DarkProductCard
+            key={product.id}
+            product={product}
+            tenantSlug={tenantSlug}
+            variant="tilt"
+          />
+        ))}
+      </DarkCarousel>
     </section>
   );
 }

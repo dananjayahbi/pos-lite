@@ -60,7 +60,7 @@ export function AddToCartButton({
         disabled
         aria-disabled="true"
         className={cn(
-          'w-full cursor-not-allowed rounded bg-gray-200 py-3 text-sm font-medium uppercase tracking-wider text-gray-500 sm:w-auto sm:px-12',
+          'w-full cursor-not-allowed rounded-full bg-white/10 py-3 text-sm font-medium uppercase tracking-wider text-[#64748b] sm:w-auto sm:px-12',
           className,
         )}
       >
@@ -87,18 +87,18 @@ export function AddToCartButton({
 
   const styleClasses =
     variantStyle === 'solid'
-      ? 'border border-black bg-black text-white hover:bg-gray-800'
-      : 'border border-black text-black bg-transparent hover:bg-black hover:text-white';
+      ? 'border border-[#97c93e] bg-[#97c93e] text-[#051610] hover:bg-[#b2db58] hover:border-[#b2db58]'
+      : 'border border-[#97c93e]/60 text-[#97c93e] bg-transparent hover:bg-[#97c93e] hover:text-[#051610]';
 
   return (
     <button
       type="button"
       onClick={handleClick}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded font-medium uppercase tracking-wider transition-colors',
+        'inline-flex items-center justify-center gap-2 rounded-full font-semibold uppercase tracking-wider transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_25px_rgba(151,201,62,0.3)]',
         sizeClasses,
         styleClasses,
-        alreadyInCart && 'border-green-700 bg-green-700 hover:bg-green-800',
+        alreadyInCart && 'border-[#97c93e] bg-[#97c93e] text-[#051610] hover:bg-[#97c93e]',
         className,
       )}
       aria-label={`Add ${variant.sku} to cart`}

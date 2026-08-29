@@ -3,19 +3,19 @@ import { tenantHomePath } from '@/lib/tenant';
 
 export default function NotFound() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-4 bg-[#ece2d6] text-center">
+    <main className="min-h-screen flex flex-col items-center justify-center px-4 bg-[#051610] text-center">
       <h1
-        className="text-4xl md:text-6xl mb-4"
-        style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+        className="text-4xl md:text-6xl mb-4 text-white"
+        style={{ fontFamily: 'var(--font-serif), serif' }}
       >
         Page not found
       </h1>
-      <p className="text-base md:text-lg text-gray-700 mb-8 max-w-md">
+      <p className="text-base md:text-lg text-[#cbd5e1] mb-8 max-w-md">
         The page you&apos;re looking for doesn&apos;t exist or has been moved.
       </p>
       <Link
         href={tenantHomePath('ruhunuwedagedara')}
-        className="inline-block px-8 py-3 border-2 border-black text-black uppercase text-xs tracking-wider hover:bg-black hover:text-white transition-colors"
+        className="inline-block px-8 py-3 rounded-full border-2 border-[#97c93e] text-[#97c93e] uppercase text-xs tracking-wider hover:bg-[#97c93e] hover:text-[#051610] transition-colors"
       >
         Back to Home
       </Link>

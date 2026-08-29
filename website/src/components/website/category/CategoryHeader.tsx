@@ -12,16 +12,16 @@ export function CategoryHeader({ category }: CategoryHeaderProps) {
   return (
     <div className="mb-8">
       <h1
-        className="text-3xl md:text-4xl font-medium"
-        style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+        className="text-3xl md:text-4xl font-medium text-white"
+        style={{ fontFamily: 'var(--font-serif), serif' }}
       >
         {category.name}
       </h1>
       {category.description && (
-        <p className="mt-2 max-w-2xl text-gray-600">{category.description}</p>
+        <p className="mt-2 max-w-2xl text-[#cbd5e1]">{category.description}</p>
       )}
       {category.productCount != null && (
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 text-sm text-[#94a3b8]">
           {category.productCount} product{category.productCount !== 1 ? 's' : ''}
         </p>
       )}

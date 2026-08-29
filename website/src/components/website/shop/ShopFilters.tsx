@@ -64,7 +64,7 @@ export function ShopFilters({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 rounded-3xl border border-white/10 bg-[#0d2e22]/70 p-4 backdrop-blur-sm">
       {/* Category pills */}
       {categories.length > 0 && (
         <FilterPills
@@ -96,7 +96,7 @@ export function ShopFilters({
       )}
 
       {/* Price range + sort */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-[#082017]/70 p-4 sm:flex-row sm:items-center sm:justify-between">
         <PriceRangeFilter
           bounds={priceBounds}
           valueMin={priceMin}
@@ -107,9 +107,9 @@ export function ShopFilters({
         />
 
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">Sort:</span>
+          <span className="text-xs text-[#94a3b8]">Sort:</span>
           <select
-            className="rounded border border-gray-300 px-2 py-1.5 text-xs bg-white focus:border-black focus:ring-1 focus:ring-black outline-none"
+            className="rounded-lg border border-white/12 bg-[#051610] px-2 py-1.5 text-xs text-white focus:border-[#97c93e] focus:ring-1 focus:ring-[#97c93e] outline-none"
             value={selectedSort || 'latest'}
             onChange={(e) => {
               window.location.href = buildHref({ sort: e.target.value });

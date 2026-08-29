@@ -46,49 +46,49 @@ export function StaticPageShell({
 
       {/* Page title hero */}
       <section
-        className="relative border-b border-black/5 overflow-hidden"
+        className="relative pt-[112px] border-b border-white/5 overflow-hidden"
         style={
           heroImageUrl
-            ? { backgroundImage: `url(${heroImageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-            : { backgroundColor: 'var(--site-light-gray, #f5f5f5)' }
+            ? {
+                backgroundImage: `url(${heroImageUrl})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                minHeight: '480px',
+              }
+            : { backgroundColor: 'rgba(5, 22, 16, 0.95)' }
         }
       >
-        {/* Dark overlay for readability when hero image is set */}
+        {/* Vignette overlay for readability */}
         {heroImageUrl && (
-          <div className="absolute inset-0 bg-black/40" />
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                'radial-gradient(circle at 50% 50%, rgba(5,22,16,0.4) 0%, rgba(5,22,16,0.85) 65%, #051610 100%)',
+            }}
+          />
         )}
-        <div className="relative max-w-5xl mx-auto px-4 py-16 md:py-24 text-center">
+        <div className="relative z-10 max-w-5xl mx-auto px-6 py-16 md:py-24 text-center">
           <h1
-            className={`text-3xl md:text-5xl font-medium tracking-tight ${
-              heroImageUrl ? 'text-white' : 'text-[var(--site-primary,#0a0a0a)]'
-            }`}
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+            className="text-3xl md:text-5xl font-cinzel font-extrabold tracking-wide text-white leading-tight"
+            style={{ fontFamily: 'var(--font-serif), serif' }}
           >
             {title}
           </h1>
           {subtitle && (
-            <p
-              className={`mt-3 text-sm md:text-base max-w-lg mx-auto ${
-                heroImageUrl ? 'text-white/80' : 'text-gray-500'
-              }`}
-            >
+            <p className="mt-3 text-sm md:text-base text-[#cbd5e1] font-light max-w-lg mx-auto">
               {subtitle}
             </p>
           )}
           {description && (
-            <p
-              className={`mt-2 text-sm max-w-xl mx-auto ${
-                heroImageUrl ? 'text-white/60' : 'text-gray-400'
-              }`}
-            >
-              {description}
-            </p>
+            <p className="mt-2 text-sm text-[#94a3b8] max-w-xl mx-auto">{description}</p>
           )}
+          <div className="w-16 h-[2px] bg-[#97c93e]/60 mx-auto mt-6 rounded-full" />
         </div>
       </section>
 
       {/* Page content */}
-      <main className="max-w-5xl mx-auto px-4 py-12 md:py-16">
+      <main className="max-w-7xl mx-auto px-6 py-12 md:py-16">
         {children}
       </main>
 

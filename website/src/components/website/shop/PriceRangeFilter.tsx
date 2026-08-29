@@ -39,7 +39,7 @@ export function PriceRangeFilter({
 
   return (
     <div className="flex items-center gap-2">
-      <span className="text-xs text-gray-500">Price:</span>
+      <span className="text-xs text-[#94a3b8]">Price:</span>
       <div className="flex items-center gap-1">
         <input
           type="number"
@@ -48,9 +48,9 @@ export function PriceRangeFilter({
           value={min}
           onChange={(e) => setMin(e.target.value)}
           aria-label="Minimum price"
-          className="w-20 rounded border border-gray-300 px-2 py-1.5 text-xs focus:border-black focus:ring-1 focus:ring-black outline-none"
+          className="w-20 rounded-lg border border-white/12 bg-[#051610] px-2 py-1.5 text-xs text-white placeholder:text-[#64748b] focus:border-[#97c93e] focus:ring-1 focus:ring-[#97c93e] outline-none"
         />
-        <span className="text-xs text-gray-400">–</span>
+        <span className="text-xs text-[#64748b]">–</span>
         <input
           type="number"
           min={0}
@@ -58,13 +58,13 @@ export function PriceRangeFilter({
           value={max}
           onChange={(e) => setMax(e.target.value)}
           aria-label="Maximum price"
-          className="w-20 rounded border border-gray-300 px-2 py-1.5 text-xs focus:border-black focus:ring-1 focus:ring-black outline-none"
+          className="w-20 rounded-lg border border-white/12 bg-[#051610] px-2 py-1.5 text-xs text-white placeholder:text-[#64748b] focus:border-[#97c93e] focus:ring-1 focus:ring-[#97c93e] outline-none"
         />
       </div>
       <button
         type="button"
         onClick={() => onApply(parse(min), parse(max))}
-        className="rounded border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-600 hover:border-gray-500"
+        className="rounded-lg border border-white/15 px-2 py-1.5 text-xs font-medium text-[#cbd5e1] hover:border-[#97c93e]/50 hover:text-white"
       >
         Apply
       </button>
@@ -76,7 +76,7 @@ export function PriceRangeFilter({
             setMax('');
             onApply(undefined, undefined);
           }}
-          className="rounded px-2 py-1.5 text-xs font-medium text-gray-500 underline hover:text-black"
+          className="rounded px-2 py-1.5 text-xs font-medium text-[#94a3b8] underline hover:text-[#97c93e]"
         >
           Clear
         </button>

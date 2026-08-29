@@ -33,13 +33,13 @@ export function FilterPills({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {label && <span className="text-xs text-gray-500">{label}:</span>}
+      {label && <span className="text-xs text-[#94a3b8]">{label}:</span>}
       <Link
         href={buildHref(undefined)}
         className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
           !selectedId
-            ? 'border-black bg-black text-white'
-            : 'border-gray-300 text-gray-600 hover:border-gray-500'
+            ? 'border-[#97c93e] bg-[#97c93e] text-[#051610]'
+            : 'border-white/10 text-[#cbd5e1] hover:border-[#97c93e]/50 hover:text-white'
         }`}
       >
         All
@@ -50,8 +50,8 @@ export function FilterPills({
           href={buildHref(opt.id)}
           className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
             selectedId === opt.id
-              ? 'border-black bg-black text-white'
-              : 'border-gray-300 text-gray-600 hover:border-gray-500'
+              ? 'border-[#97c93e] bg-[#97c93e] text-[#051610]'
+              : 'border-white/10 text-[#cbd5e1] hover:border-[#97c93e]/50 hover:text-white'
           }`}
         >
           {opt.label}

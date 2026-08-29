@@ -55,8 +55,8 @@ export function ContactInfoCards({
     <section className="py-8">
       {title && (
         <h2
-          className="text-2xl font-medium mb-6 text-center text-[var(--site-primary,#0a0a0a)]"
-          style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+          className="text-2xl font-medium mb-6 text-center text-white"
+          style={{ fontFamily: 'var(--font-serif), serif' }}
         >
           {title}
         </h2>
@@ -65,12 +65,12 @@ export function ContactInfoCards({
         {cards.map((card) => (
           <div
             key={card.label}
-            className="bg-white rounded-lg p-5 shadow-sm border border-black/5 hover:shadow-md transition-shadow duration-300 text-center"
+            className="rounded-2xl bg-[#082017]/70 p-5 border border-white/10 backdrop-blur-sm transition-shadow duration-300 hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)] text-center"
           >
-            <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[var(--site-bg,#ece2d6)] mb-3">
-              <card.icon size={18} className="text-[var(--site-accent,#b4946e)]" />
+            <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[#051610] mb-3">
+              <card.icon size={18} className="text-[#97c93e]" />
             </div>
-            <h3 className="text-sm font-semibold text-[var(--site-primary,#0a0a0a)] mb-1">
+            <h3 className="text-sm font-semibold text-white mb-1">
               {card.label}
             </h3>
             {card.href ? (
@@ -78,12 +78,12 @@ export function ContactInfoCards({
                 href={card.href}
                 target={card.label === 'Address' ? '_blank' : undefined}
                 rel={card.label === 'Address' ? 'noopener noreferrer' : undefined}
-                className="text-sm text-gray-500 hover:text-[var(--site-accent,#b4946e)] transition-colors"
+                className="text-sm text-[#94a3b8] hover:text-[#97c93e] transition-colors"
               >
                 {card.value}
               </a>
             ) : (
-              <p className="text-sm text-gray-500 whitespace-pre-line">
+              <p className="text-sm text-[#94a3b8] whitespace-pre-line">
                 {card.value}
               </p>
             )}

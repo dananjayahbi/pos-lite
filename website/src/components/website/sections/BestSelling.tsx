@@ -1,11 +1,11 @@
 'use client';
 
-import type {
-  BestSellingSection,
-  PublicProduct,
-} from '@/types/website.types';
-import { ProductCard } from '@/components/website/cart/ProductCard';
-import { CarouselSlider } from '@/components/website/sections/CarouselSlider';
+import React from 'react';
+import type { BestSellingSection, PublicProduct } from '@/types/website.types';
+import { DarkProductCard } from '@/components/website/sections/DarkProductCard';
+import { DarkCarousel } from '@/components/website/sections/DarkCarousel';
+import { SectionTitle } from '@/components/website/sections/SectionTitle';
+import { SectionAmbience } from '@/components/website/sections/SectionAmbience';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -20,11 +20,7 @@ function pickDisplayImage(product: PublicProduct): string | undefined {
 }
 
 function pickDisplayPrice(product: PublicProduct): number {
-  return (
-    product.variants?.[0]?.retailPrice ??
-    product.primaryVariant?.retailPrice ??
-    0
-  );
+  return product.variants?.[0]?.retailPrice ?? product.primaryVariant?.retailPrice ?? 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -43,18 +39,18 @@ interface BestSellingProps {
 // Component
 // ---------------------------------------------------------------------------
 
+/**
+ * Section 04 — "TOP SELLING ITEMS" swipeable pill-silhouette carousel.
+ */
 export function BestSelling({
   config,
-  websiteConfig: _websiteConfig,
   tenantSlug,
   bestSellingProducts,
 }: BestSellingProps) {
   const sectionConfig = config as unknown as BestSellingSection;
 
-  // ── Data source ──────────────────────────────────────────────────────
   let source = bestSellingProducts ?? [];
 
-  // If specific product IDs are configured, filter to only those.
   if (sectionConfig.productIds && sectionConfig.productIds.length > 0) {
     const idSet = new Set(sectionConfig.productIds);
     source = source.filter((p) => idSet.has(p.id));
@@ -64,54 +60,41 @@ export function BestSelling({
 
   if (display.length === 0) return null;
 
-  const title = sectionConfig.title || 'Top Selling Items This Week';
+  const title = sectionConfig.title || 'Top Selling Items';
 
-  // ── Render ────────────────────────────────────────────────────────────
   return (
-    <section className="best-selling-section max-h-[525px] overflow-hidden">
-      {/* Section title */}
-      <h2 className="section-title">{title}</h2>
+    <section id="top-selling-section" className="section-dark relative w-full py-20 sm:py-28 lg:py-32 overflow-hidden">
+      <SectionAmbience
+        leaves={[
+          { icon: 'fa-solid fa-seedling', classes: 'top-12 left-8 text-6xl text-[#97c93e]', speed: 0.22 },
+          { icon: 'fa-solid fa-leaf', classes: 'bottom-20 right-10 text-7xl text-emerald-400', speed: 0.3 },
+          { icon: 'fa-solid fa-spa', classes: 'top-1/3 right-1/4 text-5xl text-lime-300', speed: 0.16 },
+          { icon: 'fa-solid fa-cannabis', classes: 'bottom-12 left-1/4 text-4xl text-emerald-300', speed: 0.26 },
+        ]}
+        glows={['-top-20 left-1/3 w-96 h-96 bg-[#97c93e]', 'bottom-0 right-1/4 w-80 h-80 bg-emerald-500']}
+      />
 
-      <CarouselSlider
-        sliderId="best-selling"
-        desktopCards={4}
-        tabletCards={3}
-        mobileCards={2}
-        gap={16}
-        className="mt-4"
-      >
+      <SectionTitle
+        label="MOST LOVED BOTANICAL REMEDIES"
+        title={title}
+        reveal
+      />
+
+      <DarkCarousel sliderId="top-selling" showProgress>
         {display.map((product) => {
           const img = pickDisplayImage(product);
           return (
-            <ProductCard
+            <DarkProductCard
               key={product.id}
               product={product}
               tenantSlug={tenantSlug}
+              variant="pill"
               {...(img ? { imageOverride: img } : {})}
               priceOverride={pickDisplayPrice(product)}
             />
           );
         })}
-      </CarouselSlider>
-
-      {/* ── Section-title styling ─────────────────────────────────────── */}
-      <style jsx>{`
-        .section-title {
-          font-size: 22px;
-          font-weight: 700;
-          letter-spacing: 0.5px;
-          color: #1a1a1a;
-          margin-bottom: 4px;
-          padding: 0 16px;
-        }
-
-        @media (max-width: 768px) {
-          .section-title {
-            font-size: 18px;
-            padding: 0 12px;
-          }
-        }
-      `}</style>
+      </DarkCarousel>
     </section>
   );
 }

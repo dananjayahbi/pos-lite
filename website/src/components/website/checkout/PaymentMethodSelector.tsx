@@ -27,15 +27,15 @@ export function PaymentMethodSelector({
 }: PaymentMethodSelectorProps) {
   return (
     <fieldset>
-      <legend className="mb-3 text-sm font-medium text-gray-700">Payment method</legend>
+      <legend className="mb-3 text-sm font-medium text-[#cbd5e1]">Payment method</legend>
       <div className="space-y-3">
         {METHODS.map((method) => {
           const active = value === method.value;
           return (
             <label
               key={method.value}
-              className={`flex cursor-pointer items-start gap-3 rounded border p-3 transition-colors ${
-                active ? 'border-black bg-gray-50' : 'border-gray-200'
+              className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors ${
+                active ? 'border-[#97c93e] bg-[#97c93e]/10' : 'border-white/10'
               }`}
             >
               <input
@@ -44,14 +44,14 @@ export function PaymentMethodSelector({
                 value={method.value}
                 checked={active}
                 onChange={() => onChange(method.value)}
-                className="mt-1 accent-black"
+                className="mt-1 accent-[#97c93e]"
               />
               <span>
-                <span className="block text-sm font-medium text-gray-800">
+                <span className="block text-sm font-medium text-white">
                   {method.label}
                   {method.value === 'CARD' ? ` — ${totalLabel}` : ''}
                 </span>
-                <span className="block text-xs text-gray-500">{method.hint}</span>
+                <span className="block text-xs text-[#94a3b8]">{method.hint}</span>
               </span>
             </label>
           );

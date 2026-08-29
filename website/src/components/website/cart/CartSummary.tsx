@@ -31,18 +31,18 @@ export function CartSummary({
   const checkoutHref = ROUTES.checkout(tenantSlug);
 
   return (
-    <div className="border-t border-gray-200 bg-white pt-4">
+    <div className="border-t border-white/10 pt-4">
       <div className="mb-3 flex items-center justify-between text-sm">
-        <span className="text-gray-600">
+        <span className="text-[#94a3b8]">
           Subtotal{itemCount > 1 ? ` (${itemCount} items)` : ''}
         </span>
-        <span className="text-base font-semibold tabular-nums">
+        <span className="text-base font-semibold tabular-nums text-white">
           {formattedSubtotal}
         </span>
       </div>
 
       {!allInStock && (
-        <p className="mb-3 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <p className="mb-3 rounded bg-amber-400/10 px-3 py-2 text-xs text-amber-300">
           One or more items are now out of stock — please review your cart.
         </p>
       )}
@@ -51,7 +51,7 @@ export function CartSummary({
         href={checkoutHref}
         {...(onNavigate ? { onClick: onNavigate } : {})}
         className={cn(
-          'block w-full rounded bg-black py-3 text-center text-sm font-medium uppercase tracking-wider text-white transition-colors hover:bg-gray-800',
+          'block w-full rounded-full bg-[#97c93e] py-3 text-center text-sm font-semibold uppercase tracking-wider text-[#051610] transition-all hover:-translate-y-0.5 hover:bg-[#b2db58] hover:shadow-[0_8px_25px_rgba(151,201,62,0.3)]',
         )}
       >
         {variant === 'page' ? 'Place Order' : 'Checkout'}
@@ -61,7 +61,7 @@ export function CartSummary({
         <Link
           href={checkoutHref}
           {...(onNavigate ? { onClick: onNavigate } : {})}
-          className="mt-2 block w-full rounded border border-gray-300 py-2.5 text-center text-xs uppercase tracking-wider text-gray-700 transition-colors hover:bg-gray-50"
+          className="mt-2 block w-full rounded-full border border-white/15 py-2.5 text-center text-xs uppercase tracking-wider text-[#cbd5e1] transition-colors hover:bg-white/10 hover:text-white"
         >
           View Cart
         </Link>
