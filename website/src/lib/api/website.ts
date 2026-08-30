@@ -50,6 +50,13 @@ export interface PublicAppointmentSlot {
   staff?: { id: string; email: string } | null;
 }
 
+/** A bookable physician (derived from the distinct staff in available slots). */
+export interface PublicAppointmentDoctor {
+  id: string;
+  name: string;
+  email?: string | null;
+}
+
 /** Payload used to submit a public booking. */
 export interface PublicBookingInput {
   walkInName: string;
@@ -62,6 +69,20 @@ export interface PublicBookingInput {
   durationMins: number;
   price: number;
   notes?: string | null;
+}
+
+/**
+ * Fetch the list of bookable physicians for the customer booking page.
+ * Derived from the distinct staff who have appointment slots generated.
+ */
+export async function getPublicAppointmentDoctors(
+  tenantSlug: string,
+): Promise<PublicAppointmentDoctor[]> {
+  const res = await apiGet<{ success: boolean; data: PublicAppointmentDoctor[] }>(
+    `/api/public/site/${encodeURIComponent(tenantSlug)}/appointment-doctors`,
+    { tags: [`appointment-doctors:${tenantSlug}`] },
+  );
+  return res?.data ?? [];
 }
 
 /**

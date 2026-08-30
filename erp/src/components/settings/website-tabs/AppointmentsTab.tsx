@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
-import { Loader2, X } from 'lucide-react';
+import { Loader2, ExternalLink, X } from 'lucide-react';
 import { DeferredMediaUploader } from '@/components/shared/DeferredMediaUploader';
 import { cn } from '@/lib/utils';
 import type { WebsiteConfigData, WebsiteAppointmentsConfig } from '@/types/website.types';
@@ -86,14 +86,60 @@ export function AppointmentsTab({ config, onChange }: AppointmentsTabProps) {
     onChange({ appointments: { ...appointments, ...patch } });
   }
 
+  // Derive the customer-facing appointments URL. In production the ERP is
+  // served from an `admin.` subdomain while the storefront is on the bare
+  // host, so strip the "admin." prefix. In local dev the ERP runs on 3003 and
+  // the storefront on 3002, so remap the port.
+  const previewUrl = (() => {
+    if (typeof window === 'undefined') return '';
+    const { host, protocol } = window.location;
+    let h = host.replace(/^admin\./i, '');
+    h = h.replace(/:3003$/, ':3002');
+    return `${protocol}//${h}/appointments`;
+  })();
+
   return (
     <div className="space-y-6">
+      {/* Sync status + live page preview */}
+      <div className="rounded-lg border border-cream/40 bg-cream/20 px-3 py-2">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="text-sm font-semibold text-espresso">Appointments (Channelling)</h3>
+            <p className="mt-0.5 text-xs text-sand">
+              Reference layout: a parallax hero above a glassmorphic booking
+              terminal (patient details, service, physician, time slots, notes)
+              with a success confirmation modal.
+            </p>
+          </div>
+          {previewUrl && (
+            <a
+              href={previewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-full border border-terracotta/40 px-3 py-1.5 text-xs font-medium text-terracotta hover:bg-terracotta hover:text-white transition-colors"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              View live page
+            </a>
+          )}
+        </div>
+        <div className="mt-3 flex items-center gap-2 text-xs text-sand">
+          <span
+            className={cn(
+              'inline-flex h-2 w-2 rounded-full',
+              appointments.enabled ? 'bg-green-500' : 'bg-sand/50',
+            )}
+          />
+          {appointments.enabled
+            ? `Public — ${selectedIds.length > 0 ? selectedIds.length : 'all'} service${
+                selectedIds.length === 1 ? '' : 's'
+              } offered, synced with ERP /appointments`
+            : 'Hidden — booking page is not publicly accessible'}
+        </div>
+      </div>
+
       {/* Enable / disable */}
       <div>
-        <h3 className="text-sm font-semibold text-espresso mb-3">Appointments (Channelling)</h3>
-        <p className="text-xs text-sand mb-4">
-          Control the customer-facing appointment booking page and its navigation link.
-        </p>
         <div className="flex items-center justify-between rounded-lg border border-mist bg-white p-4">
           <div>
             <p className="text-sm font-medium text-espresso">Show booking page</p>

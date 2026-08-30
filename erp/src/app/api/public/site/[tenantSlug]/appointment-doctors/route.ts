@@ -1,10 +1,10 @@
 /**
- * GET /api/public/site/[tenantSlug]/appointment-services
+ * GET /api/public/site/[tenantSlug]/appointment-doctors
  *
- * Public list of active appointment services for a tenant, exposing only
- * the fields a customer needs to book: id, name, description, durationMins,
- * price, and color. Returns an empty array for tenants that have the
- * appointments module disabled.
+ * Public list of bookable physicians (staff who have generated appointment
+ * slots) for a tenant. Returns id + email (the User model has no name field,
+ * so the email is the display handle). Returns an empty array for tenants
+ * that have the appointments module disabled.
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -51,41 +51,21 @@ export async function GET(
     return jsonWithCors(request, { success: true, data: [] });
   }
 
-  const services = await prisma.appointmentService.findMany({
-    where: {
-      tenantId: tenant.id,
-      deletedAt: null,
-      isActive: true,
-    },
-    orderBy: { sortOrder: 'asc' },
-    select: {
-      id: true,
-      name: true,
-      description: true,
-      durationMins: true,
-      price: true,
-      color: true,
-    },
-  });
-
-  // Honor the owner's service selection from the website config's
-  // `appointments.serviceIds`. When set (non-empty), only those services are
-  // offered to customers; when empty, all active services are shown so the
-  // public page stays in sync with the ERP's configured offering.
-  const websiteConfig = await prisma.websiteConfig.findUnique({
+  // Distinct staff who have at least one generated slot → the bookable doctors.
+  const staff = await prisma.appointmentSlot.findMany({
     where: { tenantId: tenant.id },
-    select: { appointments: true },
+    distinct: ['staffId'],
+    select: {
+      staff: { select: { id: true, email: true, isActive: true, deletedAt: true } },
+    },
   });
-  const appointmentConfig = (websiteConfig?.appointments ?? {}) as {
-    serviceIds?: string[] | null;
-  };
-  const selectedIds = appointmentConfig.serviceIds ?? [];
-  const publicServices =
-    selectedIds.length > 0
-      ? services.filter((s) => selectedIds.includes(s.id))
-      : services;
 
-  return jsonWithCors(request, { success: true, data: publicServices }, {
+  const doctors = staff
+    .map((s) => s.staff)
+    .filter((s) => s.isActive && !s.deletedAt)
+    .map((s) => ({ id: s.id, name: s.email, email: s.email }));
+
+  return jsonWithCors(request, { success: true, data: doctors }, {
     headers: {
       // Public cache: 60s, stale-while-revalidate 5 minutes
       'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
