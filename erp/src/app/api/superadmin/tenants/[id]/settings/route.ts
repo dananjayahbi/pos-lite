@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
+// The currency is always LKR for this on-premises deployment. It is locked here
+// so no client can change it for a business via the superadmin settings API.
+const LOCKED_CURRENCY = 'LKR';
+
 const businessSettingsSchema = z.object({
   storeName: z.string().trim().min(2, 'Store name must be at least 2 characters').max(80),
   logoUrl: z.string().trim().url('Logo URL must be a valid URL').or(z.literal('')),
@@ -56,7 +60,8 @@ export async function PATCH(
       ...currentSettings,
       address: parsed.data.address,
       phoneNumber: parsed.data.phoneNumber,
-      currency: parsed.data.currency,
+      // Currency is always LKR for this deployment — ignore any client value.
+      currency: LOCKED_CURRENCY,
       timezone: parsed.data.timezone,
     };
 

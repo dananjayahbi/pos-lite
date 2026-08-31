@@ -6,6 +6,10 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import type { TenantStatus } from '@/generated/prisma/client';
 
+// The currency is always LKR for this on-premises deployment. It is locked on
+// the server side so only LKR can be persisted for any business.
+const LOCKED_CURRENCY = 'LKR';
+
 const createTenantSchema = z.object({
   storeName: z.string().min(2).max(80),
   slug: z.string().min(3).max(30).regex(/^[a-z0-9-]+$/),
@@ -14,8 +18,6 @@ const createTenantSchema = z.object({
   timezone: z.string().min(1),
   currency: z.string().min(1),
 });
-
-const PAGE_SIZE = 20;
 
 export async function GET(request: NextRequest) {
   const session = await auth();
@@ -70,7 +72,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { storeName, slug, ownerEmail, ownerPassword, timezone, currency } = parsed.data;
+  const { storeName, slug, ownerEmail, ownerPassword, timezone } = parsed.data;
 
   try {
     const existingTenant = await prisma.tenant.findFirst({
@@ -97,7 +99,8 @@ export async function POST(request: NextRequest) {
         slug,
         status: 'ACTIVE',
         settings: {
-          currency,
+          // Currency is always LKR for this deployment — ignore any client value.
+          currency: LOCKED_CURRENCY,
           timezone,
           vatRate: 0,
           ssclRate: 0,

@@ -34,7 +34,9 @@ const TIMEZONES = [
   'Pacific/Auckland',
 ];
 
-const CURRENCIES = ['LKR', 'USD', 'GBP', 'EUR', 'INR', 'AUD', 'SGD'];
+// The currency is always LKR for this on-premises deployment. It is locked
+// here and on the API side so it cannot be changed from the superadmin panel.
+const LOCKED_CURRENCY = 'LKR';
 
 type BusinessSettingsValues = {
   storeName: string;
@@ -52,7 +54,10 @@ type Props = {
 
 export default function BusinessSettingsForm({ tenantId, initialValues }: Props) {
   const router = useRouter();
-  const [values, setValues] = useState<BusinessSettingsValues>(initialValues);
+  const [values, setValues] = useState<BusinessSettingsValues>({
+    ...initialValues,
+    currency: LOCKED_CURRENCY,
+  });
   const [saving, setSaving] = useState(false);
 
   const update = useCallback(
@@ -71,7 +76,7 @@ export default function BusinessSettingsForm({ tenantId, initialValues }: Props)
       const res = await fetch(`/api/superadmin/tenants/${tenantId}/settings`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
+        body: JSON.stringify({ ...values, currency: LOCKED_CURRENCY }),
       });
 
       const json = (await res.json()) as {
@@ -159,18 +164,12 @@ export default function BusinessSettingsForm({ tenantId, initialValues }: Props)
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Currency</Label>
-              <Select value={values.currency} onValueChange={(v) => update('currency', v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select currency" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CURRENCIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex h-10 items-center justify-between rounded-md border border-espresso/15 bg-linen/50 px-3 text-sm">
+                <span className="font-medium text-espresso">
+                  {LOCKED_CURRENCY}
+                </span>
+                <span className="text-xs text-espresso/50">Locked · LKR</span>
+              </div>
             </div>
 
             <div className="space-y-2">

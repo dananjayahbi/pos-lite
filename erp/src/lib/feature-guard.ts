@@ -5,7 +5,7 @@
  * in Tenant.settings.enabledModules as a string[].
  */
 
-const KNOWN_MODULES = ['appointments', 'delivery'] as const;
+export const KNOWN_MODULES = ['appointments', 'delivery', 'website'] as const;
 export type ModuleName = (typeof KNOWN_MODULES)[number];
 
 /**
@@ -51,5 +51,10 @@ export const MODULE_DEFINITIONS: {
     name: 'delivery',
     label: 'Delivery & Courier',
     description: 'Enable courier dispatch, shipment tracking, rate cards, packaging, and reconciliation',
+  },
+  {
+    name: 'website',
+    label: 'Public Website',
+    description: 'Enable the customer-facing online storefront for this business',
   },
 ];

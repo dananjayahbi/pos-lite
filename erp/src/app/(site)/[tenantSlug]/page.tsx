@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { getPublicWebsiteConfig } from '@/lib/services/website.service';
+import { isModuleEnabled } from '@/lib/feature-guard';
 import { WebsiteShell } from '@/components/website/WebsiteShell';
 import type { WebsiteConfigData } from '@/types/website.types';
 
@@ -14,10 +15,16 @@ export default async function SitePage({ params }: SitePageProps) {
   // Resolve tenant by slug
   const tenant = await prisma.tenant.findFirst({
     where: { slug: tenantSlug, deletedAt: null },
-    select: { id: true, name: true, slug: true },
+    select: { id: true, name: true, slug: true, settings: true },
   });
 
   if (!tenant) {
+    notFound();
+  }
+
+  // The "website" feature module can be disabled per tenant from the superadmin
+  // panel. When disabled, the public storefront is unavailable for this business.
+  if (!isModuleEnabled((tenant.settings ?? {}) as Record<string, unknown>, 'website')) {
     notFound();
   }
 

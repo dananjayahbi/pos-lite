@@ -61,7 +61,7 @@ export async function getTenantById(tenantId: string) {
 }
 
 export async function createTenant(input: CreateTenantInput) {
-  const { storeName, slug, ownerEmail, ownerPasswordHash, timezone, currency } = input;
+  const { storeName, slug, ownerEmail, ownerPasswordHash, timezone } = input;
 
   // Check if 2 businesses already exist
   const existingCount = await prisma.tenant.count({ where: { deletedAt: null } });
@@ -77,7 +77,8 @@ export async function createTenant(input: CreateTenantInput) {
           slug,
           status: 'ACTIVE',
           settings: {
-            currency,
+            // Currency is always LKR for this deployment — ignore any input value.
+            currency: 'LKR',
             timezone,
             vatRate: 0,
             ssclRate: 0,

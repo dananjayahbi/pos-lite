@@ -1,6 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { v2 as cloudinary } from 'cloudinary';
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+} from '@aws-sdk/client-s3';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -121,7 +126,7 @@ async function uploadToCloudinary(
 
 // ── Cloudflare R2 Provider ─────────────────────────────────────────────────
 
-function getR2Client() {
+export function getR2Client() {
   const accountId = process.env.CLOUDFLARE_R2_ACCOUNT_ID;
   const accessKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
   const secretAccessKey = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
