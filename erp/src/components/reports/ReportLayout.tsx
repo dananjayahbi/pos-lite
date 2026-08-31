@@ -131,6 +131,11 @@ function getNavItems(): NavItem[] {
       permission: PERMISSIONS.REPORT.viewZeroValueReport,
     },
     {
+      label: "Recovery Performance",
+      href: "/reports/recovery-staff-performance",
+      permission: PERMISSIONS.REPORT.viewRecoveryReport,
+    },
+    {
       label: "Saved Reports",
       href: "/reports/saved",
       permission: PERMISSIONS.REPORT.viewSalesReport,
