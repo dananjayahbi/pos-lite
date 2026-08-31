@@ -415,7 +415,7 @@ export default function StoreSidebar({
         <div className="border-mist mx-5 border-b" />
       </div>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+      <nav className="min-h-0 flex-1 overflow-y-auto scrollbar-none px-3 py-4">
         {navGroups.map((group) => {
           const visibleItems = group.items.filter((item) =>
             canAccessItem(item, userRole, permissions),
@@ -427,10 +427,10 @@ export default function StoreSidebar({
 
           return (
             <div key={group.label} className="mb-6 last:mb-0">
-              <p className="text-sand/80 mb-2 px-3 text-xs font-semibold tracking-wider uppercase">
+              <p className="text-sand/80 mb-1.5 px-3 text-xs font-semibold tracking-wider uppercase">
                 {group.label}
               </p>
-              <ul className="space-y-1">
+              <ul className="flex flex-col">
                 {visibleItems.map((item) => {
                   const isActive = isActivePath(pathname, item.href, item.match);
 
@@ -443,7 +443,7 @@ export default function StoreSidebar({
                         href={item.href}
                         {...(onNavigate ? { onClick: onNavigate } : {})}
                         {...(isPosLink ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                        className={`block rounded-r-md border-l-[3px] px-3 py-2 text-sm font-medium transition-colors ${
+                        className={`flex h-9 items-center rounded-r-md border-l-[3px] px-3 text-sm font-medium transition-colors ${
                           isActive
                             ? 'border-terracotta bg-linen text-espresso'
                             : 'text-espresso/70 hover:bg-linen hover:text-espresso border-transparent'

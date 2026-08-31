@@ -85,6 +85,16 @@ body {
   box-sizing: border-box;
 }
 
+/* ── Utility: hide scrollbar while keeping scrollable ─────────── */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
