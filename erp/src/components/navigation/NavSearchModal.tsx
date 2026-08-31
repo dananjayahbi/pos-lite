@@ -30,22 +30,47 @@ interface NavSearchModalProps {
   onNavigate?: () => void;
 }
 
-function matchesQuery(
-  entry: NavSearchEntry,
-  query: string,
-): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  const haystack = [
-    entry.title,
-    entry.description ?? '',
-    entry.group ?? '',
-    ...(entry.keywords ?? []),
-  ]
-    .join(' ')
-    .toLowerCase();
-  // Split query into tokens; every token must appear somewhere.
-  return q.split(/\s+/).filter(Boolean).every((token) => haystack.includes(token));
+/** Normalize text for matching: lowercase + collapse whitespace. */
+function normalize(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Rank an entry against a query.
+ * - Multi-word queries must match as a contiguous phrase (title or keywords)
+ *   so that e.g. "add sale" matches "Record Sale" and NOT "Process Return".
+ * - Single-word queries may appear anywhere (title, keywords or description).
+ * Returns 0 when the entry should be excluded.
+ */
+function scoreEntry(entry: NavSearchEntry, query: string): number {
+  const q = normalize(query);
+  if (!q) return 0;
+
+  const title = normalize(entry.title);
+  const keywords = (entry.keywords ?? []).map(normalize);
+  const description = normalize(entry.description ?? '');
+
+  // Strongest: title match.
+  if (title === q) return 100;
+  if (title.startsWith(q)) return 90;
+  if (title.includes(q)) return 80;
+
+  // Keyword exact / phrase match.
+  for (const kw of keywords) {
+    if (!kw) continue;
+    if (kw === q) return 70;
+    if (kw.includes(q)) return 60;
+  }
+
+  const fullText = normalize([title, ...keywords.filter(Boolean), description].join(' '));
+
+  // Multi-word query must appear as a phrase somewhere in the entry text.
+  if (q.includes(' ') && fullText.includes(q)) return 55;
+
+  // Single-word fallback: may appear anywhere in the entry text.
+  if (!q.includes(' ') && fullText.includes(q)) return 30;
+
+  return 0;
 }
 
 export default function NavSearchModal({
@@ -66,10 +91,17 @@ export default function NavSearchModal({
     );
   }, [hasPermission]);
 
-  const filtered = useMemo(
-    () => visibleEntries.filter((entry) => matchesQuery(entry, query)),
-    [visibleEntries, query],
-  );
+  const filtered = useMemo(() => {
+    const q = normalize(query);
+    if (!q) return visibleEntries;
+    // Score every entry, drop non-matches, then sort best-first so the
+    // single most accurate guess rises to the top.
+    return visibleEntries
+      .map((entry) => ({ entry, score: scoreEntry(entry, q) }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map((item) => item.entry);
+  }, [visibleEntries, query]);
 
   const grouped = useMemo(() => groupNavEntries(filtered), [filtered]);
 
