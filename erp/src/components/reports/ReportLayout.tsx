@@ -48,6 +48,11 @@ import {
   type ReportColumn,
   type ReportRow,
 } from "@/lib/reports/export";
+import {
+  resolveReportColumns,
+  resolveReportTitle,
+  type ReportFormat,
+} from "@/lib/reports/report-config";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PERMISSIONS, type PermissionKey } from "@/lib/constants/permissions";
 
@@ -146,7 +151,11 @@ interface SavedReportRecord {
   name: string;
   reportType: string;
   filters: Record<string, unknown>;
+  format?: string;
+  storageKey?: string | null;
+  fileUrl?: string | null;
   createdAt: string;
+  updatedAt?: string;
 }
 
 // ── Component ───────────────────────────────────────────────────
@@ -177,6 +186,40 @@ export default function ReportLayout({
   );
 }
 
+// ── Sidebar nav (top-level so it is NOT recreated on every render) ────────
+
+function SidebarNav({
+  items,
+  activePath,
+  onItemClick,
+}: {
+  items: NavItem[];
+  activePath: string;
+  onItemClick?: () => void;
+}) {
+  return (
+    <nav className="flex flex-col gap-0.5 py-2">
+      {items.map((item) => {
+        const isActive = activePath === item.href;
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            {...(onItemClick ? { onClick: onItemClick } : {})}
+            className={`block px-4 py-2 font-body text-sm transition-colors ${
+              isActive
+                ? "border-l-3 border-terracotta font-semibold text-espresso"
+                : "border-l-3 border-transparent text-espresso/70 hover:bg-linen hover:text-espresso"
+            }`}
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
 function ReportLayoutInner({
   children,
   reportType,
@@ -190,6 +233,7 @@ function ReportLayoutInner({
   const { hasPermission } = usePermissions();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveFormat, setSaveFormat] = useState<ReportFormat>("pdf");
   const [savedReportsOpen, setSavedReportsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -203,8 +247,22 @@ function ReportLayoutInner({
   const navItems = getNavItems().filter(
     (item) => !item.permission || hasPermission(item.permission),
   );
+
+  // Resolve the report definition from the report-config registry so that both
+  // the live Export popover and the save-to-object-storage flow share one
+  // source of truth for title + columns, even when the layout receives no
+  // explicit `reportColumns`/`reportTitle` props.
+  const rows = reportData as ReportRow[];
+  const resolvedColumns =
+    reportColumns && reportColumns.length > 0
+      ? reportColumns
+      : resolveReportColumns(pathname, rows);
   const currentReportTitle =
-    reportTitle ?? navItems.find((item) => item.href === pathname)?.label ?? "Report";
+    reportTitle ??
+    resolveReportTitle(pathname) ??
+    (reportType ??
+      navItems.find((item) => item.href === pathname)?.label ??
+      "Report");
 
   // ── Date range handler ──────────────────────────────────────
 
@@ -218,12 +276,11 @@ function ReportLayoutInner({
   // ── Export handlers ─────────────────────────────────────────
 
   async function handleExport(format: "pdf" | "csv" | "excel") {
-    if (isExporting || !reportColumns || reportColumns.length === 0) {
+    if (isExporting || !resolvedColumns || resolvedColumns.length === 0) {
       setExportOpen(false);
       return;
     }
 
-    const rows = reportData as ReportRow[];
     if (rows.length === 0) {
       toast.error("No data to export");
       setExportOpen(false);
@@ -233,20 +290,20 @@ function ReportLayoutInner({
     setIsExporting(true);
     setExportOpen(false);
 
-    const title = reportTitle ?? reportType ?? "Report";
+    const title = currentReportTitle;
     const dateRange = `${from} to ${to}`;
     const safeName = title.replace(/\s+/g, "_");
 
     try {
       switch (format) {
         case "csv":
-          await exportToCSV(rows, reportColumns, safeName);
+          await exportToCSV(rows, resolvedColumns, safeName);
           break;
         case "excel":
-          await exportToExcel(rows, reportColumns, title, safeName);
+          await exportToExcel(rows, resolvedColumns, title, safeName);
           break;
         case "pdf":
-          await exportToPDF(title, dateRange, rows, reportColumns, safeName);
+          await exportToPDF(title, dateRange, rows, resolvedColumns, safeName);
           break;
       }
       toast.success(`${format.toUpperCase()} export started`);
@@ -283,6 +340,11 @@ function ReportLayoutInner({
           name: data.name,
           reportType: pathname,
           filters,
+          format: saveFormat,
+          rows,
+          columns: resolvedColumns,
+          title: currentReportTitle,
+          dateRange: `${from} to ${to}`,
         }),
       });
 
@@ -290,6 +352,7 @@ function ReportLayoutInner({
       if (json.success) {
         toast.success("Report saved");
         reset();
+        setSaveFormat("pdf");
         setSaveDialogOpen(false);
       } else {
         toast.error(json.error?.message ?? "Failed to save report");
@@ -375,30 +438,6 @@ function ReportLayoutInner({
 
   // ── Sidebar content (shared between desktop & mobile) ───────
 
-  function SidebarNav({ onItemClick }: { onItemClick?: () => void }) {
-    return (
-      <nav className="flex flex-col gap-0.5 py-2">
-        {navItems.map((item) => {
-          const isActive = pathname === item.href;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              {...(onItemClick ? { onClick: onItemClick } : {})}
-              className={`block px-4 py-2 font-body text-sm transition-colors ${
-                isActive
-                  ? "border-l-3 border-terracotta font-semibold text-espresso"
-                  : "border-l-3 border-transparent text-espresso/70 hover:bg-linen hover:text-espresso"
-              }`}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
-    );
-  }
-
   return (
       <div className="flex h-full min-h-0 flex-col">
         {/* ── Header strip ─────────────────────────────────────── */}
@@ -415,7 +454,7 @@ function ReportLayoutInner({
                 <SheetTitle className="px-4 pt-4 font-display text-lg font-bold text-espresso">
                   Reports
                 </SheetTitle>
-                <SidebarNav onItemClick={() => setMobileNavOpen(false)} />
+                <SidebarNav items={navItems} activePath={pathname} onItemClick={() => setMobileNavOpen(false)} />
               </SheetContent>
             </Sheet>
           </div>
@@ -492,21 +531,52 @@ function ReportLayoutInner({
                     </DialogTitle>
                   </DialogHeader>
                   <form onSubmit={handleSubmit(onSave)}>
-                    <div className="py-4">
-                      <Label htmlFor="report-name" className="font-body text-sm text-espresso">
-                        Report Name
-                      </Label>
-                      <Input
-                        id="report-name"
-                        placeholder="e.g. Monthly Sales Summary"
-                        className="mt-1.5"
-                        {...register("name")}
-                      />
-                      {errors.name && (
-                        <p className="mt-1 font-body text-xs text-danger">
-                          {errors.name.message}
-                        </p>
-                      )}
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="report-name" className="font-body text-sm text-espresso">
+                          Report Name
+                        </Label>
+                        <Input
+                          id="report-name"
+                          placeholder="e.g. Monthly Sales Summary"
+                          className="mt-1.5"
+                          {...register("name")}
+                        />
+                        {errors.name && (
+                          <p className="mt-1 font-body text-xs text-danger">
+                            {errors.name.message}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="font-body text-sm text-espresso">
+                          Report Format
+                        </Label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {(
+                            [
+                              { value: "pdf", label: "PDF", icon: FileTextIcon },
+                              { value: "csv", label: "CSV", icon: FileIcon },
+                              { value: "xlsx", label: "Excel", icon: FileSpreadsheetIcon },
+                            ] as const
+                          ).map(({ value, label, icon: Icon }) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => setSaveFormat(value)}
+                              className={`flex flex-col items-center justify-center gap-1 rounded-md border px-2 py-3 font-body text-sm transition-colors ${
+                                saveFormat === value
+                                  ? "border-terracotta bg-terracotta/5 text-terracotta"
+                                  : "border-mist text-sand hover:bg-linen"
+                              }`}
+                            >
+                              <Icon className="h-4 w-4" />
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                     <DialogFooter>
                       <Button type="submit" disabled={isSubmitting} size="sm">
@@ -574,18 +644,36 @@ function ReportLayoutInner({
                                 <p className="truncate font-medium text-espresso">
                                   {savedReport.name}
                                 </p>
-                                <p className="text-xs text-mist">
-                                  {new Date(savedReport.createdAt).toLocaleString("en-GB", {
-                                    day: "2-digit",
-                                    month: "short",
-                                    year: "numeric",
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })}
+                                <p className="mt-1 inline-flex items-center gap-1.5">
+                                  <span className="rounded bg-mist/50 px-1.5 py-0.5 font-mono text-[10px] uppercase text-sand">
+                                    {savedReport.format ?? "pdf"}
+                                  </span>
+                                  <span className="text-xs text-mist">
+                                    {new Date(savedReport.createdAt).toLocaleString("en-GB", {
+                                      day: "2-digit",
+                                      month: "short",
+                                      year: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </span>
                                 </p>
                               </div>
 
                               <div className="flex shrink-0 items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  asChild
+                                >
+                                  <a
+                                    href={`/api/reports/saved/${savedReport.id}/download?view=1`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    View
+                                  </a>
+                                </Button>
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -594,7 +682,18 @@ function ReportLayoutInner({
                                     router.push(buildSavedReportHref(savedReport));
                                   }}
                                 >
-                                  Open
+                                  Open in App
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="gap-1"
+                                  asChild
+                                >
+                                  <a href={`/api/reports/saved/${savedReport.id}/download`}>
+                                    <DownloadIcon className="h-3.5 w-3.5" />
+                                    Download
+                                  </a>
                                 </Button>
                                 <Button
                                   size="sm"
@@ -629,7 +728,7 @@ function ReportLayoutInner({
                 Reports
               </h2>
             </div>
-            <SidebarNav />
+            <SidebarNav items={navItems} activePath={pathname} />
           </aside>
 
           {/* Main content */}

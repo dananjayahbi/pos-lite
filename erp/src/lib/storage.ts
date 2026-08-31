@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { v2 as cloudinary } from 'cloudinary';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -8,6 +8,8 @@ export type UploadOptions = {
   folder?: string;
   contentType?: string;
   maxSizeBytes?: number;
+  /** When true, use `path` verbatim as the object key instead of appending a timestamp. */
+  usePathAsKey?: boolean;
 };
 
 export type UploadResult = {
@@ -153,7 +155,7 @@ async function uploadToR2(
     throw new Error('CLOUDFLARE_R2_BUCKET_NAME must be set when STORAGE_PROVIDER is "cloudflare_r2"');
   }
 
-  const key = `${path}-${Date.now()}`;
+  const key = options.usePathAsKey ? path : `${path}-${Date.now()}`;
 
   await client.send(
     new PutObjectCommand({
@@ -183,6 +185,29 @@ async function deleteFromR2(path: string): Promise<void> {
       Key: path,
     }),
   );
+}
+
+async function downloadFromR2(path: string): Promise<Buffer> {
+  const client = getR2Client();
+  const bucket = process.env.CLOUDFLARE_R2_BUCKET_NAME;
+
+  if (!bucket) {
+    throw new Error('CLOUDFLARE_R2_BUCKET_NAME must be set');
+  }
+
+  const response = await client.send(
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: path,
+    }),
+  );
+
+  if (!response.Body) {
+    throw new Error('R2 object returned an empty body');
+  }
+
+  const bytes = await response.Body.transformToByteArray();
+  return Buffer.from(bytes);
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────
@@ -237,4 +262,30 @@ export async function deleteFile(
       error instanceof Error ? error.message : error,
     );
   }
+}
+
+/**
+ * Download the raw bytes of a stored object. Supports the Cloudflare R2
+ * provider (used by saved report artifacts) and throws for unsupported
+ * providers.
+ */
+export async function downloadFile(path: string): Promise<Buffer> {
+  const provider = process.env.STORAGE_PROVIDER;
+
+  if (provider === 'cloudflare_r2') {
+    return downloadFromR2(path);
+  }
+
+  if (provider === 'supabase') {
+    // Supabase storage objects are public; fetch via the public URL.
+    const url = process.env.SUPABASE_PUBLIC_BASE_URL;
+    const publicUrl = `${url}/${BUCKET}/${path}`;
+    const res = await fetch(publicUrl);
+    if (!res.ok) {
+      throw new Error(`Failed to download object from Supabase (${res.status})`);
+    }
+    return Buffer.from(await res.arrayBuffer());
+  }
+
+  throw new Error("downloadFile only supports 'cloudflare_r2' / 'supabase' providers");
 }

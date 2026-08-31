@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { deleteFile } from '@/lib/storage';
 
 export async function GET(
   _request: Request,
@@ -133,6 +134,12 @@ export async function DELETE(
 
     const { id } = await params;
 
+    // Delete the stored artifact from object storage first, then the DB record.
+    const existing = await prisma.savedReport.findFirst({
+      where: { id, tenantId, userId: session.user.id },
+      select: { storageKey: true },
+    });
+
     const deleted = await prisma.savedReport.deleteMany({
       where: {
         id,
@@ -146,6 +153,10 @@ export async function DELETE(
         { success: false, error: { code: 'NOT_FOUND', message: 'Saved report not found' } },
         { status: 404 },
       );
+    }
+
+    if (existing?.storageKey) {
+      await deleteFile(existing.storageKey);
     }
 
     return NextResponse.json({ success: true });

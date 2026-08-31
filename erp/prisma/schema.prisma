@@ -1520,6 +1520,10 @@ model SavedReport {
   name       String
   reportType String
   filters    Json
+  // Generated artifact metadata
+  format     String   @default("pdf") // "pdf" | "csv" | "xlsx"
+  storageKey String? // R2 object key under saved_reports/
+  fileUrl    String? // Public URL to the stored artifact
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
