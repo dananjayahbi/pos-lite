@@ -25,7 +25,6 @@ export default function NavSearchTrigger({ onOpen }: NavSearchTriggerProps) {
       >
         <SearchIcon className="h-3.5 w-3.5" />
         <span>Search</span>
-        <kbd className="ml-1 rounded border border-mist bg-linen px-1 text-[10px]">⌘K</kbd>
       </Button>
       <Button
         type="button"

@@ -51,7 +51,6 @@ export default function StoreLayoutClient({
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <aside className="hidden w-64 shrink-0 overflow-hidden border-r border-mist bg-pearl md:flex">
             <StoreSidebar
-              userEmail={userEmail}
               userRole={userRole}
               permissions={permissions}
               businessName={businessName}
@@ -89,7 +88,6 @@ export default function StoreLayoutClient({
                 <SheetContent side="left" className="w-72 bg-pearl p-0">
                   <SheetTitle className="sr-only">Store navigation</SheetTitle>
                   <StoreSidebar
-                    userEmail={userEmail}
                     userRole={userRole}
                     permissions={permissions}
                     businessName={businessName}

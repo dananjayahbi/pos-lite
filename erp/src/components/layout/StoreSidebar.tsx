@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { signOut } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
 import type { UserRole } from '@/generated/prisma/client';
 import { PERMISSIONS, type PermissionKey } from '@/lib/constants/permissions';
@@ -20,7 +19,6 @@ interface NavGroup {
 }
 
 interface StoreSidebarProps {
-  userEmail: string;
   userRole: UserRole;
   permissions: string[];
   businessName: string;
@@ -388,7 +386,6 @@ function formatRole(role: UserRole): string {
 }
 
 export default function StoreSidebar({
-  userEmail,
   userRole,
   permissions,
   businessName,
@@ -459,19 +456,6 @@ export default function StoreSidebar({
           );
         })}
       </nav>
-
-      <div className="border-mist shrink-0 border-t px-4 py-4">
-        <p className="text-sand truncate text-xs">{userEmail}</p>
-        <button
-          type="button"
-          onClick={() => {
-            void signOut({ callbackUrl: `${window.location.origin}/login` });
-          }}
-          className="text-terracotta hover:text-espresso mt-2 text-xs transition-colors"
-        >
-          Log Out
-        </button>
-      </div>
     </div>
   );
 }
