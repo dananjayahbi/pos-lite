@@ -8,11 +8,8 @@ const businessSettingsSchema = z.object({
   logoUrl: z.string().trim().url('Logo URL must be a valid URL').or(z.literal('')),
   address: z.string().trim().max(160, 'Address must be 160 characters or less'),
   phoneNumber: z.string().trim().max(40, 'Phone number must be 40 characters or less'),
-  receiptFooter: z.string().trim().max(240, 'Receipt footer must be 240 characters or less'),
   currency: z.string().trim().min(1, 'Currency is required'),
   timezone: z.string().trim().min(1, 'Timezone is required'),
-  vatRate: z.coerce.number().min(0).max(100),
-  ssclRate: z.coerce.number().min(0).max(100),
 });
 
 export async function PATCH(
@@ -59,11 +56,8 @@ export async function PATCH(
       ...currentSettings,
       address: parsed.data.address,
       phoneNumber: parsed.data.phoneNumber,
-      receiptFooter: parsed.data.receiptFooter,
       currency: parsed.data.currency,
       timezone: parsed.data.timezone,
-      vatRate: parsed.data.vatRate,
-      ssclRate: parsed.data.ssclRate,
     };
 
     const updated = await prisma.tenant.update({

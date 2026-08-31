@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import { SignOutButton } from '@/components/auth/SignOutButton';
 import SuperAdminNav from '@/components/superadmin/SuperAdminNav';
 
@@ -18,6 +19,14 @@ export default async function SuperAdminLayout({
     redirect('/dashboard');
   }
 
+  // The system has exactly 2 hardcoded tenants (the same on-premises owner).
+  // These become the dynamic "Businesses" nav items.
+  const tenants = await prisma.tenant.findMany({
+    where: { deletedAt: null },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, name: true },
+  });
+
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
@@ -32,7 +41,7 @@ export default async function SuperAdminLayout({
           <div className="mx-6 border-b border-mist/30" />
 
           {/* Navigation */}
-          <SuperAdminNav />
+          <SuperAdminNav tenants={tenants} />
         </div>
 
         {/* Footer */}

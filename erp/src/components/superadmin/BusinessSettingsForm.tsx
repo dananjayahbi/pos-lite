@@ -41,11 +41,8 @@ type BusinessSettingsValues = {
   logoUrl: string;
   address: string;
   phoneNumber: string;
-  receiptFooter: string;
   currency: string;
   timezone: string;
-  vatRate: number;
-  ssclRate: number;
 };
 
 type Props = {
@@ -152,9 +149,10 @@ export default function BusinessSettingsForm({ tenantId, initialValues }: Props)
 
       <Card className="border-mist">
         <CardHeader>
-          <CardTitle className="font-display text-espresso">Regional & Tax Settings</CardTitle>
+          <CardTitle className="font-display text-espresso">Regional Settings</CardTitle>
           <CardDescription>
-            Configure currency, timezone, and tax rates for this business.
+            Configure the currency and timezone for this business. Tax and
+            receipt settings are managed from the business dashboard.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -190,55 +188,6 @@ export default function BusinessSettingsForm({ tenantId, initialValues }: Props)
                 </SelectContent>
               </Select>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="vatRate">VAT Rate (%)</Label>
-              <Input
-                id="vatRate"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                value={values.vatRate}
-                onChange={(e) => update('vatRate', parseFloat(e.target.value) || 0)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="ssclRate">SSCL Rate (%)</Label>
-              <Input
-                id="ssclRate"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                value={values.ssclRate}
-                onChange={(e) => update('ssclRate', parseFloat(e.target.value) || 0)}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-mist">
-        <CardHeader>
-          <CardTitle className="font-display text-espresso">Receipt Settings</CardTitle>
-          <CardDescription>
-            Customize the footer text printed on receipts.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <Label htmlFor="receiptFooter">Receipt Footer</Label>
-            <Textarea
-              id="receiptFooter"
-              value={values.receiptFooter}
-              onChange={(e) => update('receiptFooter', e.target.value)}
-              rows={4}
-              placeholder="Thank you for shopping with us!"
-            />
           </div>
         </CardContent>
       </Card>

@@ -3,25 +3,41 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const navGroups = [
-  {
-    label: 'Overview',
-    items: [{ name: 'Dashboard', href: '/superadmin/dashboard' }],
-  },
-  {
-    label: 'Management',
-    items: [
-      { name: 'Businesses', href: '/superadmin/tenants' },
-    ],
-  },
-  {
-    label: 'System',
-    items: [{ name: 'Health', href: '/superadmin/system' }],
-  },
-];
+export interface SuperAdminNavTenant {
+  id: string;
+  name: string;
+}
 
-export default function SuperAdminNav() {
+interface SuperAdminNavProps {
+  tenants?: SuperAdminNavTenant[];
+}
+
+export default function SuperAdminNav({ tenants = [] }: SuperAdminNavProps) {
   const pathname = usePathname();
+
+  const isActive = (href: string) =>
+    pathname === href || pathname.startsWith(`${href}/`);
+
+  const navGroups = [
+    {
+      label: 'Overview',
+      items: [{ name: 'Dashboard', href: '/superadmin/dashboard' }],
+    },
+    {
+      label: 'Businesses',
+      items: tenants.map((tenant) => ({
+        name: tenant.name,
+        href: `/superadmin/businesses/${tenant.id}`,
+      })),
+    },
+    {
+      label: 'Management',
+      items: [
+        { name: 'All Businesses', href: '/superadmin/tenants' },
+        { name: 'Health', href: '/superadmin/system' },
+      ],
+    },
+  ];
 
   return (
     <nav className="flex-1 overflow-y-auto px-3 py-4">
@@ -32,13 +48,13 @@ export default function SuperAdminNav() {
           </p>
           <ul className="space-y-1">
             {group.items.map((item) => {
-              const isActive = pathname === item.href;
+              const active = isActive(item.href);
               return (
                 <li key={item.href}>
                   <Link
                     href={item.href}
                     className={`block rounded-r-md px-3 py-2 text-sm font-medium transition-colors ${
-                      isActive
+                      active
                         ? 'border-l-[3px] border-sand bg-linen/10 text-pearl'
                         : 'border-l-[3px] border-transparent text-pearl/60 hover:text-terracotta'
                     }`}
