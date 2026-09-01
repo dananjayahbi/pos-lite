@@ -4,10 +4,9 @@
  */
 
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { tenantHomePath } from '@/lib/tenant';
 import { getTenantInfo } from '@/lib/api/website';
 import { TrackingLookupForm } from '@/components/website/tracking/TrackingLookupForm';
+import { StoreHeader } from '@/components/website/common/StoreHeader';
 
 interface TrackPageProps {
   params: Promise<{ tenantSlug: string }>;
@@ -21,23 +20,7 @@ export default async function TrackPage({ params }: TrackPageProps) {
 
   return (
     <div className="min-h-screen bg-[#051610] text-[#cbd5e1]">
-      <header className="border-b border-white/10">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <Link
-            href={tenantHomePath(tenantSlug)}
-            className="text-lg font-medium text-white"
-            style={{ fontFamily: 'var(--font-serif), serif' }}
-          >
-            {tenant?.name ?? 'Store'}
-          </Link>
-          <Link
-            href={tenantHomePath(tenantSlug)}
-            className="text-sm text-[#94a3b8] transition-colors hover:text-[#97c93e]"
-          >
-            ← Back to store
-          </Link>
-        </div>
-      </header>
+      <StoreHeader tenantSlug={tenantSlug} storeName={tenant?.name} />
 
       <main className="mx-auto max-w-3xl px-4 py-10">
         <h1

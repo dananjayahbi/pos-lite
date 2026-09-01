@@ -13,6 +13,8 @@ import {
 interface ProductDetailProps {
   product: PublicProduct;
   tenantSlug: string;
+  /** Tenant display name, surfaced in the trust bar. */
+  tenantName?: string | undefined;
 }
 
 /**
@@ -26,7 +28,7 @@ interface ProductDetailProps {
  * derived from it whenever the variant changes, and updated independently
  * when the visitor browses images directly.
  */
-export function ProductDetail({ product, tenantSlug }: ProductDetailProps) {
+export function ProductDetail({ product, tenantSlug, tenantName }: ProductDetailProps) {
   const variants = product.variants ?? [];
   const images = buildGalleryImages(variants, product.mainImageUrl);
 
@@ -68,6 +70,7 @@ export function ProductDetail({ product, tenantSlug }: ProductDetailProps) {
         tenantSlug={tenantSlug}
         selectedVariantId={selectedVariantId}
         onVariantChange={handleVariantChange}
+        tenantName={tenantName}
       />
     </div>
   );

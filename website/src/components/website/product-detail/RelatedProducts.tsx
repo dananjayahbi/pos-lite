@@ -43,7 +43,7 @@ export function RelatedProducts({ products, tenantSlug }: RelatedProductsProps) 
           You may also like
         </h2>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {products.map((p) => (
             <Link
               key={p.id}
@@ -55,7 +55,7 @@ export function RelatedProducts({ products, tenantSlug }: RelatedProductsProps) 
                 <img
                   src={pickImage(p)}
                   alt={p.name}
-                  className="primary"
+                  className="primary object-contain"
                   loading="lazy"
                 />
               </div>

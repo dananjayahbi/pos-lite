@@ -4,10 +4,9 @@
  */
 
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { tenantHomePath } from '@/lib/tenant';
 import { getTenantInfo } from '@/lib/api/website';
 import { CheckoutForm } from '@/components/website/checkout/CheckoutForm';
+import { StoreHeader } from '@/components/website/common/StoreHeader';
 
 interface CheckoutPageProps {
   params: Promise<{ tenantSlug: string }>;
@@ -22,23 +21,7 @@ export default async function CheckoutPage({ params }: CheckoutPageProps) {
 
   return (
     <div className="min-h-screen bg-[#051610] text-[#cbd5e1]">
-      <header className="border-b border-white/10">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 py-3">
-          <Link
-            href={tenantHomePath(tenantSlug)}
-            className="text-lg font-medium text-white"
-            style={{ fontFamily: 'var(--font-serif), serif' }}
-          >
-            {tenant?.name ?? 'Store'}
-          </Link>
-          <Link
-            href={tenantHomePath(tenantSlug)}
-            className="text-sm text-[#94a3b8] hover:text-[#97c93e] transition-colors"
-          >
-            ← Back to store
-          </Link>
-        </div>
-      </header>
+      <StoreHeader tenantSlug={tenantSlug} storeName={tenant?.name} />
 
       <main className="mx-auto max-w-7xl px-4 py-8">
         <h1

@@ -58,7 +58,7 @@ export function ProductGallery({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Main image */}
+      {/* Main image — object-contain so non-square images aren't cropped */}
       <div
         className="aspect-square overflow-hidden rounded-xl border border-white/10 bg-[#082017]"
         onTouchStart={onTouchStart}
@@ -68,7 +68,7 @@ export function ProductGallery({
         <img
           src={currentImage.url}
           alt={productName}
-          className="h-full w-full select-none object-cover"
+          className="h-full w-full select-none object-contain"
           draggable={false}
         />
       </div>
@@ -116,7 +116,7 @@ export function ProductGallery({
               <img
                 src={img.url}
                 alt={`${productName} thumbnail ${i + 1}`}
-                className="h-full w-full object-cover"
+                className="h-full w-full object-contain"
               />
             </button>
           ))}

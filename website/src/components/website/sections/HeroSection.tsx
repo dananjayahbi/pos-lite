@@ -183,7 +183,7 @@ export function HeroSection({ websiteConfig, tenantSlug }: HeroSectionProps) {
 
           {/* Right column */}
           <div className="lg:col-span-5 flex flex-col justify-center lg:pl-6">
-            <div className="bg-black/30 lg:bg-transparent p-6 lg:p-0 rounded-2xl backdrop-blur-sm lg:backdrop-blur-0 border border-white/10 lg:border-none">
+            <div className="bg-black/30 p-6 sm:p-8 lg:p-10 rounded-2xl backdrop-blur-md border border-white/10 shadow-[0_8px_30px_rgba(0,0,0,0.25)]">
               <div className={`slide-text-animate ${exiting ? 'animate-out' : ''} delay-200`}>
                 <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold uppercase tracking-wider text-[#97c93e] mt-1 mb-3">
                   {slide.title ?? 'VITALITY & WELLNESS'}
@@ -196,7 +196,7 @@ export function HeroSection({ websiteConfig, tenantSlug }: HeroSectionProps) {
                 </p>
               </div>
 
-              <div className={`slide-text-animate ${exiting ? 'animate-out' : ''} delay-400 flex items-center gap-4`}>
+              <div className={`slide-text-animate ${exiting ? 'animate-out' : ''} delay-400 flex flex-wrap items-center gap-4`}>
                 <a
                   href={slide.ctaLink ?? ROUTES.shop(tenantSlug)}
                   className="inline-flex items-center gap-2.5 px-6 py-2.5 rounded-full bg-[#97c93e] hover:bg-[#b2db58] text-black font-semibold text-xs sm:text-sm tracking-wider uppercase transition-all duration-300 shadow-md hover:scale-105 active:scale-95"

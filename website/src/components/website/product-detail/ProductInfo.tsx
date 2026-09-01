@@ -6,6 +6,8 @@ import { formatLKR } from '@/lib/utils';
 import { useCartStore, selectLineQuantity } from '@/stores/cartStore';
 import { AddToCartButton } from '@/components/website/cart/AddToCartButton';
 import { QuantityStepper } from '@/components/website/cart/QuantityStepper';
+import { ProductConcerns } from '@/components/website/product-detail/ProductConcerns';
+import { ProductTrustBar } from '@/components/website/product-detail/ProductTrustBar';
 
 interface ProductInfoProps {
   product: PublicProduct;
@@ -14,6 +16,8 @@ interface ProductInfoProps {
   selectedVariantId?: string | undefined;
   /** Called when the visitor selects a variant through the UI. */
   onVariantChange?: (variant: PublicProductVariant | undefined) => void;
+  /** Tenant display name (used in the trust bar). */
+  tenantName?: string | undefined;
 }
 
 /**
@@ -24,6 +28,7 @@ export function ProductInfo({
   tenantSlug,
   selectedVariantId,
   onVariantChange,
+  tenantName,
 }: ProductInfoProps) {
   const variants = product.variants ?? [];
   const selected =
@@ -103,6 +108,9 @@ export function ProductInfo({
           : 'Out of stock'}
       </p>
 
+      {/* Concern chips */}
+      <ProductConcerns concerns={product.healthConcerns} />
+
       {/* Description */}
       {product.description && (
         <div className="prose prose-sm max-w-none text-[#cbd5e1]">
@@ -146,6 +154,9 @@ export function ProductInfo({
           {currentQtyInCart} of this item {currentQtyInCart === 1 ? 'is' : 'are'} already in your cart.
         </p>
       )}
+
+      {/* Trust highlights */}
+      <ProductTrustBar tenantName={tenantName} />
     </div>
   );
 }
