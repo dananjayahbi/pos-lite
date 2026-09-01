@@ -5,8 +5,7 @@ import { getPublicProduct, getPublicProducts } from '@/lib/api/products';
 import { getTenantInfo } from '@/lib/api/website';
 import { tenantHomePath } from '@/lib/tenant';
 import { SITE } from '@/config/site';
-import { ProductGallery } from '@/components/website/product-detail/ProductGallery';
-import { ProductInfo } from '@/components/website/product-detail/ProductInfo';
+import { ProductDetail } from '@/components/website/product-detail/ProductDetail';
 import { ProductHealthSections } from '@/components/website/product-detail/ProductHealthSections';
 import { RelatedProducts } from '@/components/website/product-detail/RelatedProducts';
 import { Breadcrumb } from '@/components/website/product-detail/Breadcrumb';
@@ -74,18 +73,8 @@ export default async function ProductPage({ params }: ProductPageProps) {
           />
         </div>
 
-        {/* Product layout */}
-        <div className="grid gap-8 md:grid-cols-2">
-          <ProductGallery
-            variants={product.variants}
-            productName={product.name}
-            mainImageUrl={product.mainImageUrl}
-          />
-          <ProductInfo
-            product={product}
-            tenantSlug={tenantSlug}
-          />
-        </div>
+        {/* Product layout — gallery + info kept in sync (variant ↔ image) */}
+        <ProductDetail product={product} tenantSlug={tenantSlug} />
 
         {/* Structured Ayurvedic health/usage content */}
         <ProductHealthSections product={product} />

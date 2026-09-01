@@ -10,16 +10,26 @@ import { QuantityStepper } from '@/components/website/cart/QuantityStepper';
 interface ProductInfoProps {
   product: PublicProduct;
   tenantSlug: string;
+  /** Controlled selected variant id (lifted to the parent for cross-sync). */
+  selectedVariantId?: string | undefined;
+  /** Called when the visitor selects a variant through the UI. */
+  onVariantChange?: (variant: PublicProductVariant | undefined) => void;
 }
 
 /**
  * Product name, price, variant selector, quantity picker, and add-to-cart CTA.
  */
-export function ProductInfo({ product, tenantSlug }: ProductInfoProps) {
+export function ProductInfo({
+  product,
+  tenantSlug,
+  selectedVariantId,
+  onVariantChange,
+}: ProductInfoProps) {
   const variants = product.variants ?? [];
-  const [selected, setSelected] = useState<PublicProductVariant | undefined>(
-    product.primaryVariant ?? variants[0],
-  );
+  const selected =
+    variants.find((v) => v.id === selectedVariantId) ??
+    product.primaryVariant ??
+    variants[0];
 
   const price = selected?.retailPrice ?? variants[0]?.retailPrice ?? 0;
   const inStock = (selected?.stockQuantity ?? 0) > 0;
@@ -29,6 +39,10 @@ export function ProductInfo({ product, tenantSlug }: ProductInfoProps) {
       : () => 0,
   );
   const [qty, setQty] = useState(1);
+
+  const handleSelect = (v: PublicProductVariant) => {
+    onVariantChange?.(v);
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -68,7 +82,7 @@ export function ProductInfo({ product, tenantSlug }: ProductInfoProps) {
               <button
                 key={v.id}
                 type="button"
-                onClick={() => setSelected(v)}
+                onClick={() => handleSelect(v)}
                 className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
                   selected?.id === v.id
                     ? 'border-[#97c93e] bg-[#97c93e] text-[#051610]'
