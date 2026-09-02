@@ -1,0 +1,119 @@
+/* ======================================================== */
+/* SPOTLIGHT FEATURED BANNER SECTION STYLES                 */
+/* Classic 2-Column Split Layout with Parallax & Animations */
+/* ======================================================== */
+
+#spotlight-section {
+  position: relative;
+  background-color: #051610;
+}
+
+/* Left Image Showcase Frame (Plain Image with Parallax & 3D Depth) */
+.spotlight-img-frame {
+  position: relative;
+  border-radius: 36px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 25px 50px -15px rgba(0, 0, 0, 0.8), 0 0 35px rgba(151, 201, 62, 0.08);
+  transform-style: preserve-3d;
+  transition: transform 500ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 500ms cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 400ms ease;
+  will-change: transform;
+}
+
+.spotlight-img-frame:hover {
+  border-color: rgba(151, 201, 62, 0.35);
+  box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.9), 0 0 45px rgba(151, 201, 62, 0.16);
+}
+
+.spotlight-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  transition: transform 800ms cubic-bezier(0.2, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.spotlight-img-frame:hover .spotlight-img {
+  transform: scale(1.06);
+}
+
+/* Subtle Vignette on Image Frame */
+.spotlight-img-vignette {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.05) 0%, rgba(5, 22, 16, 0.5) 100%);
+  pointer-events: none;
+}
+
+/* Ambient Backlight Halo */
+.spotlight-halo {
+  position: absolute;
+  width: 380px;
+  height: 380px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(151, 201, 62, 0.15) 0%, rgba(9, 34, 24, 0) 70%);
+  filter: blur(60px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Right Content Column Typography */
+.spotlight-title {
+  font-family: var(--font-serif);
+  font-size: 2.25rem;
+  line-height: 1.18;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.02em;
+}
+
+@media (min-width: 640px) {
+  .spotlight-title {
+    font-size: 2.75rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .spotlight-title {
+    font-size: 3.25rem;
+  }
+}
+
+.spotlight-subtitle {
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  color: #cbd5e1;
+  font-weight: 300;
+}
+
+/* Prominent "BUY NOW" Button */
+.spotlight-buy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px 36px;
+  border-radius: 9999px;
+  background: #97c93e;
+  color: #000000;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 10px 25px rgba(151, 201, 62, 0.35);
+  cursor: pointer;
+}
+
+.spotlight-buy-btn:hover {
+  background: #b2db58;
+  transform: translateY(-3px) scale(1.03);
+  box-shadow: 0 14px 32px rgba(151, 201, 62, 0.5);
+}
+
+.spotlight-buy-btn:active {
+  transform: translateY(0) scale(0.98);
+}

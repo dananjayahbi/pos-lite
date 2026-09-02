@@ -194,6 +194,26 @@ export interface FooterColumn {
   links: FooterColumnLink[];
 }
 
+// ── Appointments (Channelling) ───────────────────────────────────────────────
+
+/** Config for the customer-facing "Appointments" booking page. */
+export interface WebsiteAppointmentsConfig {
+  /** Whether the Appointments booking page appears in the website nav + is public. */
+  enabled: boolean;
+  /** Nav label shown in the header menu (e.g. "Book a Channeling"). */
+  navLabel: string;
+  /** Hero/heading title shown on the booking page. */
+  title: string;
+  /** Subtitle shown under the title. */
+  subtitle: string;
+  /** Optional hero image URL for the booking page. */
+  heroImageUrl?: string;
+  /** Appointment service IDs offered to customers. Empty = show all active services. */
+  serviceIds: string[];
+  /** Short helper blurb shown above the booking form. */
+  intro?: string;
+}
+
 // ── Combined sections map ────────────────────────────────────────────────────
 
 export type SectionKey =
@@ -257,6 +277,9 @@ export interface WebsiteConfigData {
   // Footer
   footerAbout?: string;
   footerColumns: FooterColumn[];
+
+  // Appointments (customer-facing booking page)
+  appointments?: WebsiteAppointmentsConfig;
 
   // About page
   aboutPageTitle?: string;

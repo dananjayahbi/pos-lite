@@ -39,4 +39,6 @@ export const ROUTES = {
   cart: (tenantSlug: string) => `/${tenantSlug}/cart`,
   checkout: (tenantSlug: string) => `/${tenantSlug}/checkout`,
   track: (tenantSlug: string) => `/${tenantSlug}/track`,
+  appointments: (tenantSlug: string) =>
+    tenantSlug === SITE.defaultTenantSlug ? '/appointments' : `/${tenantSlug}/appointments`,
 } as const;

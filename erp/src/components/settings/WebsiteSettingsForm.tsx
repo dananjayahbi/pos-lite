@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Palette, Layout, Layers, Footprints, ShoppingBag, FileText, Phone, AlertTriangle } from 'lucide-react';
+import { Palette, Layout, Layers, Footprints, ShoppingBag, FileText, Phone, AlertTriangle, CalendarDays } from 'lucide-react';
 import { GeneralTab } from './website-tabs/GeneralTab';
 import { HeaderTab } from './website-tabs/HeaderTab';
 import { LandingPageTab } from './website-tabs/LandingPageTab';
@@ -11,6 +11,7 @@ import { FooterTab } from './website-tabs/FooterTab';
 import { AboutPageTab } from './website-tabs/AboutPageTab';
 import { ContactPageTab } from './website-tabs/ContactPageTab';
 import { ShopTab } from './website-tabs/ShopTab';
+import { AppointmentsTab } from './website-tabs/AppointmentsTab';
 import { ResetConfirmDialog } from './ResetConfirmDialog';
 import { pendingUploads, removedUrls, processPendingUploads, deleteRemovedUrls, resetUploadState } from './uploadState';
 import type { WebsiteConfigData } from '@/types/website.types';
@@ -41,6 +42,14 @@ const DEFAULT_CONFIG: WebsiteConfigData = {
   footerAbout: '',
   footerColumns: [],
   heroSlides: [],
+  appointments: {
+    enabled: false,
+    navLabel: 'Appointments',
+    title: 'Book a Channeling',
+    subtitle: '',
+    serviceIds: [],
+    intro: '',
+  },
 };
 
 const TABS = [
@@ -51,6 +60,7 @@ const TABS = [
   { value: 'shop', label: 'Shop Page', icon: ShoppingBag },
   { value: 'about', label: 'About Page', icon: FileText },
   { value: 'contact', label: 'Contact Page', icon: Phone },
+  { value: 'appointments', label: 'Appointments', icon: CalendarDays },
 ] as const;
 
 type TabValue = (typeof TABS)[number]['value'];
@@ -306,6 +316,8 @@ export default function WebsiteSettingsForm() {
         return <AboutPageTab config={config} onChange={updateConfig} />;
       case 'contact':
         return <ContactPageTab config={config} onChange={updateConfig} />;
+      case 'appointments':
+        return <AppointmentsTab config={config} onChange={updateConfig} />;
       default:
         return null;
     }

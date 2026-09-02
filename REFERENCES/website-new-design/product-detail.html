@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Product Details - Wedagedara | Ayurvedic Apothecary</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'ayurveda-green': '#97c93e',
+            'ayurveda-accent': '#b2db58',
+            'emerald-deep': '#051610',
+            'emerald-card': '#082017',
+            'gold-accent': '#c5a059',
+          },
+          fontFamily: {
+            cinzel: ['Cinzel', 'serif'],
+            sans: ['Plus Jakarta Sans', 'sans-serif'],
+            playfair: ['Playfair Display', 'serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts: Cinzel & Plus Jakarta Sans & Playfair Display -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,400;1,600&display=swap" rel="stylesheet" />
+
+  <!-- Font Awesome 6 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <!-- Modular Section Stylesheets -->
+  <link rel="stylesheet" href="assets/css/global.css" />
+  <link rel="stylesheet" href="assets/css/header.css" />
+  <link rel="stylesheet" href="assets/css/cart.css" />
+  <link rel="stylesheet" href="assets/css/product-detail.css" />
+  <link rel="stylesheet" href="assets/css/footer.css" />
+</head>
+
+<body class="bg-[#051610] text-slate-100 min-h-screen relative selection:bg-[#97c93e] selection:text-black">
+
+  <!-- ======================================================== -->
+  <!-- 01. HEADER SECTION                                       -->
+  <!-- ======================================================== -->
+  <header id="main-header" class="fixed top-0 left-0 right-0 z-40 transition-all duration-300 px-6 sm:px-10 lg:px-16 py-5">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      
+      <!-- Brand Logo / Left Header -->
+      <a href="index.html" class="flex items-center gap-3 group">
+        <div class="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white p-1 border border-[#97c93e]/40 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform overflow-hidden flex-shrink-0">
+          <img src="assets/images/logo.jpg" alt="Ruhunu Wedagedara Logo" class="w-full h-full object-contain" />
+        </div>
+        <div class="flex flex-col">
+          <span class="font-cinzel tracking-[0.22em] text-base md:text-lg font-bold text-white uppercase group-hover:text-[#b2db58] transition-colors">
+            WEDAGEDARA
+          </span>
+          <span class="text-[9px] tracking-[0.28em] uppercase text-gray-400 -mt-1 font-sans">Ayurvedic Heritage</span>
+        </div>
+      </a>
+
+      <!-- Desktop Navigation Items -->
+      <nav class="hidden md:flex items-center gap-7 lg:gap-9">
+        <a href="index.html" class="text-sm font-medium tracking-wider uppercase text-gray-300 hover:text-[#97c93e] transition-colors relative py-1 group">
+          HOME
+          <span class="absolute bottom-0 left-0 w-0 h-[2px] bg-[#97c93e] transition-all duration-300 group-hover:w-full"></span>
+        </a>
+        <a href="about.html" class="text-sm font-medium tracking-wider uppercase text-gray-300 hover:text-[#97c93e] transition-colors relative py-1 group">
+          ABOUT
+          <span class="absolute bottom-0 left-0 w-0 h-[2px] bg-[#97c93e] transition-all duration-300 group-hover:w-full"></span>
+        </a>
+        <a href="shop.html" class="text-sm font-medium tracking-wider uppercase text-white hover:text-[#97c93e] transition-colors relative py-1 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-[2px] after:bg-[#97c93e]">
+          SHOP
+        </a>
+        <a href="contact.html" class="text-sm font-medium tracking-wider uppercase text-gray-300 hover:text-[#97c93e] transition-colors relative py-1 group">
+          CONTACT
+          <span class="absolute bottom-0 left-0 w-0 h-[2px] bg-[#97c93e] transition-all duration-300 group-hover:w-full"></span>
+        </a>
+        <a href="appointments.html" class="text-sm font-semibold tracking-wider uppercase px-4 py-2 rounded-full border border-[#97c93e]/40 text-[#b2db58] hover:bg-[#97c93e] hover:text-black transition-all duration-300">
+          <i class="fa-regular fa-calendar-check mr-1.5 text-xs"></i> Appointments
+        </a>
+      </nav>
+
+      <!-- Header Right Action Group: Cart & Mobile Menu -->
+      <div class="flex items-center gap-3">
+        <!-- Shopping Basket Button -->
+        <button class="cart-toggle-btn relative text-white hover:text-[#97c93e] transition-colors p-2 text-lg focus:outline-none" aria-label="Open Shopping Basket">
+          <i class="fa-solid fa-bag-shopping"></i>
+          <span id="header-cart-badge" class="cart-badge">0</span>
+        </button>
+
+        <!-- Mobile Hamburger Toggle -->
+        <button id="mobile-menu-btn" class="md:hidden text-white hover:text-[#97c93e] text-2xl focus:outline-none p-1" aria-label="Open Mobile Menu">
+          <i class="fa-solid fa-bars-staggered"></i>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Mobile Drawer Menu -->
+  <div id="mobile-backdrop" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 opacity-0 pointer-events-none transition-opacity duration-300 md:hidden"></div>
+  <aside id="mobile-drawer" class="fixed top-0 right-0 bottom-0 w-72 bg-[#082017] border-l border-white/10 z-50 p-6 flex flex-col justify-between translate-x-full transition-transform duration-300 md:hidden shadow-2xl">
+    <div>
+      <div class="flex items-center justify-between pb-6 border-b border-white/10">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-white p-0.5 border border-[#97c93e]/40 flex items-center justify-center shadow-md overflow-hidden flex-shrink-0">
+            <img src="assets/images/logo.jpg" alt="Ruhunu Wedagedara Logo" class="w-full h-full object-contain" />
+          </div>
+          <span class="font-cinzel tracking-widest text-lg font-bold text-[#97c93e]">WEDAGEDARA</span>
+        </div>
+        <button id="mobile-menu-close" class="text-gray-400 hover:text-white text-xl p-1" aria-label="Close Mobile Menu">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <nav class="flex flex-col gap-4 mt-6">
+        <a href="index.html" class="mobile-nav-link text-base font-medium text-gray-200 hover:text-[#97c93e] flex items-center justify-between py-2 border-b border-white/5">
+          <span>HOME</span>
+          <i class="fa-solid fa-chevron-right text-xs"></i>
+        </a>
+        <a href="about.html" class="mobile-nav-link text-base font-medium text-gray-200 hover:text-[#97c93e] flex items-center justify-between py-2 border-b border-white/5">
+          <span>ABOUT</span>
+          <i class="fa-solid fa-chevron-right text-xs"></i>
+        </a>
+        <a href="shop.html" class="mobile-nav-link text-base font-medium text-[#97c93e] flex items-center justify-between py-2 border-b border-white/5">
+          <span>SHOP</span>
+          <i class="fa-solid fa-chevron-right text-xs"></i>
+        </a>
+        <a href="contact.html" class="mobile-nav-link text-base font-medium text-gray-200 hover:text-[#97c93e] flex items-center justify-between py-2 border-b border-white/5">
+          <span>CONTACT</span>
+          <i class="fa-solid fa-chevron-right text-xs"></i>
+        </a>
+        <a href="appointments.html" class="mobile-nav-link text-base font-medium text-[#b2db58] flex items-center justify-between py-2 mt-2 bg-[#97c93e]/10 px-3 rounded-lg border border-[#97c93e]/30">
+          <span><i class="fa-regular fa-calendar-check mr-2"></i> Appointments</span>
+          <i class="fa-solid fa-arrow-right text-xs"></i>
+        </a>
+      </nav>
+    </div>
+
+    <div class="pt-6 border-t border-white/10 text-xs text-gray-400 flex flex-col gap-2">
+      <div class="flex items-center gap-2 text-white">
+        <i class="fa-solid fa-phone text-[#97c93e]"></i>
+        <span>+94 (0) 11 234 5678</span>
+      </div>
+      <div class="flex items-center gap-2 text-white">
+        <i class="fa-solid fa-location-dot text-[#97c93e]"></i>
+        <span>Colombo 07, Sri Lanka</span>
+      </div>
+    </div>
+  </aside>
+
+
+  <!-- ======================================================== -->
+  <!-- 02. BREADCRUMBS BAR                                      -->
+  <!-- ======================================================== -->
+  <section class="pt-28 pb-6 border-b border-white/5 bg-[#051610]">
+    <div class="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 flex items-center justify-between">
+      <nav class="detail-breadcrumbs flex items-center gap-2">
+        <a href="index.html">Home</a>
+        <span>/</span>
+        <a href="shop.html">Shop</a>
+        <span>/</span>
+        <span id="breadcrumb-product-name" class="text-white font-medium">Product</span>
+      </nav>
+
+      <a href="shop.html" class="back-to-store-btn">
+        <i class="fa-solid fa-arrow-left text-xs"></i>
+        <span>Back to store</span>
+      </a>
+    </div>
+  </section>
+
+
+  <!-- ======================================================== -->
+  <!-- 03. SINGLE PRODUCT SHOWCASE SECTION                      -->
+  <!-- ======================================================== -->
+  <section id="product-showcase-section" class="relative w-full py-12 sm:py-16 lg:py-20 overflow-hidden">
+    <div class="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
+      
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-start">
+        
+        <!-- Left Column: Image Showcase -->
+        <div class="lg:col-span-6">
+          <div class="product-main-img-frame">
+            <img 
+              id="detail-main-img" 
+              src="" 
+              alt="Ayurvedic Product Formulation" 
+              class="product-main-img"
+            />
+          </div>
+        </div>
+
+        <!-- Right Column: Product Meta & Add to Cart -->
+        <div class="lg:col-span-6 flex flex-col">
+          
+          <!-- Tags -->
+          <div id="detail-tags-container" class="flex flex-wrap gap-2 mb-4">
+            <!-- Injected by product-detail.js -->
+          </div>
+
+          <!-- Product Title -->
+          <h1 id="detail-title" class="detail-product-title">
+            Loading...
+          </h1>
+
+          <!-- Price Display -->
+          <div class="mt-4 mb-6">
+            <span id="detail-price" class="detail-price-val">Rs. 0</span>
+          </div>
+
+          <!-- Variant Selections -->
+          <div class="mb-6">
+            <label class="block text-xs font-bold tracking-wider uppercase text-gray-400 mb-3 font-sans">
+              SELECT VARIANT
+            </label>
+            <div id="detail-variants-container" class="flex flex-wrap gap-2.5">
+              <!-- Injected by product-detail.js -->
+            </div>
+          </div>
+
+          <!-- Stock Status -->
+          <div id="detail-stock-status" class="mb-6 text-sm font-semibold text-emerald-400 font-sans flex items-center">
+            <i class="fa-solid fa-circle-check text-emerald-400 mr-1.5"></i> In stock
+          </div>
+
+          <!-- Description -->
+          <div class="mb-8 border-t border-b border-white/5 py-6">
+            <p id="detail-description" class="text-gray-300 font-light leading-relaxed font-sans text-sm sm:text-base">
+              Classical Ayurvedic decoction.
+            </p>
+          </div>
+
+          <!-- Quantity Stepper & Add to Cart CTA -->
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+            
+            <!-- Quantity Stepper -->
+            <div class="flex items-center justify-between border border-white/15 rounded-full bg-[#082017] px-4 py-2 w-full sm:w-36">
+              <button id="qty-minus" class="qty-btn" aria-label="Decrease Quantity">-</button>
+              <span id="qty-val" class="qty-val-display">1</span>
+              <button id="qty-plus" class="qty-btn" aria-label="Increase Quantity">+</button>
+            </div>
+
+            <!-- Add to Cart CTA -->
+            <button id="add-to-cart-cta" class="add-to-cart-btn">
+              <i class="fa-solid fa-bag-shopping"></i>
+              <span>ADD TO CART</span>
+            </button>
+
+          </div>
+
+          <!-- Extra Assurance Badges -->
+          <div class="grid grid-cols-2 gap-4 mt-8 pt-6 border-t border-white/5 text-xs text-gray-400 font-sans">
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-seedling text-[#97c93e]"></i>
+              <span>100% Organically Harvested</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-shield-heart text-[#97c93e]"></i>
+              <span>Ola Leaf Ancestral Purity</span>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ======================================================== -->
+  <!-- 04. YOU MAY ALSO LIKE SECTION (5 Product Cards)          -->
+  <!-- ======================================================== -->
+  <section id="related-products-section" class="relative w-full py-16 sm:py-20 border-t border-white/5 bg-gradient-to-b from-[#051610] to-[#04120d]">
+    <div class="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
+      
+      <div class="mb-10">
+        <h2 class="text-2xl sm:text-3xl font-cinzel font-bold text-white tracking-wide">
+          You may also like
+        </h2>
+        <div class="w-12 h-[2px] bg-[#97c93e]/60 mt-3"></div>
+      </div>
+
+      <!-- 5-Card Dynamic Grid -->
+      <div id="related-products-grid" class="related-products-grid">
+        <!-- Injected dynamically by product-detail.js -->
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ======================================================== -->
+  <!-- 05. SHARE / CART TOAST NOTIFICATION                      -->
+  <!-- ======================================================== -->
+  <div id="share-toast" class="fixed bottom-8 right-8 bg-[#082017] border border-[#97c93e]/40 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 z-50 opacity-0 pointer-events-none transition-all duration-300">
+    <i class="fa-solid fa-circle-check text-[#97c93e] text-lg"></i>
+    <span class="text-sm font-medium">Added to your sanctuary basket!</span>
+  </div>
+
+
+  <!-- ======================================================== -->
+  <!-- 06. FOOTER SECTION (Strict 3-Column Ancestral Layout)    -->
+  <!-- ======================================================== -->
+  <footer id="main-footer" class="relative w-full pt-20 pb-12 bg-gradient-to-b from-[#051610] via-[#030e0a] to-[#010705] overflow-hidden border-t border-white/10">
+    <div class="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
+      <div class="footer-grid reveal-on-scroll">
+        
+        <!-- COLUMN 1: BRAND IDENTITY & LOGO -->
+        <div class="flex flex-col">
+          <a href="index.html" class="footer-brand-logo group">
+            <div class="w-10 h-10 rounded-xl bg-white p-1 border border-[#97c93e]/40 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform overflow-hidden flex-shrink-0">
+              <img src="assets/images/logo.jpg" alt="Ruhunu Wedagedara Logo" class="w-full h-full object-contain" />
+            </div>
+            <span>WEDAGEDARA</span>
+          </a>
+          <p class="footer-brand-text">
+            Rooted in ancestral Ola Leaf manuscripts and ethical Ceylon forest sanctuaries. We slow-decoct sacred botanicals to preserve the purest healing potency for cellular vitality and timeless wellness.
+          </p>
+          <div class="footer-social-wrap">
+            <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" class="footer-social-btn" aria-label="Instagram"><i class="fa-brands fa-instagram"></i></a>
+            <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" class="footer-social-btn" aria-label="Facebook"><i class="fa-brands fa-facebook-f"></i></a>
+            <a href="https://wa.me/94770000000" target="_blank" rel="noopener noreferrer" class="footer-social-btn" aria-label="WhatsApp"><i class="fa-brands fa-whatsapp"></i></a>
+            <a href="https://youtube.com" target="_blank" rel="noopener noreferrer" class="footer-social-btn" aria-label="YouTube"><i class="fa-brands fa-youtube"></i></a>
+          </div>
+        </div>
+
+        <!-- COLUMN 2: BOTANICAL NAVIGATION -->
+        <div class="flex flex-col">
+          <h3 class="footer-col-title">EXPLORE APOTHECARY</h3>
+          <nav class="footer-nav-list">
+            <a href="shop.html" class="footer-nav-link group">
+              <i class="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors"></i>
+              <span>All Shop Formulations</span>
+            </a>
+            <a href="index.html#top-selling-section" class="footer-nav-link group">
+              <i class="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors"></i>
+              <span>Top Selling Remedies</span>
+            </a>
+            <a href="index.html#categories-section" class="footer-nav-link group">
+              <i class="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors"></i>
+              <span>Botanical Categories</span>
+            </a>
+            <a href="contact.html" class="footer-nav-link group">
+              <i class="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors"></i>
+              <span>Physical Sanctuary</span>
+            </a>
+          </nav>
+        </div>
+
+        <!-- COLUMN 3: ALWAYS "ABOUT US" -->
+        <div class="flex flex-col">
+          <h3 class="footer-col-title">ABOUT US</h3>
+          <p class="footer-about-text">
+            Wedagedara represents a multi-generational lineage of Ceylon Ayurvedic masters and certified herbalists. We bridge 5,000-year-old botanical alchemy with modern purity standards, sourcing every root from pesticide-free indigenous soils.
+          </p>
+          <div class="footer-hours-card">
+            <span class="footer-hours-label">SANCTUARY CONSULTATION HOURS</span>
+            <span class="footer-hours-val">Monday – Sunday: 8:00 AM – 7:00 PM</span>
+            <span class="text-xs text-gray-400 mt-1 font-sans">42 Horton Place, Colombo 07</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom Bar -->
+      <div class="footer-bottom-bar reveal-on-scroll">
+        <p class="footer-copy-text">&copy; 2026 Wedagedara. All Rights Reserved. Crafted with Ancestral Wisdom.</p>
+        <button id="footer-back-to-top" class="footer-back-top-btn" aria-label="Back to Top">
+          <span>TOP</span>
+          <i class="fa-solid fa-arrow-up text-xs"></i>
+        </button>
+      </div>
+
+    </div>
+  </footer>
+
+  <!-- ======================================================== -->
+  <!-- CART DRAWER COMPONENT                                    -->
+  <!-- ======================================================== -->
+  <div id="cart-backdrop"></div>
+  <aside id="cart-drawer" aria-label="Shopping Basket Drawer">
+    <!-- Drawer Header -->
+    <div class="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-[#051610]">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-white p-0.5 border border-[#97c93e]/40 flex items-center justify-center shadow-md overflow-hidden flex-shrink-0">
+          <img src="assets/images/logo.jpg" alt="Ruhunu Wedagedara Logo" class="w-full h-full object-contain" />
+        </div>
+        <div>
+          <h3 class="font-cinzel text-base font-bold text-white tracking-wider">YOUR BASKET</h3>
+          <span id="cart-drawer-count" class="text-[10px] uppercase tracking-widest text-[#97c93e] -mt-1 block font-sans">(0 items)</span>
+        </div>
+      </div>
+      <button id="cart-drawer-close" class="text-gray-400 hover:text-white text-xl p-1 transition-colors" aria-label="Close Basket">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+
+    <!-- Scrollable Items Container -->
+    <div id="cart-items-container">
+      <!-- Injected dynamically by cart.js -->
+    </div>
+
+    <!-- Drawer Footer -->
+    <div id="cart-footer">
+      <div class="flex items-center justify-between text-sm text-gray-400 mb-2 font-sans">
+        <span>Subtotal</span>
+        <span id="cart-subtotal-val" class="text-base font-bold text-white font-sans">Rs. 0</span>
+      </div>
+      <div class="flex items-center gap-1.5 text-[11px] text-[#97c93e]/80 mb-4 font-sans">
+        <i class="fa-solid fa-truck-fast"></i>
+        <span>Ayurvedic delivery across Sri Lanka & Worldwide</span>
+      </div>
+      <button id="cart-checkout-cta" class="cart-checkout-btn">
+        <i class="fa-solid fa-lock text-xs"></i>
+        <span>PROCEED TO CHECKOUT</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Modular Scripts -->
+  <script src="assets/js/header.js"></script>
+  <script src="assets/js/parallax.js"></script>
+  <script src="assets/js/footer.js"></script>
+  <script src="assets/js/cart.js"></script>
+  <script src="assets/js/shop.js"></script>
+  <script src="assets/js/product-detail.js"></script>
+</body>
+</html>

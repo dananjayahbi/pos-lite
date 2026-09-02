@@ -94,6 +94,18 @@ export const FooterColumnSchema = z.object({
   links: z.array(FooterColumnLinkSchema).default([]),
 });
 
+// ── Appointments (Channelling) ───────────────────────────────────────────────
+
+export const WebsiteAppointmentsConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  navLabel: z.string().max(50).default('Appointments'),
+  title: z.string().max(200).default('Book an Appointment'),
+  subtitle: z.string().max(500).default(''),
+  heroImageUrl: z.string().max(500).nullable().optional().or(z.literal('')),
+  serviceIds: z.array(z.string()).default([]),
+  intro: z.string().max(1000).nullable().optional().or(z.literal('')),
+});
+
 // ── Section Configs (validated) ─────────────────────────────────────────────
 // Each section schema uses `.partial().passthrough()` so optional/unknown
 // fields are preserved, while the shape of known fields is validated at save
@@ -229,6 +241,9 @@ export const WebsiteConfigSchema = z.object({
   // Footer
   footerAbout: z.string().max(1000).nullable().optional().or(z.literal('')),
   footerColumns: z.array(FooterColumnSchema).default([]),
+
+  // Appointments (customer-facing booking page)
+  appointments: WebsiteAppointmentsConfigSchema.nullable().optional(),
 
   // About Page
   aboutPageTitle: z.string().max(200).nullable().optional().or(z.literal('')),

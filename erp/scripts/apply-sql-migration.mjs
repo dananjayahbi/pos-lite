@@ -17,11 +17,16 @@ if (!migrationPath) {
   process.exit(1);
 }
 
-// Read DATABASE_URL from .env.local (strip optional surrounding quotes).
-const envRaw = readFileSync(resolve(erpRoot, '.env.local'), 'utf8');
+// Read DATABASE_URL from .env.local if present, otherwise fall back to .env
+// (strip optional surrounding quotes).
+import { existsSync } from 'node:fs';
+const envFilePath = existsSync(resolve(erpRoot, '.env.local'))
+  ? resolve(erpRoot, '.env.local')
+  : resolve(erpRoot, '.env');
+const envRaw = readFileSync(envFilePath, 'utf8');
 const match = envRaw.match(/^DATABASE_URL="?([^"\n]+)"?$/m);
 if (!match) {
-  console.error('DATABASE_URL not found in .env.local');
+  console.error(`DATABASE_URL not found in ${envFilePath}`);
   process.exit(1);
 }
 const databaseUrl = match[1];

@@ -1027,8 +1027,8 @@ model Sale {
   id                    String         @id @default(cuid())
   tenantId              String
   tenant                Tenant         @relation(fields: [tenantId], references: [id])
-  shiftId               String
-  shift                 Shift          @relation(fields: [shiftId], references: [id])
+  shiftId               String?
+  shift                 Shift?         @relation(fields: [shiftId], references: [id])
   customerId            String?
   customer              Customer?      @relation(fields: [customerId], references: [id])
   cashierId             String

@@ -1770,6 +1770,29 @@ async function seedHardwareAndAuditData() {
     console.log('Delivery module already enabled, skipping');
   }
 
+  // ── 1b2. Enable appointments module on the primary tenant ──
+  // Re-read settings to include any modules enabled above.
+  const currentSettings2 = (await prisma.tenant.findUnique({ where: { id: tenantId } }))
+    ?.settings as Record<string, unknown> | null;
+  const settingsNow2 = currentSettings2 ?? {};
+  const enabledModules2: string[] = Array.isArray(settingsNow2.enabledModules)
+    ? (settingsNow2.enabledModules as string[])
+    : [];
+  if (!enabledModules2.includes('appointments')) {
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        settings: {
+          ...settingsNow2,
+          enabledModules: [...enabledModules2, 'appointments'],
+        },
+      },
+    });
+    console.log('Appointments module enabled on primary tenant');
+  } else {
+    console.log('Appointments module already enabled, skipping');
+  }
+
   // ── 1c. Seed a DISPATCH_STAFF demo user for the primary tenant ──
   const dispatchStaffEmail = 'dispatch@ayurpos.dev';
   const existingDispatch = await prisma.user.findFirst({

@@ -124,12 +124,13 @@ export async function printSaleReceipt(saleId: string): Promise<void> {
       lines: { include: { variant: { include: { product: true } } } },
       customer: true,
       shift: { include: { tenant: true } },
+      tenant: true,
       cashier: true,
       payments: true,
     },
   });
 
-  const tenant = sale.shift.tenant;
+  const tenant = sale.shift?.tenant ?? sale.tenant;
   const settings = tenant.settings as Record<string, unknown> | null;
   const printerConfig: PrinterConfig = {
     type: 'NETWORK',
@@ -272,9 +273,7 @@ export async function printZReport(shiftId: string): Promise<void> {
     totalSalesAmount += Number(sale.totalAmount);
   }
 
-  const breakdown = sumPaymentBreakdown(
-    shift.sales.flatMap((s) => s.payments),
-  );
+  const breakdown = sumPaymentBreakdown(shift.sales.flatMap((s) => s.payments));
   const totalCash = breakdown.cash.toNumber();
   const totalCard = breakdown.card.toNumber();
   const totalQr = breakdown.lankaqr.toNumber();
@@ -329,9 +328,7 @@ export async function printZReport(shiftId: string): Promise<void> {
     const returnsCount = shift.closure.totalReturnsCount;
     if (returnsCount > 0) {
       parts.push(...line(padLine('Returns:', `-${formatMoney(returnsAmt)}`, w)));
-      parts.push(
-        ...line(padLine('Net Revenue:', formatMoney(totalSalesAmount - returnsAmt), w)),
-      );
+      parts.push(...line(padLine('Net Revenue:', formatMoney(totalSalesAmount - returnsAmt), w)));
     }
   }
 

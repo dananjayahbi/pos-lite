@@ -30,6 +30,27 @@ describe('CreateSaleSchema — mandatory customer (doc 32)', () => {
     }
   });
 
+  it('accepts a management sale without a shiftId', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'CASH',
+      cashReceived: 100,
+      customerId: 'cust-1',
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('accepts a shiftless management sale without a customerId', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'CASH',
+      cashReceived: 100,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
   it('accepts LANKAQR as a payment method', () => {
     const parsed = CreateSaleSchema.safeParse({
       shiftId: 'shift-1',
@@ -106,7 +127,9 @@ describe('CreateSaleSchema — zero-value reason (docs 33 & 34)', () => {
     });
     expect(parsed.success).toBe(false);
     if (!parsed.success) {
-      expect(parsed.error.issues.some((i) => i.path.includes('zeroValueLinkedOrderRef'))).toBe(true);
+      expect(parsed.error.issues.some((i) => i.path.includes('zeroValueLinkedOrderRef'))).toBe(
+        true,
+      );
     }
   });
 

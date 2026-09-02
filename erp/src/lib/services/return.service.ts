@@ -246,7 +246,7 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
         authorizedBy: true,
       },
     });
-  });
+  }, { maxWait: 10_000, timeout: 30_000 });
 
   void createAuditLog({
     tenantId,
@@ -272,13 +272,37 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
       .findUnique({ where: { id: tenantId }, select: { settings: true } })
       .then((tenant) => {
         if (!tenant) return;
-        const hw = (tenant.settings as any)?.hardware?.printer;
-        if (!hw?.host) return;
+        const settings =
+          typeof tenant.settings === 'object' && tenant.settings !== null
+            ? (tenant.settings as Record<string, unknown>)
+            : {};
+        const hardware = settings.hardware;
+        const hw =
+          typeof hardware === 'object' && hardware !== null
+            ? (hardware as Record<string, unknown>).printer
+            : undefined;
+        const printer =
+          typeof hw === 'object' && hw !== null
+            ? (hw as Record<string, unknown>)
+            : undefined;
+        const host = typeof printer?.host === 'string' ? printer.host : '';
+        if (!host) return;
+        const rawPort = printer?.port;
+        const port =
+          typeof rawPort === 'number'
+            ? rawPort
+            : typeof rawPort === 'string' && rawPort.trim() !== ''
+              ? Number(rawPort)
+              : undefined;
+        const paperWidth =
+          printer?.paperWidth === '80mm' ? ('80mm' as const) : ('58mm' as const);
+        const type = printer?.type === 'USB' ? ('USB' as const) : ('NETWORK' as const);
+        // exactOptionalPropertyTypes — only include optional fields when set.
         const printerConfig: PrinterConfig = {
-          type: hw.type ?? 'NETWORK',
-          host: hw.host,
-          port: hw.port,
-          paperWidth: hw.paperWidth ?? '58mm',
+          type,
+          host,
+          paperWidth,
+          ...(port !== undefined && Number.isFinite(port) ? { port } : {}),
         };
         void kickCashDrawer(printerConfig);
       })

@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wedagedara | Authentic Ayurvedic Remedies & Holistic Health</title>
+  <meta name="description" content="Discover natural Ayurvedic remedies, herbal wellness, and doctor-certified organic healthcare at Wedagedara." />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ayurveda: {
+              lime: '#97c93e',
+              lightlime: '#b2db58',
+              dark: '#051610',
+              forest: '#092218',
+              emerald: '#154232',
+              gold: '#c5a059'
+            }
+          },
+          fontFamily: {
+            cinzel: ['Cinzel', 'serif'],
+            sans: ['Plus Jakarta Sans', 'sans-serif'],
+            playfair: ['Playfair Display', 'serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Font Awesome 6 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <!-- Modular Section Stylesheets -->
+  <link rel="stylesheet" href="assets/css/global.css" />
+  <link rel="stylesheet" href="assets/css/header.css" />
+  <link rel="stylesheet" href="assets/css/cart.css" />
+  <link rel="stylesheet" href="assets/css/hero.css" />
+  <link rel="stylesheet" href="assets/css/products.css" />
+  <link rel="stylesheet" href="assets/css/top-selling.css" />
+  <link rel="stylesheet" href="assets/css/featured-banner.css" />
+  <link rel="stylesheet" href="assets/css/categories.css" />
+  <link rel="stylesheet" href="assets/css/latest-products.css" />
+  <link rel="stylesheet" href="assets/css/testimonials.css" />
+  <link rel="stylesheet" href="assets/css/store-reference.css" />
+  <link rel="stylesheet" href="assets/css/footer.css" />
+  <link rel="stylesheet" href="assets/css/product-modal.css" />
+</head>
+
+<body class="bg-[#051610] text-slate-100 min-h-screen relative selection:bg-[#97c93e] selection:text-black">
+
+  <!-- ======================================================== -->
+  <!-- 01. HEADER SECTION                                       -->
+  <!-- ======================================================== -->
+  <header id="main-header" class="fixed top-0 left-0 right-0 z-40 transition-all duration-300 px-6 sm:px-10 lg:px-16 py-5">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      
+      <!-- Brand Logo / Left Header -->
+      <a href="index.html" class="flex items-center gap-3 group">
+        <div class="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white p-1 border border-[#97c93e]/40 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform overflow-hidden flex-shrink-0">
+          <img src="assets/images/logo.jpg" alt="Ruhunu Wedagedara Logo" class="w-full h-full object-contain" />
+        </div>
+        <div class="flex flex-col">
+          <span class="font-cinzel tracking-[0.22em] text-base md:text-lg font-bold text-white uppercase group-hover:text-[#b2db58] transition-colors">
+            WEDAGEDARA
+          </span>
+          <span class="text-[9px] tracking-[0.28em] uppercase text-gray-400 -mt-1 font-sans">Ayurvedic Heritage</span>
+        </div>
+      </a>
+
+      <!-- Desktop Navigation Items (HOME, ABOUT, PRODUCTS, CONTACT, Appointments) -->
+      <nav class="hidden md:flex items-center gap-7 lg:gap-9">
+        <a href="index.html#hero-section" class="text-sm font-medium tracking-wider uppercase text-white hover:text-[#97c93e] transition-colors relative py-1 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-[2px] after:bg-[#97c93e]">
+          HOME
+        </a>
+        <a href="about.html" class="text-sm font-medium tracking-wider uppercase text-gray-300 hover:text-[#97c93e] transition-colors relative py-1 group">
+          ABOUT
+          <span class="absolute bottom-0 left-0 w-0 h-[2px] bg-[#97c93e] transition-all duration-300 group-hover:w-full"></span>
+        </a>
+        <a href="shop.html" class="text-sm font-medium tracking-wider uppercase text-gray-300 hover:text-[#97c93e] transition-colors relative py-1 group">
+          SHOP
+          <span class="absolute bottom-0 left-0 w-0 h-[2px] bg-[#97c93e] transition-all duration-300 group-hover:w-full"></span>
+        </a>
+        <a href="contact.html" class="text-sm font-medium tracking-wider uppercase text-gray-300 hover:text-[#97c93e] transition-colors relative py-1 group">
+          CONTACT
+          <span class="absolute bottom-0 left-0 w-0 h-[2px] bg-[#97c93e] transition-all duration-300 group-hover:w-full"></span>
+        </a>
+        <a href="appointments.html" class="text-sm font-semibold tracking-wider uppercase px-4 py-2 rounded-full border border-[#97c93e]/40 text-[#b2db58] hover:bg-[#97c93e] hover:text-black transition-all duration-300">
+          <i class="fa-regular fa-calendar-check mr-1.5 text-xs"></i> Appointments
+        </a>
+      </nav>
+
+      <!-- Header Right Action Group: Cart & Mobile Menu -->
+      <div class="flex items-center gap-3">
+        <!-- Shopping Basket Button -->
+        <button class="cart-toggle-btn relative text-white hover:text-[#97c93e] transition-colors p-2 text-lg focus:outline-none" aria-label="Open Shopping Basket">
+          <i class="fa-solid fa-bag-shopping"></i>
+          <span id="header-cart-badge" class="cart-badge">0</span>
+        </button>
+
+        <!-- Mobile Hamburger Toggle -->
+        <button id="mobile-menu-btn" class="md:hidden text-white hover:text-[#97c93e] text-2xl focus:outline-none p-1" aria-label="Open Mobile Menu">
+          <i class="fa-solid fa-bars-staggered"></i>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Mobile Drawer Menu -->
+  <div id="mobile-backdrop" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 opacity-0 pointer-events-none transition-opacity duration-300 md:hidden"></div>
+  <aside id="mobile-drawer" class="fixed top-0 right-0 bottom-0 w-72 bg-[#082017] border-l border-white/10 z-50 p-6 flex flex-col justify-between translate-x-full transition-transform duration-300 md:hidden shadow-2xl">
+    <div>
+      <div class="flex items-center justify-between pb-6 border-b border-white/10">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-white p-0.5 border border-[#97c93e]/40 flex items-center justify-center shadow-md overflow-hidden flex-shrink-0">
+            <img src="assets/images/logo.jpg" alt="Ruhunu Wedagedara Logo" class="w-full h-full object-contain" />
+          </div>
+          <span class="font-cinzel tracking-widest text-lg font-bold text-[#97c93e]">WEDAGEDARA</span>
+        </div>
+        <button id="mobile-menu-close" class="text-gray-400 hover:text-white text-xl p-1" aria-label="Close Mobile Menu">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <nav class="flex flex-col gap-4 mt-6">
+        <a href="index.html#hero-section" class="mobile-nav-link text-base font-medium text-[#97c93e] flex items-center justify-between py-2 border-b border-white/5">
+          <span>HOME</span>
+          <i class="fa-solid fa-chevron-right text-xs"></i>
+        </a>
+        <a href="about.html" class="mobile-nav-link text-base font-medium text-gray-200 hover:text-[#97c93e] flex items-center justify-between py-2 border-b border-white/5">
+          <span>ABOUT</span>
+          <i class="fa-solid fa-chevron-right text-xs"></i>
+        </a>
+        <a href="shop.html" class="mobile-nav-link text-base font-medium text-gray-200 hover:text-[#97c93e] flex items-center justify-between py-2 border-b border-white/5">
+          <span>SHOP</span>
+          <i class="fa-solid fa-chevron-right text-xs"></i>
+        </a>
+        <a href="contact.html" class="mobile-nav-link text-base font-medium text-gray-200 hover:text-[#97c93e] flex items-center justify-between py-2 border-b border-white/5">
+          <span>CONTACT</span>
+          <i class="fa-solid fa-chevron-right text-xs"></i>
+        </a>
+        <a href="appointments.html" class="mobile-nav-link text-base font-medium text-[#b2db58] flex items-center justify-between py-2 mt-2 bg-[#97c93e]/10 px-3 rounded-lg border border-[#97c93e]/30">
+          <span><i class="fa-regular fa-calendar-check mr-2"></i> Appointments</span>
+          <i class="fa-solid fa-arrow-right text-xs"></i>
+        </a>
+      </nav>
+    </div>
+
+    <div class="pt-6 border-t border-white/10 flex flex-col gap-3">
+      <p class="text-xs text-gray-400">Pure Ayurvedic Healing & Wellness</p>
+      <div class="flex items-center gap-4 text-gray-400 text-base">
+        <a href="#" class="hover:text-[#97c93e]"><i class="fa-brands fa-x-twitter"></i></a>
+        <a href="#" class="hover:text-[#97c93e]"><i class="fa-brands fa-facebook-f"></i></a>
+        <a href="#" class="hover:text-[#97c93e]"><i class="fa-brands fa-instagram"></i></a>
+        <a href="#" class="hover:text-[#97c93e]"><i class="fa-brands fa-youtube"></i></a>
+      </div>
+    </div>
+  </aside>
+
+
+  <!-- ======================================================== -->
+  <!-- 02. HERO SECTION & SLIDER (Pinterest Reference Match)    -->
+  <!-- ======================================================== -->
+  <section id="hero-section" class="relative w-full h-screen min-h-[640px] flex items-center justify-center overflow-hidden">
+    
+    <!-- Background Slide Container (crossfade images) -->
+    <div id="hero-bg-container" class="absolute inset-0 z-0">
+      <div class="hero-bg-slide active" style="background-image: url('https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?auto=format&fit=crop&w=2000&q=85');"></div>
+    </div>
+
+    <!-- Atmospheric Vignette & Contrast Overlay -->
+    <div class="hero-vignette absolute inset-0 z-10 pointer-events-none"></div>
+
+    <!-- Main Hero Content Container -->
+    <div class="relative z-20 w-full max-w-7xl mx-auto px-6 sm:px-10 lg:px-16 pt-16 pb-12 h-full flex flex-col justify-between">
+      
+      <!-- Top Spacer -->
+      <div class="h-6"></div>
+
+      <!-- Center Grid: Left Title Block vs Right Details Block -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center my-auto transition-transform duration-300">
+        
+        <!-- Left Hero Column: Big Bold Statement -->
+        <div class="lg:col-span-7 flex flex-col justify-center">
+          <div class="slide-text-animate delay-100">
+            <h1 id="hero-title-main" class="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-cinzel font-light tracking-wide text-white leading-tight drop-shadow-md">
+              PROTECT
+            </h1>
+            <h2 id="hero-title-sub" class="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-cinzel font-bold tracking-tight text-white leading-tight drop-shadow-lg -mt-1 sm:-mt-2">
+              NATURE
+            </h2>
+          </div>
+
+          <!-- Decorative Subtitle Line -->
+          <div class="slide-text-animate delay-200 flex items-center gap-3 sm:gap-4 mt-4 sm:mt-6 mb-6">
+            <div class="w-10 sm:w-16 h-[1.5px] bg-white/70"></div>
+            <span id="hero-tagline" class="text-xs sm:text-sm md:text-base font-sans tracking-[0.25em] uppercase text-emerald-200/90 font-medium">
+              Ayurvedic Botanical Healing
+            </span>
+          </div>
+
+          <!-- Designer/Brand Tagline -->
+          <div class="slide-text-animate delay-300">
+            <p class="font-playfair italic text-xs sm:text-sm text-gray-400/90 tracking-wide">
+              Crafted by Wedagedara Herbal Sanctuary
+            </p>
+          </div>
+        </div>
+
+        <!-- Right Hero Column: Slide Counter & Sub-Content -->
+        <div class="lg:col-span-5 flex flex-col justify-center lg:pl-6">
+          <div class="bg-black/30 lg:bg-transparent p-6 lg:p-0 rounded-2xl backdrop-blur-sm lg:backdrop-blur-0 border border-white/10 lg:border-none">
+            
+            <!-- Slide Number (e.g. 01.) -->
+            <div class="slide-text-animate delay-100">
+              <span id="hero-slide-number" class="text-5xl sm:text-6xl lg:text-7xl font-cinzel font-bold text-[#97c93e] tracking-tight">
+                01.
+              </span>
+            </div>
+
+            <!-- Slide Heading (HEADING) -->
+            <div class="slide-text-animate delay-200">
+              <h3 id="hero-right-heading" class="text-xl sm:text-2xl lg:text-3xl font-bold uppercase tracking-wider text-[#97c93e] mt-1 mb-3">
+                VITALITY & WELLNESS
+              </h3>
+            </div>
+
+            <!-- Slide Description Paragraph -->
+            <div class="slide-text-animate delay-300">
+              <p id="hero-description" class="text-xs sm:text-sm text-gray-300 leading-relaxed max-w-md mb-6 font-light">
+                Experience the profound harmony of authentic Ayurvedic elixirs, hand-harvested from pristine medicinal forests to restore natural vitality and peace.
+              </p>
+            </div>
+
+            <!-- Call To Action Button -->
+            <div class="slide-text-animate delay-400 flex items-center gap-4">
+              <a id="hero-cta-btn" href="#products-section" class="inline-flex items-center gap-2.5 px-6 py-2.5 rounded-full bg-[#97c93e] hover:bg-[#b2db58] text-black font-semibold text-xs sm:text-sm tracking-wider uppercase transition-all duration-300 shadow-md hover:scale-105 active:scale-95">
+                <span>Explore Remedies</span>
+                <i class="fa-solid fa-arrow-right text-xs"></i>
+              </a>
+
+              <a href="#appointments" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-white/20 hover:border-[#97c93e] text-white hover:text-[#b2db58] text-xs sm:text-sm font-medium tracking-wider transition-all duration-300">
+                <span>Consult Doctor</span>
+              </a>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom Row: Share Button (Left) & Slider Dots (Center) -->
+      <div class="flex items-center justify-between pt-4 relative">
+        
+        <!-- Bottom Left: Share Button -->
+        <button id="hero-share-btn" class="flex items-center gap-2 text-xs sm:text-sm text-gray-300 hover:text-[#97c93e] transition-colors uppercase tracking-[0.2em] font-medium group focus:outline-none">
+          <i class="fa-solid fa-share-nodes text-sm text-[#97c93e] group-hover:rotate-12 transition-transform"></i>
+          <span>share</span>
+        </button>
+
+        <!-- Bottom Center: Pagination Dots (o o o o o) -->
+        <div class="absolute left-1/2 -translate-x-1/2 bottom-0 flex items-center">
+          <div id="hero-dots-container" class="flex items-center gap-3">
+            <!-- Injected by main.js -->
+          </div>
+        </div>
+
+        <div class="w-16 hidden sm:block"></div>
+
+      </div>
+
+    </div>
+
+    <!-- Right Vertical Dock (Scoped to Hero Section) -->
+    <aside class="hidden lg:flex absolute right-6 xl:right-10 top-1/2 -translate-y-1/2 z-20 flex-col items-center gap-6 pointer-events-auto">
+      <div class="w-[1.5px] h-20 bg-white/60"></div>
+      <div class="flex flex-col items-center gap-4 text-white/80">
+        <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" class="hover:text-[#97c93e] hover:scale-125 transition-all text-sm" aria-label="Twitter">
+          <i class="fa-brands fa-x-twitter"></i>
+        </a>
+        <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" class="hover:text-[#97c93e] hover:scale-125 transition-all text-sm" aria-label="Facebook">
+          <i class="fa-brands fa-facebook-f"></i>
+        </a>
+        <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" class="hover:text-[#97c93e] hover:scale-125 transition-all text-sm" aria-label="Instagram">
+          <i class="fa-brands fa-instagram"></i>
+        </a>
+        <a href="https://youtube.com" target="_blank" rel="noopener noreferrer" class="hover:text-[#97c93e] hover:scale-125 transition-all text-sm" aria-label="YouTube">
+          <i class="fa-brands fa-youtube"></i>
+        </a>
+      </div>
+      <span class="writing-vertical text-xs font-sans tracking-[0.25em] text-gray-400/90 lowercase transform rotate-180">
+        follow us
+      </span>
+    </aside>
+
+  </section>
+
+
+  <!-- ======================================================== -->
+  <!-- 03. FULL-WIDTH PRODUCTS SLIDER SECTION                   -->
+  <!-- ======================================================== -->
+  <section id="products-section" class="relative w-full py-20 sm:py-28 lg:py-32 bg-[#051610] overflow-hidden border-t border-white/5">
+    
+    <!-- Parallax Floating Botanical Leaves Elements -->
+    <div class="parallax-leaf top-10 left-6 text-6xl text-[#97c93e]" data-speed="0.2">
+      <i class="fa-solid fa-leaf"></i>
+    </div>
+    <div class="parallax-leaf bottom-16 right-10 text-7xl text-emerald-400" data-speed="0.32">
+      <i class="fa-solid fa-seedling"></i>
+    </div>
+    <div class="parallax-leaf top-1/2 left-1/4 text-5xl text-lime-300" data-speed="0.14">
+      <i class="fa-solid fa-spa"></i>
+    </div>
+    <div class="parallax-leaf top-20 right-1/4 text-4xl text-emerald-300" data-speed="0.25">
+      <i class="fa-solid fa-cannabis"></i>
+    </div>
+
+    <!-- Section Header (Centered Luxury Title) -->
+    <div class="relative z-10 max-w-4xl mx-auto px-6 text-center mb-10 sm:mb-14">
+      <div class="reveal-on-scroll">
+        <span class="text-xs font-semibold tracking-[0.3em] uppercase text-[#97c93e] block mb-2.5 font-sans">
+          AUTHENTIC AYURVEDIC CARE
+        </span>
+        <h2 class="text-3xl sm:text-4xl md:text-5xl font-cinzel font-bold text-white tracking-wide leading-tight">
+          CURATED BOTANICAL COLLECTIONS
+        </h2>
+        <div class="w-16 h-[2px] bg-[#97c93e]/60 mx-auto my-4"></div>
+        <p class="text-xs sm:text-sm text-gray-400 font-light leading-relaxed max-w-2xl mx-auto">
+          Handcrafted formulas extracted from Ceylon medicinal herbs to balance mind, body, and spirit. Click any product to explore detailed benefits.
+        </p>
+      </div>
+    </div>
+
+    <!-- FULL-WIDTH SLIDER WRAPPER WITH FLANKING ARROWS -->
+    <div class="reveal-on-scroll relative w-full overflow-hidden">
+      
+      <!-- Left Flanking Arrow Button -->
+      <button 
+        id="products-flank-prev" 
+        class="slider-flank-arrow absolute left-2 sm:left-6 lg:left-8 top-1/2 -translate-y-1/2" 
+        aria-label="Previous Product"
+      >
+        <i class="fa-solid fa-chevron-left text-sm sm:text-base"></i>
+      </button>
+
+      <!-- Right Flanking Arrow Button -->
+      <button 
+        id="products-flank-next" 
+        class="slider-flank-arrow absolute right-2 sm:right-6 lg:right-8 top-1/2 -translate-y-1/2" 
+        aria-label="Next Product"
+      >
+        <i class="fa-solid fa-chevron-right text-sm sm:text-base"></i>
+      </button>
+
+      <!-- Left & Right Gradient Vignette Fade for Luxury Bleed -->
+      <div class="absolute left-0 top-0 bottom-0 w-8 sm:w-16 lg:w-24 bg-gradient-to-r from-[#051610] to-transparent pointer-events-none z-20"></div>
+      <div class="absolute right-0 top-0 bottom-0 w-8 sm:w-16 lg:w-24 bg-gradient-to-l from-[#051610] to-transparent pointer-events-none z-20"></div>
+
+      <!-- Full-Width Horizontal Slider Track -->
+      <div 
+        id="products-slider-track" 
+        class="flex gap-4 sm:gap-6 lg:gap-8 overflow-x-auto no-scrollbar py-6 px-8 sm:px-16 lg:px-24 xl:px-28 scroll-smooth w-full select-none"
+      >
+        <!-- Injected dynamically by main.js (7 products) -->
+      </div>
+
+      <!-- Slider Progress Indicator Bar -->
+      <div class="w-48 sm:w-64 h-[2px] bg-white/10 rounded-full mx-auto mt-6 overflow-hidden">
+        <div id="products-progress-bar" class="h-full bg-[#97c93e] w-1/4 transition-all duration-300 rounded-full"></div>
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- ======================================================== -->
+  <!-- 04. TOP SELLING ITEMS SECTION (Swipeable Carousel)       -->
+  <!-- Matching Reference Card Layout (Pill Silhouette)         -->
+  <!-- ======================================================== -->
+  <section id="top-selling-section" class="relative w-full py-20 sm:py-28 lg:py-32 bg-[#051610] overflow-hidden border-t border-white/5">
+    
+    <!-- Parallax Floating Botanical Leaves Elements -->
+    <div class="parallax-leaf top-12 left-8 text-6xl text-[#97c93e]" data-speed="0.22">
+      <i class="fa-solid fa-seedling"></i>
+    </div>
+    <div class="parallax-leaf bottom-20 right-10 text-7xl text-emerald-400" data-speed="0.3">
+      <i class="fa-solid fa-leaf"></i>
+    </div>
+    <div class="parallax-leaf top-1/3 right-1/4 text-5xl text-lime-300" data-speed="0.16">
+      <i class="fa-solid fa-spa"></i>
+    </div>
+    <div class="parallax-leaf bottom-12 left-1/4 text-4xl text-emerald-300" data-speed="0.26">
+      <i class="fa-solid fa-cannabis"></i>
+    </div>
+
+    <!-- Ambient Glowing Light Orbs -->
+    <div class="ambient-glow -top-20 left-1/3 w-96 h-96 bg-[#97c93e]"></div>
+    <div class="ambient-glow bottom-0 right-1/4 w-80 h-80 bg-emerald-500"></div>
+
+    <!-- Section Title Header (Only the Title) -->
+    <div class="relative z-10 max-w-4xl mx-auto px-6 text-center mb-10 sm:mb-14">
+      <div class="reveal-on-scroll">
+        <span class="text-xs font-semibold tracking-[0.3em] uppercase text-[#97c93e] block mb-2 font-sans">
+          MOST LOVED BOTANICAL REMEDIES
+        </span>
+        <h2 class="text-3xl sm:text-4xl md:text-5xl font-cinzel font-bold text-white tracking-wide leading-tight">
+          TOP SELLING ITEMS
+        </h2>
+        <div class="w-16 h-[2px] bg-[#97c93e]/60 mx-auto mt-4"></div>
+      </div>
+    </div>
+
+    <!-- FULL-WIDTH SLIDER WRAPPER WITH FLANKING ARROWS & SWIPE TRACK -->
+    <div class="reveal-on-scroll relative w-full overflow-hidden">
+      
+      <!-- Left Flanking Arrow Button -->
+      <button 
+        id="top-selling-prev" 
+        class="top-selling-flank-arrow absolute left-2 sm:left-6 lg:left-8 top-1/2 -translate-y-1/2" 
+        aria-label="Previous Top Selling Item"
+      >
+        <i class="fa-solid fa-chevron-left text-sm sm:text-base"></i>
+      </button>
+
+      <!-- Right Flanking Arrow Button -->
+      <button 
+        id="top-selling-next" 
+        class="top-selling-flank-arrow absolute right-2 sm:right-6 lg:right-8 top-1/2 -translate-y-1/2" 
+        aria-label="Next Top Selling Item"
+      >
+        <i class="fa-solid fa-chevron-right text-sm sm:text-base"></i>
+      </button>
+
+      <!-- Left & Right Gradient Vignette Fade for Luxury Bleed -->
+      <div class="absolute left-0 top-0 bottom-0 w-8 sm:w-16 lg:w-24 bg-gradient-to-r from-[#051610] to-transparent pointer-events-none z-20"></div>
+      <div class="absolute right-0 top-0 bottom-0 w-8 sm:w-16 lg:w-24 bg-gradient-to-l from-[#051610] to-transparent pointer-events-none z-20"></div>
+
+      <!-- Full-Width Horizontal Slider Track (7 items) -->
+      <div 
+        id="top-selling-track" 
+        class="flex gap-4 sm:gap-6 lg:gap-8 overflow-x-auto no-scrollbar py-6 px-8 sm:px-16 lg:px-24 xl:px-28 scroll-smooth w-full select-none"
+      >
+        <!-- Injected dynamically by top-selling.js (7 products) -->
+      </div>
+
+      <!-- Slider Progress Indicator Bar -->
+      <div class="w-48 sm:w-64 h-[2px] bg-white/10 rounded-full mx-auto mt-6 overflow-hidden">
+        <div id="top-selling-progress-bar" class="h-full bg-[#97c93e] w-1/4 transition-all duration-300 rounded-full"></div>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ======================================================== -->
+  <!-- 05. SPOTLIGHT FEATURED BANNER SECTION                    -->
+  <!-- Classic 2-Column Split Layout with Parallax & Animations -->
+  <!-- ======================================================== -->
+  <section id="spotlight-section" class="relative w-full py-20 sm:py-28 lg:py-36 bg-[#051610] overflow-hidden border-t border-white/5">
+    
+    <!-- Parallax Floating Botanical Leaves Elements -->
+    <div class="parallax-leaf top-16 right-10 text-6xl text-[#97c93e]" data-speed="0.25">
+      <i class="fa-solid fa-leaf"></i>
+    </div>
+    <div class="parallax-leaf bottom-24 left-10 text-7xl text-emerald-400" data-speed="0.32">
+      <i class="fa-solid fa-seedling"></i>
+    </div>
+    <div class="parallax-leaf top-1/2 left-6 text-4xl text-lime-300" data-speed="0.15">
+      <i class="fa-solid fa-spa"></i>
+    </div>
+
+    <!-- Ambient Glowing Halo Backlights -->
+    <div class="spotlight-halo top-10 left-10"></div>
+    <div class="ambient-glow bottom-10 right-10 w-96 h-96 bg-[#97c93e]/10"></div>
+
+    <div class="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
+      
+      <!-- 2-Column Split Grid (Left: Plain Image, Right: Title, Subtitle, Buy Now) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-center">
+        
+        <!-- LEFT COLUMN: Plain Image Showcase -->
+        <div class="lg:col-span-6 reveal-on-scroll">
+          <div class="relative mx-auto max-w-lg lg:max-w-none">
+            
+            <!-- Main Rounded Image Frame (Plain Image Only) -->
+            <div class="spotlight-img-frame aspect-[4/5] sm:aspect-square lg:aspect-[4/5] w-full">
+              <img 
+                src="https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=85" 
+                alt="Maha Aushadha Royal Restorative Elixir - Authentic Ayurveda" 
+                class="spotlight-img"
+                loading="lazy"
+              />
+              <div class="spotlight-img-vignette"></div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN: Title, Subtitle(Description) & "BUY NOW" Button -->
+        <div class="lg:col-span-6 flex flex-col justify-center reveal-on-scroll">
+          
+          <!-- Main Title -->
+          <h2 class="spotlight-title mb-6">
+            MAHA AUSHADHA ROYAL RESTORATIVE ELIXIR
+          </h2>
+
+          <!-- Subtitle / Description -->
+          <p class="spotlight-subtitle mb-8">
+            The crowning achievement of Wedagedara's master herbalists. Prepared according to ancestral Ola Leaf manuscripts, this royal elixir is slow-decocted over 72 hours with Wild Ginseng, Grade-A Kashmiri Saffron, Blue Water Lily, and pure Forest Bee Honey to restore depleted vital essence (<span class="italic text-[#97c93e]">Ojas</span>) and elevate daily mental vitality.
+          </p>
+
+          <!-- Action Button: "BUY NOW" -->
+          <div>
+            <button 
+              id="spotlight-buy-btn" 
+              class="spotlight-buy-btn"
+              aria-label="Buy Maha Aushadha Royal Restorative Elixir"
+            >
+              <i class="fa-solid fa-bag-shopping text-sm"></i>
+              <span>BUY NOW</span>
+            </button>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ======================================================== -->
+  <!-- 06. TOP CATEGORIES SECTION (Modern 3D Category Deck)     -->
+  <!-- Strict Schema: Image + Title + Product Count             -->
+  <!-- ======================================================== -->
+  <section id="categories-section" class="relative w-full py-20 sm:py-28 lg:py-32 bg-[#051610] overflow-hidden border-t border-white/5">
+    
+    <!-- Parallax Floating Botanical Leaves Elements -->
+    <div class="parallax-leaf top-10 left-6 text-6xl text-[#97c93e]" data-speed="0.2">
+      <i class="fa-solid fa-leaf"></i>
+    </div>
+    <div class="parallax-leaf bottom-16 right-10 text-7xl text-emerald-400" data-speed="0.32">
+      <i class="fa-solid fa-seedling"></i>
+    </div>
+    <div class="parallax-leaf top-1/2 right-1/4 text-5xl text-lime-300" data-speed="0.14">
+      <i class="fa-solid fa-spa"></i>
+    </div>
+
+    <!-- Ambient Glowing Halo Backlights -->
+    <div class="ambient-glow -top-20 left-1/4 w-96 h-96 bg-[#97c93e]/10"></div>
+    <div class="ambient-glow bottom-0 right-1/3 w-80 h-80 bg-emerald-500/10"></div>
+
+    <!-- Section Title Header (Only the Title) -->
+    <div class="relative z-10 max-w-4xl mx-auto px-6 text-center mb-10 sm:mb-14">
+      <div class="reveal-on-scroll">
+        <span class="text-xs font-semibold tracking-[0.3em] uppercase text-[#97c93e] block mb-2 font-sans">
+          CURATED AYURVEDIC LINEUP
+        </span>
+        <h2 class="text-3xl sm:text-4xl md:text-5xl font-cinzel font-bold text-white tracking-wide leading-tight">
+          TOP CATEGORIES
+        </h2>
+        <div class="w-16 h-[2px] bg-[#97c93e]/60 mx-auto mt-4"></div>
+      </div>
+    </div>
+
+    <!-- KINETIC EXPANDING ACCORDION DECK CONTAINER -->
+    <div class="reveal-on-scroll relative w-full max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
+      <div id="categories-accordion" class="categories-accordion-deck">
+        <!-- Injected dynamically by categories.js (7 categories) -->
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ======================================================== -->
+  <!-- 07. LATEST PRODUCTS SECTION (Asymmetric Editorial Grid)  -->
+  <!-- Strict Schema: Image + Title + Price                     -->
+  <!-- ======================================================== -->
+  <section id="latest-products-section" class="relative w-full py-20 sm:py-28 lg:py-36 bg-[#051610] overflow-hidden border-t border-white/5">
+    
+    <!-- Parallax Floating Botanical Leaves Elements -->
+    <div class="parallax-leaf top-12 left-10 text-6xl text-[#97c93e]" data-speed="0.22">
+      <i class="fa-solid fa-leaf"></i>
+    </div>
+    <div class="parallax-leaf bottom-20 right-8 text-7xl text-emerald-400" data-speed="0.3">
+      <i class="fa-solid fa-seedling"></i>
+    </div>
+    <div class="parallax-leaf top-1/2 left-4 text-4xl text-lime-300" data-speed="0.16">
+      <i class="fa-solid fa-spa"></i>
+    </div>
+
+    <!-- Ambient Glowing Backlight Orbs -->
+    <div class="ambient-glow top-0 right-1/4 w-96 h-96 bg-[#97c93e]/10"></div>
+    <div class="ambient-glow bottom-10 left-1/3 w-80 h-80 bg-emerald-500/10"></div>
+
+    <div class="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
+      
+      <!-- Section Title Header (Only the Title) -->
+      <div class="reveal-on-scroll text-center mb-12 sm:mb-16">
+        <span class="text-xs font-semibold tracking-[0.3em] uppercase text-[#97c93e] block mb-2 font-sans">
+          NEW HERBAL ARRIVALS
+        </span>
+        <h2 class="text-3xl sm:text-4xl md:text-5xl font-cinzel font-bold text-white tracking-wide leading-tight">
+          LATEST PRODUCTS
+        </h2>
+        <div class="w-16 h-[2px] bg-[#97c93e]/60 mx-auto mt-4"></div>
+      </div>
+
+      <!-- Asymmetric Editorial 7-Card Grid Container -->
+      <div class="reveal-on-scroll">
+        <div id="latest-products-grid" class="latest-editorial-grid">
+          <!-- Injected dynamically by latest-products.js (7 products) -->
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ======================================================== -->
+  <!-- 08. TESTIMONIALS SECTION (Dual-Stream Kinetic River)     -->
+  <!-- Strict Schema: Customer Name, Title, Quote, Rating       -->
+  <!-- ======================================================== -->
+  <section id="testimonials-section" class="relative w-full py-20 sm:py-28 lg:py-36 bg-[#051610] overflow-hidden border-t border-white/5">
+    
+    <!-- Parallax Floating Botanical Leaves Elements -->
+    <div class="parallax-leaf top-14 right-12 text-6xl text-[#97c93e]" data-speed="0.2">
+      <i class="fa-solid fa-leaf"></i>
+    </div>
+    <div class="parallax-leaf bottom-16 left-10 text-7xl text-emerald-400" data-speed="0.28">
+      <i class="fa-solid fa-seedling"></i>
+    </div>
+    <div class="parallax-leaf top-1/2 left-8 text-5xl text-lime-300" data-speed="0.14">
+      <i class="fa-solid fa-spa"></i>
+    </div>
+
+    <!-- Ambient Glowing Backlight Orbs -->
+    <div class="ambient-glow top-1/4 left-1/3 w-96 h-96 bg-[#97c93e]/10"></div>
+    <div class="ambient-glow bottom-0 right-1/4 w-80 h-80 bg-emerald-500/10"></div>
+
+    <div class="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
+      
+      <!-- Section Title & Subtitle Header -->
+      <div class="reveal-on-scroll text-center mb-14 sm:mb-20">
+        <span class="text-xs font-semibold tracking-[0.3em] uppercase text-[#97c93e] block mb-2 font-sans">
+          VOICES OF HEALING
+        </span>
+        <h2 class="text-3xl sm:text-4xl md:text-5xl font-cinzel font-bold text-white tracking-wide leading-tight">
+          WHAT OUR PATRONS SAY
+        </h2>
+        <p class="max-w-2xl mx-auto text-xs sm:text-sm text-gray-300 font-light leading-relaxed mt-4 px-4 font-sans">
+          Discover how centuries-old Ceylon Ayurvedic wisdom has restored vitality, harmony, and timeless wellness to lives across the globe.
+        </p>
+        <div class="w-16 h-[2px] bg-[#97c93e]/60 mx-auto mt-5"></div>
+      </div>
+
+    </div>
+
+    <!-- DUAL-STREAM KINETIC MARQUEE RIVER -->
+    <div class="reveal-on-scroll relative w-full overflow-hidden">
+      <div class="testimonials-river-container">
+        <div class="testimonials-vignette-left"></div>
+        <div class="testimonials-vignette-right"></div>
+        
+        <!-- Stream 1: Leftward Infinite Flow -->
+        <div id="testimonials-stream-1" class="testimonials-row-track stream-row-left">
+          <!-- Injected dynamically by testimonials.js -->
+        </div>
+
+        <!-- Stream 2: Rightward Infinite Flow -->
+        <div id="testimonials-stream-2" class="testimonials-row-track stream-row-right">
+          <!-- Injected dynamically by testimonials.js -->
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+
+  <!-- ======================================================== -->
+  <!-- 09. STORE REFERENCE SECTION (Glassmorphic Sanctuary Portal)-->
+  <!-- Strict Schema: Background, Title, Subtitle, Addr 1, Addr 2, Map -->
+  <!-- ======================================================== -->
+  <section id="store-reference-section" class="relative w-full py-24 sm:py-32 lg:py-40 overflow-hidden border-t border-white/5">
+    
+    <!-- Cinematic Full-Bleed Sanctuary Parallax Background Layer -->
+    <div class="store-bg-layer"></div>
+    <div class="store-bg-vignette"></div>
+
+    <!-- Floating Parallax Botanical Leaves -->
+    <div class="parallax-leaf top-16 left-12 text-6xl text-[#97c93e]" data-speed="0.22">
+      <i class="fa-solid fa-seedling"></i>
+    </div>
+    <div class="parallax-leaf bottom-20 right-10 text-7xl text-emerald-400" data-speed="0.3">
+      <i class="fa-solid fa-leaf"></i>
+    </div>
+
+    <!-- Ambient Glowing Light Orbs -->
+    <div class="ambient-glow top-1/3 right-1/4 w-96 h-96 bg-[#97c93e]/10"></div>
+    <div class="ambient-glow bottom-10 left-1/4 w-80 h-80 bg-emerald-500/10"></div>
+
+    <div class="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
+      
+      <!-- Glassmorphic Sanctuary Portal Box -->
+      <div class="reveal-on-scroll store-portal-box">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+          
+          <!-- Left Column: Title, Subtitle, Address -->
+          <div class="lg:col-span-5 flex flex-col justify-center">
+            <span class="text-xs font-semibold tracking-[0.3em] uppercase text-[#97c93e] block mb-3 font-sans">
+              PHYSICAL SANCTUARY
+            </span>
+            <h2 class="store-title">
+              OUR FLAGSHIP SANCTUARY
+            </h2>
+            <p class="store-subtitle">
+              Step into our serene apothecary lounge in Colombo 07. Experience personalized herbal consultations, explore classical fresh decoctions, and discover handcrafted remedies prepared in our sacred forest sanctuaries.
+            </p>
+
+            <!-- Address Card -->
+            <div class="store-address-box">
+              <div class="store-address-icon">
+                <i class="fa-solid fa-location-dot"></i>
+              </div>
+              <div class="flex flex-col">
+                <span class="store-address-line1">
+                  No. 42, Horton Place, Colombo 07
+                </span>
+                <span class="store-address-line2">
+                  Western Province, Sri Lanka (00700)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Embedded Dark-Themed Google Map -->
+          <div class="lg:col-span-7">
+            <div class="store-map-frame">
+              <iframe
+                title="Wedagedara Sanctuary Colombo 07 Location Map"
+                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3960.772583543977!2d79.8687799!3d6.9177519!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3ae25974a63fae3b%3A0x63a34a36f56f4d54!2sHorton%20Pl%2C%20Colombo%2000700!5e0!3m2!1sen!2slk!4v1700000000000!5m2!1sen!2slk"
+                class="store-map-iframe"
+                allowfullscreen=""
+                loading="lazy"
+                referrerpolicy="no-referrer-when-downgrade"
+              ></iframe>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ======================================================== -->
+  <!-- 10. FOOTER SECTION (Strict 3-Column Ancestral Layout)    -->
+  <!-- Col 1: Brand & Logo | Col 2: Navigation | Col 3: About Us-->
+  <!-- ======================================================== -->
+  <footer id="main-footer" class="relative w-full pt-20 pb-12 bg-gradient-to-b from-[#051610] via-[#030e0a] to-[#010705] overflow-hidden border-t border-white/10">
+    
+    <!-- Parallax Floating Botanical Leaves Elements -->
+    <div class="parallax-leaf top-10 right-10 text-6xl text-[#97c93e]" data-speed="0.18">
+      <i class="fa-solid fa-leaf"></i>
+    </div>
+    <div class="parallax-leaf bottom-14 left-8 text-7xl text-emerald-400" data-speed="0.25">
+      <i class="fa-solid fa-seedling"></i>
+    </div>
+
+    <!-- Ambient Glowing Light Orbs -->
+    <div class="ambient-glow top-0 left-1/4 w-96 h-96 bg-[#97c93e]/10"></div>
+    <div class="ambient-glow bottom-0 right-1/4 w-80 h-80 bg-emerald-500/10"></div>
+
+    <div class="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
+      
+      <!-- 3-Column Luxury Grid -->
+      <div class="footer-grid reveal-on-scroll">
+        
+        <!-- COLUMN 1: BRAND IDENTITY & SACRED HERITAGE (With Logo) -->
+        <div class="flex flex-col">
+          <a href="#hero-section" class="footer-brand-logo group">
+            <div class="w-10 h-10 rounded-xl bg-white p-1 border border-[#97c93e]/40 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform overflow-hidden flex-shrink-0">
+              <img src="assets/images/logo.jpg" alt="Ruhunu Wedagedara Logo" class="w-full h-full object-contain" />
+            </div>
+            <span>WEDAGEDARA</span>
+          </a>
+          <p class="footer-brand-text">
+            Rooted in ancestral Ola Leaf manuscripts and ethical Ceylon forest sanctuaries. We slow-decoct sacred botanicals to preserve the purest healing potency for cellular vitality and timeless wellness.
+          </p>
+          
+          <!-- Social Presence Icons -->
+          <div class="footer-social-wrap">
+            <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" class="footer-social-btn" aria-label="Instagram">
+              <i class="fa-brands fa-instagram"></i>
+            </a>
+            <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" class="footer-social-btn" aria-label="Facebook">
+              <i class="fa-brands fa-facebook-f"></i>
+            </a>
+            <a href="https://wa.me/94770000000" target="_blank" rel="noopener noreferrer" class="footer-social-btn" aria-label="WhatsApp">
+              <i class="fa-brands fa-whatsapp"></i>
+            </a>
+            <a href="https://youtube.com" target="_blank" rel="noopener noreferrer" class="footer-social-btn" aria-label="YouTube">
+              <i class="fa-brands fa-youtube"></i>
+            </a>
+          </div>
+        </div>
+
+        <!-- COLUMN 2: BOTANICAL NAVIGATION (Quick Explore) -->
+        <div class="flex flex-col">
+          <h3 class="footer-col-title">
+            EXPLORE APOTHECARY
+          </h3>
+          <nav class="footer-nav-list">
+            <a href="#products-section" class="footer-nav-link group">
+              <i class="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors"></i>
+              <span>Featured Elixirs & Oils</span>
+            </a>
+            <a href="#top-selling-section" class="footer-nav-link group">
+              <i class="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors"></i>
+              <span>Top Selling Remedies</span>
+            </a>
+            <a href="#spotlight-section" class="footer-nav-link group">
+              <i class="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors"></i>
+              <span>Spotlight Kasthuri Kaha</span>
+            </a>
+            <a href="#categories-section" class="footer-nav-link group">
+              <i class="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors"></i>
+              <span>Botanical Categories</span>
+            </a>
+            <a href="#latest-products-section" class="footer-nav-link group">
+              <i class="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors"></i>
+              <span>Fresh Herbal Arrivals</span>
+            </a>
+            <a href="#store-reference-section" class="footer-nav-link group">
+              <i class="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors"></i>
+              <span>Physical Sanctuary</span>
+            </a>
+          </nav>
+        </div>
+
+        <!-- COLUMN 3: ALWAYS "ABOUT US" -->
+        <div class="flex flex-col">
+          <h3 class="footer-col-title">
+            ABOUT US
+          </h3>
+          <p class="footer-about-text">
+            Wedagedara represents a multi-generational lineage of Ceylon Ayurvedic masters and certified herbalists. We bridge 5,000-year-old botanical alchemy with modern purity standards, sourcing every root from pesticide-free indigenous soils.
+          </p>
+
+          <!-- Sanctuary Operating Schedule Card -->
+          <div class="footer-hours-card">
+            <span class="footer-hours-label">
+              SANCTUARY CONSULTATION HOURS
+            </span>
+            <span class="footer-hours-val">
+              Monday – Sunday: 8:00 AM – 7:00 PM
+            </span>
+            <span class="text-xs text-gray-400 mt-1 font-sans">
+              42 Horton Place, Colombo 07
+            </span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Minimalist Bottom Bar (Copyright & Back to Top) -->
+      <div class="footer-bottom-bar reveal-on-scroll">
+        <p class="footer-copy-text">
+          &copy; 2026 Wedagedara. All Rights Reserved. Crafted with Ancestral Wisdom.
+        </p>
+        <button id="footer-back-to-top" class="footer-back-top-btn" aria-label="Back to Top">
+          <span>TOP</span>
+          <i class="fa-solid fa-arrow-up text-xs"></i>
+        </button>
+      </div>
+
+    </div>
+  </footer>
+
+
+  <!-- ========================================================================= -->
+  <!-- 11. PRODUCT DETAILS POPUP MODAL (Exact Reference Silhouette Match)        -->
+  <!-- Rotating Squircle Wave Pill (530px) + Centered Right Card (430px)         -->
+  <!-- ========================================================================= -->
+  <div 
+    id="product-details-modal" 
+    class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 opacity-0 invisible pointer-events-none transition-all duration-300"
+    role="dialog"
+    aria-modal="true"
+  >
+    <!-- Modal Backdrop Blur -->
+    <div id="product-modal-backdrop" class="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity"></div>
+
+    <!-- The Floating Reference Card Body (Exact Silhouette from Reference) -->
+    <div 
+      id="product-modal-card" 
+      class="relative z-10 w-full max-w-4xl max-h-[94vh] overflow-y-auto lg:overflow-visible no-scrollbar flex flex-col lg:flex-row items-center justify-center p-2 transform scale-95 opacity-0 transition-all duration-300"
+    >
+      
+      <!-- Global Modal Close Button (Top-Right on Mobile & Desktop) -->
+      <button 
+        id="product-modal-close" 
+        class="absolute top-4 right-4 sm:top-5 sm:right-5 w-9 h-9 rounded-full bg-black/60 hover:bg-[#97c93e] hover:text-black border border-white/20 flex items-center justify-center text-white transition-all duration-200 z-50 shadow-lg" 
+        aria-label="Close Product Details"
+      >
+        <i class="fa-solid fa-xmark text-sm"></i>
+      </button>
+
+      <!-- ===================================================================== -->
+      <!-- LEFT SECTION: TALLER PILL (530px) WITH ROTATING SQUIRCLE WAVES        -->
+      <!-- ===================================================================== -->
+      <div class="modal-pill-left w-full lg:w-[360px] flex-shrink-0 flex flex-col items-center justify-center p-6 sm:p-8 lg:py-14 relative min-h-[260px] z-20 overflow-hidden shadow-2xl">
+        
+        <!-- Desktop Rotating Squircle Waves (Right Edge of Pill) -->
+        <div class="hidden lg:block rot-wave-shape rot-wave-1"></div>
+        <div class="hidden lg:block rot-wave-shape rot-wave-2"></div>
+        <div class="hidden lg:block rot-wave-shape rot-wave-3"></div>
+
+        <!-- Mobile Rotating Squircle Waves (Bottom Edge of Pill) -->
+        <div class="block lg:hidden rot-wave-shape-mob rot-wave-mob-1"></div>
+        <div class="block lg:hidden rot-wave-shape-mob rot-wave-mob-2"></div>
+        <div class="block lg:hidden rot-wave-shape-mob rot-wave-mob-3"></div>
+
+        <!-- Content over Left Pill: Circular Photo & Dosha Badge -->
+        <div class="relative z-10 flex flex-col items-center justify-center">
+          <!-- Circular Center Product Image -->
+          <div class="w-36 h-36 sm:w-44 sm:h-44 lg:w-48 lg:h-48 rounded-full bg-[#051610] shadow-2xl overflow-hidden p-1.5 border border-white/20 relative z-20 flex items-center justify-center transform hover:scale-105 transition-transform duration-500">
+            <img 
+              id="modal-product-img" 
+              src="" 
+              alt="Ayurvedic Product" 
+              class="w-full h-full object-cover rounded-full"
+            />
+          </div>
+
+          <!-- Dosha Indicator Pill Below Avatar Cutout -->
+          <div class="mt-4 sm:mt-5 text-center relative z-20">
+            <span id="modal-product-dosha" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-black/60 border border-white/15 text-[10px] sm:text-xs font-semibold tracking-wider uppercase text-emerald-300 shadow-md">
+              <i class="fa-solid fa-spa text-[9px] text-[#97c93e]"></i> Tri-Dosha Balanced
+            </span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ===================================================================== -->
+      <!-- RIGHT SECTION: SHORTER DETAILS BODY (Strict 430px Height, Clean       -->
+      <!-- Overlap with Left Pill)                                               -->
+      <!-- ===================================================================== -->
+      <div class="modal-body-right flex-1 p-6 sm:p-7 lg:py-6 lg:pr-8 lg:pl-16 flex flex-col justify-between relative z-10 w-full lg:-ml-8 -mt-3 lg:mt-0 rounded-b-[32px] lg:rounded-b-none lg:rounded-r-[40px] pt-12 lg:pt-6">
+        
+        <div class="pr-2 sm:pr-4">
+          <!-- Category & Volume Meta -->
+          <div class="flex items-center justify-between gap-2 mb-1">
+            <span id="modal-product-category" class="text-xs font-bold tracking-[0.25em] uppercase text-[#97c93e]">
+              FACE CREAM
+            </span>
+            <span id="modal-product-volume" class="text-xs text-gray-400 tracking-wider">
+              50g Glass Jar
+            </span>
+          </div>
+
+          <!-- Product Title -->
+          <h3 id="modal-product-title" class="text-xl sm:text-2xl lg:text-3xl font-cinzel font-bold text-white leading-snug mb-1.5">
+            Kasthuri Kaha Night Cream
+          </h3>
+
+          <!-- Price & Authenticity Tag -->
+          <div class="flex items-center gap-3 mb-3">
+            <span id="modal-product-price" class="text-lg sm:text-xl font-bold font-cinzel text-[#97c93e]">
+              Rs. 3,200.00
+            </span>
+            <span class="text-[10px] sm:text-[11px] uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-medium">
+              In Stock • 100% Herbal
+            </span>
+          </div>
+
+          <!-- Full Narrative Details -->
+          <p id="modal-product-fulldetails" class="text-xs sm:text-sm text-gray-300 leading-relaxed font-light mb-3.5 max-w-xl line-clamp-3">
+            A luxurious nighttime cream infused with Venivel, Kasthuri Kaha, and cold-pressed sesame oil. Repairs daily oxidative damage, deeply moisturizes, and revitalizes skin elasticity while you rest peacefully.
+          </p>
+
+          <!-- Key Ingredients Tags -->
+          <div class="mb-2">
+            <span class="text-[10px] sm:text-[11px] font-semibold tracking-wider uppercase text-gray-400 block mb-1.5 font-sans">
+              Sacred Botanical Actives:
+            </span>
+            <div id="modal-product-ingredients" class="flex flex-wrap gap-1.5">
+              <!-- Injected by main.js -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer Actions (Strictly ONLY "ORDER VIA WHATSAPP" and "PROCEED TO BUY") -->
+        <div class="pt-3 border-t border-white/10 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          
+          <!-- Primary WhatsApp Button -->
+          <button 
+            id="modal-order-whatsapp" 
+            class="flex-1 inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-[#97c93e] hover:bg-[#b2db58] text-black font-bold text-xs sm:text-sm tracking-wider uppercase transition-all shadow-md hover:scale-105 active:scale-95"
+          >
+            <i class="fa-brands fa-whatsapp text-base"></i>
+            <span>ORDER VIA WHATSAPP</span>
+          </button>
+
+          <!-- Secondary Proceed to Buy Button -->
+          <button 
+            id="modal-proceed-buy" 
+            class="flex-1 inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full border-2 border-[#97c93e] hover:bg-[#97c93e] hover:text-black text-[#b2db58] font-bold text-xs sm:text-sm tracking-wider uppercase transition-all shadow-md hover:scale-105 active:scale-95"
+          >
+            <i class="fa-solid fa-bag-shopping text-xs"></i>
+            <span>PROCEED TO BUY</span>
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- Share Toast Feedback -->
+  <div id="share-toast" class="fixed bottom-6 left-6 z-50 bg-[#082017] border border-[#97c93e]/40 text-white px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs tracking-wider opacity-0 pointer-events-none translate-y-2">
+    <i class="fa-solid fa-circle-check text-[#97c93e] text-sm"></i>
+    <span>Link copied to clipboard!</span>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- CART DRAWER COMPONENT                                    -->
+  <!-- ======================================================== -->
+  <div id="cart-backdrop"></div>
+  <aside id="cart-drawer" aria-label="Shopping Basket Drawer">
+    <!-- Drawer Header -->
+    <div class="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-[#051610]">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-white p-0.5 border border-[#97c93e]/40 flex items-center justify-center shadow-md overflow-hidden flex-shrink-0">
+          <img src="assets/images/logo.jpg" alt="Ruhunu Wedagedara Logo" class="w-full h-full object-contain" />
+        </div>
+        <div>
+          <h3 class="font-cinzel text-base font-bold text-white tracking-wider">YOUR BASKET</h3>
+          <span id="cart-drawer-count" class="text-[10px] uppercase tracking-widest text-[#97c93e] -mt-1 block font-sans">(0 items)</span>
+        </div>
+      </div>
+      <button id="cart-drawer-close" class="text-gray-400 hover:text-white text-xl p-1 transition-colors" aria-label="Close Basket">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+
+    <!-- Scrollable Items Container -->
+    <div id="cart-items-container">
+      <!-- Injected dynamically by cart.js -->
+    </div>
+
+    <!-- Drawer Footer -->
+    <div id="cart-footer">
+      <div class="flex items-center justify-between text-sm text-gray-400 mb-2 font-sans">
+        <span>Subtotal</span>
+        <span id="cart-subtotal-val" class="text-base font-bold text-white font-sans">Rs. 0</span>
+      </div>
+      <div class="flex items-center gap-1.5 text-[11px] text-[#97c93e]/80 mb-4 font-sans">
+        <i class="fa-solid fa-truck-fast"></i>
+        <span>Ayurvedic delivery across Sri Lanka & Worldwide</span>
+      </div>
+      <button id="cart-checkout-cta" class="cart-checkout-btn">
+        <i class="fa-solid fa-lock text-xs"></i>
+        <span>PROCEED TO CHECKOUT</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Modular Section Scripts -->
+  <script src="assets/js/hero.js"></script>
+  <script src="assets/js/products.js"></script>
+  <script src="assets/js/top-selling.js"></script>
+  <script src="assets/js/featured-banner.js"></script>
+  <script src="assets/js/categories.js"></script>
+  <script src="assets/js/latest-products.js"></script>
+  <script src="assets/js/testimonials.js"></script>
+  <script src="assets/js/store-reference.js"></script>
+  <script src="assets/js/footer.js"></script>
+  <script src="assets/js/product-modal.js"></script>
+  <script src="assets/js/parallax.js"></script>
+  <script src="assets/js/header.js"></script>
+  <script src="assets/js/cart.js"></script>
+  <script src="assets/js/utils.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>

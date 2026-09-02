@@ -7,60 +7,71 @@ const CreateSaleLineSchema = z.object({
   discountPercent: z.number().min(0).max(100).default(0),
 });
 
-export const CreateSaleSchema = z.object({
-  shiftId: z.string().min(1),
-  lines: z.array(CreateSaleLineSchema).min(1),
-  cartDiscountAmount: z.number().min(0).default(0),
-  paymentMethod: z.nativeEnum(PaymentMethod, { error: 'Invalid payment method' }),
-  authorizingManagerId: z.string().min(1).optional(),
-  cashReceived: z.number().positive().optional(),
-  cardReferenceNumber: z.string().max(20).optional(),
-  cardAmount: z.number().positive().optional(),
-  splitLegMethod: z.enum(['CARD', 'LANKAQR']).optional(),
-  customerId: z.string().min(1, 'A customer must be linked to finalize a POS sale'),
-  appliedStoreCredit: z.string().optional().default('0'),
-  appliedPromotions: z.any().optional(),
-  promoCode: z.string().max(50).optional(),
-  // Doc 33 / 34: zero-value reason + original order reference for replacements.
-  zeroValueReason: z.nativeEnum(ZeroValueReason).optional(),
-  zeroValueLinkedOrderRef: z.string().trim().min(1).max(64).optional(),
-}).superRefine((data, ctx) => {
-  if (data.paymentMethod === 'CASH') {
-    if (data.cashReceived === undefined || data.cashReceived <= 0) {
+export const CreateSaleSchema = z
+  .object({
+    shiftId: z.string().min(1).optional(),
+    lines: z.array(CreateSaleLineSchema).min(1),
+    cartDiscountAmount: z.number().min(0).default(0),
+    paymentMethod: z.nativeEnum(PaymentMethod, { error: 'Invalid payment method' }),
+    authorizingManagerId: z.string().min(1).optional(),
+    cashReceived: z.number().positive().optional(),
+    cardReferenceNumber: z.string().max(20).optional(),
+    cardAmount: z.number().positive().optional(),
+    splitLegMethod: z.enum(['CARD', 'LANKAQR']).optional(),
+    customerId: z.string().min(1).optional(),
+    appliedStoreCredit: z.string().optional().default('0'),
+    appliedPromotions: z.any().optional(),
+    promoCode: z.string().max(50).optional(),
+    // Doc 33 / 34: zero-value reason + original order reference for replacements.
+    zeroValueReason: z.nativeEnum(ZeroValueReason).optional(),
+    zeroValueLinkedOrderRef: z.string().trim().min(1).max(64).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.paymentMethod === 'CASH') {
+      if (data.cashReceived === undefined || data.cashReceived <= 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['cashReceived'],
+          message: 'cashReceived is required for CASH payments',
+        });
+      }
+    }
+    if (data.paymentMethod === 'SPLIT') {
+      if (data.cardAmount === undefined || data.cardAmount <= 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['cardAmount'],
+          message: 'cardAmount is required for SPLIT payments',
+        });
+      }
+      if (data.cashReceived === undefined || data.cashReceived <= 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['cashReceived'],
+          message: 'cashReceived is required for SPLIT payments',
+        });
+      }
+    }
+    // POS sales must be linked to a customer. Shiftless sales are created from
+    // the owner/manager sales page, where a customer may be intentionally omitted.
+    if (data.shiftId && !data.customerId) {
       ctx.addIssue({
         code: 'custom',
-        path: ['cashReceived'],
-        message: 'cashReceived is required for CASH payments',
+        path: ['customerId'],
+        message: 'A customer must be linked to finalize a POS sale',
       });
     }
-  }
-  if (data.paymentMethod === 'SPLIT') {
-    if (data.cardAmount === undefined || data.cardAmount <= 0) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['cardAmount'],
-        message: 'cardAmount is required for SPLIT payments',
-      });
+    // Doc 34: a replacement must point at an original order reference.
+    if (data.zeroValueReason === 'PRODUCT_REPLACEMENT') {
+      if (!data.zeroValueLinkedOrderRef || data.zeroValueLinkedOrderRef.trim().length === 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['zeroValueLinkedOrderRef'],
+          message: 'An original order reference is required for PRODUCT_REPLACEMENT sales',
+        });
+      }
     }
-    if (data.cashReceived === undefined || data.cashReceived <= 0) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['cashReceived'],
-        message: 'cashReceived is required for SPLIT payments',
-      });
-    }
-  }
-  // Doc 34: a replacement must point at an original order reference.
-  if (data.zeroValueReason === 'PRODUCT_REPLACEMENT') {
-    if (!data.zeroValueLinkedOrderRef || data.zeroValueLinkedOrderRef.trim().length === 0) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['zeroValueLinkedOrderRef'],
-        message: 'An original order reference is required for PRODUCT_REPLACEMENT sales',
-      });
-    }
-  }
-});
+  });
 
 export type CreateSaleInput = z.infer<typeof CreateSaleSchema>;
 

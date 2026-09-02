@@ -1,0 +1,11 @@
+/* ======================================================== */
+/* HEADER SECTION STYLES                                    */
+/* ======================================================== */
+
+/* Glass Nav (Applied on scroll via JS) */
+.glass-nav {
+  background: rgba(5, 22, 16, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}

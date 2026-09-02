@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, Loader2, Minus, Plus, Search, Trash2 } from 'lucide-react';
+import { Loader2, Minus, Plus, Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -78,21 +78,14 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const { data: shiftData, isLoading: shiftLoading } = useQuery({
-    queryKey: ['currentShift'],
-    queryFn: async () => {
-      const res = await fetch('/api/store/shifts/current');
-      const json = (await res.json()) as { success: boolean; data: { id: string; status: string } | null };
-      return json.data;
-    },
-    enabled: open,
-    staleTime: 30_000,
-  });
-
   const { data: products, isFetching: searchLoading } = useQuery({
     queryKey: ['productSearch', debouncedSearch],
     queryFn: async () => {
-      const params = new URLSearchParams({ search: debouncedSearch, isArchived: 'false', limit: '12' });
+      const params = new URLSearchParams({
+        search: debouncedSearch,
+        isArchived: 'false',
+        limit: '12',
+      });
       const res = await fetch(`/api/store/products?${params.toString()}`);
       const json = (await res.json()) as { success: boolean; data?: Product[] };
       return json.data ?? [];
@@ -135,9 +128,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
 
   const { mutate: submitSale, isPending } = useMutation({
     mutationFn: async () => {
-      if (!shiftData?.id) throw new Error('No open shift');
       const body: Record<string, unknown> = {
-        shiftId: shiftData.id,
         lines: cart.map((i) => ({
           variantId: i.variantId,
           quantity: i.quantity,
@@ -189,7 +180,6 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
     setCardAmount('');
   }
 
-  const hasOpenShift = shiftData != null;
   const cashNum = parseFloat(cashReceived) || 0;
   const cardNum = parseFloat(cardAmount) || 0;
 
@@ -201,7 +191,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
         ? true
         : cashNum > 0 && cardNum > 0 && cashNum + cardNum >= total);
 
-  const canSubmit = hasOpenShift && isPaymentValid && !isPending;
+  const canSubmit = isPaymentValid && !isPending;
 
   return (
     <Sheet
@@ -219,21 +209,16 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
         </SheetHeader>
 
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
-          {/* Shift status */}
-          {!shiftLoading && !hasOpenShift && (
-            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              No open shift. Open a shift in the POS terminal first.
-            </div>
-          )}
-
           {/* Product search */}
           <div className="relative" ref={dropdownRef}>
-            <Label htmlFor="product-search" className="mb-1.5 block text-xs font-semibold text-espresso">
+            <Label
+              htmlFor="product-search"
+              className="text-espresso mb-1.5 block text-xs font-semibold"
+            >
               Add Products
             </Label>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sand" />
+              <Search className="text-sand pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
               <Input
                 id="product-search"
                 value={search}
@@ -247,30 +232,30 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                 autoComplete="off"
               />
               {searchLoading && (
-                <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-sand" />
+                <Loader2 className="text-sand absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 animate-spin" />
               )}
             </div>
 
             {showDropdown && debouncedSearch.length >= 2 && products && products.length > 0 && (
-              <div className="absolute left-0 top-full z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-mist bg-white shadow-lg">
+              <div className="border-mist absolute top-full left-0 z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border bg-white shadow-lg">
                 {products.flatMap((product) =>
                   product.variants.map((variant) => (
                     <button
                       key={variant.id}
                       type="button"
                       onClick={() => addVariant(product, variant)}
-                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-linen"
+                      className="hover:bg-linen flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors"
                     >
                       <div className="min-w-0">
-                        <span className="font-medium text-espresso">{product.name}</span>
+                        <span className="text-espresso font-medium">{product.name}</span>
                         {(variant.form ?? variant.packSize) && (
-                          <span className="ml-1.5 text-xs text-sand">
+                          <span className="text-sand ml-1.5 text-xs">
                             {[variant.form, variant.packSize].filter(Boolean).join(' / ')}
                           </span>
                         )}
-                        <span className="ml-1.5 text-xs text-sand/60">{variant.sku}</span>
+                        <span className="text-sand/60 ml-1.5 text-xs">{variant.sku}</span>
                       </div>
-                      <span className="ml-3 shrink-0 text-sm font-semibold text-espresso">
+                      <span className="text-espresso ml-3 shrink-0 text-sm font-semibold">
                         {formatRupee(parseFloat(variant.retailPrice))}
                       </span>
                     </button>
@@ -282,12 +267,12 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
 
           {/* Cart */}
           {cart.length > 0 && (
-            <div className="rounded-lg border border-mist divide-y divide-mist/40">
+            <div className="border-mist divide-mist/40 divide-y rounded-lg border">
               {cart.map((item) => (
                 <div key={item.variantId} className="flex items-center gap-2 px-3 py-2">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-espresso">{item.productName}</p>
-                    <p className="text-xs text-sand">
+                    <p className="text-espresso truncate text-sm font-medium">{item.productName}</p>
+                    <p className="text-sand text-xs">
                       {item.variantDesc} · {item.sku}
                     </p>
                   </div>
@@ -300,16 +285,18 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                         setCart((prev) =>
                           prev
                             .map((i) =>
-                              i.variantId === item.variantId ? { ...i, quantity: i.quantity - 1 } : i,
+                              i.variantId === item.variantId
+                                ? { ...i, quantity: i.quantity - 1 }
+                                : i,
                             )
                             .filter((i) => i.quantity > 0),
                         )
                       }
-                      className="flex h-6 w-6 items-center justify-center rounded border border-mist text-sand transition-colors hover:border-terracotta hover:text-terracotta"
+                      className="border-mist text-sand hover:border-terracotta hover:text-terracotta flex h-6 w-6 items-center justify-center rounded border transition-colors"
                     >
                       <Minus className="h-3 w-3" />
                     </button>
-                    <span className="w-6 text-center text-sm font-semibold text-espresso">
+                    <span className="text-espresso w-6 text-center text-sm font-semibold">
                       {item.quantity}
                     </span>
                     <button
@@ -321,20 +308,22 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                           ),
                         )
                       }
-                      className="flex h-6 w-6 items-center justify-center rounded border border-mist text-sand transition-colors hover:border-terracotta hover:text-terracotta"
+                      className="border-mist text-sand hover:border-terracotta hover:text-terracotta flex h-6 w-6 items-center justify-center rounded border transition-colors"
                     >
                       <Plus className="h-3 w-3" />
                     </button>
                   </div>
 
-                  <span className="w-20 shrink-0 text-right text-sm font-semibold text-espresso">
+                  <span className="text-espresso w-20 shrink-0 text-right text-sm font-semibold">
                     {formatRupee(item.unitPrice * item.quantity * (1 - item.discountPercent / 100))}
                   </span>
 
                   <button
                     type="button"
-                    onClick={() => setCart((prev) => prev.filter((i) => i.variantId !== item.variantId))}
-                    className="shrink-0 text-sand transition-colors hover:text-terracotta"
+                    onClick={() =>
+                      setCart((prev) => prev.filter((i) => i.variantId !== item.variantId))
+                    }
+                    className="text-sand hover:text-terracotta shrink-0 transition-colors"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -347,7 +336,10 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
             <>
               {/* Cart discount */}
               <div className="flex items-center gap-3">
-                <Label htmlFor="cart-discount" className="shrink-0 text-xs font-semibold text-espresso">
+                <Label
+                  htmlFor="cart-discount"
+                  className="text-espresso shrink-0 text-xs font-semibold"
+                >
                   Cart Discount (LKR)
                 </Label>
                 <Input
@@ -363,26 +355,28 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
               </div>
 
               {/* Totals */}
-              <dl className="divide-y divide-mist/40 rounded-lg border border-mist text-sm">
+              <dl className="divide-mist/40 border-mist divide-y rounded-lg border text-sm">
                 <div className="flex justify-between px-3 py-1.5">
                   <dt className="text-sand">Subtotal</dt>
-                  <dd className="font-medium text-espresso">{formatRupee(cartSubtotal)}</dd>
+                  <dd className="text-espresso font-medium">{formatRupee(cartSubtotal)}</dd>
                 </div>
                 {discountAmt > 0 && (
-                  <div className="flex justify-between px-3 py-1.5 text-terracotta">
+                  <div className="text-terracotta flex justify-between px-3 py-1.5">
                     <dt>Discount</dt>
                     <dd>−{formatRupee(discountAmt)}</dd>
                   </div>
                 )}
                 <div className="flex justify-between px-3 py-2">
-                  <dt className="font-semibold text-espresso">Total</dt>
-                  <dd className="text-base font-bold text-espresso">{formatRupee(total)}</dd>
+                  <dt className="text-espresso font-semibold">Total</dt>
+                  <dd className="text-espresso text-base font-bold">{formatRupee(total)}</dd>
                 </div>
               </dl>
 
               {/* Payment method */}
               <div>
-                <Label className="mb-2 block text-xs font-semibold text-espresso">Payment Method</Label>
+                <Label className="text-espresso mb-2 block text-xs font-semibold">
+                  Payment Method
+                </Label>
                 <div className="grid grid-cols-3 gap-2">
                   {(['CASH', 'CARD', 'SPLIT'] as const).map((m) => (
                     <button
@@ -404,7 +398,10 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
               {/* Cash received */}
               {(paymentMethod === 'CASH' || paymentMethod === 'SPLIT') && (
                 <div>
-                  <Label htmlFor="cash-received" className="mb-1.5 block text-xs font-semibold text-espresso">
+                  <Label
+                    htmlFor="cash-received"
+                    className="text-espresso mb-1.5 block text-xs font-semibold"
+                  >
                     Cash Received (LKR)
                   </Label>
                   <Input
@@ -417,8 +414,11 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                     placeholder={`e.g. ${Math.ceil(total)}`}
                   />
                   {paymentMethod === 'CASH' && cashNum >= total && cashNum > 0 && (
-                    <p className="mt-1 text-xs text-sand">
-                      Change: <span className="font-medium text-espresso">{formatRupee(cashNum - total)}</span>
+                    <p className="text-sand mt-1 text-xs">
+                      Change:{' '}
+                      <span className="text-espresso font-medium">
+                        {formatRupee(cashNum - total)}
+                      </span>
                     </p>
                   )}
                 </div>
@@ -427,7 +427,10 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
               {/* Card amount (SPLIT) */}
               {paymentMethod === 'SPLIT' && (
                 <div>
-                  <Label htmlFor="card-amount" className="mb-1.5 block text-xs font-semibold text-espresso">
+                  <Label
+                    htmlFor="card-amount"
+                    className="text-espresso mb-1.5 block text-xs font-semibold"
+                  >
                     Card Amount (LKR)
                   </Label>
                   <Input
@@ -444,7 +447,10 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
               {/* Card reference */}
               {(paymentMethod === 'CARD' || paymentMethod === 'SPLIT') && (
                 <div>
-                  <Label htmlFor="card-ref" className="mb-1.5 block text-xs font-semibold text-espresso">
+                  <Label
+                    htmlFor="card-ref"
+                    className="text-espresso mb-1.5 block text-xs font-semibold"
+                  >
                     Card Reference{paymentMethod === 'CARD' ? ' (optional)' : ''}
                   </Label>
                   <Input
