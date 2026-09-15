@@ -8,6 +8,12 @@ import { isModuleEnabled } from '@/lib/feature-guard';
 import { prisma } from '@/lib/prisma';
 import type { PermissionKey } from '@/lib/constants/permissions';
 
+// INF-02: the typed error builders live in the canonical modules now; this
+// file re-exports them so the delivery route family keeps compiling
+// unchanged (back-compat per the INF-02 design).
+import { unauthorized, forbidden, badRequest, conflict, notFound } from './error-envelope';
+export { unauthorized, forbidden, validationError, notFound, conflict, badRequest, internalError } from './error-envelope';
+
 /**
  * Shared route guards for the delivery feature: auth + tenant + feature-module
  * + permission. Returns the resolved tenantId on success, or a Response to
@@ -38,59 +44,11 @@ export async function requireDeliveryAuth(permission?: PermissionKey): Promise<
   return { ok: true, tenantId, userId: session.user.id };
 }
 
-export function unauthorized(message: string): NextResponse {
-  return NextResponse.json(
-    { success: false, error: { code: 'UNAUTHORIZED', message } },
-    { status: 401 },
-  );
-}
-
-export function forbidden(message: string): NextResponse {
-  return NextResponse.json(
-    { success: false, error: { code: 'FORBIDDEN', message } },
-    { status: 403 },
-  );
-}
-
-export function validationError(details: unknown, message = 'Validation failed'): NextResponse {
-  return NextResponse.json(
-    { success: false, error: { code: 'VALIDATION_ERROR', message, details } },
-    { status: 400 },
-  );
-}
-
-export function notFound(message: string): NextResponse {
-  return NextResponse.json(
-    { success: false, error: { code: 'NOT_FOUND', message } },
-    { status: 404 },
-  );
-}
-
-export function conflict(message: string): NextResponse {
-  return NextResponse.json(
-    { success: false, error: { code: 'CONFLICT', message } },
-    { status: 409 },
-  );
-}
-
-export function badRequest(message: string): NextResponse {
-  return NextResponse.json(
-    { success: false, error: { code: 'BAD_REQUEST', message } },
-    { status: 400 },
-  );
-}
-
-export function internalError(message: string): NextResponse {
-  return NextResponse.json(
-    { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message } },
-    { status: 500 },
-  );
-}
-
 /**
  * Map delivery-service sentinel errors (and courier-prefixed errors) to HTTP
  * responses. Returns null when the error is not recognized (caller falls back
- * to a 500).
+ * to a 500). Delivery-specific friendly copy; the generic classification for
+ * other routes lives in `map-service-error.ts`.
  */
 export function mapDeliveryError(error: unknown): NextResponse | null {
   const message = error instanceof Error ? error.message : '';

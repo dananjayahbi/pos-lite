@@ -6,6 +6,7 @@ import { getAllCategories, createCategory } from '@/lib/services/product.service
 import type { CreateCategoryInput } from '@/lib/services/product.service';
 import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 import { CategorySchema } from '@/lib/validators/category.validators';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function GET() {
   try {
@@ -30,11 +31,10 @@ export async function GET() {
 
     return NextResponse.json({ success: true, data: categories });
   } catch (error) {
-    console.error('GET /api/store/categories error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // INF-02: one-line error mapping — Prisma P2002/P2025 and service
+    // sentinels become typed envelope responses; unknown errors are logged
+    // server-side and returned as a generic 500 with no internals.
+    return toErrorResponse(error, 'GET /api/store/categories');
   }
 }
 
@@ -89,19 +89,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: category }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : '';
-
-    if (message.includes('already exists')) {
-      return NextResponse.json(
-        { success: false, error: { code: 'CONFLICT', message } },
-        { status: 409 },
-      );
-    }
-
-    console.error('POST /api/store/categories error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // INF-02: Prisma P2002 → friendly 409, sentinels → typed codes, unknown →
+    // logged 500 with no internals (BUG-21 family).
+    return toErrorResponse(error, 'POST /api/store/categories');
   }
 }

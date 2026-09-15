@@ -4,6 +4,8 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getExpenses, createExpense } from '@/lib/services/expense.service';
 import { CreateExpenseSchema } from '@/lib/validators/expense.validators';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { parseQueryInt } from '@/lib/api/query-params';
 
 export async function GET(request: Request) {
   try {
@@ -35,17 +37,14 @@ export async function GET(request: Request) {
       category: searchParams.get('category') ?? undefined,
       dateFrom: searchParams.get('dateFrom') ?? undefined,
       dateTo: searchParams.get('dateTo') ?? undefined,
-      page: searchParams.get('page') ? Number(searchParams.get('page')) : undefined,
-      pageSize: searchParams.get('pageSize') ? Number(searchParams.get('pageSize')) : undefined,
+      // XC-01: malformed page/pageSize now 400 instead of NaN → 500.
+      page: parseQueryInt(searchParams, 'page', { min: 1, max: 1_000_000 }),
+      pageSize: parseQueryInt(searchParams, 'pageSize', { min: 1, max: 200 }),
     });
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
-    console.error('GET /api/store/expenses error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch expenses' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'GET /api/store/expenses');
   }
 }
 

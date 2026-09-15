@@ -39,7 +39,7 @@ Follow §0 protocol exactly: ledger updates at start/finish of each doc, named-s
 - **Micro docs (the work orders):** one per issue/task, 126 of them, in `prerequisites/` (INF-01…04 shared infra), `phase-1-foundation/`…`phase-6-reporting/` (M01…M35 by module), `cross-cutting/` (XC-01…06 policies/helpers used by many docs), `client-req-gaps/` (REQ-01…12 new capability builds). Each contains: meta (severity, module, QA pin ids, dependencies) → verified source state with file:line → root cause → modular fix approach → files → acceptance/gate. Intentionally NO code — you design the implementation from the approach section.
 - **`00-OVERVIEW.md`:** master registry — §2 corrections, §3 every BUG/GAP mapped to its doc(s), §4 per-doc status tracker, §7 global rules. The per-doc status column lives there; this file's §4 ledger is the wave-level roll-up.
 - **This file:** sequencing + live state + decisions + discipline. If a plan fact and this file disagree, fix this file (it drifts fastest).
-- **Test harness reality (until W0 lands):** `erp/tests/` and `erp/playwright.config.ts` do not exist; `@playwright/test` is not a dependency. QA suites run only after INF-01 relocates them into `erp/tests/`. Until then nothing can be gated — that is why INF-01 is the first doc of the first wave.
+- **Test harness reality (W0 LANDED 2026-09-15):** the harness now exists — `erp/playwright.config.ts`, `@playwright/test` devDep, and the runnable spec mirror `erp/tests/*.spec.ts` (35 files, `globalSetup` preflight + route warm-up). Gate commands: `yarn test:e2e tests/NN_*.spec.ts` with the dev server started out-of-band (`NODE_OPTIONS=--max-old-space-size=4096 yarn dev` in `erp/`) against a seeded DB (`npx prisma db push --force-reset --accept-data-loss` + `npx prisma db seed` — see repo notes; a fresh seed is REQUIRED for specs using fixed test-data names, e.g. 04 X3). `docs/QA-round1/tests/` remains QA's frozen record.
 - **Status vocabulary:** docs go `DOC` (written, verified) → `IMPL` (code merged) → `GATE` (named spec green, pins flipped). Verification-first docs (M18-01, M23-01, M25-02, M02-04) can also go `CLOSED-SOURCE` (spec green against unfixed code → bug already gone; note it in the doc, update `QA_CLIENT_REQ.md` with a dated line). Gates needing client credentials/keys are `BLOCKED-D1`, never "failed".
 
 ---
@@ -63,6 +63,7 @@ Each wave: ordered doc list (execution order = dependency order), session split,
 - Entry: none (first wave; INF-01 unblocks everything else).
 - Also: open the INF-03 credentials request with the client (parallel track, §5-D1).
 - Exit gate: `erp/tests/` harness green on specs 04 + 06; error-envelope mappers unit-tested; verification four closed or escalated to fix plans (record results — they change later waves per §2.7).
+- **RESULT (2026-09-15, W0 DONE):** exit gate met — spec 04 31/31, spec 06 33/33, mappers unit-tested (239 Vitest). INF-01/02/04/XC-01/XC-02 → GATE. **V-doc outcomes that change later waves (§2.7/R4):** M23-01 (BUG-56) **CLOSED-SOURCE** (spec 23 F1 green → no packaging-timeout defect; M23-02 still owns BUG-57/58 in W6). M02-04 (GAP-4) **CLOSED-SOURCE** (spec 02 `search:` green, stale comment fixed). **M18-01 (BUG-52) RED** — `/pos/shift-report?shiftId=invalid` renders the "Open Your Shift" cashier screen instead of the empty/error state; the QA-era "already fixed" read is stale → **escalate to a fix plan** (owned by W5 M18-01/REQ-11). **M25-02 (BUG-63) RED** — R3 double-click still wipes the card to zeros (baseRate 350→0), so the source guard the doc assumed is NOT effective → **escalate to a fix plan** (owned by W6 M25-02; the doc's "residual hardening" `reset()` is now mandatory, not optional).
 
 ### W1 — Identity spine: auth then staff/RBAC · 2 sessions · 15 docs
 - S1 (7): `M01-06 → M01-01 → M01-02 → M01-03 → M01-04 → M01-05 → M01-07` (seed edit #1)
@@ -130,7 +131,7 @@ Each wave: ordered doc list (execution order = dependency order), session split,
 
 | Wave | Sessions | Docs | Status | Completed | Blocked | Handoff notes (dated) |
 |---|---|---|---|---|---|---|
-| W0 | 1 | 9 | PENDING | — | — | — |
+| W0 | 1 | 9 | **DONE** | INF-01, INF-02, INF-04, XC-01, XC-02 (all GATE); M23-01, M02-04 (CLOSED-SOURCE); M18-01, M25-02 (RED→escalate) | — | **2026-09-15 (session W0-1):** Harness restored (`erp/tests/` + config + `@playwright/test`); spec 04 31/31, spec 06 33/33, spec 02 reproduces exactly the 1 BUG-1 pin (INF-01 acceptance met). INF-02 error layer + 9 routes migrated (A3/BUG-21 pin flipped green). INF-04 serializer + `zPrice` (tests/23 P1 flipped to `"0.75"`). XC-01 parser + 14 routes (BUG-28/32/40/75/81/82/84/26/29 pins flipped). XC-02 audit envelope + superadmin 401-guard + recon clamp (specs 30/35 green, 08 S1 401). **V-docs: M23-01 + M02-04 CLOSED-SOURCE (green); M18-01 (F0) + M25-02 (R3) RED → escalated to fix plans (see §3 W0 + §8-R4).** 239 unit tests green; typecheck clean (only pre-existing jspdf). Next: W1 (needs D3). |
 | W1 | 2 | 15 | PENDING | — | — | — |
 | W2 | 1 | 11 | PENDING | — | — | — |
 | W3 | 1 | 11 | PENDING | — | — | — |
@@ -145,7 +146,7 @@ Each wave: ordered doc list (execution order = dependency order), session split,
 
 **Doc-level detail** lives in the `00-OVERVIEW.md` §4 tracker (single source per doc); this ledger is the roll-up + handoff. Keep both in sync each task (§0 protocol step 5).
 
-**INF-03 / D1 credential track (parallel, client-owned):** requested ☐ · courier sandbox ☐ · PayHere ☐ · Resend/WhatsApp ☐ · CRON_SECRET ☐.
+**INF-03 / D1 credential track (parallel, client-owned):** requested ☑ (2026-09-15, `docs/QA-round1/INFRA_CREDENTIAL_REQUEST.md`) · courier sandbox ☐ · PayHere ☐ · Resend/WhatsApp ☐ · CRON_SECRET ☐.
 
 ---
 

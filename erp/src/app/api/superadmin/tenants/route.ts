@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
-import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import type { TenantStatus } from '@/generated/prisma/client';
+import { requireSuperAdmin } from '@/lib/api/superadmin-guard';
 
 // The currency is always LKR for this on-premises deployment. It is locked on
 // the server side so only LKR can be persisted for any business.
@@ -20,11 +20,8 @@ const createTenantSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const session = await auth();
-
-  if (!session || session.user?.role !== 'SUPER_ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const guard = await requireSuperAdmin();
+  if (!guard.ok) return guard.response;
 
   const { searchParams } = request.nextUrl;
   const search = searchParams.get('search') ?? '';
@@ -47,11 +44,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-
-  if (!session || session.user?.role !== 'SUPER_ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const guard = await requireSuperAdmin();
+  if (!guard.ok) return guard.response;
 
   // Check if 2 businesses already exist
   const existingCount = await prisma.tenant.count({ where: { deletedAt: null } });

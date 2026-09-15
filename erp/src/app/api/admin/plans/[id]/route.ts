@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { requireSuperAdmin } from '@/lib/api/superadmin-guard';
 
 const updatePlanSchema = z
   .object({
@@ -19,14 +19,8 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  const session = await auth();
-
-  if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
-    return NextResponse.json(
-      { success: false, error: { code: 'FORBIDDEN', message: 'Super admin access required' } },
-      { status: 403 },
-    );
-  }
+  const guard = await requireSuperAdmin();
+  if (!guard.ok) return guard.response;
 
   const { id } = await context.params;
 

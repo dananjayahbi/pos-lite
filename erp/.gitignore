@@ -43,3 +43,7 @@ next-env.d.ts
 /src/generated/prisma
 
 /REFERENCES/
+
+# playwright e2e outputs (INF-01)
+/test-results/
+/playwright-report/

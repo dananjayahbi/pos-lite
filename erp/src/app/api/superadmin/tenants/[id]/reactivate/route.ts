@@ -1,17 +1,14 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { requireSuperAdmin } from '@/lib/api/superadmin-guard';
 
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await auth();
-
-  if (!session || session.user?.role !== 'SUPER_ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const guard = await requireSuperAdmin();
+  if (!guard.ok) return guard.response;
 
   const { id } = await params;
 

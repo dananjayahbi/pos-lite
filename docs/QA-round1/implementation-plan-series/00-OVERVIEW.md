@@ -26,7 +26,7 @@ These differ from the QA report and every dependent doc must respect them:
 | C-2 | **BUG-14/15** — double-click fires two callbacks; 500 renders no error | **Largely fixed already** on this branch (submit disabled via `isSubmitting`; `mapAuthError` fallback exists). Residual: guard is React-state-only (not synchronous ref), no signed-in redirect on `/login` (BUG-17 still open). M01-05 covers the residue only. |
 | C-3 | **BUG-35** — "suspension not enforced anywhere" | Partially holds: middleware suspension gate + `/suspended` page DO exist, but the gate **bypasses all `/api/` paths** and fail-opens when the bridge errors; `authorize()` has no tenant-status check; store layout has no page guard. M08-01 rewritten to this reality. |
 | C-4 | **BUG-54** — cashier login "unexplained" redirect loop | Root-cause candidates ranked from source: (a) `cashier1` is seeded **only inside `seedDemoSales()`** and the whole function is skipped when the tenant already has ≥20 sales, with `upsert update:{}` never repairing a stale row; (b) in-memory IP rate-limit 10/15min; (c) `__Secure-` cookie-name mismatch behind HTTPS proxy; (d) sessionVersion bumps → `/login?sessionExpired`. M01-07 addresses all four. |
-| C-5 | QA suites location | `erp/tests/` and `erp/playwright.config.ts` **do not exist** on this branch; suites live only in `docs/QA-round1/tests/`. `@playwright/test` is not a dependency (Vitest only, ~24 unit files). Every fix gate depends on INF-01 restoring the harness. |
+| C-5 | QA suites location | `erp/tests/` and `erp/playwright.config.ts` **did not exist** at plan time (2026-09-15); suites lived only in `docs/QA-round1/tests/`, `@playwright/test` was not a dependency. **→ RESOLVED in W0 (2026-09-15):** INF-01 landed the harness (`erp/tests/` mirror + config + devDep); gates now run via `yarn test:e2e`. |
 | C-6 | Env config | `erp/.env.local` absent; `erp/.env` exists (git-ignored, NOT committed) but lacks `RESEND_API_KEY`, `PAYHERE_MERCHANT_SECRET`, `CRON_SECRET`, all `WHATSAPP_*`, and courier keys → BUG-60/71/73 gate families persist as config work (INF-03). |
 | C-7 | New findings (not in QA report) | **NEW-A:** staff audit writes are fire-and-forget (`void … .catch(() => {})`) — failed audit writes vanish silently. **NEW-B:** `/api/internal/middleware` `checkTenantStatus` returns 400 for missing tenantId → middleware silently skips the suspension check (fail-open amplifier of C-3). **NEW-C:** empty route directory `src/app/api/store/staff/[id]/pin/` (dead scaffold). **NEW-D:** `settings/account` PATCH + `reset-password` bump `sessionVersion` — mechanism exists, which is exactly why BUG-6's missing bump is a one-line-per-call fix. **NEW-E:** login page ignores middleware `callbackUrl` (always role-default route). |
 
@@ -77,10 +77,10 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 ### prerequisites / environment (INF)
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| INF-01 | Restore Playwright E2E harness (config, deps, spec relocation, env-readiness gates) | P1 enabler | DOC |
-| INF-02 | Central API error envelope + Prisma error mapping (kill `message.includes` anti-pattern, stop internals leakage) | P1 | DOC |
-| INF-03 | Environment/secrets configuration matrix (Resend, PayHere, CRON_SECRET, WhatsApp, Trans Express, courier) | P1 | DOC |
-| INF-04 | Decimal/JSON serialization contract (strings vs numbers, 2-dp) | P2 | DOC |
+| INF-01 | Restore Playwright E2E harness (config, deps, spec relocation, env-readiness gates) | P1 enabler | **GATE** (2026-09-15 W0: spec 04 31/31, 06 33/33, 02 = 1 BUG-1 pin) |
+| INF-02 | Central API error envelope + Prisma error mapping (kill `message.includes` anti-pattern, stop internals leakage) | P1 | **GATE** (24 mapper unit tests; 9 routes migrated; A3/BUG-21 pin flipped) |
+| INF-03 | Environment/secrets configuration matrix (Resend, PayHere, CRON_SECRET, WhatsApp, Trans Express, courier) | P1 | DOC — **requested 2026-09-15** (client/ops track, `INFRA_CREDENTIAL_REQUEST.md`) |
+| INF-04 | Decimal/JSON serialization contract (strings vs numbers, 2-dp) | P2 | **GATE** (serialize+zPrice unit tests; packaging DTO; tests/23 P1 flipped) |
 
 ### M01 — Authentication & Session
 | ID | Title | Sev | Status |
@@ -99,7 +99,7 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 | M02-01 | BUG-1 leftover apparel "Gender" column header | P3 | DOC |
 | M02-02 | BUG-2 + BUG-19 false-success product creation (207 ignored; `variants` key silently dropped) | P1 | DOC |
 | M02-03 | BUG-20 soft-deleted products unrecoverable (restore path missing) | P2 | DOC |
-| M02-04 | GAP-4 duplicate search inputs (STALE — fixed in source) + OBS-1 cashier POS dialog note | P3 | DOC (closed) |
+| M02-04 | GAP-4 duplicate search inputs (STALE — fixed in source) + OBS-1 cashier POS dialog note | P3 | **CLOSED-SOURCE** (2026-09-15: spec 02 `search:` green; stale comment fixed in `erp/tests/`) |
 | M02-05 | GAP-1 decision record: dosage handled via Description/Usage (reopen triggers) | — | DOC (record) |
 
 ### M03 — RBAC, Users & Permissions
@@ -117,23 +117,23 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 ### M04 — Categories & Brands
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| M04-01 | BUG-21 409 leaks raw Prisma/Turbopack internals (module instance of INF-02) | P3 | DOC |
+| M04-01 | BUG-21 409 leaks raw Prisma/Turbopack internals (module instance of INF-02) | P3 | **GATE** (2026-09-15 via INF-02; A3 pin flipped) |
 | M04-02 | BUG-22 brand vs category delete-button UX inconsistency | P3 | DOC |
 
 ### M05 — Customers CRM
 | ID | Title | Sev | Status |
 |---|---|---|---|
 | M05-01 | BUG-25 empty optional Email blocks UI create | P2 | DOC |
-| M05-02 | BUG-26 + BUG-29 birthday empty/invalid handling (wrong 409, internals leak) | P1 | DOC |
+| M05-02 | BUG-26 + BUG-29 birthday empty/invalid handling (wrong 409, internals leak) | P1 | IMPL (W0 leak fixed via INF-02 — B2/T1 pins flipped to 400; 201-for-empty still W3) |
 | M05-03 | BUG-27 no DB unique on (tenantId, phone) — concurrent duplicates | P2 | DOC |
-| M05-04 | BUG-28 malformed numeric query filters → 500 (module instance of XC-01) | P3 | DOC |
+| M05-04 | BUG-28 malformed numeric query filters → 500 (module instance of XC-01) | P3 | **GATE** (2026-09-15 via XC-01; X5 pin flipped) |
 | M05-05 | BUG-74 + OBS-5 audience endpoints: NaN/enum params → 500; cashier PII exposure | P2 | DOC |
 
 ### M06 — Suppliers
 | ID | Title | Sev | Status |
 |---|---|---|---|
 | M06-01 | BUG-30/31 no duplicate guard on supplier phone/name | P2 | DOC |
-| M06-02 | BUG-32 non-numeric page/limit → 500 | P3 | DOC |
+| M06-02 | BUG-32 non-numeric page/limit → 500 | P3 | **GATE** (2026-09-15 via XC-01; X4 pin flipped) |
 | M06-03 | BUG-33 cleared Lead Time blocks submit with raw NaN message | P3 | DOC |
 | M06-04 | BUG-34 edit sheet first open blank | P2 | DOC |
 | M06-05 | OBS-9/10/11 phone search, unarchive path, archived-row edit policy | P2/P3 | DOC |
@@ -179,7 +179,7 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 | M16-02 | BUG-49 GRN UI cannot capture batch/expiry | P2 | DOC |
 | M17-01 | BUG-50 cross-tenant return → 500 (unmapped tenant-mismatch) | P2 | DOC |
 | M17-02 | BUG-51 return date filters → 500 | P3 | DOC |
-| M18-01 | BUG-52 shift-report empty state + req 1.4 cash over/short — STALE-looking, verification doc | P2→close | DOC |
+| M18-01 | BUG-52 shift-report empty state + req 1.4 cash over/short — STALE-looking, verification doc | P2→close | **RED→fix-plan** (2026-09-15: spec 18 F0 fails — `/pos/shift-report?shiftId=invalid` renders Open-Your-Shift, not the empty/error state; escalate to W5) |
 | M19-01 | BUG-53 petty-cash negative balance policy decision + guard | P2 | DOC |
 | M20-01 | BUG-54-dependent: cashier RBAC verification for timeclock/commissions | P1 | DOC |
 | M20-02 | Req 3.8 payout creation validation contract | P2 | DOC |
@@ -188,12 +188,12 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 | ID | Title | Sev | Status |
 |---|---|---|---|
 | M21-01 | BUG-55 raw-material single GET omits stockStatus metadata | P2 | DOC |
-| M23-01 | BUG-56 `/delivery/packaging` page timeout — verification doc (no source defect) | P1→close | DOC |
+| M23-01 | BUG-56 `/delivery/packaging` page timeout — verification doc (no source defect) | P1→close | **CLOSED-SOURCE** (2026-09-15: spec 23 F1 green; env/harness, not source) |
 | M23-02 | BUG-58 packaging list sort order + BUG-57 Decimal serialization consumer note | P3 | DOC |
 | M24-01 | BUG-60 (+OBS-32) Trans Express auth failure, error-category mapping, packaging auto-deduct trigger | P1 | DOC |
 | M24-02 | BUG-61 tracking auto-sync path (req 3.1) once dispatch works | P2 | DOC |
 | M25-01 | BUG-62 city-level zone override unreachable (NULLS FIRST) | P1 | DOC |
-| M25-02 | BUG-63 double-click Save Rate Card wipes card to zeros — verification doc (guarded in source) | P1→close | DOC |
+| M25-02 | BUG-63 double-click Save Rate Card wipes card to zeros — verification doc (guarded in source) | P1→close | **RED→fix-plan** (2026-09-15: spec 25 R3 still wipes 350→0; the assumed guard is NOT effective — escalate to W6, `reset()` now mandatory) |
 | M25-03 | BUG-64 concurrent entries PUT blends matrices (no transaction) | P2 | DOC |
 | M26-01 | BUG-65 reconciliation engine unreachable (upstream gate plan) | P1 | DOC |
 | M26-02 | BUG-66 dispute sentinels unmapped → 500 + OBS-40 dispute audit actions | P2 | DOC |
@@ -241,8 +241,8 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 ### Cross-cutting (XC)
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| XC-01 | Query-param validation sweep (shared parser/guard; kills the BUG-28/32/40/45/51/74/75/81/82/84/89/91 family) | P2 | DOC |
-| XC-02 | Response-envelope consistency (audit-logs shape BUG-59, OBS-13/46 unauth 401-vs-403 policy) | P2 | DOC |
+| XC-01 | Query-param validation sweep (shared parser/guard; kills the BUG-28/32/40/45/51/74/75/81/82/84/89/91 family) | P2 | **GATE** (2026-09-15: parser + 14 routes + CI guard; BUG-28/32/40/75/81/82/84 pins flipped) |
+| XC-02 | Response-envelope consistency (audit-logs shape BUG-59, OBS-13/46 unauth 401-vs-403 policy) | P2 | **GATE** (2026-09-15: audit envelope + superadmin 401-guard + recon clamp; specs 30/35 green, 08 S1 401) |
 | XC-03 | Page/API permission-gate consistency (OBS-4/8/41/51/52/80; single guard helper) | P2 | DOC |
 | XC-04 | Input sanitization / stored-HTML policy (BUG-76/77/94 family; React escaping vs schema strip) | P2 | DOC |
 | XC-05 | Soft-delete / restore / deprovision policy (BUG-20, OBS-10, GAP-4, OBS-45/63) | P2 | DOC |

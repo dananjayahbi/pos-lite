@@ -13,3 +13,8 @@
 
 ## Acceptance / gate
 - F1 green (or a source defect isolated with a specific file:line and this doc upgraded to a fix plan before any code change).
+
+## W0 execution result (2026-09-15) — **CLOSED-SOURCE**
+- Re-ran `tests/23_packaging_stock.spec.ts` §1.F1 on the restored INF-01 harness against a fresh seeded DB with the delivery module enabled on the primary tenant: **F1 passed (8.7s)** — the `/delivery/packaging` page loads with no navigation abort.
+- Verdict: **BUG-56 CLOSED (environment/harness, not reproducible in source)** — confirmed the doc's hypothesis. The QA-era `net::ERR_ABORTED` was the cold-compile / module-gate condition, not a render defect. No code change made or needed here.
+- Regression pin: F1 stands as the "page renders for `managePackaging` holders" guard. (M23-02 in W6 still owns BUG-57 serialization — the INF-04 `tests/23` P1 flip — and BUG-58 sorting, where the §1.F6 alphabetical-vs-enum-order test assumption remains open.)

@@ -4,6 +4,8 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { planProduction, produceGoods } from '@/lib/services/bom.service';
 import { ProduceGoodsSchema } from '@/lib/validators/bom.validators';
+import { parseQueryInt } from '@/lib/api/query-params';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function POST(request: Request) {
   try {
@@ -121,7 +123,8 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
     const bomId = searchParams.get('bomId');
-    const quantity = Number(searchParams.get('quantity') ?? '0');
+    // XC-01: malformed quantity now 400 naming the param (was NaN → Prisma 500).
+    const quantity = parseQueryInt(searchParams, 'quantity') ?? 0;
     if (!bomId) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message: 'bomId is required' } },
@@ -138,22 +141,8 @@ export async function GET(request: NextRequest) {
     const plan = await planProduction(tenantId, bomId, quantity);
     return NextResponse.json({ success: true, data: plan });
   } catch (error) {
-    if (error instanceof Error && error.message === 'NOT_FOUND') {
-      return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message: 'Bill of materials not found' } },
-        { status: 404 },
-      );
-    }
-    if (error instanceof Error && error.message === 'FORBIDDEN') {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
-        { status: 403 },
-      );
-    }
-    console.error('GET /api/store/bom/produce error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // XC-01/INF-02: parser ApiErrors surface as their 400; NOT_FOUND/FORBIDDEN
+    // sentinels map via the shared service mapper; unknown → leak-free 500.
+    return toErrorResponse(error, 'GET /api/store/bom/produce');
   }
 }

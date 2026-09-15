@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { requireSuperAdmin } from '@/lib/api/superadmin-guard';
 
 // The currency is always LKR for this on-premises deployment. It is locked here
 // so no client can change it for a business via the superadmin settings API.
@@ -21,13 +21,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const session = await auth();
-    if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Super admin access required' } },
-        { status: 403 },
-      );
-    }
+    const guard = await requireSuperAdmin();
+    if (!guard.ok) return guard.response;
 
     const { id } = await params;
     const body: unknown = await request.json();

@@ -16,3 +16,9 @@ Their run predated this branch's page work (or hit the Suspense/loading race: `u
 
 ## Acceptance / gate
 - F0 green → BUG-52 closed in next QA report; req 1.4 bullets ticked with evidence line.
+
+## W0 execution result (2026-09-15) — **RED → ESCALATE TO FIX PLAN**
+- Re-ran `tests/18_shifts_cash.spec.ts` F0 on the INF-01 harness (fresh seed): **FAILED**. The doc's "already implemented" read was stale.
+- Evidence: after `page.goto('/pos/shift-report?shiftId=invalid')`, the page renders the **"Open Your Shift"** cashier screen (heading "Open Your Shift", Opening-Float input, "Start Shift"), NOT the expected "No shift ID provided." / "Failed to load report" empty/error state. So the `getByText(/no shift id provided|failed to load report/i)` assertion never matches.
+- Root cause (to confirm in the fix pass): `/pos/shift-report` is under the POS route group, whose layout/page redirects a cashier with **no open shift** to the open-shift screen before `ShiftReportPageContent` renders the empty/error branch. The empty-state code exists (per this doc) but is unreachable for the F0 caller. This is a real defect, not a hydration race.
+- **Status: BUG-52 stays OPEN.** This doc is upgraded from verification to a fix plan owned by **W5** (M18-01). Req 1.4 bullets are NOT ticked. Suggested fix direction: render the shift-report empty/error state independent of the open-shift redirect (e.g. guard order, or a distinct report route that doesn't bounce to open-shift), so an invalid/missing `shiftId` surfaces the documented empty/error UI.

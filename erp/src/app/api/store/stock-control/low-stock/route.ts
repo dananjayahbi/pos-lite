@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { parseQueryInt } from '@/lib/api/query-params';
 
 interface LowStockRow {
   id: string;
@@ -48,10 +50,12 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const countOnly = searchParams.get('countOnly') === 'true';
     const format = searchParams.get('format');
-    const thresholdParam = searchParams.get('threshold');
-    const threshold = thresholdParam ? parseInt(thresholdParam, 10) : null;
-    const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '25', 10)));
+    // XC-01: threshold=abc used to be parseInt→NaN→silent empty 200 (BUG-81)
+    // and >int4 crashed with 500 (BUG-82). Now: malformed → 400, clamped to a
+    // sane int4 window.
+    const threshold = parseQueryInt(searchParams, 'threshold', { min: 0, max: 2_147_483_647 });
+    const page = parseQueryInt(searchParams, 'page', { default: 1, min: 1 }) ?? 1;
+    const limit = parseQueryInt(searchParams, 'limit', { default: 25, min: 1, max: 100 }) ?? 25;
 
     if (countOnly) {
       const result = await prisma.$queryRaw<[{ count: bigint }]>`
@@ -177,10 +181,8 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Low stock query error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch low stock data' } },
-      { status: 500 },
-    );
+    // XC-01/INF-02: parser ApiErrors surface as their 400; unknown
+    // errors are logged and returned as a generic, leak-free 500.
+    return toErrorResponse(error, 'Low stock query');
   }
 }

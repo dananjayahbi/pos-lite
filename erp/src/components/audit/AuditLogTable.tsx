@@ -103,7 +103,13 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
       const res = await fetch(`/api/audit-logs?${buildParams()}`);
       const json = await res.json();
       if (!json.success) throw new Error(json.error?.message ?? 'Failed to fetch audit logs');
-      return json.data;
+      // XC-02 canonical envelope: array `data` + pagination in `meta`.
+      return {
+        data: json.data as AuditLogEntry[],
+        total: json.meta?.total ?? 0,
+        page: json.meta?.page ?? 1,
+        pageSize: json.meta?.limit ?? PAGE_SIZE,
+      };
     },
   });
 

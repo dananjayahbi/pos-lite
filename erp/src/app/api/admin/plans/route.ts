@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { requireSuperAdmin } from '@/lib/api/superadmin-guard';
 
 const createPlanSchema = z.object({
   name: z.enum(['STARTER', 'GROWTH', 'ENTERPRISE']),
@@ -13,14 +13,8 @@ const createPlanSchema = z.object({
 });
 
 export async function GET() {
-  const session = await auth();
-
-  if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
-    return NextResponse.json(
-      { success: false, error: { code: 'FORBIDDEN', message: 'Super admin access required' } },
-      { status: 403 },
-    );
-  }
+  const guard = await requireSuperAdmin();
+  if (!guard.ok) return guard.response;
 
   const plans = await prisma.subscriptionPlan.findMany({
     orderBy: { monthlyPrice: 'asc' },
@@ -31,14 +25,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await auth();
-
-  if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
-    return NextResponse.json(
-      { success: false, error: { code: 'FORBIDDEN', message: 'Super admin access required' } },
-      { status: 403 },
-    );
-  }
+  const guard = await requireSuperAdmin();
+  if (!guard.ok) return guard.response;
 
   const body = await request.json();
   const parsed = createPlanSchema.safeParse(body);

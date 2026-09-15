@@ -12,3 +12,8 @@
 
 ## Acceptance
 - No pin to flip. Mark GAP-4 **CLOSED (fixed in source, verified 2026-09-15)** in the next QA round; keep OBS-1 as a standing automation note.
+
+## W0 execution result (2026-09-15) — **CLOSED-SOURCE**
+- Ran the relocated `erp/tests/02_inventory.spec.ts` `search:` test on the INF-01 harness (fresh seed): **passed (8.8s)** — GAP-4's duplicate-input defect is confirmed gone in source.
+- Action taken: updated the stale "responsive duplicate" comment in `erp/tests/02_inventory.spec.ts` (the `.locator('visible=true')` is now a harmless belt-and-braces pattern, not a workaround).
+- **GAP-4 CLOSED (fixed in source, verified 2026-09-15).** OBS-1 recorded as a standing harness/automation note (cashier sign-in opens the "Open POS" dialog and must be clicked "Open in this tab") — reused by all cashier-login specs (M01-07, M20-01 in W1).

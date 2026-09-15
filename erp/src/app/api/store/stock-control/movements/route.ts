@@ -5,6 +5,8 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import type { Prisma } from '@/generated/prisma/client';
 import { StockMovementReason } from '@/generated/prisma/client';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { parseQueryInt, parseQueryDate } from '@/lib/api/query-params';
 
 const REASON_LABELS: Record<string, string> = {
   FOUND: 'Found',
@@ -54,10 +56,12 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = request.nextUrl;
-    const page = Math.max(1, Number(searchParams.get('page') ?? '1'));
-    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') ?? '25')));
-    const from = searchParams.get('from');
-    const to = searchParams.get('to');
+    // XC-01: malformed page/limit → 400 (was NaN past the clamp); from/to are
+    // now validated ISO dates — garbage no longer reaches Prisma (BUG-40).
+    const page = parseQueryInt(searchParams, 'page', { default: 1, min: 1 }) ?? 1;
+    const limit = parseQueryInt(searchParams, 'limit', { default: 25, min: 1, max: 100 }) ?? 25;
+    const fromDate = parseQueryDate(searchParams, 'from');
+    const toDate = parseQueryDate(searchParams, 'to');
     const reasonsParam = searchParams.get('reasons');
     const search = searchParams.get('search');
     const actorId = searchParams.get('actorId');
@@ -67,10 +71,10 @@ export async function GET(request: NextRequest) {
     // Build where clause
     const where: Prisma.StockMovementWhereInput = { tenantId };
 
-    if (from || to) {
+    if (fromDate || toDate) {
       where.createdAt = {};
-      if (from) where.createdAt.gte = new Date(from);
-      if (to) where.createdAt.lte = new Date(to);
+      if (fromDate) where.createdAt.gte = fromDate;
+      if (toDate) where.createdAt.lte = toDate;
     }
 
     if (reasonsParam) {
@@ -141,9 +145,9 @@ export async function GET(request: NextRequest) {
 
       const csv = [header, ...rows].join('\n');
 
-      const fromStr = from ?? '';
-      const toStr = to ?? '';
-      const filename = from || to
+      const fromStr = fromDate ? fromDate.toISOString().slice(0, 10) : '';
+      const toStr = toDate ? toDate.toISOString().slice(0, 10) : '';
+      const filename = fromDate || toDate
         ? `stock-movements-${fromStr}-to-${toStr}.csv`
         : 'stock-movements-all.csv';
 
@@ -179,10 +183,8 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Stock movements error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch stock movements' } },
-      { status: 500 },
-    );
+    // XC-01/INF-02: parser ApiErrors surface as their 400; unknown
+    // errors are logged and returned as a generic, leak-free 500.
+    return toErrorResponse(error, 'Stock movements');
   }
 }

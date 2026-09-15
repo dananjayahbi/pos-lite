@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { parseQueryInt, parseQueryBool } from '@/lib/api/query-params';
 import { getSuppliers, createSupplier } from '@/lib/services/supplier.service';
 import { CreateSupplierSchema } from '@/lib/validators/supplier.validators';
 import type { CreateSupplierInput } from '@/lib/validators/supplier.validators';
@@ -36,18 +38,15 @@ export async function GET(request: Request) {
 
     const result = await getSuppliers(tenantId, {
       search: searchParams.get('search') ?? undefined,
-      page: searchParams.get('page') ? Number(searchParams.get('page')) : undefined,
-      limit: searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined,
-      includeArchived: searchParams.get('includeArchived') === 'true',
+      // XC-01: malformed page/limit now 400 (BUG-32); out-of-range clamps.
+      page: parseQueryInt(searchParams, 'page', { min: 1, max: 1_000_000 }),
+      limit: parseQueryInt(searchParams, 'limit', { min: 1, max: 200 }),
+      includeArchived: parseQueryBool(searchParams, 'includeArchived') ?? false,
     });
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
-    console.error('GET /api/store/suppliers error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'GET /api/store/suppliers');
   }
 }
 

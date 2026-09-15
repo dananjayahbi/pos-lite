@@ -8,6 +8,8 @@ import {
   type GetBatchesFilters,
 } from '@/lib/services/batchTracking.service';
 import { BatchSource } from '@/generated/prisma/client';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { parseQueryInt } from '@/lib/api/query-params';
 
 const EXPIRY_STATUSES = ['EXPIRED', 'EXPIRING_SOON', 'OK'] as const;
 type ExpiryStatusFilter = (typeof EXPIRY_STATUSES)[number];
@@ -40,8 +42,9 @@ export async function GET(request: NextRequest) {
     const variantId = searchParams.get('variantId') ?? undefined;
     const sourceRaw = searchParams.get('source') ?? undefined;
     const expiryStatusRaw = searchParams.get('expiryStatus') ?? undefined;
-    const page = Math.max(1, Number(searchParams.get('page') ?? '1'));
-    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') ?? '25')));
+    // XC-01: Math.max(1,Number('abc')) is NaN — malformed page/limit now 400.
+    const page = parseQueryInt(searchParams, 'page', { default: 1, min: 1 }) ?? 1;
+    const limit = parseQueryInt(searchParams, 'limit', { default: 25, min: 1, max: 100 }) ?? 25;
 
     const filters: GetBatchesFilters = {
       page,
@@ -64,10 +67,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: listResult.batches, meta: { ...stats, total: listResult.total } });
   } catch (error) {
-    console.error('GET batches error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to list batches' } },
-      { status: 500 },
-    );
+    // XC-01/INF-02: parser ApiErrors surface as their 400; unknown
+    // errors are logged and returned as a generic, leak-free 500.
+    return toErrorResponse(error, 'GET batches');
   }
 }

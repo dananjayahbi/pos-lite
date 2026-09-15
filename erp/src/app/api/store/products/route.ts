@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getAllProducts, createProduct, createProductVariants } from '@/lib/services/product.service';
 import { ProductListQuerySchema, CreateProductSchema } from '@/lib/validators/product.validators';
 import { revalidateTenantStorefront } from '@/lib/revalidate-website';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -97,11 +98,10 @@ export async function GET(request: NextRequest) {
       meta: { page, limit, total: result.total, totalPages },
     });
   } catch (error) {
-    console.error('GET /api/store/products error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // INF-02: one-line error mapping — Prisma P2002/P2025 and service
+    // sentinels become typed envelope responses; unknown errors are logged
+    // server-side and returned as a generic 500 with no internals.
+    return toErrorResponse(error, 'GET /api/store/products');
   }
 }
 
@@ -178,26 +178,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: product }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : '';
-
-    if (message.includes('already exists')) {
-      return NextResponse.json(
-        { success: false, error: { code: 'CONFLICT', message } },
-        { status: 409 },
-      );
-    }
-
-    if (message.includes('not found')) {
-      return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message } },
-        { status: 404 },
-      );
-    }
-
-    console.error('POST /api/store/products error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // INF-02: one-line error mapping — Prisma P2002/P2025 and service
+    // sentinels become typed envelope responses; unknown errors are logged
+    // server-side and returned as a generic 500 with no internals.
+    return toErrorResponse(error, 'POST /api/store/products');
   }
 }
