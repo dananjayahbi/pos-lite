@@ -27,21 +27,32 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-function mapAuthError(error: string | undefined): string {
+function mapAuthError(error: string | undefined, code?: string): string {
+  // next-auth surfaces the thrown error's static `type` as `error` (always
+  // "CredentialsSignin" for credential failures) and the configurable `code`
+  // separately. authorize() rides the specific rejection token on `code`
+  // (see signinError in auth.ts), so it must be checked FIRST - otherwise
+  // every rejection collapses into the generic invalid-credentials message.
+  const signal = code ?? error;
+
+  if (signal?.includes('TOO_MANY_ATTEMPTS')) {
+    return 'Too many login attempts. Please wait about 15 minutes before trying again.';
+  }
+
+  if (signal?.includes('ACCOUNT_INACTIVE')) {
+    return 'Your account is inactive. Please contact an administrator.';
+  }
+
+  if (signal?.includes('TENANT_SUSPENDED')) {
+    return 'Your business account is suspended. Please contact support to restore access.';
+  }
+
   if (!error) {
     return 'Unable to sign in. Please try again.';
   }
 
-  if (error.includes('TOO_MANY_ATTEMPTS')) {
-    return 'Too many login attempts. Please wait about 15 minutes before trying again.';
-  }
-
   if (error.includes('CredentialsSignin')) {
     return 'Invalid email or password. Please try again.';
-  }
-
-  if (error.includes('ACCOUNT_INACTIVE')) {
-    return 'Your account is inactive. Please contact an administrator.';
   }
 
   return 'Unable to sign in. Please try again.';
@@ -120,7 +131,7 @@ export function LoginFormContent() {
         redirect: false,
       });
       if (result?.error) {
-        setFormError(mapAuthError(result.error));
+        setFormError(mapAuthError(result.error, result.code));
         submittingRef.current = false;
         return;
       }

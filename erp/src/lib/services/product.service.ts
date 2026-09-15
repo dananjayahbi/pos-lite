@@ -10,7 +10,8 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
 import type { HealthConcern, ProductSource, TaxRule } from '@/generated/prisma/client';
-import { createAuditLog } from '@/lib/services/audit.service';
+import { createAuditLog, writeAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { ApiError } from '@/lib/api/errors';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,12 @@ export interface ProductFilters {
   /** Fetch a specific set of products by ID (used to hydrate pickers). */
   ids?: string[] | undefined;
   isArchived?: boolean | undefined;
+  /**
+   * M02-03 — opt-in "Deleted" view: when true, return ONLY soft-deleted
+   * products (deletedAt != null). The default (false/undefined) keeps the
+   * hard `deletedAt: null` filter that every other caller relies on.
+   */
+  includeDeleted?: boolean | undefined;
   page?: number | undefined;
   limit?: number | undefined;
 }
@@ -128,11 +135,13 @@ function generateSku(brandName: string | null, form: string | undefined | null, 
 // ── Product Functions ────────────────────────────────────────────────────────
 
 export async function getAllProducts(tenantId: string, filters: ProductFilters = {}) {
-  const { search, categoryId, categoryIds, brandId, brandIds, ids, isArchived, page = 1, limit = 20 } = filters;
+  const { search, categoryId, categoryIds, brandId, brandIds, ids, isArchived, includeDeleted, page = 1, limit = 20 } = filters;
 
+  // M02-03: `includeDeleted` flips the hard filter into the "Deleted" view —
+  // ONLY soft-deleted rows. Default behavior (deletedAt: null) is unchanged.
   const where: Prisma.ProductWhereInput = {
     tenantId,
-    deletedAt: null,
+    deletedAt: includeDeleted ? { not: null } : null,
   };
 
   if (ids && ids.length > 0) {
@@ -140,10 +149,13 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
   }
 
   if (search) {
+    // In the deleted view the variants are soft-deleted too, so the variant
+    // sub-conditions must not re-filter them by deletedAt: null.
+    const variantSearch = includeDeleted ? {} : { deletedAt: null };
     where.OR = [
       { name: { contains: search, mode: 'insensitive' as const } },
-      { variants: { some: { sku: { contains: search, mode: 'insensitive' as const }, deletedAt: null } } },
-      { variants: { some: { barcode: { contains: search, mode: 'insensitive' as const }, deletedAt: null } } },
+      { variants: { some: { sku: { contains: search, mode: 'insensitive' as const }, ...variantSearch } } },
+      { variants: { some: { barcode: { contains: search, mode: 'insensitive' as const }, ...variantSearch } } },
     ];
   }
 
@@ -170,7 +182,9 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
         category: { select: { id: true, name: true } },
         brand: { select: { id: true, name: true } },
         variants: {
-          where: { deletedAt: null },
+          // Mirror the product-level filter: the Deleted view shows the
+          // soft-deleted variants (so SKU/stock are visible before restore).
+          where: { deletedAt: includeDeleted ? { not: null } : null },
           select: {
             id: true,
             sku: true,
@@ -192,7 +206,7 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
         },
         _count: {
           select: {
-            variants: { where: { deletedAt: null } },
+            variants: { where: { deletedAt: includeDeleted ? { not: null } : null } },
           },
         },
       },
@@ -533,6 +547,95 @@ export async function archiveProduct(tenantId: string, productId: string, actorI
   return updated;
 }
 
+/**
+ * M02-03 (BUG-20 / D4 policy) — undo a soft delete: clear `deletedAt` on the
+ * product AND its variants (exactly the scope `softDeleteProduct` sets), so
+ * stock/prices come back untouched.
+ *
+ * Idempotency: restoring a live product is a 409, not a silent 200 no-op —
+ * the caller almost certainly has stale UI state and deserves an honest
+ * "already restored" signal.
+ *
+ * SKU guard: names/SKUs are RESERVED after soft-delete (D4), so a duplicate
+ * create is rejected while the product is deleted. As a belt-and-braces
+ * check, if some OTHER live product somehow holds a variant SKU of this
+ * product (e.g. data written before the pre-check shipped), refuse the
+ * restore with 409 rather than letting the @@unique([tenantId, sku])
+ * constraint throw a raw 500.
+ */
+export async function restoreProduct(
+  tenantId: string,
+  productId: string,
+  actor: { id: string; role: string },
+) {
+  const existing = await prisma.product.findFirst({
+    where: { id: productId, tenantId },
+    include: {
+      variants: {
+        where: { deletedAt: { not: null } },
+        select: { id: true, sku: true },
+      },
+    },
+  });
+
+  if (!existing) {
+    throw ApiError.notFound('Product not found');
+  }
+
+  if (!existing.deletedAt) {
+    throw ApiError.conflict('Product is not deleted');
+  }
+
+  // SKU collision guard: any of this product's (deleted) variant SKUs already
+  // owned by a LIVE variant of another product blocks the restore.
+  const skus = existing.variants.map((v) => v.sku);
+  if (skus.length > 0) {
+    const collision = await prisma.productVariant.findFirst({
+      where: {
+        tenantId,
+        sku: { in: skus },
+        deletedAt: null,
+        productId: { not: productId },
+      },
+      select: { sku: true },
+    });
+    if (collision) {
+      throw ApiError.conflict(
+        `Restore blocked: SKU ${collision.sku} now belongs to another product`,
+      );
+    }
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const product = await tx.product.update({
+      where: { id: productId },
+      data: { deletedAt: null },
+    });
+
+    // Mirror softDeleteProduct's scope exactly: it set deletedAt on every
+    // variant of this product; restore clears the same set.
+    await tx.productVariant.updateMany({
+      where: { productId, deletedAt: { not: null } },
+      data: { deletedAt: null },
+    });
+
+    return product;
+  });
+
+  await writeAuditLog({
+    tenantId,
+    actorId: actor.id,
+    actorRole: actor.role,
+    entityType: 'Product',
+    entityId: productId,
+    action: AUDIT_ACTIONS.PRODUCT_RESTORED,
+    before: { deletedAt: existing.deletedAt } as unknown as Prisma.InputJsonValue,
+    after: { deletedAt: null } as unknown as Prisma.InputJsonValue,
+  });
+
+  return updated;
+}
+
 // ── Variant Lookup Functions ─────────────────────────────────────────────────
 
 export async function getVariantById(tenantId: string, variantId: string) {
@@ -630,13 +733,22 @@ export async function getAllCategories(tenantId: string) {
 }
 
 export async function createCategory(tenantId: string, data: CreateCategoryInput) {
-  // Check for duplicate name
+  // M04-01 (D4 policy): the name is reserved while ANY row carries it — live
+  // or soft-deleted — because @@unique([tenantId, name]) keeps archived rows
+  // holding the name. A deletedAt-agnostic pre-check surfaces the friendly
+  // 409 from the service instead of letting the DB throw a raw P2002 dump;
+  // mapPrismaError in toErrorResponse stays the belt-and-braces safety net
+  // for races between this check and the insert (BUG-21).
   const existing = await prisma.category.findFirst({
-    where: { tenantId, name: data.name, deletedAt: null },
+    where: { tenantId, name: data.name },
   });
 
   if (existing) {
-    throw new Error('A category with this name already exists');
+    throw ApiError.conflict(
+      existing.deletedAt
+        ? 'A category with this name already exists (an archived record uses this name)'
+        : 'A category with this name already exists',
+    );
   }
 
   return prisma.category.create({
@@ -663,13 +775,19 @@ export async function updateCategory(
     throw new Error('Category not found');
   }
 
-  // Check name conflict on rename
+  // Check name conflict on rename — M04-01 (D4): archived rows still reserve
+  // the name at the DB, so the pre-check is deletedAt-agnostic and throws a
+  // typed 409 with the friendly message (P2002 mapper stays the safety net).
   if (data.name && data.name !== existing.name) {
     const conflict = await prisma.category.findFirst({
-      where: { tenantId, name: data.name, deletedAt: null, id: { not: categoryId } },
+      where: { tenantId, name: data.name, id: { not: categoryId } },
     });
     if (conflict) {
-      throw new Error('A category with this name already exists');
+      throw ApiError.conflict(
+        conflict.deletedAt
+          ? 'A category with this name already exists (an archived record uses this name)'
+          : 'A category with this name already exists',
+      );
     }
   }
 
@@ -760,12 +878,18 @@ export async function getAllBrands(tenantId: string) {
 }
 
 export async function createBrand(tenantId: string, data: CreateBrandInput) {
+  // M04-01 (D4 policy): deletedAt-agnostic name reservation — see
+  // createCategory above for the full rationale (BUG-21 belt-and-braces).
   const existing = await prisma.brand.findFirst({
-    where: { tenantId, name: data.name, deletedAt: null },
+    where: { tenantId, name: data.name },
   });
 
   if (existing) {
-    throw new Error('A brand with this name already exists');
+    throw ApiError.conflict(
+      existing.deletedAt
+        ? 'A brand with this name already exists (an archived record uses this name)'
+        : 'A brand with this name already exists',
+    );
   }
 
   return prisma.brand.create({
@@ -787,13 +911,18 @@ export async function updateBrand(tenantId: string, brandId: string, data: Updat
     throw new Error('Brand not found');
   }
 
-  // Check name conflict on rename
+  // Check name conflict on rename — M04-01 (D4): deletedAt-agnostic, see the
+  // category update above (BUG-21 belt-and-braces).
   if (data.name && data.name !== existing.name) {
     const conflict = await prisma.brand.findFirst({
-      where: { tenantId, name: data.name, deletedAt: null, id: { not: brandId } },
+      where: { tenantId, name: data.name, id: { not: brandId } },
     });
     if (conflict) {
-      throw new Error('A brand with this name already exists');
+      throw ApiError.conflict(
+        conflict.deletedAt
+          ? 'A brand with this name already exists (an archived record uses this name)'
+          : 'A brand with this name already exists',
+      );
     }
   }
 

@@ -3,7 +3,7 @@
 import type { Category } from '@/hooks/useCategories';
 import { Badge } from '@/components/ui/badge';
 import { Pencil } from 'lucide-react';
-import { CategoryDeleteButton } from '@/components/categories/CategoryDeleteButton';
+import { ResourceDeleteButton, productsAssignedReason } from '@/components/shared/ResourceDeleteButton';
 import { CategoryIcon } from '@/components/categories/CategoryIcon';
 
 interface CategoryListProps {
@@ -87,16 +87,14 @@ export function CategoryList({
                 </button>
               )}
               {canDelete && (
-                <CategoryDeleteButton
+                <ResourceDeleteButton
+                  canDelete
+                  label={cat.name}
                   isDeleting={false}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete?.(cat);
-                  }}
-                  categoryName={cat.name}
+                  onDelete={() => onDelete?.(cat)}
                   blockedReason={
                     cat._count.products > 0
-                      ? `${cat._count.products} product${cat._count.products === 1 ? '' : 's'} assigned — reassign or archive them first`
+                      ? productsAssignedReason(cat._count.products)
                       : undefined
                   }
                 />

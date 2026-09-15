@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { TENANT_FEATURE_MODULES } from '@/lib/constants/tenant-modules';
+
 // ── Appointment Service ───────────────────────────────────────────────────────
 
 export const AppointmentServiceSchema = z.object({
@@ -134,8 +136,13 @@ export const AppointmentFiltersSchema = z.object({
 
 // ── Feature Module Toggle ────────────────────────────────────────────────────
 
+// M08-04 (BUG-38): allowlist against the canonical module registry — unknown
+// names → 400 VALIDATION_ERROR via the route's safeParse path. `[]` is valid
+// (clears all modules); duplicates are deduped server-side.
 export const FeatureModuleToggleSchema = z.object({
-  modules: z.array(z.string()),
+  modules: z
+    .array(z.enum(TENANT_FEATURE_MODULES))
+    .transform((modules) => [...new Set(modules)]),
 });
 
 // ── Types ─────────────────────────────────────────────────────────────────────

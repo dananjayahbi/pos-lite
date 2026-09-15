@@ -154,7 +154,7 @@ export async function DELETE(
     return NextResponse.json({
       success: true,
       data: deleted,
-      message: 'Product has been archived. It can be restored by un-setting deletedAt.',
+      message: 'Product deleted. It can be restored from the Deleted filter in Inventory.',
     });
   } catch (error) {
     // INF-02: one-line error mapping — Prisma P2002/P2025 and service

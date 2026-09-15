@@ -10,6 +10,7 @@ import { PRODUCT_FORM_LABELS } from '@/lib/constants/product-options';
 const STATUS_LABELS: Record<string, string> = {
   active: 'Active',
   archived: 'Archived',
+  deleted: 'Deleted',
   low_stock: 'Low Stock',
   out_of_stock: 'Out of Stock',
 };

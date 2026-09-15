@@ -31,6 +31,8 @@ export const AUTH_ACTIONS = {
   LOGIN_FAILED_INVALID_CREDENTIALS: 'LOGIN_FAILED_INVALID_CREDENTIALS',
   LOGIN_FAILED_ACCOUNT_INACTIVE: 'LOGIN_FAILED_ACCOUNT_INACTIVE',
   LOGIN_FAILED_ACCOUNT_SUSPENDED: 'LOGIN_FAILED_ACCOUNT_SUSPENDED',
+  // M08-01 (BUG-35): valid credentials rejected because the tenant is suspended/cancelled.
+  LOGIN_FAILED_TENANT_SUSPENDED: 'LOGIN_FAILED_TENANT_SUSPENDED',
   LOGOUT: 'LOGOUT',
   PASSWORD_RESET_REQUESTED: 'PASSWORD_RESET_REQUESTED',
   // M01-01: reset email minted but delivery failed (token purged, ops signal).
@@ -100,6 +102,8 @@ export const AUDIT_ACTIONS = {
   BOM_UPDATED: 'BOM_UPDATED',
   BOM_DELETED: 'BOM_DELETED',
   PRODUCTION_LOGGED: 'PRODUCTION_LOGGED',
+  // Product lifecycle (M02-03 — soft-delete recovery)
+  PRODUCT_RESTORED: 'PRODUCT_RESTORED',
 } as const;
 
 export type AuthAction = (typeof AUTH_ACTIONS)[keyof typeof AUTH_ACTIONS];

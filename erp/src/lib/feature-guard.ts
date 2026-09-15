@@ -1,12 +1,17 @@
 /**
  * Feature Module Guard
- * 
+ *
  * Since there is no dedicated feature-flag table, we store enabled modules
  * in Tenant.settings.enabledModules as a string[].
  */
 
-export const KNOWN_MODULES = ['appointments', 'delivery', 'website'] as const;
-export type ModuleName = (typeof KNOWN_MODULES)[number];
+// M08-04 (BUG-38): the module registry lives in one place so the API
+// validator and this guard can never drift. KNOWN_MODULES stays exported
+// under its original name for existing imports.
+import { TENANT_FEATURE_MODULES } from '@/lib/constants/tenant-modules';
+
+export { TENANT_FEATURE_MODULES as KNOWN_MODULES };
+export type ModuleName = (typeof TENANT_FEATURE_MODULES)[number];
 
 /**
  * Check whether a specific feature module is enabled for a tenant.

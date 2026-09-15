@@ -16,7 +16,8 @@ import { test, expect, type Page } from '@playwright/test';
  *     default 0, imageUrl string ≤500 ('' → null).
  *   • BrandSchema: name 2..60, description ≤500 optional, logoUrl must be a
  *     valid URL or null (z.string().url()).
- *   • POST/PATCH duplicate name → 409 CONFLICT ("already exists" branch).
+ *   • POST/PATCH duplicate name → 409 CONFLICT (friendly message only —
+ *     M04-01/BUG-21: archived rows reserve names, no raw Prisma dump leaks).
  *   • DELETE is a SOFT delete (deletedAt) guarded by dependent products →
  *     409 CATEGORY_IN_USE / BRAND_IN_USE. Audit rows CATEGORY_DELETED /
  *     BRAND_DELETED are written with actorRole 'SYSTEM' (BUG-4 class).
@@ -99,6 +100,23 @@ const apiPatch = (p: Page, url: string, data: any) =>
 
 const pickId = (b: any): string | undefined =>
   b?.data?.id ?? b?.data?.category?.id ?? b?.data?.brand?.id ?? b?.id;
+
+/**
+ * M04-01 (BUG-21) — assert a 409 duplicate-name response is a clean typed
+ * envelope: code CONFLICT, friendly "already exists" message, and none of
+ * the raw Prisma/Turbopack internals that used to leak through the old
+ * message.includes('already exists') catch (server paths, chunk names,
+ * constraint dumps). Reused by A3 (creates) and C4/B3 (rename conflicts).
+ */
+function expectCleanConflict409(body: any): void {
+  expect(body?.error?.code, 'error code CONFLICT').toBe('CONFLICT');
+  const msg = String(body?.error?.message ?? '');
+  expect(msg, 'friendly message present').toMatch(/already exists/i);
+  expect(
+    (msg + ' ' + JSON.stringify(body ?? '')).toLowerCase(),
+    'no Prisma/Turbopack internals leak (BUG-21)',
+  ).not.toMatch(/prisma|\.next|chunk|invalid `|invocation|constraint failed|tenantid|p2002/);
+}
 
 /**
  * Login helper. OWNER lands on /dashboard directly; CASHIER may open an
@@ -236,6 +254,8 @@ test.describe.serial('Module 4 — Categories & Brands (full-scope QA)', () => {
       name: `${RUN} Cat API`,
     });
     expect(conflict.status(), 'duplicate rename → 409').toBe(409);
+    // M04-01: clean typed 409 body — friendly message, no raw internals.
+    expectCleanConflict409(await json(conflict));
   });
 
   test('B1 brands page renders list + New Brand dialog creates via UI', async ({ page }) => {
@@ -298,6 +318,8 @@ test.describe.serial('Module 4 — Categories & Brands (full-scope QA)', () => {
       name: `${RUN} Brand API`,
     });
     expect(conflict.status(), 'duplicate rename → 409').toBe(409);
+    // M04-01: clean typed 409 body — friendly message, no raw internals.
+    expectCleanConflict409(await json(conflict));
   });
 
   test('C5 legacy redirects /inventory/categories and /inventory/brands work', async ({ page }) => {
@@ -377,7 +399,7 @@ test.describe.serial('Module 4 — Categories & Brands (full-scope QA)', () => {
     expect(after?.data?.id ?? after?.id, 'category survives failed delete').toBeTruthy();
   });
 
-  test('L2 brand with assigned products refuses delete (409 BRAND_IN_USE)', async ({ page }) => {
+  test('L2 brand with assigned products refuses delete (409 BRAND_IN_USE) + blocked-lock UI', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     const list = await json(await page.request.get('/api/store/brands'));
     const rows: any[] = Array.isArray(list?.data) ? list.data : [];
@@ -388,6 +410,27 @@ test.describe.serial('Module 4 — Categories & Brands (full-scope QA)', () => {
     expect(del.status(), 'in-use brand delete → 409').toBe(409);
     const body = await json(del);
     expect(body?.error?.code ?? '', 'error code BRAND_IN_USE').toContain('IN_USE');
+
+    // M04-02 UI: an in-use brand row shows the SAME disabled lock + tooltip
+    // affordance as /categories (shared ResourceDeleteButton) instead of the
+    // old behaviour of omitting the delete button entirely. The full blocked
+    // reason rides on the accessible name (tooltip content is portal-rendered
+    // only while open, so the label is the deterministic assertion).
+    await page.goto(`${BASE_URL}/brands`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Brands' })).toBeVisible({ timeout: 90_000 });
+    const reason = `${withProducts._count.products} product${
+      withProducts._count.products === 1 ? '' : 's'
+    } assigned — reassign or archive them first`;
+    // exact:true — the clickable row container is also role=button and its
+    // accessible name contains this label as a substring.
+    const lock = page.getByRole('button', {
+      name: `Cannot delete ${withProducts.name}: ${reason}`,
+      exact: true,
+    });
+    await expect(lock, 'in-use brand shows disabled lock (not a missing button)').toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(lock).toBeDisabled();
   });
 
   test('L3 product count badge matches API _count for a sampled category', async ({ page }) => {
@@ -467,7 +510,7 @@ test.describe.serial('Module 4 — Categories & Brands (full-scope QA)', () => {
     expect.soft(auditRows.some((a) => a.entityId === id), 'BRAND_DELETED audit row exists').toBeTruthy();
   });
 
-  test('A3 duplicate name after soft-delete: recreate same name → clean 409 (BUG-21 fixed)', async ({ page }) => {
+  test('A3 duplicate name after soft-delete: recreate same name → clean 409 (BUG-21 fixed) — category & brand', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     const name = `${RUN} Cat Reuse`;
     const first = await apiPost(page, '/api/store/categories', { name });
@@ -475,21 +518,37 @@ test.describe.serial('Module 4 — Categories & Brands (full-scope QA)', () => {
     const id = pickId(await json(first));
     await page.request.delete(`/api/store/categories/${id}`);
 
-    // FIXED (INF-02): the DB has @@unique([tenantId, name]) and the soft-deleted
-    // row still holds the name, so the insert hits the unique constraint — but
-    // mapPrismaError now turns P2002 into a friendly 409 CONFLICT. The raw
-    // Prisma dump (server paths / chunk names / "already exists" echo) that
-    // used to leak through the route's message.includes() branch is gone.
+    // FIXED (INF-02, pin pre-flipped in W0; M04-01 belt-and-braces): the DB has
+    // @@unique([tenantId, name]) and the soft-deleted row still holds the name
+    // (D4: archived records reserve names), so the create conflicts. The
+    // service pre-check is now deletedAt-agnostic and throws the friendly
+    // 409 itself; mapPrismaError remains the safety net for races. Either way
+    // the raw Prisma/Turbopack dump that used to leak is gone.
     // (Recreate-after-soft-delete *policy* — 409 vs 201 — is D4/XC-05, W2.)
     const second = await apiPost(page, '/api/store/categories', { name });
     expect(second.status(), 'recreate-after-delete → 409').toBe(409);
-    const body = await json(second);
-    expect(body?.error?.code, 'CONFLICT code').toBe('CONFLICT');
-    const msg = String(body?.error?.message ?? '');
-    expect(msg, 'friendly field-derived message').toMatch(/already exists/i);
-    expect(msg.toLowerCase(), 'no Prisma/internals leak (BUG-21/26/29)').not.toMatch(
-      /prisma|\.next|chunk|invalid `|invocation|constraint failed/,
-    );
+    expectCleanConflict409(await json(second));
+
+    // M04-01: same contract for brands — plain duplicate create AND
+    // recreate-after-soft-delete must both be clean typed 409s.
+    const brandName = `${RUN} Brand Reuse`;
+    const dupBrand = await apiPost(page, '/api/store/brands', { name: brandName });
+    expect(dupBrand.status(), 'brand create → 201').toBe(201);
+    const dupBrandId = pickId(await json(dupBrand));
+    if (dupBrandId) state.createdBrandIds.push(dupBrandId);
+    const dupBrandAgain = await apiPost(page, '/api/store/brands', { name: brandName });
+    expect(dupBrandAgain.status(), 'duplicate brand create → 409').toBe(409);
+    expectCleanConflict409(await json(dupBrandAgain));
+
+    await page.request.delete(`/api/store/brands/${dupBrandId}`);
+    const reuseBrand = await apiPost(page, '/api/store/brands', { name: brandName });
+    expect(reuseBrand.status(), 'brand recreate-after-delete → 409').toBe(409);
+    const reuseBody = await json(reuseBrand);
+    expectCleanConflict409(reuseBody);
+    expect(
+      String(reuseBody?.error?.message ?? ''),
+      'archived-record suffix when only a soft-deleted row holds the name',
+    ).toContain('archived record');
   });
 
   // ── §5 Chaos, button spam & race conditions ────────────────────────────────

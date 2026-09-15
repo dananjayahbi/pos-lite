@@ -49,6 +49,10 @@ export function InventoryListClient({ initialCount, permissions }: InventoryList
 
   const hasActiveFilters = !!(search || categories || brands || forms || status);
 
+  // M02-03 — the "Deleted" view shows soft-deleted products with a Restore
+  // action instead of the live row's Archive/Delete actions.
+  const isDeletedView = status === 'deleted';
+
   const { data, isLoading } = useProducts(filters);
 
   const displayCount = data?.meta?.total ?? initialCount;
@@ -165,6 +169,7 @@ export function InventoryListClient({ initialCount, permissions }: InventoryList
         isLoading={isLoading}
         permissions={permissions}
         hasActiveFilters={hasActiveFilters}
+        isDeletedView={isDeletedView}
         onClearFilters={handleClearFilters}
         onArchive={handleArchive}
         onDelete={handleDelete}
@@ -241,7 +246,8 @@ export function InventoryListClient({ initialCount, permissions }: InventoryList
           <DialogHeader>
             <DialogTitle className="font-display text-espresso">Delete Product</DialogTitle>
             <DialogDescription className="font-body text-mist">
-              Are you sure you want to delete this product? This action cannot be undone.
+              Are you sure you want to delete this product? It will be hidden from the catalog
+              and can be restored later from the Deleted filter in Inventory.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

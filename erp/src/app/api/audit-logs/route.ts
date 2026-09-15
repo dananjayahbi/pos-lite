@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@/generated/prisma/client';
 import { auth } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getAuditLogs } from '@/lib/services/audit.service';
@@ -16,8 +18,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // M08-03 (BUG-37): SUPER_ADMIN is tenantless by design — serve the
+    // cross-tenant system ledger instead of 401ing before the permission
+    // check. An optional ?tenantId= narrows the view to one business.
+    const isSuperAdmin = session.user.role === 'SUPER_ADMIN';
     const tenantId = session.user.tenantId;
-    if (!tenantId) {
+    if (!isSuperAdmin && !tenantId) {
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: 'No tenant associated' } },
         { status: 401 },
@@ -40,15 +46,25 @@ export async function GET(request: NextRequest) {
     const pageSize = parseQueryInt(searchParams, 'pageSize', { default: 50, min: 1, max: 200 }) ?? 50;
     const format = searchParams.get('format') ?? 'json';
 
-    const result = await getAuditLogs(tenantId, {
-      entityType,
-      action,
-      startDate,
-      endDate,
-      userId,
-      page,
-      pageSize,
-    });
+    const result = isSuperAdmin
+      ? await getCrossTenantAuditLogs(searchParams.get('tenantId') ?? undefined, {
+          entityType,
+          action,
+          startDate,
+          endDate,
+          userId,
+          page,
+          pageSize,
+        })
+      : await getAuditLogs(tenantId as string, {
+          entityType,
+          action,
+          startDate,
+          endDate,
+          userId,
+          page,
+          pageSize,
+        });
 
     if (format === 'csv') {
       const csvRows = [
@@ -95,4 +111,48 @@ export async function GET(request: NextRequest) {
     // errors are logged and returned as a generic, leak-free 500.
     return toErrorResponse(error, 'GET /api/audit-logs');
   }
+}
+
+interface CrossTenantFilters {
+  entityType?: string | undefined;
+  action?: string | undefined;
+  startDate?: Date | undefined;
+  endDate?: Date | undefined;
+  userId?: string | undefined;
+  page?: number | undefined;
+  pageSize?: number | undefined;
+}
+
+/**
+ * M08-03 (BUG-37) — SUPER_ADMIN system-wide ledger. Mirrors the pagination
+ * and where-clause shape of `getAuditLogs` but omits `tenantId` entirely
+ * (or filters to one business when `?tenantId=` is given), so tenantless
+ * bridge rows (`tenantId:null` auth events, OBS-72) are visible here.
+ */
+async function getCrossTenantAuditLogs(
+  tenantId: string | undefined,
+  filters: CrossTenantFilters,
+) {
+  const page = Math.max(1, filters.page ?? 1);
+  const pageSize = Math.min(Math.max(1, filters.pageSize ?? 50), 100);
+  const skip = (page - 1) * pageSize;
+
+  const where: Prisma.AuditLogWhereInput = {};
+  if (tenantId !== undefined) where.tenantId = tenantId;
+  if (filters.entityType !== undefined) where.entityType = filters.entityType;
+  if (filters.action !== undefined) where.action = filters.action;
+  if (filters.userId !== undefined) where.actorId = filters.userId;
+  if (filters.startDate !== undefined || filters.endDate !== undefined) {
+    where.createdAt = {
+      ...(filters.startDate !== undefined ? { gte: filters.startDate } : {}),
+      ...(filters.endDate !== undefined ? { lte: filters.endDate } : {}),
+    };
+  }
+
+  const [data, total] = await Promise.all([
+    prisma.auditLog.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: pageSize }),
+    prisma.auditLog.count({ where }),
+  ]);
+
+  return { data, total, page, pageSize };
 }

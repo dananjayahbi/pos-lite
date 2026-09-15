@@ -33,6 +33,12 @@ export async function GET(request: NextRequest) {
       if (val !== null) rawParams[key] = val;
     }
 
+    // M02-03 — the "Deleted" view: `?status=deleted` lists ONLY soft-deleted
+    // products. It is intercepted here (before schema validation) because
+    // ProductListQuerySchema's status enum covers live states only.
+    const includeDeleted = rawParams.status === 'deleted';
+    if (includeDeleted) delete rawParams.status;
+
     const parsed = ProductListQuerySchema.safeParse(rawParams);
     if (!parsed.success) {
       const errors = parsed.error.issues.map((i) => ({
@@ -60,6 +66,7 @@ export async function GET(request: NextRequest) {
     const result = await getAllProducts(tenantId, {
       ...filters,
       isArchived,
+      includeDeleted,
       categoryIds,
       brandIds,
       page,

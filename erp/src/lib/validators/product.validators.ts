@@ -98,41 +98,73 @@ export const UpdateVariantSchema = z
 
 /**
  * Create-product schema. `gender` removed (clothing-only).
+ *
+ * BUG-19 (M02-02): the top-level object is `.strict()` — unknown keys are no
+ * longer silently stripped (a client posting `variants:[…]` used to get a 201
+ * with ZERO variants). `variants` is kept working as an explicit alias of
+ * `variantDefinitions` via `normalizeVariantsAlias` below.
  */
-export const CreateProductSchema = z.object({
-  name: z
-    .string()
-    .min(2, 'Product name must be at least 2 characters')
-    .max(120),
-  description: z.string().max(1000).optional(),
-  categoryId: z.string().cuid('A valid category ID is required'),
-  brandId: z
-    .string()
-    .optional()
-    .transform((val) => (val === '' ? undefined : val))
-    .pipe(z.string().cuid().optional()),
-  tags: z.array(z.string().max(30)).default([]),
-  taxRule: z.nativeEnum(TaxRule).default('STANDARD_VAT'),
-  // Single representative image for storefront product cards.
-  mainImageUrl: z
-    .string()
-    .max(500)
-    .optional()
-    .transform((val) => (val === '' ? null : val))
-    .pipe(z.string().max(500).nullable().optional()),
-  // Ayurvedic health/usage content — structured storefront sections.
-  activeIngredients: z.string().max(5000).nullable().optional(),
-  usageInstructions: z.string().max(5000).nullable().optional(),
-  healthBenefits: z.string().max(5000).nullable().optional(),
-  safetyPrecautions: z.string().max(5000).nullable().optional(),
-  healthConcerns: z.array(z.nativeEnum(HealthConcern)).default([]),
-  productSource: z.nativeEnum(ProductSource).default(ProductSource.MANUFACTURED),
-  variantDefinitions: z.array(CreateVariantInputSchema).optional(),
-});
+const CreateProductObject = z
+  .object({
+    name: z
+      .string()
+      .min(2, 'Product name must be at least 2 characters')
+      .max(120),
+    description: z.string().max(1000).optional(),
+    categoryId: z.string().cuid('A valid category ID is required'),
+    brandId: z
+      .string()
+      .optional()
+      .transform((val) => (val === '' ? undefined : val))
+      .pipe(z.string().cuid().optional()),
+    tags: z.array(z.string().max(30)).default([]),
+    taxRule: z.nativeEnum(TaxRule).default('STANDARD_VAT'),
+    // Single representative image for storefront product cards.
+    mainImageUrl: z
+      .string()
+      .max(500)
+      .optional()
+      .transform((val) => (val === '' ? null : val))
+      .pipe(z.string().max(500).nullable().optional()),
+    // Ayurvedic health/usage content — structured storefront sections.
+    activeIngredients: z.string().max(5000).nullable().optional(),
+    usageInstructions: z.string().max(5000).nullable().optional(),
+    healthBenefits: z.string().max(5000).nullable().optional(),
+    safetyPrecautions: z.string().max(5000).nullable().optional(),
+    healthConcerns: z.array(z.nativeEnum(HealthConcern)).default([]),
+    productSource: z.nativeEnum(ProductSource).default(ProductSource.MANUFACTURED),
+    variantDefinitions: z.array(CreateVariantInputSchema).optional(),
+  })
+  .strict();
 
-export const UpdateProductSchema = CreateProductSchema.partial().extend({
-  isArchived: z.boolean().optional(),
-});
+/**
+ * BUG-19: `variants` is accepted as an explicit alias of
+ * `variantDefinitions` (mapped before parsing). If both keys are present,
+ * `variantDefinitions` wins and the alias key is dropped so `.strict()` does
+ * not reject it. Every OTHER unknown top-level key fails with
+ * unrecognized_keys → 400 VALIDATION_ERROR at the route.
+ */
+function normalizeVariantsAlias(value: unknown): unknown {
+  if (value && typeof value === 'object' && !Array.isArray(value) && 'variants' in value) {
+    const { variants, ...rest } = value as Record<string, unknown>;
+    if (rest.variantDefinitions === undefined) {
+      return { ...rest, variantDefinitions: variants };
+    }
+    return rest;
+  }
+  return value;
+}
+
+export const CreateProductSchema = z.preprocess(normalizeVariantsAlias, CreateProductObject);
+
+// PATCH stays lenient (explicit `.strip()` undoes `.strict()` inherited from
+// `CreateProductObject`): M02-02 scopes the strictness flip to the create
+// surface only, so existing PATCH callers are unaffected.
+export const UpdateProductSchema = CreateProductObject.partial()
+  .extend({
+    isArchived: z.boolean().optional(),
+  })
+  .strip();
 
 // ── Query Schema ─────────────────────────────────────────────────────────────
 
@@ -170,7 +202,7 @@ export const StockAdjustmentSchema = z.object({
 
 // ── Inferred Types ───────────────────────────────────────────────────────────
 
-export type CreateProductInput = z.infer<typeof CreateProductSchema>;
+export type CreateProductInput = z.output<typeof CreateProductSchema>;
 export type UpdateProductInput = z.infer<typeof UpdateProductSchema>;
 export type CreateVariantInput = z.infer<typeof CreateVariantInputSchema>;
 export type UpdateVariantInput = z.infer<typeof UpdateVariantSchema>;

@@ -28,6 +28,8 @@ const STATUSES = [
   { value: '', label: 'All' },
   { value: 'active', label: 'Active' },
   { value: 'archived', label: 'Archived' },
+  // M02-03 — soft-deleted products are recoverable via this view.
+  { value: 'deleted', label: 'Deleted' },
   { value: 'low_stock', label: 'Low Stock' },
   { value: 'out_of_stock', label: 'Out of Stock' },
 ] as const;

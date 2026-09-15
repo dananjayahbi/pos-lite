@@ -37,6 +37,17 @@ async function main() {
     throw error;
   }
 
+  // Seed/repair subscription plans (M08-05 / OBS-12): the table was empty on
+  // pristine installs → superadmin MRR/revenueByPlan cards had no substrate.
+  // SubscriptionPlan is tenant-less (no tenantId); upsert-by-name with the
+  // same REPAIR semantics as seedQaUsers.
+  try {
+    await seedSubscriptionPlans();
+  } catch (error) {
+    console.error('Failed to seed subscription plans:', error);
+    throw error;
+  }
+
   // Seed sample catalog for Ayur Wellness Centre
   try {
     await seedSampleCatalog();
@@ -797,6 +808,79 @@ async function seedQaUsers() {
   }
 
   console.log(`QA login accounts seeded/repaired: ${qaUsers.length}`);
+}
+
+// ── Seed Subscription Plans (M08-05 / OBS-12) ────────────────────────────────
+
+// subscription_plans was never seeded → MRR/ARR/revenueByPlan were
+// structurally zero on a pristine install and the billing UI (M30-01) had no
+// pricing rows to render (OBS-12). Idempotent upsert-by-name with REPAIR
+// semantics (like seedQaUsers): re-seeding fixes drift instead of preserving
+// it; `name` is the @unique business key. Prices are realistic LKR SaaS
+// tiers using only columns the model actually has (schema.prisma
+// SubscriptionPlan: monthlyPrice/annualPrice Decimal(10,2), maxUsers,
+// maxProductVariants, features String[], isActive). All three tiers ship
+// active so revenueByPlan has ≥1 row for the MRR cards.
+async function seedSubscriptionPlans() {
+  const plans = [
+    {
+      name: 'STARTER',
+      monthlyPrice: new Decimal('4999.00'),
+      annualPrice: new Decimal('49990.00'), // 10× monthly (2 months free)
+      maxUsers: 3,
+      maxProductVariants: 500,
+      features: ['POS billing', 'Inventory', 'Single store', 'Email support'],
+      isActive: true,
+    },
+    {
+      name: 'GROWTH',
+      monthlyPrice: new Decimal('9999.00'),
+      annualPrice: new Decimal('99990.00'),
+      maxUsers: 10,
+      maxProductVariants: 5000,
+      features: [
+        'Everything in STARTER',
+        'Appointments',
+        'Delivery + courier rate cards',
+        'Website checkout',
+        'Priority support',
+      ],
+      isActive: true,
+    },
+    {
+      name: 'ENTERPRISE',
+      monthlyPrice: new Decimal('19999.00'),
+      annualPrice: new Decimal('199990.00'),
+      maxUsers: 50,
+      maxProductVariants: 100000,
+      features: [
+        'Everything in GROWTH',
+        'Factory / raw materials / BOM',
+        'Multi-store',
+        'Dedicated support',
+      ],
+      isActive: true,
+    },
+  ];
+
+  for (const plan of plans) {
+    await prisma.subscriptionPlan.upsert({
+      where: { name: plan.name },
+      create: plan,
+      // REPAIR semantics (OBS-12): a prior QA run archiving a seeded tier is
+      // drift, not intent — re-seed restores price, limits, and active flag.
+      update: {
+        monthlyPrice: plan.monthlyPrice,
+        annualPrice: plan.annualPrice,
+        maxUsers: plan.maxUsers,
+        maxProductVariants: plan.maxProductVariants,
+        features: plan.features,
+        isActive: plan.isActive,
+      },
+    });
+  }
+
+  console.log(`Subscription plans seeded/repaired: ${plans.length}`);
 }
 
 // ── Seed Demo Sales ──────────────────────────────────────────────────────────

@@ -19,34 +19,46 @@ import { test, expect, type Page } from '@playwright/test';
  *             subscriptionStatus), SubscriptionPlan, Subscription,
  *             enum TenantStatus { ACTIVE GRACE_PERIOD SUSPENDED CANCELLED }
  *
- * Contracts verified by source inspection + two disposable probe runs
- * (READ-ONLY, all mutations restored):
+ * Contracts verified by source inspection on QA-R1 after the W2 fixes
+ * (M08-01…M08-05 landed; all mutations restored by cleanup):
  *   • POST /api/superadmin/tenants → 403 "Maximum of 2 businesses allowed"
  *     even for SUPER_ADMIN (business creation disabled; /new page redirects
  *     back to the list). Validation of the request body never runs because
  *     the count guard fires first.
- *   • [id]/settings PATCH: storeName 2..80, logoUrl URL-or-empty, address
- *     ≤160, phoneNumber ≤40, receiptFooter ≤240, currency/timezone ≥1,
- *     vatRate/ssclRate coerced 0..100 → 400 VALIDATION_ERROR (first issue)
- *     / 404 NOT_FOUND / 200 {success, data:{id,name,logoUrl,settings}}.
- *     Sibling settings keys are preserved (delivery.label, hardware,
- *     enabledModules survive the merge).
- *   • feature-modules PATCH: FeatureModuleToggleSchema = {modules: string[]}
- *     — NO allowlist (arbitrary names accepted, stored verbatim); 401 when
- *     unauthenticated (different from the 403 elsewhere), 404 unknown id.
- *   • suspend/reactivate/grace-period POST: no try/catch — unknown id → 500;
- *     reactivate resets status ACTIVE + graceEndsAt null; grace sets
- *     GRACE_PERIOD + exactly +14 days.
+ *   • [id]/settings PATCH (M08-01): businessSettingsSchema = {storeName
+ *     2..80, logoUrl URL-or-empty, address ≤160, phoneNumber ≤40, currency
+ *     ≥1, timezone ≥1}. receiptFooter/vatRate/ssclRate are NOT schema keys —
+ *     unknown keys are STRIPPED by Zod (200, stored values untouched: strip-
+ *     not-reject). Merge writes name/logoUrl + settings {address,
+ *     phoneNumber, currency:'LKR' (locked), timezone}; siblings (vatRate,
+ *     receiptFooter, hardware, enabledModules…) survive. 400
+ *     VALIDATION_ERROR (first issue message) / 404 NOT_FOUND /
+ *     200 {success, data:{id,name,logoUrl,settings}}.
+ *   • Tenant-detail UI (M08-01): stats cards + BusinessSettingsForm
+ *     (#storeName/#address/#phoneNumber, locked 'LKR', timezone Select,
+ *     single 'Save Business Settings') + TenantDisableToggle
+ *     ('Disable Business' confirm / 'Enable Business') + FeatureModulesManager
+ *     (#module-appointments/delivery/website). NO Export Data / Audit Log /
+ *     Suspend / Trigger Grace buttons (REQ-12 stubs never shipped).
+ *   • feature-modules PATCH (M08-04): FeatureModuleToggleSchema allowlists
+ *     names to ['appointments','delivery','website'] (z.enum + dedupe); []
+ *     clears; unknown name or non-array → 400 VALIDATION_ERROR; 401 when
+ *     unauthenticated, 404 unknown id.
+ *   • suspend/reactivate/grace-period POST (M08-02): unknown id → 404
+ *     NOT_FOUND typed envelope; reactivate resets status ACTIVE +
+ *     graceEndsAt null; grace sets GRACE_PERIOD + exactly +14 days.
  *   • check-slug: {available:false} for missing slug param, never 400.
- *   • Suspension enforcement is page-guard/middleware-only; middleware is
- *     dead in dev (BUG-13) → a suspended tenant's owner can still log in
- *     and use the app (BUG-35); reactivate restores access.
- *   • /api/audit-logs rejects SUPER_ADMIN ("No tenant associated" → 401) —
- *     the /superadmin/system audit tail renders only because the page
- *     queries Prisma directly.
- *   • /api/admin/plans POST validation: 422 (not 400) with issue array;
- *     plans table is EMPTY in the seeded DB (MRR/ARR = 0) — plans are
- *     created + archived by this suite (isActive:false).
+ *   • Suspension enforcement (M08-01): live proxy gate — a suspended
+ *     tenant's users cannot sign in (login form error, no session, APIs 401)
+ *     and pre-suspension sessions get 403 TENANT_SUSPENDED / /suspended;
+ *     reactivate restores access.
+ *   • /api/audit-logs (M08-03): SUPER_ADMIN now gets a 200 cross-tenant
+ *     {data, meta:{total}} feed; tenant-scoped roles unchanged.
+ *   • /api/admin/plans (M08-05): POST validation 422 with issue array;
+ *     duplicate name → 409 CONFLICT; GET defaults to ACTIVE plans
+ *     (?includeInactive=true for all); the seed ships STARTER/GROWTH/
+ *     ENTERPRISE (isActive:true), so this suite reuses/reprices seeded rows
+ *     via ensurePlan and archives them again at cleanup.
  *
  * 10-point spectrum mapping is annotated per describe block.
  * All created data is RUN-suffixed and restored/cleaned by the final tests.
@@ -163,15 +175,21 @@ async function getTenants(page: Page): Promise<any[]> {
   return body?.businesses ?? [];
 }
 
-/** Create a plan via /api/admin/plans (or ignore 422 duplicate). */
 /**
- * Create a plan via /api/admin/plans.
+ * Create a plan via /api/admin/plans, or reuse+reprice an existing row.
  *
- * BUG-39 pin context: `SubscriptionPlan.name` is @unique and the POST route
- * has no try/catch around `prisma.subscriptionPlan.create`, so a duplicate
- * name (e.g. left behind by an earlier QA run) yields an unhandled 500 with
- * an EMPTY response body instead of a 409/422 contract. We tolerate that by
- * falling back to the existing plan row via GET.
+ * M08-05 (BUG-39 FIXED): duplicate names now answer a typed 409 CONFLICT
+ * (names stay reserved while any row exists, archived included — D4), and
+ * GET /api/admin/plans defaults to ACTIVE rows with ?includeInactive=true as
+ * the opt-in (OBS-17). Additionally the seed (OBS-12) ships STARTER/GROWTH/
+ * ENTERPRISE, so POST-first always conflicts on a seeded DB.
+ *
+ * Tolerance contract (helper-local, callers untouched): on any non-201
+ * create outcome we find the existing row via includeInactive=true, PATCH it
+ * to the requested price (upsert semantics — P1's price pins depend on it),
+ * and report 201 so the existing `status === 201 || (500 && existing)`
+ * assertions keep holding. The legacy 500-with-empty-body path is still
+ * tolerated for pre-fix servers.
  */
 async function ensurePlan(page: Page, name: string, monthlyPrice: number) {
   const res = await apiPost(page, '/api/admin/plans', {
@@ -186,10 +204,24 @@ async function ensurePlan(page: Page, name: string, monthlyPrice: number) {
   if (res.status() === 201) {
     return { status: 201, id: body?.data?.id as string | undefined };
   }
-  // Duplicate name (unique constraint) → server 500s with empty body (BUG-39).
-  // Recover by reusing the existing active-or-inactive plan row.
-  const list = await json(await page.request.get('/api/admin/plans'));
+  // Duplicate name (409 post-fix; 500/422 on older servers) → reuse the
+  // existing row (active or archived) and reprice it via PATCH.
+  const list = await json(
+    await page.request.get('/api/admin/plans?includeInactive=true'),
+  );
   const existing = (list?.data ?? []).find((p: any) => p?.name === name);
+  if (existing?.id) {
+    const reprice = await apiPatch(page, `/api/admin/plans/${existing.id}`, {
+      monthlyPrice,
+      annualPrice: monthlyPrice * 10,
+      // Re-activate too: a prior run's cleanup (or an aborted run) may have
+      // archived the row, and P1's downstream GET defaults to active rows.
+      isActive: true,
+    });
+    if (reprice.status() === 200) {
+      return { status: 201, id: existing.id as string, existing: true };
+    }
+  }
   return {
     status: res.status() as number,
     id: existing?.id as string | undefined,
@@ -214,16 +246,15 @@ async function archivePlanByName(page: Page, name: string) {
  */
 async function restoreTenantName(page: Page, tenantId: string, name: string, tenant: any) {
   const s = tenant?.settings ?? {};
+  // M08-01: receiptFooter/vatRate/ssclRate are stripped keys — the merge
+  // preserves them server-side, so the restore only carries schema fields.
   const res = await apiPatch(page, `/api/superadmin/tenants/${tenantId}/settings`, {
     storeName: name,
     logoUrl: tenant?.logoUrl ?? '',
     address: typeof s.address === 'string' ? s.address : '',
     phoneNumber: typeof s.phoneNumber === 'string' ? s.phoneNumber : '',
-    receiptFooter: typeof s.receiptFooter === 'string' ? s.receiptFooter : '',
     currency: typeof s.currency === 'string' ? s.currency : 'LKR',
     timezone: typeof s.timezone === 'string' ? s.timezone : 'Asia/Colombo',
-    vatRate: typeof s.vatRate === 'number' ? s.vatRate : 0,
-    ssclRate: typeof s.ssclRate === 'number' ? s.ssclRate : 0,
   });
   expect(res.status(), `restore tenant name → ${name}`).toBe(200);
 }
@@ -332,33 +363,41 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     await expect(page.locator('tbody').getByRole('link', { name: 'Ayur Wellness Centre' })).toBeVisible();
   });
 
-  test('F3 tenant detail page renders stats + settings form + admin actions + module toggles', async ({ page }) => {
+  test('F3 tenant detail page renders stats + business settings + access toggle + module toggles', async ({ page }) => {
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
     await gotoTenantDetail(page, state.tenant2Id, 'Lanka Electronics');
 
     await expect(page.getByRole('link', { name: '← Back to Businesses' })).toBeVisible();
 
-    // Stats cards.
+    // Stats cards (M08-01: Slug/Staff/Products/Total Sales).
     await expect(page.getByText('Slug').first()).toBeVisible();
     await expect(page.getByText('lanka-electronics').first()).toBeVisible();
+    await expect(page.getByText('Staff').first()).toBeVisible();
+    await expect(page.getByText('Products').first()).toBeVisible();
+    await expect(page.getByText('Total Sales').first()).toBeVisible();
 
-    // Settings form prefilled from Tenant.settings.
+    // BusinessSettingsForm (M08-01): identity/contact fields + LOCKED
+    // currency. No vatRate/ssclRate/receiptFooter inputs ship on this page.
     await waitForHydratedInput(page, '#storeName');
     await expect(page.locator('#storeName')).toHaveValue('Lanka Electronics');
-    await expect(page.locator('#vatRate')).toHaveValue('18');
-    await expect(page.locator('#ssclRate')).toHaveValue('2.5');
+    await expect(page.locator('#address')).toBeVisible();
+    await expect(page.locator('#phoneNumber')).toBeVisible();
+    await expect(page.getByText('Locked · LKR')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save Business Settings' })).toBeVisible();
 
-    // Admin actions for an ACTIVE tenant: Suspend + Grace visible, Reactivate hidden.
-    await expect(page.getByRole('button', { name: 'Suspend Business' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Trigger Grace Period' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Reactivate Business' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Export Data' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Audit Log' })).toBeVisible();
+    // Business Access (M08-01): ACTIVE tenant shows the Disable confirm
+    // trigger. The old Suspend/Reactivate/Trigger Grace/Export Data/Audit
+    // Log buttons never shipped (REQ-12 stubs).
+    await expect(page.getByRole('button', { name: 'Disable Business' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Enable Business' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Export Data' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Audit Log' })).toHaveCount(0);
 
-    // Feature-module toggles: exactly the 2 known modules.
+    // Feature-module toggles: the 3 allowlisted modules (M08-04).
     await waitForHydratedInput(page, '#module-appointments');
     await expect(page.locator('#module-appointments')).toHaveCount(1);
     await expect(page.locator('#module-delivery')).toHaveCount(1);
+    await expect(page.locator('#module-website')).toHaveCount(1);
     await expect(page.getByRole('heading', { name: 'Feature Modules' })).toBeVisible();
   });
 
@@ -367,9 +406,12 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     await gotoTenantDetail(page, state.tenant2Id, 'Lanka Electronics');
     await waitForHydratedInput(page, '#storeName');
 
-    const footer = `${RUN} Lanka footer 🌿`;
-    await page.locator('#receiptFooter').fill(footer);
-    await page.locator('#phoneNumber').fill('+94 11 987 6543');
+    // M08-01: the shipped form only edits identity/contact fields —
+    // receiptFooter has no field (it is a stripped API key).
+    const addr = `${RUN} Lanka addr`;
+    const phone = '+94 11 987 6543';
+    await page.locator('#address').fill(addr);
+    await page.locator('#phoneNumber').fill(phone);
     await page.getByRole('button', { name: 'Save Business Settings' }).click();
 
     await expect(page.getByText('Business settings saved')).toBeVisible({ timeout: 30_000 });
@@ -377,48 +419,70 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     const res = await page.request.get('/api/superadmin/tenants');
     const body = await json(res);
     const lanka = (body?.businesses ?? []).find((t: any) => t.id === state.tenant2Id);
-    expect(lanka?.settings?.receiptFooter).toBe(footer);
-    expect(lanka?.settings?.phoneNumber).toBe('+94 11 987 6543');
-    // Siblings untouched by the settings merge.
+    expect(lanka?.settings?.address).toBe(addr);
+    expect(lanka?.settings?.phoneNumber).toBe(phone);
+    // Siblings untouched by the settings merge (M08-01 strip-not-reject).
     expect(lanka?.settings?.vatRate).toBe(18);
     expect(lanka?.settings?.currency).toBe('LKR');
-    expect(lanka?.settings?.enabledModules).toEqual(['delivery']);
+    expect(lanka?.settings?.enabledModules).toEqual(state.snap2?.settings?.enabledModules);
+    expect(lanka?.settings?.receiptFooter).toEqual(state.snap2?.settings?.receiptFooter);
+
+    // Strip semantics (M08-01): vatRate/receiptFooter are NOT schema keys —
+    // a direct API PATCH carrying them is accepted (200) and the stored
+    // values stay unchanged.
+    const strip = await apiPatch(page, `/api/superadmin/tenants/${state.tenant2Id}/settings`, {
+      storeName: 'Lanka Electronics',
+      logoUrl: '',
+      address: addr,
+      phoneNumber: phone,
+      currency: 'LKR',
+      timezone: 'Asia/Colombo',
+      vatRate: 'abc',
+      receiptFooter: 'x'.repeat(300),
+    });
+    expect(strip.status(), 'dead keys stripped → 200 (not 400)').toBe(200);
+    const after = await json(await page.request.get('/api/superadmin/tenants'));
+    const lanka2 = (after?.businesses ?? []).find((t: any) => t.id === state.tenant2Id);
+    expect(lanka2?.settings?.vatRate, 'vatRate untouched by strip').toBe(18);
+    expect(lanka2?.settings?.receiptFooter, 'receiptFooter untouched by strip').toEqual(
+      state.snap2?.settings?.receiptFooter,
+    );
   });
 
-  test('F5 admin lifecycle via UI: suspend dialog → reactivate → grace → reactivate', async ({ page }) => {
+  test('F5 admin lifecycle via UI: disable → enable; grace period via API → reactivate', async ({ page }) => {
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
     await gotoTenantDetail(page, state.tenant2Id, 'Lanka Electronics');
     await waitForHydratedInput(page, '#storeName');
 
-    // Suspend through the ConfirmDialog.
-    await page.getByRole('button', { name: 'Suspend Business' }).click();
-    await expect(page.getByText('Suspend Business').first()).toBeVisible({ timeout: 15_000 });
+    // M08-01: the shipped access control is TenantDisableToggle —
+    // 'Disable Business' opens a ConfirmDialog that calls /suspend.
+    await page.getByRole('button', { name: 'Disable Business' }).click();
+    await expect(page.getByText('Disable Business').first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/All users will lose access/i)).toBeVisible();
-    await page.getByRole('button', { name: 'Suspend', exact: true }).click();
-    await expect(page.getByText('Business suspended successfully')).toBeVisible({ timeout: 30_000 });
-
-    // Status badge flips; action set flips (Reactivate appears, Suspend/Grace vanish).
-    await expect(page.getByText('Suspended').first()).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole('button', { name: 'Reactivate Business' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Suspend Business' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Trigger Grace Period' })).toHaveCount(0);
-
-    // Reactivate (direct button, no dialog).
-    await page.getByRole('button', { name: 'Reactivate Business' }).click();
-    await expect(page.getByText('Business reactivated successfully')).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText('Active').first()).toBeVisible({ timeout: 30_000 });
-
-    // Grace period through its ConfirmDialog.
-    await page.getByRole('button', { name: 'Trigger Grace Period' }).click();
-    await expect(page.getByText('Trigger Grace Period').first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(/14-day grace period/i)).toBeVisible();
     // Radix modal aria-hides the trigger while open → only the confirm
     // button matches getByRole; .last() targets it.
-    await page.getByRole('button', { name: 'Trigger Grace Period' }).last().click();
-    await expect(page.getByText('Grace period triggered successfully')).toBeVisible({ timeout: 30_000 });
+    await page.getByRole('button', { name: 'Disable Business' }).last().click();
+    await expect(page.getByText('Business disabled successfully')).toBeVisible({ timeout: 30_000 });
+
+    // Status badge flips; the toggle becomes 'Enable Business' (M08-01).
+    await expect(page.getByText('Suspended').first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('button', { name: 'Enable Business' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('button', { name: 'Disable Business' })).toHaveCount(0);
+
+    // Re-enable (direct button, no dialog) → /reactivate.
+    await page.getByRole('button', { name: 'Enable Business' }).click();
+    await expect(page.getByText('Business enabled successfully')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('Active').first()).toBeVisible({ timeout: 30_000 });
+
+    // Grace period has no UI button (M08-02) — drive the API, then verify
+    // the badge re-renders after a fresh load.
+    const grace = await page.request.post(`/api/superadmin/tenants/${state.tenant2Id}/grace-period`);
+    expect(grace.status(), 'grace-period → 200').toBe(200);
+    expect((await json(grace))?.tenant?.status).toBe('GRACE_PERIOD');
+    await gotoTenantDetail(page, state.tenant2Id, 'Lanka Electronics');
     await expect(page.getByText('Grace Period').first()).toBeVisible({ timeout: 30_000 });
 
-    // Restore ACTIVE (API path — reactivate also clears graceEndsAt).
+    // Restore ACTIVE (reactivate also clears graceEndsAt).
     const re = await page.request.post(`/api/superadmin/tenants/${state.tenant2Id}/reactivate`);
     expect(re.status()).toBe(200);
     const restored = await json(re);
@@ -431,10 +495,17 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     await gotoTenantDetail(page, state.tenant2Id, 'Lanka Electronics');
     await waitForHydratedInput(page, '#module-appointments');
 
-    // Lanka Electronics ships with appointments DISABLED.
+    // M08-04: appointments state is snapshot-relative (seed/migration may
+    // ship it either way) — normalise to DISABLED via the API first.
     const before = await json(await page.request.get('/api/superadmin/tenants'));
-    const modulesBefore = before?.businesses?.find((t: any) => t.id === state.tenant2Id)?.settings?.enabledModules;
-    expect(modulesBefore).not.toContain('appointments');
+    const modulesBefore: string[] =
+      before?.businesses?.find((t: any) => t.id === state.tenant2Id)?.settings?.enabledModules ?? [];
+    if (modulesBefore.includes('appointments')) {
+      const off = await apiPatch(page, `/api/superadmin/tenants/${state.tenant2Id}/feature-modules`, {
+        modules: modulesBefore.filter((m) => m !== 'appointments'),
+      });
+      expect(off.status(), 'normalise appointments off').toBe(200);
+    }
 
     // OWNER of tenant 2 is bounced off /appointments while disabled.
     await login(page, OWNER_TENANT2.email, OWNER_TENANT2.password);
@@ -459,15 +530,14 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     await page.waitForTimeout(5_000);
     expect(page.url(), 'appointments enabled → page stays').toMatch(/\/appointments/);
 
-    // Toggle back OFF (restores seed state) via API.
+    // Restore the F0 snapshot module set via API (M08-04).
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
-    const mods = await json(await page.request.get('/api/superadmin/tenants'));
-    const current: string[] = mods?.businesses?.find((t: any) => t.id === state.tenant2Id)?.settings?.enabledModules ?? [];
     const patched = await apiPatch(page, `/api/superadmin/tenants/${state.tenant2Id}/feature-modules`, {
-      modules: current.filter((m) => m !== 'appointments'),
+      modules: state.snap2?.settings?.enabledModules ?? [],
     });
     expect(patched.status()).toBe(200);
-    expect((await json(patched))?.data?.enabledModules).not.toContain('appointments');
+    expect((await json(patched))?.data?.enabledModules)
+      .toEqual(state.snap2?.settings?.enabledModules ?? []);
   });
 
   test('F7 business creation is disabled: /new redirects, POST → 403 max-2, slug check still live', async ({ page }) => {
@@ -518,22 +588,22 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
 
   // ── §2 Financial & calculation precision ───────────────────────────────────
 
-  test('P1 MRR/ARR derived from plan prices; 2-dp LKR rendering in plans UI', async ({ page }) => {
+  test('P1 MRR/ARR derived from plan prices; seeded plans re-priced via API (M08-05)', async ({ page }) => {
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
 
-    // Baseline: seeded DB has no plans → MRR/ARR are 0.
+    // Baseline: MRR/ARR count ACTIVE Subscriptions only — the seed ships
+    // plans (M08-05) but no subscriptions → still 0.
     const m0 = await json(await page.request.get('/api/admin/metrics'));
     expect(m0?.mrr).toBe(0);
     expect(m0?.arr).toBe(0);
 
-    // Create a plan priced at a float-unsafe value (12345.55) → Decimal-safe.
-    // NOTE: a plan with this name may already exist from a prior run
-    // (SubscriptionPlan.name is @unique). ensurePlan falls back to the
-    // existing row when POST 500s (unhandled duplicate — BUG-39).
+    // Re-price a float-unsafe value (12345.55) → Decimal-safe round-trip.
+    // M08-05 (BUG-39 FIXED): STARTER ships from the seed, so POST-first
+    // always 409s; ensurePlan falls back to PATCH-reprice + re-activate.
     const plan = await ensurePlan(page, 'STARTER', 12345.55);
     expect(
       plan.status === 201 || (plan.status === 500 && plan.existing),
-      `POST plan → 201, or 500-with-existing-row when name collides (BUG-39)`,
+      `plan upsert → 201-equivalent (fresh create or reuse+reprice)`,
     ).toBe(true);
     if (plan.id) state.createdPlanIds.push(plan.id);
 
@@ -546,11 +616,12 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     expect(Number(starter?.monthlyPrice)).toBeCloseTo(12345.55, 2);
     expect(Number(starter?.annualPrice)).toBeCloseTo(123455.5, 2);
 
-    // UI renders with Intl.NumberFormat en-LK (2-dp LKR).
+    // M01-06/B2 pin: /dashboard/super-admin/plans is a store path, so the
+    // proxy funnels SUPER_ADMIN to /superadmin/dashboard — the legacy plans
+    // table (2-dp LKR) never renders for its only audience; pricing is
+    // verified through the API above.
     await page.goto(`${BASE_URL}/dashboard/super-admin/plans`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Subscription Plans' })).toBeVisible({ timeout: 60_000 });
-    await waitForHydratedInput(page, 'table');
-    await expect(page.getByText('LKR 12,345.55', { exact: false }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page).toHaveURL(/\/superadmin\/dashboard/, { timeout: 30_000 });
   });
 
   test('P2 plans CRUD: 422 validation contract + PATCH isActive + price precision', async ({ page }) => {
@@ -622,12 +693,12 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
 
   // ── §3 Cross-module cascade & ledger impact ────────────────────────────────
 
-  test('L1 settings save cascades to the store UI: receipt footer + tenant name round-trip', async ({ page }) => {
+  test('L1 settings save cascades to the store UI: tenant name round-trip', async ({ page }) => {
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
     await gotoTenantDetail(page, state.tenant1Id, 'Ayur Wellness Centre');
     await waitForHydratedInput(page, '#storeName');
 
-    // Rename + set a distinctive footer.
+    // Rename via the shipped form (M08-01: no receiptFooter field exists).
     const renamed = `${RUN} Ayur Renamed`;
     await page.locator('#storeName').fill(renamed);
     await page.getByRole('button', { name: 'Save Business Settings' }).click();
@@ -659,13 +730,16 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     await page.waitForTimeout(5_000);
     expect(page.url(), 'delivery enabled → stays on /delivery').toMatch(/\/delivery/);
 
-    // Tenant 2 (delivery enabled, but verified independently in F6 via
-    // appointments): the API list reflects per-tenant module sets.
+    // Tenant 2 (verified independently in F6 via appointments): the API
+    // list reflects per-tenant module sets. M08-04: compare against the F0
+    // snapshot instead of a hardcoded literal — the seeded/migrated module
+    // set is data, not a spec constant.
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
     const body = await json(await page.request.get('/api/superadmin/tenants'));
-    const modules = body?.businesses?.find((t: any) => t.id === state.tenant2Id)?.settings?.enabledModules;
-    expect(modules).toContain('delivery');
-    expect(modules).not.toContain('appointments');
+    const mods1 = body?.businesses?.find((t: any) => t.id === state.tenant1Id)?.settings?.enabledModules ?? [];
+    const mods = body?.businesses?.find((t: any) => t.id === state.tenant2Id)?.settings?.enabledModules ?? [];
+    expect(mods1, 'tenant 1 ships delivery (seed 1b)').toContain('delivery');
+    expect(mods).toEqual(state.snap2?.settings?.enabledModules ?? []);
   });
 
   // ── §4 Audit trail, immutability & suspension gating ───────────────────────
@@ -715,15 +789,18 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     expect(restored?.status).toBe('ACTIVE');
   });
 
-  test('A3 audit-log API is tenant-scoped: SUPER_ADMIN is rejected (401 No tenant associated)', async ({ page }) => {
-    // DEFECT PIN: /api/audit-logs resolves tenancy from the session tenantId;
-    // SUPER_ADMIN has none, so the system-level actor is audit-blind at the
-    // API layer. The /superadmin/system page renders its tail by querying
-    // Prisma directly. Pinned as current behavior (see BUG-37).
+  test('A3 audit-log API serves SUPER_ADMIN a cross-tenant ledger (200, not 401)', async ({ page }) => {
+    // M08-03 (BUG-37) FIXED PIN: /api/audit-logs branches on role — the
+    // tenantless SUPER_ADMIN now gets the system-wide cross-tenant feed
+    // (optional ?tenantId= narrows it) instead of the old 401
+    // "No tenant associated". Tenant-scoped roles are unchanged.
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
     const res = await page.request.get('/api/audit-logs?limit=3');
-    expect(res.status(), 'SUPER_ADMIN audit-logs → 401 (pin)').toBe(401);
-    expect((await json(res))?.error?.message).toBe('No tenant associated');
+    expect(res.status(), 'SUPER_ADMIN audit-logs → 200 (cross-tenant)').toBe(200);
+    const body = await json(res);
+    expect(Array.isArray(body?.data), 'rows array in canonical envelope').toBe(true);
+    expect(body.data.length, 'system ledger has rows (incl. this login)').toBeGreaterThan(0);
+    expect(typeof body?.meta?.total).toBe('number');
   });
 
   // ── §5 Chaos, button spamming & race conditions ────────────────────────────
@@ -733,31 +810,39 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     await gotoTenantDetail(page, state.tenant2Id, 'Lanka Electronics');
     await waitForHydratedInput(page, '#storeName');
 
-    await page.locator('#receiptFooter').fill(`${RUN} dblclick footer`);
+    // M08-01: #receiptFooter never shipped — use the address field.
+    await page.locator('#address').fill(`${RUN} dblclick addr`);
     await page.getByRole('button', { name: 'Save Business Settings' }).dblclick();
     await expect(page.getByText('Business settings saved').first()).toBeVisible({ timeout: 30_000 });
 
     // Exactly the same value lands (no corruption / double-append).
     const body = await json(await page.request.get('/api/superadmin/tenants'));
     const lanka = body?.businesses?.find((t: any) => t.id === state.tenant2Id);
-    expect(lanka?.settings?.receiptFooter).toBe(`${RUN} dblclick footer`);
+    expect(lanka?.settings?.address).toBe(`${RUN} dblclick addr`);
   });
 
   test('R2 3-way concurrent settings PATCH: zero 500s, last-write-wins, siblings intact', async ({ page }) => {
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
 
+    // Capture the CURRENT sibling state to compare against — the invariant is
+    // "this test's PATCHes don't clobber siblings", not "equals the F0
+    // snapshot" (an earlier test may have normalised enabledModules undefined→[]).
+    const preBody = await json(await page.request.get('/api/superadmin/tenants'));
+    const preSettings = preBody?.businesses?.find((t: any) => t.id === state.tenant2Id)?.settings;
+    const preModules = preSettings?.enabledModules;
+    const preVat = preSettings?.vatRate;
+
     const results = await Promise.all(
       [1, 2, 3].map((i) =>
+        // M08-01: schema keys only — vatRate/receiptFooter are stripped
+        // (strip-not-reject), so they must not appear in the payload here.
         apiPatch(page, `/api/superadmin/tenants/${state.tenant2Id}/settings`, {
           storeName: 'Lanka Electronics',
           logoUrl: '',
           address: `Race addr ${i}`,
           phoneNumber: '0770000000',
-          receiptFooter: `Race footer ${i}`,
           currency: 'LKR',
           timezone: 'Asia/Colombo',
-          vatRate: 18,
-          ssclRate: 2.5,
         }),
       ),
     );
@@ -769,8 +854,8 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     const body = await json(await page.request.get('/api/superadmin/tenants'));
     const settings = body?.businesses?.find((t: any) => t.id === state.tenant2Id)?.settings;
     expect(['Race addr 1', 'Race addr 2', 'Race addr 3']).toContain(settings?.address);
-    expect(settings?.enabledModules).toEqual(['delivery']);
-    expect(settings?.vatRate).toBe(18);
+    expect(settings?.enabledModules, 'enabledModules untouched by settings PATCH').toEqual(preModules);
+    expect(settings?.vatRate, 'vatRate preserved — stripped key, merge keeps it').toEqual(preVat);
   });
 
   test('R3 rapid module-toggle spam: final enabledModules is a coherent list (no dupes)', async ({ page }) => {
@@ -786,8 +871,9 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     }
 
     // Final PATCH through the API settles a canonical list, then assert.
+    // M08-04: settle back to the F0 snapshot set (allowlisted names only).
     const settle = await apiPatch(page, `/api/superadmin/tenants/${state.tenant2Id}/feature-modules`, {
-      modules: ['delivery'],
+      modules: state.snap2?.settings?.enabledModules ?? ['delivery'],
     });
     expect(settle.status()).toBe(200);
 
@@ -795,7 +881,8 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     const mods: string[] = body?.businesses?.find((t: any) => t.id === state.tenant2Id)?.settings?.enabledModules;
     expect(Array.isArray(mods)).toBe(true);
     expect(new Set(mods).size, 'no duplicate modules after spam').toBe(mods.length);
-    expect(mods).toContain('delivery');
+    // M08-04: the settle PATCH restores the F0 snapshot set exactly.
+    expect(mods).toEqual(state.snap2?.settings?.enabledModules ?? mods);
   });
 
   // ── §6 Hardware & device simulation ────────────────────────────────────────
@@ -842,16 +929,14 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
       const url = (await json(ok))?.url as string;
       expect(url).toBeTruthy();
       // Round-trip: persist a valid logoUrl through the settings API.
+      // M08-01: schema keys only (receiptFooter/vatRate/ssclRate stripped).
       const patch = await apiPatch(page, `/api/superadmin/tenants/${state.tenant1Id}/settings`, {
         storeName: 'Ayur Wellness Centre',
         logoUrl: url,
         address: '',
         phoneNumber: '',
-        receiptFooter: 'Thank you for shopping at Ayur Wellness Centre!',
         currency: 'LKR',
         timezone: 'Asia/Colombo',
-        vatRate: 18,
-        ssclRate: 2.5,
       });
       expect(patch.status()).toBe(200);
     }
@@ -965,8 +1050,9 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
   test('S2 CASHIER: /superadmin/* pages bounce (→/pos), every superadmin API 403', async ({ page }) => {
     await login(page, CASHIER.email, CASHIER.password);
 
-    // Middleware is dead in dev (BUG-13); the (superadmin) layout performs
-    // the bounce — CASHIER ends up on /pos via the role-route hop chain.
+    // Proxy bounce (M01-06 hardened src/proxy.ts): non-SUPER_ADMIN on a
+    // /superadmin path → /dashboard; the store-role hop chain may then land
+    // the CASHIER on /pos.
     await page.goto(`${BASE_URL}/superadmin/tenants`, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(3_000);
     expect(page.url(), 'cashier /superadmin/tenants → bounced off superadmin').toMatch(/\/(pos|dashboard)/);
@@ -1008,16 +1094,15 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
 
     // Patch tenant 1 with distinct values.
+    // M08-01: schema keys only — receiptFooter/vatRate/ssclRate are stripped
+    // (and must not be able to cross the tenant boundary anyway).
     const p = await apiPatch(page, `/api/superadmin/tenants/${state.tenant1Id}/settings`, {
       storeName: 'Ayur Wellness Centre',
       logoUrl: '',
       address: `${RUN} isolation addr`,
       phoneNumber: '0712345678',
-      receiptFooter: 'Thank you for shopping at Ayur Wellness Centre!',
       currency: 'LKR',
       timezone: 'Asia/Colombo',
-      vatRate: 18,
-      ssclRate: 2.5,
     });
     expect(p.status()).toBe(200);
 
@@ -1025,24 +1110,26 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     const body = await json(await page.request.get('/api/superadmin/tenants'));
     const t2 = body?.businesses?.find((t: any) => t.id === state.tenant2Id);
     expect(t2?.settings?.address).not.toBe(`${RUN} isolation addr`);
-    expect(t2?.settings?.receiptFooter).not.toBe('Thank you for shopping at Ayur Wellness Centre!');
+    expect(t2?.settings?.phoneNumber).not.toBe('0712345678');
     expect(t2?.name).toBe('Lanka Electronics');
   });
 
   // ── §9 Boundary inputs & chaos data ────────────────────────────────────────
 
-  test('X1 settings validation contract: 12 bad cases → 400 VALIDATION_ERROR (first issue)', async ({ page }) => {
+  test('X1 settings validation contract: bad cases → 400 VALIDATION_ERROR (first issue); dead keys stripped', async ({ page }) => {
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
 
+    // M08-01: businessSettingsSchema keys only. receiptFooter/vatRate/
+    // ssclRate are NOT schema fields — payloads carrying them are accepted
+    // with the keys stripped (see the strip case after the loop), so the
+    // old 'receiptFooter 241'/'vatRate 101'/'ssclRate -1'/'vatRate letters'
+    // 400-cases are gone.
     const valid = {
       logoUrl: '',
       address: 'a',
       phoneNumber: '1',
-      receiptFooter: 'f',
       currency: 'LKR',
       timezone: 'Asia/Colombo',
-      vatRate: 18,
-      ssclRate: 2.5,
     };
     const cases: Array<[string, Record<string, unknown>]> = [
       ['storeName 1 char', { storeName: 'x' }],
@@ -1051,12 +1138,8 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
       ['logoUrl not-a-url', { storeName: 'Ok Name', logoUrl: 'not-a-url' }],
       ['address 161 chars', { storeName: 'Ok Name', address: 'a'.repeat(161) }],
       ['phoneNumber 41 chars', { storeName: 'Ok Name', phoneNumber: 'p'.repeat(41) }],
-      ['receiptFooter 241 chars', { storeName: 'Ok Name', receiptFooter: 'f'.repeat(241) }],
       ['currency empty', { storeName: 'Ok Name', currency: '' }],
       ['timezone empty', { storeName: 'Ok Name', timezone: '' }],
-      ['vatRate 101', { storeName: 'Ok Name', vatRate: 101 }],
-      ['ssclRate -1', { storeName: 'Ok Name', ssclRate: -1 }],
-      ['vatRate string-letters', { storeName: 'Ok Name', vatRate: 'abc' }],
     ];
 
     for (const [label, override] of cases) {
@@ -1070,11 +1153,36 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
       expect(body?.error?.code ?? '', label).toBe('VALIDATION_ERROR');
       expect(typeof body?.error?.message, `${label} carries first-issue message`).toBe('string');
     }
+
+    // Strip-not-reject pin (M08-01): dead keys are removed by Zod, never
+    // rejected — 200 and the stored vatRate/receiptFooter stay untouched.
+    const before = (await json(await page.request.get('/api/superadmin/tenants')))
+      ?.businesses?.find((t: any) => t.id === state.tenant1Id);
+    const strip = await apiPatch(page, `/api/superadmin/tenants/${state.tenant1Id}/settings`, {
+      ...valid,
+      storeName: 'Ayur Wellness Centre',
+      address: typeof before?.settings?.address === 'string' ? before.settings.address : '',
+      phoneNumber: typeof before?.settings?.phoneNumber === 'string' ? before.settings.phoneNumber : '',
+      vatRate: 'abc',
+      receiptFooter: 'x'.repeat(300),
+    });
+    expect(strip.status(), 'dead keys → stripped, 200 (not 400)').toBe(200);
+    const after = (await json(await page.request.get('/api/superadmin/tenants')))
+      ?.businesses?.find((t: any) => t.id === state.tenant1Id);
+    expect(after?.settings?.vatRate, 'stored vatRate unchanged by strip').toEqual(
+      before?.settings?.vatRate,
+    );
+    expect(after?.settings?.receiptFooter, 'stored receiptFooter unchanged by strip').toEqual(
+      before?.settings?.receiptFooter,
+    );
   });
 
-  test('X2 boundary accept: 2-char name, 160/40/240-char fields, vat 0 & 100, decimal rates', async ({ page }) => {
+  test('X2 boundary accept: 160-char address, 40-char phone; dead keys stripped not stored', async ({ page }) => {
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
 
+    // M08-01: the shipped schema caps address at 160 and phoneNumber at 40.
+    // receiptFooter/vatRate/ssclRate are NOT schema keys — sending them is
+    // accepted (200) but they never overwrite the stored sibling values.
     const res = await apiPatch(page, `/api/superadmin/tenants/${state.tenant1Id}/settings`, {
       storeName: 'Ayur Wellness Centre',
       logoUrl: '',
@@ -1086,67 +1194,67 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
       vatRate: 100,
       ssclRate: 0,
     });
-    expect(res.status(), 'all-at-maximum → 200').toBe(200);
+    expect(res.status(), 'address/phone at max → 200').toBe(200);
     const data = (await json(res))?.data;
     expect((data?.settings?.address as string).length).toBe(160);
-    expect(data?.settings?.vatRate).toBe(100);
-    expect(data?.settings?.ssclRate).toBe(0);
+    expect((data?.settings?.phoneNumber as string).length).toBe(40);
+    // Dead keys stripped: stored values untouched (seed truth via F0 snapshot).
+    expect(data?.settings?.vatRate, 'vatRate 100 stripped — stored value kept').toBe(
+      state.snap1?.settings?.vatRate ?? 18,
+    );
+    expect(data?.settings?.ssclRate, 'ssclRate 0 stripped — stored value kept').toBe(
+      state.snap1?.settings?.ssclRate ?? 2.5,
+    );
+    expect(data?.settings?.receiptFooter, 'receiptFooter stripped — stored value kept').toEqual(
+      state.snap1?.settings?.receiptFooter,
+    );
 
-    // Decimal rate precision (2-dp) — float-safe through z.coerce + JSON.
-    const dec = await apiPatch(page, `/api/superadmin/tenants/${state.tenant1Id}/settings`, {
+    // Currency lock (M08-01): a client-sent currency never wins — the server
+    // forces LKR into the merged settings.
+    const lock = await apiPatch(page, `/api/superadmin/tenants/${state.tenant1Id}/settings`, {
       storeName: 'Ayur Wellness Centre',
       logoUrl: '',
       address: '',
       phoneNumber: '',
-      receiptFooter: 'Thank you for shopping at Ayur Wellness Centre!',
-      currency: 'LKR',
+      currency: 'USD',
       timezone: 'Asia/Colombo',
-      vatRate: 18.25,
-      ssclRate: 2.75,
     });
-    expect(dec.status()).toBe(200);
-    const dd = (await json(dec))?.data?.settings;
-    expect(dd?.vatRate).toBe(18.25);
-    expect(dd?.ssclRate).toBe(2.75);
+    expect(lock.status()).toBe(200);
+    expect((await json(lock))?.data?.settings?.currency, 'currency locked to LKR').toBe('LKR');
   });
 
-  test('X3 chaos payloads: Unicode footer round-trip, XSS inert, forgery keys ignored', async ({ page }) => {
+  test('X3 chaos payloads: Unicode round-trip, XSS inert, forgery keys ignored', async ({ page }) => {
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
 
-    // Unicode: Sinhala + Tamil + emoji in the footer (bounded ≤240).
+    // M08-01: receiptFooter is a stripped key — unicode/XSS payloads now ride
+    // the address field (≤160).
     const unicode = `සමඟ ${RUN} தமிழ் 🌿`;
     const uni = await apiPatch(page, `/api/superadmin/tenants/${state.tenant1Id}/settings`, {
       storeName: 'Ayur Wellness Centre',
       logoUrl: '',
-      address: '',
+      address: unicode,
       phoneNumber: '',
-      receiptFooter: unicode,
       currency: 'LKR',
       timezone: 'Asia/Colombo',
-      vatRate: 18,
-      ssclRate: 2.5,
     });
-    expect(uni.status(), 'unicode footer → 200').toBe(200);
-    expect((await json(uni))?.data?.settings?.receiptFooter).toBe(unicode);
+    expect(uni.status(), 'unicode address → 200').toBe(200);
+    expect((await json(uni))?.data?.settings?.address).toBe(unicode);
 
-    // XSS in the footer is stored inert and rendered as text in the UI.
+    // XSS in the address is stored inert and rendered as text in the UI.
     const xss = `<img src=x onerror=window.__m08xss=1>`;
     const xssRes = await apiPatch(page, `/api/superadmin/tenants/${state.tenant1Id}/settings`, {
       storeName: 'Ayur Wellness Centre',
       logoUrl: '',
-      address: '',
+      address: xss,
       phoneNumber: '',
-      receiptFooter: xss,
       currency: 'LKR',
       timezone: 'Asia/Colombo',
-      vatRate: 18,
-      ssclRate: 2.5,
     });
     expect(xssRes.status()).toBe(200);
 
     await gotoTenantDetail(page, state.tenant1Id, 'Ayur Wellness Centre');
-    await waitForHydratedInput(page, '#receiptFooter');
-    await expect(page.locator('#receiptFooter')).toHaveValue(xss, { timeout: 30_000 });
+    await waitForHydratedInput(page, '#address');
+    await expect(page.locator('#address')).toHaveValue(xss, { timeout: 30_000 });
     const fired = await page.evaluate(() => (window as any).__m08xss);
     expect(fired, 'onerror handler must never execute').toBeUndefined();
 
@@ -1158,11 +1266,8 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
       logoUrl: '',
       address: '',
       phoneNumber: '',
-      receiptFooter: 'Thank you for shopping at Ayur Wellness Centre!',
       currency: 'LKR',
       timezone: 'Asia/Colombo',
-      vatRate: 18,
-      ssclRate: 2.5,
       status: 'CANCELLED',
       subscriptionStatus: 'CANCELLED',
       enabledModules: ['hacked'],
@@ -1178,24 +1283,24 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     expect(t1?.deletedAt ?? null).toBeNull();
   });
 
-  test('X4 feature-modules chaos: unknown module names stored verbatim (pin), empty list OK, wrong type 400', async ({ page }) => {
+  test('X4 feature-modules chaos: unknown module names rejected (400), empty list OK, wrong type 400', async ({ page }) => {
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
 
-    // DEFECT PIN: FeatureModuleToggleSchema only checks string[]; arbitrary
-    // module names are accepted and persisted (see BUG-38). Toggle UI only
-    // knows 2, but the API trusts anything.
+    // M08-04 (BUG-38) FIXED PIN: FeatureModuleToggleSchema validates against
+    // the canonical TENANT_FEATURE_MODULES allowlist (appointments/delivery/
+    // website); any unknown name → 400 VALIDATION_ERROR, nothing stored.
     const weird = await apiPatch(page, `/api/superadmin/tenants/${state.tenant1Id}/feature-modules`, {
       modules: ['delivery', 'website', 'hacked-module'],
     });
-    expect(weird.status(), 'unknown module name → 200 (pin)').toBe(200);
+    expect(weird.status(), 'unknown module name → 400').toBe(400);
     const weirdBody = await json(weird);
-    expect(weirdBody?.data?.enabledModules).toContain('hacked-module');
+    expect(weirdBody?.error?.code, 'typed VALIDATION_ERROR').toBe('VALIDATION_ERROR');
 
     // Empty list accepted (disables everything — gates then hide the pages).
     const empty = await apiPatch(page, `/api/superadmin/tenants/${state.tenant1Id}/feature-modules`, {
       modules: [],
     });
-    expect(empty.status()).toBe(200);
+    expect(empty.status(), '[] clears modules → 200').toBe(200);
     expect((await json(empty))?.data?.enabledModules).toEqual([]);
 
     // Non-array modules → 400 VALIDATION_ERROR.
@@ -1204,11 +1309,12 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     });
     expect(bad.status(), 'modules:string → 400').toBe(400);
 
-    // Restore tenant 1 seed modules.
+    // Valid allowlist toggle → 200 (restore tenant 1 seed modules).
     const restore = await apiPatch(page, `/api/superadmin/tenants/${state.tenant1Id}/feature-modules`, {
       modules: ['appointments', 'delivery', 'website'],
     });
-    expect(restore.status()).toBe(200);
+    expect(restore.status(), 'valid modules → 200').toBe(200);
+    expect((await json(restore))?.data?.enabledModules).toEqual(['appointments', 'delivery', 'website']);
   });
 
   test('X5 chaos lifecycle matrix: unknown tenant id across all action routes', async ({ page }) => {
@@ -1238,11 +1344,15 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     });
     expect(f.status(), 'feature-modules unknown id → 404').toBe(404);
 
-    // DEFECT PIN: suspend/reactivate/grace-period have NO try/catch and no
-    // existence check — Prisma throws P2025 → unhandled 500 (BUG-36).
+    // M08-02 (BUG-36) FIXED PIN: suspend/reactivate/grace-period now do an
+    // explicit findUnique → 404 NOT_FOUND typed envelope (with try/catch +
+    // toErrorResponse behind it) instead of the old unhandled P2025 500.
     for (const action of ['suspend', 'reactivate', 'grace-period']) {
       const res = await page.request.post(`/api/superadmin/tenants/nonexistent-tenant/${action}`);
-      expect(res.status(), `${action} unknown id → 500 (BUG-36 pin)`).toBe(500);
+      expect(res.status(), `${action} unknown id → 404`).toBe(404);
+      const body = await json(res);
+      expect(body?.success, `${action} 404 envelope success:false`).toBe(false);
+      expect(body?.error?.code, `${action} error code NOT_FOUND`).toBe('NOT_FOUND');
     }
   });
 
@@ -1275,16 +1385,14 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
       ?.businesses?.find((t: any) => t.id === state.tenant2Id);
 
     await page.waitForTimeout(1_100);
+    // M08-01: schema keys only (dead keys would be stripped anyway).
     const p = await apiPatch(page, `/api/superadmin/tenants/${state.tenant2Id}/settings`, {
       storeName: 'Lanka Electronics',
       logoUrl: '',
       address: 'time-travel addr',
       phoneNumber: '0770000001',
-      receiptFooter: 'time-travel footer',
       currency: 'LKR',
       timezone: 'Asia/Colombo',
-      vatRate: 18,
-      ssclRate: 2.5,
     });
     expect(p.status()).toBe(200);
 
@@ -1298,37 +1406,76 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
 
   // ── Defect pins (BUG-35 / BUG-36 / BUG-37 / BUG-38 companions) ────────────
 
-  test('B1 BUG-35 pin: suspended tenant owner is gated out of the app (M01-06 FIXED)', async ({ page }) => {
-    // M01-06 made src/proxy.ts fail-closed and added the API/page suspension
-    // gate. Logging in is still allowed (suspension is not an auth failure),
-    // but the first store navigation is redirected to /suspended. The old
-    // dev pin asserted the owner could browse /dashboard — that was BUG-35.
+  test('B1a BUG-35 pin: suspended tenant owner cannot even log in (M08-01 login gate)', async ({ page }) => {
+    // M08-01 hardened BUG-35 beyond the W1 proxy gate: authorize() now checks
+    // the tenant status AFTER password verification, so a suspended owner gets
+    // NO session at all — the login form shows the suspension message inline
+    // and API calls stay 401 (unauthenticated), not 403.
+    const sa = page.context(); // the page's own context — cleared to drop the SA session
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
     expect(
       (await page.request.post(`/api/superadmin/tenants/${state.tenant2Id}/suspend`)).status(),
     ).toBe(200);
 
-    // Sign in as the now-suspended tenant's owner WITHOUT the login() helper
-    // (it waits for a workspace URL; a suspended session lands on /suspended).
-    // Clear the SUPER_ADMIN session first — a signed-in /login bounces (1.6).
-    await page.context().clearCookies();
+    await sa.clearCookies();
     await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded' });
     await page.getByLabel('Email address').fill(OWNER_TENANT2.email);
     await page.getByLabel('Password').fill(OWNER_TENANT2.password);
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(page, 'suspended-tenant owner gated to /suspended').toHaveURL(/\/suspended/, {
-      timeout: 20_000,
-    });
 
-    // Tenant-workspace APIs are 403 JSON (data-level half of M08-01).
+    await expect(
+      page.getByText('Your business account is suspended'),
+      'login rejected with suspension copy',
+    ).toBeVisible({ timeout: 20_000 });
+    expect(page.url(), 'no session minted — stays on /login').not.toMatch(/dashboard|suspended/);
+    const sess = await (await page.request.get('/api/auth/session')).json().catch(() => null);
+    expect(sess?.user, 'session endpoint has no user').toBeFalsy();
     const api = await page.request.get('/api/store/customers');
-    expect(api.status(), 'suspended tenant API → 403').toBe(403);
+    expect(api.status(), 'no-session tenant API → 401').toBe(401);
 
     // Restore immediately.
+    await sa.clearCookies();
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
     const re = await page.request.post(`/api/superadmin/tenants/${state.tenant2Id}/reactivate`);
     expect(re.status()).toBe(200);
     expect((await json(re))?.tenant?.status).toBe('ACTIVE');
+  });
+
+  test('B1b BUG-35 pin: an ALREADY-LOGGED-IN suspended session loses API + pages (proxy + layout guard)', async ({
+    page,
+    browser,
+  }) => {
+    // Data-level half of M08-01 (landed W1 in src/proxy.ts, re-pinned here):
+    // a session minted BEFORE suspension keeps working until its next request,
+    // then tenant APIs get 403 TENANT_SUSPENDED and pages redirect /suspended.
+    await login(page, OWNER_TENANT2.email, OWNER_TENANT2.password);
+    expect(
+      (await page.request.get('/api/store/customers')).status(),
+      'active tenant API works pre-suspension',
+    ).toBe(200);
+
+    // Suspend from an isolated SUPER_ADMIN context (own cookies, no bounce).
+    const saPage = await browser.newPage();
+    await login(saPage, SUPERADMIN.email, SUPERADMIN.password);
+    expect(
+      (await saPage.request.post(`/api/superadmin/tenants/${state.tenant2Id}/suspend`)).status(),
+    ).toBe(200);
+
+    const api = await page.request.get('/api/store/customers');
+    expect(api.status(), 'suspended tenant API → 403').toBe(403);
+    const body = await api.json().catch(() => null);
+    expect(body?.error?.code).toBe('TENANT_SUSPENDED');
+
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: 'domcontentloaded' });
+    await expect(page, 'suspended-tenant page nav gated to /suspended').toHaveURL(/\/suspended/, {
+      timeout: 20_000,
+    });
+
+    // Restore immediately; the same live session recovers without re-login.
+    await saPage.request.post(`/api/superadmin/tenants/${state.tenant2Id}/reactivate`);
+    await saPage.close();
+    const back = await page.request.get('/api/store/customers');
+    expect(back.status(), 'reactivation restores the session mid-flight').toBe(200);
   });
 
   test('B2 BUG-9 pin: SUPER_ADMIN hitting a tenant store route is funneled to the super-admin area (M01-06 FIXED)', async ({ page }) => {
@@ -1362,6 +1509,9 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     }
 
     // 2) Exact settings restore from the F0 snapshot (both tenants).
+    // M08-01: schema keys only — vatRate/receiptFooter/ssclRate are stripped
+    // by the route and preserved server-side by the merge, so the snapshot
+    // siblings need no resend.
     for (const snap of [state.snap1, state.snap2]) {
       if (!snap?.id) continue;
       const settings = snap.settings ?? {};
@@ -1370,11 +1520,8 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
         logoUrl: snap.logoUrl ?? '',
         address: typeof settings.address === 'string' ? settings.address : '',
         phoneNumber: typeof settings.phoneNumber === 'string' ? settings.phoneNumber : '',
-        receiptFooter: typeof settings.receiptFooter === 'string' ? settings.receiptFooter : '',
         currency: typeof settings.currency === 'string' ? settings.currency : 'LKR',
         timezone: typeof settings.timezone === 'string' ? settings.timezone : 'Asia/Colombo',
-        vatRate: typeof settings.vatRate === 'number' ? settings.vatRate : 0,
-        ssclRate: typeof settings.ssclRate === 'number' ? settings.ssclRate : 0,
       });
       expect(res.status(), `restore settings for ${snap.slug}`).toBe(200);
     }
@@ -1406,8 +1553,11 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     expect(t1?.status).toBe('ACTIVE');
     expect(t2?.name).toBe('Lanka Electronics');
     expect(t2?.status).toBe('ACTIVE');
-    expect(t2?.settings?.receiptFooter, 'tenant 2 footer restored to seed (empty)').toBe(
-      state.snap2?.settings?.receiptFooter ?? '',
+    // M08-01: receiptFooter is a stripped key — the merge never touches it,
+    // so the stored value must still equal the F0 snapshot exactly (for
+    // Lanka that is key-absent/undefined, not '').
+    expect(t2?.settings?.receiptFooter, 'tenant 2 footer untouched by strip semantics').toEqual(
+      state.snap2?.settings?.receiptFooter,
     );
   });
 });

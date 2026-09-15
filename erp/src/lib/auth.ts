@@ -5,7 +5,12 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { authConfig } from '@/lib/auth.config';
-import { AUTH_ACTIONS, createAuditLog, hashEmailForAudit } from '@/lib/services/audit.service';
+import {
+  AUTH_ACTIONS,
+  createAuditLog,
+  hashEmailForAudit,
+  writeAuditLog,
+} from '@/lib/services/audit.service';
 import { getClientIp } from '@/lib/utils/request';
 import {
   checkRateLimit,
@@ -18,6 +23,21 @@ const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
 });
+
+/**
+ * Build a CredentialsSignin whose configurable `code` carries a specific
+ * rejection token. The constructor argument only sets `.message`, which
+ * next-auth does NOT surface to the client (the redirect carries `error=<type>`
+ * and `code=<error.code>`); `signIn(...,{redirect:false})` therefore exposes
+ * the token via `result.code`. Setting `code` here is the documented channel
+ * ("`code` is configurable" - @auth/core CredentialsSignin). Tokens are
+ * non-sensitive user-facing states (shown after password verification).
+ */
+function signinError(code: string): CredentialsSignin {
+  const error = new CredentialsSignin(code);
+  error.code = code;
+  return error;
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
@@ -36,7 +56,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const rateLimit = checkRateLimit(ipAddress, 'login', 10, 15 * 60 * 1000);
         if (!rateLimit.allowed) {
-          throw new CredentialsSignin('TOO_MANY_ATTEMPTS');
+          throw signinError('TOO_MANY_ATTEMPTS');
         }
 
         const parsed = loginSchema.safeParse(credentials);
@@ -103,7 +123,36 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             ipAddress,
             userAgent,
           });
-          throw new CredentialsSignin('ACCOUNT_INACTIVE');
+          throw signinError('ACCOUNT_INACTIVE');
+        }
+
+        // M08-01 (BUG-35): tenant-level suspension gate. Checked ONLY after the
+        // password verifies, so wrong-password attempts never learn that a
+        // tenant is suspended (no oracle). Policy: SUSPENDED and CANCELLED block
+        // login; GRACE_PERIOD and ACTIVE are allowed (grace-period banner UX is
+        // a separate product decision — see M08-01 doc item 5). SUPER_ADMIN has
+        // tenantId null and is unaffected.
+        if (user.tenantId) {
+          const tenant = await prisma.tenant.findUnique({
+            where: { id: user.tenantId },
+            select: { status: true },
+          });
+          if (tenant && (tenant.status === 'SUSPENDED' || tenant.status === 'CANCELLED')) {
+            recordFailedAttempt(ipAddress, 'login', 15 * 60 * 1000);
+            // SECURITY-relevant rejection: durable audit write (M03-02 pattern),
+            // not the swallowing createAuditLog used by the other auth failures.
+            await writeAuditLog({
+              tenantId: user.tenantId,
+              actorId: user.id,
+              actorRole: user.role,
+              entityType: 'User',
+              entityId: user.id,
+              action: AUTH_ACTIONS.LOGIN_FAILED_TENANT_SUSPENDED,
+              ipAddress,
+              userAgent,
+            });
+            throw signinError('TENANT_SUSPENDED');
+          }
         }
 
         clearRateLimitBucket(ipAddress, 'login');

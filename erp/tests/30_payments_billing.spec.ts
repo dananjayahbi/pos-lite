@@ -16,10 +16,14 @@
  * - DB   : Subscription, SubscriptionPlan, Invoice, InvoicePaymentEvent,
  *          PaymentReminder
  *
- * Live-environment reality (verified 2026-09-09):
+ * Live-environment reality (verified 2026-09-09; plans updated by M08-05):
  *   - NO Subscription row exists for any tenant (seed never creates one, and
  *     createTrialSubscription has zero callers — dead code).
- *   - All SubscriptionPlan rows are isActive=false.
+ *   - SubscriptionPlan rows ARE seeded (M08-05 / OBS-12): STARTER, GROWTH and
+ *     ENTERPRISE, created active. GET /api/admin/plans defaults to ACTIVE rows
+ *     with ?includeInactive=true as the opt-in for all rows (OBS-17), and a
+ *     duplicate POST name returns a typed 409 CONFLICT (BUG-39 — names stay
+ *     reserved while any row exists, archived included).
  *   - No PAYHERE_MERCHANT_SECRET configured → every webhook IPN fails the
  *     signature gate (expectedSig computed from empty secret).
  *   - No CRON_SECRET configured → cron routes 401 for every caller.
@@ -110,19 +114,31 @@ test.describe('§1 Functional & business logic', () => {
     expect(json.error).toContain('No subscription found');
   });
 
-  test('F3: plans API lists only inactive plans (live env) with Decimal prices', async ({ page }) => {
+  test('F3: plans API lists active plans by default (M08-05/OBS-17), seeded names present', async ({ page }) => {
     await login(page, SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD);
+    // Default contract: ACTIVE rows only, aligned with /api/superadmin/plans.
     const res = await page.request.get(PLANS_URL);
     expect(res.status()).toBe(200);
     const json = await res.json();
     const plans = json.data ?? json;
     expect(Array.isArray(plans)).toBe(true);
     for (const plan of plans) {
+      expect(plan.isActive).toBe(true);
       expect(plan).toHaveProperty('monthlyPrice');
       expect(plan).toHaveProperty('annualPrice');
       // Decimal(10,2) serialization: parseable as a finite number.
       expect(Number.isFinite(Number(plan.monthlyPrice))).toBe(true);
     }
+    // Populated-data assertion (OBS-12): the seed carries all three tiers;
+    // includeInactive=true is the superset opt-in (default ⊆ all).
+    const all = await (
+      await page.request.get(`${PLANS_URL}?includeInactive=true`)
+    ).json();
+    const allPlans = all.data ?? all;
+    const names = allPlans.map((p: any) => p.name);
+    expect(names).toEqual(
+      expect.arrayContaining(['STARTER', 'GROWTH', 'ENTERPRISE']),
+    );
   });
 
   test('F4: plans POST requires SUPER_ADMIN (owner gets 403)', async ({ page }) => {
@@ -157,6 +173,20 @@ test.describe('§1 Functional & business logic', () => {
     // The payment-methods page reads subscription.payhereSubscriptionToken —
     // without a subscription it must not render a broken state.
     expect(page.url()).not.toContain('/billing/payment-methods');
+  });
+
+  test('F8 (M08-05 / BUG-39 pin): duplicate plan name → typed 409 CONFLICT, never an empty 500', async ({ page }) => {
+    await login(page, SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD);
+    // STARTER always exists once the seed runs (M08-05/OBS-12); names stay
+    // reserved while ANY row exists, archived included (D4 policy).
+    const res = await page.request.post(PLANS_URL, {
+      data: { name: 'STARTER', monthlyPrice: 100, annualPrice: 1000, maxUsers: 5, maxProductVariants: 50, features: ['dup-pin'] },
+    });
+    expect(res.status(), 'duplicate name → 409 (was: unhandled 500, empty body)').toBe(409);
+    const json = await res.json();
+    expect(json.success).toBe(false);
+    expect(json.error?.code).toBe('CONFLICT');
+    expect(String(json.error?.message)).toMatch(/already exists/i);
   });
 });
 
@@ -200,6 +230,27 @@ test.describe('§2 Financial & calculation precision', () => {
     expect(Math.round((monthlyEnd - now) / (24 * 60 * 60 * 1000))).toBe(30);
     expect(Math.round((annualEnd - now) / (24 * 60 * 60 * 1000))).toBe(365);
     expect(Math.round((due - now) / (24 * 60 * 60 * 1000))).toBe(7);
+
+    // M08-05 / OBS-12 — zero-base pin upgraded to a populated-data assertion:
+    // the seed now carries STARTER/GROWTH/ENTERPRISE, so the MRR cards have
+    // real substrate. revenueByPlan has one entry per ACTIVE plan (not per
+    // subscription); with subscriptions still absent (BUG-70) each entry is
+    // zeroed, but the array itself must no longer be structurally empty.
+    // MRR/ARR stay 0 until a Subscription row exists — that gate is BUG-70's,
+    // not the plan table's.
+    await login(page, SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD);
+    const metrics = await (
+      await page.request.get(`${BASE_URL}/api/admin/metrics`)
+    ).json();
+    expect(Array.isArray(metrics?.revenueByPlan)).toBe(true);
+    expect(
+      metrics?.revenueByPlan.length,
+      'M08-05: seeded active plans must give revenueByPlan ≥1 entry (MRR cards substrate)',
+    ).toBeGreaterThanOrEqual(1);
+    for (const entry of metrics?.revenueByPlan ?? []) {
+      expect(typeof entry.planName).toBe('string');
+      expect(Number.isFinite(entry.monthlyCumulativeRevenue)).toBe(true);
+    }
   });
 });
 
@@ -221,9 +272,14 @@ test.describe('§3 Cross-module cascade & impact', () => {
 
   test('L2: plans are the pricing source for checkout (Module 08 linkage)', async ({ page }) => {
     await login(page, SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD);
-    const res = await page.request.get(PLANS_URL);
+    // includeInactive=true so the pin is stable even when the Module 08 suite
+    // has archived a tier mid-run; the seed guarantees all three rows exist.
+    const res = await page.request.get(`${PLANS_URL}?includeInactive=true`);
     const json = await res.json();
     const plans = json.data ?? json;
+    // Populated-data assertion (OBS-12): zero-plan vacuity is no longer the
+    // baseline — the seed carries STARTER/GROWTH/ENTERPRISE.
+    expect(plans.length).toBeGreaterThanOrEqual(3);
     // Every plan carries the constraint fields the checkout flow needs.
     for (const plan of plans) {
       expect(Number.isInteger(plan.maxUsers)).toBe(true);

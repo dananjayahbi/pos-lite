@@ -3,11 +3,14 @@
 import Link from 'next/link';
 import { Archive, Eye, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { RestoreProductButton } from '@/components/inventory/RestoreProductButton';
 
 interface InventoryRowActionsProps {
   productId: string;
   productName: string;
   isArchived: boolean;
+  /** M02-03 — row comes from the "Deleted" view; offer Restore instead. */
+  isDeleted?: boolean;
   canArchive: boolean;
   canDelete: boolean;
   onArchive?: ((id: string, isArchived: boolean) => void) | undefined;
@@ -19,11 +22,15 @@ interface InventoryRowActionsProps {
  *
  * Modularized so the table itself can stay focused on layout. Renders a fixed
  * order: View → Edit → Archive → Delete, hiding actions the user cannot run.
+ * In the "Deleted" view (M02-03) the row is soft-deleted, so the detail/edit
+ * routes 404 and archive/delete are meaningless — only Restore is offered
+ * (gated on the same `product:archive` permission the restore route requires).
  */
 export function InventoryRowActions({
   productId,
   productName,
   isArchived,
+  isDeleted = false,
   canArchive,
   canDelete,
   onArchive,
@@ -31,6 +38,16 @@ export function InventoryRowActions({
 }: InventoryRowActionsProps) {
   const iconButton =
     'h-8 w-8 text-espresso/60 transition-colors hover:text-espresso';
+
+  if (isDeleted) {
+    return (
+      <div className="flex items-center gap-1">
+        {canArchive && (
+          <RestoreProductButton productId={productId} productName={productName} />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-1">

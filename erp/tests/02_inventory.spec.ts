@@ -20,8 +20,8 @@ import { test, expect, type Page } from '@playwright/test';
  *      (POWDER/TABLET/…) remains the variant *form factor*, unrelated to it.
  *   ✅ Low-stock alerts at per-variant reorder level + in-app notification (1.5)
  *   ✅ Item deactivation via archive; batch & expiry tracking screen present
- *   🐛 BUG: the inventory table still renders a leftover apparel "Gender"
- *      column header, which actually displays the variant count.
+ *   ✅ BUG-1 FIXED (M02-01, 2026-09-15): the leftover apparel "Gender" column
+ *      header was renamed to "Variants" — it renders the variant count.
  *
  * Tests run in serial: the create test publishes `product`, which the
  * search / edit / low-stock / archive tests reuse.
@@ -307,6 +307,65 @@ test.describe.serial('Module 2 — Inventory & Products', () => {
     await expect(page.getByText('Not recommended during pregnancy.')).toBeVisible();
     await expect(page.getByText('Health Benefits')).toBeVisible();
     await expect(page.getByText('Supports stamina and reduces stress.')).toBeVisible();
+  });
+
+  test('BUG-2 pin: wizard duplicate-SKU submit shows PARTIAL_SUCCESS warning, not success', async ({
+    page,
+  }) => {
+    test.skip(!product, 'depends on the create test (reuses its SKU)');
+
+    // Drive the wizard manually — createProductViaWizard asserts the success
+    // toast, which must NOT appear here: the SKU already belongs to the
+    // fixture product, so the route answers 207 PARTIAL_SUCCESS.
+    await page.goto(`${BASE_URL}/inventory/new`, { waitUntil: 'domcontentloaded' });
+    await waitForHydratedForm(page);
+    await page.getByLabel('Product Name').fill(`QA DupWizard ${RUN_ID}`);
+    const categoryOptions = await openSelectByPlaceholder(page, 'Select a category');
+    await expect(categoryOptions.first()).toBeVisible();
+    await categoryOptions.first().click();
+    await page.getByRole('button', { name: 'Next: Variants' }).click();
+    await expect(page.getByRole('heading', { name: 'Step 2: Variant Matrix' })).toBeVisible();
+    await waitForHydratedForm(page);
+
+    await addChip(page, 'Type a form (e.g. POWDER) and press Enter', 'POWDER');
+    await addChip(page, 'Type a pack size (e.g. 75g, 200ml) and press Enter', '200g');
+    const skuInput = page.locator('#sku-0');
+    await expect(skuInput).toBeVisible();
+    await skuInput.fill(product.sku); // forced duplicate → variant creation fails
+    await page.locator('#stock-0').fill('10');
+    await page.locator('#cost-0').fill('900');
+    await page.locator('#retail-0').fill('1450');
+    await page.locator('#low-0').fill('5');
+    await page.getByRole('button', { name: 'Next: Review' }).click();
+    await expect(page.getByRole('heading', { name: 'Review & Create' })).toBeVisible();
+
+    const responsePromise = page.waitForResponse(
+      (r) => r.url().includes('/api/store/products') && r.request().method() === 'POST',
+      { timeout: 60_000 },
+    );
+    await page.getByRole('button', { name: 'Create Product' }).click();
+    const res = await responsePromise;
+    expect.soft(res.status(), 'BUG-2: duplicate-SKU submit → 207 PARTIAL_SUCCESS').toBe(207);
+
+    // Cleanup first (best-effort): the product row WAS created — archive the
+    // stray shell so the run leaves no unmanaged fixture behind.
+    const resBody = (await res.json().catch(() => null)) as { data?: { id?: string } } | null;
+    if (resBody?.data?.id) {
+      await page.request.post(`/api/store/products/${resBody.data.id}/archive`).catch(() => {});
+    }
+
+    // The review step surfaces the warning banner (API message + guidance)…
+    const alert = page.getByTestId('partial-success-warning');
+    await expect(alert, 'BUG-2: warning banner replaces the success toast').toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(alert).toContainText('Product created but variant creation failed');
+    await expect(alert).toContainText(/add variants from the product.s edit page/i);
+    // …and the plain success toast is never shown.
+    await expect(page.getByText('Product created successfully')).toHaveCount(0);
+    // User is kept on the review step (no navigation to /inventory).
+    await expect(page.getByRole('heading', { name: 'Review & Create' })).toBeVisible();
+    await expect(page).toHaveURL(/\/inventory\/new/);
   });
 
   test('search: filters the inventory list by the dynamic product name', async ({ page }) => {
@@ -599,8 +658,9 @@ test.describe.serial('Module 2 expansion — API surface, security & chaos (2026
 
     // CreateProductSchema contract (src/lib/validators/product.validators.ts):
     // name, categoryId + variantDefinitions[] with sku/retailPrice/costPrice.
-    // NOTE: the schema key is `variantDefinitions` — a `variants` key is
-    // silently dropped by the route (see BUG-19 in QA_BUG_REPORT.md).
+    // NOTE: the schema key is `variantDefinitions`; a `variants` key is an
+    // accepted alias since M02-02/BUG-19 (pinned by E22 below). Any OTHER
+    // unknown top-level key is now rejected 400 VALIDATION_ERROR (.strict()).
     const retailPrice = 199.99;
     const res = await apiPost(page, '/api/store/products', {
       name: `${RUN} product`,
@@ -736,26 +796,26 @@ test.describe.serial('Module 2 expansion — API surface, security & chaos (2026
     }
   });
 
-  // ── §4 Audit trail, soft delete & no hard delete ───────────────────────────
+  // ── §4 Audit trail, soft delete & recoverable delete ───────────────────────
 
-  test('E7 archive is soft delete; DELETE is soft too and product becomes unrecoverable', async ({ page }) => {
+  test('E7 DELETE is a soft delete with a real restore path (M02-03 fixed)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     expect(state.categoryId, 'depends on E1').toBeTruthy();
 
-    // Use a DEDICATED throwaway product — DELETE soft-deletes irreversibly
-    // (no restore endpoint exists), so the E2 fixture must not be touched.
+    // Use a DEDICATED throwaway product so the E2 fixture is never touched.
+    // initialStock 5 gives us a stock figure to re-verify after restore.
     const res = await apiPost(page, '/api/store/products', {
       name: `${RUN} deltarget`,
       categoryId: state.categoryId,
       variantDefinitions: [
-        { sku: `${RUN}-DEL`, form: 'OIL', packSize: '10ml', retailPrice: 50, costPrice: 20, initialStock: 0, lowStockThreshold: 0 },
+        { sku: `${RUN}-DEL`, form: 'OIL', packSize: '10ml', retailPrice: 50, costPrice: 20, initialStock: 5, lowStockThreshold: 0 },
       ],
     });
     const body = await json(res);
     const delTarget = pickId(body);
     expect(delTarget, 'throwaway product created').toBeTruthy();
 
-    // 1) archive toggle is a soft delete (isArchived flag), reversible.
+    // 1) archive toggle is a soft flag (isArchived), reversible.
     const archive = await apiPost(page, `/api/store/products/${delTarget}/archive`, {});
     expect(archive.status(), 'archive accepted').toBeLessThan(300);
     const archBody = await json(archive);
@@ -763,29 +823,60 @@ test.describe.serial('Module 2 expansion — API surface, security & chaos (2026
     const unarchive = await apiPost(page, `/api/store/products/${delTarget}/archive`, {});
     expect.soft(unarchive.status(), 'unarchive (toggle back) works').toBeLessThan(300);
 
-    // 2) DELETE is ALSO a soft delete (deletedAt on product + variants) —
-    //    response explicitly says "archived ... restored by un-setting deletedAt".
+    // 2) DELETE is a soft delete (deletedAt on product + variants) and the
+    //    response now points at the REAL recovery path (M02-03 / D4 policy).
     const del = await page.request.delete(`/api/store/products/${delTarget}`);
-    expect(del.status(), 'DELETE accepted (soft delete)').toBeLessThan(300);
+    expect.soft(del.status(), 'DELETE accepted (soft delete)').toBe(200);
     const delBody = await json(del);
-    expect.soft(JSON.stringify(delBody), 'DELETE response documents soft-delete semantics').toContain('archived');
+    expect.soft(
+      JSON.stringify(delBody),
+      'DELETE message names the Deleted filter, not raw-DB surgery',
+    ).toContain('Deleted filter');
 
-    // 3) BUT: soft-deleted products vanish from ALL queries (getAllProducts
-    //    hard-filters deletedAt: null) and the archive toggle now 404s —
-    //    the "restore" path promised in the DELETE response does not exist.
-    const search = await json(
-      await page.request.get(`/api/store/products?search=${encodeURIComponent(`${RUN} deltarget`)}`),
-    );
-    const searchRows: any[] = Array.isArray(search?.data?.products) ? search.data.products : [];
+    // 3) Gone from the default list…
+    const defaultRows = async () => {
+      const b = await json(
+        await page.request.get(`/api/store/products?search=${encodeURIComponent(`${RUN} deltarget`)}`),
+      );
+      return Array.isArray(b?.data) ? b.data : [];
+    };
     expect.soft(
-      searchRows.some((p: any) => p?.id === delTarget),
-      'soft-deleted product absent from every list (incl. archived view)',
+      (await defaultRows()).some((p: any) => p?.id === delTarget),
+      'soft-deleted product absent from the default list',
     ).toBe(false);
-    const resurrect = await apiPost(page, `/api/store/products/${delTarget}/archive`, {});
+
+    // 4) …but VISIBLE under the deleted filter (?status=deleted).
+    const deletedList = await json(
+      await page.request.get(
+        `/api/store/products?status=deleted&search=${encodeURIComponent(`${RUN} deltarget`)}`,
+      ),
+    );
+    const deletedRows: any[] = Array.isArray(deletedList?.data) ? deletedList.data : [];
     expect.soft(
-      resurrect.status(),
-      'BUG-19b: archive toggle on soft-deleted product → 404, no restore path',
-    ).toBe(404);
+      deletedRows.some((p: any) => p?.id === delTarget),
+      'soft-deleted product listed under status=deleted',
+    ).toBe(true);
+
+    // 5) POST /restore brings it back, variants + stock intact.
+    const restore = await page.request.post(`/api/store/products/${delTarget}/restore`);
+    expect.soft(restore.status(), 'restore returns 200').toBe(200);
+    expect.soft(
+      (await defaultRows()).some((p: any) => p?.id === delTarget),
+      'restored product back in the default list',
+    ).toBe(true);
+    const detail = await json(await page.request.get(`/api/store/products/${delTarget}`));
+    const restoredVariant = (detail?.data?.variants ?? [])[0];
+    expect.soft(restoredVariant?.sku, 'variant intact after restore').toBe(`${RUN}-DEL`);
+    expect.soft(restoredVariant?.stockQuantity, 'stock unchanged across delete/restore').toBe(5);
+
+    // 6) Second restore is an honest 409 (idempotency guard), not a silent no-op.
+    const again = await page.request.post(`/api/store/products/${delTarget}/restore`);
+    expect.soft(again.status(), 'restore of a live product → 409').toBe(409);
+    const againBody = await json(again);
+    expect.soft(
+      againBody?.error?.message,
+      '409 explains the product is not deleted',
+    ).toContain('not deleted');
   });
 
   // ── §5 Chaos, button spam & race conditions ────────────────────────────────
@@ -995,19 +1086,13 @@ test.describe.serial('Module 2 expansion — API surface, security & chaos (2026
       createdAt: '1999-01-01T00:00:00.000Z',
       variants: [],
     });
-    expect.soft(res.status(), 'create with forged createdAt < 300').toBeLessThan(300);
-    const id = pickId(await json(res));
-    if (id) state.createdProductIds.push(id);
-    if (id && res.status() < 300) {
-      const body = await json(await page.request.get(`/api/store/products/${id}`));
-      const createdAt = String(JSON.stringify(body).match(/"createdAt":"([^"]+)"/)?.[1] ?? '');
-      if (createdAt) {
-        expect(
-          new Date(createdAt).getFullYear(),
-          'server clock wins over client-supplied 1999 date',
-        ).toBeGreaterThan(2020);
-      }
-    }
+    // M02-02 (BUG-19 strictness flip): CreateProductSchema is now .strict(),
+    // so a forged `createdAt` — an unknown top-level key — is rejected
+    // outright instead of being silently dropped; the backdate attempt never
+    // reaches the create path.
+    expect.soft(res.status(), 'create with forged createdAt → 400 (strict)').toBe(400);
+    const body = await json(res);
+    expect.soft(body?.error?.code, '400 carries VALIDATION_ERROR').toBe('VALIDATION_ERROR');
   });
 
   // ── Import / export / csv-template surface ─────────────────────────────────
@@ -1062,19 +1147,67 @@ test.describe.serial('Module 2 expansion — API surface, security & chaos (2026
     expect.soft(badRes.status(), 'negative retailPrice never 500').toBeLessThan(500);
   });
 
-  test('E21 BUG-1 pin: inventory table headers internally consistent (no Gender)', async ({ page }) => {
+  test('E21 BUG-1 pin: inventory table headers internally consistent (Variants, no Gender)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     await page.goto(`${BASE_URL}/inventory`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('table').first()).toBeVisible({ timeout: 90_000 });
     const headers = (await page.locator('table th').allInnerTexts()).map((h) => h.trim());
     test.info().annotations.push({ type: 'info', description: `INVENTORY HEADERS: ${JSON.stringify(headers)}` });
-    // BUG-1: leftover apparel "Gender" header must be gone.
-    expect.soft(headers, 'BUG-1: no "Gender" header').not.toContain('Gender');
-    expect.soft(headers.filter((h) => !h), 'no blank headers').toEqual([]);
+    // BUG-1 fixed by M02-01: the leftover apparel "Gender" header was renamed
+    // to "Variants" (the cell renders product._count.variants). Headers are
+    // CSS-uppercased, so match case-insensitively.
+    expect.soft(
+      headers.some((h) => /gender/i.test(h)),
+      'BUG-1: no "Gender" header',
+    ).toBe(false);
+    expect.soft(
+      headers.some((h) => /^variants$/i.test(h)),
+      'M02-01: a "Variants" header is present',
+    ).toBe(true);
+    // The selection column legitimately has no text (it holds the aria-labelled
+    // "Select all products" checkbox) — at most one blank header is allowed.
+    expect.soft(headers.filter((h) => !h).length, 'only the checkbox column is blank').toBeLessThanOrEqual(1);
     expect.soft(
       headers.filter((h, i) => h && headers.indexOf(h) !== i),
       'no duplicated headers',
     ).toEqual([]);
+  });
+
+  // ── BUG-19 (M02-02): variants alias + strict unknown-key rejection ────────
+
+  test('E22 BUG-19 pin: variants[] alias creates variants; unknown top-level key → 400', async ({ page }) => {
+    await login(page, OWNER.email, OWNER.password);
+    expect(state.categoryId, 'depends on E1').toBeTruthy();
+
+    // Alias face: `variants` maps to `variantDefinitions` — the variant must
+    // actually be created (pre-fix: silent 201 with ZERO variants).
+    const aliasRes = await apiPost(page, '/api/store/products', {
+      name: `${RUN} alias-variants`,
+      categoryId: state.categoryId,
+      variants: [
+        { sku: `${RUN}-ALIAS`, form: 'POWDER', packSize: '100g', retailPrice: 120, costPrice: 60, initialStock: 3, lowStockThreshold: 1 },
+      ],
+    });
+    const aliasBody = await json(aliasRes);
+    const aliasId = pickId(aliasBody);
+    if (aliasId) state.createdProductIds.push(aliasId);
+    expect.soft(aliasRes.status(), `alias create accepted, got ${aliasRes.status()}`).toBeLessThan(300);
+    expect.soft(aliasId, 'alias create returned a product id').toBeTruthy();
+    if (aliasId) {
+      const detail = await json(await page.request.get(`/api/store/products/${aliasId}`));
+      const skus: string[] = ((detail?.data ?? detail)?.variants ?? []).map((v: any) => v?.sku);
+      expect.soft(skus, '`variants` alias actually created the variant').toContain(`${RUN}-ALIAS`);
+    }
+
+    // Strict face: an unrelated unknown top-level key is rejected, not stripped.
+    const bogusRes = await apiPost(page, '/api/store/products', {
+      name: `${RUN} bogus-key`,
+      categoryId: state.categoryId,
+      bogusKey: 1,
+    });
+    expect.soft(bogusRes.status(), 'unknown top-level key → 400').toBe(400);
+    const bogusBody = await json(bogusRes);
+    expect.soft(bogusBody?.error?.code, '400 carries VALIDATION_ERROR').toBe('VALIDATION_ERROR');
   });
 
   // ── Cleanup (Appendix C.7) ─────────────────────────────────────────────────

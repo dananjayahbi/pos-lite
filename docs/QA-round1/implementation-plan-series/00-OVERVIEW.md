@@ -96,9 +96,9 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 ### M02 — Products & Variants
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| M02-01 | BUG-1 leftover apparel "Gender" column header | P3 | DOC |
-| M02-02 | BUG-2 + BUG-19 false-success product creation (207 ignored; `variants` key silently dropped) | P1 | DOC |
-| M02-03 | BUG-20 soft-deleted products unrecoverable (restore path missing) | P2 | DOC |
+| M02-01 | BUG-1 leftover apparel "Gender" column header | P3 | **GATE** (2026-09-16 W2: `InventoryTable.tsx` header → "Variants"; spec 02 E21 flipped — no `/gender/i` header, "Variants" present) |
+| M02-02 | BUG-2 + BUG-19 false-success product creation (207 ignored; `variants` key silently dropped) | P1 | **GATE** (2026-09-16 W2: wizard honors 207 via `create-result.ts` classifier → PARTIAL_SUCCESS banner not success toast; `CreateProductSchema` gains `variants`→`variantDefinitions` alias + `.strict()` unknown-key 400; spec 02 BUG-2 pin + new E22 green) |
+| M02-03 | BUG-20 soft-deleted products unrecoverable (restore path missing) | P2 | **GATE** (2026-09-16 W2, D4=reserved+restore: `restoreProduct` + `POST /products/[id]/restore` (SKU-collision 409, PRODUCT_RESTORED audit) + `?status=deleted` list view + Restore UI; DELETE copy fixed; spec 02 E7 flipped green) |
 | M02-04 | GAP-4 duplicate search inputs (STALE — fixed in source) + OBS-1 cashier POS dialog note | P3 | **CLOSED-SOURCE** (2026-09-15: spec 02 `search:` green; stale comment fixed in `erp/tests/`) |
 | M02-05 | GAP-1 decision record: dosage handled via Description/Usage (reopen triggers) | — | DOC (record) |
 
@@ -117,8 +117,8 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 ### M04 — Categories & Brands
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| M04-01 | BUG-21 409 leaks raw Prisma/Turbopack internals (module instance of INF-02) | P3 | **GATE** (2026-09-15 via INF-02; A3 pin flipped) |
-| M04-02 | BUG-22 brand vs category delete-button UX inconsistency | P3 | DOC |
+| M04-01 | BUG-21 409 leaks raw Prisma/Turbopack internals (module instance of INF-02) | P3 | **GATE** (2026-09-15 via INF-02; A3 pin flipped. W2 addendum 2026-09-16: `createCategory`/`createBrand` pre-checks made deletedAt-agnostic (D4 reserve), friendly 409 incl. archived-name wording; 04 A3/B3/C4 re-verified green) |
+| M04-02 | BUG-22 brand vs category delete-button UX inconsistency | P3 | **GATE** (2026-09-16 W2: shared `src/components/shared/ResourceDeleteButton.tsx` (disabled lock + tooltip) adopted by BrandList + migrated CategoryList; spec 04 L2 UI assertion green) |
 
 ### M05 — Customers CRM
 | ID | Title | Sev | Status |
@@ -148,11 +148,11 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 ### M08 — Super Admin / Tenants
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| M08-01 | BUG-35 suspension enforcement gaps (API bypass, fail-open, no login check) — corrected C-3 | P1 | DOC |
-| M08-02 | BUG-36 suspend/reactivate/grace unknown id → 500 | P3 | DOC |
-| M08-03 | BUG-37 `/api/audit-logs` rejects SUPER_ADMIN (system actor audit-blind) | P2 | DOC |
-| M08-04 | BUG-38 feature-modules accepts arbitrary module names | P3 | DOC |
-| M08-05 | BUG-39 duplicate plan → empty-body 500 + OBS-12/17 plan seeding & list semantics | P2 | DOC |
+| M08-01 | BUG-35 suspension enforcement gaps (API bypass, fail-open, no login check) — corrected C-3 | P1 | **GATE** (2026-09-16 W2: login gate in `authorize()` (post-password, SUSPENDED/CANCELLED block, GRACE allows, `LOGIN_FAILED_TENANT_SUSPENDED` durable audit) + `(store)/layout.tsx` defense-in-depth guard + tenant-aware `/suspended`; API/page gate already live from W1 proxy. **Fixed a real propagation bug** — `CredentialsSignin` code now surfaces via `result.code` (was always generic). spec 08 B1a/B1b green) |
+| M08-02 | BUG-36 suspend/reactivate/grace unknown id → 500 | P3 | **GATE** (2026-09-16 W2: three lifecycle routes findUnique→404 NOT_FOUND + toErrorResponse; spec 08 X5 flipped 500→404) |
+| M08-03 | BUG-37 `/api/audit-logs` rejects SUPER_ADMIN (system actor audit-blind) | P2 | **GATE** (2026-09-16 W2: role branch — SUPER_ADMIN gets cross-tenant view (+ optional `?tenantId=`), no 401; spec 08 A3 flipped 401→200) |
+| M08-04 | BUG-38 feature-modules accepts arbitrary module names | P3 | **GATE** (2026-09-16 W2: `TENANT_FEATURE_MODULES` registry + `z.enum` + dedupe, `[]` clears; spec 08 X4 flipped — unknown→400) |
+| M08-05 | BUG-39 duplicate plan → empty-body 500 + OBS-12/17 plan seeding & list semantics | P2 | **GATE** (2026-09-16 W2: `withUniqueGuard`→409 CONFLICT; admin/plans GET active-default + `?includeInactive=true`; `seedSubscriptionPlans` STARTER/GROWTH/ENTERPRISE (seed edit #3); spec 08 ensurePlan + spec 30 F3/F8/L2/P3 pins flipped) |
 
 ### M09–M13 — Inventory control
 | ID | Title | Sev | Status |
