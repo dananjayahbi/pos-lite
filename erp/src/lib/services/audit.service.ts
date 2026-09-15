@@ -33,6 +33,10 @@ export const AUTH_ACTIONS = {
   LOGIN_FAILED_ACCOUNT_SUSPENDED: 'LOGIN_FAILED_ACCOUNT_SUSPENDED',
   LOGOUT: 'LOGOUT',
   PASSWORD_RESET_REQUESTED: 'PASSWORD_RESET_REQUESTED',
+  // M01-01: reset email minted but delivery failed (token purged, ops signal).
+  PASSWORD_RESET_DELIVERY_FAILED: 'PASSWORD_RESET_DELIVERY_FAILED',
+  // M01-02: forgot-password suppressed by the per-IP limiter (429 path).
+  PASSWORD_RESET_THROTTLED: 'PASSWORD_RESET_THROTTLED',
   PASSWORD_RESET_COMPLETED: 'PASSWORD_RESET_COMPLETED',
   SESSION_INVALIDATED_BY_VERSION_MISMATCH: 'SESSION_INVALIDATED_BY_VERSION_MISMATCH',
   FORCE_LOGOUT_TRIGGERED: 'FORCE_LOGOUT_TRIGGERED',
@@ -52,6 +56,8 @@ export const AUDIT_ACTIONS = {
   // Staff
   STAFF_ROLE_CHANGED: 'STAFF_ROLE_CHANGED',
   STAFF_PERMISSION_CHANGED: 'STAFF_PERMISSION_CHANGED',
+  // M03-08 (GAP-2): admin set-password on a staff account.
+  STAFF_PASSWORD_RESET: 'STAFF_PASSWORD_RESET',
   // Promotion
   PROMOTION_CREATED: 'PROMOTION_CREATED',
   PROMOTION_UPDATED: 'PROMOTION_UPDATED',
@@ -135,6 +141,50 @@ export async function createAuditLog(input: CreateAuditLogInput): Promise<void> 
     });
   } catch (error) {
     console.error('Audit log write failed:', error);
+  }
+}
+
+/**
+ * M03-02 (NEW-A) — durability variant of createAuditLog for SECURITY-RELEVANT
+ * trails (staff role/permission changes, force-logout, admin set-password).
+ *
+ * Unlike createAuditLog it does NOT swallow failures: an unaudited privilege
+ * change is worse than a failed request, so it rethrows and the calling route
+ * surfaces a 500. Best-effort/view-ish events keep using createAuditLog (or
+ * fire-and-forget with a console error), never a silent `.catch(() => {})`.
+ */
+export async function writeAuditLog(input: CreateAuditLogInput): Promise<void> {
+  const beforeData =
+    input.before === undefined ? undefined : input.before === null ? Prisma.JsonNull : input.before;
+  const afterData =
+    input.after === undefined ? undefined : input.after === null ? Prisma.JsonNull : input.after;
+
+  try {
+    await prisma.auditLog.create({
+      data: {
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        action: input.action,
+        ...(beforeData !== undefined ? { before: beforeData } : {}),
+        ...(afterData !== undefined ? { after: afterData } : {}),
+        ...(input.ipAddress !== undefined ? { ipAddress: input.ipAddress } : {}),
+        ...(input.userAgent !== undefined ? { userAgent: input.userAgent } : {}),
+      },
+    });
+  } catch (error) {
+    console.error('SECURITY audit log write failed:', input.action, error);
+    try {
+      const Sentry = await import('@sentry/nextjs');
+      Sentry.captureException(error, {
+        tags: { audit: 'write-failed', action: input.action },
+      });
+    } catch {
+      /* Sentry unavailable — the console.error above is the fallback signal */
+    }
+    throw error;
   }
 }
 

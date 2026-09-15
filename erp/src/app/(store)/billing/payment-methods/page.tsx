@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
+import { denialRouteFor } from '@/lib/auth/page-guards';
 import { getSubscriptionForTenant } from '@/lib/billing/subscription.service';
 import PaymentMethodManagementCard from '@/components/billing/PaymentMethodManagementCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,7 +10,7 @@ export const metadata = { title: 'Payment Methods | AyurPOS' };
 export default async function BillingPaymentMethodsPage() {
   const session = await auth();
   if (!session?.user?.id || !session.user.tenantId) {
-    redirect('/login');
+    redirect(denialRouteFor(session?.user));
   }
 
   if (!['OWNER', 'MANAGER', 'SUPER_ADMIN'].includes(session.user.role)) {

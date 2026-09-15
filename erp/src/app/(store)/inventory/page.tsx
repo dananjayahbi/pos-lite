@@ -1,4 +1,5 @@
 import { auth } from '@/lib/auth';
+import { denialRouteFor } from '@/lib/auth/page-guards';
 import { prisma } from '@/lib/prisma';
 import { redirect } from 'next/navigation';
 import { InventoryListClient } from '@/components/inventory/InventoryListClient';
@@ -9,7 +10,7 @@ export const metadata = {
 
 export default async function InventoryPage() {
   const session = await auth();
-  if (!session?.user?.tenantId) redirect('/login');
+  if (!session?.user?.tenantId) redirect(denialRouteFor(session?.user));
 
   const totalProducts = await prisma.product.count({
     where: { tenantId: session.user.tenantId, deletedAt: null },

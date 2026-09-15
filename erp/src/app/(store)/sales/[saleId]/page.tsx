@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { auth } from '@/lib/auth';
+import { denialRouteFor } from '@/lib/auth/page-guards';
 import { getSaleById } from '@/lib/services/sale.service';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
@@ -44,7 +45,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
   if (!session?.user) redirect('/login');
 
   const tenantId = session.user.tenantId;
-  if (!tenantId) redirect('/login');
+  if (!tenantId) redirect(denialRouteFor(session.user));
 
   if (session.user.role !== 'OWNER' && session.user.role !== 'MANAGER') {
     redirect('/dashboard');

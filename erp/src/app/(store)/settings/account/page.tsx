@@ -1,12 +1,13 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
+import { denialRouteFor } from '@/lib/auth/page-guards';
 import AccountSettingsClient from '@/components/settings/AccountSettingsClient';
 
 export const metadata = { title: 'My Account | AyurPOS' };
 
 export default async function AccountSettingsPage() {
   const session = await auth();
-  if (!session?.user?.tenantId) redirect('/login');
+  if (!session?.user?.tenantId) redirect(denialRouteFor(session?.user));
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6 p-6">

@@ -51,6 +51,9 @@ const CRON_REMINDERS_URL = `${BASE_URL}/api/cron/payment-reminders`;
 const RUN_TAG = `qa-m30-${Date.now().toString(36)}`;
 
 async function login(page: any, email: string, password: string) {
+  // A signed-in /login now bounces to the role default (M01-05/BUG-17), so
+  // every helper login starts from a logged-out context.
+  await page.context().clearCookies();
   await page.goto(`${BASE_URL}/login`);
   await page.waitForLoadState('networkidle');
   await page.fill('input[name="email"]', email);

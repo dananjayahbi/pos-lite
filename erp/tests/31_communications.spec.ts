@@ -91,6 +91,35 @@ function broadcastBody(overrides: Record<string, unknown> = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// M01-02: the forgot-password limiter is per-IP (5/hour) and DB-backed in this
+// env. F10 + A3 issue 4 POSTs total; wipe the buckets once at file start so
+// cross-file ordering (spec 01 shares this IP) can never cause a spurious 429.
+// ─────────────────────────────────────────────────────────────────────────────
+test.beforeAll(async () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { config: dotenvConfig } = require('dotenv') as typeof import('dotenv');
+  let url = process.env.DATABASE_URL;
+  if (!url) {
+    for (const envFile of ['.env.local', '.env']) {
+      const parsed = dotenvConfig({ path: `${process.cwd()}/${envFile}` });
+      if (!parsed.error && parsed.parsed?.DATABASE_URL) {
+        url = parsed.parsed.DATABASE_URL;
+        break;
+      }
+    }
+  }
+  if (!url) return;
+  const { Client } = require('pg') as typeof import('pg');
+  const client = new Client({ connectionString: url });
+  await client.connect();
+  try {
+    await client.query('DELETE FROM rate_limit_buckets');
+  } finally {
+    await client.end();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // §0 — Fixture discovery (must be declared FIRST: Playwright runs tests in
 // declaration order, and later tests depend on the ids discovered here)
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { auth } from '@/lib/auth';
+import { denialRouteFor } from '@/lib/auth/page-guards';
 import { redirect } from 'next/navigation';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
@@ -10,7 +11,7 @@ export const metadata = {
 
 export default async function BatchesPage() {
   const session = await auth();
-  if (!session?.user?.tenantId) redirect('/login');
+  if (!session?.user?.tenantId) redirect(denialRouteFor(session?.user));
 
   if (!hasPermission(session.user, PERMISSIONS.BATCH.viewBatch)) {
     redirect('/dashboard');

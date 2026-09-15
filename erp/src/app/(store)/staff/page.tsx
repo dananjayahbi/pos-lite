@@ -37,6 +37,7 @@ import { Plus, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { CreateStaffSchema } from '@/lib/validators/staff.validators';
 import type { CreateStaffInput } from '@/lib/validators/staff.validators';
+import { ASSIGNABLE_ROLES, type AssignableRole } from '@/lib/constants/permissions';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -58,11 +59,15 @@ const ROLE_COLORS: Record<string, string> = {
   MANAGER: 'bg-terracotta text-pearl',
   CASHIER: 'bg-sand text-espresso',
   STOCK_CLERK: 'bg-mist text-espresso',
+  // M03-01 (BUG-3): DISPATCH_STAFF was missing here — the badge fell back to
+  // the default while the role itself was rejected by the API validator.
+  DISPATCH_STAFF: 'bg-pearl text-espresso',
   FACTORY_MANAGER: 'bg-mist text-espresso',
 };
 
-const ASSIGNABLE_ROLES = ['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK', 'FACTORY_MANAGER'] as const;
-type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
+// M03-01 (BUG-3): single source of truth — the same constant the API
+// validator and the settings editor use, so the two screens cannot disagree.
+// (SUPER_ADMIN stays excluded — escalation guard, tests/03 8.7/8.8.)
 
 function RoleBadge({ role }: { role: string }) {
   return (
@@ -80,6 +85,8 @@ export default function StaffPage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  // M03-08 (GAP-2): optional initial password for the create dialog.
+  const [initialPassword, setInitialPassword] = useState('');
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 400);
@@ -148,11 +155,33 @@ export default function StaffPage() {
         const err = await res.json();
         throw new Error(err?.error?.message ?? 'Failed to create staff member');
       }
-      return res.json();
+      return res.json() as Promise<{ success: boolean; data: { id: string } }>;
     },
-    onSuccess: () => {
+    onSuccess: async (created) => {
+      // M03-08 (GAP-2): created accounts get an unusable random password
+      // server-side; if the operator supplied an initial password, set it
+      // through the dedicated route (bumps sessionVersion + audits).
+      const password = initialPassword.trim();
+      if (password && created?.data?.id) {
+        const pwRes = await fetch(`/api/store/staff/${created.data.id}/password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ newPassword: password }),
+        });
+        if (!pwRes.ok) {
+          const err = await pwRes.json().catch(() => null);
+          toast.warning(
+            'Staff created, but the initial password was NOT set: ' +
+              (err?.error?.message ?? 'unknown error'),
+          );
+        } else {
+          toast.success('Staff member created with an initial password');
+        }
+      } else {
+        toast.success('Staff member created (no password set — set one before first sign-in)');
+      }
+      setInitialPassword('');
       queryClient.invalidateQueries({ queryKey: ['staff'] });
-      toast.success('Staff member created');
       form.reset();
       setDialogOpen(false);
     },
@@ -243,6 +272,21 @@ export default function StaffPage() {
                   )}
                 </div>
               )}
+
+              <div className="space-y-2">
+                <Label htmlFor="initialPassword">Initial Password (optional)</Label>
+                <Input
+                  id="initialPassword"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="At least 8 characters"
+                  value={initialPassword}
+                  onChange={(e) => setInitialPassword(e.target.value)}
+                />
+                <p className="text-xs text-sand">
+                  A new account cannot sign in until a password is set. Leave empty to set one later.
+                </p>
+              </div>
 
               <Button type="submit" className="w-full" disabled={createMutation.isPending}>
                 {createMutation.isPending ? 'Creating...' : 'Create Staff Member'}

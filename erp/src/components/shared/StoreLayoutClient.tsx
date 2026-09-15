@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
+import { postLogoutAudit } from '@/lib/auth/logout-audit';
 import type { UserRole } from '@/generated/prisma/client';
 import StoreSidebar from '@/components/layout/StoreSidebar';
 import { NotificationPopover } from '@/components/notifications/NotificationPopover';
@@ -69,7 +70,11 @@ export default function StoreLayoutClient({
                 </span>
                 <button
                   type="button"
-                  onClick={() => void signOut({ callbackUrl: `${window.location.origin}/login` })}
+                  onClick={async () => {
+                    // M01-04: ledger the sign-out before the cookie is cleared.
+                    await postLogoutAudit();
+                    await signOut({ callbackUrl: `${window.location.origin}/login` });
+                  }}
                   className="text-xs text-terracotta transition-colors hover:text-espresso"
                 >
                   Log Out

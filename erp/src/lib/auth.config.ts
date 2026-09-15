@@ -19,6 +19,12 @@ export const authConfig: NextAuthConfig = {
   pages: {
     signIn: '/login',
   },
+  // M01-07 (BUG-54 cause 3): cookie-name determinism. In production HTTPS
+  // NextAuth uses the __Secure- prefixed names; in dev it must NOT, even
+  // behind an HTTPS-proxying setup that sets x-forwarded-proto — otherwise
+  // the middleware/proxy derives one name while the app sets the other and
+  // fresh sessions bounce straight back to /login.
+  useSecureCookies: process.env.NODE_ENV === 'production',
   providers: [],
   callbacks: {
     async jwt({ token, user }: { token: any; user?: any }) {

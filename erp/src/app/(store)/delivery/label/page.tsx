@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { auth } from '@/lib/auth';
+import { denialRouteFor } from '@/lib/auth/page-guards';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { isModuleEnabled } from '@/lib/feature-guard';
@@ -14,7 +15,7 @@ export default async function LabelDesignPage() {
   const session = await auth();
   if (!session?.user) redirect('/login');
   const tenantId = session.user.tenantId;
-  if (!tenantId) redirect('/login');
+  if (!tenantId) redirect(denialRouteFor(session.user));
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },

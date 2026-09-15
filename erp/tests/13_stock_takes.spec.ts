@@ -42,6 +42,9 @@ async function json(response: any): Promise<any> {
 }
 
 async function login(page: Page, credentials = OWNER) {
+  // A signed-in /login now bounces to the role default (M01-05/BUG-17), so
+  // every helper login starts from a logged-out context.
+  await page.context().clearCookies();
   await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded' });
   await waitForHydratedInput(page, '#email');
   await page.getByLabel('Email address').fill(credentials.email);
@@ -51,8 +54,13 @@ async function login(page: Page, credentials = OWNER) {
     await expect(page).toHaveURL(/\/(dashboard|pos)/, { timeout: 8_000 });
   } catch {
     const choice = page.getByRole('button', { name: /open in this tab/i }).first();
-    await choice.waitFor({ state: 'visible', timeout: 30_000 });
-    await choice.click();
+    try {
+     await choice.waitFor({ state: 'visible', timeout: 15_000 });
+     await choice.click();
+   } catch {
+     /* slow cold-compile sign-in for a non-cashier role — no dialog; *
+      * the trailing URL check below resolves the race. */
+   }
     await expect(page).toHaveURL(/\/(dashboard|pos)/, { timeout: 30_000 });
   }
 }

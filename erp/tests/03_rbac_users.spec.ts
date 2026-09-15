@@ -130,6 +130,25 @@ async function authedContext(browser: Browser, key: UserKey) {
   return browser.newContext({ baseURL: BASE_URL, storageState: state });
 }
 
+/**
+ * M03-04 consequence: once the sessionVersion gate actually works (M01-06),
+ * any test that bumps an identity's sessionVersion (deactivation, permission
+ * grant/revoke, force-logout) silently KILLS that identity's cached
+ * storageState — every later `authedContext(key)` would reuse a dead cookie.
+ * Call this in the `finally` of such tests so the next use re-logs in.
+ */
+function invalidateStorageState(key: UserKey): void {
+  const file = stateCache.get(key);
+  stateCache.delete(key);
+  if (file) {
+    try {
+      require('fs').rmSync(file, { force: true });
+    } catch {
+      /* best-effort */
+    }
+  }
+}
+
 const json = async (res: APIResponse) => res.json().catch(() => null);
 
 /** True when the response is the documented { success:false, error:{code} } shape. */
@@ -604,6 +623,9 @@ test.describe('4. Audit Trail, Soft-Delete & Immutability', () => {
       await ownerReq.patch(`/api/store/staff/${cashier.id}`, { data: { isActive: true } });
       await victim.close();
       await ownerCtx.close();
+      // The isActive toggles bumped sessionVersion (M03-04); the cached
+      // cashier state is now stale — force a re-login for later tests.
+      invalidateStorageState('cashier');
     }
   });
 });
@@ -1047,6 +1069,9 @@ test.describe('8b. Privilege Escalation & Session Integrity', () => {
     } finally {
       await victim.close();
       await ownerCtx.close();
+      // Grant + revoke each bumped sessionVersion (M03-04) — the cached
+      // cashier cookie is now dead; force a re-login for later tests.
+      invalidateStorageState('cashier');
     }
   });
 });
@@ -1234,9 +1259,10 @@ test.describe('10. Time-Travel & Session Expiry', () => {
     const fl = await ownerCtx.request.post(`/api/admin/users/${cashier.id}/force-logout`);
     expect(fl.status()).toBe(200);
 
-    // Middleware caches sessionVersion for 5s (session-version-cache.ts:6),
-    // so allow for TTL expiry before the next navigation.
-    await sleep(6500);
+    // M01-06/M03-03: the proxy gate reads sessionVersion straight from the DB
+    // (no cache), so the bump is effective on the target's VERY NEXT request —
+    // no TTL wait anymore. A small settle covers in-flight navigation only.
+    await sleep(500);
     await vPage.goto('/customers');
     await expect(vPage, 'force-logged-out session must be rejected').toHaveURL(/\/login/, {
       timeout: 20_000,
@@ -1244,6 +1270,9 @@ test.describe('10. Time-Travel & Session Expiry', () => {
 
     await victim.close();
     await ownerCtx.close();
+    // The force-logout bumped the seeded cashier's sessionVersion — the
+    // cached state is dead; later tests must re-login.
+    invalidateStorageState('cashier');
   });
 
   test('10.3 A role change made while signed out applies on the next fresh read', async ({
@@ -1325,6 +1354,118 @@ test.describe('11. Role Enum Contract (UI vs Validator)', () => {
       failures,
       `Roles advertised by the permission editor but rejected by the API: ${failures.join('; ')}`,
     ).toEqual([]);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 12. STAFF PASSWORD LIFECYCLE (M03-08 / GAP-2) — create → set password → sign in
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('12. Staff password lifecycle (GAP-2)', () => {
+  test.setTimeout(120_000);
+
+  const NEW_PASSWORD = 'qa03-lifecycle-99';
+
+  test('12.1 create → set-password → the account can sign in; a second set kills the live session', async ({
+    browser,
+  }) => {
+    const ctx = await authedContext(browser, 'owner');
+    const req = ctx.request;
+    const email = qaEmail('pwlife');
+
+    const created = await req.post('/api/store/staff', { data: { email, role: 'CASHIER' } });
+    expect(created.status(), 'create staff → 201').toBe(201);
+    const id = (await json(created))?.data?.id as string;
+    expect(id).toBeTruthy();
+
+    /** Credentials sign-in over the wire; returns the jar for follow-ups. */
+    async function signInCtx(password: string) {
+      const jar = await browser.newContext({ baseURL: BASE_URL });
+      const csrf = (await (await jar.request.get('/api/auth/csrf')).json().catch(() => ({}))) as {
+        csrfToken?: string;
+      };
+      await jar.request.post('/api/auth/callback/credentials', {
+        form: { email, password, csrfToken: csrf.csrfToken ?? '', json: 'true' },
+      });
+      return jar;
+    }
+
+    try {
+      // GAP-2 core: before a password is set the account cannot sign in — its
+      // server-side hash is an unusable random UUID.
+      const beforeSet = await signInCtx('anything-123');
+      const beforeSession = (await json(await beforeSet.request.get('/api/auth/session'))) as {
+        user?: { email?: string };
+      } | null;
+      expect(beforeSession?.user?.email ?? null, 'no password set → no session').toBeNull();
+      await beforeSet.close();
+
+      // Admin set-password route.
+      const set = await req.post(`/api/store/staff/${id}/password`, {
+        data: { newPassword: NEW_PASSWORD },
+      });
+      expect(set.status(), 'set-password → 200').toBe(200);
+
+      // Now the account signs in and holds a usable session.
+      const jar = await signInCtx(NEW_PASSWORD);
+      const session = (await json(await jar.request.get('/api/auth/session'))) as {
+        user?: { email?: string };
+      } | null;
+      expect(session?.user?.email, 'after set-password the account can sign in').toBe(email);
+
+      // A SECOND set bumps sessionVersion (NEW-D) — the M01-06 proxy gate must
+      // terminate the live session on its next request (401 for API paths).
+      const set2 = await req.post(`/api/store/staff/${id}/password`, {
+        data: { newPassword: `${NEW_PASSWORD}b` },
+      });
+      expect(set2.status()).toBe(200);
+
+      const stale = await jar.request.get('/api/store/customers');
+      expect(
+        stale.status(),
+        'a password reset must invalidate the subject live session (M03-04/M01-06)',
+      ).toBeGreaterThanOrEqual(401);
+      await jar.close();
+      // STAFF_PASSWORD_RESET audit row carries the OWNER actor, not SYSTEM.
+      const logs = await req.get(
+        '/api/audit-logs?entityType=Staff&action=STAFF_PASSWORD_RESET&pageSize=100',
+      );
+      const rows = auditRows(await json(logs)).filter((r) => r.entityId === id);
+      expect(rows.length, 'set-password is audited').toBeGreaterThan(0);
+      expect(rows[0]?.actorId, 'audit records the acting owner').not.toBeNull();
+      expect(rows[0]?.actorRole, 'audit does not blame SYSTEM').not.toBe('SYSTEM');
+    } finally {
+      await req.patch(`/api/store/staff/${id}`, { data: { isActive: false } });
+      await ctx.close();
+    }
+  });
+
+  test('12.2 set-password enforces the 8-char policy and OWNER-only access', async ({ browser }) => {
+    const ctx = await authedContext(browser, 'owner');
+    const req = ctx.request;
+    const email = qaEmail('pwpolicy');
+    const created = await req.post('/api/store/staff', { data: { email, role: 'CASHIER' } });
+    const id = (await json(created))?.data?.id as string;
+
+    try {
+      const short = await req.post(`/api/store/staff/${id}/password`, {
+        data: { newPassword: 'short' },
+      });
+      expect(short.status(), 'short password → 400').toBe(400);
+      expect(apiError(short, await json(short))).toBe('VALIDATION_ERROR');
+
+      // A CASHIER cannot set another account's password.
+      const cashierCtx = await authedContext(browser, 'cashier');
+      const denied = await cashierCtx.request.post(`/api/store/staff/${id}/password`, {
+        data: { newPassword: 'long-enough-1' },
+      });
+      expect(denied.status(), 'cashier denied').toBeLessThan(500);
+      expect([401, 403], 'cashier denied').toContain(denied.status());
+      await cashierCtx.close();
+    } finally {
+      await req.patch(`/api/store/staff/${id}`, { data: { isActive: false } });
+      await ctx.close();
+    }
   });
 });
 

@@ -1,4 +1,5 @@
 import { auth } from '@/lib/auth';
+import { denialRouteFor } from '@/lib/auth/page-guards';
 import { prisma } from '@/lib/prisma';
 import { redirect } from 'next/navigation';
 import { ProductDetailClient } from '@/components/product/ProductDetailClient';
@@ -18,7 +19,7 @@ export async function generateMetadata({ params }: Props) {
 
 export default async function ProductDetailPage({ params }: Props) {
   const session = await auth();
-  if (!session?.user?.tenantId) redirect('/login');
+  if (!session?.user?.tenantId) redirect(denialRouteFor(session?.user));
 
   const userPermissions = Array.isArray(session.user.permissions)
     ? session.user.permissions.filter((p): p is string => typeof p === 'string')

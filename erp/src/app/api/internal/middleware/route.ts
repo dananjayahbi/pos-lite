@@ -5,8 +5,8 @@
  * Node.js modules. This API route acts as a bridge — middleware calls this
  * endpoint via fetch() for any database operations it needs.
  *
- * IMPORTANT: This route must be excluded from the middleware matcher to
- * prevent infinite loops. See middleware.ts → config.matcher.
+ * IMPORTANT: This route must be excluded from the proxy matcher to
+ * prevent infinite loops. See src/proxy.ts → config.matcher.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
@@ -34,8 +34,11 @@ export async function POST(request: NextRequest) {
 
       case 'checkTenantStatus': {
         const { tenantId } = body;
+        // NEW-B (M01-06): a missing/invalid tenantId is an explicit "no tenant"
+        // answer — 200 {status:null} — so the proxy denies based on data
+        // instead of a 400 turning into a silent skip behind `if (res.ok)`.
         if (!tenantId || typeof tenantId !== 'string') {
-          return NextResponse.json({ error: 'Invalid tenantId' }, { status: 400 });
+          return NextResponse.json({ status: null, deletedAt: null });
         }
         const tenant = await prisma.tenant.findUnique({
           where: { id: tenantId },
@@ -45,7 +48,7 @@ export async function POST(request: NextRequest) {
             deletedAt: true,
           },
         });
-        return NextResponse.json(tenant);
+        return NextResponse.json(tenant ?? { status: null, deletedAt: null });
       }
 
       case 'checkTenantSlug': {

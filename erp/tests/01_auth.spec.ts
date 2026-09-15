@@ -183,7 +183,9 @@ test.describe('Authentication', () => {
     const businessName = (await sidebar.locator('p').first().innerText()).trim();
     expect(businessName.length).toBeGreaterThan(0);
     await expect(sidebar.getByText('OWNER', { exact: true })).toBeVisible();
-    await expect(sidebar.getByText(OWNER.email)).toBeVisible();
+    // Identity email + Log Out live in the DESKTOP header (StoreLayoutClient
+    // renders them outside <aside>), so scope there — not the sidebar.
+    await expect(page.locator('header:visible').getByText(OWNER.email)).toBeVisible();
 
     // No auth error banner after a successful sign-in.
     await expect(page.getByText(AUTH_ERROR_INVALID_CREDENTIALS)).toHaveCount(0);
@@ -224,8 +226,8 @@ test.describe('Authentication', () => {
     await loginAsOwner(page);
     await hideNextDevOverlay(page);
 
-    // Scope to the sidebar: the desktop header renders a second "Log Out".
-    const logoutButton = page.locator('aside').getByRole('button', { name: 'Log Out' });
+    // The desktop header renders the Log Out control (StoreLayoutClient).
+    const logoutButton = page.locator('header:visible').getByRole('button', { name: 'Log Out' });
     await expect(logoutButton).toBeVisible();
     await logoutButton.click();
 
@@ -238,15 +240,19 @@ test.describe('Authentication', () => {
   });
 });
 
-// ─── Helpers: Postgres probes (erp/.env.local -> DATABASE_URL) ───────────────
+// ─── Helpers: Postgres probes (erp/.env[.local] -> DATABASE_URL) ────────────
 
 /* eslint-disable @typescript-eslint/no-require-imports */
-// Load erp/.env.local so DATABASE_URL is available to the pg client below.
+// Load erp/.env.local (QA round-1 layout) or erp/.env (this checkout) so
+// DATABASE_URL is available to the pg client below.
 {
   const { config: dotenvConfig } = require('dotenv') as typeof import('dotenv');
-  const parsed = dotenvConfig({ path: `${process.cwd()}/.env.local` });
-  if (!parsed.error && parsed.parsed?.DATABASE_URL) {
-    process.env.DATABASE_URL = parsed.parsed.DATABASE_URL;
+  for (const envFile of ['.env.local', '.env']) {
+    const parsed = dotenvConfig({ path: `${process.cwd()}/${envFile}` });
+    if (!parsed.error && parsed.parsed?.DATABASE_URL) {
+      process.env.DATABASE_URL = parsed.parsed.DATABASE_URL;
+      break;
+    }
   }
 }
 
@@ -362,8 +368,8 @@ async function countAudit(
 /**
  * Mint a VerificationToken directly in the DB (same shape the forgot-password
  * route writes: 32 random bytes hex, 1-hour expiry). Used as a DETERMINISTIC
- * fixture because /api/auth/forgot-password silently mints nothing once its
- * in-memory 5/hour bucket is full — including on legitimate requests (BUG-16).
+ * fixture for tests that need a live token regardless of the limiter budget
+ * (M01-02 now answers 429 when the bucket is full instead of a silent 200).
  */
 async function mintResetToken(identifier: string): Promise<string> {
   const token = require('crypto').randomBytes(32).toString('hex') as string;
@@ -376,6 +382,17 @@ async function mintResetToken(identifier: string): Promise<string> {
     );
   });
   return token;
+}
+
+/**
+ * Wipe every forgot-password limiter bucket (M01-02). The limiter runs
+ * DB-backed in this environment (RATE_LIMIT_DB=1), so a burst pin needs a
+ * clean window; in in-memory mode the table is simply empty and this no-ops.
+ */
+async function resetForgotBuckets(): Promise<void> {
+  await withDb(async (query) => {
+    await query('DELETE FROM rate_limit_buckets');
+  });
 }
 
 
@@ -478,7 +495,7 @@ test.describe('1. Functional & Business Logic', () => {
     const businessName = (await sidebar.locator('p').first().innerText()).trim();
     expect(businessName.length).toBeGreaterThan(0); // renamable tenant, read live
     await expect(sidebar.getByText('OWNER', { exact: true })).toBeVisible();
-    await expect(sidebar.getByText(USERS.owner.email)).toBeVisible();
+    await expect(page.locator('header:visible').getByText(USERS.owner.email)).toBeVisible();
     await expect(page.getByText(TXT.invalidCredentials)).toHaveCount(0);
   });
 
@@ -504,9 +521,9 @@ test.describe('1. Functional & Business Logic', () => {
     await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(/\/login/, { timeout: 20_000 });
     await expectLoginPage(page);
-    // NOTE (BUG-13): middleware.ts:161-163 SHOULD preserve ?callbackUrl=/dashboard
-    // so post-login navigation resumes. Observed (curl + browser): the redirect
-    // is a bare /login — the destination is LOST. Pinned in QA_BUG_REPORT.md.
+    // NOTE (BUG-13, FIXED by M01-06): src/proxy.ts preserves
+    // ?callbackUrl=<pathname> on the unauthenticated bounce, and the login
+    // form now honors a same-origin callbackUrl post-login (NEW-E).
   });
 
   test('1.5 API login resolves the documented session contract', async ({ browser }) => {
@@ -599,18 +616,17 @@ test.describe('2. Form Validation & Credentials Contract', () => {
     });
   });
 
-  test('2.5 a leaked reset token completes takeover with zero email delivery (BUG-11 pin)', async ({
+  test('2.5 a leaked reset token cannot complete takeover when delivery failed (BUG-11 FIXED)', async ({
     browser,
   }) => {
-    // BUG-11 contract: /api/auth/forgot-password hands the reset URL to
-    // sendPasswordResetEmail() and IGNORES the return value. With no
-    // RESEND_API_KEY the email is silently skipped while the token stays live
-    // for 1h and the API reports success. Any leak of that token (DB dump,
-    // logs, a future resend feature) then completes a FULL takeover with no
-    // inbox access — and the legitimate user is never notified. The token here
-    // is minted exactly as the route does (deterministic fixture; the endpoint
-    // itself silently mints nothing once its 5/hour bucket is full — BUG-16).
+    // M01-01: /api/auth/forgot-password now inspects sendPasswordResetEmail's
+    // result and DELETES the just-minted token when delivery fails. With no
+    // RESEND_API_KEY (this env), delivery always fails, so the route must
+    // leave ZERO live tokens for the identifier — a leaked/undelivered token
+    // can no longer complete a takeover. The public response stays neutral
+    // (anti-enumeration), and a PASSWORD_RESET_DELIVERY_FAILED row is written.
     const ctx = await browser.newContext({ baseURL: BASE_URL });
+    await resetForgotBuckets();
 
     const before = await dbUser(USERS.owner.email);
     expect(before).toBeTruthy();
@@ -622,30 +638,33 @@ test.describe('2. Form Validation & Credentials Contract', () => {
     expect(forgot.status()).toBe(200);
     expect(((await json(forgot)) as { message?: string })?.message).toBe(FORGOT_NEUTRAL_API);
 
-    const token = await mintResetToken(USERS.owner.email);
-
-    // Complete the takeover without ever opening an inbox.
-    const reset = await ctx.request.post('/api/auth/reset-password', {
-      data: { token, newPassword: 'rotated-pass-99', confirmPassword: 'rotated-pass-99' },
+    // The route minted then purged: no live token may remain for the owner.
+    const liveTokens = await withDb(async (query) => {
+      const res = await query(
+        'SELECT COUNT(*)::int AS n FROM verification_tokens WHERE identifier = $1',
+        [USERS.owner.email],
+      );
+      return res.rows[0]?.n as number;
     });
-    expect(reset.status()).toBe(200);
-    await apiSignIn(ctx, USERS.owner.email, 'rotated-pass-99');
-    // Detection via the session endpoint (Set-Cookie probes are unreliable on
-    // auto-followed 302s): a resolved user identity = takeover succeeded.
-    const takeoverSession = (await json(await ctx.request.get('/api/auth/session'))) as {
-      user?: { email?: string };
-    } | null;
-    const takeoverSucceeded = takeoverSession?.user?.email === USERS.owner.email;
 
-    // ── cleanup FIRST, so the failing assertion below cannot poison the run ──
+    // The delivery-failure signal is ledgered for ops.
+    const ownerId = (await getUserIdByEmail(USERS.owner.email))!;
+    const deliveryFailedRows = await countAudit('PASSWORD_RESET_DELIVERY_FAILED', {
+      actorId: ownerId,
+      since: RUN_START,
+    });
+
     await ctx.close();
-    await restoreOwnerPassword();
     await resetOwnerSessionVersionTo(versionBefore);
 
     expect(
-      takeoverSucceeded,
-      'Full account takeover achieved without email access — see BUG-11 in QA_BUG_REPORT.md',
-    ).toBe(false);
+      liveTokens,
+      'forgot-password must not leave an undelivered reset token live — see BUG-11',
+    ).toBe(0);
+    expect(
+      deliveryFailedRows,
+      'a failed reset-email delivery must write a PASSWORD_RESET_DELIVERY_FAILED row',
+    ).toBeGreaterThan(0);
   });
 
   test('2.6 reset-password UI: /reset-password without a token is an invalid link', async ({
@@ -710,7 +729,12 @@ test.describe('3. Cross-Module Cascade & Ledger Impact (DB-verified)', () => {
       return String(res.rows[0]?.t); // raw UTC wall-clock literal, no TZ applied
     });
 
-    const ctx = await authedContext(browser, 'owner'); // triggers exactly one login
+    // Force a REAL credentials login: authedContext reuses the cached
+    // storageState created by an earlier test, so it would NOT re-run
+    // authorize() and lastLoginAt would never advance. apiSignIn always POSTs
+    // /api/auth/callback/credentials → authorize() → the lastLoginAt update.
+    const ctx = await browser.newContext({ baseURL: BASE_URL });
+    await apiSignIn(ctx, USERS.owner.email, USERS.owner.password);
     await ctx.close();
 
     const rows = await countAudit('LOGIN_SUCCESS', { actorId: ownerId!, since: RUN_START });
@@ -829,8 +853,8 @@ test.describe('4. Audit Trail, Session Termination & Immutability', () => {
     await expect(page.locator('aside')).toBeVisible({ timeout: 30_000 });
     await hideNextDevOverlay(page);
 
-    // Scope to the sidebar: the desktop header renders a second "Log Out".
-    const logoutButton = page.locator('aside').getByRole('button', { name: 'Log Out' });
+    // The desktop header renders the Log Out control (StoreLayoutClient).
+    const logoutButton = page.locator('header:visible').getByRole('button', { name: 'Log Out' });
     await expect(logoutButton).toBeVisible();
     await logoutButton.click();
 
@@ -997,6 +1021,7 @@ test.describe('5. Chaos, Button Spamming & Race Conditions', () => {
       return res.rows[0]?.n as number;
     });
 
+    await resetForgotBuckets();
     const responses = await Promise.all([
       request.post('/api/auth/forgot-password', { data: { email: USERS.owner.email } }),
       request.post('/api/auth/forgot-password', {
@@ -1018,6 +1043,42 @@ test.describe('5. Chaos, Button Spamming & Race Conditions', () => {
       after,
       'concurrent forgot-password requests must not mint duplicate live tokens — see BUG-18',
     ).toBeLessThanOrEqual(Math.max(before, 1));
+  });
+
+  test('5.6 the 6th forgot-password burst request is throttled 429 + ledgered (BUG-16 FIXED)', async ({
+    request,
+  }) => {
+    // M01-02: the limiter no longer fakes success. After the 5/hour budget is
+    // consumed from one IP, the 6th request returns 429 with a Retry-After
+    // header and a PASSWORD_RESET_THROTTLED audit row — while the response
+    // body still says nothing about whether the email exists (anti-enumeration
+    // is IP-scoped, not email-scoped).
+    await resetForgotBuckets();
+
+    const unknown = `throttle-${Date.now().toString(36)}@ayurpos.test`;
+    for (let i = 0; i < 5; i++) {
+      const res = await request.post('/api/auth/forgot-password', { data: { email: unknown } });
+      expect(res.status(), `burst request ${i + 1} within budget`).toBe(200);
+    }
+
+    const sixth = await request.post('/api/auth/forgot-password', { data: { email: unknown } });
+    expect(sixth.status(), '6th burst request must be throttled').toBe(429);
+    expect(sixth.headers()['retry-after'], '429 must advertise Retry-After').toBeTruthy();
+    const body = (await sixth.json()) as {
+      success?: boolean;
+      error?: { code?: string; message?: string };
+    };
+    expect(body.success).toBe(false);
+    expect(body.error?.code).toBe('RATE_LIMITED');
+
+    const throttledRows = await countAudit('PASSWORD_RESET_THROTTLED', { since: RUN_START });
+    expect(
+      throttledRows,
+      'a throttled reset request must write a PASSWORD_RESET_THROTTLED row',
+    ).toBeGreaterThan(0);
+
+    // Restore a clean window so later tests are not poisoned by this burst.
+    await resetForgotBuckets();
   });
 
 
@@ -1434,10 +1495,10 @@ test.describe('10. Time-Travel, Token Expiry & Session Invalidation', () => {
       ]);
     });
 
-    // middleware.ts:207-231 invalidates JWTs whose version is LOWER than the
-    // DB's (route: /login?sessionExpired=true). Observed on a cold build: the
-    // request is served 200 — the gate never runs, so a forcibly-invalidated
-    // account keeps full access until its token expires (BUG-13 pin).
+    // src/proxy.ts (M01-06) invalidates JWTs whose version is LOWER than the
+    // DB's on the very NEXT request — the gate is fail-closed and cache-free,
+    // so a forcibly-invalidated account loses access immediately (BUG-5/13
+    // fixed; the bump below must terminate the live session deterministically).
     await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
     await page.waitForTimeout(1000);

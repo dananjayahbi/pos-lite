@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { denialRouteFor } from "@/lib/auth/page-guards";
 import { SubscriptionStatus } from "@/generated/prisma/client";
 import { getSubscriptionForTenant } from "@/lib/billing/subscription.service";
 import {
@@ -23,7 +24,7 @@ export default async function BillingPage({
 }) {
   const session = await auth();
   if (!session?.user?.id || !session.user.tenantId) {
-    redirect("/login");
+    redirect(denialRouteFor(session?.user));
   }
 
   const role = session.user.role;

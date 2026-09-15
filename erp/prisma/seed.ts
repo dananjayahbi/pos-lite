@@ -28,6 +28,15 @@ async function main() {
     throw error;
   }
 
+  // Seed/repair QA login accounts (M01-07 — BUG-54: these MUST exist even
+  // when demo-sales/audit sections skip; `update` repairs drift idempotently).
+  try {
+    await seedQaUsers();
+  } catch (error) {
+    console.error('Failed to seed QA users:', error);
+    throw error;
+  }
+
   // Seed sample catalog for Ayur Wellness Centre
   try {
     await seedSampleCatalog();
@@ -658,6 +667,138 @@ async function seedInitialStockMovements() {
   console.log(`  Skipped (zero qty): ${allVariantsCount - variants.length}`);
 }
 
+// ── QA Login Accounts (M01-07 / BUG-54) ─────────────────────────────────────
+//
+// Every account the QA suites (tests/01, 03, 20) sign in with is seeded HERE,
+// at top level, with REPAIR semantics: an idempotent re-seed fixes a stale
+// hash, a flipped isActive, a soft-delete, or a wrong tenantId instead of
+// preserving the drift. Previously cashier1/cashier2 were created only inside
+// seedDemoSales() (skipped once ≥20 sales exist) and dispatch only inside
+// seedHardwareAndAuditData() — so a dirty DB could leave QA logins broken with
+// no way to recover except manual SQL (BUG-54 cause 1).
+// `npx prisma db seed` is the canonical reset for QA environments.
+async function seedQaUsers() {
+  const primary = await prisma.tenant.findFirst({ where: { slug: 'dilani' } });
+  const lanka = await prisma.tenant.findFirst({ where: { slug: 'lanka-electronics' } });
+  if (!primary || !lanka) {
+    console.log('Tenants missing, skipping QA users seed');
+    return;
+  }
+
+  const cashierPermissions = [
+    'sale:create',
+    'sale:view',
+    'sale:hold',
+    'sale:resume',
+    'sale:receipt:reprint',
+    'shift:open',
+    'shift:close',
+    'shift:view',
+  ];
+
+  const qaUsers = [
+    {
+      email: 'superadmin@ayurpos.dev',
+      password: process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'changeme123!',
+      role: 'SUPER_ADMIN' as const,
+      tenantId: null,
+      permissions: [],
+    },
+    {
+      email: 'owner@dilani-ayurwellness.lk',
+      password: 'owner123!',
+      role: 'OWNER' as const,
+      tenantId: primary.id,
+      permissions: [],
+    },
+    {
+      email: 'owner@lanka-electronics.lk',
+      password: 'owner123!',
+      role: 'OWNER' as const,
+      tenantId: lanka.id,
+      permissions: [],
+    },
+    {
+      email: 'cashier1@ayurpos.dev',
+      password: 'cashier123!',
+      role: 'CASHIER' as const,
+      tenantId: primary.id,
+      permissions: cashierPermissions,
+    },
+    {
+      email: 'cashier2@ayurpos.dev',
+      password: 'cashier123!',
+      role: 'CASHIER' as const,
+      tenantId: primary.id,
+      permissions: cashierPermissions,
+    },
+    {
+      email: 'cashier@lanka-electronics.lk',
+      password: 'cashier123!',
+      role: 'CASHIER' as const,
+      tenantId: lanka.id,
+      permissions: cashierPermissions,
+    },
+    {
+      email: 'dispatch@ayurpos.dev',
+      password: 'dispatch123!',
+      role: 'DISPATCH_STAFF' as const,
+      tenantId: primary.id,
+      permissions: [],
+    },
+    // M03-08 (GAP-3): known-password accounts for the roles that previously
+    // had none, so FACTORY_MANAGER isolation and MANAGER/STOCK_CLERK scoping
+    // become browser-verifiable (req 2.4 Roles 2–3).
+    {
+      email: 'manager@ayurpos.dev',
+      password: 'manager123!',
+      role: 'MANAGER' as const,
+      tenantId: primary.id,
+      permissions: [],
+    },
+    {
+      email: 'stockclerk@ayurpos.dev',
+      password: 'stock123!',
+      role: 'STOCK_CLERK' as const,
+      tenantId: primary.id,
+      permissions: [],
+    },
+    {
+      email: 'factory@ayurpos.dev',
+      password: 'factory123!',
+      role: 'FACTORY_MANAGER' as const,
+      tenantId: primary.id,
+      permissions: [],
+    },
+  ];
+
+  for (const qa of qaUsers) {
+    const passwordHash = await bcrypt.hash(qa.password, 12);
+    await prisma.user.upsert({
+      where: { email: qa.email },
+      create: {
+        email: qa.email,
+        passwordHash,
+        role: qa.role,
+        tenantId: qa.tenantId,
+        permissions: qa.permissions,
+        isActive: true,
+      },
+      // REPAIR semantics (BUG-54): re-seed fixes drift, never preserves it.
+      update: {
+        passwordHash,
+        role: qa.role,
+        tenantId: qa.tenantId,
+        permissions: qa.permissions,
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+  }
+
+  console.log(`QA login accounts seeded/repaired: ${qaUsers.length}`);
+}
+
 // ── Seed Demo Sales ──────────────────────────────────────────────────────────
 
 async function seedDemoSales() {
@@ -675,44 +816,18 @@ async function seedDemoSales() {
     return;
   }
 
-  // ── Create 2 cashier users ──
-  const cashierPassword = await bcrypt.hash('cashier123!', 12);
-  const cashierPermissions = [
-    'sale:create',
-    'sale:view',
-    'sale:hold',
-    'sale:resume',
-    'sale:receipt:reprint',
-    'shift:open',
-    'shift:close',
-    'shift:view',
-  ];
-
-  const cashier1 = await prisma.user.upsert({
+  // ── QA cashier accounts are created/repaired by seedQaUsers() (M01-07);
+  // demo sales only needs their ids. ──
+  const cashier1 = await prisma.user.findUnique({
     where: { email: 'cashier1@ayurpos.dev' },
-    create: {
-      email: 'cashier1@ayurpos.dev',
-      passwordHash: cashierPassword,
-      role: 'CASHIER',
-      tenantId,
-      permissions: cashierPermissions,
-      isActive: true,
-    },
-    update: {},
   });
-
-  const cashier2 = await prisma.user.upsert({
+  const cashier2 = await prisma.user.findUnique({
     where: { email: 'cashier2@ayurpos.dev' },
-    create: {
-      email: 'cashier2@ayurpos.dev',
-      passwordHash: cashierPassword,
-      role: 'CASHIER',
-      tenantId,
-      permissions: cashierPermissions,
-      isActive: true,
-    },
-    update: {},
   });
+  if (!cashier1 || !cashier2) {
+    console.log('QA cashier users missing, skipping demo sales seed');
+    return;
+  }
 
   const cashiers = [cashier1, cashier2];
 
@@ -1793,26 +1908,8 @@ async function seedHardwareAndAuditData() {
     console.log('Appointments module already enabled, skipping');
   }
 
-  // ── 1c. Seed a DISPATCH_STAFF demo user for the primary tenant ──
-  const dispatchStaffEmail = 'dispatch@ayurpos.dev';
-  const existingDispatch = await prisma.user.findFirst({
-    where: { tenantId, email: dispatchStaffEmail, deletedAt: null },
-  });
-  if (!existingDispatch) {
-    await prisma.user.create({
-      data: {
-        email: dispatchStaffEmail,
-        passwordHash: await bcrypt.hash('dispatch123!', 12),
-        role: 'DISPATCH_STAFF',
-        tenantId,
-        permissions: [],
-        isActive: true,
-      },
-    });
-    console.log(`Created DISPATCH_STAFF user: ${dispatchStaffEmail}`);
-  } else {
-    console.log('DISPATCH_STAFF user already exists, skipping');
-  }
+  // ── 1c. DISPATCH_STAFF demo user is seeded/repaired by seedQaUsers()
+  // (M01-07) — no creation here so a hardware-section skip can't lose it. ──
 
   // Fetch demo users
   const owner = await prisma.user.findFirst({

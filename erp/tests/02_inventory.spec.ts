@@ -63,6 +63,9 @@ async function waitForHydratedForm(page: Page, selector = 'form', timeout = 30_0
 
 /** Log in as the owner and land on the dashboard. */
 async function loginAsOwner(page: Page) {
+  // A signed-in /login now bounces to the role default (M01-05/BUG-17), so
+  // every helper login starts from a logged-out context.
+  await page.context().clearCookies();
   await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded' });
   await waitForHydratedForm(page);
   await page.getByLabel('Email address').fill(OWNER.email);
@@ -534,6 +537,9 @@ test.describe.serial('Module 2 expansion — API surface, security & chaos (2026
     b?.data?.id ?? b?.data?.product?.id ?? b?.product?.id ?? b?.id;
 
   async function login(page: Page, email: string, password: string) {
+    // A signed-in /login now bounces to the role default (M01-05/BUG-17), so
+    // every helper login starts from a logged-out context.
+    await page.context().clearCookies();
     await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded' });
     await waitForHydratedForm(page);
     await page.getByLabel('Email address').fill(email);
@@ -546,8 +552,13 @@ test.describe.serial('Module 2 expansion — API surface, security & chaos (2026
       await expect(page).toHaveURL(/\/(dashboard|pos)/, { timeout: 8_000 });
     } catch {
       const choice = page.getByRole('button', { name: /open in this tab/i }).first();
-      await choice.waitFor({ state: 'visible', timeout: 30_000 });
-      await choice.click();
+      try {
+       await choice.waitFor({ state: 'visible', timeout: 15_000 });
+       await choice.click();
+     } catch {
+       /* slow cold-compile sign-in for a non-cashier role — no dialog; *
+        * the trailing URL check below resolves the race. */
+     }
       await expect(page).toHaveURL(/\/(dashboard|pos)/, { timeout: 30_000 });
     }
     // page.request shares the session cookie with the browser context.

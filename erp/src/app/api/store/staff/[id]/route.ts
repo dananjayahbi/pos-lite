@@ -4,7 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getStaffById, updateStaff } from '@/lib/services/staff.service';
 import { UpdateStaffSchema } from '@/lib/validators/staff.validators';
-import type { UpdateStaffInput } from '@/lib/validators/staff.validators';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function GET(
   _request: Request,
@@ -113,18 +113,18 @@ export async function PATCH(
       );
     }
 
-    const staff = await updateStaff(tenantId, id, parsed.data as UpdateStaffInput);
+    const staff = await updateStaff(tenantId, id, parsed.data, {
+      id: session.user.id,
+      role: session.user.role,
+      tenantId,
+    });
 
     return NextResponse.json({ success: true, data: staff });
   } catch (error) {
+    // M03-02: security-relevant audit failures rethrow → toErrorResponse 500
+    // (an unaudited privilege change must not report success). M03-06: an
+    // email-change collision (P2002) surfaces as a typed 409, never a 500.
     const message = error instanceof Error ? error.message : '';
-
-    if (message === 'Staff member not found') {
-      return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message } },
-        { status: 404 },
-      );
-    }
 
     if (message === 'Cannot assign SUPER_ADMIN role') {
       return NextResponse.json(
@@ -133,10 +133,6 @@ export async function PATCH(
       );
     }
 
-    console.error('PATCH /api/store/staff/[id] error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'staff update');
   }
 }

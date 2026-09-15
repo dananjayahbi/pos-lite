@@ -36,6 +36,9 @@ const AUDIT_PAGE = `${BASE}/settings/audit-log`;
 
 /** Login via the standard UI form (handles the cashier-only Open POS dialog). */
 async function login(page: Page, email: string, password: string): Promise<void> {
+  // A signed-in /login now bounces to the role default (M01-05/BUG-17), so
+  // every helper login starts from a logged-out context.
+  await page.context().clearCookies();
   await page.goto(`${BASE}/login`);
   await page.fill('input[name="email"]', email);
   await page.fill('input[name="password"]', password);
@@ -488,9 +491,14 @@ test.describe('§7 Network Resilience', () => {
     expect(res.status()).toBe(400);
   });
 
-  test('N4 — internal middleware rejects missing tenantId for checkTenantStatus', async ({ page }) => {
+  test('N4 — internal middleware answers missing tenantId with 200 {status:null} (NEW-B)', async ({ page }) => {
+    // M01-06/NEW-B: a missing/invalid tenantId is an explicit "no tenant"
+    // answer (200 {status:null}), NOT a 400 — the old 400 turned the
+    // proxy's `if (res.ok)` guard into a silent skip (fail-open).
     const res = await page.request.post(INTERNAL_API, { data: { action: 'checkTenantStatus' } });
-    expect(res.status()).toBe(400);
+    expect(res.status()).toBe(200);
+    const body = (await res.json()) as { status?: string | null };
+    expect(body.status).toBeNull();
   });
 
   test('N5 — audit page survives a mocked 500 from the audit API (graceful UI)', async ({ page }) => {
@@ -529,7 +537,8 @@ test.describe('§8 Security, RBAC & Multi-Branch Isolation', () => {
     const res = await page.request.get(AUDIT_API);
     expect(res.status()).toBe(403);
     // UI: page guard should deny (redirect or error, never the audit table).
-    await login(page, CASHIER.email, CASHIER.password);
+    // NOTE: no second login() — a signed-in /login now bounces to the role
+    // default (M01-05/BUG-17), so re-logging on the same page is a no-op.
     const resp = await page.goto(AUDIT_PAGE);
     const url = page.url();
     const denied = !url.includes('/settings/audit-log') || (resp?.status() ?? 200) >= 400;

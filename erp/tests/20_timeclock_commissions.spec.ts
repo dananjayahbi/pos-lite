@@ -14,6 +14,9 @@ async function json(response: Response) {
 }
 
 async function login(page: Page, credentials = OWNER) {
+  // A signed-in /login now bounces to the role default (M01-05/BUG-17), so
+  // every helper login starts from a logged-out context.
+  await page.context().clearCookies();
   await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => {
     const input = document.querySelector('#email');
@@ -23,6 +26,17 @@ async function login(page: Page, credentials = OWNER) {
   await page.getByLabel('Email address').fill(credentials.email);
   await page.getByLabel('Password').fill(credentials.password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+
+  // CASHIER sign-in raises the intentional "Open POS" interstitial (OBS-1,
+  // login/page.tsx): the dialog mounts instead of navigating. Dismiss it into
+  // the current tab. Non-cashier roles never raise it, so the wait times out.
+  const openHere = page.getByRole('button', { name: /Open in this tab/i });
+  try {
+    await openHere.waitFor({ state: 'visible', timeout: 4_000 });
+    await openHere.click();
+  } catch {
+    /* no interstitial for this role */
+  }
 
   await expect(page).toHaveURL(/\/(dashboard|pos)/, { timeout: 20_000 });
 }
@@ -188,13 +202,26 @@ test.describe('Module 20 - Timeclock & Staff Commissions', () => {
     expect([400, 500]).toContain(invalid.status());
   });
 
-  test('T5 RBAC blocks cashiers from timeclock and commission actions', async ({ page }) => {
+  test('T5 RBAC blocks cashiers from timeclock and commission actions', async ({ page, browser }) => {
+    // A CASHIER cannot list staff (staff:view is denied — that IS the RBAC
+    // contract), so resolve the two user ids through an OWNER context first,
+    // then drive the cashier's own probes with them.
+    const ownerCtx = await browser.newContext({ baseURL: BASE_URL });
+    const ownerPage = await ownerCtx.newPage();
+    await login(ownerPage, OWNER);
+    const ownerStaff = await fetchStaff(ownerPage);
+    const cashierId = ownerStaff.find((u) => u.email === CASHIER.email)?.id ?? '';
+    const ownerId = ownerStaff.find((u) => u.email === OWNER.email)?.id ?? '';
+    await ownerCtx.close();
+    expect(cashierId, 'cashier id resolvable via owner').toBeTruthy();
+    expect(ownerId, 'owner id resolvable via owner').toBeTruthy();
+
     await login(page, CASHIER);
 
-    const ownClock = await page.request.get('/api/store/timeclock?userId=' + (await (await fetchStaff(page)).find((u) => u.email === CASHIER.email)?.id ?? ''));
+    const ownClock = await page.request.get('/api/store/timeclock?userId=' + cashierId);
     expect(ownClock.status()).toBe(200);
 
-    const otherClock = await page.request.get('/api/store/timeclock?userId=' + (await (await fetchStaff(page)).find((u) => u.email === OWNER.email)?.id ?? ''));
+    const otherClock = await page.request.get('/api/store/timeclock?userId=' + ownerId);
     expect(otherClock.status()).toBe(403);
 
     const commissionSummary = await page.request.get('/api/store/staff/commissions');
@@ -202,7 +229,7 @@ test.describe('Module 20 - Timeclock & Staff Commissions', () => {
 
     const payout = await page.request.post('/api/store/staff/commissions/payout', {
       data: {
-        userId: (await (await fetchStaff(page)).find((u) => u.email === CASHIER.email)?.id ?? ''),
+        userId: cashierId,
         periodStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
         periodEnd: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 59, 999).toISOString(),
       },

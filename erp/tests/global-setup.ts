@@ -52,4 +52,34 @@ export default async function globalSetup() {
     }
   }
   await ctx.dispose();
+
+  // M01-02 determinism: wipe the DB-backed forgot-password buckets so each
+  // suite run starts from a full budget (the 6th-burst-request → 429
+  // contract must not inherit a previous run's window). Best-effort —
+  // harmless when the limiter runs in in-memory mode (table stays empty).
+  try {
+    const { config: dotenvConfig } = require('dotenv') as typeof import('dotenv');
+    let url = process.env.DATABASE_URL;
+    if (!url) {
+      for (const envFile of ['.env.local', '.env']) {
+        const parsed = dotenvConfig({ path: `${process.cwd()}/${envFile}` });
+        if (!parsed.error && parsed.parsed?.DATABASE_URL) {
+          url = parsed.parsed.DATABASE_URL;
+          break;
+        }
+      }
+    }
+    if (url) {
+      const { Client } = require('pg') as typeof import('pg');
+      const client = new Client({ connectionString: url });
+      await client.connect();
+      try {
+        await client.query('DELETE FROM rate_limit_buckets');
+      } finally {
+        await client.end();
+      }
+    }
+  } catch (err) {
+    console.warn('[globalSetup] rate-limit bucket reset skipped:', String(err));
+  }
 }

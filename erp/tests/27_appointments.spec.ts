@@ -72,6 +72,9 @@ const RUN = (g.__m27run ??= `qa-m27-${Date.now()}`);
 const DAY_BASE = 30 + (Number(RUN.slice(-7)) % 3000);
 
 async function login(page: Page, email: string, password: string): Promise<void> {
+  // A signed-in /login now bounces to the role default (M01-05/BUG-17), so
+  // every helper login starts from a logged-out context.
+  await page.context().clearCookies();
   await page.goto(`${BASE}/login`);
   await page.fill('input[name="email"]', email);
   await page.fill('input[name="password"]', password);

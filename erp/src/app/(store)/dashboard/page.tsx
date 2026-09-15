@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@/lib/auth';
+import { denialRouteFor } from '@/lib/auth/page-guards';
 import { prisma } from '@/lib/prisma';
 import { getDefaultRouteForRole } from '@/lib/utils/default-route';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -304,7 +305,7 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
 export default async function StoreDashboardPage() {
   const session = await auth();
   if (!session?.user?.tenantId) {
-    redirect('/login');
+    redirect(denialRouteFor(session?.user));
   }
 
   const defaultRoute = getDefaultRouteForRole(session.user.role);

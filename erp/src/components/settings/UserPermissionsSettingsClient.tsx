@@ -28,12 +28,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   ALL_PERMISSIONS,
+  ASSIGNABLE_ROLES,
   PERMISSIONS,
   ROLE_PERMISSIONS,
+  type AssignableRole,
   type PermissionKey,
 } from '@/lib/constants/permissions';
 
-type AssignableRole = 'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK' | 'DISPATCH_STAFF' | 'FACTORY_MANAGER';
+// M03-01 (BUG-3): AssignableRole + ASSIGNABLE_ROLES now come from the shared
+// constant — the same list the API validator builds its enum from.
 
 interface StaffMember {
   id: string;
@@ -52,7 +55,7 @@ const ROLE_COLORS: Record<AssignableRole, string> = {
   FACTORY_MANAGER: 'bg-mist text-espresso',
 };
 
-const ASSIGNABLE_ROLES: AssignableRole[] = ['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK', 'DISPATCH_STAFF', 'FACTORY_MANAGER'];
+// M03-01 (BUG-3): shared source of truth (imported above) — no local list.
 
 const GROUP_LABELS: Record<keyof typeof PERMISSIONS, string> = {
   SALE: 'Sales',

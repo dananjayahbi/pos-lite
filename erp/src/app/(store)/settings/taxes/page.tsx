@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
+import { denialRouteFor } from '@/lib/auth/page-guards';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
@@ -9,7 +10,7 @@ export const metadata = { title: 'Tax Settings | AyurPOS' };
 
 export default async function TaxSettingsPage() {
   const session = await auth();
-  if (!session?.user?.tenantId) redirect('/login');
+  if (!session?.user?.tenantId) redirect(denialRouteFor(session?.user));
   if (!hasPermission(session.user, PERMISSIONS.SETTINGS.manageTax)) redirect('/dashboard');
 
   const tenant = await prisma.tenant.findUniqueOrThrow({

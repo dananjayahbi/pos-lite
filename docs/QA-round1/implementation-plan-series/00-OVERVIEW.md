@@ -85,13 +85,13 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 ### M01 — Authentication & Session
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| M01-01 | BUG-11 forgot-password silent email skip + live-token takeover chain | P1 | DOC |
-| M01-02 | BUG-16 forgot-password limiter: in-memory, fake 200, no audit | P2 | DOC |
-| M01-03 | BUG-18 concurrent forgot-password mints multiple live tokens | P2 | DOC |
-| M01-04 | BUG-12 sign-out is audit-blind (LOGOUT never written) | P2 | DOC |
-| M01-05 | Login UI residue: BUG-14/15 hardening + BUG-17 signed-in `/login` + NEW-E callbackUrl | P2/P3 | DOC |
-| M01-06 | Middleware hardening: `proxy.ts` migration + fail-closed gates (corrected BUG-13, NEW-B) | P1 | DOC |
-| M01-07 | BUG-54 cashier login reliability: seed idempotency + lockout + cookie-name diagnosis | P1 | DOC |
+| M01-01 | BUG-11 forgot-password silent email skip + live-token takeover chain | P1 | **GATE** (2026-09-15 W1: spec 01 2.5 flipped — undelivered token purged + `PASSWORD_RESET_DELIVERY_FAILED`; email.service returns `EmailSendResult`) |
+| M01-02 | BUG-16 forgot-password limiter: in-memory, fake 200, no audit | P2 | **GATE** (2026-09-15 W1: spec 01 5.6 new — 6th burst → 429 + `Retry-After` + `PASSWORD_RESET_THROTTLED`; DB-backed bucket `RateLimitBucket` + in-memory dev fallback; 5 Vitest) |
+| M01-03 | BUG-18 concurrent forgot-password mints multiple live tokens | P2 | **GATE** (2026-09-15 W1: spec 01 5.5 green; `reset-token.ts` $transaction delete+create + P2002 retry; 3 Vitest) |
+| M01-04 | BUG-12 sign-out is audit-blind (LOGOUT never written) | P2 | **GATE** (2026-09-15 W1: spec 01 4.5 flipped — `/api/auth/logout-audit` + shared client helper at all 3 sign-out sites; events.signOut verified firing but route path chosen for IP/UA parity) |
+| M01-05 | Login UI residue: BUG-14/15 hardening + BUG-17 signed-in `/login` + NEW-E callbackUrl | P2/P3 | **GATE** (2026-09-15 W1: spec 01 1.6/5.4/7.6 green; server-side authed redirect, sync submit-guard, try/catch signIn, same-origin callbackUrl; OBS-1 dialog kept verbatim) |
+| M01-06 | Middleware hardening: `proxy.ts` migration + fail-closed gates (corrected BUG-13, NEW-B) | P1 | **GATE** (2026-09-15 W1: `src/proxy.ts` live (dev log `proxy.ts: 4-6ms`, zero deprecation warnings); spec 01 10.3 deterministic; unauth API→401 / page→/login?callbackUrl curl-verified; NEW-B bridge 200{status:null}; spec 08 B1/B2 pins flipped. Post-W1 sweep: specs 04/05/06/30/35 re-run green (35 N4 flipped to NEW-B contract); B1/B2 gates live-verified by proxy probes — suspended owner → /suspended + TENANT_SUSPENDED 403, SUPER_ADMIN /dashboard → /superadmin/dashboard) |
+| M01-07 | BUG-54 cashier login reliability: seed idempotency + lockout + cookie-name diagnosis | P1 | **GATE** (2026-09-15 W1: spec 20 T0–T5 green after force-reset+seed; `seedQaUsers()` top-level with REPAIR semantics; `useSecureCookies` dev-deterministic; 10 QA accounts verified in DB) |
 
 ### M02 — Products & Variants
 | ID | Title | Sev | Status |
@@ -105,14 +105,14 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 ### M03 — RBAC, Users & Permissions
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| M03-01 | BUG-3 DISPATCH_STAFF missing from staff role validator + screen disagreement | P1 | DOC |
-| M03-02 | BUG-4 + NEW-A staff audit rows: no actor + fire-and-forget writes | P1 | DOC |
-| M03-03 | BUG-5 force-logout fail-open: dual caches + typeof guard | P1 | DOC |
-| M03-04 | BUG-6 privilege changes never bump sessionVersion (revocations don't apply) | P1 | DOC |
-| M03-05 | BUG-7 commissionRate magnitude unvalidated → 500 | P2 | DOC |
-| M03-06 | BUG-8 concurrent staff create → 500 instead of 409 | P2 | DOC |
-| M03-07 | BUG-9 SUPER_ADMIN stranded on `/login` by page guard | P3 | DOC |
-| M03-08 | GAP-2/GAP-3 staff password lifecycle (set-password/invite + role-verification seeds) | P1 | DOC |
+| M03-01 | BUG-3 DISPATCH_STAFF missing from staff role validator + screen disagreement | P1 | **GATE** (2026-09-15 W1: spec 03 11.1 green; shared `ASSIGNABLE_ROLES` in permissions.ts drives validator + both dropdowns; 6 Vitest enum-contract) |
+| M03-02 | BUG-4 + NEW-A staff audit rows: no actor + fire-and-forget writes | P1 | **GATE** (2026-09-15 W1: spec 03 4.3 green — real actorId/actorRole; `writeAuditLog` durable variant rethrows → route 500; force-logout migrated; 3 Vitest) |
+| M03-03 | BUG-5 force-logout fail-open: dual caches + typeof guard | P1 | **GATE** (2026-09-15 W1: spec 03 10.2 green with 6.5s→0.5s wait — cache-free gate; response carries new sessionVersion + revokedAt) |
+| M03-04 | BUG-6 privilege changes never bump sessionVersion (revocations don't apply) | P1 | **GATE** (2026-09-15 W1: spec 03 4.4 + 8.11 green — role/isActive/permissions diff → increment in same update; tests/03 `invalidateStorageState` pattern added) |
+| M03-05 | BUG-7 commissionRate magnitude unvalidated → 500 | P2 | **GATE** (2026-09-15 W1: spec 03 2.2 + 9.3 green — D3 0–999.99 refine; 4 Vitest) |
+| M03-06 | BUG-8 concurrent staff create → 500 instead of 409 | P2 | **GATE** (2026-09-15 W1: spec 03 5.1 green — insert-and-map via new XC-06 `withUniqueGuard`; PATCH email collision mapped too; 5 Vitest) |
+| M03-07 | BUG-9 SUPER_ADMIN stranded on `/login` by page guard | P3 | **GATE** (2026-09-15 W1: spec 03 8.5 green — proxy funnel primary + `denialRouteFor` sweep across all 35 (store) pages) |
+| M03-08 | GAP-2/GAP-3 staff password lifecycle (set-password/invite + role-verification seeds) | P1 | **GATE** (2026-09-15 W1: new spec 03 §12 (12.1/12.2) green — `/api/store/staff/[id]/password` (sessionVersion bump + durable audit), create-dialog initial password, manager/stockclerk/factory verification seeds + TEST_CREDENTIALS.md; invite email deferred (INF-03, provider-less env) |
 
 ### M04 — Categories & Brands
 | ID | Title | Sev | Status |
@@ -246,7 +246,7 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 | XC-03 | Page/API permission-gate consistency (OBS-4/8/41/51/52/80; single guard helper) | P2 | DOC |
 | XC-04 | Input sanitization / stored-HTML policy (BUG-76/77/94 family; React escaping vs schema strip) | P2 | DOC |
 | XC-05 | Soft-delete / restore / deprovision policy (BUG-20, OBS-10, GAP-4, OBS-45/63) | P2 | DOC |
-| XC-06 | DB unique constraints + race-hardening sweep (BUG-8/27/30/31/39/48/64/92/98 + token index) | P1 | DOC |
+| XC-06 | DB unique constraints + race-hardening sweep (BUG-8/27/30/31/39/48/64/92/98 + token index) | P1 | **PARTIAL (W1 2026-09-15):** shared primitives landed with M03-06 — `src/lib/api/race-guard.ts` (`withUniqueGuard`, `lockingTx`, `lockForUpdate`, `isUniqueViolation`) + M01-03 transactional mint (BUG-18 leg). Per-entity constraint migrations (Customer/Supplier/Delivery uniques, appointment EXCLUDE) execute with their module docs (W2–W7) per §2.5 |
 
 ### Client-requirement gaps (REQ) — unbuilt/partial features from `QA_CLIENT_REQ.md`
 | ID | Req | Title | Status |

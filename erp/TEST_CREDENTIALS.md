@@ -77,6 +77,38 @@
 
 ---
 
+## Business 1 — Additional Roles (M03-08 verification accounts)
+
+Known-password accounts for the roles that previously had none, so
+FACTORY_MANAGER isolation and MANAGER / STOCK_CLERK scoping are
+browser-verifiable (req 2.4 Roles 2–3). All land on the Ayur Wellness Centre
+tenant and are repaired (hash/role/active/tenant) on every `prisma db seed`.
+
+| Field    | manager                   | stockclerk                   | factory                   |
+| -------- | ------------------------- | ---------------------------- | ------------------------- |
+| Email    | `manager@ayurpos.dev`     | `stockclerk@ayurpos.dev`     | `factory@ayurpos.dev`     |
+| Password | `manager123!`             | `stock123!`                  | `factory123!`             |
+| Role     | `MANAGER`                 | `STOCK_CLERK`                | `FACTORY_MANAGER`         |
+| Lands on | `/dashboard`              | `/dashboard`                 | `/factory`                |
+
+> `FACTORY_MANAGER` is denied `/pos`, `/sales`, `/returns`, `/reports`,
+> `/customers`, `/expenses`, `/billing`, `/staff`, and
+> `/delivery/reconciliation` (see `FACTORY_FORBIDDEN_PATH_PREFIXES` in
+> `src/proxy.ts`) — direct-URL attempts bounce to `/factory`.
+
+---
+
+## Staff password lifecycle (M03-08 / GAP-2)
+
+Newly created staff accounts get an unusable random password server-side.
+To make an account sign-in-capable, an OWNER/MANAGER with `staff:manage`
+either supplies an **Initial Password** in the create dialog, or calls
+`POST /api/store/staff/<id>/password` with `{ "newPassword": "..." }` (≥8
+chars). Setting a password bumps the account's `sessionVersion`, so any live
+session of that user is terminated on their next request.
+
+---
+
 ## Notes
 
 - The system is configured for exactly **2 businesses** (Ayur Wellness Centre and Lanka Electronics).

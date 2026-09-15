@@ -1,5 +1,16 @@
 import { Resend } from 'resend';
 
+/**
+ * Structured send outcome (M01-01 / INF-03 step 4): callers must be able to
+ * distinguish "provider not configured" from "provider rejected the send"
+ * without parsing logs. `delivered` is the only field most callers need.
+ */
+export interface EmailSendResult {
+  delivered: boolean;
+  /** 'provider-not-configured' | 'provider-error' when delivered === false */
+  reason?: string;
+}
+
 function getResendClient(): Resend | null {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -10,11 +21,15 @@ function getResendClient(): Resend | null {
   return new Resend(apiKey);
 }
 
-export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+export async function sendEmail(
+  to: string,
+  subject: string,
+  html: string,
+): Promise<EmailSendResult> {
   try {
     const resend = getResendClient();
     if (!resend) {
-      return false;
+      return { delivered: false, reason: 'provider-not-configured' };
     }
 
     const fromAddress = process.env.EMAIL_FROM_ADDRESS || 'noreply@ayurpos.dev';
@@ -26,14 +41,17 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
       html,
     });
 
-    return true;
+    return { delivered: true };
   } catch (error) {
     console.error('Failed to send email:', error);
-    return false;
+    return { delivered: false, reason: 'provider-error' };
   }
 }
 
-export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<boolean> {
+export async function sendPasswordResetEmail(
+  to: string,
+  resetUrl: string,
+): Promise<EmailSendResult> {
   const html = `
     <div style="font-family: Inter, Arial, sans-serif; color: #1A1210; line-height: 1.5;">
       <h2 style="font-family: 'Playfair Display', Georgia, serif; color: #3A2D28; margin-bottom: 8px;">AyurPOS</h2>

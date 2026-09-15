@@ -513,6 +513,19 @@ model VerificationToken {
   @@map("verification_tokens")
 }
 
+// M01-02: persistent sliding-window rate-limit buckets (forgot-password).
+// Mirrors the in-memory implementation: `timestamps` holds epoch-ms hits
+// inside the current window. In-memory remains the dev fallback; this table
+// survives restarts and scales horizontally.
+model RateLimitBucket {
+  id        String   @id @default(cuid())
+  bucketKey String   @unique @map("bucket_key") // "<action>:<ip>"
+  timestamps Json    @default("[]")
+  updatedAt DateTime @default(now()) @updatedAt @map("updatedAt")
+
+  @@map("rate_limit_buckets")
+}
+
 // ── Audit ────────────────────────────────────────────────────────────────────
 
 model AuditLog {

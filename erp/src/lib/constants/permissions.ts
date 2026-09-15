@@ -189,10 +189,28 @@ const managerExcluded = new Set<PermissionKey>([
   PERMISSIONS.REPORT.viewZeroValueReport,
 ]);
 
-export const ROLE_PERMISSIONS: Record<
-  'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK' | 'DISPATCH_STAFF' | 'FACTORY_MANAGER',
-  PermissionKey[]
-> = {
+export type AssignableRole = Exclude<UserRole, 'SUPER_ADMIN'>;
+
+/**
+ * M03-01 (BUG-3) — SINGLE SOURCE OF TRUTH for roles an operator may be
+ * assigned. This tuple and ROLE_PERMISSIONS' keys are tied together by the
+ * `Record<AssignableRole, …>` type, so a role cannot exist in one list and be
+ * missing from the other. SUPER_ADMIN is excluded on purpose: the platform
+ * role is never assignable through the tenant staff API (the escalation
+ * guard is a passing QA contract — tests/03 8.7/8.8). The staff validator and
+ * both role dropdowns (staff page + settings editor) all consume this, which
+ * makes a UI↔API enum disagreement structurally impossible.
+ */
+export const ASSIGNABLE_ROLES: AssignableRole[] = [
+  'OWNER',
+  'MANAGER',
+  'CASHIER',
+  'STOCK_CLERK',
+  'DISPATCH_STAFF',
+  'FACTORY_MANAGER',
+];
+
+export const ROLE_PERMISSIONS: Record<AssignableRole, PermissionKey[]> = {
   OWNER: [...ALL_PERMISSIONS],
   MANAGER: ALL_PERMISSIONS.filter((permission) => !managerExcluded.has(permission)),
   CASHIER: [
@@ -253,6 +271,11 @@ export const ROLE_PERMISSIONS: Record<
   ],
 };
 
+/**
+ * Resolve the effective permission set for a user: role defaults from the
+ * matrix plus any explicitly assigned overrides (deduplicated). SUPER_ADMIN
+ * gets the full store set (platform controls live in /api/admin/*).
+ */
 export function getEffectivePermissions(
   role: UserRole | undefined,
   assignedPermissions: unknown,

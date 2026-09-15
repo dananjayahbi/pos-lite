@@ -132,6 +132,9 @@ async function gotoTenantDetail(page: Page, tenantId: string, tenantName: string
  * URL-vs-dialog like the Module 02–07 specs.
  */
 async function login(page: Page, email: string, password: string) {
+  // A signed-in /login now bounces to the role default (M01-05/BUG-17), so
+  // every helper login starts from a logged-out context.
+  await page.context().clearCookies();
   await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded' });
   await waitForHydratedInput(page, '#email');
   await page.getByLabel('Email address').fill(email);
@@ -141,8 +144,13 @@ async function login(page: Page, email: string, password: string) {
     await expect(page).toHaveURL(/\/(dashboard|superadmin\/dashboard|pos)/, { timeout: 8_000 });
   } catch {
     const choice = page.getByRole('button', { name: /open in this tab/i }).first();
-    await choice.waitFor({ state: 'visible', timeout: 30_000 });
-    await choice.click();
+    try {
+     await choice.waitFor({ state: 'visible', timeout: 15_000 });
+     await choice.click();
+   } catch {
+     /* slow cold-compile sign-in for a non-cashier role — no dialog; *
+      * the trailing URL check below resolves the race. */
+   }
     await expect(page).toHaveURL(/\/(dashboard|superadmin\/dashboard|pos)/, { timeout: 30_000 });
   }
 }
@@ -280,10 +288,12 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     const overview = page.locator('table');
     await expect(overview.first()).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText('Business Name').first()).toBeVisible();
-    // Both seeded tenants appear with slug + status badges.
-    await expect(page.getByRole('link', { name: 'Ayur Wellness Centre' })).toBeVisible();
-    await expect(page.getByText('dilani', { exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Lanka Electronics' })).toBeVisible();
+    // Both seeded tenants appear with slug + status badges. Scope the name
+    // links to the overview table — the sidebar nav also renders a tenant
+    // link, so a bare getByRole('link') is a strict-mode violation (2 matches).
+    await expect(overview.getByRole('link', { name: 'Ayur Wellness Centre' })).toBeVisible();
+    await expect(page.getByText('dilani', { exact: true }).first()).toBeVisible();
+    await expect(overview.getByRole('link', { name: 'Lanka Electronics' })).toBeVisible();
 
     // Overview rows link to the tenant detail pages.
     const detailLinks = page.locator('a[href^="/superadmin/tenants/"]');
@@ -304,7 +314,8 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     await page.goto(`${BASE_URL}/superadmin/tenants?search=lanka`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Businesses' })).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('tbody tr')).toHaveCount(1);
-    await expect(page.getByRole('link', { name: 'Lanka Electronics' })).toBeVisible();
+    // Scope to tbody — the sidebar nav also renders tenant links.
+    await expect(page.locator('tbody').getByRole('link', { name: 'Lanka Electronics' })).toBeVisible();
 
     // Status filter with zero matches → empty-state row.
     await page.goto(`${BASE_URL}/superadmin/tenants?status=SUSPENDED`, { waitUntil: 'domcontentloaded' });
@@ -318,7 +329,7 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     );
     await expect(page.getByRole('heading', { name: 'Businesses' })).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('tbody tr')).toHaveCount(1);
-    await expect(page.getByRole('link', { name: 'Ayur Wellness Centre' })).toBeVisible();
+    await expect(page.locator('tbody').getByRole('link', { name: 'Ayur Wellness Centre' })).toBeVisible();
   });
 
   test('F3 tenant detail page renders stats + settings form + admin actions + module toggles', async ({ page }) => {
@@ -1287,22 +1298,31 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
 
   // ── Defect pins (BUG-35 / BUG-36 / BUG-37 / BUG-38 companions) ────────────
 
-  test('B1 BUG-35 pin: suspended tenant owner can still log in and use the app in dev', async ({ page }) => {
-    // DEFECT PIN: middleware (the suspension gate) never executes in the
-    // Next 16 dev server (BUG-13 root cause), and no page-level guard
-    // re-checks tenant status — so suspension does NOT block logins or app
-    // usage locally. Pin asserts CURRENT behavior (BUG-35); when proxy.ts
-    // lands, flip to expect /suspended.
+  test('B1 BUG-35 pin: suspended tenant owner is gated out of the app (M01-06 FIXED)', async ({ page }) => {
+    // M01-06 made src/proxy.ts fail-closed and added the API/page suspension
+    // gate. Logging in is still allowed (suspension is not an auth failure),
+    // but the first store navigation is redirected to /suspended. The old
+    // dev pin asserted the owner could browse /dashboard — that was BUG-35.
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
     expect(
       (await page.request.post(`/api/superadmin/tenants/${state.tenant2Id}/suspend`)).status(),
     ).toBe(200);
 
-    await login(page, OWNER_TENANT2.email, OWNER_TENANT2.password);
-    expect(page.url(), 'suspended-tenant owner logs in anyway (dev pin)').toMatch(/\/dashboard/);
-    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(3_000);
-    expect(page.url(), 'suspended-tenant owner browses the app (dev pin)').toMatch(/\/dashboard/);
+    // Sign in as the now-suspended tenant's owner WITHOUT the login() helper
+    // (it waits for a workspace URL; a suspended session lands on /suspended).
+    // Clear the SUPER_ADMIN session first — a signed-in /login bounces (1.6).
+    await page.context().clearCookies();
+    await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded' });
+    await page.getByLabel('Email address').fill(OWNER_TENANT2.email);
+    await page.getByLabel('Password').fill(OWNER_TENANT2.password);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(page, 'suspended-tenant owner gated to /suspended').toHaveURL(/\/suspended/, {
+      timeout: 20_000,
+    });
+
+    // Tenant-workspace APIs are 403 JSON (data-level half of M08-01).
+    const api = await page.request.get('/api/store/customers');
+    expect(api.status(), 'suspended tenant API → 403').toBe(403);
 
     // Restore immediately.
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
@@ -1311,18 +1331,22 @@ test.describe.serial('Module 8 — Tenant & Subscription Administration (full-sc
     expect((await json(re))?.tenant?.status).toBe('ACTIVE');
   });
 
-  test('B2 BUG-9 pin: SUPER_ADMIN hitting a tenant store route lands on /login (middleware dead)', async ({ page }) => {
-    // DEFECT PIN (re-verifies Module 03 BUG-9): with middleware dead in dev,
-    // the /dashboard page guard redirect()s SUPER_ADMIN to /login (the
-    // intended funnel to /superadmin/dashboard exists only in middleware).
-    // The authed /suppliers route renders instead (page has no role gate).
+  test('B2 BUG-9 pin: SUPER_ADMIN hitting a tenant store route is funneled to the super-admin area (M01-06 FIXED)', async ({ page }) => {
+    // M01-06: src/proxy.ts now runs the SUPER_ADMIN store-route funnel (it
+    // redirected before the page guard could). Hitting any store route lands
+    // on /superadmin/dashboard — the intended behavior — instead of the old
+    // /login dead-middleware artifact (BUG-9).
     await login(page, SUPERADMIN.email, SUPERADMIN.password);
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(3_000);
-    expect(page.url(), 'SUPER_ADMIN /dashboard → /login (BUG-9 pin)').toMatch(/\/login/);
+    await page.waitForTimeout(2_000);
+    expect(page.url(), 'SUPER_ADMIN /dashboard → /superadmin/dashboard').toMatch(
+      /\/superadmin\/dashboard/,
+    );
     await page.goto(`${BASE_URL}/suppliers`, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(3_000);
-    expect(page.url(), 'SUPER_ADMIN /suppliers stays (no page role gate)').toMatch(/\/suppliers/);
+    await page.waitForTimeout(2_000);
+    expect(page.url(), 'SUPER_ADMIN /suppliers → /superadmin/dashboard').toMatch(
+      /\/superadmin\/dashboard/,
+    );
   });
 
   // ── Cleanup: exact restore of both tenants + plan retirement ──────────────

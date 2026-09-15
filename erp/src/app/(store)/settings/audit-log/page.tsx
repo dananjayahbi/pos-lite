@@ -1,4 +1,5 @@
 import { auth } from '@/lib/auth';
+import { denialRouteFor } from '@/lib/auth/page-guards';
 import { redirect } from 'next/navigation';
 import { requirePagePermission } from '@/lib/auth/page-guards';
 import { PERMISSIONS } from '@/lib/constants/permissions';
@@ -8,7 +9,7 @@ export const metadata = { title: 'Audit Log | AyurPOS' };
 
 export default async function AuditLogPage() {
   const session = await auth();
-  if (!session?.user?.tenantId) redirect('/login');
+  if (!session?.user?.tenantId) redirect(denialRouteFor(session?.user));
   requirePagePermission(session.user, PERMISSIONS.SETTINGS.viewAuditLog);
 
   return <AuditLogPageClient />;

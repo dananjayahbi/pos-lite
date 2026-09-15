@@ -1,4 +1,5 @@
 import { auth } from '@/lib/auth';
+import { denialRouteFor } from '@/lib/auth/page-guards';
 import { prisma } from '@/lib/prisma';
 import { redirect } from 'next/navigation';
 import HardwareSettingsForm from '@/components/settings/HardwareSettingsForm';
@@ -45,7 +46,7 @@ function parseHardwareSettings(settings: unknown): HardwareSettings {
 
 export default async function HardwareSettingsPage() {
   const session = await auth();
-  if (!session?.user?.tenantId) redirect('/login');
+  if (!session?.user?.tenantId) redirect(denialRouteFor(session?.user));
   if (DENIED_ROLES.has(session.user.role)) redirect('/pos');
 
   const tenant = await prisma.tenant.findUniqueOrThrow({

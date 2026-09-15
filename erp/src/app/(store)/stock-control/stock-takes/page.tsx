@@ -1,4 +1,5 @@
 import { auth } from '@/lib/auth';
+import { denialRouteFor } from '@/lib/auth/page-guards';
 import { redirect } from 'next/navigation';
 import { StockTakeList } from '@/components/stock-control/StockTakeList';
 
@@ -8,7 +9,7 @@ export const metadata = {
 
 export default async function StockTakesPage() {
   const session = await auth();
-  if (!session?.user?.tenantId) redirect('/login');
+  if (!session?.user?.tenantId) redirect(denialRouteFor(session?.user));
 
   const userPermissions = Array.isArray(session.user.permissions)
     ? session.user.permissions.filter((p): p is string => typeof p === 'string')
