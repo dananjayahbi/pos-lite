@@ -15,8 +15,10 @@
  * Key contract facts (code-verified):
  * - All routes are AUTH-ONLY (no permission gate) — any authenticated tenant
  *   user (incl. CASHIER) may edit the website. Pinned as OBS-41.
- * - Hero-slide/ad row-level routes have NO tenant scoping in the service layer
- *   (update/delete by bare id) — cross-tenant IDOR probed in §8 (BUG-68 pins).
+ * - Hero-slide/ad row-level routes are TENANT-SCOPED in the service layer
+ *   (M29-01/BUG-68 fix): update/delete resolve the row through
+ *   `assertWebsiteChildBelongsToTenant` and fail closed as 404 on a foreign id
+ *   — cross-tenant IDOR pinned in §8 (BUG-68 pins, S4–S6).
  * - PUT /website reconciles heroSlides/ads relation rows via full replace
  *   (delete-all + recreate) in a transaction; the DB mirrors the editor.
  * - Config save fires storefront revalidation (best-effort, never fails save).
@@ -293,19 +295,22 @@ test.describe('§1 Functional & business logic', () => {
     expect(after.heroSlides.some((s: any) => s.id === s1.data.id)).toBe(false);
   });
 
-  test('F11: PUT validates slide drafts before the media filter (400 on empty mediaUrl)', async ({ page }) => {
+  test('F11: PUT skips media-less slide drafts per item instead of rejecting the save', async ({ page }) => {
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
-    // The route validates the full array with WebsiteHeroSlideSchema BEFORE
-    // filtering out media-less drafts — an empty mediaUrl fails min(1) and
-    // rejects the whole save. The documented draft-skip only applies to
-    // drafts that pass schema (e.g. missing optional fields), not empty media.
+    // M29-03 fix (OBS-43): the media-less draft filter now runs PER ITEM before
+    // the survivor array is schema-validated, so a single empty-media draft is
+    // skipped instead of failing `min(1)` and rejecting the whole save. The UI's
+    // client-side strip behaviour is unchanged.
+    const valid = slidePayload({ title: `keeper ${RUN_TAG}` });
     const res = await putConfig(page, {
-      heroSlides: [slidePayload(), { mediaType: 'image', mediaUrl: '', title: 'draft' }],
+      heroSlides: [valid, { mediaType: 'image', mediaUrl: '', title: 'draft' }],
       ads: [],
     });
-    expect(res.status()).toBe(400);
-    const json = await res.json();
-    expect(json.error.code).toBe('VALIDATION_ERROR');
+    expect(res.status(), `PUT -> ${await res.text()}`).toBe(200);
+    // The valid slide is persisted; the draft is dropped, not saved as a row.
+    const after = await getConfig(page);
+    expect(after.heroSlides).toHaveLength(1);
+    expect(after.heroSlides[0].title).toBe(`keeper ${RUN_TAG}`);
   });
 
   test('F12: categories endpoint returns the tenant catalog (id/name)', async ({ page }) => {
@@ -603,24 +608,33 @@ test.describe('§8 Security, RBAC & multi-tenant isolation', () => {
     expect(ads.status()).toBe(401);
   });
 
-  test('S2 (OBS-41 pin): cashier can read AND write the website config (auth-only surface)', async ({ page }) => {
+  test('S2 (OBS-41 pin): cashier is forbidden from reading AND writing the website CMS (403)', async ({ page }) => {
     await login(page, CASHIER1_EMAIL, CASHIER1_PASSWORD);
+    // M29-03 fix: the website CMS is gated on SETTINGS.manageWebsite
+    // (`settings:website`) via the shared requirePermissionResponse guard, so a
+    // CASHIER — whose explicit permission list omits it — gets 403 on reads too.
     const get = await page.request.get(CONFIG_URL);
-    expect(get.status()).toBe(200);
-    // Documented current behavior: no permission gate — cashier mutations land.
+    expect(get.status(), 'cashier GET /website must be 403').toBe(403);
     const put = await page.request.put(CONFIG_URL, { data: { tagline: `cashier ${RUN_TAG}` } });
-    expect(put.status()).toBe(200);
-    // Restore immediately.
-    const snap = loadSnapshot();
+    expect(put.status(), 'cashier PUT /website must be 403').toBe(403);
+    const body = await put.json();
+    expect(body.error.code).toBe('FORBIDDEN');
+    // The write must not have landed — owner re-reads and finds no cashier value.
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
-    await putConfig(page, { tagline: snap?.tagline ?? null });
+    const after = await getConfig(page);
+    expect(after.tagline).not.toBe(`cashier ${RUN_TAG}`);
   });
 
-  test('S3: settings/website page is reachable for any authenticated tenant user', async ({ page }) => {
+  test('S3: settings/website page is blocked for CASHIER (redirected away)', async ({ page }) => {
     await login(page, CASHIER1_EMAIL, CASHIER1_PASSWORD);
     await page.goto(`${BASE_URL}/settings/website`);
     await page.waitForLoadState('networkidle');
-    expect(page.url()).toContain('/settings/website');
+    // M29-03 fix: the page mirrors /settings/users and redirects to /dashboard
+    // when the signed-in user lacks SETTINGS.manageWebsite. For a CASHIER that
+    // is a two-hop redirect — /dashboard itself forwards to the role default
+    // (/pos), so the terminal URL is asserted loosely.
+    expect(page.url()).not.toContain('/settings/website');
+    expect(page.url()).toMatch(/\/(dashboard|pos)$/);
   });
 
   test('S4 (BUG-68 pin): cross-tenant hero-slide PATCH must be rejected (IDOR probe)', async ({ page }) => {
@@ -633,17 +647,10 @@ test.describe('§8 Security, RBAC & multi-tenant isolation', () => {
     const patch = await page.request.patch(`${SLIDES_URL}/${slideId}`, {
       data: { title: 'HACKED-BY-LANKA' },
     });
-    // BUG-68: updateHeroSlide has no tenant scoping — the cross-tenant write
-    // succeeds (200). The correct contract is a 404 rejection.
-    if (patch.status() === 200) {
-      await login(page, OWNER_EMAIL, OWNER_PASSWORD);
-      const config = await getConfig(page);
-      const title = config.heroSlides.find((s: any) => s.id === slideId)?.title;
-      throw new Error(
-        `BUG-68: cross-tenant slide PATCH succeeded — dilani slide title is now "${title}" (expected 404 rejection)`,
-      );
-    }
-    expect([403, 404]).toContain(patch.status());
+    // BUG-68 (M29-01 fix): updateHeroSlide is tenant-scoped — the cross-tenant
+    // write fails closed as 404 (no existence disclosure). A 200 here means the
+    // IDOR is back; any other status is not the pinned contract.
+    expect(patch.status(), 'cross-tenant slide PATCH must fail closed as 404').toBe(404);
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
     await page.request.delete(`${SLIDES_URL}/${slideId}`);
   });
@@ -654,10 +661,8 @@ test.describe('§8 Security, RBAC & multi-tenant isolation', () => {
     const slideId = created.data.id;
     await login(page, LANKA_OWNER_EMAIL, LANKA_OWNER_PASSWORD);
     const del = await page.request.delete(`${SLIDES_URL}/${slideId}`);
-    if (del.status() === 200) {
-      throw new Error('BUG-68: cross-tenant slide DELETE succeeded — Lanka deleted a dilani slide');
-    }
-    expect([403, 404]).toContain(del.status());
+    // BUG-68 (M29-01 fix): tenant-scoped delete → 404 for a foreign id.
+    expect(del.status(), 'cross-tenant slide DELETE must fail closed as 404').toBe(404);
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
     await page.request.delete(`${SLIDES_URL}/${slideId}`);
   });
@@ -668,10 +673,8 @@ test.describe('§8 Security, RBAC & multi-tenant isolation', () => {
     const adId = created.data.id;
     await login(page, LANKA_OWNER_EMAIL, LANKA_OWNER_PASSWORD);
     const patch = await page.request.patch(`${ADS_URL}/${adId}`, { data: { name: 'HACKED' } });
-    if (patch.status() === 200) {
-      throw new Error('BUG-68: cross-tenant ad PATCH succeeded — Lanka renamed a dilani ad');
-    }
-    expect([403, 404]).toContain(patch.status());
+    // BUG-68 (M29-01 fix): tenant-scoped update → 404 for a foreign id.
+    expect(patch.status(), 'cross-tenant ad PATCH must fail closed as 404').toBe(404);
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
     await page.request.delete(`${ADS_URL}/${adId}`);
   });
@@ -825,16 +828,30 @@ test.describe('§10 Time-travel & retroactive handling', () => {
     expect(after.createdAt).toBe(before.createdAt);
   });
 
-  test('T4: invalid date strings in ad scheduling never corrupt the row', async ({ page }) => {
+  test('T4: invalid date strings in ad scheduling are rejected with 400', async ({ page }) => {
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    // M29-03 fix (OBS-44): `startsAt`/`endsAt` are `z.coerce.date().refine(...)`,
+    // so a garbage date fails validation up front (400) instead of reaching the
+    // service as `Invalid Date`. POST and PATCH share the one definition.
     const res = await createAd(page, adPayload({ startsAt: 'not-a-date' }));
-    expect([200, 201, 400]).toContain(res.status());
-    if (res.status() === 201) {
-      const json = await res.json();
-      const raw = json.data.startsAt;
-      expect(raw === null || !Number.isNaN(new Date(raw).getTime())).toBe(true);
-      await page.request.delete(`${ADS_URL}/${json.data.id}`);
-    }
+    expect(res.status(), 'garbage startsAt must be 400').toBe(400);
+    const json = await res.json();
+    expect(json.error.code).toBe('VALIDATION_ERROR');
+    expect(json.data).toBeUndefined();
+
+    // PATCH takes the same path (UpdateWebsiteAdSchema = WebsiteAdSchema.partial()).
+    const created = await (await createAd(page, adPayload())).json();
+    const patch = await page.request.patch(`${ADS_URL}/${created.data.id}`, {
+      data: { startsAt: 'not-a-date' },
+    });
+    expect(patch.status(), 'garbage PATCH startsAt must be 400').toBe(400);
+    // The stored row is untouched — no Invalid Date written.
+    const get = await page.request.get(`${ADS_URL}`);
+    const rows = (await get.json()).data as { id: string; startsAt: string | null }[];
+    const row = rows.find((r) => r.id === created.data.id);
+    expect(row).toBeTruthy();
+    expect(row!.startsAt).toBeNull();
+    await page.request.delete(`${ADS_URL}/${created.data.id}`);
   });
 });
 

@@ -40,6 +40,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
+import { buildBridgeAuthHeaders } from '@/lib/internal-bridge-headers';
 
 // ── In-memory caches ───────────────────────────────────────────────────────
 // Only the (harmless, additive) tenant-slug existence cache lives here; the
@@ -147,7 +148,13 @@ async function middlewareApi(
   const apiUrl = new URL('/api/internal/middleware', request.url);
   return fetch(apiUrl, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      // M35-02 hardening: present the shared bridge secret so the Node endpoint
+      // can verify the caller. Empty when unconfigured, which makes the bridge
+      // refuse the call in production (fail closed) instead of trusting it.
+      ...buildBridgeAuthHeaders(),
+    },
     body: JSON.stringify(body),
   });
 }

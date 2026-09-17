@@ -2,6 +2,7 @@
 
 import React, { useMemo, useEffect } from 'react';
 import { WebsiteHeader } from './sections/WebsiteHeader';
+import { AnnouncementBar } from './sections/AnnouncementBar';
 import { HeroSection } from './sections/HeroSection';
 import { ImageSliderSection } from './sections/ImageSliderSection';
 import { BestSelling } from './sections/BestSelling';
@@ -217,6 +218,10 @@ export function WebsiteShell({
 
   return (
     <div className="site-wrapper">
+      {/* Site-wide announcement top-bar (req 3.4) — normal flow, above the
+          fixed header, which offsets itself via --announcement-bar-height. */}
+      <AnnouncementBar config={websiteConfig} />
+
       {/* Header Ads */}
       {headerAds.map((ad) => (
         <AdBanner key={ad.id} ad={ad} />

@@ -39,6 +39,12 @@
   /* Section rhythm */
   --section-padding-y: 5rem;
   --section-gap: 0px;
+
+  /* M29-03 (req 3.4) — height of the announcement top-bar, published by the
+     <AnnouncementBar> component. `0px` when the bar is off, which is also the
+     pre-feature layout: the fixed header below sits at `top: var(...)` so a
+     site with no announcement renders byte-identically. */
+  --announcement-bar-height: 0px;
 }
 
 /* ── Base Styles ─────────────────────────────────────────────────────────── */

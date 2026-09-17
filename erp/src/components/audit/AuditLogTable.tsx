@@ -99,8 +99,12 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
 
   const { data, isLoading } = useQuery<AuditLogResponse>({
     queryKey: ['auditLogs', filters.entityType, filters.action, filters.startDate, filters.endDate, filters.userId, page],
-    queryFn: async () => {
-      const res = await fetch(`/api/audit-logs?${buildParams()}`);
+    // M35-02 (OBS-75): react-query hands us an AbortSignal — pass it through so
+    // a superseded request is cancelled instead of racing the newer one. Without
+    // this, rapid filter changes could resolve out of order and flash stale rows
+    // (last-write-wins was not guaranteed).
+    queryFn: async ({ signal }) => {
+      const res = await fetch(`/api/audit-logs?${buildParams()}`, { signal });
       const json = await res.json();
       if (!json.success) throw new Error(json.error?.message ?? 'Failed to fetch audit logs');
       // XC-02 canonical envelope: array `data` + pagination in `meta`.

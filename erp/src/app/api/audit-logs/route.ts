@@ -7,6 +7,21 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getAuditLogs } from '@/lib/services/audit.service';
 import { parseQueryInt, parseQueryDate } from '@/lib/api/query-params';
 import { toErrorResponse } from '@/lib/api/error-envelope';
+import { toCsvLines } from '@/lib/export';
+
+/**
+ * M35-01 (BUG-79): the audit CSV column order, named so the export, the spec
+ * pin and any future email/attachment path all reference one definition.
+ */
+const AUDIT_CSV_HEADERS = [
+  'createdAt',
+  'entityType',
+  'entityId',
+  'action',
+  'actorId',
+  'actorRole',
+  'ipAddress',
+] as const;
 
 export async function GET(request: NextRequest) {
   try {
@@ -67,9 +82,14 @@ export async function GET(request: NextRequest) {
         });
 
     if (format === 'csv') {
-      const csvRows = [
-        ['createdAt', 'entityType', 'entityId', 'action', 'actorId', 'actorRole', 'ipAddress'],
-        ...result.data.map((entry) => [
+      // M35-01 (BUG-79): the header row is emitted UNQUOTED and data cells are
+      // quoted only when they need it, via the shared `toCsvLines` writer. The
+      // old inline mapper quoted every cell — including the header — producing
+      // `"createdAt","entityType",...`, which Excel/Sheets render with literal
+      // quotes in some locales and which makes diffs noisy (RULE: RULE-EXPORT-CSV).
+      const csv = toCsvLines(
+        AUDIT_CSV_HEADERS,
+        result.data.map((entry) => [
           entry.createdAt.toISOString(),
           entry.entityType,
           entry.entityId,
@@ -78,11 +98,7 @@ export async function GET(request: NextRequest) {
           entry.actorRole,
           entry.ipAddress ?? '',
         ]),
-      ];
-
-      const csv = csvRows
-        .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-        .join('\n');
+      );
 
       return new NextResponse(csv, {
         status: 200,

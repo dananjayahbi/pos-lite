@@ -21,6 +21,21 @@ export function requirePagePermission(
 }
 
 /**
+ * XC-03 — the boolean form of the same check, for pages that choose their OWN
+ * destination (e.g. `/dashboard`) rather than the shared `/pos` default.
+ *
+ * Exists so a page can express "may this user see this?" with a permission KEY
+ * instead of an inline `['OWNER','MANAGER'].includes(...)`. Use
+ * `requirePagePermission` when the standard denial destination is correct.
+ */
+export function hasPermissionPage(
+  user: PageUser | null | undefined,
+  permission: PermissionKey,
+): boolean {
+  return hasPermission(user, permission);
+}
+
+/**
  * M03-07 (BUG-9) — tenant-session guard for store pages.
  *
  * The old `if (!session?.user?.tenantId) redirect('/login')` pattern assumed

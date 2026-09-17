@@ -18,6 +18,17 @@ export interface WebsiteNavItem {
   children?: WebsiteNavItem[];
 }
 
+/**
+ * Site-wide announcement top-bar (req 3.4) — `WebsiteConfig.announcementBar`.
+ * Optional end-to-end: configs stored before this field existed have no value,
+ * and the storefront renders nothing when `isActive` is not `true`.
+ */
+export interface WebsiteAnnouncementBarData {
+  text?: string;
+  link?: string;
+  isActive?: boolean;
+}
+
 /** Hero slide configuration */
 export interface WebsiteHeroSlideData {
   id?: string;
@@ -341,6 +352,9 @@ export interface WebsiteConfigData {
 
   // Social
   socialLinks: WebsiteSocialLinks;
+
+  // Site-wide announcement top-bar (req 3.4)
+  announcementBar?: WebsiteAnnouncementBarData;
 
   // Navigation
   navItems: WebsiteNavItem[];

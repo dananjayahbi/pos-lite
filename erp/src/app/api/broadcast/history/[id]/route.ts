@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 function parseBroadcastFilters(raw: unknown) {
   if (typeof raw !== 'object' || raw === null) {
@@ -26,9 +28,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ success: false, error: { code: 'UNAUTHORIZED', message: 'No tenant associated' } }, { status: 401 });
     }
 
-    if (['CASHIER', 'STOCK_CLERK'].includes(session.user.role)) {
-      return NextResponse.json({ success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } }, { status: 403 });
-    }
+    // XC-03: shared guard, same key as the broadcast history LIST route. The
+    // previous role denylist was the third distinct gate style in this module.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.BROADCAST.send);
+    if (forbidden) return forbidden;
 
     const { id } = await params;
     const broadcast = await prisma.customerBroadcast.findFirst({

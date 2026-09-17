@@ -11,11 +11,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { AUTH_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
+import {
+  INTERNAL_BRIDGE_HEADER,
+  authorizeBridgeRequest,
+  getBridgeAuthStatus,
+} from '@/lib/internal-bridge-auth';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
+    // M35-02 hardening: this endpoint writes audit rows and reads user/tenant
+    // state for an Edge caller, so it verifies the caller. See
+    // `internal-bridge-auth.ts` for the enforcement model (secret configured →
+    // constant-time check; unconfigured → refused in production, allowed in dev).
+    const authorization = authorizeBridgeRequest(request.headers.get(INTERNAL_BRIDGE_HEADER));
+    if (!authorization.allowed) {
+      const status = getBridgeAuthStatus();
+      console.warn('Internal bridge rejected request:', authorization.reason, status);
+      return NextResponse.json(
+        { error: 'Unauthorized', code: authorization.reason },
+        { status: 401 },
+      );
+    }
+
     const body = await request.json();
     const { action } = body;
 

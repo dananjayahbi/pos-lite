@@ -194,3 +194,39 @@ export function resolveReportTitle(pathname: string): string {
   const slug = pathname.split("/").filter(Boolean).slice(-1)[0] ?? "Report";
   return slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+/**
+ * M34-01 (BUG-78) — every slug the saved-report API may persist.
+ *
+ * Derived from the definitions above (rather than hand-listed) so the allowlist
+ * cannot drift from the reports that actually exist: adding a report to
+ * `definitions` automatically makes it savable, and removing one makes its slug
+ * invalid — in both directions the API schema follows the real registry.
+ *
+ * `saved` is included separately because the saved-reports list page is itself a
+ * report surface a user can save.
+ */
+const EXTRA_REPORT_SLUGS = ["saved"] as const;
+
+export const REPORT_SLUGS: readonly string[] = [
+  ...Object.keys(definitions).map((path) => path.replace(/^\/reports\//, "")),
+  ...EXTRA_REPORT_SLUGS,
+];
+
+/** True when `slug` names a report the app knows how to render. */
+export function isKnownReportSlug(slug: string): boolean {
+  return REPORT_SLUGS.includes(slug);
+}
+
+/**
+ * Build the in-app href for a saved report.
+ *
+ * M34-01 (BUG-78): this ALWAYS composes `/reports/<slug>`. It deliberately has
+ * no passthrough for stored strings that look like paths — the previous
+ * `reportType.startsWith('/') ? reportType : ...` branch let a persisted
+ * `//evil.com` become a protocol-relative href and navigate off-site. Even with
+ * the server-side allowlist in place, the href builder never trusts stored data.
+ */
+export function buildReportHref(reportType: string): string {
+  return `/reports/${encodeURIComponent(reportType)}`;
+}

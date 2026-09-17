@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getAllProducts } from '@/lib/services/product.service';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { parseQueryInt } from '@/lib/api/query-params';
@@ -21,6 +23,10 @@ export async function GET(request: NextRequest) {
         { status: 401 },
       );
     }
+
+    // M29-03 (OBS-41): the product picker belongs to the website CMS.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebsite);
+    if (forbidden) return forbidden;
 
     const { searchParams } = request.nextUrl;
     const search = searchParams.get('search') ?? undefined;

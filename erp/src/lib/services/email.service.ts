@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { warnProviderNotConfigured } from '@/lib/notifications/provider-status';
 
 /**
  * Structured send outcome (M01-01 / INF-03 step 4): callers must be able to
@@ -14,7 +15,9 @@ export interface EmailSendResult {
 function getResendClient(): Resend | null {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    console.warn('RESEND_API_KEY is missing. Email sending is disabled.');
+    // M31-01: loud + throttled so an unconfigured deployment is visible in
+    // logs/Sentry instead of only the per-send false return.
+    warnProviderNotConfigured('email');
     return null;
   }
 

@@ -1,5 +1,8 @@
 import { prisma } from '@/lib/prisma';
 import { type Prisma, SubscriptionStatus } from '@/generated/prisma/client';
+import { TRIAL_PERIOD_DAYS } from '@/lib/billing/constants';
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export async function createTrialSubscription(
   tenantId: string,
@@ -15,7 +18,11 @@ export async function createTrialSubscription(
     }
 
     const now = new Date();
-    const trialEndsAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    // Trial length is TRIAL_PERIOD_DAYS (30) — named in lib/billing/constants
+    // so the seed's demo-trial block (M30-01) uses the identical basis.
+    const trialEndsAt = new Date(
+      now.getTime() + TRIAL_PERIOD_DAYS * MS_PER_DAY,
+    );
 
     const subscription = await client.subscription.create({
       data: {

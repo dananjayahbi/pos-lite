@@ -1,23 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { timingSafeEqual } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { composeDailySummaryEmail } from '@/lib/email/dailySummary';
+import { sendEmail } from '@/lib/services/email.service';
 import Decimal from 'decimal.js';
-
-function isValidCronSecret(authHeader: string | null): boolean {
-  const envSecret = process.env.CRON_SECRET;
-  if (!envSecret || !authHeader) return false;
-
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-  if (!token) return false;
-
-  const a = Buffer.from(envSecret, 'utf-8');
-  const b = Buffer.from(token, 'utf-8');
-
-  if (a.length !== b.length) return false;
-
-  return timingSafeEqual(a, b);
-}
+import { isValidCronSecret } from '@/lib/cron-auth';
 
 function getYesterdayRange(): { start: Date; end: Date } {
   const now = new Date();
@@ -73,6 +59,7 @@ export async function GET(request: NextRequest) {
 
   let processed = 0;
   let sent = 0;
+  let pending = 0;
   let failed = 0;
 
   for (const tenant of tenants) {
@@ -82,18 +69,21 @@ export async function GET(request: NextRequest) {
       processed++;
 
       try {
-        // Idempotency: check if already sent today for this tenant+email
-        const alreadySent = await prisma.dailySummaryLog.findFirst({
+        // Idempotency: a summary already handled today is not re-sent. SENT and
+        // PENDING both count as handled (PENDING == provider absent, so a second
+        // run today must not pile up duplicate rows); a FAILED row is retried.
+        const alreadyHandled = await prisma.dailySummaryLog.findFirst({
           where: {
             tenantId: tenant.id,
             recipientEmail: owner.email,
-            status: 'SENT',
+            status: { in: ['SENT', 'PENDING'] },
             sentAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
           },
         });
 
-        if (alreadySent) {
-          sent++; // Count as already handled
+        if (alreadyHandled) {
+          // Count as already handled — under the status it actually carries.
+          if (alreadyHandled.status === 'SENT') sent++; else pending++;
           continue;
         }
 
@@ -150,19 +140,45 @@ export async function GET(request: NextRequest) {
           tenantSlug: tenant.slug,
         });
 
-        // TODO: Replace console.log with Resend email sending when API key is available
-        // e.g. await resend.emails.send({ from: '...', to: owner.email, subject: '...', html })
-        console.log(`[daily-summary] Email for ${tenant.name} -> ${owner.email}:\n${html}`);
+        // M35-02 (OBS-73): actually attempt delivery. Previously this was a
+        // `console.log` followed by an unconditional `status: 'SENT'` write — a
+        // false-success ledger claiming emails that were never sent (the same
+        // anti-pattern family as BUG-11/73). The outcome is now recorded as
+        // observed: SENT only on a real delivery, PENDING when the provider is
+        // simply not configured (retryable once INF-03 supplies the key), and
+        // FAILED when the provider was configured but rejected the send.
+        const result = await sendEmail(
+          owner.email,
+          `Daily Summary — ${formatDate(start)}`,
+          html,
+        );
 
-        await prisma.dailySummaryLog.create({
-          data: {
-            tenantId: tenant.id,
-            recipientEmail: owner.email,
-            status: 'SENT',
-          },
-        });
-
-        sent++;
+        if (result.delivered) {
+          await prisma.dailySummaryLog.create({
+            data: {
+              tenantId: tenant.id,
+              recipientEmail: owner.email,
+              status: 'SENT',
+            },
+          });
+          sent++;
+        } else {
+          // Not delivered: never claim SENT. `provider-not-configured` is a
+          // PENDING (nothing is broken, the integration is absent); anything
+          // else is a real FAILED.
+          const notConfigured = result.reason === 'provider-not-configured';
+          await prisma.dailySummaryLog.create({
+            data: {
+              tenantId: tenant.id,
+              recipientEmail: owner.email,
+              status: notConfigured ? 'PENDING' : 'FAILED',
+              errorMessage: notConfigured
+                ? 'Email provider not configured (RESEND_API_KEY unset) — not sent'
+                : `Email provider error (${result.reason ?? 'unknown'})`,
+            },
+          });
+          if (notConfigured) pending++; else failed++;
+        }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
@@ -186,6 +202,6 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    data: { processed, sent, failed },
+    data: { processed, sent, pending, failed },
   });
 }

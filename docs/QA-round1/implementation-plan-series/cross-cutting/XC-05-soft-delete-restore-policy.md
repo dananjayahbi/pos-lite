@@ -2,6 +2,15 @@
 
 **Severity:** P2 (data-loss-adjacent) · **Type:** cross-cutting · **Depends on:** INF-02, XC-04 (shared docs) · **Members:** BUG-20 (M02-03), OBS-10 (M06-05), GAP-4 (M03-08 area), OBS-45 (website reset), OBS-63 (M33-03), OBS-42, recreate-after-delete family (BUG-21/90)
 
+> **Scope correction (2026-09-17, XC-05):** **OBS-42 belongs to M29, not here.**
+> QA defines it as the website-products picker total (62) exceeding the store
+> catalog total (61) because the store route applies a permission-based
+> post-filter (`filteredProducts`); it was pinned with a documented ±1 drift
+> tolerance in tests/29 L1 (`QA_BUG_REPORT.md` line 1487). That is a read-path
+> filtering difference and has no bearing on delete/restore semantics, so this
+> document does not claim it. The canonical vocabulary below is produced from
+> the schema in `erp/prisma/schema.prisma` rather than from the member list.
+
 ## Verified source state (2026-09-15) — the delete story differs per entity, mostly badly
 | Entity | "Delete" mechanism | Restore path | Notes |
 |---|---|---|---|

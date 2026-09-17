@@ -18,6 +18,16 @@ export interface WebsiteNavItem {
   children?: WebsiteNavItem[];
 }
 
+/**
+ * Site-wide announcement top-bar (req 3.4) — `WebsiteConfig.announcementBar`.
+ * Serialized from the ERP; absent on configs stored before the field existed.
+ */
+export interface WebsiteAnnouncementBarData {
+  text?: string;
+  link?: string;
+  isActive?: boolean;
+}
+
 /** Hero slide configuration */
 export interface WebsiteHeroSlideData {
   id?: string;
@@ -326,6 +336,9 @@ export interface WebsiteConfigData {
 
   // Social
   socialLinks: WebsiteSocialLinks;
+
+  // Site-wide announcement top-bar (req 3.4)
+  announcementBar?: WebsiteAnnouncementBarData;
 
   // Navigation
   navItems: WebsiteNavItem[];

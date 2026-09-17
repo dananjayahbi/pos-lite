@@ -6,14 +6,26 @@ import type { Prisma } from '@/generated/prisma/client';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { generateReportFile, type GeneratedFormat } from '@/lib/reports/generate-report';
-import { resolveReportColumns, resolveReportTitle } from '@/lib/reports/report-config';
+import { REPORT_SLUGS, resolveReportColumns, resolveReportTitle } from '@/lib/reports/report-config';
 import { buildSavedReportKey } from '@/lib/reports/saved-report-storage';
 import type { ReportColumn } from '@/lib/reports/export';
+import { zSafeShortText } from '@/lib/validators/shared';
 import { uploadFile } from '@/lib/storage';
 
+/**
+ * M34-01 (BUG-78): `reportType` used to be any non-empty string, and it is
+ * persisted then turned into the "Open in App" href — a stored `//evil.com`
+ * became a protocol-relative off-site link. It is now restricted to the slugs
+ * the app can actually render (derived from the report registry, not hand-listed).
+ *
+ * M34-02 (BUG-77): `name` is free text that reaches the saved-report list and
+ * the generated artifact, so it uses the shared XC-04 short-text guard, which
+ * rejects control markup instead of trying to strip it.
+ */
 const createSavedReportSchema = z.object({
-  name: z.string().min(1).max(100),
-  reportType: z.string().min(1),
+  // zSafeShortText already trims and requires ≥1 char, so no extra refine here.
+  name: zSafeShortText(100),
+  reportType: z.enum(REPORT_SLUGS as [string, ...string[]]),
   filters: z.record(z.string(), z.unknown()),
   format: z.enum(['pdf', 'csv', 'xlsx']).default('pdf'),
   // Rows + columns are provided by the client so the generated artifact includes

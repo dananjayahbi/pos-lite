@@ -16,8 +16,14 @@
  * - API  : GET /api/reports/zero-value-sales → REPORT.viewZeroValueReport
  * - API  : GET /api/reports/recovery-staff-performance → REPORT.viewRecoveryReport
  * - API  : GET/POST /api/reports/saved + GET/PUT/DELETE /api/reports/saved/[id]
- *          (viewSalesReport gate; user-scoped: userId + tenantId; zod name 1..100,
- *          reportType ≥1, filters record)
+ *          (viewSalesReport gate; user-scoped: userId + tenantId; zod
+ *          name = zSafeShortText(100) [M34-02: rejects < > `],
+ *          reportType = enum over the renderable report slugs [M34-01: no paths],
+ *          filters record)
+ * - Saved-report "Open in App": the href is ALWAYS composed as /reports/<slug>
+ *          by buildReportHref; the client never trusts the stored string
+ *          (M34-01 / BUG-78), and an unrecognized legacy slug renders a disabled
+ *          "Unknown report" action instead of a link.
  * - Date params: `from`/`to` (YYYY-MM-DD) → 400 "Invalid date parameters" on garbage
  * - Live data (2026-09-11): 87 COMPLETED sales, 71 returns, 0 zero-value sales,
  *   0 saved reports, 7 expenses for dilani. CASHIER holds NO REPORT.* permissions.
@@ -569,20 +575,28 @@ test.describe('§8 Security, RBAC & multi-tenant isolation', () => {
 // §9 — Boundary inputs & chaos data
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('§9 Boundary inputs & chaos data', () => {
-  test('X1 (BUG-77 pin): XSS payload in saved-report name is STORED VERBATIM (no sanitization)', async ({ page }) => {
+  test('X1 (BUG-77 fixed): markup in a saved-report name is rejected at the schema (400)', async ({ page }) => {
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
-    // DEFECT (BUG-77): the name is stored verbatim — the list API returns raw
-    // <script> tags. React escapes on render (no execution in the UI today),
-    // but the API surface hands unsanitized HTML to any non-React consumer.
-    // Same class as BUG-76 (webhook URL). Pinned as current behavior.
+    // M34-02 / BUG-77 FIXED: `name` now goes through the shared XC-04
+    // `zSafeShortText(100)` guard, which REJECTS control markup (< > and`) rather
+    // than stripping it, so the API can never hand unsanitized HTML to a
+    // non-React consumer (the PDF/CSV artifact path renders server-side).
     const res = await page.request.post(SAVED_URL, {
       data: { name: `${RUN_TAG} <script>alert(1)</script>`, reportType: 'sales', filters: {} },
     });
-    expect(res.status()).toBe(201);
-    const id = (await res.json()).data.id;
-    createdSavedIds.push(id);
+    expect(res.status(), 'BUG-77 fixed: markup name rejected').toBe(400);
+
+    // Non-vacuity: the SAME payload shape without markup is still accepted, so
+    // the 400 above is caused by the markup rule and not by an unrelated failure.
+    const ok = await page.request.post(SAVED_URL, {
+      data: { name: `${RUN_TAG} plain name`, reportType: 'sales', filters: {} },
+    });
+    expect(ok.status()).toBe(201);
+    createdSavedIds.push((await ok.json()).data.id);
+
+    // And nothing markup-bearing leaked into the list.
     const text = await (await page.request.get(SAVED_URL)).text();
-    expect(text, 'BUG-77 pin: script tags stored verbatim in the name field').toContain('<script>');
+    expect(text).not.toContain('<script>');
   });
 
   test('X2: Unicode/emoji saved-report name round-trips intact', async ({ page }) => {
@@ -642,24 +656,34 @@ test.describe('§9 Boundary inputs & chaos data', () => {
     expect(staff.status()).not.toBe(500);
   });
 
-  test('X7 (BUG-78 pin): protocol-relative reportType accepted → off-site Open link', async ({ page }) => {
+  test('X7 (BUG-78 fixed): unknown reportType is rejected at the schema (400)', async ({ page }) => {
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
-    // DEFECT (BUG-78): reportType is a free-form string with no allowlist, and
-    // the saved page builds the Open link as
-    //   reportType.startsWith('/') ? reportType : `/reports/${reportType}`
-    // — a value like '//evil.com' STARTS WITH '/' and is used VERBATIM as the
-    // href, producing a protocol-relative URL that navigates off-site when
-    // clicked. Live-verified: create with reportType '//evil.com' → 201.
-    // Pinned as current behavior; an allowlist of known report types is the
-    // correct contract.
-    const res = await page.request.post(SAVED_URL, {
+    // M34-01 / BUG-78 FIXED: `reportType` is now an enum over the slugs the app
+    // can actually render (derived from the report registry), so the stored
+    // value can no longer be a path. Previously '//evil.com' was accepted (201)
+    // and the saved page's `startsWith('/')` branch used it VERBATIM as the
+    // href — a protocol-relative URL that navigated off-site on click.
+    const offSite = await page.request.post(SAVED_URL, {
       data: { name: `${RUN_TAG} open-redirect`, reportType: '//evil.com', filters: {} },
     });
-    expect(res.status(), 'BUG-78 pin: protocol-relative reportType accepted').toBe(201);
-    const id = (await res.json()).data.id;
+    expect(offSite.status(), 'BUG-78 fixed: protocol-relative reportType rejected').toBe(400);
+
+    // A same-origin absolute path is rejected too — the allowlist accepts slugs,
+    // not paths, so no stored value can ever drive the href builder.
+    const pathLike = await page.request.post(SAVED_URL, {
+      data: { name: `${RUN_TAG} path-like`, reportType: '/reports/sales', filters: {} },
+    });
+    expect(pathLike.status(), 'paths are not slugs').toBe(400);
+
+    // Non-vacuity: a real slug still works, and the app owns the resulting href.
+    const valid = await page.request.post(SAVED_URL, {
+      data: { name: `${RUN_TAG} valid`, reportType: 'sales', filters: {} },
+    });
+    expect(valid.status()).toBe(201);
+    const id = (await valid.json()).data.id;
     createdSavedIds.push(id);
     const get = await page.request.get(`${SAVED_URL}/${id}`);
-    expect((await get.json()).data.reportType).toBe('//evil.com');
+    expect((await get.json()).data.reportType).toBe('sales');
   });
 });
 

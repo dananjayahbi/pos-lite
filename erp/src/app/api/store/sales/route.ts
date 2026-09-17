@@ -117,10 +117,11 @@ export async function POST(request: Request) {
 
     // Sales created from the management page are intentionally shiftless. The
     // POS terminal still sends a shiftId and remains available to cashiers.
+    // XC-03: the inline owner/manager comparison is replaced by a registry key,
+    // so the rule and the role list cannot drift apart.
     if (
       parsed.data.shiftId === undefined &&
-      session.user.role !== 'OWNER' &&
-      session.user.role !== 'MANAGER'
+      !hasPermission(session.user, PERMISSIONS.SALE.createSaleWithoutShift)
     ) {
       return NextResponse.json(
         {

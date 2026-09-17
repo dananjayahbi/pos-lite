@@ -1,17 +1,23 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { PERMISSIONS } from '@/lib/constants/permissions';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
 
+// M31-03 (OBS-53): status + counters now live in the filters JSON. Older rows
+// predate that and carry only `analytics`, so the parser still tolerates the
+// flat shape.
 function parseBroadcastFilters(raw: unknown) {
   if (typeof raw !== 'object' || raw === null) {
-    return { criteria: {}, analytics: {} };
+    return { criteria: {}, analytics: {}, status: 'COMPLETED' as const };
   }
 
   const data = raw as Record<string, unknown>;
   const criteria = typeof data.criteria === 'object' && data.criteria !== null ? data.criteria as Record<string, unknown> : data;
   const analytics = typeof data.analytics === 'object' && data.analytics !== null ? data.analytics as Record<string, unknown> : {};
+  const status = data.status === 'SENDING' ? ('SENDING' as const) : ('COMPLETED' as const);
 
-  return { criteria, analytics };
+  return { criteria, analytics, status };
 }
 
 export async function GET() {
@@ -26,9 +32,11 @@ export async function GET() {
       return NextResponse.json({ success: false, error: { code: 'UNAUTHORIZED', message: 'No tenant associated' } }, { status: 401 });
     }
 
-    if (['CASHIER', 'STOCK_CLERK'].includes(session.user.role)) {
-      return NextResponse.json({ success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } }, { status: 403 });
-    }
+    // M31-02 (OBS-52): the history surface reads the same audience/broadcast
+    // data as the composer, so it carries the composer's own permission rather
+    // than a hand-maintained role list.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.BROADCAST.send);
+    if (forbidden) return forbidden;
 
     const broadcasts = await prisma.customerBroadcast.findMany({
       where: { tenantId },
@@ -49,6 +57,7 @@ export async function GET() {
         sentByEmail: broadcast.sentBy.email,
         criteria: parsed.criteria,
         analytics: parsed.analytics,
+        status: parsed.status,
       };
     });
 

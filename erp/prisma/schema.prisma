@@ -1572,7 +1572,10 @@ model DailySummaryLog {
   id             String   @id @default(cuid())
   tenantId       String
   sentAt         DateTime @default(now())
-  status         String // "SENT" or "FAILED"
+  // M35-02 (OBS-73): "SENT" | "PENDING" | "FAILED". SENT means the provider
+  // accepted the message — never set it for a message that was not delivered;
+  // PENDING means the provider is not configured (retryable once INF-03 lands).
+  status         String
   errorMessage   String?
   recipientEmail String
 
@@ -1588,17 +1591,23 @@ enum WebhookDeliveryStatus {
   PENDING
   SUCCESS
   FAILED
+  // M33-02 (OBS-62): terminal state after MAX_ATTEMPTS auto-retries — the
+  // delivery is dead-lettered and surfaced for manual investigation.
+  EXHAUSTED
 }
 
 model WebhookEndpoint {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   url       String
   secret    String
-  isActive  Boolean  @default(true)
+  isActive  Boolean   @default(true)
   events    String[]
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  // M33-03 (OBS-63) / XC-05: "delete" is a soft delete so the delivery ledger
+  // (which cascades on a hard delete) survives for audit.
+  deletedAt DateTime?
 
   deliveries WebhookDelivery[]
 
@@ -1616,8 +1625,16 @@ model WebhookDelivery {
   response          String?
   status            WebhookDeliveryStatus
   attemptedAt       DateTime              @default(now())
+  // M33-02 (OBS-62): auto-retry bookkeeping. `attempt` counts dispatches for
+  // this delivery (1 = the original); `nextRetryAt` is when the webhook-retries
+  // cron may re-dispatch it. Both are absent on rows written before the retry
+  // machine landed — `attempt` defaults to 1 and a NULL `nextRetryAt` is simply
+  // never selected as due.
+  attempt           Int                   @default(1)
+  nextRetryAt       DateTime?
 
   @@index([webhookEndpointId])
+  @@index([nextRetryAt])
   @@map("webhook_deliveries")
 }
 
@@ -1651,6 +1668,10 @@ model WebsiteConfig {
 
   // Social Links — { facebook, instagram, email, phone, whatsapp }
   socialLinks Json @default("{}")
+
+  // Site-wide announcement top-bar (req 3.4) — { text, link, isActive }.
+  // Rendered in normal flow above the header on the customer-facing site.
+  announcementBar Json @default("{}")
 
   // Navigation menu items — [{ label, href, children? }]
   navItems Json @default("[]")

@@ -5,6 +5,7 @@ import { toErrorResponse } from '@/lib/api/error-envelope';
 import { parseQueryInt } from '@/lib/api/query-params';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { toCsvLines } from '@/lib/export';
 
 interface LowStockRow {
   id: string;
@@ -155,11 +156,25 @@ export async function GET(request: NextRequest) {
 
     if (isCsv) {
       const today = new Date().toISOString().split('T')[0];
-      const header = 'Product Name,Category,SKU,Form,Pack Size,Current Stock,Threshold,Shortfall,Retail Price';
-      const rows = variants.map((v) =>
+      // M35-01 (BUG-79): shared CSV writer. The previous inline version quoted
+      // product/category unconditionally but left SKU, form and pack size RAW,
+      // so a comma in any of those broke the row. `csvCell` quotes exactly the
+      // cells that need it and leaves the header row unquoted.
+      const csv = toCsvLines(
         [
-          `"${v.product_name.replace(/"/g, '""')}"`,
-          `"${v.category_name.replace(/"/g, '""')}"`,
+          'Product Name',
+          'Category',
+          'SKU',
+          'Form',
+          'Pack Size',
+          'Current Stock',
+          'Threshold',
+          'Shortfall',
+          'Retail Price',
+        ],
+        variants.map((v) => [
+          v.product_name,
+          v.category_name,
           v.sku,
           v.form ?? '',
           v.pack_size ?? '',
@@ -167,9 +182,8 @@ export async function GET(request: NextRequest) {
           v.low_stock_threshold,
           v.shortfall,
           v.retail_price,
-        ].join(','),
+        ]),
       );
-      const csv = [header, ...rows].join('\n');
 
       return new NextResponse(csv, {
         status: 200,

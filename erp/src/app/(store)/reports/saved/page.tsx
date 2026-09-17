@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SavedReportOpenButton } from '@/components/reports/SavedReportOpenButton';
+import { buildReportHref, isKnownReportSlug } from '@/lib/reports/report-config';
 
 interface SavedReportRecord {
   id: string;
@@ -27,8 +29,22 @@ function formatReportType(reportType: string) {
   return cleaned.replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+/**
+ * M34-01 (BUG-78): the href is ALWAYS composed from a known slug.
+ *
+ * The old builder walked `reportType.startsWith('/') ? reportType : ...`,
+ * which turned a persisted `//evil.com/x` into a protocol-relative href
+ * (confirmed reachable today, since it passes the `startsWith('/')` test)
+ * — one click navigated off-site. Even with the new server-side allowlist,
+ * the client never trusts the stored string.
+ */
 function buildSavedReportHref(savedReport: SavedReportRecord) {
-  const route = savedReport.reportType.startsWith('/') ? savedReport.reportType : `/reports/${savedReport.reportType}`;
+  const route = isKnownReportSlug(savedReport.reportType)
+    ? buildReportHref(savedReport.reportType)
+    : null;
+
+  if (!route) return null;
+
   const params = new URLSearchParams();
 
   Object.entries(savedReport.filters ?? {}).forEach(([key, value]) => {
@@ -156,9 +172,7 @@ export default function SavedReportsPage() {
                       <Button variant="outline" asChild>
                         <a href={`/api/reports/saved/${report.id}/download`}>Download</a>
                       </Button>
-                      <Button variant="outline" asChild>
-                        <a href={buildSavedReportHref(report)}>Open in App</a>
-                      </Button>
+                      <SavedReportOpenButton href={buildSavedReportHref(report)} />
                       <Button
                         variant="outline"
                         onClick={() => {

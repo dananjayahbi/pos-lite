@@ -18,7 +18,10 @@ export default async function POSLayout({ children }: { children: React.ReactNod
   }
 
   const shift = await getCurrentShift(tenantId, session.user.id);
-  const showOwnerDashboardShortcut = session.user.role === 'OWNER';
+  // xc-03-waiver: presentational shortcut only — this decides whether to render
+  // a convenience link to the owner dashboard. It authorizes nothing: the
+  // dashboard itself is permission-gated by the shared page guard.
+  const showOwnerDashboardShortcut = session.user.role === 'OWNER'; // xc-03-waiver: presentational shortcut only — authorizes nothing (the dashboard is separately gated)
   const branding = await getTenantBranding(tenantId);
 
   // M18-01 (BUG-52): the open-shift gate moved into the client `ShiftGate` so

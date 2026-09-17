@@ -1,5 +1,6 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Prisma, PrismaClient } from '../src/generated/prisma/client';
+import { TRIAL_PERIOD_DAYS } from '../src/lib/billing/constants';
 import bcrypt from 'bcryptjs';
 import Decimal from 'decimal.js';
 
@@ -2088,6 +2089,90 @@ async function seedHardwareAndAuditData() {
     console.log('Website module enabled on primary tenant');
   } else {
     console.log('Website module already enabled, skipping');
+  }
+
+  // ── 1d. TRIAL subscription for the demo tenant (M30-01 / BUG-70) ──
+  // BUG-70: NO Subscription row existed for ANY tenant on a freshly seeded
+  // install, so `/billing` and `/billing/payment-methods` hard-redirected to
+  // `/` and `initiateCheckout` answered "No subscription found" — the entire
+  // billing UI was unreachable. (The write path, `createTrialSubscription`,
+  // had zero callers; the tenant-create route now calls it via
+  // src/lib/billing/provisioning.ts.) This block gives the demo tenant the
+  // same TRIAL subscription a newly created tenant receives.
+  //
+  // Trial policy ASSUMPTION — the client's D-level answer is still outstanding
+  // (full statement in src/lib/billing/provisioning.ts):
+  //   • duration  30 days — TRIAL_PERIOD_DAYS, byte-identical to the math
+  //     createTrialSubscription has always applied.
+  //   • plan      STARTER — the entry tier (resolved by name; SubscriptionPlan
+  //     ids are per-database cuids), the same plan the upgrade card offers.
+  //   • grace     none added here: the existing check-subscriptions cron moves
+  //     TRIAL → PAST_DUE at trialEndsAt and suspends after GRACE_PERIOD_DAYS
+  //     (7), so trial → past_due → suspended stays a single timeline.
+  //
+  // Idempotent with the REPAIR idiom used by seedQaUsers()/
+  // seedSubscriptionPlans(): create when absent; a CANCELLED demo row (left
+  // over from a QA cancel round) is restored to the TRIAL baseline so a reseed
+  // is the canonical reset; any other existing status is left untouched.
+  // Placed before the 1c demo-user early-return below so it can never be
+  // skipped by a missing demo user.
+  {
+    const plan = await prisma.subscriptionPlan.findUnique({
+      where: { name: 'STARTER' },
+    });
+    // main() runs seedSubscriptionPlans() (M08-05) before this section, so
+    // STARTER is present and active; degrade to a skip — never a crash — on a
+    // database seeded before M08-05.
+    if (!plan || !plan.isActive) {
+      console.log('STARTER plan missing/inactive, skipping demo trial subscription');
+    } else {
+      const existingSubscription = await prisma.subscription.findUnique({
+        where: { tenantId },
+      });
+      const trialNow = new Date();
+      const trialEndsAt = new Date(
+        trialNow.getTime() + TRIAL_PERIOD_DAYS * 24 * 60 * 60 * 1000,
+      );
+
+      if (!existingSubscription) {
+        await prisma.subscription.create({
+          data: {
+            tenantId,
+            planId: plan.id,
+            status: 'TRIAL',
+            trialEndsAt,
+            currentPeriodStart: trialNow,
+            currentPeriodEnd: trialEndsAt,
+          },
+        });
+        await prisma.tenant.update({
+          where: { id: tenantId },
+          data: { subscriptionStatus: 'TRIAL' },
+        });
+        console.log(
+          `Demo TRIAL subscription seeded (${TRIAL_PERIOD_DAYS}d, ${plan.name})`,
+        );
+      } else if (existingSubscription.status === 'CANCELLED') {
+        await prisma.subscription.update({
+          where: { tenantId },
+          data: {
+            planId: plan.id,
+            status: 'TRIAL',
+            trialEndsAt,
+            currentPeriodStart: trialNow,
+            currentPeriodEnd: trialEndsAt,
+            cancelledAt: null,
+          },
+        });
+        await prisma.tenant.update({
+          where: { id: tenantId },
+          data: { subscriptionStatus: 'TRIAL' },
+        });
+        console.log('Demo subscription was CANCELLED — restored to TRIAL baseline');
+      } else {
+        console.log('Demo subscription already present, skipping');
+      }
+    }
   }
 
   // ── 1c. DISPATCH_STAFF demo user is seeded/repaired by seedQaUsers()

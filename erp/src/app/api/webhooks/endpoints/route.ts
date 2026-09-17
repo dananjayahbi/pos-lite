@@ -3,8 +3,18 @@ import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { generateWebhookSecret } from '@/lib/webhooks/generate-secret';
+import { zSafeUrl } from '@/lib/validators/shared';
+import { parsePagination } from '@/lib/api/query-params';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
-const ALLOWED_ROLES_READ = new Set(['OWNER', 'MANAGER']);
+/** M33-02 (OBS-66): generous default so existing consumers are unaffected. */
+const ENDPOINTS_DEFAULT_LIMIT = 50;
+const ENDPOINTS_MAX_LIMIT = 200;
+
+// XC-03: viewWebhookEndpoints / manageWebhookEndpoints replace the local
+// ALLOWED_ROLES_READ set and the bare `role !== 'OWNER'` write check.
 
 const KNOWN_EVENTS = [
   'sale.completed',
@@ -15,7 +25,12 @@ const KNOWN_EVENTS = [
 ] as const;
 
 const createEndpointSchema = z.object({
-  url: z.string().url().refine((u) => u.startsWith('https://'), {
+  // M33-01 (BUG-76): the field used to accept any syntactically-valid URL, so
+  // `https://evil.example.com/<script>alert(1)</script>` was stored verbatim
+  // and echoed by the list API. `zSafeUrl` (XC-04) rejects the RFC-3986-illegal
+  // characters that build markup / attribute breakouts, so such input is a typed
+  // 400 instead of a stored payload.
+  url: zSafeUrl().refine((u) => u.startsWith('https://'), {
     message: 'Webhook URL must use HTTPS',
   }),
   events: z
@@ -23,7 +38,7 @@ const createEndpointSchema = z.object({
     .min(1, 'At least one event is required'),
 });
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) {
@@ -41,33 +56,46 @@ export async function GET() {
       );
     }
 
-    if (!ALLOWED_ROLES_READ.has(session.user.role)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
-        { status: 403 },
-      );
-    }
+    // XC-03: shared view key replaces the local ALLOWED_ROLES_READ set.
+    const readForbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.viewWebhookEndpoints);
+    if (readForbidden) return readForbidden;
+    // M33-02 (OBS-66): the list was unbounded. Page/limit go through the shared
+    // XC-01 parsers (malformed → typed 400, out-of-range → clamped) with a
+    // generous default of 50 so existing consumers see no change.
+    const { searchParams } = new URL(request.url);
+    const { page, limit } = parsePagination(searchParams, {
+      defaultLimit: ENDPOINTS_DEFAULT_LIMIT,
+      maxLimit: ENDPOINTS_MAX_LIMIT,
+    });
+    const skip = (page - 1) * limit;
 
-    const endpoints = await prisma.webhookEndpoint.findMany({
-      where: { tenantId },
-      select: {
-        id: true,
-        url: true,
-        isActive: true,
-        events: true,
-        createdAt: true,
-        deliveries: {
-          orderBy: { attemptedAt: 'desc' },
-          take: 1,
-          select: {
-            status: true,
-            statusCode: true,
-            attemptedAt: true,
+    const where = { tenantId, deletedAt: null };
+
+    const [endpoints, total] = await Promise.all([
+      prisma.webhookEndpoint.findMany({
+        where,
+        select: {
+          id: true,
+          url: true,
+          isActive: true,
+          events: true,
+          createdAt: true,
+          deliveries: {
+            orderBy: { attemptedAt: 'desc' },
+            take: 1,
+            select: {
+              status: true,
+              statusCode: true,
+              attemptedAt: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.webhookEndpoint.count({ where }),
+    ]);
 
     const data = endpoints.map((ep) => ({
       id: ep.id,
@@ -78,13 +106,16 @@ export async function GET() {
       lastDelivery: ep.deliveries[0] ?? null,
     }));
 
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({
+      success: true,
+      data,
+      meta: { page, limit, total, hasMore: skip + endpoints.length < total },
+    });
   } catch (error) {
-    console.error('GET /api/webhooks/endpoints error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch webhook endpoints' } },
-      { status: 500 },
-    );
+    // M33-02 / XC-01: `parsePagination` throws a typed `ApiError` for a
+    // malformed page/limit. Routing it through the shared envelope handler is
+    // what makes that a 400 BAD_REQUEST instead of a generic 500.
+    return toErrorResponse(error, 'GET /api/webhooks/endpoints');
   }
 }
 
@@ -106,12 +137,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (session.user.role !== 'OWNER') {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Only owners can create webhook endpoints' } },
-        { status: 403 },
-      );
-    }
+    // XC-03: shared manage key replaces the bare `role !== 'OWNER'` check.
+    const writeForbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebhookEndpoints);
+    if (writeForbidden) return writeForbidden;
 
     const body: unknown = await request.json();
     const parsed = createEndpointSchema.safeParse(body);

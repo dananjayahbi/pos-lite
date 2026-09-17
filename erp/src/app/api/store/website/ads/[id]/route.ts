@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { updateAd, deleteAd } from '@/lib/services/website.service';
 import { UpdateWebsiteAdSchema } from '@/lib/validators/website.validators';
 import { revalidateTenantStorefront } from '@/lib/revalidate-website';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function PATCH(
   request: Request,
@@ -31,7 +34,17 @@ export async function PATCH(
       );
     }
 
-    const ad = await updateAd(id, parsed.data as unknown as Record<string, unknown>);
+    // M29-03 (OBS-41): website CMS write — owner/manager permission.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebsite);
+    if (forbidden) return forbidden;
+
+    // M29-01/BUG-68: the ad id is client-controlled, so the mutation is
+    // scoped to the caller's tenant — a foreign id fails closed as 404.
+    const ad = await updateAd(
+      session.user.tenantId,
+      id,
+      parsed.data as unknown as Record<string, unknown>,
+    );
 
     // Revalidate the storefront config so the ad change appears immediately.
     try {
@@ -42,11 +55,8 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, data: ad });
   } catch (error) {
-    console.error('PATCH /api/store/website/ads/[id] error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // INF-02: thrown ApiErrors (404 cross-tenant miss) keep their status/code.
+    return toErrorResponse(error, 'PATCH /api/store/website/ads/[id]');
   }
 }
 
@@ -63,8 +73,13 @@ export async function DELETE(
       );
     }
 
+    // M29-03 (OBS-41): website CMS write — owner/manager permission.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebsite);
+    if (forbidden) return forbidden;
+
     const { id } = await params;
-    await deleteAd(id);
+    // M29-01/BUG-68: tenant-scoped delete — see PATCH above.
+    await deleteAd(session.user.tenantId, id);
 
     // Revalidate the storefront config so the removed ad disappears immediately.
     try {
@@ -75,10 +90,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('DELETE /api/store/website/ads/[id] error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'DELETE /api/store/website/ads/[id]');
   }
 }

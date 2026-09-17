@@ -26,7 +26,36 @@ export interface IntOptions {
   max?: number;
 }
 
-/** Integer query param. Malformed → 400; out-of-range → clamped. */
+/**
+ * XC-01 / BUG-75 — magnitude guard for numeric params.
+ *
+ * The digit regexes below accept arbitrarily long strings, so `Number()` can
+ * return a value beyond `Number.MAX_SAFE_INTEGER` (`'99999999999999999999'` →
+ * `1e20`). Arithmetic on such a value is non-deterministic, and consumers
+ * multiply it (`skip = (page - 1) * limit`) or scale it into a `Date` — both
+ * produce garbage, and an unsafe `skip` reaches Prisma as an unhandled 500.
+ *
+ * Contract: a numeric overflow is **saturated, never rejected** — a param that
+ * is merely too large must degrade gracefully, not turn an otherwise readable
+ * feed into a 400. Preference order for the saturated value:
+ *   1. the caller's own bound in the offending direction (`max` / `min`) — this
+ *      keeps a route's existing clamp authoritative (e.g. the notifications
+ *      feed's `max: 1_000_000`);
+ *   2. the caller's `default` — every skip-computing page param declares
+ *      `default: 1`, so an overflowing `page` degrades to page 1 (`skip = 0`),
+ *      matching the route-level "out-of-domain page → clamp to 1" philosophy;
+ *   3. ±`MAX_SAFE_INTEGER` when the caller declared neither.
+ * A declared bound is only trusted when it is itself a safe integer.
+ */
+function saturateOverflow(value: number, opts: IntOptions): number {
+  const positive = value > 0;
+  const declared = positive ? opts.max : opts.min;
+  if (declared !== undefined && Number.isSafeInteger(declared)) return declared;
+  if (opts.default !== undefined && Number.isSafeInteger(opts.default)) return opts.default;
+  return positive ? Number.MAX_SAFE_INTEGER : Number.MIN_SAFE_INTEGER;
+}
+
+/** Integer query param. Malformed → 400; out-of-range or unsafe magnitude → clamped. */
 export function parseQueryInt(
   params: URLSearchParams,
   name: string,
@@ -37,7 +66,10 @@ export function parseQueryInt(
   if (!/^-?\d+$/.test(value)) {
     throw ApiError.badRequest(`Query parameter "${name}" must be an integer`);
   }
-  const n = Number(value);
+  const parsed = Number(value);
+  // XC-01/BUG-75: a numeric overflow saturates before the range clamp so no
+  // unsafe integer can ever reach a `skip` / multiplier caller.
+  const n = Number.isSafeInteger(parsed) ? parsed : saturateOverflow(parsed, opts);
   if (opts.min !== undefined && n < opts.min) return opts.min;
   if (opts.max !== undefined && n > opts.max) return opts.max;
   return n;
@@ -54,10 +86,17 @@ export function parseQueryNumber(
   if (!/^-?\d+(\.\d+)?$/.test(value)) {
     throw ApiError.badRequest(`Query parameter "${name}" must be a number`);
   }
-  const n = Number(value);
-  if (!Number.isFinite(n)) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
     throw ApiError.badRequest(`Query parameter "${name}" must be a finite number`);
   }
+  // XC-01/BUG-75: finite is not enough — a huge magnitude is also unsafe for
+  // downstream arithmetic, so saturate it. Deliberately NOT a 400: the
+  // bigint-overflow `minSpend=99999999999999999999` pin requires a served 200.
+  // (`Math.abs` comparison rather than `isSafeInteger`, because decimals — the
+  // whole point of this parser — are never "safe integers".)
+  const n =
+    Math.abs(parsed) > Number.MAX_SAFE_INTEGER ? saturateOverflow(parsed, opts) : parsed;
   if (opts.min !== undefined && n < opts.min) return opts.min;
   if (opts.max !== undefined && n > opts.max) return opts.max;
   return n;

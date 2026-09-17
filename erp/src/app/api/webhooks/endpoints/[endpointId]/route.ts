@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 export async function DELETE(
   _request: Request,
@@ -23,17 +25,14 @@ export async function DELETE(
       );
     }
 
-    if (session.user.role !== 'OWNER') {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Only owners can delete webhook endpoints' } },
-        { status: 403 },
-      );
-    }
+    // XC-03: shared manage key replaces the bare `role !== 'OWNER'` check.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebhookEndpoints);
+    if (forbidden) return forbidden;
 
     const { endpointId } = await params;
 
     const endpoint = await prisma.webhookEndpoint.findFirst({
-      where: { id: endpointId, tenantId },
+      where: { id: endpointId, tenantId, deletedAt: null },
     });
 
     if (!endpoint) {
@@ -43,9 +42,17 @@ export async function DELETE(
       );
     }
 
-    await prisma.webhookEndpoint.delete({ where: { id: endpointId } });
+    // M33-03 (OBS-63) / XC-05: this used to be a hard delete, and
+    // `WebhookDelivery.webhookEndpoint` cascades on delete — removing an
+    // endpoint silently destroyed its whole delivery ledger. "Delete" now
+    // follows the app's soft-delete convention: the endpoint is hidden from the
+    // list while the delivery history survives for audit.
+    await prisma.webhookEndpoint.update({
+      where: { id: endpointId },
+      data: { deletedAt: new Date(), isActive: false },
+    });
 
-    return NextResponse.json({ success: true, data: { id: endpointId } });
+    return NextResponse.json({ success: true, data: { id: endpointId, deleted: true } });
   } catch (error) {
     console.error('DELETE /api/webhooks/endpoints/[endpointId] error:', error);
     return NextResponse.json(

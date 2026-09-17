@@ -62,6 +62,7 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
     <>
       <header
         id="main-header"
+        style={{ top: 'var(--announcement-bar-height, 0px)' }}
         className={`fixed top-0 left-0 right-0 z-40 transition-all duration-300 px-6 sm:px-10 lg:px-16 py-5 ${
           scrolled ? 'glass-nav py-3.5 shadow-2xl' : ''
         }`}

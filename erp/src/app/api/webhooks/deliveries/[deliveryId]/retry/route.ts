@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { deliverWebhook } from '@/lib/webhooks/send';
+import { recordRetryOutcome } from '@/lib/webhooks/retry-schedule';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 export async function POST(
   _request: Request,
@@ -24,12 +27,9 @@ export async function POST(
       );
     }
 
-    if (session.user.role !== 'OWNER') {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Only owners can retry webhook deliveries' } },
-        { status: 403 },
-      );
-    }
+    // XC-03: shared manage key replaces the bare `role !== 'OWNER'` check.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebhookEndpoints);
+    if (forbidden) return forbidden;
 
     const { deliveryId } = await params;
 
@@ -66,7 +66,17 @@ export async function POST(
       secret: delivery.webhookEndpoint.secret,
       event: delivery.event,
       payload,
+      attempt: (delivery.attempt ?? 1) + 1,
+      // M33-02 (OBS-62): a manual retry is itself a retry — it must NOT open a
+      // second scheduled retry, otherwise the chain head and the cron sweep
+      // would both drive the same event and duplicate deliveries.
+      scheduleRetry: false,
     });
+
+    // Keep the chain head's schedule truthful: a manual retry that SUCCEEDS
+    // must cancel the pending automatic retry, and one that fails must push the
+    // next attempt out rather than leaving a stale (already-past) nextRetryAt.
+    await recordRetryOutcome(delivery.id, (delivery.attempt ?? 1) + 1, retried.status === 'SUCCESS');
 
     return NextResponse.json({
       success: true,

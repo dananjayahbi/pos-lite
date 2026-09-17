@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 
 export async function GET() {
@@ -25,6 +27,10 @@ export async function GET() {
         { status: 401 },
       );
     }
+
+    // M29-03 (OBS-41): the category picker belongs to the website CMS.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebsite);
+    if (forbidden) return forbidden;
 
     const categories = await prisma.category.findMany({
       where: { tenantId },

@@ -6,6 +6,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
+import { ApiError } from '@/lib/api/errors';
 import { createAuditLog } from '@/lib/services/audit.service';
 import type { Prisma } from '@/generated/prisma/client';
 
@@ -17,6 +18,59 @@ function pruneEmptyStrings<T extends Record<string, unknown>>(obj: T): T {
     if (result[key] === '') result[key] = null;
   }
   return result as T;
+}
+
+/**
+ * OBS-44 — normalize an ad scheduling value for Prisma.
+ *
+ * `WebsiteDateSchema` (`z.coerce.date()`) hands the service a real `Date` (or
+ * `null`/`undefined`), so no string re-parsing happens here. Re-parsing was the
+ * bug: a path that skipped the schema could pass a non-date string and Prisma
+ * received `Invalid Date`. Anything that is not a valid `Date` fails closed as
+ * `null` rather than being guessed at.
+ */
+function toNullableDate(value: unknown): Date | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+}
+
+/**
+ * M29-01/BUG-68 — tenant ownership gate for hero-slide / ad **row mutations**.
+ *
+ * Hero slides and ads are mutated through row-level routes
+ * (`/hero-slides/[id]`, `/ads/[id]`) whose id comes straight from the URL, so a
+ * bare-id `update`/`delete` lets any authenticated user rewrite or destroy
+ * another tenant's storefront content (cross-tenant IDOR). Every row mutation
+ * resolves the row through this gate first.
+ *
+ * Fails closed with 404 — never 403 — so a foreign id is indistinguishable
+ * from a missing one (no existence disclosure), matching the convention used
+ * by `staff.service.ts` / `assertCustomerBelongsToTenant`.
+ */
+export async function assertWebsiteChildBelongsToTenant(
+  tenantId: string,
+  entity: 'heroSlide' | 'ad',
+  id: string,
+): Promise<{ id: string }> {
+  const row =
+    entity === 'heroSlide'
+      ? await prisma.websiteHeroSlide.findFirst({ where: { id, tenantId }, select: { id: true } })
+      : await prisma.websiteAd.findFirst({ where: { id, tenantId }, select: { id: true } });
+
+  if (!row) {
+    throw new ApiError(
+      404,
+      'NOT_FOUND',
+      entity === 'heroSlide' ? 'Hero slide not found' : 'Ad not found',
+    );
+  }
+  return row;
 }
 
 // ── Website Config ───────────────────────────────────────────────────────────
@@ -86,22 +140,39 @@ export async function createHeroSlide(
 }
 
 export async function updateHeroSlide(
+  tenantId: string,
   slideId: string,
   data: Record<string, unknown>,
 ) {
+  // M29-01/BUG-68: slideId is a client-controlled route param — resolve it
+  // inside the caller's tenant before writing (404 on a foreign/missing id).
+  await assertWebsiteChildBelongsToTenant(tenantId, 'heroSlide', slideId);
   return prisma.websiteHeroSlide.update({
     where: { id: slideId },
     data: pruneEmptyStrings(data) as unknown as Prisma.WebsiteHeroSlideUpdateInput,
   });
 }
 
-export async function deleteHeroSlide(slideId: string) {
+export async function deleteHeroSlide(tenantId: string, slideId: string) {
+  await assertWebsiteChildBelongsToTenant(tenantId, 'heroSlide', slideId);
   return prisma.websiteHeroSlide.delete({ where: { id: slideId } });
 }
 
 export async function reorderHeroSlides(
+  tenantId: string,
   slides: { id: string; sortOrder: number }[],
 ) {
+  // M29-01/BUG-68: the ids in this batch also arrive from the client, so the
+  // whole set must be proven to belong to the tenant before reordering.
+  const ids = slides.map(({ id }) => id);
+  const owned = await prisma.websiteHeroSlide.findMany({
+    where: { id: { in: ids }, tenantId },
+    select: { id: true },
+  });
+  if (owned.length !== new Set(ids).size) {
+    throw new ApiError(404, 'NOT_FOUND', 'Hero slide not found');
+  }
+
   const operations = slides.map(({ id, sortOrder }) =>
     prisma.websiteHeroSlide.update({
       where: { id },
@@ -148,23 +219,26 @@ export async function createAd(
       tenantId,
       configId,
       ...cleanData,
-      startsAt: data.startsAt ? new Date(data.startsAt as string) : null,
-      endsAt: data.endsAt ? new Date(data.endsAt as string) : null,
+      startsAt: toNullableDate(data.startsAt),
+      endsAt: toNullableDate(data.endsAt),
     } as unknown as Prisma.WebsiteAdCreateInput,
   });
 }
 
 export async function updateAd(
+  tenantId: string,
   adId: string,
   data: Record<string, unknown>,
 ) {
+  // M29-01/BUG-68: same row-level gate as updateHeroSlide.
+  await assertWebsiteChildBelongsToTenant(tenantId, 'ad', adId);
   const cleanData = pruneEmptyStrings({ ...data } as Record<string, unknown>);
   const updateData: Record<string, unknown> = { ...cleanData };
   if ('startsAt' in data) {
-    updateData.startsAt = data.startsAt ? new Date(data.startsAt as string) : null;
+    updateData.startsAt = toNullableDate(data.startsAt);
   }
   if ('endsAt' in data) {
-    updateData.endsAt = data.endsAt ? new Date(data.endsAt as string) : null;
+    updateData.endsAt = toNullableDate(data.endsAt);
   }
   return prisma.websiteAd.update({
     where: { id: adId },
@@ -172,7 +246,8 @@ export async function updateAd(
   });
 }
 
-export async function deleteAd(adId: string) {
+export async function deleteAd(tenantId: string, adId: string) {
+  await assertWebsiteChildBelongsToTenant(tenantId, 'ad', adId);
   return prisma.websiteAd.delete({ where: { id: adId } });
 }
 
@@ -200,7 +275,9 @@ export async function replaceHeroSlides(
   }[],
 ) {
   await prisma.$transaction([
-    prisma.websiteHeroSlide.deleteMany({ where: { configId } }),
+    // M29-01/BUG-68: configId already comes from the caller's own config, but
+    // tenantId is kept in the predicate so the wipe can never cross tenants.
+    prisma.websiteHeroSlide.deleteMany({ where: { configId, tenantId } }),
     ...slides.map((slide) =>
       prisma.websiteHeroSlide.create({
         data: {
@@ -239,7 +316,8 @@ export async function replaceAds(
   }[],
 ) {
   await prisma.$transaction([
-    prisma.websiteAd.deleteMany({ where: { configId } }),
+    // M29-01/BUG-68: tenantId in the predicate — see replaceHeroSlides.
+    prisma.websiteAd.deleteMany({ where: { configId, tenantId } }),
     ...ads.map((ad) =>
       prisma.websiteAd.create({
         data: {
@@ -252,8 +330,8 @@ export async function replaceAds(
           targetUrl: ad.targetUrl ?? null,
           position: ad.position ?? 'between_sections',
           displayAfterSection: ad.displayAfterSection ?? null,
-          startsAt: ad.startsAt ? new Date(ad.startsAt as string | Date) : null,
-          endsAt: ad.endsAt ? new Date(ad.endsAt as string | Date) : null,
+          startsAt: toNullableDate(ad.startsAt),
+          endsAt: toNullableDate(ad.endsAt),
           isActive: ad.isActive ?? true,
         },
       }),

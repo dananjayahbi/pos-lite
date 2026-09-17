@@ -50,6 +50,23 @@ export const UpdateWebsiteHeroSlideSchema = WebsiteHeroSlideSchema.partial();
 
 // ── Ads ──────────────────────────────────────────────────────────────────────
 
+/**
+ * OBS-44 — one date contract shared by the ad POST and PATCH paths.
+ *
+ * `z.coerce.date()` resolves the payload to a real `Date` (null-safe: an
+ * explicit `null` stays `null`, an absent key stays absent), and the refine
+ * rejects anything un-parseable. Previously the field was
+ * `z.string().datetime()` — a *string* that the service layer re-parsed with
+ * `new Date(...)`, so a path that skipped the schema could hand `Invalid Date`
+ * to Prisma. Because `UpdateWebsiteAdSchema` is `WebsiteAdSchema.partial()`,
+ * both verbs carry identical enforcement from this single definition.
+ */
+export const WebsiteDateSchema = z
+  .coerce.date()
+  .refine((date) => !Number.isNaN(date.getTime()), 'Invalid date')
+  .nullable()
+  .optional();
+
 export const WebsiteAdSchema = z.object({
   name: z.string().min(1, 'Ad name is required').max(100),
   mediaType: z.enum(['image', 'video']),
@@ -58,12 +75,26 @@ export const WebsiteAdSchema = z.object({
   targetUrl: z.string().max(500).nullable().optional().or(z.literal('')),
   position: z.enum(['header', 'between_sections', 'sidebar', 'popup']),
   displayAfterSection: z.string().nullable().optional().or(z.literal('')),
-  startsAt: z.string().datetime().optional().nullable(),
-  endsAt: z.string().datetime().optional().nullable(),
+  startsAt: WebsiteDateSchema,
+  endsAt: WebsiteDateSchema,
   isActive: z.boolean().default(true),
 });
 
 export const UpdateWebsiteAdSchema = WebsiteAdSchema.partial();
+
+// ── Announcement Bar (req 3.4) ───────────────────────────────────────────────
+// Dedicated editor for the site-wide top-bar announcement, so a merchant can
+// change the text/link without touching code. Optional end-to-end so configs
+// stored before this field existed keep working.
+
+export const WebsiteAnnouncementBarSchema = z.object({
+  text: z.string().max(200).nullable().optional().or(z.literal('')),
+  link: z.string().max(500).nullable().optional().or(z.literal('')),
+  isActive: z.boolean().default(false),
+});
+
+export const UpdateWebsiteAnnouncementBarSchema =
+  WebsiteAnnouncementBarSchema.partial();
 
 // ── Section Configs ──────────────────────────────────────────────────────────
 
@@ -263,6 +294,11 @@ export const WebsiteConfigSchema = z.object({
   // Sections
   sections: WebsiteSectionsSchema.default({}),
 
+  // Site-wide announcement top-bar (req 3.4). Optional: when the caller omits
+  // it the stored value is left untouched (Prisma ignores absent keys), so a
+  // partial save like `{ tagline }` never clears a configured announcement.
+  announcementBar: WebsiteAnnouncementBarSchema.optional(),
+
   // Footer
   footerAbout: z.string().max(1000).nullable().optional().or(z.literal('')),
   footerColumns: z.array(FooterColumnSchema).default([]),
@@ -315,3 +351,6 @@ export const WebsiteConfigSchema = z.object({
 export type WebsiteConfigInput = z.infer<typeof WebsiteConfigSchema>;
 export type WebsiteHeroSlideInput = z.infer<typeof WebsiteHeroSlideSchema>;
 export type WebsiteAdInput = z.infer<typeof WebsiteAdSchema>;
+export type WebsiteAnnouncementBarInput = z.infer<
+  typeof WebsiteAnnouncementBarSchema
+>;

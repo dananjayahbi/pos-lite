@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import type { TenantStatus } from '@/generated/prisma/client';
 import { requireSuperAdmin } from '@/lib/api/superadmin-guard';
+import { provisionTrialSubscriptionSafely } from '@/lib/billing/provisioning';
 
 // The currency is always LKR for this on-premises deployment. It is locked on
 // the server side so only LKR can be persisted for any business.
@@ -112,6 +113,15 @@ export async function POST(request: NextRequest) {
         role: 'OWNER',
       },
     });
+
+    // ─ Billing provisioning (M30-01 / BUG-70) ──────────────────────────────
+    // Give the new tenant a TRIAL Subscription now that its row exists, so
+    // `/billing` is reachable from day one instead of redirecting to `/`
+    // (`createTrialSubscription` previously had zero callers). The hook is
+    // non-fatal by design — a tenant must still be created when the plan
+    // table is empty or provisioning hiccups. When the 2-business cap above
+    // is lifted, this stays the single place billing is provisioned.
+    await provisionTrialSubscriptionSafely(tenant.id);
 
     return NextResponse.json({ id: tenant.id }, { status: 201 });
   } catch {

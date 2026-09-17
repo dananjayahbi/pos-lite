@@ -1,4 +1,5 @@
 import React from 'react';
+import { AnnouncementBar } from '../sections/AnnouncementBar';
 import { WebsiteHeader } from '../sections/WebsiteHeader';
 import { WebsiteFooter } from '../sections/WebsiteFooter';
 import { PageHero } from './PageHero';
@@ -43,6 +44,10 @@ export function StaticPageShell({
 
   return (
     <div className="site-wrapper">
+      {/* Site-wide announcement top-bar (req 3.4) — kept identical to the
+          main storefront so static pages match the home page. */}
+      <AnnouncementBar config={websiteConfig} />
+
       <WebsiteHeader config={websiteConfig} tenantSlug={tenantSlug} />
 
       {/* Page title hero */}

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
 import {
   InvoiceStatus,
@@ -10,12 +9,47 @@ import {
   autoGenerateNextInvoice,
   generateAndEmailInvoicePdf,
 } from "@/lib/billing/invoice.service";
+import {
+  verifyPayhereSignature,
+  type PayhereSignatureRejection,
+} from "@/lib/billing/payhere-signature";
 import { processOrderPaymentStatus } from "@/lib/services/order-payment.service";
 
-// ─── PayHere IPN Webhook ────────────────────────────────────────────────────
+// ── PayHere IPN Webhook ────────────────────────────────────────────────────
 // Receives Instant Payment Notifications from PayHere payment gateway.
-// Always returns 200 — PayHere retries on non-200 responses.
-// ─────────────────────────────────────────────────────────────────────────────
+//
+// Always returns 200 — PayHere retries on non-200 responses (OBS-47). A
+// rejection is therefore expressed IN THE BODY, never as a status code:
+//   accepted => { received: true }
+//   rejected => { received: false, signatureValid: false, reason: <code> }
+// where reason distinguishes 'SECRET_NOT_CONFIGURED' (misconfigured deployment,
+// BUG-71/M30-02) from 'BAD_SIGNATURE' (forged/tampered IPN) so ops can alert.
+//
+// INVARIANT (BUG-72/M30-03): the signature gate runs FIRST — before any DB
+// read or write. A rejected IPN creates ZERO rows; the InvoicePaymentEvent
+// financial ledger only ever holds verified payloads.
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Always-200 acknowledgement. Extra fields are additive — callers that only
+ * read `received` are unaffected.
+ */
+function accepted(extra: Record<string, unknown> = {}): NextResponse {
+  return NextResponse.json({ received: true, ...extra }, { status: 200 });
+}
+
+/**
+ * Always-200 rejection. `received:false` + `signatureValid:false` + the
+ * machine-readable `reason` make a dropped IPN distinguishable from an
+ * accepted one without changing the HTTP contract PayHere retries against.
+ * Nothing has been read from or written to the DB at this point.
+ */
+function rejected(reason: PayhereSignatureRejection): NextResponse {
+  return NextResponse.json(
+    { received: false, signatureValid: false, reason },
+    { status: 200 },
+  );
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,24 +74,29 @@ export async function POST(request: NextRequest) {
       md5sig: "REDACTED",
     });
 
-    // ── Signature verification ──────────────────────────────────────────
-    const secret = process.env.PAYHERE_MERCHANT_SECRET ?? "";
-    const innerHash = createHash("md5")
-      .update(secret.toUpperCase())
-      .digest("hex");
-    const expectedSig = createHash("md5")
-      .update(
-        merchant_id + order_id + payhere_amount + payhere_currency + innerHash,
-      )
-      .digest("hex");
-    const signatureValid =
-      expectedSig.toLowerCase() === md5sig.toLowerCase();
+    // ─ Signature verification (GATE — first, before any DB access) ──────
+    // `verifyPayhereSignature` owns the md5 algorithm and the rejection
+    // taxonomy (see src/lib/billing/payhere-signature.ts). A missing secret is
+    // warned about there, throttled so an IPN flood cannot spam logs/Sentry.
+    const { valid: signatureValid, reason } = verifyPayhereSignature({
+      merchantId: merchant_id,
+      orderId: order_id,
+      amount: payhere_amount,
+      currency: payhere_currency,
+      md5sig,
+    });
 
+    // Rejected → respond 200 (retry semantics) and stop. No invoice lookup, no
+    // audit row, no order/subscription/tenant mutation (BUG-72).
     if (!signatureValid) {
-      console.warn("[PayHere IPN] Invalid signature for order:", order_id);
+      console.warn(
+        "[PayHere IPN] Rejected IPN:",
+        JSON.stringify({ order_id, status_code, reason }),
+      );
+      return rejected(reason);
     }
 
-    // ── Look up existing invoice ────────────────────────────────────────
+    // ─ Look up existing invoice ────────────────────────────────────────
     const invoice = await prisma.invoice.findUnique({
       where: { id: order_id },
       include: { subscription: true, tenant: true },
@@ -74,7 +113,9 @@ export async function POST(request: NextRequest) {
             payhereOrderId: order_id,
             payhereAmount: payhere_amount,
             payhereMd5sig: md5sig,
-            signatureValid,
+            // Only verified payloads reach this write (the gate above), so the
+            // ledger records the constant that follows from it.
+            signatureValid: true,
             rawPayload: rawBody,
           },
         });
@@ -86,11 +127,6 @@ export async function POST(request: NextRequest) {
         "[PayHere IPN] No invoice found for order_id — skipping audit event:",
         order_id,
       );
-    }
-
-    // Stop processing if signature invalid
-    if (!signatureValid) {
-      return NextResponse.json({ received: true }, { status: 200 });
     }
 
     // ── Customer (website) order IPN ────────────────────────────────────
@@ -116,7 +152,7 @@ export async function POST(request: NextRequest) {
       } catch (e) {
         console.error("[PayHere IPN] Failed to process order payment:", e);
       }
-      return NextResponse.json({ received: true }, { status: 200 });
+      return accepted();
     }
 
     // ── Recurring IPN — create invoice on the fly ───────────────────────
@@ -156,7 +192,8 @@ export async function POST(request: NextRequest) {
               payhereOrderId: order_id,
               payhereAmount: payhere_amount,
               payhereMd5sig: md5sig,
-              signatureValid,
+              // Verified: the gate above already rejected anything unsigned.
+              signatureValid: true,
               rawPayload: rawBody,
             },
           });
@@ -181,12 +218,12 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      return NextResponse.json({ received: true }, { status: 200 });
+      return accepted();
     }
 
     if (!invoice) {
       console.error("[PayHere IPN] Unknown order_id:", order_id);
-      return NextResponse.json({ received: true }, { status: 200 });
+      return accepted();
     }
 
     // ── Duplicate protection ────────────────────────────────────────────
@@ -195,7 +232,7 @@ export async function POST(request: NextRequest) {
         "[PayHere IPN] Duplicate IPN for paid invoice:",
         invoice.id,
       );
-      return NextResponse.json({ received: true }, { status: 200 });
+      return accepted();
     }
 
     // ── Process payment status ──────────────────────────────────────────
@@ -207,10 +244,10 @@ export async function POST(request: NextRequest) {
       recurring,
     );
 
-    return NextResponse.json({ received: true }, { status: 200 });
+    return accepted();
   } catch (error) {
     console.error("[PayHere IPN] Unhandled error:", error);
-    return NextResponse.json({ received: true }, { status: 200 });
+    return accepted();
   }
 }
 

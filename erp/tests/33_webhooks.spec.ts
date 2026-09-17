@@ -61,6 +61,10 @@ const KNOWN_EVENTS = ['sale.completed', 'return.initiated', 'stock.adjusted', 's
 const createdEndpointIds: string[] = [];
 let primaryEndpointId: string | null = null;
 let primaryDeliveryId: string | null = null;
+// The retry CHILD row F10 creates (attempt 2). Kept separately because delivery
+// rows survive across runs — the endpoint delete is a soft delete — so F10b must
+// assert on the exact row this run produced.
+let primaryRetryChildId: string | null = null;
 
 async function login(page: any, email: string, password: string) {
   await page.goto(`${BASE_URL}/login`);
@@ -97,13 +101,20 @@ test.describe('§1 Functional & business logic', () => {
     expect(page.url()).toContain('/settings/webhooks');
   });
 
-  test('F2: endpoints list starts empty and returns typed payload', async ({ page }) => {
+  test('F2: endpoints list returns typed payload and pagination meta', async ({ page }) => {
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
     const res = await page.request.get(ENDPOINTS_URL);
     expect(res.status()).toBe(200);
     const json = await res.json();
     expect(json.success).toBe(true);
     expect(Array.isArray(json.data)).toBe(true);
+    // M33-02 / OBS-66 FIXED: the list was unbounded. It now carries the XC-02
+    // canonical pagination envelope with a generous default limit of 50.
+    expect(json.meta).toBeTruthy();
+    expect(json.meta.page).toBe(1);
+    expect(json.meta.limit).toBe(50);
+    expect(typeof json.meta.total).toBe('number');
+    expect(typeof json.meta.hasMore).toBe('boolean');
   });
 
   test('F3: owner creates an endpoint — 201, 64-hex secret returned once', async ({ page }) => {
@@ -128,6 +139,25 @@ test.describe('§1 Functional & business logic', () => {
     expect(ep, 'created endpoint must appear in the list').toBeTruthy();
     expect(ep.url).toBe(DEAD_URL);
     expect(ep.lastDelivery).toBeNull();
+  });
+
+  test('F4b: endpoint list pagination clamps limit to 1..200 and honours page', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    // M33-02 / OBS-66: malformed values are a typed 400 (shared XC-01 parser),
+    // out-of-range values are CLAMPED (never a 500, never unbounded).
+    const malformed = await page.request.get(`${ENDPOINTS_URL}?limit=abc`);
+    expect(malformed.status()).toBe(400);
+    const huge = await page.request.get(`${ENDPOINTS_URL}?limit=99999`);
+    expect(huge.status()).toBe(200);
+    expect((await huge.json()).meta.limit).toBe(200);
+    const zero = await page.request.get(`${ENDPOINTS_URL}?limit=0`);
+    expect(zero.status()).toBe(200);
+    expect((await zero.json()).meta.limit).toBe(1);
+    const far = await page.request.get(`${ENDPOINTS_URL}?page=1000000&limit=50`);
+    expect(far.status()).toBe(200);
+    const farJson = await far.json();
+    expect(farJson.data).toHaveLength(0);
+    expect(farJson.meta.hasMore).toBe(false);
   });
 
   test('F5: validation — HTTP URL rejected (HTTPS-only)', async ({ page }) => {
@@ -211,6 +241,43 @@ test.describe('§1 Functional & business logic', () => {
     // Same event re-delivered, but as a distinct delivery row — no event duplication.
     const retriedRow = after.find((d: any) => d.id === json.data.id);
     expect(retriedRow.event).toBe(original.event);
+
+    // Hand the child id to F10b so it can assert the scheduling invariant on the
+    // row THIS run created. Delivery rows are now PRESERVED across runs (the
+    // endpoint delete is a soft delete), so scanning "all rows" would also pick
+    // up retried heads left by earlier runs.
+    primaryRetryChildId = json.data.id;
+  });
+
+  test('F10b: auto-retry scheduling — the chain head owns the schedule, retry children never do', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    test.skip(!primaryEndpointId || !primaryDeliveryId || !primaryRetryChildId, 'No retry child recorded by F10');
+
+    const rows = (await (await page.request.get(`${ENDPOINTS_URL}/${primaryEndpointId}/deliveries`)).json()).data;
+
+    // M33-02 / OBS-62: the inline dispatch stamps `attempt` and, on failure, a
+    // `nextRetryAt` that `cron/webhook-retries` selects on.
+    const head = rows.find((d: any) => d.id === primaryDeliveryId);
+    expect(head, 'the chain-head delivery exists').toBeTruthy();
+
+    // Assertions run against the ids THIS run produced. Delivery rows survive
+    // across runs (soft delete preserves the ledger), so a blanket scan would
+    // also see retried heads from previous runs.
+    expect(head.attempt, 'F10 manual retry advanced the head').toBeGreaterThanOrEqual(2);
+    expect(['FAILED', 'EXHAUSTED']).toContain(head.status);
+    if (head.status === 'FAILED') {
+      expect(head.nextRetryAt, 'a FAILED head stays scheduled for automatic retry').toBeTruthy();
+    } else {
+      expect(head.nextRetryAt, 'an EXHAUSTED head is dead-lettered, not scheduled').toBeNull();
+    }
+
+    // THE INVARIANT: the retry child is recorded for the ledger but carries no
+    // schedule of its own. If it did, a failed retry would itself become due and
+    // both the head and the child would drive the same event (duplicate sends).
+    const child = rows.find((d: any) => d.id === primaryRetryChildId);
+    expect(child, 'the retry child exists').toBeTruthy();
+    expect(child.attempt, 'the child is attempt 2').toBe(2);
+    expect(child.nextRetryAt, 'a retry child must never be scheduled').toBeNull();
   });
 
   test('F11: unknown endpoint id → 404 on deliveries + test + delete', async ({ page }) => {
@@ -274,7 +341,7 @@ test.describe('§2 Financial & calculation precision', () => {
 // §3 — Cross-module cascade & impact
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('§3 Cross-module cascade & impact', () => {
-  test('L1: endpoint delete cascades its deliveries (hard delete, no orphans)', async ({ page }) => {
+  test('L1: endpoint delete is a SOFT delete — hidden from the list, delivery ledgers preserved', async ({ page }) => {
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
     // Create a sacrificial endpoint + one delivery.
     const create = await page.request.post(ENDPOINTS_URL, {
@@ -282,18 +349,35 @@ test.describe('§3 Cross-module cascade & impact', () => {
     });
     expect(create.status()).toBe(201);
     const epId = (await create.json()).data.id;
-    createdEndpointIds.push(epId);
-    await page.request.post(`${ENDPOINTS_URL}/${epId}/test`);
+    // The live POST is not fetched for its body here — only its status matters,
+    // and the delivery ledger is what the assertions below inspect.
+    const testFire = await page.request.post(`${ENDPOINTS_URL}/${epId}/test`);
+    expect(testFire.status(), 'test delivery recorded').toBe(200);
 
     const del = await page.request.delete(`${ENDPOINTS_URL}/${epId}`);
     expect(del.status()).toBe(200);
-    // Endpoint gone from the list.
+
+    // M33-03 / OBS-63 FIXED: the delete is now a SOFT delete. The endpoint stops
+    // appearing (and stops receiving events) but the delivery history is NOT
+    // destroyed — a webhook ledger is audit evidence, and an owner who removes
+    // an endpoint to stop failures should still be able to see what failed.
     const list = (await (await page.request.get(ENDPOINTS_URL)).json()).data;
-    expect(list.find((e: any) => e.id === epId)).toBeUndefined();
-    // Deliveries list for the deleted endpoint → 404 (endpoint-scoped lookup).
+    expect(list.find((e: any) => e.id === epId), 'soft-deleted endpoint is hidden').toBeUndefined();
+
+    // The delivery ledger survives. The endpoint-scoped read is 404 (the lookup
+    // filters deletedAt:null), which proves the endpoint is logically gone while
+    // the rows behind it remain addressable through the tenant-scoped retry path.
     const deliveries = await page.request.get(`${ENDPOINTS_URL}/${epId}/deliveries`);
-    expect(deliveries.status()).toBe(404);
-    createdEndpointIds.splice(createdEndpointIds.indexOf(epId), 1);
+    expect(deliveries.status(), 'soft-deleted endpoint reads as absent').toBe(404);
+
+    // Re-delete is idempotent-safe: it 404s because the row is already hidden.
+    const redelete = await page.request.delete(`${ENDPOINTS_URL}/${epId}`);
+    expect(redelete.status()).toBe(404);
+
+    // Nothing to clean up in the endpoint list (already hidden); the tenant-scoped
+    // rows are retained by design.
+    const idx = createdEndpointIds.indexOf(epId);
+    if (idx >= 0) createdEndpointIds.splice(idx, 1);
   });
 
   test('L2: only active endpoints with a matching subscription receive dispatch (contract pin)', async ({ page }) => {
@@ -531,21 +615,28 @@ test.describe('§8 Security, RBAC & multi-tenant isolation', () => {
 // §9 — Boundary inputs & chaos data
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('§9 Boundary inputs & chaos data', () => {
-  test('X1 (BUG-76 pin): XSS payload in URL is STORED VERBATIM (no sanitization)', async ({ page }) => {
+  test('X1 (BUG-76 fixed): markup-bearing URL is rejected at the schema (400)', async ({ page }) => {
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
-    // DEFECT (BUG-76): zod's .url() accepts 'https://evil.example.com/<script>...'
-    // and the route stores it verbatim — the list API returns the raw script
-    // tags, which the settings UI would render. Pinned as current behavior;
-    // URL sanitization/encoding is the correct contract.
+    // M33-01 / BUG-76 FIXED: the endpoint URL now goes through the shared
+    // `zSafeUrl` guard (XC-04) on top of the HTTPS rule. RFC-3986-illegal
+    // characters — the ones that build markup or break out of an attribute —
+    // are a typed 400 instead of a stored payload echoed by the list API.
     const res = await page.request.post(ENDPOINTS_URL, {
       data: endpointBody({ url: 'https://evil.example.com/<script>alert(1)</script>' }),
     });
-    expect(res.status(), 'BUG-76 pin: XSS URL is accepted (201)').toBe(201);
-    const id = (await res.json()).data.id;
-    createdEndpointIds.push(id);
-    const list = await page.request.get(ENDPOINTS_URL);
-    const text = await list.text();
-    expect(text, 'BUG-76 pin: script tags stored verbatim in the URL field').toContain('<script>');
+    expect(res.status(), 'BUG-76 fixed: XSS URL rejected').toBe(400);
+
+    // Non-vacuity: a clean HTTPS URL is still accepted, so the 400 above is the
+    // markup rule and not an unrelated failure.
+    const ok = await page.request.post(ENDPOINTS_URL, {
+      data: endpointBody({ url: 'https://hooks.example.com/ok' }),
+    });
+    expect(ok.status()).toBe(201);
+    createdEndpointIds.push((await ok.json()).data.id);
+
+    // And nothing markup-bearing can appear in the list.
+    const text = await (await page.request.get(ENDPOINTS_URL)).text();
+    expect(text, 'BUG-76 fixed: no raw script tags in the list').not.toContain('<script>');
   });
 
   test('X2: Unicode/emoji in URL is rejected or stored inert', async ({ page }) => {

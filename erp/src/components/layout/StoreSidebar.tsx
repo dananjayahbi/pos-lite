@@ -344,6 +344,9 @@ const navGroups: NavGroup[] = [
         name: 'Website',
         href: '/settings/website',
         roles: ['OWNER', 'MANAGER'],
+        // M29-03 (OBS-41): the nav entry now carries the same permission the
+        // page + 7 API routes enforce (role list intentionally unchanged).
+        permission: PERMISSIONS.SETTINGS.manageWebsite,
       },
       {
         name: 'Webhooks',

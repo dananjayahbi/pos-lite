@@ -7,6 +7,7 @@ import type { Prisma } from '@/generated/prisma/client';
 import { StockMovementReason } from '@/generated/prisma/client';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { parseQueryInt, parseQueryDate } from '@/lib/api/query-params';
+import { toCsvLines } from '@/lib/export';
 
 const REASON_LABELS: Record<string, string> = {
   FOUND: 'Found',
@@ -21,13 +22,6 @@ const REASON_LABELS: Record<string, string> = {
 };
 
 const VALID_REASONS = new Set(Object.values(StockMovementReason));
-
-function escapeCSV(value: string): string {
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -126,24 +120,38 @@ export async function GET(request: NextRequest) {
         include,
       });
 
-      const header = 'Date,Product,SKU,Form,Pack Size,Reason,Reason Label,Change,Before,After,Actor,Note';
-      const rows = movements.map((m) => {
-        const date = m.createdAt.toISOString();
-        const product = escapeCSV(m.variant.product.name);
-        const sku = escapeCSV(m.variant.sku);
-        const form = escapeCSV(m.variant.form ?? '');
-        const packSize = escapeCSV(m.variant.packSize ?? '');
-        const reason = m.reason;
-        const reasonLabel = escapeCSV(REASON_LABELS[m.reason] ?? m.reason);
-        const change = m.quantityDelta > 0 ? `+${m.quantityDelta}` : String(m.quantityDelta);
-        const before = String(m.quantityBefore);
-        const after = String(m.quantityAfter);
-        const actor = escapeCSV(m.actor?.email ?? 'system');
-        const note = escapeCSV(m.note ?? '');
-        return `${date},${product},${sku},${form},${packSize},${reason},${reasonLabel},${change},${before},${after},${actor},${note}`;
-      });
-
-      const csv = [header, ...rows].join('\n');
+      // M35-01 (BUG-79): shared writer + unquoted header. The local `escapeCSV`
+      // helper is gone so this route cannot drift from the other exports.
+      const csv = toCsvLines(
+        [
+          'Date',
+          'Product',
+          'SKU',
+          'Form',
+          'Pack Size',
+          'Reason',
+          'Reason Label',
+          'Change',
+          'Before',
+          'After',
+          'Actor',
+          'Note',
+        ],
+        movements.map((m) => [
+          m.createdAt.toISOString(),
+          m.variant.product.name,
+          m.variant.sku,
+          m.variant.form ?? '',
+          m.variant.packSize ?? '',
+          m.reason,
+          REASON_LABELS[m.reason] ?? m.reason,
+          m.quantityDelta > 0 ? `+${m.quantityDelta}` : String(m.quantityDelta),
+          String(m.quantityBefore),
+          String(m.quantityAfter),
+          m.actor?.email ?? 'system',
+          m.note ?? '',
+        ]),
+      );
 
       const fromStr = fromDate ? fromDate.toISOString().slice(0, 10) : '';
       const toStr = toDate ? toDate.toISOString().slice(0, 10) : '';
