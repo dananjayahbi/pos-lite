@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { hasPermission } from '@/lib/utils/permissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { convertAppointmentToSale } from '@/lib/services/appointment.service';
 
 export async function POST(
@@ -23,8 +25,20 @@ export async function POST(
       );
     }
 
+    // M27-02/BUG-86: conversion flips a status AND writes a financial Sale, so
+    // it requires both editAppointment and the sales-create key.
+    if (
+      !hasPermission(session.user, PERMISSIONS.APPOINTMENT.editAppointment) ||
+      !hasPermission(session.user, PERMISSIONS.SALE.createSale)
+    ) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
+      );
+    }
+
     const { id } = await params;
-    const sale = await convertAppointmentToSale(tenantId, id, session.user.id);
+    const sale = await convertAppointmentToSale(tenantId, id, session.user.id, session.user.role);
 
     return NextResponse.json({ success: true, data: sale }, { status: 201 });
   } catch (error) {

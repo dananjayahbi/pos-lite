@@ -118,6 +118,10 @@ export async function POST(
     if (message === 'SERVICE_NOT_FOUND') {
       return errorWithCors(request, 404, 'The selected service is unavailable.');
     }
+    // M27-04/OBS-79: a public client cannot record a visit in the past.
+    if (message === 'BACKDATE_NOT_ALLOWED') {
+      return errorWithCors(request, 400, 'Please choose a time from now onwards.');
+    }
     // eslint-disable-next-line no-console
     console.error('POST /api/public/site/[tenantSlug]/appointments error:', error);
     return errorWithCors(request, 500, 'Failed to book appointment. Please try again.');

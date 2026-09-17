@@ -151,8 +151,13 @@ test.describe('Module 18 - Shifts, Cash Movements & Z-Report', () => {
     await expect(page.getByRole('heading', { name: /shifts/i })).toBeVisible({ timeout: 40_000 });
     await expect(page.getByRole('button', { name: /open shift|close current shift/i })).toBeVisible();
 
+    // FIXED (M18-01/BUG-52): the POS layout no longer early-returns the
+    // open-shift screen over /pos/shift-report, so an invalid shiftId reaches
+    // the report page's own error state ("Shift not found" from the z-report
+    // API, or "Failed to load report" fallback) instead of the "Open Your
+    // Shift" cashier screen.
     await page.goto(`${BASE_URL}/pos/shift-report?shiftId=invalid`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText(/no shift id provided|failed to load report/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/no shift id provided|failed to load report|shift not found/i)).toBeVisible({ timeout: 20_000 });
   });
 
   test('F1 opens a shift and rejects duplicate opening while current-shift is visible', async ({ page }) => {

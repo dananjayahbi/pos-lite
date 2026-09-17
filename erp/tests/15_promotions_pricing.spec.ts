@@ -85,8 +85,8 @@ async function evaluate(page: Page, variant: any, extra: Record<string, unknown>
 
 test.describe('Module 15 - Promotions, Discounts & Customer Pricing', () => {
   test.describe.configure({ mode: 'serial', timeout: 180_000 });
-  const state: { variant?: any; product?: any; customer?: any; promotionIds: string[]; saleIds: string[] } = {
-    promotionIds: [], saleIds: [],
+  const state: { variant?: any; product?: any; customer?: any; promotionIds: string[]; saleIds: string[]; customerPricingRuleIds: string[] } = {
+    promotionIds: [], saleIds: [], customerPricingRuleIds: [],
   };
 
   test.beforeAll(async ({ browser }) => {
@@ -107,6 +107,10 @@ test.describe('Module 15 - Promotions, Discounts & Customer Pricing', () => {
   test.afterAll(async ({ browser }) => {
     const page = await browser.newPage();
     await login(page);
+    for (const ruleId of state.customerPricingRuleIds) {
+      // DELETE is a soft deactivate (CustomerPricingRule has no deletedAt).
+      await page.request.delete(`/api/store/customer-pricing-rules/${ruleId}`);
+    }
     for (const saleId of state.saleIds) {
       await page.request.post(`/api/store/sales/${saleId}/void`);
     }
@@ -280,14 +284,65 @@ test.describe('Module 15 - Promotions, Discounts & Customer Pricing', () => {
     });
   });
 
-  test('F9 customer pricing evaluation is tenant-scoped and has no accidental discount without a rule', async ({ page }) => {
+  test('F9 customer pricing rules apply to tagged customers and stop when deactivated', async ({ page }) => {
     await login(page);
-    const evaluated = await evaluate(page, state.variant, { customerId: state.customer.id });
-    expect(evaluated.response.status()).toBe(200);
-    expect(evaluated.result.data.appliedDiscounts.some((d: any) => d.promotionType === 'CUSTOMER_PRICING')).toBe(false);
-    // The schema exposes CustomerPricingRule, but no store API creates one.
-    const unsupported = await page.request.post('/api/store/customer-pricing-rules', { data: {} });
-    expect([404, 405]).toContain(unsupported.status());
+    // No rule yet → no accidental customer-pricing discount.
+    const before = await evaluate(page, state.variant, { customerId: state.customer.id });
+    expect(before.response.status()).toBe(200);
+    expect(before.result.data.appliedDiscounts.some((d: any) => d.promotionType === 'CUSTOMER_PRICING')).toBe(false);
+
+    // Tag the fixture customer so the rule can match it (evaluation keys off
+    // exact Customer.tags membership).
+    const tag = `M15TAG${RUN}`.toUpperCase();
+    const tagged = await page.request.patch(`/api/store/customers/${state.customer.id}`, {
+      data: { tags: [tag] }, headers: { 'content-type': 'application/json' },
+    });
+    expect(tagged.status()).toBe(200);
+
+    const retailPrice = Number(variantPrice(state.variant));
+    const rulePrice = Math.round(retailPrice * 0.5 * 100) / 100;
+    // Window covers "now" so the rule is live for the evaluation below.
+    const created = await post(page, '/api/store/customer-pricing-rules', {
+      customerTag: tag,
+      variantId: state.variant.id,
+      price: rulePrice,
+      startsAt: '2000-01-01T00:00:00.000Z',
+      endsAt: '2999-01-01T00:00:00.000Z',
+    });
+    const rule = await body(created);
+    expect(created.status(), JSON.stringify(rule)).toBe(201);
+    state.customerPricingRuleIds.push(rule.data.id);
+    expect(rule.data.customerTag).toBe(tag);
+    expect(rule.data.variantId).toBe(state.variant.id);
+
+    const listed = await body(await page.request.get(`/api/store/customer-pricing-rules?customerTag=${tag}`));
+    expect(listed.data.some((row: any) => row.id === rule.data.id)).toBe(true);
+
+    // Cart evaluation for the tagged customer now shows the rule price.
+    const applied = await evaluate(page, state.variant, { customerId: state.customer.id });
+    expect(applied.response.status()).toBe(200);
+    const pricing = applied.result.data.appliedDiscounts.find((d: any) => d.promotionType === 'CUSTOMER_PRICING');
+    expect(pricing).toBeTruthy();
+    expect(pricing.promotionId).toBe(rule.data.id);
+    const expectedDiscount = ((retailPrice - rulePrice) * 2).toFixed(2);
+    expect(Number(pricing.discountAmount).toFixed(2)).toBe(expectedDiscount);
+
+    // Overlap guard: a second active rule for the same tag/variant/window 409s.
+    const overlap = await post(page, '/api/store/customer-pricing-rules', {
+      customerTag: tag,
+      variantId: state.variant.id,
+      price: 1,
+    });
+    expect(overlap.status()).toBe(409);
+    expect((await body(overlap)).error.code).toBe('CUSTOMER_PRICING_OVERLAP');
+
+    // Deactivate → normal price returns.
+    const deactivated = await page.request.delete(`/api/store/customer-pricing-rules/${rule.data.id}`);
+    expect(deactivated.status()).toBe(200);
+    expect((await body(deactivated)).data.isActive).toBe(false);
+    const after = await evaluate(page, state.variant, { customerId: state.customer.id });
+    expect(after.response.status()).toBe(200);
+    expect(after.result.data.appliedDiscounts.some((d: any) => d.promotionType === 'CUSTOMER_PRICING')).toBe(false);
   });
 
   test('S1 enforces unauthenticated and cashier permissions', async ({ request, browser }) => {
@@ -331,12 +386,29 @@ test.describe('Module 15 - Promotions, Discounts & Customer Pricing', () => {
       cartLines: [{ variantId: state.variant.id, quantity: -1, unitPrice: '10.00' }],
     });
     expect(negative.status()).toBe(400);
+    // M15-02 (BUG-47): `value` is now bounded per promotion type, so the
+    // safe-integer ceiling is rejected as a client-input error naming the field
+    // rather than reaching the Decimal(12,2) column and surfacing as a 500.
     const overflow = await post(page, '/api/store/promotions', {
       name: `M15 Overflow ${RUN}`, type: 'CART_PERCENTAGE', value: Number.MAX_SAFE_INTEGER,
     });
-    // Defect pin: an extreme finite number reaches Prisma and currently returns 500.
-    expect([400, 500]).toContain(overflow.status());
-    if (overflow.status() === 201) state.promotionIds.push((await body(overflow)).data.id);
+    expect(overflow.status()).toBe(400);
+    const overflowBody = await body(overflow);
+    expect(overflowBody.error.code).toBe('VALIDATION_ERROR');
+    expect(overflowBody.error.message).toMatch(/value/i);
+
+    // Every numeric shape is bounded: >100% percentage, an over-wide fixed
+    // amount, and a non-integer free-item quantity all stay 400s.
+    for (const input of [
+      { name: `M15 Pct ${RUN}`, type: 'CART_PERCENTAGE', value: 101 },
+      { name: `M15 Amx ${RUN}`, type: 'CART_FIXED', value: 99999999999.99 },
+      { name: `M15 Qty ${RUN}`, type: 'BOGO', value: 1.5 },
+      { name: `M15 Min ${RUN}`, type: 'BOGO', value: 1, minQuantity: 0 },
+    ]) {
+      const response = await post(page, '/api/store/promotions', input);
+      expect(response.status(), JSON.stringify(input)).toBe(400);
+      expect((await body(response)).error.code).toBe('VALIDATION_ERROR');
+    }
   });
 
   test('H1 supports scanner-like SKU input on the promotions-adjacent POS catalog', async ({ page }) => {

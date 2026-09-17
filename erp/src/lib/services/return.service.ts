@@ -46,15 +46,22 @@ export async function validateReturnEligibility(
   });
 
   if (!sale) {
-    throw new Error(`Sale not found: ${originalSaleId}`);
+    // M17-01: typed sentinels (INF-02 registry) — the returns route no longer
+    // substring-matches prose, and an unexpected throw can never fall through
+    // to a generic 500 for a routine client error.
+    throw new Error(`SALE_NOT_FOUND: ${originalSaleId}`);
   }
 
   if (sale.tenantId !== tenantId) {
-    throw new Error('Authorization error: sale does not belong to this tenant');
+    // Cross-tenant reference fails closed as 404 (indistinguishable from a
+    // missing sale) instead of the previous unhandled 500 — M17-01/BUG-50.
+    throw new Error(`FOREIGN_TENANT_RESOURCE: sale ${originalSaleId} belongs to another tenant`);
   }
 
   if (sale.status !== 'COMPLETED') {
-    throw new Error(`Sale status must be COMPLETED for return. Current status: ${sale.status}`);
+    throw new Error(
+      `RETURN_SALE_NOT_COMPLETED: current status ${sale.status}`,
+    );
   }
 
   // Check return window
@@ -65,8 +72,8 @@ export async function validateReturnEligibility(
 
   if (now > expiryDate) {
     throw new Error(
-      `Return window expired. Sale date: ${saleDate.toISOString().slice(0, 10)}, ` +
-        `expiry: ${expiryDate.toISOString().slice(0, 10)}`,
+      `RETURN_WINDOW_EXPIRED: sale date ${saleDate.toISOString().slice(0, 10)}, ` +
+        `expiry ${expiryDate.toISOString().slice(0, 10)}`,
     );
   }
 
@@ -74,11 +81,13 @@ export async function validateReturnEligibility(
   for (const line of lines) {
     const saleLine = sale.lines.find((sl) => sl.id === line.saleLineId);
     if (!saleLine) {
-      throw new Error(`Sale line ${line.saleLineId} does not belong to sale ${originalSaleId}`);
+      throw new Error(
+        `RETURN_LINE_FOREIGN: line ${line.saleLineId} does not belong to sale ${originalSaleId}`,
+      );
     }
 
     if (line.quantity <= 0) {
-      throw new Error(`Return quantity must be greater than zero for line ${line.saleLineId}`);
+      throw new Error(`RETURN_QTY_INVALID: line ${line.saleLineId}`);
     }
 
     const alreadyReturned = await getRemainingReturnableQty(line.saleLineId, tx);
@@ -86,9 +95,9 @@ export async function validateReturnEligibility(
 
     if (line.quantity > remaining) {
       throw new Error(
-        `Cannot return ${line.quantity} units of variant ${line.variantId} ` +
-          `(line ${line.saleLineId}). Only ${remaining} units remaining ` +
-          `(original: ${saleLine.quantity}, already returned: ${alreadyReturned})`,
+        `RETURN_QTY_EXCEEDS_RETURNABLE: line ${line.saleLineId} ` +
+          `(requested ${line.quantity}, remaining ${remaining}, ` +
+          `original ${saleLine.quantity}, already returned ${alreadyReturned})`,
       );
     }
   }

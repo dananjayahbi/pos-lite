@@ -103,10 +103,11 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error('POST /api/store/suppliers error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // M06-01 (BUG-30 / INF-02): duplicate-phone pre-check throws
+    // ApiError.conflict (409, friendly message preserved); a concurrent race
+    // loser hits @@unique([tenantId, phone]) and mapPrismaError turns P2002
+    // into 409 CONFLICT. Anything else is a logged generic 500 — never a
+    // raw-dump echo.
+    return toErrorResponse(error, 'POST /api/store/suppliers');
   }
 }

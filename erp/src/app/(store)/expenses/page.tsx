@@ -47,6 +47,7 @@ import { formatRupee } from '@/lib/format';
 import Decimal from 'decimal.js';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ReceiptUploader } from '@/components/expenses/ReceiptUploader';
+import { PettyCashFundPicker } from '@/components/expenses/PettyCashFundPicker';
 import { PettyCashExportButton } from '@/components/petty-cash/PettyCashExportButton';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -122,6 +123,9 @@ export default function ExpensesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
   const [viewExpense, setViewExpense] = useState<Expense | null>(null);
+  // M19-01 (D2): explicit manager approval to let a linked expense overdraw the fund.
+  const [createOverdraw, setCreateOverdraw] = useState(false);
+  const [editOverdraw, setEditOverdraw] = useState(false);
 
   // ── Query ──
   const buildParams = useCallback(() => {
@@ -150,16 +154,23 @@ export default function ExpensesPage() {
   );
 
   // Petty cash fund for optional linkage of standalone expenses (doc 36).
-  const { data: fund } = useQuery<{ id: string; name: string; activeCategories: string[] } | null>({
+  const { data: pettyCash } = useQuery<{
+    data: { id: string; name: string; activeCategories: string[] };
+    balance: { currentBalance: number };
+  } | null>({
     queryKey: ['petty-cash-fund'],
     queryFn: async () => {
       const res = await fetch('/api/store/petty-cash');
       const json = await res.json();
       if (!json.success) return null;
-      return json.data;
+      return json;
     },
     retry: false,
   });
+  // M19-01 (D2): pass the live balance so the picker can warn before submit.
+  const fund = pettyCash
+    ? { ...pettyCash.data, currentBalance: pettyCash.balance?.currentBalance }
+    : null;
 
   // ── Create Form ──
   const createForm = useForm<CreateExpenseInput>({
@@ -178,7 +189,8 @@ export default function ExpensesPage() {
       const res = await fetch('/api/store/expenses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        // M19-01 (D2): ride the manager approval only when an overdraft is pending.
+        body: JSON.stringify(createOverdraw ? { ...data, overdrawApproved: true } : data),
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error?.message ?? 'Failed to create');
@@ -186,8 +198,10 @@ export default function ExpensesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['petty-cash-fund'] });
       toast.success('Expense created');
       setCreateOpen(false);
+      setCreateOverdraw(false);
       createForm.reset();
     },
     onError: (err: Error) => toast.error(err.message),
@@ -203,7 +217,7 @@ export default function ExpensesPage() {
       const res = await fetch(`/api/store/expenses/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify(editOverdraw ? { ...data, overdrawApproved: true } : data),
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error?.message ?? 'Failed to update');
@@ -211,8 +225,10 @@ export default function ExpensesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['petty-cash-fund'] });
       toast.success('Expense updated');
       setEditExpense(null);
+      setEditOverdraw(false);
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -342,21 +358,14 @@ export default function ExpensesPage() {
                 <Input type="date" {...createForm.register('expenseDate')} className="border-mist" />
               </div>
               {fund && (
-                <div>
-                  <Label>Petty Cash Fund (optional)</Label>
-                  <Select
-                    value={createForm.watch('pettyCashFundId') ?? ''}
-                    onValueChange={(v) => createForm.setValue('pettyCashFundId', v === 'none' ? undefined : v)}
-                  >
-                    <SelectTrigger className="border-mist">
-                      <SelectValue placeholder="Not linked" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Not linked</SelectItem>
-                      <SelectItem value={fund.id}>{fund.name}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <PettyCashFundPicker
+                  fund={fund}
+                  fundId={createForm.watch('pettyCashFundId')}
+                  amount={createForm.watch('amount')}
+                  overdrawApproved={createOverdraw}
+                  onFundChange={(v) => createForm.setValue('pettyCashFundId', v)}
+                  onOverdrawChange={setCreateOverdraw}
+                />
               )}
               <div>
                 <Label>Receipt (optional)</Label>
@@ -577,21 +586,14 @@ export default function ExpensesPage() {
                 <Input type="date" {...editForm.register('expenseDate')} className="border-mist" />
               </div>
               {fund && (
-                <div>
-                  <Label>Petty Cash Fund (optional)</Label>
-                  <Select
-                    value={editForm.watch('pettyCashFundId') ?? ''}
-                    onValueChange={(v) => editForm.setValue('pettyCashFundId', v === 'none' ? undefined : v)}
-                  >
-                    <SelectTrigger className="border-mist">
-                      <SelectValue placeholder="Not linked" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Not linked</SelectItem>
-                      <SelectItem value={fund.id}>{fund.name}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <PettyCashFundPicker
+                  fund={fund}
+                  fundId={editForm.watch('pettyCashFundId')}
+                  amount={editForm.watch('amount')}
+                  overdrawApproved={editOverdraw}
+                  onFundChange={(v) => editForm.setValue('pettyCashFundId', v)}
+                  onOverdrawChange={setEditOverdraw}
+                />
               )}
               <div>
                 <Label>Receipt (optional)</Label>

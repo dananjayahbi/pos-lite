@@ -3,30 +3,41 @@ import { prisma } from '@/lib/prisma';
 import type { ShiftStatus, SaleStatus, PaymentMethod, ReturnRefundMethod } from '@/generated/prisma/client';
 import { sumPaymentBreakdown } from '@/lib/services/paymentBreakdown';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { lockForUpdate } from '@/lib/api/race-guard';
 
 // ── Open Shift ───────────────────────────────────────────────────────────────
 
 export async function openShift(tenantId: string, cashierId: string, openingFloat: number) {
-  const existing = await prisma.shift.findFirst({
-    where: {
-      tenantId,
-      cashierId,
-      status: 'OPEN' satisfies ShiftStatus,
-    },
-  });
+  // XC-06 / M18 F10: the "is a shift already open?" check used to run OUTSIDE a
+  // transaction, so three concurrent opens all passed the check and created
+  // duplicates (the F10 race pin). Lock the cashier's row first so same-cashier
+  // opens serialize: the loser sees the committed OPEN shift and 409s.
+  const shift = await prisma.$transaction(async (tx) => {
+    await lockForUpdate(tx, 'users', '"id" = $1', [cashierId]);
 
-  if (existing) {
-    throw new Error('CONFLICT: A shift is already open for this cashier');
-  }
+    const existing = await tx.shift.findFirst({
+      where: {
+        tenantId,
+        cashierId,
+        status: 'OPEN' satisfies ShiftStatus,
+      },
+    });
 
-  const shift = await prisma.shift.create({
-    data: {
-      tenantId,
-      cashierId,
-      openingFloat,
-      status: 'OPEN' satisfies ShiftStatus,
-    },
-  });
+    if (existing) {
+      throw new Error('CONFLICT: A shift is already open for this cashier');
+    }
+
+    return tx.shift.create({
+      data: {
+        tenantId,
+        cashierId,
+        openingFloat,
+        status: 'OPEN' satisfies ShiftStatus,
+      },
+    });
+    // 15s budget: concurrent opens queue on the row lock, so the losers
+    // legitimately wait out the winner's commit (Prisma's 5s default P2028'd).
+  }, { timeout: 15_000 });
 
   await createAuditLog({
     tenantId,

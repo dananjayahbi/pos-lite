@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { hasPermission } from '@/lib/utils/permissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getCommissionsForUser } from '@/lib/services/commission.service';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { parseQueryInt } from '@/lib/api/query-params';
 
 export async function GET(
   request: NextRequest,
@@ -25,7 +29,9 @@ export async function GET(
 
     const { id } = await params;
 
-    if (!['MANAGER', 'OWNER'].includes(session.user.role) && id !== session.user.id) {
+    // M20-01 (XC-03): "own records OR staff-management permission" — expressed as
+    // a permission key rather than a hard-coded MANAGER/OWNER list.
+    if (id !== session.user.id && !hasPermission(session.user, PERMISSIONS.STAFF.viewStaff)) {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'You can only view your own commission records' } },
         { status: 403 },
@@ -33,17 +39,14 @@ export async function GET(
     }
 
     const url = request.nextUrl;
-    const page = url.searchParams.get('page') ? Number(url.searchParams.get('page')) : 1;
-    const pageSize = url.searchParams.get('pageSize') ? Number(url.searchParams.get('pageSize')) : 20;
+    // XC-01: malformed page/pageSize now 400 instead of NaN → 500.
+    const page = parseQueryInt(url.searchParams, 'page', { default: 1, min: 1, max: 1_000_000 }) ?? 1;
+    const pageSize = parseQueryInt(url.searchParams, 'pageSize', { default: 20, min: 1, max: 200 }) ?? 20;
 
     const result = await getCommissionsForUser(tenantId, id, page, pageSize);
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
-    console.error('GET /api/store/staff/[id]/commissions error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'GET /api/store/staff/[id]/commissions');
   }
 }

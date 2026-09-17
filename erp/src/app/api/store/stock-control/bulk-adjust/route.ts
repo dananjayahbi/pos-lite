@@ -5,13 +5,24 @@ import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StockMovementReason } from '@/generated/prisma/client';
+import {
+  MAX_STOCK_ADJUSTMENT_DELTA,
+  MAX_STOCK_QUANTITY,
+} from '@/lib/validators/product.validators';
 
 const BulkAdjustSchema = z.object({
   adjustments: z
     .array(
       z.object({
         variantId: z.string().min(1, { error: 'Variant ID is required' }),
-        quantityDelta: z.number().int().refine((v) => v !== 0, { message: 'quantityDelta cannot be zero' }),
+        quantityDelta: z
+          .number()
+          .int()
+          .refine((v) => v !== 0, { message: 'quantityDelta cannot be zero' })
+          // M09-02 (BUG-41): same business ceiling as StockAdjustmentSchema.
+          .refine((v) => Math.abs(v) <= MAX_STOCK_ADJUSTMENT_DELTA, {
+            message: `quantityDelta must be between -${MAX_STOCK_ADJUSTMENT_DELTA} and ${MAX_STOCK_ADJUSTMENT_DELTA}`,
+          }),
         reason: z.nativeEnum(StockMovementReason, { error: 'Invalid reason' }),
         note: z.string().max(500).optional(),
       }),
@@ -123,6 +134,14 @@ export async function POST(request: NextRequest) {
             `BELOW_ZERO:${variant.sku}:${variant.stockQuantity}`,
           );
         }
+        // M09-02 (BUG-41): per-row ceiling check mirrors the below-zero guard
+        // so an overflowing batch rolls back with a typed error instead of a
+        // Postgres integer-out-of-range 500.
+        if (newQty > MAX_STOCK_QUANTITY) {
+          throw new Error(
+            `ABOVE_MAX:${variant.sku}:${variant.stockQuantity}`,
+          );
+        }
 
         await tx.productVariant.update({
           where: { id: adj.variantId },
@@ -223,6 +242,19 @@ export async function POST(request: NextRequest) {
             error: {
               code: 'BELOW_ZERO_STOCK',
               message: `Adjustment would result in negative stock quantity. SKU: ${sku}, Current stock: ${currentStock}.`,
+            },
+          },
+          { status: 422 },
+        );
+      }
+      if (error.message.startsWith('ABOVE_MAX:')) {
+        const [, sku, currentStock] = error.message.split(':');
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'ABOVE_MAX_STOCK',
+              message: `Adjustment would exceed the maximum stock quantity. SKU: ${sku}, Current stock: ${currentStock}.`,
             },
           },
           { status: 422 },

@@ -321,6 +321,14 @@ const navGroups: NavGroup[] = [
         permission: PERMISSIONS.SETTINGS.manageTax,
       },
       {
+        // M07-02 (OBS-81): /settings/store is live again (tenant self-service
+        // store profile), so it gets the nav entry its permission always implied.
+        name: 'Store Profile',
+        href: '/settings/store',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.SETTINGS.manageStoreProfile,
+      },
+      {
         name: 'Team & Permissions',
         href: '/settings/users',
         roles: ['OWNER', 'MANAGER'],

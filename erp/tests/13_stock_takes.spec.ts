@@ -10,6 +10,7 @@ import { test, expect, type Page } from '@playwright/test';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3003';
 const OWNER = { email: 'owner@dilani-ayurwellness.lk', password: 'owner123!' };
+const MANAGER = { email: 'manager@ayurpos.dev', password: 'manager123!' };
 const CASHIER = { email: 'cashier1@ayurpos.dev', password: 'cashier123!' };
 const TENANT_TWO = { email: 'owner@lanka-electronics.lk', password: 'owner123!' };
 const RUN = `m13x${Date.now().toString(36)}`.slice(-12);
@@ -267,19 +268,25 @@ test.describe.serial('Module 13 — Stock Takes (full-scope QA)', () => {
     expect(rows.some((row) => row.type === 'STOCK_TAKE_SUBMITTED' && row.relatedEntityId === state.sessionId)).toBe(true);
   });
 
-  test('F6 approved session is idempotence-guarded and review UI renders final state', async ({ page }) => {
+  test('F6 initiator self-approval is blocked (M13-02); a second approver approves, idempotence-guarded, review UI renders final state', async ({ page }) => {
     await login(page);
+    const selfApproval = await post(page, `/api/store/stock-control/stock-takes/${state.sessionId}/approve`);
+    expect(selfApproval.status(), 'maker-checker: initiator self-approval → 403').toBe(403);
+    expect(String((await json(selfApproval))?.error?.message ?? '')).toMatch(/cannot approve a stock take you initiated/i);
+
+    await login(page, MANAGER);
     const approved = await post(page, `/api/store/stock-control/stock-takes/${state.sessionId}/approve`);
-    expect(approved.status(), 'approve → 200').toBe(200);
+    expect(approved.status(), 'second approver with approveStockTake → 200').toBe(200);
     expect((await json(approved))?.data?.correctionsApplied).toBe(1);
     state.approvedDelta = 2;
 
     const secondApproval = await post(page, `/api/store/stock-control/stock-takes/${state.sessionId}/approve`);
     expect(secondApproval.status(), 'second approval → 400').toBe(400);
 
+    await login(page);
     const final = await getSession(page, state.sessionId!);
     expect(final.status).toBe('APPROVED');
-    expect(final.approvedBy.email).toBe(OWNER.email);
+    expect(final.approvedBy.email).toBe(MANAGER.email);
 
     await page.goto(`${BASE_URL}/stock-control/stock-takes/${state.sessionId}/review`, {
       waitUntil: 'domcontentloaded',
@@ -303,16 +310,37 @@ test.describe.serial('Module 13 — Stock Takes (full-scope QA)', () => {
     expect(movement.quantityDelta).toBe(2);
   });
 
-  test('P2 negative counted quantity is accepted by API (defect pin; count validation gap)', async ({ page }) => {
+  test('P2 negative or non-integer counted quantity is rejected (M13-01); valid counts persist', async ({ page }) => {
     await login(page);
-    const detail = await getSession(page, state.sessionId!);
+    const created = await createFreshSession(page, state.categoryId);
+    expect(created.response.status()).toBe(201);
+    state.extraSessions.push(created.id!);
+    const detail = await getSession(page, created.id!);
     const item = detail.items[0];
-    const response = await page.request.patch(
-      `/api/store/stock-control/stock-takes/${state.sessionId}/items/${item.id}`,
-      { data: { countedQuantity: -1 }, headers: { 'content-type': 'application/json' } },
-    );
-    expect(response.status(), 'negative counted quantity currently persists').toBe(200);
-    expect((await json(response))?.data?.discrepancy).toBe(-1 - item.systemQuantity);
+
+    // A valid integer count persists with the exact discrepancy.
+    const valid = await updateItem(page, created.id!, item.id, item.systemQuantity + 3);
+    expect(valid.countedQuantity).toBe(item.systemQuantity + 3);
+    expect(valid.discrepancy).toBe(3);
+
+    for (const bad of [-1, 2.5, '7', null]) {
+      const response = await page.request.patch(
+        `/api/store/stock-control/stock-takes/${created.id}/items/${item.id}`,
+        { data: { countedQuantity: bad }, headers: { 'content-type': 'application/json' } },
+      );
+      expect(response.status(), `count ${JSON.stringify(bad)} → 400`).toBe(400);
+      expect((await json(response))?.error?.code).toBe('VALIDATION_ERROR');
+    }
+
+    // Rejected writes must leave the stored count/discrepancy untouched.
+    const after = await getSession(page, created.id!);
+    const saved = after.items.find((candidate: any) => candidate.id === item.id);
+    expect(saved.countedQuantity).toBe(item.systemQuantity + 3);
+    expect(saved.discrepancy).toBe(3);
+    await post(page, `/api/store/stock-control/stock-takes/${created.id}/cancel`, {
+      action: 'discard',
+      note: `${RUN} P2 validation cleanup`,
+    });
   });
 
   // §3 Cross-module cascade and ledger impact
@@ -522,12 +550,12 @@ test.describe.serial('Module 13 — Stock Takes (full-scope QA)', () => {
       `/api/store/stock-control/stock-takes/${created.id}/items/${item.id}`,
       { data: { countedQuantity: 2.5 }, headers: { 'content-type': 'application/json' } },
     );
-    expect([200, 500], 'decimal count is either persisted or surfaced as a server error').toContain(decimal.status());
+    expect(decimal.status(), 'M13-01: decimal count is a typed validation error').toBe(400);
     const huge = await page.request.patch(
       `/api/store/stock-control/stock-takes/${created.id}/items/${item.id}`,
       { data: { countedQuantity: 2147483648 }, headers: { 'content-type': 'application/json' } },
     );
-    expect([200, 500], 'int4 overflow is not a silent stock mutation').toContain(huge.status());
+    expect([400, 500], 'int4 overflow is rejected or surfaced, never a silent stock mutation').toContain(huge.status());
     const xss = await page.request.patch(
       `/api/store/stock-control/stock-takes/${created.id}/items/${item.id}`,
       { data: { isRecounted: true, note: 'සටහන குறிப்பு 🌿 <img src=x onerror=alert(1)>' }, headers: { 'content-type': 'application/json' } },

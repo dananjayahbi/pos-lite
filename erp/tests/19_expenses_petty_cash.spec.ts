@@ -137,6 +137,46 @@ test.describe('Module 19 - Expenses & Petty Cash', () => {
     expect(fundAfter.id).toBe(fund.id);
   });
 
+  test('F3b blocks a fund-overdrawing expense by default and allows it with a manager approval (M19-01/D2)', async ({ page }) => {
+    await login(page, OWNER);
+    const fundBefore = await getFund(page);
+    const overdraw = Number(fundBefore.currentBalance) + 5000;
+
+    // Default: blocked with a typed 422 — nothing is written.
+    const blocked = await createExpense(page, {
+      category: 'MAINTENANCE',
+      amount: overdraw,
+      description: 'QA overdraft blocked',
+      expenseDate: new Date().toISOString().slice(0, 10),
+      pettyCashFundId: fundBefore.id,
+    });
+    expect(blocked.response.status()).toBe(422);
+    expect(blocked.body?.error?.code).toBe('PETTY_CASH_OVERDRAW');
+
+    const afterBlock = await getFund(page);
+    expect(Number(afterBlock.currentBalance)).toBeCloseTo(Number(fundBefore.currentBalance), 2);
+
+    // Manager override: explicit approval drives the balance negative.
+    const approved = await createExpense(page, {
+      category: 'MAINTENANCE',
+      amount: overdraw,
+      description: 'QA overdraft approved',
+      expenseDate: new Date().toISOString().slice(0, 10),
+      pettyCashFundId: fundBefore.id,
+      overdrawApproved: true,
+    });
+    expect(approved.response.status()).toBe(201);
+    const afterApprove = await getFund(page);
+    expect(Number(afterApprove.currentBalance)).toBeLessThan(0);
+
+    // Clean up: remove the approved expense and restore the fund balance.
+    const expenseId = approved.body?.data?.id as string;
+    const del = await page.request.delete(`/api/store/expenses/${expenseId}`);
+    expect([200, 204]).toContain(del.status());
+    const restored = await getFund(page);
+    expect(Number(restored.currentBalance)).toBeCloseTo(Number(fundBefore.currentBalance), 2);
+  });
+
   test('F4 triggers a low-balance alert once the running balance crosses the threshold', async ({ page }) => {
     await login(page, OWNER);
     const fund = await getFund(page);

@@ -185,6 +185,12 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
           // Mirror the product-level filter: the Deleted view shows the
           // soft-deleted variants (so SKU/stock are visible before restore).
           where: { deletedAt: includeDeleted ? { not: null } : null },
+          // Deterministic variant order (matches `getProductById`). Without an
+          // explicit orderBy Postgres returns variants in arbitrary physical
+          // order, so list consumers (POS/QA fixtures) that pick "the first
+          // variant" could resolve a different row on every call. The `id`
+          // tiebreaker matters because seeded variants often share a createdAt.
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
           select: {
             id: true,
             sku: true,
@@ -226,7 +232,7 @@ export async function getProductById(tenantId: string, productId: string) {
     include: {
       category: true,
       brand: true,
-      variants: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },
+      variants: { where: { deletedAt: null }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
     },
   });
 

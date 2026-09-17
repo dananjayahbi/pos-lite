@@ -45,6 +45,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs';
+// M15-01 (BUG-46) — customer pricing rules are managed in their own tab
+// rather than appended to this table.
+import { CustomerPricingTab } from '@/components/promotions/CustomerPricingTab';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -427,133 +436,152 @@ export default function PromotionsPage() {
         </Dialog>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-mist/30 bg-pearl p-4">
-          <p className="font-body text-xs uppercase tracking-wide text-mist">Active now</p>
-          <p className="mt-2 font-display text-2xl text-espresso">{activeCount}</p>
-          <p className="mt-1 text-sm text-sand">Inline create/edit still covers the common workflows cleanly.</p>
-        </div>
-        <div className="rounded-xl border border-mist/30 bg-pearl p-4">
-          <p className="font-body text-xs uppercase tracking-wide text-mist">Scheduled windows</p>
-          <p className="mt-2 font-display text-2xl text-espresso">{timedCount}</p>
-          <p className="mt-1 text-sm text-sand">Timed promotions stay easy to scan without adding route sprawl.</p>
-        </div>
-        <div className="rounded-xl border border-mist/30 bg-pearl p-4">
-          <p className="font-body text-xs uppercase tracking-wide text-mist">Promo codes</p>
-          <p className="mt-2 font-display text-2xl text-espresso">{promoCodeCount}</p>
-          <p className="mt-1 text-sm text-sand">If this grows into a monster, we can graduate it to a dedicated page later.</p>
-        </div>
-      </div>
+      {/* M15-01 (BUG-46): the customer pricing tab sits beside the promotion
+          list so customer-specific prices are reachable from the same page. */}
+      <Tabs defaultValue="promotions" className="gap-4">
+        <TabsList>
+          <TabsTrigger value="promotions" className="font-body px-3">
+            Promotions
+          </TabsTrigger>
+          <TabsTrigger value="customer-pricing" className="font-body px-3">
+            Customer Pricing
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Table */}
-      {isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full" />
-          ))}
-        </div>
-      ) : promotions.length === 0 ? (
-        <div className="text-center py-16">
-          <p className="font-body text-mist">No promotions yet. Create one to get started.</p>
-        </div>
-      ) : (
-        <div className="border border-mist/30 rounded-lg overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-linen/50">
-                <TableHead className="font-body text-xs text-mist font-medium">Name</TableHead>
-                <TableHead className="font-body text-xs text-mist font-medium">Type</TableHead>
-                <TableHead className="font-body text-xs text-mist font-medium">Value</TableHead>
-                <TableHead className="font-body text-xs text-mist font-medium">Promo Code</TableHead>
-                <TableHead className="font-body text-xs text-mist font-medium">Status</TableHead>
-                <TableHead className="font-body text-xs text-mist font-medium">Valid Window</TableHead>
-                <TableHead className="font-body text-xs text-mist font-medium">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {promotions.map((promo) => (
-                <TableRow key={promo.id} className="hover:bg-linen/30">
-                  <TableCell className="font-body text-sm text-espresso font-medium">{promo.name}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className={`font-body text-xs ${getTypeBadgeClasses(promo.type)}`}>
-                      {PROMOTION_TYPE_LABELS[promo.type] ?? promo.type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-mono text-sm text-espresso">
-                    {formatValue(promo.type, promo.value)}
-                  </TableCell>
-                  <TableCell className="font-mono text-sm text-mist">
-                    {promo.type === 'PROMO_CODE' && promo.promoCode ? promo.promoCode : '—'}
-                  </TableCell>
-                  <TableCell>
-                    <Switch
-                      checked={promo.isActive}
-                      onCheckedChange={(checked) =>
-                        toggleMutation.mutate({ id: promo.id, isActive: checked })
-                      }
-                    />
-                  </TableCell>
-                  <TableCell className="font-body text-xs text-mist">
-                    {formatDateRange(promo.startsAt, promo.endsAt)}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setEditPromo(promo)}
-                      className="text-terracotta hover:text-espresso gap-1"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                      Edit
-                    </Button>
-                  </TableCell>
-                </TableRow>
+        <TabsContent value="promotions" className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="rounded-xl border border-mist/30 bg-pearl p-4">
+              <p className="font-body text-xs uppercase tracking-wide text-mist">Active now</p>
+              <p className="mt-2 font-display text-2xl text-espresso">{activeCount}</p>
+              <p className="mt-1 text-sm text-sand">Inline create/edit still covers the common workflows cleanly.</p>
+            </div>
+            <div className="rounded-xl border border-mist/30 bg-pearl p-4">
+              <p className="font-body text-xs uppercase tracking-wide text-mist">Scheduled windows</p>
+              <p className="mt-2 font-display text-2xl text-espresso">{timedCount}</p>
+              <p className="mt-1 text-sm text-sand">Timed promotions stay easy to scan without adding route sprawl.</p>
+            </div>
+            <div className="rounded-xl border border-mist/30 bg-pearl p-4">
+              <p className="font-body text-xs uppercase tracking-wide text-mist">Promo codes</p>
+              <p className="mt-2 font-display text-2xl text-espresso">{promoCodeCount}</p>
+              <p className="mt-1 text-sm text-sand">If this grows into a monster, we can graduate it to a dedicated page later.</p>
+            </div>
+          </div>
+
+          {/* Table */}
+          {isLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
               ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {/* Edit Sheet */}
-      <Sheet open={!!editPromo} onOpenChange={(open) => { if (!open) setEditPromo(null); }}>
-        <SheetContent className="overflow-y-auto sm:max-w-xl">
-          <SheetHeader>
-            <SheetTitle className="font-display text-lg text-espresso">Edit Promotion</SheetTitle>
-          </SheetHeader>
-          {editPromo && (
-            <div className="mt-6 space-y-6">
-              <PromotionForm
-                key={editPromo.id}
-                defaultValues={{
-                  name: editPromo.name,
-                  type: editPromo.type as PromotionTypeValue,
-                  value: new Decimal(editPromo.value.toString()).toNumber(),
-                  promoCode: editPromo.promoCode ?? undefined,
-                  targetCategoryId: editPromo.targetCategoryId ?? undefined,
-                  minQuantity: editPromo.minQuantity ?? undefined,
-                  startsAt: editPromo.startsAt ? editPromo.startsAt.slice(0, 10) : undefined,
-                  endsAt: editPromo.endsAt ? editPromo.endsAt.slice(0, 10) : undefined,
-                  description: editPromo.description ?? undefined,
-                }}
-                categories={categories}
-                onSubmit={(data) => updateMutation.mutate({ id: editPromo.id, data })}
-                isSubmitting={updateMutation.isPending}
-                submitLabel="Save Changes"
-              />
-              <div className="border-t border-mist/30 pt-4">
-                <Button
-                  variant="ghost"
-                  className="w-full text-[#9B2226] hover:text-[#9B2226]/80 hover:bg-[#9B2226]/5 font-body"
-                  onClick={() => deactivateMutation.mutate(editPromo.id)}
-                  disabled={deactivateMutation.isPending}
-                >
-                  {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate Promotion'}
-                </Button>
-              </div>
+            </div>
+          ) : promotions.length === 0 ? (
+            <div className="text-center py-16">
+              <p className="font-body text-mist">No promotions yet. Create one to get started.</p>
+            </div>
+          ) : (
+            <div className="border border-mist/30 rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-linen/50">
+                    <TableHead className="font-body text-xs text-mist font-medium">Name</TableHead>
+                    <TableHead className="font-body text-xs text-mist font-medium">Type</TableHead>
+                    <TableHead className="font-body text-xs text-mist font-medium">Value</TableHead>
+                    <TableHead className="font-body text-xs text-mist font-medium">Promo Code</TableHead>
+                    <TableHead className="font-body text-xs text-mist font-medium">Status</TableHead>
+                    <TableHead className="font-body text-xs text-mist font-medium">Valid Window</TableHead>
+                    <TableHead className="font-body text-xs text-mist font-medium">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {promotions.map((promo) => (
+                    <TableRow key={promo.id} className="hover:bg-linen/30">
+                      <TableCell className="font-body text-sm text-espresso font-medium">{promo.name}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className={`font-body text-xs ${getTypeBadgeClasses(promo.type)}`}>
+                          {PROMOTION_TYPE_LABELS[promo.type] ?? promo.type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm text-espresso">
+                        {formatValue(promo.type, promo.value)}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm text-mist">
+                        {promo.type === 'PROMO_CODE' && promo.promoCode ? promo.promoCode : '—'}
+                      </TableCell>
+                      <TableCell>
+                        <Switch
+                          checked={promo.isActive}
+                          onCheckedChange={(checked) =>
+                            toggleMutation.mutate({ id: promo.id, isActive: checked })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="font-body text-xs text-mist">
+                        {formatDateRange(promo.startsAt, promo.endsAt)}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditPromo(promo)}
+                          className="text-terracotta hover:text-espresso gap-1"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
-        </SheetContent>
-      </Sheet>
+
+          {/* Edit Sheet */}
+          <Sheet open={!!editPromo} onOpenChange={(open) => { if (!open) setEditPromo(null); }}>
+            <SheetContent className="overflow-y-auto sm:max-w-xl">
+              <SheetHeader>
+                <SheetTitle className="font-display text-lg text-espresso">Edit Promotion</SheetTitle>
+              </SheetHeader>
+              {editPromo && (
+                <div className="mt-6 space-y-6">
+                  <PromotionForm
+                    key={editPromo.id}
+                    defaultValues={{
+                      name: editPromo.name,
+                      type: editPromo.type as PromotionTypeValue,
+                      value: new Decimal(editPromo.value.toString()).toNumber(),
+                      promoCode: editPromo.promoCode ?? undefined,
+                      targetCategoryId: editPromo.targetCategoryId ?? undefined,
+                      minQuantity: editPromo.minQuantity ?? undefined,
+                      startsAt: editPromo.startsAt ? editPromo.startsAt.slice(0, 10) : undefined,
+                      endsAt: editPromo.endsAt ? editPromo.endsAt.slice(0, 10) : undefined,
+                      description: editPromo.description ?? undefined,
+                    }}
+                    categories={categories}
+                    onSubmit={(data) => updateMutation.mutate({ id: editPromo.id, data })}
+                    isSubmitting={updateMutation.isPending}
+                    submitLabel="Save Changes"
+                  />
+                  <div className="border-t border-mist/30 pt-4">
+                    <Button
+                      variant="ghost"
+                      className="w-full text-[#9B2226] hover:text-[#9B2226]/80 hover:bg-[#9B2226]/5 font-body"
+                      onClick={() => deactivateMutation.mutate(editPromo.id)}
+                      disabled={deactivateMutation.isPending}
+                    >
+                      {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate Promotion'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </SheetContent>
+          </Sheet>
+        </TabsContent>
+
+        <TabsContent value="customer-pricing">
+          <CustomerPricingTab />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

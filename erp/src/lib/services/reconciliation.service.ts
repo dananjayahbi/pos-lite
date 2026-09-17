@@ -115,7 +115,30 @@ export async function importRemittanceStatement(
   setSentryTenantContext({ tenantId });
 
   const content = typeof buffer === 'string' ? Buffer.from(buffer, 'utf-8') : buffer;
-  const rows = parseRemittanceFile(filename, content);
+
+  // M26-03/BUG-67: a workbook the parser cannot decode must not 500 — record a
+  // FAILED StatementImport (the schema's parseError column was previously dead)
+  // and surface a typed error the route maps to 400.
+  let rows: ReturnType<typeof parseRemittanceFile>;
+  try {
+    rows = parseRemittanceFile(filename, content);
+  } catch (parseError) {
+    const parseMessage = parseError instanceof Error ? parseError.message : 'Unparseable statement file';
+    try {
+      await prisma.statementImport.create({
+        data: {
+          tenantId,
+          filename,
+          uploadedById: userId,
+          status: 'FAILED',
+          parseError: parseMessage.slice(0, 500),
+        },
+      });
+    } catch (recordError) {
+      console.error('Failed to record FAILED statement import:', recordError);
+    }
+    throw new Error('STATEMENT_PARSE_FAILED');
+  }
 
   const statement = await prisma.statementImport.create({
     data: {

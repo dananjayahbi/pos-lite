@@ -113,7 +113,17 @@ test.describe('Module 21 - Factory Raw Materials', () => {
     expect(getRes.status()).toBe(200);
     const readBody = await json(getRes);
     expect(readBody?.success).toBe(true);
+    // M21-01 (BUG-55): the detail GET must carry the full list DTO — not an
+    // {id}-only existence check — so stockStatus is readable without re-deriving.
+    expect(readBody?.data?.id).toBe(material.id);
+    expect(Number(readBody?.data?.quantity)).toBeCloseTo(2, 6);
+    expect(Number(readBody?.data?.lowStockThreshold)).toBeCloseTo(5, 6);
     expect(readBody?.data?.stockStatus).toMatch(/LOW|OUT/);
+    const listAfter = await page.request.get('/api/store/raw-materials?page=1&limit=50');
+    const listRow = ((await json(listAfter))?.data ?? []).find((row: any) => row.id === material.id);
+    expect(listRow, 'detail row is present in the list').toBeTruthy();
+    expect(readBody?.data?.stockStatus).toBe(listRow.stockStatus);
+    expect(Number(readBody?.data?.quantity)).toBe(Number(listRow.quantity));
   });
 
   test('T3 dispatch staff is forbidden from the factory raw-materials area', async ({ page }) => {

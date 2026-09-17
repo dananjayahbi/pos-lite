@@ -3,6 +3,7 @@ import 'server-only';
 import Decimal from 'decimal.js';
 
 import { Prisma } from '@/generated/prisma/client';
+import type { StockMovementReason } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { setSentryTenantContext } from '@/lib/sentry/context';
@@ -29,6 +30,9 @@ import type {
 const deliveryInclude = {
   address: true,
   customer: { select: { id: true, name: true, phone: true } },
+  // M28-01: website orders persist their reserved line items; the detail view
+  // (and the cancel-restock path) needs them, so they ride the standard include.
+  lines: { orderBy: { createdAt: 'asc' as const } },
   shipments: { orderBy: { createdAt: 'desc' as const } },
   events: { orderBy: { eventAt: 'asc' as const }, take: 50 },
   sale: { select: { id: true, totalAmount: true, status: true } },
@@ -275,6 +279,37 @@ export async function cancelDelivery(
       where: { id },
       data: { status: 'CANCELED', canceledAt: new Date(), canceledById: userId },
     });
+
+    // M28-01: website orders reserved stock at placement — canceling returns it
+    // to the ledger (reversal movement, mirroring the WEBSITE_ORDER reason).
+    const lines = await tx.deliveryLine.findMany({
+      where: { deliveryId: id, tenantId },
+      select: { variantId: true, quantity: true },
+    });
+    for (const line of lines) {
+      const variant = await tx.productVariant.findFirst({
+        where: { id: line.variantId, tenantId },
+        select: { stockQuantity: true },
+      });
+      if (!variant) continue;
+      await tx.productVariant.update({
+        where: { id: line.variantId },
+        data: { stockQuantity: { increment: line.quantity } },
+      });
+      await tx.stockMovement.create({
+        data: {
+          tenantId,
+          variantId: line.variantId,
+          quantityDelta: line.quantity,
+          quantityBefore: variant.stockQuantity,
+          quantityAfter: variant.stockQuantity + line.quantity,
+          reason: 'WEBSITE_ORDER' as StockMovementReason,
+          note: 'Website order canceled — stock returned',
+          actorId: userId,
+        },
+      });
+    }
+
     await tx.deliveryEvent.create({
       data: {
         tenantId,

@@ -133,7 +133,23 @@ describe('CreateSaleSchema — zero-value reason (docs 33 & 34)', () => {
     }
   });
 
-  it('accepts a PRODUCT_REPLACEMENT sale with a linked order reference', () => {
+  it('accepts a PRODUCT_REPLACEMENT sale with a linked order reference and defective barcode', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'NONE',
+      zeroValueReason: 'PRODUCT_REPLACEMENT',
+      zeroValueLinkedOrderRef: 'cm-abc123',
+      defectiveBarcode: '931234567890',
+      customerId: 'cust-1',
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  // M14-04 (req 3.11 / D14): PRODUCT_REPLACEMENT now needs BOTH the order ref
+  // and the defective item barcode.
+  it('rejects a PRODUCT_REPLACEMENT sale without a defective barcode', () => {
     const parsed = CreateSaleSchema.safeParse({
       shiftId: 'shift-1',
       lines: baseLine,
@@ -143,7 +159,25 @@ describe('CreateSaleSchema — zero-value reason (docs 33 & 34)', () => {
       zeroValueLinkedOrderRef: 'cm-abc123',
       customerId: 'cust-1',
     });
-    expect(parsed.success).toBe(true);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((i) => i.path.includes('defectiveBarcode'))).toBe(true);
+    }
+  });
+
+  // M14-01 (BUG-44): NONE is not a client-selectable tender without a reason.
+  it('rejects a NONE payment with no zeroValueReason', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'NONE',
+      customerId: 'cust-1',
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((i) => i.path.includes('paymentMethod'))).toBe(true);
+    }
   });
 
   it('rejects an unknown zeroValueReason value', () => {

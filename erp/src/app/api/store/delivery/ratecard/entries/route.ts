@@ -36,35 +36,45 @@ export async function PUT(request: Request) {
   try {
     const { entries } = input;
 
-    // Upsert: update existing entries (by id), create new ones.
-    const ids = entries.filter((e) => e.id).map((e) => e.id) as string[];
-    if (ids.length > 0) {
-      await prisma.rateCardEntry.deleteMany({
-        where: { rateCardId: card.id, id: { notIn: ids } },
-      });
-    } else {
-      await prisma.rateCardEntry.deleteMany({ where: { rateCardId: card.id } });
-    }
+    // M25-03 (XC-06, BUG-64): the whole replace is ONE atomic transaction and
+    // the parent card row is locked first, so two concurrent PUTs queue instead
+    // of interleaving (delete+create in separate top-level calls used to blend
+    // both writers' payloads into a matrix neither saved). Last write wins.
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('SELECT id FROM "rate_cards" WHERE "id" = $1 FOR UPDATE', card.id);
 
-    for (const entry of entries) {
-      const data = {
-        originDistrictId: entry.originDistrictId ?? null,
-        destinationDistrictId: entry.destinationDistrictId ?? null,
-        destinationCityId: entry.destinationCityId ?? null,
-        baseRate: entry.baseRate ?? null,
-        extraKgRate: entry.extraKgRate ?? null,
-      };
-      if (entry.id) {
-        const existing = await prisma.rateCardEntry.findFirst({
-          where: { id: entry.id, rateCardId: card.id },
+      // Upsert: update existing entries (by id), create new ones.
+      const ids = entries.filter((e) => e.id).map((e) => e.id) as string[];
+      if (ids.length > 0) {
+        await tx.rateCardEntry.deleteMany({
+          where: { rateCardId: card.id, id: { notIn: ids } },
         });
-        if (existing) {
-          await prisma.rateCardEntry.update({ where: { id: entry.id }, data });
-          continue;
-        }
+      } else {
+        await tx.rateCardEntry.deleteMany({ where: { rateCardId: card.id } });
       }
-      await prisma.rateCardEntry.create({ data: { ...data, tenantId: guard.tenantId, rateCardId: card.id } });
-    }
+
+      for (const entry of entries) {
+        const data = {
+          originDistrictId: entry.originDistrictId ?? null,
+          destinationDistrictId: entry.destinationDistrictId ?? null,
+          destinationCityId: entry.destinationCityId ?? null,
+          baseRate: entry.baseRate ?? null,
+          extraKgRate: entry.extraKgRate ?? null,
+        };
+        if (entry.id) {
+          const existing = await tx.rateCardEntry.findFirst({
+            where: { id: entry.id, rateCardId: card.id },
+          });
+          if (existing) {
+            await tx.rateCardEntry.update({ where: { id: entry.id }, data });
+            continue;
+          }
+        }
+        await tx.rateCardEntry.create({
+          data: { ...data, tenantId: guard.tenantId, rateCardId: card.id },
+        });
+      }
+    });
 
     void createAuditLog({
       tenantId: guard.tenantId,

@@ -1,7 +1,19 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import type { Prisma, Gender } from '@/generated/prisma/client';
+import { PERMISSIONS } from '@/lib/constants/permissions';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { ApiError } from '@/lib/api/errors';
+import { parseQueryInt, parseQueryNumber } from '@/lib/api/query-params';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { Gender, type Prisma } from '@/generated/prisma/client';
+
+// M05-05 (BUG-74 + OBS-51): this endpoint exists to serve the broadcast
+// composer, so it now requires the composer's own permission (`broadcast:send`,
+// client decision D15) instead of leaking phone numbers + totalSpend to every
+// authenticated role, and its filters go through the shared XC-01 parsers so a
+// malformed param is a typed 400 rather than a Prisma-driven 500.
+const GENDER_VALUES = new Set<string>(Object.values(Gender));
 
 export async function GET(request: Request) {
   try {
@@ -22,13 +34,20 @@ export async function GET(request: Request) {
       );
     }
 
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.BROADCAST.send);
+    if (forbidden) return forbidden;
+
     const { searchParams } = new URL(request.url);
 
     const tagsParam = searchParams.get('tags');
     const gender = searchParams.get('gender');
-    const minSpend = searchParams.get('minSpend');
-    const maxSpend = searchParams.get('maxSpend');
-    const birthdayMonth = searchParams.get('birthdayMonth');
+    // XC-01: 'abc' / '1e999' → 400 naming the param (BUG-74). Numeric but
+    // out-of-domain values keep their previous behavior (minSpend=1e20 → 200).
+    const minSpend = parseQueryNumber(searchParams, 'minSpend', { min: 0 });
+    const maxSpend = parseQueryNumber(searchParams, 'maxSpend', { min: 0 });
+    // Parsed (so garbage 400s) but deliberately NOT clamped: an out-of-domain
+    // month keeps its historical "ignore the filter" behavior (P2/X4/T2 pins).
+    const birthdayMonth = parseQueryInt(searchParams, 'birthdayMonth');
 
     const where: Prisma.CustomerWhereInput = {
       tenantId,
@@ -44,20 +63,23 @@ export async function GET(request: Request) {
     }
 
     if (gender && gender !== 'ALL') {
+      if (!GENDER_VALUES.has(gender)) {
+        throw ApiError.validation('Query parameter "gender" must be one of MALE, FEMALE, OTHER');
+      }
       where.gender = gender as Gender;
     }
 
-    if (minSpend) {
+    if (minSpend !== undefined) {
       where.totalSpend = {
         ...(typeof where.totalSpend === 'object' ? where.totalSpend : {}),
-        gte: parseFloat(minSpend),
+        gte: minSpend,
       } as Prisma.DecimalFilter;
     }
 
-    if (maxSpend) {
+    if (maxSpend !== undefined) {
       where.totalSpend = {
         ...(typeof where.totalSpend === 'object' ? where.totalSpend : {}),
-        lte: parseFloat(maxSpend),
+        lte: maxSpend,
       } as Prisma.DecimalFilter;
     }
 
@@ -75,19 +97,12 @@ export async function GET(request: Request) {
       orderBy: { name: 'asc' },
     });
 
-    // Apply birthdayMonth filter in JS (Prisma doesn't support EXTRACT)
-    const filtered = birthdayMonth
-      ? (() => {
-          const month = parseInt(birthdayMonth, 10);
-          if (month >= 1 && month <= 12) {
-            return customers.filter((c) => {
-              if (!c.birthday) return false;
-              return c.birthday.getMonth() + 1 === month;
-            });
-          }
-          return customers;
-        })()
-      : customers;
+    // Apply birthdayMonth filter in JS (Prisma doesn't support EXTRACT).
+    // Out-of-domain months are ignored, matching the pre-fix behavior.
+    const filtered =
+      birthdayMonth !== undefined && birthdayMonth >= 1 && birthdayMonth <= 12
+        ? customers.filter((c) => c.birthday && c.birthday.getMonth() + 1 === birthdayMonth)
+        : customers;
 
     return NextResponse.json({
       success: true,
@@ -101,10 +116,8 @@ export async function GET(request: Request) {
       })),
     });
   } catch (error) {
-    console.error('GET /api/customers/preview error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // INF-02/XC-01: ApiErrors (incl. the 400s thrown above) map to the typed
+    // envelope; unknown errors are logged and returned as a generic 500.
+    return toErrorResponse(error, 'GET /api/customers/preview');
   }
 }

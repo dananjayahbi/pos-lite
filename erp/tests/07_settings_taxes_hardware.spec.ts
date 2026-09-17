@@ -207,11 +207,18 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     }
   });
 
-  test('F7 — /settings/store page is a stub that redirects to /dashboard', async ({ page }) => {
+  test('F7 — /settings/store renders the tenant self-service profile form (M07-02 restored)', async ({ page }) => {
+    // OBS-81 FIXED: the page was a bare redirect('/dashboard') stub orphaning
+    // StoreProfileSettingsForm. It is now mounted (gated on settings:store_profile,
+    // which OWNER holds) with the tenant's current values prefilled.
     await login(page, OWNER.email, OWNER.password);
-    await page.goto(`${BASE}/settings/store`);
-    await page.waitForURL(/\/dashboard/i, { timeout: 10000 });
-    expect(page.url()).toContain('/dashboard');
+    await page.goto(`${BASE}/settings/store`, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/\/dashboard/i, { timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: /store profile/i })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.locator('#storeName')).toBeVisible();
+    await expect(page.locator('#storeName')).not.toHaveValue('');
   });
 
   test('F8 — /api/settings/store PATCH works API-only (orphaned form, live route)', async ({ page }) => {
@@ -414,17 +421,23 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     expect(body.error.message).toContain('Host is required');
   });
 
-  test('N4 — hardware PATCH silent coercions: bad port → 9100, string "false" → true (pins)', async ({ page }) => {
+  test('N4 — hardware PATCH strict validation: out-of-range port and string booleans → 400 (W4 M13-02)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     const res = await page.request.patch(HARDWARE_API, {
       data: { printerType: 'NETWORK', host: '192.168.1.100', port: 99999, cashDrawerEnabled: 'false', cfdEnabled: 0 },
     });
-    // No zod: invalid port silently becomes 9100; Boolean('false')===true. Pin current behavior.
-    expect(res.status()).toBe(200);
+    // M13-02: HardwareSettingsSchema validates strictly — no silent coercion.
+    expect(res.status()).toBe(400);
     const body = await res.json();
-    expect(body.data.hardware.printer.port).toBe(9100);
-    expect(body.data.hardware.cashDrawerEnabled).toBe(true); // "false" → true quirk
-    expect(body.data.hardware.cfdEnabled).toBe(false); // Boolean(0) → false
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    // Valid values still save cleanly (200) with the exact types persisted.
+    const ok = await page.request.patch(HARDWARE_API, {
+      data: { printerType: 'NETWORK', host: '192.168.1.100', port: 9100, cashDrawerEnabled: false, cfdEnabled: false },
+    });
+    expect(ok.status()).toBe(200);
+    const okBody = await ok.json();
+    expect(okBody.data.hardware.printer.port).toBe(9100);
+    expect(okBody.data.hardware.cashDrawerEnabled).toBe(false);
   });
 
   test('N5 — taxes PATCH missing fields → 400 (NaN → zod invalid_type)', async ({ page }) => {
@@ -471,27 +484,25 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     await page.waitForURL(/\/pos/i, { timeout: 10000 });
   });
 
-  test('S4 — DISPATCH_STAFF can PATCH hardware (role-denylist RBAC gap — BUG-80 pin)', async ({ page }) => {
+  test('S4 — DISPATCH_STAFF cannot PATCH hardware (BUG-80 fixed: permission gate)', async ({ page }) => {
     await login(page, DISPATCH.email, DISPATCH.password);
-    // DISPATCH lacks settings:hardware but the route only denylists CASHIER/STOCK_CLERK.
+    // M07-01 (W4): route now gates on settings:hardware via requirePermissionResponse.
     const res = await page.request.patch(HARDWARE_API, {
       data: { printerType: 'NETWORK', host: '192.168.1.100', port: 9100, cashDrawerEnabled: true, cfdEnabled: true },
     });
-    // Pin current behavior: 200 (gap). Flip to 403 if permission gate is added.
-    expect(res.status()).toBe(200);
+    expect(res.status()).toBe(403);
+    const body = await res.json();
+    expect(body.error.code).toBe('FORBIDDEN');
   });
 
-  test('S5 — DISPATCH_STAFF can fire test-print (same RBAC gap — BUG-80 pin)', async ({ page }) => {
+  test('S5 — DISPATCH_STAFF cannot fire test-print (BUG-80 fixed: permission gate)', async ({ page }) => {
     test.setTimeout(30000);
     await login(page, DISPATCH.email, DISPATCH.password);
     const res = await page.request.post(TEST_PRINT_API);
-    // Auth passes the denylist → reaches the printer path (500 PRINTER_ERROR or 200 success —
-    // either proves the permission gate is absent; a 403 would be the fixed contract).
-    expect([200, 500]).toContain(res.status());
-    if (res.status() === 500) {
-      const body = await res.json();
-      expect(body.error.code).toBe('PRINTER_ERROR');
-    }
+    // M07-01 (W4): the test-print route gates on settings:hardware too — 403, never reaching the printer.
+    expect(res.status()).toBe(403);
+    const body = await res.json();
+    expect(body.error.code).toBe('FORBIDDEN');
   });
 
   test('S6 — foreign tenant OWNER cannot mutate dilani settings (tenant scoping via session)', async ({ page }) => {
@@ -506,11 +517,11 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     expect(body.data.vatRate).toBe(18);
   });
 
-  test('S7 — sidebar "My Account" links to /settings/account which 404s (dead link pin)', async ({ page }) => {
+  test('S7 — "My Account" page /settings/account renders (OBS-81 dead link fixed)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     await page.goto(`${BASE}/settings/account`);
-    expect([404]).toContain(await page.evaluate(() => Number((document.querySelector('body') as HTMLBodyElement).textContent?.includes('404') ? 404 : 200)));
-    // Simpler contract: the route has no page → Next serves 404.
+    await expect(page.getByRole('heading', { name: /my account/i })).toBeVisible({ timeout: 15000 });
+    expect(page.url()).toContain('/settings/account');
   });
 
   // ─── §9 Boundary Inputs, Chaos & Unicode ──────────────────────────────
@@ -518,7 +529,7 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     await login(page, OWNER.email, OWNER.password);
     const xss = `<script>alert('xss-${RUN_TAG}')</script>`;
     const res = await page.request.patch(STORE_API, { data: { storeName: `Ayur${xss}`, logoUrl: '', address: '', phoneNumber: '', receiptFooter: '' } });
-    // zod min(2) satisfied; stored verbatim. Pin current behavior.
+    // zod min(2) satisfied; stored verbatim. Route returns the tenant row (name/settings).
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.data.name).toContain('<script>');
@@ -538,6 +549,8 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     await login(page, OWNER.email, OWNER.password);
     const res = await page.request.patch(STORE_API, { data: { storeName: 'Ayur Wellness Centre', logoUrl: 'not-a-url', address: '', phoneNumber: '', receiptFooter: '' } });
     expect(res.status()).toBe(400);
+    const body = await res.json();
+    expect(body.error.message).toMatch(/valid url/i);
   });
 
   test('X4 — Sinhala/Tamil/emoji in receiptFooter stored safely', async ({ page }) => {
@@ -546,7 +559,8 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     const res = await page.request.patch(STORE_API, { data: { storeName: 'Ayur Wellness Centre', logoUrl: '', address: '', phoneNumber: '', receiptFooter: uni } });
     expect(res.status()).toBe(200);
     const body = await res.json();
-    expect(body.data.settings.receiptFooter).toBe(uni);
+    const settings = typeof body.data.settings === 'string' ? JSON.parse(body.data.settings) : body.data.settings;
+    expect(settings.receiptFooter).toBe(uni);
     // Restore seed footer.
     await page.request.patch(STORE_API, { data: { storeName: 'Ayur Wellness Centre', logoUrl: '', address: '', phoneNumber: '', receiptFooter: 'Thank you for shopping at Ayur Wellness Centre!' } });
   });
@@ -560,17 +574,22 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     expect(str.status()).toBe(400);
   });
 
-  test('X6 — hardware: port 1 and 65535 accepted; 0 and 65536 silently → 9100 (pin)', async ({ page }) => {
+  test('X6 — hardware: port 1 and 65535 accepted; 0 and 65536 → 400 (strict, M07-03)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
-    const lo = await page.request.patch(HARDWARE_API, { data: { printerType: 'NETWORK', host: 'h', port: 1 } });
+    const base = { printerType: 'NETWORK', host: 'h', cashDrawerEnabled: true, cfdEnabled: false };
+    const lo = await page.request.patch(HARDWARE_API, { data: { ...base, port: 1 } });
     expect(lo.status()).toBe(200);
     expect((await lo.json()).data.hardware.printer.port).toBe(1);
-    const hi = await page.request.patch(HARDWARE_API, { data: { printerType: 'NETWORK', host: 'h', port: 65535 } });
+    const hi = await page.request.patch(HARDWARE_API, { data: { ...base, port: 65535 } });
     expect(hi.status()).toBe(200);
     expect((await hi.json()).data.hardware.printer.port).toBe(65535);
-    const zero = await page.request.patch(HARDWARE_API, { data: { printerType: 'NETWORK', host: 'h', port: 0 } });
-    expect(zero.status()).toBe(200);
-    expect((await zero.json()).data.hardware.printer.port).toBe(9100);
+    // No silent 9100 fallback any more — out-of-range ports are typed 400s.
+    const zero = await page.request.patch(HARDWARE_API, { data: { ...base, port: 0 } });
+    expect(zero.status()).toBe(400);
+    expect((await zero.json()).error.code).toBe('VALIDATION_ERROR');
+    const over = await page.request.patch(HARDWARE_API, { data: { ...base, port: 65536 } });
+    expect(over.status()).toBe(400);
+    expect((await over.json()).error.code).toBe('VALIDATION_ERROR');
   });
 
   // ─── §10 Time-Travel & Retroactive Semantics ──────────────────────────

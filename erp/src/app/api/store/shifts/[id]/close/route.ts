@@ -4,7 +4,33 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { CloseShiftSchema } from '@/lib/validators/shift.validators';
 import { closeShift } from '@/lib/services/shift.service';
+import { serializeNumber } from '@/lib/api/serialize';
 import { prisma } from '@/lib/prisma';
+
+/**
+ * INF-04: the closure snapshot's money columns are `Decimal` at rest and would
+ * otherwise JSON-serialize to strings. The Z-report and close pins both read
+ * these as numbers, so normalize the snapshot at the route boundary.
+ */
+function serializeShiftCloseResult(result: unknown): unknown {
+  if (!result || typeof result !== 'object') return result;
+  const { closure, ...rest } = result as { closure?: Record<string, unknown> };
+  if (!closure) return result;
+  return {
+    ...rest,
+    closure: {
+      ...closure,
+      closingCashCount: serializeNumber(closure.closingCashCount as never),
+      expectedCash: serializeNumber(closure.expectedCash as never),
+      cashDifference: serializeNumber(closure.cashDifference as never),
+      totalSalesAmount: serializeNumber(closure.totalSalesAmount as never),
+      totalReturnsAmount: serializeNumber(closure.totalReturnsAmount as never),
+      totalCashAmount: serializeNumber(closure.totalCashAmount as never),
+      totalCardAmount: serializeNumber(closure.totalCardAmount as never),
+      totalQrAmount: serializeNumber(closure.totalQrAmount as never),
+    },
+  };
+}
 
 export async function POST(_request: Request, props: { params: Promise<{ id: string }> }) {
   try {
@@ -79,7 +105,7 @@ export async function POST(_request: Request, props: { params: Promise<{ id: str
       console.warn('Shift close notification creation failed:', notifError);
     }
 
-    return NextResponse.json({ success: true, data: result });
+    return NextResponse.json({ success: true, data: serializeShiftCloseResult(result) });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
 

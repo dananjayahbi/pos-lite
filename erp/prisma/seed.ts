@@ -292,6 +292,13 @@ async function seedSampleTenant() {
         vatRate: 18,
         ssclRate: 2.5,
         receiptFooter: 'Thank you for shopping at Ayur Wellness Centre!',
+        // W7: the primary tenant's public storefront is live and is the fixture
+        // the whole tests/28 suite exercises — but the `website` flag was never
+        // set, so `/config` + `/tenant` 403'd at the module guard while
+        // /products (un-gated) still answered. Same seed-gap class as W6's
+        // missing `delivery` flag on Lanka. `delivery` and `appointments` are
+        // appended by the idempotent fixups later in this file.
+        enabledModules: ['website'],
       },
     },
   });
@@ -338,6 +345,11 @@ async function seedSecondBusiness() {
         timezone: 'Asia/Colombo',
         vatRate: 18,
         ssclRate: 2.5,
+        // W6/M25: the second tenant has the delivery module ENABLED but no
+        // rate card — this is the live fixture the cross-tenant rate-card pins
+        // (tests/25 F15/S4/S6, tests/26) exercise the "no active card" branch
+        // against. Without it those routes 403 at the module guard.
+        enabledModules: ['delivery'],
       },
     },
   });
@@ -1839,6 +1851,28 @@ async function seedStaffPromotionsExpenses() {
   ];
 
   let expensesCreated = 0;
+
+  // M19-01 (D2): a funded petty-cash float is required now that linked expenses
+  // cannot overdraw the fund. Create the tenant's main fund (or REPAIR a fund
+  // that was lazily auto-created at 0 before this policy), link the seeded
+  // expenses to it, then size the opening balance to leave a healthy working
+  // headroom ABOVE the seeded spend so the balance equation
+  // (opening − Σ expenses = current) holds with a positive running balance.
+  const PETTY_CASH_HEADROOM = 5000;
+  const existingFund = await prisma.pettyCashFund.findFirst({ where: { tenantId } });
+  let fund = existingFund;
+  if (!fund) {
+    fund = await prisma.pettyCashFund.create({
+      data: {
+        tenantId,
+        name: 'Main Petty Cash',
+        openingBalance: 0,
+        currentBalance: 0,
+        activeCategories: ['STAFF_MEALS', 'TEA_SUGAR', 'OFFICE_STATIONERY', 'TRAVEL', 'MISCELLANEOUS'],
+      },
+    });
+  }
+
   for (const exp of expenseDefs) {
     const existingExpense = await prisma.expense.findFirst({
       where: { tenantId, category: exp.category, description: exp.description },
@@ -1854,12 +1888,28 @@ async function seedStaffPromotionsExpenses() {
           description: exp.description,
           recordedById: recorder.id,
           expenseDate: now,
+          pettyCashFundId: fund.id,
         },
       });
       expensesCreated++;
     }
   }
-  console.log(`Expenses: ${expensesCreated} created`);
+
+  // Size the float so the balance equation leaves a positive running balance,
+  // then persist it — a reseed never leaves opening/current inconsistent.
+  const linkedTotal = await prisma.expense.aggregate({
+    where: { tenantId, pettyCashFundId: fund.id },
+    _sum: { amount: true },
+  });
+  const spent = linkedTotal._sum.amount?.toNumber() ?? 0;
+  const openingBalance = new Prisma.Decimal(spent).plus(PETTY_CASH_HEADROOM).toNumber();
+  await prisma.pettyCashFund.update({
+    where: { id: fund.id },
+    data: { openingBalance, currentBalance: openingBalance - spent },
+  });
+  console.log(
+    `Expenses: ${expensesCreated} created (petty-cash opening ${openingBalance}, spent ${spent}, balance ${openingBalance - spent})`,
+  );
 
   // ── 5. Seed CashMovements ──
   const demoShift = await prisma.shift.findFirst({
@@ -1969,6 +2019,29 @@ async function seedHardwareAndAuditData() {
     console.log('Delivery module already enabled, skipping');
   }
 
+  // ── 1b1. Dev Trans Express CourierAccount (M24-01) ──
+  // Fresh DBs previously had NO CourierAccount, so dispatch took the
+  // COURIER_ACCOUNT_NOT_CONFIGURED (409) path and the auth-failure path was
+  // unreachable in a predictable way. Seed an obviously-fake sandbox account so
+  // both branches are exercisable deterministically. The credentials are
+  // intentionally invalid — a real integration must replace them via the
+  // courier-settings UI (which now has a Test-connection button).
+  const existingCourierAccount = await prisma.courierAccount.findFirst({ where: { tenantId } });
+  if (!existingCourierAccount) {
+    await prisma.courierAccount.create({
+      data: {
+        tenantId,
+        env: 'STAGING',
+        email: 'dev-sandbox@example.invalid',
+        password: 'dev-sandbox-not-a-real-credential',
+        isActive: true,
+      },
+    });
+    console.log('Dev Trans Express courier account seeded (STAGING, fake credentials)');
+  } else {
+    console.log('Courier account already present, skipping');
+  }
+
   // ── 1b2. Enable appointments module on the primary tenant ──
   // Re-read settings to include any modules enabled above.
   const currentSettings2 = (await prisma.tenant.findUnique({ where: { id: tenantId } }))
@@ -1990,6 +2063,31 @@ async function seedHardwareAndAuditData() {
     console.log('Appointments module enabled on primary tenant');
   } else {
     console.log('Appointments module already enabled, skipping');
+  }
+
+  // ─ 1b3. Enable website module on the primary tenant ─
+  // Guards `/api/public/site/[slug]/config` + `/tenant`. Added in W7 after the
+  // storefront suite exposed the gap (module disabled → 403 on those two routes
+  // while the un-gated catalog routes kept answering).
+  const currentSettingsW = (await prisma.tenant.findUnique({ where: { id: tenantId } }))
+    ?.settings as Record<string, unknown> | null;
+  const settingsNowW = currentSettingsW ?? {};
+  const enabledModulesW: string[] = Array.isArray(settingsNowW.enabledModules)
+    ? (settingsNowW.enabledModules as string[])
+    : [];
+  if (!enabledModulesW.includes('website')) {
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        settings: {
+          ...settingsNowW,
+          enabledModules: [...enabledModulesW, 'website'],
+        },
+      },
+    });
+    console.log('Website module enabled on primary tenant');
+  } else {
+    console.log('Website module already enabled, skipping');
   }
 
   // ── 1c. DISPATCH_STAFF demo user is seeded/repaired by seedQaUsers()

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { StockTakeItemUpdateSchema } from '@/lib/validators/stock-take.validators';
 
 export async function PATCH(
   request: NextRequest,
@@ -39,10 +40,20 @@ export async function PATCH(
       );
     }
 
-    const body = (await request.json()) as {
-      countedQuantity?: number;
-      isRecounted?: boolean;
-    };
+    // M13-01 (BUG-42) — the count must be a non-negative integer before it can
+    // corrupt the stored discrepancy; reject everything else up front.
+    const body: unknown = await request.json();
+    const parsed = StockTakeItemUpdateSchema.safeParse(body);
+    if (!parsed.success) {
+      const errors = parsed.error.issues.map((i) => ({
+        path: i.path.join('.'),
+        message: i.message,
+      }));
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Validation failed', details: errors } },
+        { status: 400 },
+      );
+    }
 
     // Fetch current item to compute discrepancy
     const currentItem = await prisma.stockTakeItem.findFirst({
@@ -62,13 +73,13 @@ export async function PATCH(
       isRecounted?: boolean;
     } = {};
 
-    if (body.countedQuantity !== undefined) {
-      updateData.countedQuantity = body.countedQuantity;
-      updateData.discrepancy = body.countedQuantity - currentItem.systemQuantity;
+    if (parsed.data.countedQuantity !== undefined) {
+      updateData.countedQuantity = parsed.data.countedQuantity;
+      updateData.discrepancy = parsed.data.countedQuantity - currentItem.systemQuantity;
     }
 
-    if (body.isRecounted !== undefined) {
-      updateData.isRecounted = body.isRecounted;
+    if (parsed.data.isRecounted !== undefined) {
+      updateData.isRecounted = parsed.data.isRecounted;
     }
 
     const updatedItem = await prisma.stockTakeItem.update({

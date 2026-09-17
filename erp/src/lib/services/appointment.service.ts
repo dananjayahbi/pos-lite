@@ -1,7 +1,18 @@
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
-import type { CreateAppointmentInput, UpdateAppointmentInput, AppointmentFilters } from '@/lib/validators/appointment.validators';
+import { getCurrentShift } from '@/lib/services/shift.service';
+import { scheduleReminders } from '@/lib/services/appointment-reminder.service';
+import { lockForUpdate } from '@/lib/api/race-guard';
+import {
+  APPOINTMENT_BACKDATE_GRACE_MINUTES,
+  isAppointmentStatusTransitionAllowed,
+} from '@/lib/constants/appointments';
+import type {
+  CreateAppointmentInput,
+  UpdateAppointmentInput,
+  AppointmentFilters,
+} from '@/lib/validators/appointment.validators';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -11,6 +22,22 @@ async function assertAppointmentBelongsToTenant(tenantId: string, appointmentId:
   });
   if (!appointment) throw new Error('APPOINTMENT_NOT_FOUND');
   return appointment;
+}
+
+/**
+ * M27-04 / OBS-79 backdate policy: a booking may be recorded up to
+ * `APPOINTMENT_BACKDATE_GRACE_MINUTES` in the past (clinics legitimately record
+ * a walk-in after the fact), beyond which the caller must hold
+ * `appointment:settings:manage`. The public storefront booking path is always
+ * enforced — it has no privileged actor.
+ */
+async function assertBackdateAllowed(
+  startTime: Date,
+  actorHasManageSettings: boolean,
+): Promise<void> {
+  const cutoff = new Date(Date.now() - APPOINTMENT_BACKDATE_GRACE_MINUTES * 60_000);
+  if (startTime >= cutoff || actorHasManageSettings) return;
+  throw new Error('BACKDATE_NOT_ALLOWED');
 }
 
 const appointmentInclude = {
@@ -23,7 +50,16 @@ const appointmentInclude = {
 // ── List ─────────────────────────────────────────────────────────────────────
 
 export async function getAppointments(tenantId: string, filters: Partial<AppointmentFilters> = {}) {
-  const { status, staffId, serviceId, customerId, dateFrom, dateTo, page = 1, limit = 50 } = filters as AppointmentFilters;
+  const {
+    status,
+    staffId,
+    serviceId,
+    customerId,
+    dateFrom,
+    dateTo,
+    page = 1,
+    limit = 50,
+  } = filters as AppointmentFilters;
 
   const where: Prisma.AppointmentWhereInput = {
     tenantId,
@@ -83,66 +119,89 @@ export async function createAppointment(
   tenantId: string,
   userId: string,
   input: CreateAppointmentInput,
+  actorRole = 'UNKNOWN',
+  canManageSettings = false,
 ) {
   const startTime = new Date(input.startTime);
   const endTime = new Date(input.endTime);
   const title = input.title || `${input.serviceId ? 'Appointment' : input.walkInName || 'Walk-in'}`;
 
-  // Check for overlapping appointments for the same staff
-  if (input.staffId) {
-    const overlap = await prisma.appointment.findFirst({
-      where: {
-        tenantId,
-        staffId: input.staffId,
-        status: { notIn: ['CANCELLED', 'NO_SHOW'] },
-        startTime: { lt: endTime },
-        endTime: { gt: startTime },
-      },
-    });
-    if (overlap) {
-      throw new Error('STAFF_UNAVAILABLE');
-    }
+  // M27-04/OBS-79: reject far-past bookings unless the actor may manage settings.
+  await assertBackdateAllowed(startTime, canManageSettings);
+
+  // M27-06/BUG-92: the overlap check used to run OUTSIDE the transaction
+  // (TOCTOU — 3 concurrent same-slot bookings all 201'd). It is now performed
+  // inside the transaction after locking the staff member's row, so same-staff
+  // writers serialize: the loser sees the committed row and 409s.
+  //
+  // The audit + reminder-scheduling side effects were previously inside this
+  // transaction too, which pushed the interactive-transaction budget past
+  // Prisma's default 5s under dev-server load (P2028 "cannot commit on an
+  // expired transaction" → a spurious 500 on an otherwise legal booking). They
+  // are post-commit now: only the lock + overlap probe + insert need atomicity.
+  const appointment = await prisma.$transaction(
+    async (tx) => {
+      if (input.staffId) {
+        await lockForUpdate(tx, 'users', '"id" = $1', [input.staffId]);
+        const overlap = await tx.appointment.findFirst({
+          where: {
+            tenantId,
+            staffId: input.staffId,
+            status: { notIn: ['CANCELLED', 'NO_SHOW'] },
+            startTime: { lt: endTime },
+            endTime: { gt: startTime },
+          },
+        });
+        if (overlap) {
+          throw new Error('STAFF_UNAVAILABLE');
+        }
+      }
+
+      return tx.appointment.create({
+        data: {
+          tenantId,
+          title,
+          description: input.description ?? null,
+          startTime,
+          endTime,
+          durationMins: input.durationMins,
+          price: input.price,
+          depositAmount: input.depositAmount ?? 0,
+          notes: input.notes ?? null,
+          customerNotes: input.customerNotes ?? null,
+          walkInName: input.walkInName ?? null,
+          walkInPhone: input.walkInPhone ?? null,
+          customerId: input.customerId ?? null,
+          serviceId: input.serviceId ?? null,
+          staffId: input.staffId ?? null,
+          createdById: userId,
+          recurrenceType: input.recurrenceType ?? null,
+          recurrenceEndDate: input.recurrenceEndDate ? new Date(input.recurrenceEndDate) : null,
+        },
+        include: appointmentInclude,
+      });
+    },
+    { timeout: 15_000 },
+  );
+
+  await createAuditLog({
+    tenantId,
+    actorId: userId,
+    actorRole,
+    entityType: 'Appointment',
+    entityId: appointment.id,
+    action: 'CREATE',
+  });
+
+  // M27-08: schedule the 24h/2h reminder rows (the cron sends them). Non-fatal
+  // — a reminder-scheduling failure must not lose the booking.
+  try {
+    await scheduleReminders({ appointmentId: appointment.id, tenantId });
+  } catch (reminderError) {
+    console.warn('Failed to schedule appointment reminders:', reminderError);
   }
 
-  return prisma.$transaction(async (tx) => {
-    const appointment = await tx.appointment.create({
-      data: {
-        tenantId,
-        title,
-        description: input.description ?? null,
-        startTime,
-        endTime,
-        durationMins: input.durationMins,
-        price: input.price,
-        depositAmount: input.depositAmount ?? 0,
-        notes: input.notes ?? null,
-        customerNotes: input.customerNotes ?? null,
-        walkInName: input.walkInName ?? null,
-        walkInPhone: input.walkInPhone ?? null,
-        customerId: input.customerId ?? null,
-        serviceId: input.serviceId ?? null,
-        staffId: input.staffId ?? null,
-        createdById: userId,
-        recurrenceType: input.recurrenceType ?? null,
-        recurrenceEndDate: input.recurrenceEndDate ? new Date(input.recurrenceEndDate) : null,
-      },
-      include: appointmentInclude,
-    });
-
-    // If there's a slotId that should be linked, mark it as booked
-    // (Slot linking happens via available slots selection in the UI)
-
-    await createAuditLog({
-      tenantId,
-      actorId: userId,
-      actorRole: 'OWNER',
-      entityType: 'Appointment',
-      entityId: appointment.id,
-      action: 'CREATE',
-    });
-
-    return appointment;
-  });
+  return appointment;
 }
 
 // ── Update ───────────────────────────────────────────────────────────────────
@@ -152,7 +211,16 @@ export async function updateAppointment(
   id: string,
   input: UpdateAppointmentInput,
 ) {
-  await assertAppointmentBelongsToTenant(tenantId, id);
+  const existing = await assertAppointmentBelongsToTenant(tenantId, id);
+
+  // M27-04/BUG-88: the PATCH path used to write any status the client sent
+  // (SCHEDULED→COMPLETED skipping check-in, COMPLETED→CANCELLED erasing revenue).
+  // Restrict to the legal lifecycle edges; terminal rows reject status edits.
+  if (input.status !== undefined && input.status !== existing.status) {
+    if (!isAppointmentStatusTransitionAllowed(existing.status, input.status)) {
+      throw new Error('INVALID_STATUS_TRANSITION');
+    }
+  }
 
   const data: Prisma.AppointmentUpdateInput = {};
 
@@ -192,6 +260,7 @@ export async function cancelAppointment(
   id: string,
   userId: string,
   reason?: string,
+  actorRole = 'UNKNOWN',
 ) {
   await assertAppointmentBelongsToTenant(tenantId, id);
 
@@ -217,7 +286,7 @@ export async function cancelAppointment(
   await createAuditLog({
     tenantId,
     actorId: userId,
-    actorRole: 'OWNER',
+    actorRole,
     entityType: 'Appointment',
     entityId: id,
     action: 'CANCEL',
@@ -321,10 +390,21 @@ export async function getAppointmentServiceById(tenantId: string, id: string) {
 
 export async function createAppointmentService(
   tenantId: string,
-  input: { name: string; description?: string | null | undefined; durationMins: number; price: number; color?: string | null | undefined; isActive?: boolean | undefined; sortOrder?: number | undefined },
+  input: {
+    name: string;
+    description?: string | null | undefined;
+    durationMins: number;
+    price: number;
+    color?: string | null | undefined;
+    isActive?: boolean | undefined;
+    sortOrder?: number | undefined;
+  },
 ) {
   const existing = await prisma.appointmentService.findFirst({
-    where: { tenantId, name: input.name, deletedAt: null },
+    // M27-05/BUG-90: `@@unique([tenantId, name])` spans soft-deleted rows, so
+    // the pre-check must too — otherwise a recreate passes here and dies on
+    // P2002. Names stay reserved while any row exists (Category/Brand policy).
+    where: { tenantId, name: input.name },
   });
   if (existing) throw new Error('SERVICE_NAME_EXISTS');
 
@@ -345,7 +425,15 @@ export async function createAppointmentService(
 export async function updateAppointmentService(
   tenantId: string,
   id: string,
-  input: { name?: string | undefined; description?: string | null | undefined; durationMins?: number | undefined; price?: number | undefined; color?: string | null | undefined; isActive?: boolean | undefined; sortOrder?: number | undefined },
+  input: {
+    name?: string | undefined;
+    description?: string | null | undefined;
+    durationMins?: number | undefined;
+    price?: number | undefined;
+    color?: string | null | undefined;
+    isActive?: boolean | undefined;
+    sortOrder?: number | undefined;
+  },
 ) {
   const service = await prisma.appointmentService.findFirst({
     where: { id, tenantId, deletedAt: null },
@@ -379,6 +467,20 @@ export async function deleteAppointmentService(tenantId: string, id: string) {
   });
   if (!service) throw new Error('SERVICE_NOT_FOUND');
 
+  // M27-05/BUG-90: block removing a service that future/active appointments
+  // still reference (they would orphan onto a dead row). Historical
+  // (completed/cancelled/past) references do not block — the row survives the
+  // soft-delete for the audit trail.
+  const upcoming = await prisma.appointment.count({
+    where: {
+      tenantId,
+      serviceId: id,
+      status: { in: ['SCHEDULED', 'CONFIRMED', 'CHECKED_IN'] },
+      startTime: { gte: new Date() },
+    },
+  });
+  if (upcoming > 0) throw new Error('SERVICE_IN_USE');
+
   return prisma.appointmentService.update({
     where: { id },
     data: { deletedAt: new Date() },
@@ -387,11 +489,7 @@ export async function deleteAppointmentService(tenantId: string, id: string) {
 
 // ── Stats ────────────────────────────────────────────────────────────────────
 
-export async function getAppointmentStats(
-  tenantId: string,
-  dateFrom?: string,
-  dateTo?: string,
-) {
+export async function getAppointmentStats(tenantId: string, dateFrom?: string, dateTo?: string) {
   const where: Prisma.AppointmentWhereInput = {
     tenantId,
     ...(dateFrom || dateTo
@@ -439,6 +537,7 @@ export async function convertAppointmentToSale(
   tenantId: string,
   appointmentId: string,
   userId: string,
+  actorRole = 'UNKNOWN',
 ) {
   const appointment = await assertAppointmentBelongsToTenant(tenantId, appointmentId);
 
@@ -450,11 +549,18 @@ export async function convertAppointmentToSale(
     throw new Error('ALREADY_CONVERTED');
   }
 
+  // M27-01/BUG-85: `shiftId: ''` is neither NULL nor a valid id, so every
+  // convert attempt died on the Shift FK. Resolve the acting cashier's OPEN
+  // shift (same lookup POS checkout uses); when there is none we link the sale
+  // shift-lessly (Sale.shiftId is nullable) so an owner-initiated conversion
+  // still works outside POS hours.
+  const activeShift = await getCurrentShift(tenantId, userId);
+
   // Create the sale
   const sale = await prisma.sale.create({
     data: {
       tenantId,
-      shiftId: '', // TODO: get active shift
+      ...(activeShift ? { shiftId: activeShift.id } : {}),
       customerId: appointment.customerId,
       cashierId: userId,
       subtotal: appointment.price,
@@ -476,7 +582,7 @@ export async function convertAppointmentToSale(
   await createAuditLog({
     tenantId,
     actorId: userId,
-    actorRole: 'OWNER',
+    actorRole,
     entityType: 'Appointment',
     entityId: appointmentId,
     action: 'CONVERT_TO_SALE',

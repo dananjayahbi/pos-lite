@@ -9,7 +9,8 @@ import { test, expect, type Page } from '@playwright/test';
  *          /api/store/suppliers/[id] (GET, PATCH),
  *          /api/store/suppliers/[id]/archive (PATCH)
  *   • Prisma: Supplier (tenant-scoped, isActive flag, leadTimeDays default 7,
- *             whatsappNumber nullable, NO unique constraints, NO delete API)
+ *             whatsappNumber nullable, @@unique([tenantId, phone]) post-M06-01,
+ *             NO delete API — archive/unarchive are the only removal/return paths)
  *
  * Contracts verified by source inspection + API probes (READ-ONLY):
  *   • CreateSupplierSchema: name 1..100, contactName ≤100, phone regex
@@ -18,20 +19,24 @@ import { test, expect, type Page } from '@playwright/test';
  *     (DB default 7), notes ≤1000. UpdateSupplierSchema = partial.
  *   • whatsappNumber defaults to phone on create; PATCH whatsappNumber:''
  *     resets it to phone (or null when phone absent).
- *   • NO duplicate guard: same phone → 201 (BUG-30), same name → 201 (BUG-31).
- *   • NO DELETE endpoint (405) — archive is the only removal path
- *     (isActive=false); archive is idempotent (double → 200); archived rows
- *     remain GET-able and PATCH-able by id (pinned current behavior).
- *   • GET list: search matches name/contactName ONLY (phone search → 0 hits),
- *     page/limit clamped (page≥1, 1≤limit≤100) but NON-NUMERIC page/limit
- *     → 500 (BUG-32); includeArchived=true reveals archived rows.
+ *   • FIXED (M06-01/BUG-30/31, D5): duplicate phone → 409 CONFLICT (DB
+ *     @@unique + friendly pre-check, archived rows reserve the phone); name
+ *     is NOT unique — duplicate name → 201 with a duplicateName warning flag.
+ *   • NO DELETE endpoint (405) — archive (isActive=false) is the only removal
+ *     path; archive is idempotent (double → 200); POST /suppliers/[id]/unarchive
+ *     restores (M06-05); archived rows remain GET-able but PATCH → 409
+ *     "restore first" (OBS-11 policy).
+ *   • GET list: search matches name/contactName/phone (M06-05), page/limit
+ *     clamped (page≥1, 1≤limit≤100) and NON-NUMERIC page/limit → 400 naming
+ *     the param (XC-01, BUG-32 fixed); includeArchived=true reveals archived rows.
  *   • RBAC: supplier:view/create/edit — CASHIER has NONE (all APIs 403);
  *     /suppliers page itself has no page-level permission gate (layout
  *     auth-only), so CASHIER can open the page but every action 403s.
  *   • UI: SupplierSheet (Radix Sheet — title IS a real <h2> heading here),
- *     react-hook-form + standardSchemaResolver; clearing the defaulted
- *     leadTimeDays input blocks submit with a raw resolver message
- *     "expected number, received NaN" (BUG-33).
+ *     react-hook-form + standardSchemaResolver. FIXED (M06-03/BUG-33):
+ *     clearing the defaulted leadTimeDays input coerces to undefined and
+ *     submits cleanly (API default 7). FIXED (M06-04/BUG-34): the edit sheet
+ *     resets to the selected supplier on OPEN — the first open is prefilled.
  *
  * 10-point spectrum mapping is annotated per describe block.
  * All created data is RUN-suffixed; cleanup archives + renames every row
@@ -293,29 +298,15 @@ test.describe.serial('Module 6 — Suppliers Master (full-scope QA)', () => {
     });
     await waitForHydratedInput(page, '#name');
 
-    // DEFECT (BUG-34): the edit sheet's first open renders EMPTY fields —
-    // useForm defaultValues are captured when the page mounts (supplier is
-    // still undefined) and are never re-applied when a supplier is chosen.
-    // The reset() in handleOpenChange only fires on CLOSE, so the very first
-    // edit session starts blank and submitting immediately fails with
-    // "Phone is required". The workaround is to open the sheet once, close
-    // it (which resets with the now-current supplier), and reopen — the
-    // second open is correctly prefilled. When fixed, remove the workaround.
-    const firstOpenPhone = await page.locator('#phone').inputValue();
-    if (firstOpenPhone === '') {
-      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-      await expect(page.getByRole('heading', { name: 'Edit Supplier' })).toBeHidden({
-        timeout: 15_000,
-      });
-      await row.getByRole('button', { name: `${RUN} EditMe` }).click();
-      await expect(page.getByRole('heading', { name: 'Edit Supplier' })).toBeVisible({
-        timeout: 30_000,
-      });
-      await waitForHydratedInput(page, '#name');
-    }
-    // Second open must be prefilled (if the bug is fixed, the first open
-    // already was — both paths converge here).
-    await expect(page.locator('#phone')).not.toHaveValue('', { timeout: 15_000 });
+    // FIXED (BUG-34 / M06-04): the sheet now resets to the selected supplier
+    // when it OPENS, so the very FIRST open after page load must already show
+    // the row's values (previously it rendered blank and only a close→reopen
+    // hydrated it — that workaround is now removed).
+    await expect(page.locator('#name')).toHaveValue(`${RUN} EditMe`, { timeout: 15_000 });
+    await expect(page.locator('#phone')).toHaveValue(phone, { timeout: 15_000 });
+    await expect(page.locator('#leadTimeDays')).toHaveValue('7', {
+      timeout: 15_000,
+    });
 
     await page.locator('#name').fill(`${RUN} EditMe Renamed`);
     await page.locator('#contactName').fill('Nimal Silva');
@@ -384,7 +375,7 @@ test.describe.serial('Module 6 — Suppliers Master (full-scope QA)', () => {
     if (mkMax.body?.data?.id) state.createdIds.push(mkMax.body.data.id);
   });
 
-  test('F7 search filters by name and contactName (NOT phone) + pagination clamps', async ({ page }) => {
+  test('F7 search filters by name, contactName and phone + pagination clamps', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
 
     const phone = nextPhone();
@@ -409,11 +400,16 @@ test.describe.serial('Module 6 — Suppliers Master (full-scope QA)', () => {
     );
     expect(byContact?.data?.suppliers.some((s: any) => s.id === id)).toBeTruthy();
 
-    // Phone search does NOT (search covers name/contactName only — documented).
+    // FIXED (M06-05/OBS-9): phone is searchable now (exact/prefix via the
+    // same contains-insensitive convention as name/contactName).
     const byPhone = await json(
       await page.request.get(`/api/store/suppliers?search=${encodeURIComponent(phone)}`),
     );
-    expect(byPhone?.data?.total, 'phone is not a searchable column').toBe(0);
+    expect(
+      byPhone?.data?.suppliers.some((s: any) => s.id === id),
+      'exact-phone search finds the supplier',
+    ).toBeTruthy();
+    expect(byPhone?.data?.total).toBeGreaterThanOrEqual(1);
 
     // Pagination: limit=2 → ≤2 rows + totalPages computed.
     const p1 = await json(await page.request.get('/api/store/suppliers?page=1&limit=2'));
@@ -570,7 +566,7 @@ test.describe.serial('Module 6 — Suppliers Master (full-scope QA)', () => {
     expect(inc?.data?.total).toBe(1);
   });
 
-  test('A2 no hard delete: DELETE → 405; double archive idempotent 200', async ({ page }) => {
+  test('A2 no hard delete: DELETE → 405; double archive idempotent 200; unarchive round-trips', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
 
     const mk = await createSupplier(page, { name: `${RUN} NoDelete`, phone: nextPhone() });
@@ -585,9 +581,20 @@ test.describe.serial('Module 6 — Suppliers Master (full-scope QA)', () => {
     // Archive is idempotent.
     expect(await archiveSupplier(page, id)).toBe(200);
     expect(await archiveSupplier(page, id), 'double archive → 200').toBe(200);
+
+    // FIXED (M06-05/OBS-10): the explicit unarchive route closes the loop —
+    // archive → unarchive → archive is a clean round-trip, and unarchive is
+    // idempotent like its sibling.
+    const un = await page.request.post(`/api/store/suppliers/${id}/unarchive`);
+    expect(un.status(), 'unarchive → 200').toBe(200);
+    expect((await json(un))?.data?.unarchived).toBe(true);
+    expect((await json(await page.request.get(`/api/store/suppliers/${id}`)))?.data?.isActive).toBe(true);
+    const un2 = await page.request.post(`/api/store/suppliers/${id}/unarchive`);
+    expect(un2.status(), 'double unarchive → 200').toBe(200);
+    expect(await archiveSupplier(page, id), 're-archive after unarchive → 200').toBe(200);
   });
 
-  test('A3 archived rows remain GET-able and PATCH-able by id (pin)', async ({ page }) => {
+  test('A3 archived rows remain GET-able; PATCH blocked 409 until restored', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
 
     const mk = await createSupplier(page, { name: `${RUN} ArchEdit`, phone: nextPhone() });
@@ -597,18 +604,27 @@ test.describe.serial('Module 6 — Suppliers Master (full-scope QA)', () => {
 
     expect(await archiveSupplier(page, id)).toBe(200);
 
-    // PIN: the service never re-checks isActive, so archived suppliers can
-    // still be read and edited by id. Documented current behavior — the
-    // product contract for archived records is undefined; when a decision
-    // lands (404 vs 409 vs read-only), flip these assertions.
+    // FIXED (M06-05/OBS-11): archived rows stay readable by id (PO history
+    // links need them) but are read-only — editing requires the explicit
+    // unarchive path first (restore-first policy, typed 409).
     const get = await page.request.get(`/api/store/suppliers/${id}`);
-    expect(get.status(), 'GET archived by id → 200 (pin)').toBe(200);
+    expect(get.status(), 'GET archived by id → 200').toBe(200);
 
     const patch = await apiPatch(page, `/api/store/suppliers/${id}`, {
       name: `${RUN} ArchEdit Renamed`,
     });
-    expect(patch.status(), 'PATCH archived by id → 200 (pin)').toBe(200);
-    expect((await json(patch))?.data?.name).toBe(`${RUN} ArchEdit Renamed`);
+    const body = await json(patch);
+    expect(patch.status(), 'PATCH archived by id → 409 (restore first)').toBe(409);
+    expect(body?.error?.code ?? '').toBe('CONFLICT');
+    expect(String(body?.error?.message ?? '')).toContain('restored before editing');
+
+    // Restore → the same PATCH succeeds again.
+    expect((await page.request.post(`/api/store/suppliers/${id}/unarchive`)).status()).toBe(200);
+    const patch2 = await apiPatch(page, `/api/store/suppliers/${id}`, {
+      name: `${RUN} ArchEdit Renamed`,
+    });
+    expect(patch2.status(), 'PATCH after unarchive → 200').toBe(200);
+    expect((await json(patch2))?.data?.name).toBe(`${RUN} ArchEdit Renamed`);
   });
 
   test('A4 unknown id → 404 on GET / PATCH / archive', async ({ page }) => {
@@ -653,7 +669,7 @@ test.describe.serial('Module 6 — Suppliers Master (full-scope QA)', () => {
     for (const id of ids) state.createdIds.push(id);
   });
 
-  test('R2 3-way concurrent same-phone create: zero 500s (BUG-30 pin)', async ({ page }) => {
+  test('R2 3-way concurrent same-phone create: one 201, two 409 (BUG-30 fixed)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
 
     const phone = nextPhone();
@@ -663,15 +679,12 @@ test.describe.serial('Module 6 — Suppliers Master (full-scope QA)', () => {
       ),
     );
     const statuses = results.map((r) => r.status);
-    // DEFECT PIN: there is NO duplicate guard at all (no service pre-check,
-    // no DB unique on (tenantId, phone) or name), so all three creates are
-    // accepted. The hard requirement is only that the API never 500s under
-    // race. When a uniqueness policy lands, flip to expect exactly one 201.
+    // FIXED (M06-01/D5): @@unique([tenantId, phone]) closes the dedup-free
+    // directory — the service pre-check wins sequentially, concurrent losers
+    // hit the DB constraint (P2002 → 409 via mapPrismaError). Exactly one 201.
     expect(statuses.filter((s) => s >= 500).length, 'zero 500s under race').toBe(0);
-    expect(
-      statuses.filter((s) => s === 201).length,
-      'BUG-30: duplicates accepted (≥1 winner)',
-    ).toBeGreaterThanOrEqual(1);
+    expect(statuses.filter((s) => s === 201).length, 'exactly one winner').toBe(1);
+    expect(statuses.filter((s) => s === 409).length, 'two friendly 409 losers').toBe(2);
 
     for (const r of results) {
       if (r.status === 201 && r.body?.data?.id) state.createdIds.push(r.body.data.id);
@@ -997,70 +1010,77 @@ test.describe.serial('Module 6 — Suppliers Master (full-scope QA)', () => {
 
   // ── UI defect pins ─────────────────────────────────────────────────────────
 
-  test('B1 BUG-33 pin: cleared leadTimeDays blocks submit with raw resolver message', async ({ page }) => {
-    // DEFECT PIN: the sheet defaults leadTimeDays to 7, but clearing the input
-    // makes react-hook-form submit NaN (valueAsNumber on an empty field), and
-    // the standard-schema resolver surfaces the raw zod message "Invalid
-    // input: expected number, received NaN" instead of a friendly hint. The
-    // API schema marks leadTimeDays optional — an empty field should submit
-    // as undefined and fall back to the default. When fixed, flip to assert
-    // creation succeeds with leadTimeDays 7.
+  test('B1 BUG-33 pin (FIXED): cleared leadTimeDays submits cleanly → default 7', async ({ page }) => {
+    // FIXED (M06-03): clearing the defaulted leadTimeDays input used to make
+    // react-hook-form submit NaN (valueAsNumber on an empty field) and the
+    // standard-schema resolver surfaced the raw zod message "expected number,
+    // received NaN". The register now coerces empty/invalid to undefined, so
+    // the optional field validates and the API default (7) applies. A valid
+    // integer still round-trips unchanged.
     await login(page, OWNER.email, OWNER.password);
     await page.goto(`${BASE_URL}/suppliers`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Suppliers' })).toBeVisible({ timeout: 60_000 });
     await waitForHydratedInput(page, 'input[placeholder="Search suppliers…"]');
 
-    await page.getByRole('button', { name: 'Add Supplier' }).click();
-    await expect(page.getByRole('heading', { name: 'Add Supplier' })).toBeVisible({
-      timeout: 30_000,
-    });
-    await waitForHydratedInput(page, '#name');
-    await page.locator('#name').fill(`${RUN} ClearLT`);
-    await page.locator('#phone').fill(nextPhone());
-    await page.locator('#leadTimeDays').fill('');
-    await page.getByRole('button', { name: 'Create Supplier', exact: true }).click();
+    // Assert each create on its OWN POST response body (not a shared toast —
+    // the first create's toast is still visible when the second case starts,
+    // so a toast/search check races). The create response carries the
+    // persisted leadTimeDays (+ duplicateName from M06-01).
+    const createAndReadLeadTime = async (label: string, leadTime: string): Promise<number> => {
+      await page.getByRole('button', { name: 'Add Supplier' }).click();
+      await expect(page.getByRole('heading', { name: 'Add Supplier' })).toBeVisible({
+        timeout: 30_000,
+      });
+      await waitForHydratedInput(page, '#name');
+      await page.locator('#name').fill(`${RUN} ${label}`);
+      await page.locator('#phone').fill(nextPhone());
+      await page.locator('#leadTimeDays').fill(leadTime);
+      const resPromise = page.waitForResponse(
+        (r) => r.url().includes('/api/store/suppliers') && r.request().method() === 'POST',
+        { timeout: 30_000 },
+      );
+      await page.getByRole('button', { name: 'Create Supplier', exact: true }).click();
+      const res = await resPromise;
+      expect(res.status(), `${label}: create → 201`).toBe(201);
+      const body = await res.json();
+      if (body?.data?.id) state.createdIds.push(body.data.id);
+      return Number(body?.data?.leadTimeDays);
+    };
 
-    // Documented defect: sheet stays open with the raw resolver message; no
-    // supplier is created.
-    await expect(page.getByText(/expected number, received NaN/i)).toBeVisible({
-      timeout: 15_000,
-    });
-    const phoneValue = await page.locator('#phone').inputValue();
-    const ids = await findSupplierIdsByName(page, `${RUN} ClearLT`);
-    expect(ids.length, 'supplier must NOT be created while bug present').toBe(0);
+    // Cleared lead time → no raw NaN message, API default 7 applies.
+    const lt = await createAndReadLeadTime('ClearLT', '');
+    await expect(page.getByText(/expected number, received NaN/i)).toBeHidden();
+    expect(lt, 'empty lead time → API default 7').toBe(7);
 
-    // Recovery: filling a valid value lets the same sheet submit.
-    await page.locator('#leadTimeDays').fill('5');
-    await page.getByRole('button', { name: 'Create Supplier', exact: true }).click();
-    await expect(page.getByText('Supplier created')).toBeVisible({ timeout: 30_000 });
-    const recovered = await findSupplierIdsByName(page, `${RUN} ClearLT`);
-    expect(recovered.length, 'supplier created after fixing the field').toBe(1);
-    for (const id of recovered) state.createdIds.push(id);
-    void phoneValue;
+    // A valid integer still round-trips unchanged.
+    const lt5 = await createAndReadLeadTime('KeepLT5', '5');
+    expect(lt5, 'valid integer lead time persists').toBe(5);
   });
 
-  test('B2 BUG-30/31 pin: duplicate phone AND duplicate name both accepted', async ({ page }) => {
-    // DEFECT PIN: Supplier has no unique constraint on (tenantId, phone) or
-    // (tenantId, name), and the service performs no pre-check — unlike
-    // Customer (non-atomic pre-check) and Category/Brand (DB unique). Two
-    // suppliers with identical phone and identical name coexist. When a
-    // uniqueness policy lands, flip to expect 409.
+  test('B2 BUG-30/31 pin (FIXED): duplicate phone → 409, duplicate name → 201 + flag', async ({ page }) => {
+    // FIXED (M06-01 / D5 client decision): phone is the contact key — hard
+    // unique per tenant (DB @@unique + friendly pre-check 409). Name is NOT
+    // unique: a duplicate name still creates (201) but the response data
+    // carries a duplicateName warning flag. Two same-name live rows coexist.
     await login(page, OWNER.email, OWNER.password);
 
     const phone = nextPhone();
     const a = await createSupplier(page, { name: `${RUN} DupTarget`, phone });
     expect(a.status).toBe(201);
+    expect(a.body?.data?.duplicateName, 'first create: no name clash').toBe(false);
     if (a.body?.data?.id) state.createdIds.push(a.body.data.id);
 
     const dupPhone = await createSupplier(page, { name: `${RUN} DupOther`, phone });
-    expect(dupPhone.status, 'duplicate phone → 201 (BUG-30 pin)').toBe(201);
-    if (dupPhone.body?.data?.id) state.createdIds.push(dupPhone.body.data.id);
+    expect(dupPhone.status, 'duplicate phone → 409 (BUG-30 fixed)').toBe(409);
+    expect(dupPhone.body?.error?.code ?? '').toBe('CONFLICT');
+    expect(String(dupPhone.body?.error?.message ?? '')).toContain('phone number already exists');
 
     const dupName = await createSupplier(page, {
       name: `${RUN} DupTarget`,
       phone: nextPhone(),
     });
-    expect(dupName.status, 'duplicate name → 201 (BUG-31 pin)').toBe(201);
+    expect(dupName.status, 'duplicate name → 201 (D5 warn-only)').toBe(201);
+    expect(dupName.body?.data?.duplicateName, 'duplicate-name flag surfaces').toBe(true);
     if (dupName.body?.data?.id) state.createdIds.push(dupName.body.data.id);
 
     // Both same-name rows are live simultaneously.

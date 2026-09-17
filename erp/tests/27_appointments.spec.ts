@@ -8,41 +8,47 @@
  *   limit 1..200) → 400 VALIDATION_ERROR. Envelope {success,data:{appointments,total,page,limit}},
  *   orderBy startTime asc. Create: walk-in refine (customerId OR walkInName+walkInPhone), endTime>startTime,
  *   durationMins int>=5, price>=0 → 201. Default title = serviceId?'Appointment':walkInName||'Walk-in'.
- *   Staff overlap guard (findFirst, status notIn CANCELLED/NO_SHOW) → 409 CONFLICT — but NON-ATOMIC:
- *   3 concurrent same-staff bookings all 201 (BUG-92 pin).
- * - [id] GET/PATCH/DELETE: view/edit/cancel gates. DELETE = soft CANCEL (row stays). PATCH applies ANY
- *   status directly — no transition guard (SCHEDULED→COMPLETED 200; COMPLETED→CANCELLED 200 — BUG-88 pins).
- * - [id]/cancel: appointment:cancel gate; frees slot; audit CANCEL. Idempotent double-cancel 200.
+ *   Staff overlap guard now runs INSIDE the create transaction after a `FOR UPDATE` lock on the staff
+ *   row (M27-06/BUG-92 fixed) — 3 concurrent same-staff bookings → exactly one 201, two 409.
+ * - [id] GET/PATCH/DELETE: view/edit/cancel gates. DELETE = soft CANCEL (row stays). PATCH enforces
+ *   the allowed-transition map (M27-04/BUG-88 fixed) — illegal jumps → 409 INVALID_STATUS_TRANSITION.
+ * - [id]/cancel: appointment:cancel gate; frees slot; audit CANCEL with the REAL actor role.
+ *   Idempotent double-cancel 200.
  * - [id]/check-in: appointment:checkin gate (CASHIER has it) → CHECKED_IN + checkedInAt.
- * - [id]/complete + [id]/no-show + [id]/convert-to-sale: AUTH-ONLY, NO PERMISSION GATE (BUG-86 pin —
- *   CASHIER completes/no-shows appointments with 200).
- * - convert-to-sale: ALWAYS 500 (BUG-85 pin) — sale.create uses shiftId:'' → FK violation, raw
- *   Prisma/Turbopack internals leak in message. Guards before the crash: non-COMPLETED → 400
- *   'Only completed appointments can be converted', re-convert → 409 ALREADY_CONVERTED (unreachable
- *   once the 500 is fixed).
- * - reminders GET: auth-only, NO tenant scoping (BUG-87 IDOR pin — foreign tenant reads by appointmentId).
- *   appointmentId required → 400; unknown id → 200 [] (no 404). Dead code: schedule/process functions
- *   have ZERO callers, no cron route → reminders never created or sent (OBS-77).
- * - services: GET view / POST manageServices (name 1..100, durationMins 5..480, price>=0, color hex
- *   #RRGGBB). Duplicate → 409 SERVICE_NAME_EXISTS. [id] PATCH/DELETE manageServices; DELETE = soft
- *   (deletedAt); NO in-use guard (deleting a service with linked appointments → 200); recreate-after-
- *   soft-delete → 500 (DB @@unique([tenantId,name]) vs deletedAt-null pre-check — BUG-90 pin).
- * - slots GET: date required → 400; malformed date → 500 (BUG-89 pin; same for stats/time-off dateFrom).
+ * - [id]/complete + [id]/no-show: gated on appointment:edit (M27-02/BUG-86 fixed — CASHIER now 403;
+ *   OWNER/MANAGER lifecycle flows unaffected). [id]/convert-to-sale gates on edit + sale:create.
+ * - convert-to-sale: resolves the acting cashier's OPEN shift (M27-01/BUG-85 fixed) and links the
+ *   sale; no open shift → shift-less (NULL) sale. non-COMPLETED → 400 'Only completed appointments
+ *   can be converted', re-convert → 409 ALREADY_CONVERTED.
+ * - reminders GET: view-gated AND tenant-scoped (M27-03/BUG-87 fixed — foreign tenant → 404/empty).
+ *   appointmentId required → 400. M27-08: reminders ARE scheduled on create (24h/2h window, future
+ *   bookings only) and sent by POST /api/cron/appointment-reminders (Bearer CRON_SECRET).
+ * - services: GET view / POST manageServices (name 1..100, durationMins 5..480, price>=0,
+ *   max 99999999.99, color hex #RRGGBB). Duplicate → 409 SERVICE_NAME_EXISTS. [id] PATCH/DELETE
+ *   manageServices; DELETE = soft (deletedAt) and refuses while future live appointments reference it
+ *   → 409 SERVICE_IN_USE (M27-05/BUG-90 fixed); the name pre-check spans soft-deleted rows so a
+ *   recreate-with-same-name → 409 SERVICE_NAME_EXISTS (never 500).
+ * - slots GET: date required → 400; malformed date → 400 (M27-07/BUG-89 fixed; same for stats/time-off).
  *   slots/generate POST: manageSchedule; {startDate,endDate} ISO; idempotent (2nd run created:0 via
  *   @@unique([staffId,date,startTime])); bad dates → 400.
  * - availability: GET view (staffId optional); POST bulk manageSchedule {staffId, entries[{dayOfWeek
  *   0..6, startTime/endTime HH:mm, slotDurationMins 5..120}]} upsert @@unique([staffId,dayOfWeek]).
- * - time-off: GET auth-only (NO gate — OBS-80); POST manageSchedule → 201 isApproved:false;
- *   [id] PATCH approve {isApproved:true} → 200; DELETE manageSchedule.
+ * - time-off: GET gated on appointment:view (M27-02/OBS-80 fixed); POST manageSchedule → 201
+ *   isApproved:false; [id] PATCH approve {isApproved:true} → 200; DELETE manageSchedule.
  * - stats GET: view gate → {total, byStatus, noShowRate 2dp, revenue (COMPLETED price sum)}.
- * - Decimal(10,2): price 100.456 → 100.46; 1e12 → 500 numeric overflow (BUG-91 pin).
- * - No backdate guard: startTime in the past → 201 (OBS-79 pin).
- * - Audit: CREATE/CANCEL/CONVERT_TO_SALE rows only — PATCH/check-in/complete write NOTHING (A1 pin);
- *   actorRole hardcoded 'OWNER' even for CASHIER actors (BUG-93 pin).
+ * - Decimal(10,2): price 100.456 → 100.46; 1e12 → 400 (M27-07/BUG-91 fixed — zod .max caps at
+ *   99,999,999.99, no numeric-overflow 500).
+ * - Backdating policy (M27-04/OBS-79): startTime more than 15 min in the past → 400
+ *   BACKDATE_NOT_ALLOWED unless the actor holds appointment:settings:manage; the public booking
+ *   path has no exemption.
+ * - Audit: CREATE/CANCEL/CONVERT_TO_SALE rows only — PATCH/check-in/complete write NOTHING (A1 pin,
+ *   deliberately unchanged by M27-07); actorRole carries the REAL role (M27-07/BUG-93 fixed — a
+ *   CASHIER's cancel records CASHIER, not the old hardcoded OWNER).
  * - UI: /appointments feature-toggle 'appointments' + view gate → /dashboard; calendar Day/Week/Month
  *   toggles + Today; /appointments/list 'New Appointment' → dialog. /settings manageSettings gate.
  * - Public POST /api/public/site/[tenantSlug]/appointments: no auth; unknown slug 404; SUSPENDED 403;
- *   module disabled 409; walkInName/phone + ISO times + durationMins>=5 + price>=0 → 201.
+ *   module disabled 409; walkInName/phone + ISO times + durationMins>=5 + price>=0 → 201;
+ *   startTime in the past → 400 BACKDATE_NOT_ALLOWED (M27-04).
  */
 import { test, expect, type Page } from '@playwright/test';
 
@@ -53,6 +59,7 @@ const SLOTS_API = `${BASE}/api/store/appointments/slots`;
 const AVAIL_API = `${BASE}/api/store/appointments/availability`;
 const TIMEOFF_API = `${BASE}/api/store/appointments/time-off`;
 const REMINDERS_API = `${BASE}/api/store/appointments/reminders`;
+const CRON_REMINDERS_API = `${BASE}/api/cron/appointment-reminders`;
 const STATS_API = `${BASE}/api/store/appointments/stats`;
 const AUDIT_API = `${BASE}/api/audit-logs`;
 const PUBLIC_BOOK_API = `${BASE}/api/public/site/dilani/appointments`;
@@ -154,9 +161,12 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     expect(Number(a.price)).toBe(2500);
     expect(a.durationMins).toBe(30);
     expect(new Date(a.endTime).getTime()).toBeGreaterThan(new Date(a.startTime).getTime());
-    // Dead-code reminder scheduler never runs (OBS-77): the detail view shows zero reminders.
+    // M27-08/OBS-77: the scheduler is now wired into create, so a far-future
+    // booking carries its PENDING 24h + 2h reminder rows.
     const detail = await (await page.request.get(`${APPTS_API}/${a.id}`)).json();
-    expect(detail.data.reminders).toEqual([]);
+    expect(detail.data.reminders.length).toBeGreaterThanOrEqual(2);
+    expect(detail.data.reminders.every((r: { status: string }) => r.status === 'PENDING')).toBe(true);
+    expect(detail.data.reminders.every((r: { scheduledFor: string }) => new Date(r.scheduledFor).getTime() > Date.now())).toBe(true);
   });
 
   test('F2 — create validation: patient identity refine + time/price/duration bounds → 400', async ({ page }) => {
@@ -245,6 +255,12 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     const cb = (await comp.json()).data;
     expect(cb.status).toBe('COMPLETED');
     expect(cb.completedAt).toBeTruthy();
+    // M27-04/BUG-88: COMPLETED is terminal — an edit that would erase the visit is refused.
+    const illegal = await page.request.patch(`${APPTS_API}/${a.id}`, { data: { status: 'CANCELLED' } });
+    expect(illegal.status()).toBe(409);
+    expect((await illegal.json()).error.code).toBe('INVALID_STATUS_TRANSITION');
+    const regress = await page.request.patch(`${APPTS_API}/${a.id}`, { data: { status: 'SCHEDULED' } });
+    expect(regress.status()).toBe(409);
   });
 
   test('F7 — cancel with reason; DELETE is a soft cancel (row survives)', async ({ page }) => {
@@ -265,25 +281,48 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     const del = await page.request.delete(`${APPTS_API}/${b.id}`);
     expect(del.status()).toBe(200);
     expect((await (await page.request.get(`${APPTS_API}/${b.id}`)).json()).data.status).toBe('CANCELLED');
+    // M27-04/BUG-88: the legal pipeline forbids jumping SCHEDULED → COMPLETED (skipping check-in).
+    const c = await newWalkIn(page, 'F7c', 46);
+    const skip = await page.request.patch(`${APPTS_API}/${c.id}`, { data: { status: 'COMPLETED' } });
+    expect(skip.status()).toBe(409);
+    expect((await skip.json()).error.code).toBe('INVALID_STATUS_TRANSITION');
+    // ...but the legal edge is still open.
+    expect((await page.request.patch(`${APPTS_API}/${c.id}`, { data: { status: 'CONFIRMED' } })).status()).toBe(200);
   });
 
-  test('F8 — convert-to-sale is DEAD: always 500 (BUG-85 pin) + precondition guards', async ({ page }) => {
+  test('F8 — convert-to-sale completes with sale linkage; guards intact', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     // Non-completed → 400 guard fires first.
     const open = await newWalkIn(page, 'F8open', 47);
     const early = await page.request.post(`${APPTS_API}/${open.id}/convert-to-sale`);
     expect(early.status()).toBe(400);
     expect((await early.json()).error.code).toBe('BAD_REQUEST');
-    // Completed → the sale.create crashes on shiftId:'' FK violation.
+
+    // Capture whatever shift state exists so the assertion proves the new
+    // shift-resolution either links the open shift or writes a valid NULL.
+    const cur = await page.request.get(`${BASE}/api/store/shifts/current`);
+    const curBody = await cur.json().catch(() => null);
+    const activeShiftId = cur.status() === 200 ? (curBody?.data?.id ?? null) : null;
+
+    // Completed → conversion now persists a Sale (M27-01/BUG-85 fixed).
     const done = await newWalkIn(page, 'F8done', 48);
     expect((await page.request.post(`${APPTS_API}/${done.id}/complete`)).status()).toBe(200);
     const conv = await page.request.post(`${APPTS_API}/${done.id}/convert-to-sale`);
-    // Defect pin: flip to 201 + sale linkage when the empty shiftId is fixed.
-    expect(conv.status()).toBe(500);
-    const convBody = await conv.text();
-    expect(convBody).toContain('INTERNAL_SERVER_ERROR');
-    // Raw Prisma/Turbopack internals leak into the client message (same class as BUG-21/42).
-    expect(convBody).toMatch(/prisma|Invalid `|imported/i);
+    expect(conv.status()).toBe(201);
+    const sale = (await conv.json()).data;
+    expect(sale.id).toBeTruthy();
+    expect(Number(sale.totalAmount)).toBe(2500);
+    if (activeShiftId) expect(sale.shiftId).toBe(activeShiftId);
+    else expect(sale.shiftId == null).toBe(true);
+
+    // Appointment carries the sale linkage (req 3.3 purchase-history join).
+    const after = await (await page.request.get(`${APPTS_API}/${done.id}`)).json();
+    expect(after.data.saleId).toBe(sale.id);
+
+    // Re-convert is a typed 409, never a crash.
+    const again = await page.request.post(`${APPTS_API}/${done.id}/convert-to-sale`);
+    expect(again.status()).toBe(409);
+    expect((await again.json()).error.code).toBe('CONFLICT');
   });
 
   test('F9 — service catalogue CRUD with duplicate + hex-color guards', async ({ page }) => {
@@ -310,25 +349,31 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     expect(list.data.some((s: { id: string }) => s.id === svc.id)).toBe(true);
   });
 
-  test('F10 — service soft-delete + recreate-after-soft-delete 500 (BUG-90 pin)', async ({ page }) => {
+  test('F10 — service soft-delete guards: in-use → 409 SERVICE_IN_USE; recreate → 409 (M27-05)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     const name = `${RUN} DeleteMe`;
     const svc = (await (await page.request.post(SERVICES_API, { data: { name, durationMins: 30, price: 500 } })).json()).data;
-    // Link an appointment first — delete has NO in-use guard (pin).
+    // A live, future appointment referencing the service blocks deletion.
     const { status } = await createAppt(page, {
       walkInName: `${RUN} F10`, walkInPhone: '077', serviceId: svc.id,
       startTime: iso(49), endTime: iso(49, 11), durationMins: 30, price: 500,
     });
     expect(status).toBe(201);
-    const del = await page.request.delete(`${SERVICES_API}/${svc.id}`);
-    expect(del.status()).toBe(200); // in-use service deletes anyway — orphan-link pin
-    const gone = await page.request.get(`${SERVICES_API}/${svc.id}`);
-    expect(gone.status()).toBe(404);
+    const blocked = await page.request.delete(`${SERVICES_API}/${svc.id}`);
+    expect(blocked.status()).toBe(409);
+    expect((await blocked.json()).error.code).toBe('SERVICE_IN_USE');
+    const still = await page.request.get(`${SERVICES_API}/${svc.id}`);
+    expect(still.status()).toBe(200); // nothing was deleted
+    // A service with no future live appointments deletes cleanly and leaves the list.
+    const spare = (await (await page.request.post(SERVICES_API, { data: { name: `${name}-spare`, durationMins: 30, price: 500 } })).json()).data;
+    const del = await page.request.delete(`${SERVICES_API}/${spare.id}`);
+    expect(del.status()).toBe(200);
     const list = await (await page.request.get(SERVICES_API)).json();
-    expect(list.data.some((s: { id: string }) => s.id === svc.id)).toBe(false);
-    // Defect pin: recreate with the same name → 500 (pre-check filters deletedAt, DB unique does not).
-    const recreate = await page.request.post(SERVICES_API, { data: { name, durationMins: 30, price: 500 } });
-    expect(recreate.status()).toBe(500);
+    expect(list.data.some((s: { id: string }) => s.id === spare.id)).toBe(false);
+    // M27-05/BUG-90: the name stays reserved after soft-delete → typed 409, never a 500.
+    const recreate = await page.request.post(SERVICES_API, { data: { name: `${name}-spare`, durationMins: 30, price: 500 } });
+    expect(recreate.status()).toBe(409);
+    expect((await recreate.json()).error.code).toBe('CONFLICT');
   });
 
   test('F11 — slot generation is idempotent (@@unique staff/date/start)', async ({ page }) => {
@@ -427,14 +472,14 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     expect(Number(dep.body.data.depositAmount)).toBe(500.5);
   });
 
-  test('P2 — int4-exceeding price → 500 numeric overflow (BUG-91 pin: zod min(0) has no max)', async ({ page }) => {
+  test('P2 — int4-exceeding price → 400 validation (M27-07: zod .max caps at Decimal(10,2))', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     const { status, body } = await createAppt(page, {
       walkInName: `${RUN} P2`, walkInPhone: '077', startTime: iso(55), endTime: iso(55, 11), durationMins: 30, price: 1e12,
     });
-    // Decimal(10,2) caps at 99,999,999.99 — flip to 400 when a zod .max() lands.
-    expect(status).toBe(500);
-    expect(body.error.code).toBe('INTERNAL_SERVER_ERROR');
+    // Decimal(10,2) caps at 99,999,999.99 — the validator now rejects before the DB sees it.
+    expect(status).toBe(400);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
   });
 
   // ─── §3 Cross-Module Cascade & Ledger Impact ──────────────────────────
@@ -486,7 +531,7 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     expect(after.length).toBe(before.length);
   });
 
-  test('A2 — audit actorRole hardcoded OWNER even when CASHIER is the actor (BUG-93 pin)', async ({ page }) => {
+  test('A2 — audit actorRole carries the REAL actor role (M27-07/BUG-93)', async ({ page }) => {
     await login(page, CASHIER.email, CASHIER.password);
     const { status, body } = await createAppt(page, {
       walkInName: `${RUN} A2`, walkInPhone: '077', startTime: iso(59), endTime: iso(59, 11), durationMins: 30, price: 100,
@@ -498,8 +543,8 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     const mine = rows.find((r) => r.entityId === body.data.id && r.action === 'CREATE');
     expect(mine).toBeTruthy();
     expect(mine?.actorId).toBe(body.data.createdById); // cashier acted
-    // Defect pin: flip to 'CASHIER' when the hardcoded actorRole:'OWNER' is removed.
-    expect(mine?.actorRole).toBe('OWNER');
+    // M27-07/BUG-93: the role is threaded from the session, not hardcoded.
+    expect(mine?.actorRole).toBe('CASHIER');
   });
 
   // ─── §5 Race Conditions & Idempotency ─────────────────────────────────
@@ -513,7 +558,7 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     expect((await (await page.request.get(`${APPTS_API}/${a.id}`)).json()).data.status).toBe('CANCELLED');
   });
 
-  test('R2 — 3 concurrent same-staff bookings ALL succeed → double-book race (BUG-92 pin)', async ({ page }) => {
+  test('R2 — 3 concurrent same-staff bookings: exactly one 201, two 409 (M27-06 atomic guard)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     const sid = await ownerId(page);
     const payload: ApptInput = {
@@ -524,9 +569,11 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
       createAppt(page, { ...payload, walkInName: `${RUN} R2b` }),
       createAppt(page, { ...payload, walkInName: `${RUN} R2c` }),
     ]);
-    // Defect pin: the findFirst→create overlap check is non-atomic. Flip to exactly one 201
-    // (rest 409) when the guard moves into a transaction/unique constraint.
-    expect(results.map((r) => r.status)).toEqual([201, 201, 201]);
+    const statuses = results.map((r) => r.status).sort();
+    // The overlap check now runs inside the transaction behind a staff-row FOR UPDATE
+    // lock, so the losers see the committed booking and 409 — and never 500.
+    expect(statuses).toEqual([201, 409, 409]);
+    expect(results.every((r) => r.status !== 500)).toBe(true);
   });
 
   test('R3 — concurrent reads (list/stats/services) all 200 with consistent totals', async ({ page }) => {
@@ -559,15 +606,15 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     expect((await res.json()).error.code).toBe('VALIDATION_ERROR');
   });
 
-  test('N2 — stats/slots/time-off malformed date params → 500 (BUG-89 pin: new Date() unvalidated)', async ({ page }) => {
+  test('N2 — stats/slots/time-off malformed date params → 400 (M27-07: XC-01 parseQueryDate)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     const st = await page.request.get(`${STATS_API}?dateFrom=notadate`);
-    expect(st.status()).toBe(500); // flip to 400 when date zod parsing lands
+    expect(st.status()).toBe(400);
     const sl = await page.request.get(`${SLOTS_API}?date=notadate`);
-    expect(sl.status()).toBe(500);
+    expect(sl.status()).toBe(400);
     const to = await page.request.get(`${TIMEOFF_API}?dateFrom=notadate`);
-    expect(to.status()).toBe(500);
-    // Contrast: slots WITHOUT the param is correctly 400.
+    expect(to.status()).toBe(400);
+    // Contrast: slots WITHOUT the param is also 400 (the field is required).
     expect((await page.request.get(SLOTS_API)).status()).toBe(400);
   });
 
@@ -607,17 +654,14 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     expect((await page.request.post(TIMEOFF_API, { data: { staffId: 'x', date: iso(63) } })).status()).toBe(403);
   });
 
-  test('S3 — complete/no-show/convert have NO permission gate (BUG-86 pin: CASHIER 200s)', async ({ page }) => {
+  test('S3 — complete/no-show/convert are gated on editAppointment (CASHIER → 403)', async ({ page }) => {
     await login(page, CASHIER.email, CASHIER.password);
     const a = await newWalkIn(page, 'S3', 65);
-    // Defect pins: flip to 403 when the routes gain hasPermission checks.
-    expect((await page.request.post(`${APPTS_API}/${a.id}/complete`)).status()).toBe(200);
+    expect((await page.request.post(`${APPTS_API}/${a.id}/complete`)).status()).toBe(403);
     const b = await newWalkIn(page, 'S3b', 66);
-    expect((await page.request.post(`${APPTS_API}/${b.id}/no-show`)).status()).toBe(200);
+    expect((await page.request.post(`${APPTS_API}/${b.id}/no-show`)).status()).toBe(403);
     const c = await newWalkIn(page, 'S3c', 67);
-    await page.request.post(`${APPTS_API}/${c.id}/complete`);
-    // Convert is auth-only too — reaches the 500 crash, not a 403.
-    expect((await page.request.post(`${APPTS_API}/${c.id}/convert-to-sale`)).status()).toBe(500);
+    expect((await page.request.post(`${APPTS_API}/${c.id}/convert-to-sale`)).status()).toBe(403);
   });
 
   test('S4 — DISPATCH 403 (no appointment perms); SUPER_ADMIN 401 (no tenant)', async ({ page }) => {
@@ -640,18 +684,25 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     expect(list.data.appointments.every((x: { id: string }) => x.id !== a.id)).toBe(true);
   });
 
-  test('S6 — reminders route has NO tenant scoping (BUG-87 IDOR pin)', async ({ page }) => {
+  test('S6 — reminders route is tenant-scoped + view-gated (M27-03: IDOR closed)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     const a = await newWalkIn(page, 'S6', 69);
+    // Same tenant + permission → the history is readable.
+    const mine = await page.request.get(`${REMINDERS_API}?appointmentId=${a.id}`);
+    expect(mine.status()).toBe(200);
+    expect((await mine.json()).success).toBe(true);
     await login(page, FOREIGN_OWNER.email, FOREIGN_OWNER.password);
-    // Defect pin: foreign tenant reading another tenant's reminder history by appointment id.
-    // Flip to 403/404 when getReminderHistory gains a tenantId filter.
-    const res = await page.request.get(`${REMINDERS_API}?appointmentId=${a.id}`);
-    expect(res.status()).toBe(200);
-    expect((await res.json()).success).toBe(true);
-    // Missing param → 400; unknown id → 200 [] (no 404 — enumeration-tolerant pin).
+    // M27-03/BUG-87: a foreign tenant can no longer read another tenant's reminder
+    // history by guessing the appointment id — tenant-scoped, so it sees nothing.
+    const foreign = await page.request.get(`${REMINDERS_API}?appointmentId=${a.id}`);
+    expect(foreign.status()).toBe(200);
+    expect((await foreign.json()).data).toEqual([]);
+    // Missing param → 400; unknown id → empty (no enumeration signal).
     expect((await page.request.get(REMINDERS_API)).status()).toBe(400);
     expect((await page.request.get(`${REMINDERS_API}?appointmentId=nope`)).status()).toBe(200);
+    // DISPATCH holds no appointment:view key → 403 (M27-03 gate).
+    await login(page, DISPATCH.email, DISPATCH.password);
+    expect((await page.request.get(`${REMINDERS_API}?appointmentId=${a.id}`)).status()).toBe(403);
   });
 
   test('S7 — public booking: unauthenticated 201 lands in the tenant feed', async ({ page }) => {
@@ -669,12 +720,15 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     expect((await page.request.post(PUBLIC_BOOK_API, { data: { walkInName: '' } })).status()).toBe(400);
   });
 
-  test('S8 — time-off GET has no permission gate (OBS-80 pin: any session reads the roster)', async ({ page }) => {
+  test('S8 — time-off GET is gated on viewAppointment (M27-02: OBS-80 closed)', async ({ page }) => {
+    // CASHIER holds appointment:view → 200.
     await login(page, CASHIER.email, CASHIER.password);
     const res = await page.request.get(TIMEOFF_API);
-    // Pin: auth-only. Flip to 403 if the roster is meant to be manager-visible only.
     expect(res.status()).toBe(200);
     expect((await res.json()).success).toBe(true);
+    // DISPATCH holds no appointment key → 403.
+    await login(page, DISPATCH.email, DISPATCH.password);
+    expect((await page.request.get(TIMEOFF_API)).status()).toBe(403);
   });
 
   // ─── §9 Boundary Inputs, Chaos & Unicode ──────────────────────────────
@@ -741,14 +795,26 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
   });
 
   // ─── §10 Time-Travel & Retroactive Semantics ──────────────────────────
-  test('T1 — backdated booking accepted (OBS-79 pin: no past-date guard)', async ({ page }) => {
+  test('T1 — backdating policy: past bookings need appointment:settings:manage (M27-04)', async ({ page }) => {
+    // OWNER holds appointment:settings:manage → a record-after-the-fact booking lands.
     await login(page, OWNER.email, OWNER.password);
     const { status, body } = await createAppt(page, {
       walkInName: `${RUN} T1`, walkInPhone: '077', startTime: iso(-10), endTime: iso(-10, 11), durationMins: 30, price: 100,
     });
-    // Pin: req 3.3 lists no retroactive-booking rule — flip to 400 if the client demands one.
     expect(status).toBe(201);
     expect(new Date(body.data.startTime).getTime()).toBeLessThan(Date.now());
+    // CASHIER cannot backdate beyond the grace window → typed 400.
+    await login(page, CASHIER.email, CASHIER.password);
+    const denied = await createAppt(page, {
+      walkInName: `${RUN} T1b`, walkInPhone: '077', startTime: iso(-10, 14), endTime: iso(-10, 15), durationMins: 30, price: 100,
+    });
+    expect(denied.status).toBe(400);
+    expect(denied.body.error.code).toBe('BACKDATE_NOT_ALLOWED');
+    // The public booking path has no privileged actor → also 400.
+    const pub = await page.request.post(PUBLIC_BOOK_API, {
+      data: { walkInName: `${RUN} T1c`, walkInPhone: '0771234567', startTime: iso(-10, 16), endTime: iso(-10, 17), durationMins: 30, price: 100 },
+    });
+    expect(pub.status()).toBe(400);
   });
 
   test('T2 — stats window: dateFrom/dateTo bound the population (retro rows counted)', async ({ page }) => {
@@ -769,13 +835,37 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     expect(a.data.limit).toBe(10);
   });
 
+// ─── §11 Reminder Pipeline (M27-08) ───────────────────────────────────
+  test('W1 — confirming an appointment schedules PENDING reminder rows (24h/2h math)', async ({ page }) => {
+    await login(page, OWNER.email, OWNER.password);
+    const a = await newWalkIn(page, 'W1', 80);
+    const res = await page.request.get(`${REMINDERS_API}?appointmentId=${a.id}`);
+    expect(res.status()).toBe(200);
+    const rows = (await res.json()).data as Array<{ scheduledFor: string; status: string; channel: string }>;
+    // M27-08/OBS-77: the schedule helpers had ZERO callers, so reminders were never
+    // created. A far-future booking now yields the 24h + 2h rows, both PENDING.
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    expect(rows.every((r) => r.status === 'PENDING')).toBe(true);
+    const start = new Date(a.startTime).getTime();
+    const offsets = rows.map((r) => Math.round((start - new Date(r.scheduledFor).getTime()) / 3_600_000)).sort((x, y) => x - y);
+    expect(offsets).toContain(24);
+    expect(offsets).toContain(2);
+  });
+
+  test('W2 — reminder cron fails closed without CRON_SECRET (401)', async ({ page }) => {
+    // Same fail-closed contract as the other cron routes (unset secret → unconditional 401).
+    expect((await page.request.get(`${CRON_REMINDERS_API}`)).status()).toBe(401);
+    expect((await page.request.get(`${CRON_REMINDERS_API}`, { headers: { authorization: 'Bearer guess' } })).status()).toBe(401);
+    expect((await page.request.get(`${CRON_REMINDERS_API}`, { headers: { authorization: 'crude' } })).status()).toBe(401);
+  });
+
   // ─── §0 Cleanup ───────────────────────────────────────────────────────
   test('Z1 — cleanup: cancel every qa-m27 walk-in booking created by this suite (any run)', async ({ page }) => {
     test.setTimeout(300_000);
     await login(page, OWNER.email, OWNER.password);
     let cancelled = 0;
     const seen = new Set<string>();
-    const windows: Array<[number, number]> = [[-35, 75], [DAY_BASE + 20, DAY_BASE + 35]];
+    const windows: Array<[number, number]> = [[-35, 90], [DAY_BASE + 20, DAY_BASE + 35]];
     for (const [from, to] of windows) {
       const list = await (await page.request.get(`${APPTS_API}?limit=200&dateFrom=${iso(from, 0)}&dateTo=${iso(to, 23)}`)).json();
       for (const a of list.data.appointments as Array<{ id: string; status: string; walkInName?: string | null; title?: string }>) {

@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
         const change = m.quantityDelta > 0 ? `+${m.quantityDelta}` : String(m.quantityDelta);
         const before = String(m.quantityBefore);
         const after = String(m.quantityAfter);
-        const actor = escapeCSV(m.actor.email);
+        const actor = escapeCSV(m.actor?.email ?? 'system');
         const note = escapeCSV(m.note ?? '');
         return `${date},${product},${sku},${form},${packSize},${reason},${reasonLabel},${change},${before},${after},${actor},${note}`;
       });

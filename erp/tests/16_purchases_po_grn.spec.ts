@@ -188,6 +188,79 @@ test.describe('Module 16 - Purchases, PO Creation & Goods Receipt', () => {
     expect(new Date(updated.lines[0].receivedExpiryDate).toISOString()).toBe(expiryDate);
   });
 
+  test('F8 captures batch number and expiry date from the receiving worksheet UI', async ({ page }) => {
+    // M16-02 (BUG-49): the worksheet previously sent only qty/actualCostPrice,
+    // so warehouse users could not supply traceability data even though the
+    // receive API supported it.
+    await login(page);
+    // orderedQty 1 so the single worksheet line is received in full and the PO
+    // closes (the worksheet's stepper only goes up to the remaining quantity).
+    const po = await createPO(page, state.fixture, {
+      lines: [{ variantId: state.fixture.variant.id, orderedQty: 1, expectedCostPrice: 25 }],
+    });
+    state.created.push(po.id);
+    const sent = await page.request.patch(`/api/store/purchase-orders/${po.id}`, {
+      data: { status: 'SENT' }, headers: { 'content-type': 'application/json' },
+    });
+    expect(sent.status()).toBe(200);
+
+    await page.goto(`${BASE_URL}/suppliers/purchase-orders/${po.id}/receive`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Receive Goods' })).toBeVisible({ timeout: 45_000 });
+
+    // The batch/expiry controls are per-line and intrinsic to the worksheet.
+    const batchNumber = `BATCH-UI-${RUN}`;
+    const expiryDate = '2031-06-30';
+    await expect(page.getByRole('columnheader', { name: /batch \/ expiry/i })).toBeVisible();
+    await page.getByLabel('Batch no.').first().fill(batchNumber);
+    await page.getByLabel('Expiry').first().fill(expiryDate);
+
+    // Quantity is the only field that gates submission; drive it via its stepper
+    // so the worksheet's own payload builder is what actually posts.
+    await page.getByRole('button', { name: 'Increase quantity' }).first().click();
+    await page.getByRole('button', { name: /confirm receipt/i }).click();
+    await expect(page.getByText(/receipt posted successfully/i)).toBeVisible({ timeout: 30_000 });
+
+    const updated = await getPO(page, po.id);
+    expect(updated.status).toBe('RECEIVED');
+    expect(updated.lines[0].receivedQty).toBe(1);
+    expect(updated.lines[0].receivedBatchNumber).toBe(batchNumber);
+    expect(new Date(updated.lines[0].receivedExpiryDate).toISOString()).toBe('2031-06-30T00:00:00.000Z');
+
+    // The UI receipt created the batch row with its quantity and expiry.
+    const batches = await json(await page.request.get(`/api/store/batches?search=${batchNumber}`));
+    const batch = batches.data.find((row: any) => row.batchNumber === batchNumber);
+    expect(batch).toBeTruthy();
+    expect(batch.quantity).toBe(1);
+    expect(new Date(batch.expiryDate).toISOString()).toBe('2031-06-30T00:00:00.000Z');
+
+    // …and the PURCHASE_RECEIVED movement carries the batch linkage.
+    const ledger = await json(await page.request.get(`/api/store/products/${state.fixture.product.id}/movements?limit=100`));
+    const movement = (ledger.data?.movements ?? ledger.data ?? []).find((row: any) => row.purchaseOrderId === po.id);
+    expect(movement.reason).toBe('PURCHASE_RECEIVED');
+    expect(movement.batchId).toBe(batch.id);
+
+    // Non-batch lines are unaffected: a receipt with no batch fields stays a
+    // plain stock movement with no batch row and no batchId.
+    state.received.push(po.id);
+    const plainPO = await createPO(page, state.fixture, {
+      lines: [{ variantId: state.fixture.variant.id, orderedQty: 2, expectedCostPrice: 125.1 }],
+    });
+    state.created.push(plainPO.id);
+    await page.request.patch(`/api/store/purchase-orders/${plainPO.id}`, {
+      data: { status: 'SENT' }, headers: { 'content-type': 'application/json' },
+    });
+    const plainReceive = await post(page, `/api/store/purchase-orders/${plainPO.id}/receive`, {
+      receivedLines: [{ lineId: plainPO.lines[0].id, receivedQty: 2 }],
+    });
+    expect(plainReceive.status()).toBe(200);
+    state.received.push(plainPO.id);
+    const plainLedger = await json(await page.request.get(`/api/store/products/${state.fixture.product.id}/movements?limit=100`));
+    const plainMovement = (plainLedger.data?.movements ?? plainLedger.data ?? [])
+      .find((row: any) => row.purchaseOrderId === plainPO.id);
+    expect(plainMovement.reason).toBe('PURCHASE_RECEIVED');
+    expect(plainMovement.batchId ?? null).toBeNull();
+  });
+
   test('F5 supports partial receipt then closes only after the remaining quantity', async ({ page }) => {
     await login(page);
     const po = await createPO(page, state.fixture, { lines: [{ variantId: state.fixture.variant.id, orderedQty: 3, expectedCostPrice: 99.995 }] });
@@ -250,7 +323,7 @@ test.describe('Module 16 - Purchases, PO Creation & Goods Receipt', () => {
     }
   });
 
-  test('R1 pins concurrent duplicate receipt behavior (BUG-48)', async ({ page }) => {
+  test('R1 enforces an exactly-once concurrent receipt: one 200, one typed 409 (BUG-48 fixed)', async ({ page }) => {
     await login(page);
     const beforeStock = (await (await page.request.get(`/api/store/products/${state.fixture.product.id}`)).json()).data.variants.find((candidate: any) => candidate.id === state.fixture.variant.id).stockQuantity;
     const po = await createPO(page, state.fixture);
@@ -261,9 +334,15 @@ test.describe('Module 16 - Purchases, PO Creation & Goods Receipt', () => {
       post(page, `/api/store/purchase-orders/${po.id}/receive`, payload),
       post(page, `/api/store/purchase-orders/${po.id}/receive`, payload),
     ]);
-    const statuses = await Promise.all(responses.map((response) => response.status()));
-    // Defect pin: both transactions report success without an exactly-once contract.
-    expect(statuses).toEqual([200, 200]);
+    const statuses = (await Promise.all(responses.map((response) => response.status()))).sort((a, b) => a - b);
+    const bodies = await Promise.all(responses.map((response) => json(response)));
+    // FIXED (M16-01/BUG-48): the receive path now locks each PurchaseOrderLine
+    // row (SELECT ... FOR UPDATE) before the over-receipt pre-check, so the
+    // loser re-reads the committed quantity and is rejected with a typed 409
+    // instead of reporting a second success indistinguishable from the first.
+    expect(statuses, JSON.stringify(bodies)).toEqual([200, 409]);
+    const conflict = bodies.find((body) => body?.error);
+    expect(conflict?.error?.code).toBe('OVER_RECEIPT');
     expect((await getPO(page, po.id)).lines[0].receivedQty).toBe(2);
     const afterStock = (await (await page.request.get(`/api/store/products/${state.fixture.product.id}`)).json()).data.variants.find((candidate: any) => candidate.id === state.fixture.variant.id).stockQuantity;
     expect(afterStock).toBe(beforeStock + 2);

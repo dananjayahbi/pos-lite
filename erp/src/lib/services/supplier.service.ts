@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { SL_PHONE_REGEX } from '@/lib/constants/supplier';
+import { ApiError } from '@/lib/api/errors';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 
 // ── Phone Regex ──────────────────────────────────────────────────────────────
 
@@ -40,7 +42,31 @@ export async function createSupplier(tenantId: string, data: CreateSupplierData)
     validatePhone(data.whatsappNumber);
   }
 
-  return prisma.supplier.create({
+  // M06-01 (BUG-30 / D5): phone is the contact key — hard-unique per tenant.
+  // Archived (isActive:false) rows RESERVE their phone too (same D4 policy as
+  // Category/Brand/Customer), so the pre-check is archive-agnostic and
+  // surfaces the friendly 409; @@unique([tenantId, phone]) + mapPrismaError
+  // catch race losers with P2002 → 409, never a 500.
+  const phoneClash = await prisma.supplier.findFirst({
+    where: { tenantId, phone: data.phone },
+    select: { id: true, isActive: true },
+  });
+  if (phoneClash) {
+    throw ApiError.conflict(
+      phoneClash.isActive
+        ? 'A supplier with this phone number already exists'
+        : 'A supplier with this phone number already exists (an archived record uses this phone)',
+    );
+  }
+
+  // M06-01 (D5): name is NOT unique — a live same-name row only raises a
+  // duplicateName warning flag on the 201 response (warn-only, never 409).
+  const nameClash = await prisma.supplier.findFirst({
+    where: { tenantId, name: data.name, isActive: true },
+    select: { id: true },
+  });
+
+  const supplier = await prisma.supplier.create({
     data: {
       tenantId,
       name: data.name,
@@ -55,6 +81,8 @@ export async function createSupplier(tenantId: string, data: CreateSupplierData)
       ...(data.notes !== undefined && { notes: data.notes }),
     },
   });
+
+  return { ...supplier, duplicateName: nameClash !== null };
 }
 
 // ── Update ───────────────────────────────────────────────────────────────────
@@ -75,7 +103,13 @@ export async function updateSupplier(
   supplierId: string,
   data: UpdateSupplierData,
 ) {
-  await assertSupplierBelongsToTenant(tenantId, supplierId);
+  const existing = await assertSupplierBelongsToTenant(tenantId, supplierId);
+
+  // M06-05 (OBS-11): archived rows are read-only until restored — the
+  // unarchive route is the explicit recovery path (restore-first policy).
+  if (!existing.isActive) {
+    throw ApiError.conflict('Archived suppliers must be restored before editing');
+  }
 
   if (data.phone !== undefined) {
     validatePhone(data.phone);
@@ -143,6 +177,10 @@ export async function getSuppliers(tenantId: string, options: GetSuppliersOption
     where.OR = [
       { name: { contains: options.search, mode: 'insensitive' } },
       { contactName: { contains: options.search, mode: 'insensitive' } },
+      // M06-05 (OBS-9): phone is the primary contact key (and the uniqueness
+      // field post-M06-01) — searchable like Customer's phone, same contains/
+      // insensitive convention (prefix and substring both match).
+      { phone: { contains: options.search, mode: 'insensitive' } },
     ];
   }
 
@@ -176,4 +214,39 @@ export async function archiveSupplier(tenantId: string, supplierId: string) {
     where: { id: supplierId },
     data: { isActive: false },
   });
+}
+
+/**
+ * M06-05 (OBS-10) — the two-way recovery path for the one-way archive.
+ * Mirrors `archiveSupplier` (same tenant guard, idempotent 200) and audits
+ * the actual transition as SUPPLIER_UNARCHIVED with the real actor, matching
+ * the product/promotion archive-audit conventions. A double unarchive is a
+ * no-op 200 and deliberately does NOT spam the trail.
+ */
+export async function unarchiveSupplier(
+  tenantId: string,
+  supplierId: string,
+  actor: { id: string; role: string },
+) {
+  const existing = await assertSupplierBelongsToTenant(tenantId, supplierId);
+
+  const updated = await prisma.supplier.update({
+    where: { id: supplierId },
+    data: { isActive: true },
+  });
+
+  if (!existing.isActive) {
+    void createAuditLog({
+      tenantId,
+      actorId: actor.id,
+      actorRole: actor.role,
+      entityType: 'Supplier',
+      entityId: supplierId,
+      action: AUDIT_ACTIONS.SUPPLIER_UNARCHIVED,
+      before: { isActive: false },
+      after: { isActive: true },
+    }).catch(() => {});
+  }
+
+  return updated;
 }

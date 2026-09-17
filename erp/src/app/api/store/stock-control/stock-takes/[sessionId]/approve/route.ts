@@ -62,6 +62,19 @@ export async function POST(
       );
     }
 
+    // M13-02 (BUG-43) — maker-checker separation: the initiator can never
+    // approve their own stock take, even when they hold the approve
+    // permission (e.g. OWNER). Enforced here, at the API source of truth.
+    if (stockTakeSession.initiatedById === session.user.id) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'You cannot approve a stock take you initiated' },
+        },
+        { status: 403 },
+      );
+    }
+
     const itemsWithDiscrepancy = stockTakeSession.items.filter(
       (item) => item.discrepancy !== null && item.discrepancy !== 0,
     );

@@ -65,6 +65,18 @@ export function internalError(message: string): NextResponse {
 }
 
 /**
+ * M24-01/OBS-32: upstream-dependency failure (courier API unreachable/auth
+ * rejected/etc). 502 Bad Gateway — distinct from a client `badRequest` so an
+ * outage is not indistinguishable from a malformed request.
+ */
+export function upstreamError(code: string, message: string): NextResponse {
+  return NextResponse.json(
+    { success: false, error: { code, message } },
+    { status: 502 },
+  );
+}
+
+/**
  * Single catch-line for route handlers. Resolution order:
  * 1. thrown `ApiError` → its status/code as-is.
  * 2. service sentinel strings (`map-service-error`) → typed response.

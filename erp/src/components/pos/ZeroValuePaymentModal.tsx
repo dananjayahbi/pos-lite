@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DefectiveBarcodeField } from '@/components/pos/DefectiveBarcodeField';
 
 // Reason keys surfaced to the cashier (doc 33). PRODUCT_REPLACEMENT additionally
 // requires a validated original order reference (doc 34).
@@ -48,6 +49,8 @@ export function ZeroValuePaymentModal({
 }: PaymentModalProps) {
   const [reason, setReason] = useState<ReasonValue | null>(null);
   const [linkedRef, setLinkedRef] = useState('');
+  // M14-04 (req 3.11 / D14): defective-item barcode for replacements.
+  const [defectiveBarcode, setDefectiveBarcode] = useState('');
   const [validateResult, setValidateResult] = useState<ValidateResult>({
     status: 'idle',
   });
@@ -56,6 +59,7 @@ export function ZeroValuePaymentModal({
   const reset = () => {
     setReason(null);
     setLinkedRef('');
+    setDefectiveBarcode('');
     setValidateResult({ status: 'idle' });
     setIsSubmitting(false);
   };
@@ -64,7 +68,8 @@ export function ZeroValuePaymentModal({
   const refValidated = validateResult.status === 'valid';
   const canConfirm =
     reason !== null &&
-    (!isReplacement || (linkedRef.trim().length > 0 && refValidated)) &&
+    (!isReplacement ||
+      (linkedRef.trim().length > 0 && refValidated && defectiveBarcode.trim().length > 0)) &&
     !isSubmitting;
 
   const handleValidate = async () => {
@@ -117,6 +122,9 @@ export function ZeroValuePaymentModal({
           paymentMethod: 'NONE',
           zeroValueReason: reason,
           ...(isReplacement ? { zeroValueLinkedOrderRef: linkedRef.trim() } : {}),
+          ...(isReplacement && defectiveBarcode.trim()
+            ? { defectiveBarcode: defectiveBarcode.trim() }
+            : {}),
         }),
       });
       const json = (await res.json()) as {
@@ -245,6 +253,13 @@ export function ZeroValuePaymentModal({
                   {validateResult.message}
                 </p>
               )}
+
+              {/* Defective item barcode (M14-04 / req 3.11, D14 = BOTH) */}
+              <DefectiveBarcodeField
+                value={defectiveBarcode}
+                onChange={setDefectiveBarcode}
+                disabled={isSubmitting}
+              />
             </div>
           )}
 

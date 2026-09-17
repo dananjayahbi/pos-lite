@@ -25,8 +25,25 @@ export const CreateSaleSchema = z
     // Doc 33 / 34: zero-value reason + original order reference for replacements.
     zeroValueReason: z.nativeEnum(ZeroValueReason).optional(),
     zeroValueLinkedOrderRef: z.string().trim().min(1).max(64).optional(),
+    // M14-04 (req 3.11 / D14): scanned barcode of the defective item; required
+    // by the superRefine below when reason = PRODUCT_REPLACEMENT, and resolved
+    // against the tenant's variant barcodes in the service before persisting.
+    defectiveBarcode: z.string().trim().max(64).optional(),
   })
   .superRefine((data, ctx) => {
+    // M14-01 (BUG-44): NONE is not a client-selectable tender. Zero-value sales
+    // are expressed by a computed total of 0 (+ zeroValueReason) and the
+    // service records paymentMethod='NONE' internally; a client that sends NONE
+    // alongside a reason is tolerated (the zero-value path), but NONE without a
+    // zeroValueReason is always rejected here — the service adds a total-aware
+    // guard for internal callers that bypass the validator.
+    if (data.paymentMethod === 'NONE' && !data.zeroValueReason) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['paymentMethod'],
+        message: 'A non-zero sale requires CASH/CARD/SPLIT/LANKAQR — NONE is reserved for zero-value sales with a reason',
+      });
+    }
     if (data.paymentMethod === 'CASH') {
       if (data.cashReceived === undefined || data.cashReceived <= 0) {
         ctx.addIssue({
@@ -62,12 +79,20 @@ export const CreateSaleSchema = z
       });
     }
     // Doc 34: a replacement must point at an original order reference.
+    // M14-04 (req 3.11 / D14 = BOTH): and must carry the defective item barcode.
     if (data.zeroValueReason === 'PRODUCT_REPLACEMENT') {
       if (!data.zeroValueLinkedOrderRef || data.zeroValueLinkedOrderRef.trim().length === 0) {
         ctx.addIssue({
           code: 'custom',
           path: ['zeroValueLinkedOrderRef'],
           message: 'An original order reference is required for PRODUCT_REPLACEMENT sales',
+        });
+      }
+      if (!data.defectiveBarcode || data.defectiveBarcode.trim().length === 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['defectiveBarcode'],
+          message: 'The defective item barcode is required for PRODUCT_REPLACEMENT sales',
         });
       }
     }

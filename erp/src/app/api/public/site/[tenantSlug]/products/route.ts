@@ -79,6 +79,10 @@ export async function GET(
       ? Math.min(limitRaw, MAX_LIMIT)
       : DEFAULT_LIMIT;
 
+  // M28-03/BUG-95: `page` was silently ignored (catalogs >50 unreachable).
+  const pageRaw = Number.parseInt(url.searchParams.get('page') ?? '', 10);
+  const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+
   const categoryId = url.searchParams.get('categoryId') ?? undefined;
   const brandId = url.searchParams.get('brandId') ?? undefined;
   const form = url.searchParams.get('form') ?? undefined;
@@ -111,18 +115,18 @@ export async function GET(
       ]
     : [];
 
-  // Build the orderBy clause. "best-selling" is approximated by recent sales
-  // volume; we fallback to latest for simplicity here — wire this to your
-  // sales aggregation once a proper "best-selling" query is available.
-  const orderBy: Prisma.ProductOrderByWithRelationInput[] = (() => {
-    switch (sort) {
-      case 'price-asc':
-      case 'price-desc':
-      default:
-        // price sorts are applied in memory against min retail price
-        return [{ createdAt: 'desc' }];
-      case 'best-selling':
-        return [{ createdAt: 'desc' }];
+// Build the orderBy clause. M28-04/BUG-96: `best-selling` has no sales
+// aggregation wired yet, so it falls back to `latest` deterministically — the
+// response now flags `meta.sortFallback: 'latest'` so the storefront does not
+// misrepresent a latest-sorted list as top sellers.
+    const orderBy: Prisma.ProductOrderByWithRelationInput[] = (() => {
+      switch (sort) {
+        case 'price-asc':
+        case 'price-desc':
+        default:
+          // price sorts are applied in memory against min retail price
+          return [{ createdAt: 'desc' }];
+        case 'best-selling':
       case 'latest':
         return [{ createdAt: 'desc' }];
     }
@@ -205,7 +209,7 @@ export async function GET(
     priceFiltered.sort((a, b) => b._minPrice - a._minPrice);
   }
 
-  const paginated = priceFiltered.slice(0, limit);
+  const paginated = priceFiltered.slice((page - 1) * limit, (page - 1) * limit + limit);
 
   const cleaned = paginated.map((item) => {
     // Drop the internal _minPrice helper used only for filtering/sorting above.
@@ -216,7 +220,22 @@ export async function GET(
 
   return jsonWithCors(
     request,
-    { products: cleaned, total: priceFiltered.length },
+    {
+      products: cleaned,
+      total: priceFiltered.length,
+      // M28-03: envelope parity with the ERP list routes so the storefront can
+      // build paging; a 60s s-maxage cache keeps the re-slicing cheap.
+      meta: {
+        page,
+        limit,
+        total: priceFiltered.length,
+        totalPages: Math.max(1, Math.ceil(priceFiltered.length / limit)),
+        hasMore: page * limit < priceFiltered.length,
+        // M28-04: `best-selling` has no sales counter yet — flagged honestly so
+        // the storefront does not present a latest-sorted list as top sellers.
+        ...(sort === 'best-selling' ? { sortFallback: 'latest' } : {}),
+      },
+    },
     {
       headers: {
         'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',

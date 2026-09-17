@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import {
   updateRawMaterial,
   deleteRawMaterial,
+  toRawMaterialItem,
 } from '@/lib/services/rawMaterial.service';
 import { UpdateRawMaterialSchema } from '@/lib/validators/rawMaterial.validators';
 
@@ -116,7 +117,9 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
   }
 }
 
-// Lightweight existence check used by the UI before rendering the delete dialog.
+// Single-material detail read. M21-01 (BUG-55): returns the same full DTO the
+// list uses (quantity, lowStockThreshold, stockStatus, …) — not an id-only
+// existence check — so detail and list surfaces agree byte-for-byte.
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
@@ -150,7 +153,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
         { status: 404 },
       );
     }
-    return NextResponse.json({ success: true, data: { id: material.id } });
+    return NextResponse.json({ success: true, data: toRawMaterialItem(material) });
   } catch (error) {
     console.error('GET /api/store/raw-materials/[id] error:', error);
     return NextResponse.json(

@@ -52,6 +52,7 @@ export function CourierSettingsForm() {
   const [pickupAddress, setPickupAddress] = useState('');
   const [isActive, setIsActive] = useState(false);
   const [syncingLocations, setSyncingLocations] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
   const hydrated = useRef(false);
 
   // Hydrate local state once the account loads (never clobber in-progress edits).
@@ -98,6 +99,31 @@ export function CourierSettingsForm() {
       toast.error(error instanceof Error ? error.message : 'Failed to sync locations');
     } finally {
       setSyncingLocations(false);
+    }
+  }
+
+  /**
+   * M24-01: verify the saved credentials before dispatching. Persists the form
+   * first (so the test runs against what the operator just typed), then calls
+   * the test-connection probe which reports auth failures distinctly from an
+   * upstream outage.
+   */
+  async function handleTestConnection() {
+    if (!email && !apiKey) {
+      toast.error('Add an email or API key to your Trans Express account first');
+      return;
+    }
+    setTestingConnection(true);
+    try {
+      await save.mutateAsync(buildPayload());
+      const res = await fetch('/api/store/delivery/settings', { method: 'POST' });
+      const json = (await res.json()) as { success: boolean; error?: { message?: string } };
+      if (!json.success) throw new Error(json.error?.message ?? 'Connection test failed');
+      toast.success('Trans Express connection verified');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Connection test failed');
+    } finally {
+      setTestingConnection(false);
     }
   }
 
@@ -227,6 +253,13 @@ export function CourierSettingsForm() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 border-t border-mist pt-4">
+            <Button
+              variant="outline"
+              onClick={handleTestConnection}
+              disabled={testingConnection}
+            >
+              {testingConnection ? 'Testing...' : 'Test connection'}
+            </Button>
             <Button onClick={handleSave} disabled={save.isPending}>
               {save.isPending ? 'Saving…' : 'Save account'}
             </Button>

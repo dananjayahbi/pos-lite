@@ -43,6 +43,15 @@ export const PERMISSIONS = {
     viewCustomerBalance: 'customer:view_balance',
     mergeCustomer: 'customer:merge',
   },
+  // M05-05 (OBS-51 / client decision D15): the broadcast composer family —
+  // send plus the audience preview/count endpoints that serve it. Its own key
+  // is required because CASHIER holds customer:create by design (OBS-4), so
+  // gating the audience PII reads on the customer keys could not block it.
+  // Derived sets mean OWNER + MANAGER get it automatically; CASHIER's
+  // explicit list deliberately omits it.
+  BROADCAST: {
+    send: 'broadcast:send',
+  },
   SUPPLIER: {
     createSupplier: 'supplier:create',
     editSupplier: 'supplier:edit',

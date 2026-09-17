@@ -11,7 +11,7 @@
  *                                           records CustomerBroadcast AFTER the loop)
  * - API  : GET  /api/broadcast/history (+ [id])   (role-gated; tenant-scoped; take 50)
  * - API  : GET  /api/customers/count, /api/customers/preview  (broadcast audience helpers;
- *                                           NO role gate — CASHIER can read)
+ *                                           gated on broadcast:send — M05-05/D15)
  * - API  : POST /api/store/sales/[id]/send-receipt    (WhatsApp receipt; no role gate;
  *                                           failure → HTTP 200 with success:false)
  * - API  : POST /api/store/purchase-orders/[id]/send-whatsapp  (DRAFT-only; supplier
@@ -293,18 +293,21 @@ test.describe('§2 Financial & calculation precision', () => {
     expect(sent + failed).toBe(total);
   });
 
-  test('P2 (BUG-74 pin): audience filters with garbage numeric params → 500 (unhandled)', async ({ page }) => {
+  test('P2 (BUG-74 fixed): audience filters with garbage numeric params → 400', async ({ page }) => {
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
-    // DEFECT BUG-74: minSpend/maxSpend go through parseFloat() with no NaN
-    // guard — 'abc' → NaN — and the raw value is passed into the Prisma
-    // Decimal filter, which throws → unhandled 500 (live-verified on both
-    // preview and count). Pinned as current behavior; typed 400 is correct.
-    // NOTE: bigint-overflow minSpend (999…, parses to 1e20) is SAFE (200) —
-    // only NaN-producing inputs crash.
+    // FIXED (M05-05): minSpend/maxSpend now go through the XC-01 parsers, so
+    // 'abc' / '1e999' are a typed 400 naming the param instead of NaN reaching
+    // the Prisma Decimal filter and 500ing.
     const garbage = await page.request.get(`${PREVIEW_URL}?minSpend=abc&maxSpend=1e999`);
-    expect(garbage.status(), 'BUG-74 pin: preview minSpend=abc currently 500s').toBe(500);
+    expect(garbage.status(), 'preview minSpend=abc → 400').toBe(400);
+    expect((await garbage.json()).error.code).toBe('BAD_REQUEST');
     const countGarbage = await page.request.get(`${COUNT_URL}?minSpend=abc`);
-    expect(countGarbage.status(), 'BUG-74 pin: count minSpend=abc currently 500s').toBe(500);
+    expect(countGarbage.status(), 'count minSpend=abc → 400').toBe(400);
+    expect((await countGarbage.json()).error.code).toBe('BAD_REQUEST');
+    // Still safe (unchanged): bigint-overflow minSpend (999…, parses to 1e20)
+    // is a valid finite Decimal filter → 200.
+    const huge = await page.request.get(`${PREVIEW_URL}?minSpend=99999999999999999999`);
+    expect(huge.status(), 'preview minSpend=1e20 stays 200').toBe(200);
   });
 
   test('P3: history list and detail report identical analytics for the same broadcast', async ({ page }) => {
@@ -517,12 +520,25 @@ test.describe('§8 Security, RBAC & multi-tenant isolation', () => {
     expect(page.url()).not.toContain('/customers/broadcast');
   });
 
-  test('S3 (OBS-51 pin): cashier CAN read audience preview/count (no role gate — PII exposure documented)', async ({ page }) => {
+  test('S3 (OBS-51 fixed): cashier is denied audience preview/count; owner reads them', async ({ page }) => {
     await login(page, CASHIER1_EMAIL, CASHIER1_PASSWORD);
+    // FIXED (M05-05 / client decision D15): the audience endpoints serve the
+    // broadcast composer, so they now require `broadcast:send` — which CASHIER
+    // does not have (it holds customer:create by design, OBS-4, which is why
+    // the old customer-key gate could not work here).
     const preview = await page.request.get(PREVIEW_URL);
-    expect(preview.status()).toBe(200);
+    expect(preview.status(), 'cashier preview → 403').toBe(403);
+    expect((await preview.json()).error.code).toBe('FORBIDDEN');
     const count = await page.request.get(COUNT_URL);
-    expect(count.status()).toBe(200);
+    expect(count.status(), 'cashier count → 403').toBe(403);
+    const storeBroadcast = await page.request.post(STORE_BROADCAST_URL, { data: broadcastBody() });
+    expect(storeBroadcast.status(), 'cashier store broadcast → 403').toBe(403);
+    // OWNER (and MANAGER, derived from ALL_PERMISSIONS minus managerExcluded)
+    // keep full access to the same endpoints.
+    await page.context().clearCookies();
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    expect((await page.request.get(PREVIEW_URL)).status()).toBe(200);
+    expect((await page.request.get(COUNT_URL)).status()).toBe(200);
   });
 
   test('S4: cross-tenant broadcast detail is invisible (Lanka owner → dilani id → 404)', async ({ page }) => {
@@ -597,23 +613,23 @@ test.describe('§9 Boundary inputs & chaos data', () => {
     expect(text).not.toContain('<script>');
   });
 
-  test('X4 (BUG-74 pin): hostile gender enum → 500; other hostile params safe', async ({ page }) => {
+  test('X4 (BUG-74 fixed): hostile gender enum → 400; other hostile params safe', async ({ page }) => {
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
-    // DEFECT BUG-74 (same unvalidated-param root as P2, live-verified): the
-    // gender param is cast to the Gender enum with no validation — '💥' is
-    // not a valid enum value and Prisma throws → unhandled 500. Pinned as
-    // current behavior.
+    // FIXED (M05-05): the gender param is validated against the Prisma Gender
+    // enum allowlist, so '💥' is a typed 400 VALIDATION_ERROR instead of
+    // reaching Prisma as an invalid enum value and 500ing.
     const badGender = await page.request.get(`${PREVIEW_URL}?gender=%F0%9F%92%A5`);
-    expect(badGender.status(), 'BUG-74 pin: hostile gender enum currently 500s').toBe(500);
-    // These ARE handled safely (live-verified 200): out-of-domain
-    // birthdayMonth falls through unfiltered, bigint-overflow minSpend is a
-    // valid Decimal filter, tags are plain strings.
+    expect(badGender.status(), 'hostile gender enum → 400').toBe(400);
+    expect((await badGender.json()).error.code).toBe('VALIDATION_ERROR');
+    // These stay handled safely (200): out-of-domain birthdayMonth falls
+    // through unfiltered, bigint-overflow minSpend is a valid Decimal filter,
+    // tags are plain strings.
     const month99 = await page.request.get(`${PREVIEW_URL}?birthdayMonth=99`);
-    expect(month99.status()).not.toBe(500);
+    expect(month99.status()).toBe(200);
     const huge = await page.request.get(`${PREVIEW_URL}?minSpend=99999999999999999999`);
-    expect(huge.status()).not.toBe(500);
+    expect(huge.status()).toBe(200);
     const xssTags = await page.request.get(`${PREVIEW_URL}?tags=<script>&birthdayMonth=99`);
-    expect(xssTags.status()).not.toBe(500);
+    expect(xssTags.status()).toBe(200);
   });
 
   test('X5: send-receipt with Unicode/emoji phone never 500 (fails closed)', async ({ page }) => {

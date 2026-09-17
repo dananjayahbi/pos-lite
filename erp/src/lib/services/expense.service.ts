@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma';
 import type { ExpenseCategory } from '@/generated/prisma/client';
 import type { CreateExpenseInput, UpdateExpenseInput } from '@/lib/validators/expense.validators';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
-import { adjustFundBalance } from '@/lib/services/petty-cash.service';
+import { adjustFundBalance, assertFundCanSpend } from '@/lib/services/petty-cash.service';
 
 interface ExpenseFilters {
   category?: string | undefined;
@@ -57,8 +57,20 @@ export async function getExpenseById(tenantId: string, id: string) {
 
 export async function createExpense(
   tenantId: string,
-  data: CreateExpenseInput & { recordedById: string },
+  data: CreateExpenseInput & { recordedById: string; overdrawApproved?: boolean | undefined },
 ) {
+  // M19-01 (BUG-53, D2): block a linked expense that would overdraw the fund
+  // unless an explicit (permission-checked) manager approval rode along. Runs
+  // BEFORE the row is created so a blocked overdraw writes nothing.
+  if (data.pettyCashFundId) {
+    await assertFundCanSpend(
+      tenantId,
+      data.pettyCashFundId,
+      data.amount,
+      data.overdrawApproved === true,
+    );
+  }
+
   const expense = await prisma.expense.create({
     data: {
       tenantId,
@@ -76,6 +88,19 @@ export async function createExpense(
   // A linked petty-cash expense reduces the fund's running balance.
   if (data.pettyCashFundId) {
     await adjustFundBalance(tenantId, data.pettyCashFundId, -data.amount);
+    // M19-01: an approved overdraft is a privileged exception — audit it with
+    // the actor so the audit trail answers "who allowed the negative balance?".
+    if (data.overdrawApproved === true) {
+      void createAuditLog({
+        tenantId,
+        actorId: data.recordedById,
+        actorRole: 'USER',
+        entityType: 'PettyCashFund',
+        entityId: data.pettyCashFundId,
+        action: 'PETTY_CASH_OVERDRAW_APPROVED',
+        after: { expenseId: expense.id, amount: expense.amount },
+      }).catch(() => {});
+    }
   }
 
   void createAuditLog({
@@ -94,11 +119,42 @@ export async function createExpense(
 export async function updateExpense(
   tenantId: string,
   id: string,
-  data: UpdateExpenseInput,
+  data: UpdateExpenseInput & { overdrawApproved?: boolean | undefined; actorId?: string | undefined },
 ) {
   const existing = await prisma.expense.findFirst({ where: { id, tenantId } });
   if (!existing) {
     throw new Error('Expense not found');
+  }
+
+  // M19-01 (D2): an edit that increases or re-links a fund-backed spend is
+  // guarded exactly like a create. When the fund is unchanged the old amount is
+  // credited back for the check (`credit`), because the net deduction is what
+  // the fund must be able to absorb.
+  const oldFundId = existing.pettyCashFundId;
+  const oldAmount = existing.amount.toNumber();
+  const newFundId = data.pettyCashFundId !== undefined ? data.pettyCashFundId : oldFundId;
+  const newAmount = data.amount !== undefined ? data.amount : oldAmount;
+  const sameFund = oldFundId !== null && newFundId === oldFundId;
+
+  if (newFundId && (newFundId !== oldFundId || newAmount !== oldAmount)) {
+    await assertFundCanSpend(
+      tenantId,
+      newFundId,
+      newAmount,
+      data.overdrawApproved === true,
+      sameFund ? oldAmount : 0,
+    );
+    if (data.overdrawApproved === true) {
+      void createAuditLog({
+        tenantId,
+        actorId: data.actorId ?? existing.recordedById,
+        actorRole: 'USER',
+        entityType: 'PettyCashFund',
+        entityId: newFundId,
+        action: 'PETTY_CASH_OVERDRAW_APPROVED',
+        after: { expenseId: id, amount: newAmount },
+      }).catch(() => {});
+    }
   }
 
   const expense = await prisma.expense.update({
@@ -114,17 +170,14 @@ export async function updateExpense(
     include: { recordedBy: { select: { email: true } } },
   });
 
-  // Keep the fund balance in sync when a linked expense's amount or fund changes.
-  if (existing.pettyCashFundId) {
-    await adjustFundBalance(tenantId, existing.pettyCashFundId, existing.amount.toNumber());
-  }
-  if (data.amount !== undefined && data.amount !== existing.amount.toNumber()) {
-    const fundId = data.pettyCashFundId ?? existing.pettyCashFundId;
-    if (fundId) {
-      await adjustFundBalance(tenantId, fundId, -data.amount);
-    }
-  } else if (data.pettyCashFundId) {
-    await adjustFundBalance(tenantId, data.pettyCashFundId, -existing.amount.toNumber());
+  // Keep the fund balance in sync with a single net delta when the fund is
+  // unchanged, or a refund+deduct pair when the expense moved between funds.
+  if (oldFundId && newFundId && oldFundId === newFundId) {
+    const delta = oldAmount - newAmount;
+    if (delta !== 0) await adjustFundBalance(tenantId, oldFundId, delta);
+  } else {
+    if (oldFundId) await adjustFundBalance(tenantId, oldFundId, oldAmount);
+    if (newFundId) await adjustFundBalance(tenantId, newFundId, -newAmount);
   }
 
   return expense;

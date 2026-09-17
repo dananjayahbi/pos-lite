@@ -38,7 +38,7 @@ export async function POST(
     const parsed = CancelAppointmentSchema.safeParse(body);
     const reason = parsed.success ? parsed.data.reason : undefined;
 
-    const appointment = await cancelAppointment(tenantId, id, session.user.id, reason);
+    const appointment = await cancelAppointment(tenantId, id, session.user.id, reason, session.user.role);
 
     return NextResponse.json({ success: true, data: appointment });
   } catch (error) {

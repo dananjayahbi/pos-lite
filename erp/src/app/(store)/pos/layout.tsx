@@ -3,8 +3,7 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getCurrentShift } from '@/lib/services/shift.service';
-import { ShiftOpenModal } from '@/components/pos/ShiftOpenModal';
-import { POSTerminalShell } from '@/components/pos/POSTerminalShell';
+import { ShiftGate } from '@/components/pos/ShiftGate';
 import { getTenantBranding } from '@/lib/tenant-branding';
 
 export default async function POSLayout({ children }: { children: React.ReactNode }) {
@@ -22,27 +21,24 @@ export default async function POSLayout({ children }: { children: React.ReactNod
   const showOwnerDashboardShortcut = session.user.role === 'OWNER';
   const branding = await getTenantBranding(tenantId);
 
-  if (!shift) {
-    return (
-      <ShiftOpenModal
-        cashierName={session.user.name ?? 'Cashier'}
-        showOwnerDashboardShortcut={showOwnerDashboardShortcut}
-        businessName={branding.name}
-        businessLogoUrl={branding.logoUrl}
-      />
-    );
-  }
-
+  // M18-01 (BUG-52): the open-shift gate moved into the client `ShiftGate` so
+  // that `/pos/shift-report` can render the report page's own empty/error
+  // states when no shift is open. Previously this layout early-returned
+  // <ShiftOpenModal/> and never rendered children, so an invalid/missing
+  // ?shiftId surfaced the "Open Your Shift" screen instead of the documented
+  // "No shift ID provided." / fetch-failure UI. Behavior for every other POS
+  // route (and for the shell when a shift IS open) is unchanged.
   return (
-    <POSTerminalShell
-      shiftId={shift.id}
-      shiftOpenedAt={shift.openedAt.toISOString()}
+    <ShiftGate
+      hasOpenShift={Boolean(shift)}
+      shiftId={shift?.id}
+      shiftOpenedAt={shift?.openedAt.toISOString()}
       cashierName={session.user.name ?? 'Cashier'}
       showOwnerDashboardShortcut={showOwnerDashboardShortcut}
       businessName={branding.name}
       businessLogoUrl={branding.logoUrl}
     >
       {children}
-    </POSTerminalShell>
+    </ShiftGate>
   );
 }

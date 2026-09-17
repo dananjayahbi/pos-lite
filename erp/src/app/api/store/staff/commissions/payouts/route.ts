@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { hasPermission } from '@/lib/utils/permissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getCommissionPayouts } from '@/lib/services/commission.service';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { parseQueryInt, parseQueryDate } from '@/lib/api/query-params';
@@ -22,7 +24,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!['MANAGER', 'OWNER'].includes(session.user.role)) {
+    // M20-01 (XC-03): permission-key gate instead of a hard-coded role list.
+    if (!hasPermission(session.user, PERMISSIONS.STAFF.manageStaff)) {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Only managers and owners can view payouts' } },
         { status: 403 },

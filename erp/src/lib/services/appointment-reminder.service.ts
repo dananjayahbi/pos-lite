@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/prisma';
+import { sendEmail } from '@/lib/services/email.service';
+import { sendWhatsAppTextMessage } from '@/lib/whatsapp';
 
 interface ScheduleRemindersInput {
   appointmentId: string;
@@ -76,23 +78,52 @@ export async function processPendingReminders() {
   const results = [];
   for (const reminder of pending) {
     try {
-      const phone = reminder.appointment.walkInPhone ?? reminder.appointment.customer?.phone;
+      const appointment = reminder.appointment;
+      const message = buildReminderMessage(appointment);
 
-      if (phone && reminder.channel !== 'EMAIL') {
-        // TODO: Integrate with WhatsApp service when available
-        // await sendWhatsAppMessage(phone, buildReminderMessage(reminder.appointment));
+      // M27-08/OBS-77: the send path used to be a commented-out TODO that
+      // unconditionally marked the row SENT — a fake-send that would corrupt
+      // the ledger if ever wired. Actually attempt delivery per channel and
+      // only mark SENT on provider success; otherwise FAILED with the reason.
+      let delivered = false;
+      let failure = 'No reachable contact channel for this appointment';
+
+      const phone = appointment.walkInPhone ?? appointment.customer?.phone;
+      const email = appointment.customer?.email;
+      const wantsWhatsApp = reminder.channel === 'WHATSAPP' || reminder.channel === 'BOTH';
+      const wantsEmail = reminder.channel === 'EMAIL' || reminder.channel === 'BOTH';
+
+      if (wantsEmail && email) {
+        const result = await sendEmail(email, `Appointment reminder: ${appointment.title}`, `<p>${message}</p>`);
+        if (result.delivered) {
+          delivered = true;
+        } else {
+          failure = `Email not delivered: ${result.reason ?? 'unknown'}`;
+        }
       }
 
-      // For now, mark as sent
-      await prisma.appointmentReminder.update({
-        where: { id: reminder.id },
-        data: {
-          status: 'SENT',
-          sentAt: new Date(),
-        },
-      });
+      if (!delivered && wantsWhatsApp && phone) {
+        const result = await sendWhatsAppTextMessage(phone, message);
+        if (result.success) {
+          delivered = true;
+        } else {
+          failure = result.error ?? 'WhatsApp send failed';
+        }
+      }
 
-      results.push({ id: reminder.id, status: 'SENT' });
+      if (delivered) {
+        await prisma.appointmentReminder.update({
+          where: { id: reminder.id },
+          data: { status: 'SENT', sentAt: new Date(), errorMessage: null },
+        });
+        results.push({ id: reminder.id, status: 'SENT' });
+      } else {
+        await prisma.appointmentReminder.update({
+          where: { id: reminder.id },
+          data: { status: 'FAILED', errorMessage: failure.slice(0, 500) },
+        });
+        results.push({ id: reminder.id, status: 'FAILED', error: failure });
+      }
     } catch (error) {
       await prisma.appointmentReminder.update({
         where: { id: reminder.id },
@@ -109,9 +140,12 @@ export async function processPendingReminders() {
   return results;
 }
 
-export async function getReminderHistory(appointmentId: string) {
+export async function getReminderHistory(tenantId: string, appointmentId: string) {
+  // M27-03/BUG-87: this used to filter on `appointmentId` alone, letting any
+  // authenticated user of any tenant read another tenant's reminder history
+  // (patient name/phone) by guessing ids. Scope to the caller's tenant.
   return prisma.appointmentReminder.findMany({
-    where: { appointmentId },
+    where: { tenantId, appointmentId },
     orderBy: { scheduledFor: 'asc' },
   });
 }

@@ -235,8 +235,11 @@ test.describe('Module 17 - Returns & Refunds', () => {
       lines: [{ saleLineId: voidSale.lines[0].id, variantId: state.fixture.variant.id, quantity: 1 }],
       refundMethod: 'CASH', restockItems: true, reason: 'cross tenant',
     });
-    // Defect pin: a foreign sale currently reaches an unhandled 500 instead of a controlled 4xx.
-    expect([400, 403, 422, 500]).toContain(foreignReturn.status());
+    // FIXED (M17-01/BUG-50): a cross-tenant sale reference fails closed as a
+    // typed 404 through the shared mapper — indistinguishable from a missing
+    // sale (no existence disclosure) and never an unhandled 500.
+    expect(foreignReturn.status(), JSON.stringify(await json(foreignReturn))).toBe(404);
+    expect((await json(foreignReturn))?.error?.code).toBe('NOT_FOUND');
     await tenantTwo.close();
   });
 
@@ -322,9 +325,19 @@ test.describe('Module 17 - Returns & Refunds', () => {
     state.saleIds.push(createdSale.id);
     expect(new Date(createdSale.createdAt).getUTCFullYear()).toBeGreaterThan(2020);
     const malformed = await page.request.get('/api/store/returns?from=not-a-date&to=2999-01-01');
-    // Defect pin: malformed date filters currently surface as an unhandled 500.
-    expect(malformed.status()).toBe(500);
-    expect(JSON.stringify(await json(malformed))).not.toMatch(/DATABASE_URL|node_modules|prisma/i);
+    // FIXED (M17-02/BUG-51): from/to/page/limit parse through the XC-01
+    // helpers — a malformed range is a typed 400 VALIDATION_ERROR naming the
+    // param instead of an Invalid Date reaching Prisma as an unhandled 500.
+    expect(malformed.status()).toBe(400);
+    const malformedBody = await json(malformed);
+    expect(malformedBody?.error?.code).toBe('VALIDATION_ERROR');
+    expect(String(malformedBody?.error?.message ?? '')).toContain('from');
+    expect(JSON.stringify(malformedBody)).not.toMatch(/DATABASE_URL|node_modules|prisma/i);
+    // Valid windows are unchanged, and malformed pagination is typed too.
+    expect((await page.request.get('/api/store/returns?from=2020-01-01&to=2999-01-01&page=1&limit=5')).status()).toBe(200);
+    const badPage = await page.request.get('/api/store/returns?page=abc');
+    expect(badPage.status()).toBe(400);
+    expect(((await json(badPage))?.error?.code)).toBe('VALIDATION_ERROR');
   });
 
   test('C1 supports scanner-like sale-ID entry in the real return sheet', async ({ page }) => {

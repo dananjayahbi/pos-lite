@@ -102,6 +102,11 @@ export async function POST(
     );
   } catch (error) {
     console.error('POST /api/public/site/[tenantSlug]/orders error:', error);
+    // M28-01: a line that could not be reserved is a typed 409, not a 500.
+    const message = error instanceof Error ? error.message : '';
+    if (message === 'OUT_OF_STOCK') {
+      return errorWithCors(request, 409, 'One or more items are out of stock');
+    }
     return errorWithCors(request, 500, 'An unexpected error occurred');
   }
 }

@@ -7,6 +7,7 @@ import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import type { TxClient } from '@/lib/services/inventory.service';
 import type { CreatePackagingItemInput, UpdatePackagingItemInput } from '@/lib/validators/packaging.validators';
 import { serializeMoneyOrNull } from '@/lib/api/serialize';
+import { comparePackagingItems } from '@/lib/constants/packaging';
 import type { PackagingItem } from '@/generated/prisma/client';
 
 /**
@@ -32,9 +33,13 @@ function toPackagingItemDto(item: PackagingItem): PackagingItemDto {
 export async function getPackagingItems(tenantId: string): Promise<PackagingItemDto[]> {
   const items = await prisma.packagingItem.findMany({
     where: { tenantId, deletedAt: null },
-    orderBy: [{ category: 'asc' }, { name: 'asc' }],
+    // BUG-58/M23-02: Postgres native enums order by declaration position, not
+    // alphabetically, so a DB-level `orderBy: { category: 'asc' }` does not
+    // produce the pinned order. The list is small and unpaginated — sort
+    // in-process against the category/name text instead.
+    orderBy: [{ name: 'asc' }],
   });
-  return items.map(toPackagingItemDto);
+  return items.slice().sort(comparePackagingItems).map(toPackagingItemDto);
 }
 
 export async function createPackagingItem(tenantId: string, input: CreatePackagingItemInput) {

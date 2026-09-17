@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getAppointmentStats } from '@/lib/services/appointment.service';
+import { parseQueryDate } from '@/lib/api/query-params';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function GET(request: Request) {
   try {
@@ -30,17 +32,15 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url);
-    const dateFrom = url.searchParams.get('dateFrom') ?? undefined;
-    const dateTo = url.searchParams.get('dateTo') ?? undefined;
+    // M27-07/BUG-89: malformed date params used to reach new Date() → Invalid
+    // Date → 500. XC-01's parser turns them into a typed 400.
+    const dateFrom = parseQueryDate(url.searchParams, 'dateFrom')?.toISOString();
+    const dateTo = parseQueryDate(url.searchParams, 'dateTo')?.toISOString();
 
     const stats = await getAppointmentStats(tenantId, dateFrom, dateTo);
 
     return NextResponse.json({ success: true, data: stats });
   } catch (error) {
-    console.error('GET /api/store/appointments/stats error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'GET /api/store/appointments/stats');
   }
 }

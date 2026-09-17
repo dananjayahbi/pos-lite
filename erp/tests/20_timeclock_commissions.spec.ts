@@ -183,14 +183,17 @@ test.describe('Module 20 - Timeclock & Staff Commissions', () => {
     });
 
     const payoutBody = await json(payoutRequest);
-    expect([200, 201, 400]).toContain(payoutRequest.status());
+    // M20-02: an empty period now returns a typed 409 (no unpaid commissions)
+    // rather than a raw 500; a real payout still 201s.
+    expect([200, 201, 409]).toContain(payoutRequest.status());
     if (payoutRequest.status() === 201) {
       expect(payoutBody?.success).toBe(true);
       expect(payoutBody?.data?.userId).toBe(ownerUser!.id);
     } else {
-      expect(['BAD_REQUEST', 'VALIDATION_ERROR', 'FORBIDDEN']).toContain(payoutBody?.error?.code ?? '');
+      expect(['NO_UNPAID_COMMISSIONS', 'CONFLICT']).toContain(payoutBody?.error?.code ?? '');
     }
 
+    // M20-02: malformed / unknown-staff payloads are typed 400/404 — never 500.
     const invalid = await page.request.post('/api/store/staff/commissions/payout', {
       data: {
         userId: '',
@@ -199,7 +202,31 @@ test.describe('Module 20 - Timeclock & Staff Commissions', () => {
       },
       headers: { 'content-type': 'application/json' },
     });
-    expect([400, 500]).toContain(invalid.status());
+    expect(invalid.status()).toBe(400);
+    expect((await json(invalid))?.error?.code).toBe('VALIDATION_ERROR');
+
+    const foreignStaff = await page.request.post('/api/store/staff/commissions/payout', {
+      data: {
+        userId: 'clx0000000000000000000000',
+        periodStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
+        periodEnd: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 59, 999).toISOString(),
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    // An unknown/foreign staff member has no unpaid records → typed 409, not 500.
+    expect(foreignStaff.status()).toBe(409);
+    expect((await json(foreignStaff))?.error?.code).toBe('NO_UNPAID_COMMISSIONS');
+
+    const inverted = await page.request.post('/api/store/staff/commissions/payout', {
+      data: {
+        userId: ownerUser!.id,
+        periodStart: new Date(2026, 5, 1).toISOString(),
+        periodEnd: new Date(2026, 4, 1).toISOString(),
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(inverted.status()).toBe(400);
+    expect((await json(inverted))?.error?.code).toBe('VALIDATION_ERROR');
   });
 
   test('T5 RBAC blocks cashiers from timeclock and commission actions', async ({ page, browser }) => {

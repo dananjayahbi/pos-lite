@@ -8,9 +8,11 @@
  *   allowlist — bogus ignored), expiryStatus (EXPIRED|EXPIRING_SOON|OK allowlist — bogus ignored), page/limit.
  *   Envelope {success, data: BatchListItem[], meta:{totalBatches,expiredCount,expiringSoonCount,healthyCount,total}}.
  *   ORDER BY receivedAt desc.
- *   BUG-83 pin: expiryStatus is applied as a POST-FILTER after pagination → filtered rows ≠ meta.total
- *   (observed: EXPIRED → 1 row but total=11). Pagination math breaks whenever the filter is used.
- *   BUG-84 pin: page=abc / limit=abc → Number() NaN → Prisma skip/take error → 500 (unlike low-stock route).
+ *   M11-01 (BUG-83 FIXED): expiryStatus is pushed into the SQL where-clause mirroring
+ *   getBatchExpiryStatus boundaries (EXPIRED ≤ now; EXPIRING_SOON > now and ≤ now+30d; OK > now+30d or
+ *   null) → meta.total is the FILTERED count and pagination math is honest.
+ *   M11-02 (BUG-84 FIXED): page/limit route through XC-01 parseQueryInt → malformed 400 naming the
+ *   param, out-of-range clamped (limit max 100).
  * - POST/PUT/DELETE /api/store/batches → 405. NO batch create/update/delete API at all — batches exist ONLY
  *   as a side effect of PO receive (purchaseOrder.service.ts capture/accumulate). No deletedAt column —
  *   BatchTracking is permanent once created (QA fixtures need DB-level cleanup).
@@ -192,17 +194,20 @@ test.describe.serial('Module 11 — Batch & Expiry Tracking', () => {
     expect(n.expiryDate).toBeNull();
   });
 
-  test('F4 — expiryStatus filter returns only matching rows; meta.total stays UNFILTERED (BUG-83 pin)', async ({ page }) => {
+  test('F4 — expiryStatus filter returns only matching rows; meta.total is the FILTERED count (BUG-83 fixed)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     const res = await page.request.get(`${BATCHES_API}?expiryStatus=EXPIRED&limit=100`);
     const body = await res.json();
     for (const row of body.data as Array<{ expiryStatus: string }>) {
       expect(row.expiryStatus).toBe('EXPIRED');
     }
-    // Defect pin: total counts ALL batches (pre-post-filter), so meta.total ≠ data.length and
-    // totalPages/pagination math mislead any consumer. Flip when the filter moves into the query.
-    expect(body.meta.total).toBe(body.meta.totalBatches);
-    expect(body.data.length).toBeLessThanOrEqual(body.meta.total);
+    // FIXED (M11-01): the predicate moved into the query, so meta.total counts the filtered
+    // population instead of every batch. The fixture EXPIRED set fits one page (limit=100)
+    // → total === data.length, and it can never exceed the all-batch total.
+    expect(body.meta.total).toBe((body.data as unknown[]).length);
+    expect(body.meta.total).toBeLessThanOrEqual(body.meta.totalBatches);
+    // Summary cards stay unfiltered: they remain the all-batches breakdown.
+    expect(body.meta.expiredCount + body.meta.expiringSoonCount + body.meta.healthyCount).toBe(body.meta.totalBatches);
   });
 
   test('F5 — search matches batchNumber, SKU and product name (insensitive contains)', async ({ page }) => {

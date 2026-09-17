@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { X } from 'lucide-react';
+import { z } from 'zod';
 import {
   CreateCustomerSchema,
   type CreateCustomerInput,
@@ -61,6 +62,9 @@ export function CustomerSheet({ customer, open, onOpenChange, onSuccess }: Custo
   const [tags, setTags] = useState<string[]>(customer?.tags ?? []);
   const [tagInput, setTagInput] = useState('');
 
+  // M05-01/02: the schema now transforms its output ('' → undefined email,
+  // birthday coerced to a Date), so the form fields are typed from the raw
+  // input shape and handleSubmit receives the parsed output shape.
   const {
     register,
     handleSubmit,
@@ -68,7 +72,7 @@ export function CustomerSheet({ customer, open, onOpenChange, onSuccess }: Custo
     setValue,
     watch,
     formState: { errors },
-  } = useForm<CreateCustomerInput>({
+  } = useForm<z.input<typeof CreateCustomerSchema>, any, CreateCustomerInput>({
     resolver: standardSchemaResolver(CreateCustomerSchema),
     defaultValues: {
       name: customer?.name ?? '',

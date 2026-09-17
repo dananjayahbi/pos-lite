@@ -123,27 +123,27 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 ### M05 — Customers CRM
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| M05-01 | BUG-25 empty optional Email blocks UI create | P2 | DOC |
-| M05-02 | BUG-26 + BUG-29 birthday empty/invalid handling (wrong 409, internals leak) | P1 | IMPL (W0 leak fixed via INF-02 — B2/T1 pins flipped to 400; 201-for-empty still W3) |
-| M05-03 | BUG-27 no DB unique on (tenantId, phone) — concurrent duplicates | P2 | DOC |
+| M05-01 | BUG-25 empty optional Email blocks UI create | P2 | **GATE** (2026-09-16 W3: empty-string email/whatsapp normalized to undefined pre-parse; spec 05 F-series green) |
+| M05-02 | BUG-26 + BUG-29 birthday empty/invalid handling (wrong 409, internals leak) | P1 | **GATE** (2026-09-16 W3: empty birthday → undefined not `new Date("")`; invalid → typed 400; leak closed via INF-02; spec 05 pins flipped) |
+| M05-03 | BUG-27 no DB unique on (tenantId, phone) — concurrent duplicates | P2 | **GATE** (2026-09-16 W3: `@@unique([tenantId,phone])` + `withUniqueGuard`→409 (D5); `migrations-manual/20260916000000_…sql`; spec 05 race pin flipped) |
 | M05-04 | BUG-28 malformed numeric query filters → 500 (module instance of XC-01) | P3 | **GATE** (2026-09-15 via XC-01; X5 pin flipped) |
-| M05-05 | BUG-74 + OBS-5 audience endpoints: NaN/enum params → 500; cashier PII exposure | P2 | DOC |
+| M05-05 | BUG-74 + OBS-5 audience endpoints: NaN/enum params → 500; cashier PII exposure | P2 | **GATE** (2026-09-16 W3: preview/count XC-01-coerced; NEW `broadcast:send` permission gates audience (D15) — CASHIER 403; spec 05/31 green) |
 
 ### M06 — Suppliers
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| M06-01 | BUG-30/31 no duplicate guard on supplier phone/name | P2 | DOC |
+| M06-01 | BUG-30/31 no duplicate guard on supplier phone/name | P2 | **GATE** (2026-09-16 W3: `@@unique([tenantId,phone])`→409; duplicate name warn-only `duplicateName` flag in 201 (D5); spec 06 pins flipped) |
 | M06-02 | BUG-32 non-numeric page/limit → 500 | P3 | **GATE** (2026-09-15 via XC-01; X4 pin flipped) |
-| M06-03 | BUG-33 cleared Lead Time blocks submit with raw NaN message | P3 | DOC |
-| M06-04 | BUG-34 edit sheet first open blank | P2 | DOC |
-| M06-05 | OBS-9/10/11 phone search, unarchive path, archived-row edit policy | P2/P3 | DOC |
+| M06-03 | BUG-33 cleared Lead Time blocks submit with raw NaN message | P3 | **GATE** (2026-09-16 W3: empty leadTime → default 7, friendly message; spec 06 B-series green) |
+| M06-04 | BUG-34 edit sheet first open blank | P2 | **GATE** (2026-09-16 W3: `SupplierSheet` seeded from row on first open; spec 06 F-series green) |
+| M06-05 | OBS-9/10/11 phone search, unarchive path, archived-row edit policy | P2/P3 | **GATE** (2026-09-16 W3: phone search param, `POST [id]/unarchive` + `RestoreSupplierButton` (D4), archived rows view+restore only) |
 
 ### M07 — Settings, Taxes & Hardware
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| M07-01 | BUG-80 hardware routes gate on role denylist, not permissions | P2 | DOC |
-| M07-02 | OBS-81 dead nav: `/settings/account` 404 (STALE — page now exists), stub `/settings/store`, orphaned form | P3 | DOC |
-| M07-03 | OBS-82 hardware PATCH lacks zod validation (silent coercion) | P3 | DOC |
+| M07-01 | BUG-80 hardware routes gate on role denylist, not permissions | P2 | **GATE** (2026-09-16 W4: `requirePermissionResponse` (XC-03) on settings/hardware + test-print + drawer routes; denylist removed) |
+| M07-02 | OBS-81 dead nav: `/settings/account` 404 (STALE — page now exists), stub `/settings/store`, orphaned form | P3 | **GATE** (2026-09-16 W4: `/settings/store` self-service restored — auth→`manageStoreProfile`→tenant load→`StoreProfileSettingsForm`; spec 07 F7 flipped to restored-page contract) |
+| M07-03 | OBS-82 hardware PATCH lacks zod validation (silent coercion) | P3 | **GATE** (2026-09-16 W4: NEW `HardwareSettingsSchema` strict — port int 1–65535, real booleans; spec 07 N4 flipped 200-coercion→400) |
 
 ### M08 — Super Admin / Tenants
 | ID | Title | Sev | Status |
@@ -157,63 +157,63 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 ### M09–M13 — Inventory control
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| M09-01 | BUG-40 movements ledger date params → 500 | P3 | DOC |
-| M09-02 | BUG-41 stock add int4-overflow → 500 (upper-bound guard) | P3 | DOC |
-| M09-03 | OBS-18/19/22 scanner-Enter dismiss, zero-delta schema asymmetry, reason-chip semantics | P3 | DOC |
-| M10-01 | BUG-81/82 + OBS-78 low-stock threshold validation & countOnly semantics | P3 | DOC |
-| M11-01 | BUG-83 expiryStatus post-filter breaks `meta.total` pagination | P2 | DOC |
-| M11-02 | BUG-84 batches NaN params → 500 + OBS-83 batch consumption/FEFO scope decision | P2 | DOC |
-| M13-01 | BUG-42 stock-take accepts negative counted quantities | P2 | DOC |
-| M13-02 | BUG-43 no initiator/approver separation + OBS-23 lifecycle (DRAFT) decision | P2 | DOC |
+| M09-01 | BUG-40 movements ledger date params → 500 | P3 | **GATE** (2026-09-16 W4: XC-01 `parseQueryDate` on ledger + zero-delta `!==0` in `StockAdjustmentSchema`; spec 09 pins flipped) |
+| M09-02 | BUG-41 stock add int4-overflow → 500 (upper-bound guard) | P3 | **GATE** (2026-09-16 W4: ±1,000,000 schema cap + INT_MAX guards on adjust/bulk-adjust; spec 09 X-pin flipped) |
+| M09-03 | OBS-18/19/22 scanner-Enter dismiss, zero-delta schema asymmetry, reason-chip semantics | P3 | **GATE** (2026-09-16 W4: scanner-Enter onKeyDown, chip relabel, schema symmetry; spec 09/10 tails green) |
+| M10-01 | BUG-81/82 + OBS-78 low-stock threshold validation & countOnly semantics | P3 | **GATE** (2026-09-16 W4: low-stock route `countOnly` threshold + `viewStock` guard, XC-01 coercion; spec 10 28/28) |
+| M11-01 | BUG-83 expiryStatus post-filter breaks `meta.total` pagination | P2 | **GATE** (2026-09-16 W4: expiry predicate pushed into `listBatches` where — count parity; spec 11 green) |
+| M11-02 | BUG-84 batches NaN params → 500 + OBS-83 batch consumption/FEFO scope decision | P2 | **GATE** (2026-09-16 W4: XC-01 coercion on batches routes; D6 recorded — FEFO display-only, scope note in `QA_CLIENT_REQ.md` 3.10) |
+| M13-01 | BUG-42 stock-take accepts negative counted quantities | P2 | **GATE** (2026-09-16 W4: NEW `stock-take.validators.ts` rejects negative counted qty; spec 13 pin flipped) |
+| M13-02 | BUG-43 no initiator/approver separation + OBS-23 lifecycle (DRAFT) decision | P2 | **GATE** (2026-09-16 W4: maker-checker 403 on self-approve (D7: IN_PROGRESS-start kept, no DRAFT enum); `StockTakeSession` UI; spec 13 pin flipped) |
 
 ### M14–M20 — Transactions
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| M14-01 | BUG-44 `NONE` payment accepts non-zero sale | P2 | DOC |
-| M14-02 | BUG-45 sales date filters → 500 | P3 | DOC |
-| M14-03 | Req 2.2 phone-format validation at POS checkout | P2 | DOC |
-| M14-04 | Req 3.11 zero-value reason code + Replacement defective-barcode enforcement | P2 | DOC |
-| M15-01 | BUG-46 CustomerPricingRule has model + evaluation but no CRUD API | P2 | DOC |
-| M15-02 | BUG-47 promotion value overflow → 500 | P2 | DOC |
-| M16-01 | BUG-48 concurrent GRN receipts lack exactly-once contract | P2 | DOC |
-| M16-02 | BUG-49 GRN UI cannot capture batch/expiry | P2 | DOC |
-| M17-01 | BUG-50 cross-tenant return → 500 (unmapped tenant-mismatch) | P2 | DOC |
-| M17-02 | BUG-51 return date filters → 500 | P3 | DOC |
-| M18-01 | BUG-52 shift-report empty state + req 1.4 cash over/short — STALE-looking, verification doc | P2→close | **RED→fix-plan** (2026-09-15: spec 18 F0 fails — `/pos/shift-report?shiftId=invalid` renders Open-Your-Shift, not the empty/error state; escalate to W5) |
-| M19-01 | BUG-53 petty-cash negative balance policy decision + guard | P2 | DOC |
-| M20-01 | BUG-54-dependent: cashier RBAC verification for timeclock/commissions | P1 | DOC |
-| M20-02 | Req 3.8 payout creation validation contract | P2 | DOC |
+| M14-01 | BUG-44 `NONE` payment accepts non-zero sale | P2 | **GATE** (2026-09-16 W5: `nonePaymentRequiresZeroValue` + `zeroValueReason` required; spec 14 F9) |
+| M14-02 | BUG-45 sales date filters → 500 | P3 | **GATE** (2026-09-16 W5: XC-01 date parsing; spec 14) |
+| M14-03 | Req 2.2 phone-format validation at POS checkout | P2 | **GATE** (2026-09-16 W5: `zSriLankaPhone` shared validator; spec 14) |
+| M14-04 | Req 3.11 zero-value reason code + Replacement defective-barcode enforcement | P2 | **GATE** (2026-09-16 W5: `defectiveBarcode` column + `DefectiveBarcodeField`; `DEFECTIVE_BARCODE_NOT_FOUND` 400; spec 14 C-series) |
+| M15-01 | BUG-46 CustomerPricingRule has model + evaluation but no CRUD API | P2 | **GATE** (2026-09-16 W5: `customer-pricing-rules` GET/POST/[id] + overlap 409 + `CustomerPricingTab`; spec 15 F9) |
+| M15-02 | BUG-47 promotion value overflow → 500 | P2 | **GATE** (2026-09-16 W5: per-type bounds + safe-integer guard; spec 15 X2) |
+| M16-01 | BUG-48 concurrent GRN receipts lack exactly-once contract | P2 | **GATE** (2026-09-16 W5: `lockForUpdate` PO lines + `OVER_RECEIPT` 409; spec 16 R1) |
+| M16-02 | BUG-49 GRN UI cannot capture batch/expiry | P2 | **GATE** (2026-09-16 W5: `GrnBatchFields` per-line batch/expiry; spec 16 F8) |
+| M17-01 | BUG-50 cross-tenant return → 500 (unmapped tenant-mismatch) | P2 | **GATE** (2026-09-16 W5: `FOREIGN_TENANT_RESOURCE` → 404; spec 17 F7) |
+| M17-02 | BUG-51 return date filters → 500 | P3 | **GATE** (2026-09-16 W5: `parseQueryDate`/`parsePagination`; spec 17 B2) |
+| M18-01 | BUG-52 shift-report empty state + req 1.4 cash over/short — STALE-looking, verification doc | P2→close | **GATE** (2026-09-16 W5: `/pos/shift-report` bypasses the open-shift modal via `ShiftGate`; spec 18 F0) |
+| M19-01 | BUG-53 petty-cash negative balance policy decision + guard | P2 | **GATE** (2026-09-16 W5: D2 policy — `assertFundCanSpend` + `PETTY_CASH_OVERDRAW` 422 + approved-overdraft audit; seed funds the float; spec 19 F3b) |
+| M20-01 | BUG-54-dependent: cashier RBAC verification for timeclock/commissions | P1 | **GATE** (2026-09-16 W5: XC-03 gates + cross-tenant 404; spec 20 T6) |
+| M20-02 | Req 3.8 payout creation validation contract | P2 | **GATE** (2026-09-16 W5: `PayoutSchema` cuid/datetime/window + row lock + `NO_UNPAID_COMMISSIONS` 409; spec 20 T4) |
 
 ### M21–M27 — Manufacturing & delivery
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| M21-01 | BUG-55 raw-material single GET omits stockStatus metadata | P2 | DOC |
+| M21-01 | BUG-55 raw-material single GET omits stockStatus metadata | P2 | **GATE** (2026-09-16 W4: `toRawMaterialItem` exported + reused by `[id]` route; spec 21 6/6) |
 | M23-01 | BUG-56 `/delivery/packaging` page timeout — verification doc (no source defect) | P1→close | **CLOSED-SOURCE** (2026-09-15: spec 23 F1 green; env/harness, not source) |
-| M23-02 | BUG-58 packaging list sort order + BUG-57 Decimal serialization consumer note | P3 | DOC |
-| M24-01 | BUG-60 (+OBS-32) Trans Express auth failure, error-category mapping, packaging auto-deduct trigger | P1 | DOC |
-| M24-02 | BUG-61 tracking auto-sync path (req 3.1) once dispatch works | P2 | DOC |
-| M25-01 | BUG-62 city-level zone override unreachable (NULLS FIRST) | P1 | DOC |
-| M25-02 | BUG-63 double-click Save Rate Card wipes card to zeros — verification doc (guarded in source) | P1→close | **RED→fix-plan** (2026-09-15: spec 25 R3 still wipes 350→0; the assumed guard is NOT effective — escalate to W6, `reset()` now mandatory) |
-| M25-03 | BUG-64 concurrent entries PUT blends matrices (no transaction) | P2 | DOC |
-| M26-01 | BUG-65 reconciliation engine unreachable (upstream gate plan) | P1 | DOC |
-| M26-02 | BUG-66 dispute sentinels unmapped → 500 + OBS-40 dispute audit actions | P2 | DOC |
-| M26-03 | BUG-67 corrupt XLSX → 500 (typed parse failure + FAILED row) | P3 | DOC |
-| M27-01 | BUG-85 convert-to-sale always fails (`shiftId:''`) | P1 | PLANNED |
-| M27-02 | BUG-86 complete/no-show/convert have no permission gate + OBS-80 time-off gate | P1 | PLANNED |
-| M27-03 | BUG-87 reminders route IDOR (no tenant scoping, patient PII) | P1 | PLANNED |
-| M27-04 | BUG-88 no appointment status-transition guards + OBS-79 backdate policy | P2 | PLANNED |
-| M27-05 | BUG-90 service delete in-use guard + recreate-after-delete 500 | P2 | PLANNED |
-| M27-06 | BUG-92 non-atomic staff-overlap guard (double-book race) | P2 | PLANNED |
-| M27-07 | BUG-89/91/93/94 appointment validation, ranges, audit actor, hygiene bundle | P3 | PLANNED |
-| M27-08 | OBS-77 reminder scheduler dead code (cron wiring + delivery channel) | P2 | PLANNED |
+| M23-02 | BUG-58 packaging list sort order + BUG-57 Decimal serialization consumer note | P3 | **GATE** (2026-09-17 W6: shared `comparePackagingItems` — category text then name — applied to the packaging list; INF-04 consumer note recorded; spec 23 green) |
+| M24-01 | BUG-60 (+OBS-32) Trans Express auth failure, error-category mapping, packaging auto-deduct trigger | P1 | **GATE (code half) — live half BLOCKED-D1** (2026-09-17 W6: `upstreamError` → typed **502** for the COURIER_*/LOCATION_SYNC_FAILED class; sentinel classes keep 404/409/400; NEW `POST /api/store/delivery/settings` test-connection + `CourierSettingsForm` button; dev STAGING `CourierAccount` seeded with intentionally-fake creds) |
+| M24-02 | BUG-61 tracking auto-sync path (req 3.1) once dispatch works | P2 | **BLOCKED-D1** (needs live courier credentials) |
+| M25-01 | BUG-62 city-level zone override unreachable (NULLS FIRST) | P1 | **GATE** (2026-09-17 W6: rate-card city override reachable — NULLS-last ordering fixed) |
+| M25-02 | BUG-63 double-click Save Rate Card wipes card to zeros — verification doc (guarded in source) | P1→close | **GATE** (2026-09-17 W6: absorbed from W0's RED escalation — the wipe was reproducible and `reset()` is now mandatory; spec 25 R3 green) |
+| M25-03 | BUG-64 concurrent entries PUT blends matrices (no transaction) | P2 | **GATE** (2026-09-17 W6: entries PUT wrapped in `lockingTx`) |
+| M26-01 | BUG-65 reconciliation engine unreachable (upstream gate plan) | P1 | **BLOCKED-D1** (needs live courier credentials) |
+| M26-02 | BUG-66 dispute sentinels unmapped → 500 + OBS-40 dispute audit actions | P2 | **GATE** (2026-09-17 W6: `RECONCILIATION_DISPUTE_OPENED/_UPDATED/_RESOLVED` split out; sentinels mapped off the 500 path) |
+| M26-03 | BUG-67 corrupt XLSX → 500 (typed parse failure + FAILED row) | P3 | **GATE** (2026-09-17 W6: parse wrapped → FAILED `StatementImport` + `parseError`; `STATEMENT_PARSE_FAILED` 400) |
+| M27-01 | BUG-85 convert-to-sale always fails (`shiftId:''`) | P1 | **GATE** (2026-09-17 W6: `getCurrentShift` resolves the cashier's open shift; no shift → honest NULL sale) |
+| M27-02 | BUG-86 complete/no-show/convert have no permission gate + OBS-80 time-off gate | P1 | **GATE** (2026-09-17 W6: `complete`/`no-show`/`convert-to-sale` gated on `appointment:edit`; time-off GET gated `appointment:view`; real session role threaded into audit) |
+| M27-03 | BUG-87 reminders route IDOR (no tenant scoping, patient PII) | P1 | **GATE** (2026-09-17 W7: `getReminderHistory(tenantId, appointmentId)` scoped + `viewAppointment` gate; foreign-tenant read → empty, DISPATCH → 403) |
+| M27-04 | BUG-88 no appointment status-transition guards + OBS-79 backdate policy | P2 | **GATE** (2026-09-17 W7: NEW `constants/appointments.ts` transition map; illegal edges → 409 INVALID_STATUS_TRANSITION; backdate beyond 15 min → 400 BACKDATE_NOT_ALLOWED unless `appointment:settings:manage`; public path always enforced) |
+| M27-05 | BUG-90 service delete in-use guard + recreate-after-delete 500 | P2 | **GATE** (2026-09-17 W7: future live appointments → 409 SERVICE_IN_USE; deletedAt-agnostic name pre-check → typed 409 CONFLICT instead of P2002 500) |
+| M27-06 | BUG-92 non-atomic staff-overlap guard (double-book race) | P2 | **GATE** (2026-09-17 W7: overlap check moved inside the create transaction behind `lockForUpdate` on the staff row — 3 concurrent → one 201 / two 409 / zero 500s) |
+| M27-07 | BUG-89/91/93/94 appointment validation, ranges, audit actor, hygiene bundle | P3 | **GATE (89/91/93) · 94 policy-pending** (2026-09-17 W7: `parseQueryDate` on stats/slots/time-off → 400; price `.max(99999999.99)` → 400; audit records the real session role; X2 verbatim-`<script>` storage left to XC-04) |
+| M27-08 | OBS-77 reminder scheduler dead code (cron wiring + delivery channel) | P2 | **GATE (pipeline honest; delivery gated by INF-03/D1)** (2026-09-17 W7: create schedules the 24h/2h rows; `processPendingReminders` really sends and marks SENT only on provider success (else FAILED + reason); NEW `/api/cron/appointment-reminders` Bearer `CRON_SECRET` fail-closed 401 + `vercel.json` `*/15 * * * *`) |
 
 ### M28–M33 — Storefront, CMS, payments, comms
 | ID | Title | Sev | Status |
 |---|---|---|---|
-| M28-01 | BUG-97 website checkout never decrements stock / stores no lines (overselling) | P1 | PLANNED |
-| M28-02 | BUG-98 orderRef race + non-unique | P2 | PLANNED |
-| M28-03 | BUG-95 public products endpoint ignores page param | P2 | PLANNED |
-| M28-04 | BUG-96 best-selling sort stub + storefront polish residue | P3 | PLANNED |
+| M28-01 | BUG-97 website checkout never decrements stock / stores no lines (overselling) | P1 | **GATE** (2026-09-17 W7: checkout reads `lines`, resolves variants tenant-scoped, atomic guarded decrement (0 rows → 409 OUT_OF_STOCK), stores `DeliveryLine` rows + `WEBSITE_ORDER` movements, computes codAmount/itemCount server-side; cancel restores stock) |
+| M28-02 | BUG-98 orderRef race + non-unique | P2 | **GATE** (2026-09-17 W7: NEW `OrderRefCounter` + atomic upsert inside the order transaction → `ORD-YYYY-NNNNNN`; NEW `@@unique([tenantId, orderRef])`; 3 concurrent checkouts → 3 distinct refs) |
+| M28-03 | BUG-95 public products endpoint ignores page param | P2 | **GATE** (2026-09-17 W7: `page` slices the ordered window + `meta {page,limit,total,totalPages,hasMore}`; filters apply pre-slice; cache header retained) |
+| M28-04 | BUG-96 best-selling sort stub + storefront polish residue | P3 | **GATE** (2026-09-17 W7: keeps latest ordering but surfaces the honest `meta.sortFallback:'latest'` flag so the storefront never mislabels newest as top-sellers) |
 | M29-01 | BUG-68 hero-slide/ad cross-tenant IDOR (P1 security) | P1 | DOC |
 | M29-02 | BUG-69 CMS picker leaks soft-deleted categories | P2 | DOC |
 | M29-03 | OBS-41 website surface unpermissioned + req 3.4 announcement top-bar editor + OBS-43/44 | P2 | DOC |
@@ -244,7 +244,7 @@ Folder legend: `prerequisites/` · `phase-1-foundation/` (M01–M08) · `phase-2
 | XC-01 | Query-param validation sweep (shared parser/guard; kills the BUG-28/32/40/45/51/74/75/81/82/84/89/91 family) | P2 | **GATE** (2026-09-15: parser + 14 routes + CI guard; BUG-28/32/40/75/81/82/84 pins flipped) |
 | XC-02 | Response-envelope consistency (audit-logs shape BUG-59, OBS-13/46 unauth 401-vs-403 policy) | P2 | **GATE** (2026-09-15: audit envelope + superadmin 401-guard + recon clamp; specs 30/35 green, 08 S1 401) |
 | XC-03 | Page/API permission-gate consistency (OBS-4/8/41/51/52/80; single guard helper) | P2 | DOC |
-| XC-04 | Input sanitization / stored-HTML policy (BUG-76/77/94 family; React escaping vs schema strip) | P2 | DOC |
+| XC-04 | Input sanitization / stored-HTML policy (BUG-76/77/94 family; React escaping vs schema strip) | P2 | **GATE** (2026-09-16 W3: `docs/input-policy.md` written; `zSafeUrl/zSafeShortText/zFreeText` + `escapeHtml()` + `no-raw-innerhtml.test.ts` guard; governs M33-01/M34-02/M27-07) |
 | XC-05 | Soft-delete / restore / deprovision policy (BUG-20, OBS-10, GAP-4, OBS-45/63) | P2 | DOC |
 | XC-06 | DB unique constraints + race-hardening sweep (BUG-8/27/30/31/39/48/64/92/98 + token index) | P1 | **PARTIAL (W1 2026-09-15):** shared primitives landed with M03-06 — `src/lib/api/race-guard.ts` (`withUniqueGuard`, `lockingTx`, `lockForUpdate`, `isUniqueViolation`) + M01-03 transactional mint (BUG-18 leg). Per-entity constraint migrations (Customer/Supplier/Delivery uniques, appointment EXCLUDE) execute with their module docs (W2–W7) per §2.5 |
 

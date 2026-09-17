@@ -22,9 +22,10 @@ import { test, expect, type Page } from '@playwright/test';
  *             (stockQuantity, lowStockThreshold), enum StockMovementReason
  *
  * Contracts verified by source inspection (READ-ONLY):
- *   • StockAdjustmentSchema: variantId cuid, quantityDelta int (≠0 not
- *     enforced at schema level — 0 passes zod and is a no-op write),
- *     reason nativeEnum, note ≤500 optional.
+ *   • StockAdjustmentSchema: variantId cuid, quantityDelta int, ≠0 and
+ *     |delta| ≤ 1,000,000 enforced at schema level (M09-02/M09-03 —
+ *     zero-delta and INT_MAX-scale values are typed 400s), reason
+ *     nativeEnum, note ≤500 optional.
  *   • adjust POST: 401 unauth / 403 no stock:adjust / 400 VALIDATION_ERROR /
  *     404 NOT_FOUND (variant of another tenant or soft-deleted) / 400
  *     'Stock cannot go below zero' / 200 {quantityBefore, quantityAfter,
@@ -914,26 +915,30 @@ test.describe.serial('Module 9 — Stock Movements & Adjustments (full-scope QA)
 
   // ── §6 Hardware & device simulation ────────────────────────────────────────
 
-  test('H1 barcode-scanner keystroke burst resolves the product in the adjust form', async ({ page }) => {
+  test('H1 barcode-scanner keystroke burst + trailing Enter resolves the product in the adjust form', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     await gotoStockPage(page, '/stock-control/adjust', 'Manual Stock Adjustment');
     await waitForHydratedInput(page, 'form');
 
-    // Hardware scanner = rapid keystroke burst (2 ms cadence). NOTE: no
-    // trailing Enter — the Radix popover dismisses on Enter and the results
-    // would never render; the debounced search resolves on its own.
+    // Hardware scanner = rapid keystroke burst (2 ms cadence) terminated by
+    // Enter. FIXED (M09-03/OBS-18): Enter no longer dismisses the popover —
+    // it flushes the debounced search and selects the highlighted (top)
+    // result, so the barcode-first flow resolves without a manual click.
     const search = page.getByPlaceholder('Search products by name, SKU, or barcode…');
     await search.click();
     await page.keyboard.type(state.productName, { delay: 2 });
+    await page.keyboard.press('Enter');
 
-    // Debounced search resolves; pick the product from the popover.
-    await page.getByRole('button', { name: state.productName }).first().click({
-      timeout: 30_000,
-    });
-    // Product chip replaced the search input — select the variant directly.
+    // The Enter-terminated burst selected the top product: the product chip
+    // replaced the search input (popover closed, no manual click).
+    await expect(
+      page.getByText(state.productName, { exact: true }).first(),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(search).toHaveCount(0);
+
+    // Select the variant directly — form is armed: current-stock badge
+    // visible, submit enabled after reason.
     await selectVariantOnly(page, state.variantSku);
-
-    // Form is armed: current-stock badge visible, submit enabled after reason.
     await expect(page.getByText(/\d+ units/).first()).toBeVisible({
       timeout: 30_000,
     });
@@ -1143,17 +1148,16 @@ test.describe.serial('Module 9 — Stock Movements & Adjustments (full-scope QA)
     }
   });
 
-  test('X2 zero delta passes zod and is a silent no-op write (pin)', async ({ page }) => {
+  test('X2 zero delta rejected by the ≠0 refine: 400, no ledger row', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
 
-    // DEFECT PIN: StockAdjustmentSchema requires int but not ≠0 (unlike the
-    // bulk schema which refines ≠0). quantityDelta 0 → 200, increments by 0,
-    // and writes a 0-delta ledger row. Pinned as current behavior; flip to
-    // 400 if a ≠0 refine is added to match bulk-adjust.
+    // FIXED (M09-03/OBS-19): StockAdjustmentSchema now refines quantityDelta
+    // !== 0 (parity with the bulk schema). Zero-delta → 400 VALIDATION_ERROR
+    // and no 0-delta noise row lands in the immutable ledger.
     const before = (await getVariant(page, state.variantId)).stockQuantity;
     const res = await adjust(page, state.variantId, 0, 'DATA_ERROR', `${RUN} zero-delta pin`);
-    expect(res.status, 'zero delta → 200 (pin)').toBe(200);
-    expect(res.body?.data?.quantityDelta ?? res.body?.data?.movement?.quantityDelta).toBe(0);
+    expect(res.status, 'zero delta → 400 (≠0 refine landed)').toBe(400);
+    expect(res.body?.error?.code, 'typed VALIDATION_ERROR').toBe('VALIDATION_ERROR');
     expect((await getVariant(page, state.variantId)).stockQuantity).toBe(before);
 
     const ledger = await json(
@@ -1162,8 +1166,7 @@ test.describe.serial('Module 9 — Stock Movements & Adjustments (full-scope QA)
       ),
     );
     const zeroRow = (ledger?.data ?? []).find((m: any) => m.note === `${RUN} zero-delta pin`);
-    expect(zeroRow, '0-delta ledger row written (pin)').toBeTruthy();
-    if (zeroRow?.id) state.movementIds.push(zeroRow.id);
+    expect(zeroRow, 'no 0-delta ledger row written').toBeFalsy();
   });
 
   test('X3 Unicode + XSS note round-trips inert through the ledger', async ({ page }) => {
@@ -1202,36 +1205,41 @@ test.describe.serial('Module 9 — Stock Movements & Adjustments (full-scope QA)
     expect(fired, 'onerror handler must never execute').toBeUndefined();
   });
 
-  test('X4 hostile quantities: int4-overflow add → 500 (pin); below-zero → 400; stock never corrupted', async ({ page }) => {
+  test('X4 hostile quantities: int4-overflow add → 400 (cap); below-zero → 400; stock never corrupted', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
 
     const before = (await getVariant(page, state.variantId)).stockQuantity;
 
-    // DEFECT PIN: an add whose result exceeds int4 (stock + delta > 2^31−1)
-    // throws an unhandled Postgres integer-out-of-range error → 500
-    // INTERNAL_ERROR. The transaction rolls back cleanly (stock unchanged,
-    // no ledger row), so no data corruption — but the failure is untyped.
-    // Flip to 400 VALIDATION_ERROR if a bound check is added.
+    // FIXED (M09-02/BUG-41): StockAdjustmentSchema caps |quantityDelta| at
+    // 1,000,000 (documented business ceiling) and the route keeps a
+    // newQty > INT_MAX guard as defense in depth. An INT_MAX-scale add is a
+    // typed 400 VALIDATION_ERROR — never a 500 — and stock is untouched.
     const overflow = await adjust(page, state.variantId, 2_147_483_647, 'FOUND', `${RUN} overflow pin`);
     expect(
       overflow.status,
-      'INT_MAX add overflowing int4 → 500 (pin; transaction rolled back)',
-    ).toBe(500);
+      'INT_MAX add → 400 (sane-cap validation, was 500 pin)',
+    ).toBe(400);
+    expect(overflow.body?.error?.code, 'typed VALIDATION_ERROR').toBe('VALIDATION_ERROR');
     expect((await getVariant(page, state.variantId)).stockQuantity).toBe(before);
 
-    // Below-zero removal is correctly typed 400 (BELOW_ZERO guard).
-    const negHuge = await adjust(page, state.variantId, -2_147_483_647, 'DAMAGED');
-    expect(negHuge.status, '−INT_MAX remove → 400 below-zero (typed)').toBe(400);
+    // The old INT_MAX−stock boundary add now also exceeds the 1M cap → 400
+    // (aligned to the client-chosen ceiling per the M09-02 gate note).
+    const boundary = await adjust(page, state.variantId, 2_147_483_647 - before, 'FOUND', `${RUN} boundary max`);
+    expect(boundary.status, 'INT_MAX−stock add → 400 too (cap < int4 max)').toBe(400);
     expect((await getVariant(page, state.variantId)).stockQuantity).toBe(before);
 
-    // Boundary sanity: the largest NON-overflowing add succeeds and is
-    // immediately reverted (proves the 500 is an overflow, not a size cap).
-    const maxOk = 2_147_483_647 - before;
-    const ok = await adjust(page, state.variantId, maxOk, 'FOUND', `${RUN} boundary max`);
-    expect(ok.status, 'stock + (INT_MAX − stock) = INT_MAX → 200 (no overflow)').toBe(200);
-    expect((await getVariant(page, state.variantId)).stockQuantity).toBe(2_147_483_647);
-    const back = await adjust(page, state.variantId, -maxOk, 'DATA_ERROR', `${RUN} boundary revert`);
-    expect(back.status, 'revert the boundary add → 200').toBe(200);
+    // Below-zero removal stays correctly typed 400 (BELOW_ZERO guard).
+    const negHuge = await adjust(page, state.variantId, -(before + 500), 'DAMAGED');
+    expect(negHuge.status, 'removal below zero → 400 (typed)').toBe(400);
+    expect((await getVariant(page, state.variantId)).stockQuantity).toBe(before);
+
+    // Cap-boundary sanity: the largest allowed add succeeds and is reverted
+    // immediately (proves the 400s above are the cap, not a broken route).
+    const ok = await adjust(page, state.variantId, 1_000_000, 'FOUND', `${RUN} cap max`);
+    expect(ok.status, 'delta at the 1,000,000 ceiling → 200').toBe(200);
+    expect((await getVariant(page, state.variantId)).stockQuantity).toBe(before + 1_000_000);
+    const back = await adjust(page, state.variantId, -1_000_000, 'DATA_ERROR', `${RUN} cap revert`);
+    expect(back.status, 'revert the cap add → 200').toBe(200);
     expect((await getVariant(page, state.variantId)).stockQuantity).toBe(before);
   });
 

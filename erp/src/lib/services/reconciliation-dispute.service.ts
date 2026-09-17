@@ -58,7 +58,7 @@ export async function openDispute(input: OpenDisputeInput) {
     actorRole: 'UNKNOWN',
     entityType: 'ReconciliationDispute',
     entityId: dispute.id,
-    action: AUDIT_ACTIONS.RECONCILIATION_IMPORTED,
+    action: AUDIT_ACTIONS.RECONCILIATION_DISPUTE_OPENED,
     after: { ledgerEntryId: input.ledgerEntryId, disputedAmount: input.disputedAmount },
   });
 
@@ -119,7 +119,9 @@ export async function updateDispute(input: UpdateDisputeInput) {
     actorRole: 'UNKNOWN',
     entityType: 'ReconciliationDispute',
     entityId: dispute.id,
-    action: AUDIT_ACTIONS.RECONCILIATION_IMPORTED,
+    action: isTerminal
+      ? AUDIT_ACTIONS.RECONCILIATION_DISPUTE_RESOLVED
+      : AUDIT_ACTIONS.RECONCILIATION_DISPUTE_UPDATED,
     after: { status: input.status },
   });
 

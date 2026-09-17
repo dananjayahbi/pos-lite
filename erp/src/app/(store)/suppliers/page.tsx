@@ -23,9 +23,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { Plus, Pencil, Archive, ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { SupplierSheet } from '@/components/suppliers/SupplierSheet';
+import { RestoreSupplierButton } from '@/components/suppliers/RestoreSupplierButton';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,6 +60,9 @@ export default function SuppliersPage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
+  // M06-05 (OBS-10) — mirrors the products Deleted-filter pattern: archived
+  // suppliers stay hidden until the operator explicitly asks for them.
+  const [includeArchived, setIncludeArchived] = useState(false);
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | undefined>(undefined);
@@ -79,9 +84,10 @@ export default function SuppliersPage() {
   if (debouncedSearch) queryParams.set('search', debouncedSearch);
   queryParams.set('page', String(page));
   queryParams.set('limit', '20');
+  if (includeArchived) queryParams.set('includeArchived', 'true');
 
   const { data, isLoading } = useQuery<{ success: boolean; data: SuppliersResponse }>({
-    queryKey: ['suppliers', debouncedSearch, page],
+    queryKey: ['suppliers', debouncedSearch, page, includeArchived],
     queryFn: () =>
       fetch(`/api/store/suppliers?${queryParams.toString()}`).then((r) => r.json()),
   });
@@ -148,13 +154,25 @@ export default function SuppliersPage() {
       </div>
 
       {/* Search */}
-      <div className="flex gap-4">
+      <div className="flex items-center gap-4">
         <Input
           placeholder="Search suppliers…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-sm"
         />
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Switch
+            size="sm"
+            checked={includeArchived}
+            onCheckedChange={(checked) => {
+              setIncludeArchived(checked);
+              setPage(1);
+            }}
+            aria-label="Include archived"
+          />
+          Include archived
+        </label>
       </div>
 
       {/* Table */}
@@ -192,13 +210,20 @@ export default function SuppliersPage() {
               suppliers.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell>
-                    <button
-                      type="button"
-                      onClick={() => openEdit(s)}
-                      className="font-medium text-espresso hover:text-terracotta hover:underline"
-                    >
-                      {s.name}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(s)}
+                        className="font-medium text-espresso hover:text-terracotta hover:underline"
+                      >
+                        {s.name}
+                      </button>
+                      {!s.isActive && (
+                        <Badge variant="secondary" className="text-muted-foreground">
+                          Archived
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {s.contactName ?? '—'}
@@ -219,16 +244,24 @@ export default function SuppliersPage() {
                   <TableCell className="text-center">{s._count.purchaseOrders}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(s)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setArchiveTarget(s)}
-                      >
-                        <Archive className="h-4 w-4" />
-                      </Button>
+                      {s.isActive ? (
+                        <>
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(s)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setArchiveTarget(s)}
+                          >
+                            <Archive className="h-4 w-4" />
+                          </Button>
+                        </>
+                      ) : (
+                        // M06-05: archived rows are read-only (PATCH → 409),
+                        // so the row offers Restore instead of Edit/Archive.
+                        <RestoreSupplierButton supplierId={s.id} supplierName={s.name} />
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

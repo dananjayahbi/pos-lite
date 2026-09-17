@@ -64,6 +64,24 @@ const RULES: Rule[] = [
   { match: token('INSUFFICIENT_STOCK'), status: 409, code: 'INSUFFICIENT_STOCK', message: 'Insufficient stock to complete this operation.' },
   { match: token('CONFLICT'), status: 409, code: 'CONFLICT', message: 'This operation conflicts with existing data.' },
 
+  // ── Module 16/17 sentinels (M16-01/M17-01) ─────────────────────────────
+  // Goods receipt that lost the PurchaseOrderLine row-lock race: the request
+  // itself was valid, but a concurrent receipt already committed the quantity
+  // (BUG-48). 409 — the caller must re-read the PO, not retry blindly.
+  { match: token('OVER_RECEIPT'), status: 409, code: 'OVER_RECEIPT', message: 'This purchase order line was already received by another receipt. Reload the purchase order and try again.' },
+  // Cross-tenant reference: fail closed as 404 so a foreign id is never
+  // distinguishable from a missing one (BUG-50, no existence disclosure).
+  { match: token('FOREIGN_TENANT_RESOURCE'), status: 404, code: 'NOT_FOUND', message: 'The requested record was not found.' },
+  // Return-eligibility family — status/code preserved exactly as the returns
+  // route returned them (422 UNPROCESSABLE), now sentinel-driven instead of
+  // `message.includes(...)` substring matching (M17-01).
+  { match: token('SALE_NOT_FOUND'), status: 422, code: 'UNPROCESSABLE', message: 'Sale not found' },
+  { match: token('RETURN_SALE_NOT_COMPLETED'), status: 422, code: 'UNPROCESSABLE', message: 'Only a completed sale can be returned.' },
+  { match: token('RETURN_WINDOW_EXPIRED'), status: 422, code: 'UNPROCESSABLE', message: 'The return window for this sale has expired.' },
+  { match: token('RETURN_LINE_FOREIGN'), status: 422, code: 'UNPROCESSABLE', message: 'The return line does not belong to the referenced sale.' },
+  { match: token('RETURN_QTY_INVALID'), status: 422, code: 'UNPROCESSABLE', message: 'Return quantity must be greater than zero.' },
+  { match: token('RETURN_QTY_EXCEEDS_RETURNABLE'), status: 422, code: 'UNPROCESSABLE', message: 'The requested quantity exceeds the remaining returnable quantity for this line.' },
+
   // ── Prose messages from the older product/customer services ────────────
   // Status + code are preserved exactly as the routes returned them; only the
   // raw-dump echo disappears (friendly static message instead).
@@ -72,6 +90,7 @@ const RULES: Rule[] = [
   { match: exact('Category not found'), status: 404, code: 'NOT_FOUND', message: 'Category not found' },
   { match: exact('Brand not found'), status: 404, code: 'NOT_FOUND', message: 'Brand not found' },
   { match: exact('Customer not found'), status: 404, code: 'NOT_FOUND', message: 'Customer not found' },
+  { match: exact('Supplier not found'), status: 404, code: 'NOT_FOUND', message: 'Supplier not found' },
   {
     match: exact('Cannot delete category while products are assigned to it'),
     status: 409,

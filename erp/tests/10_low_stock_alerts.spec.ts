@@ -3,13 +3,15 @@
  * Full 10-point spectrum QA suite.
  *
  * Code facts (verified 2026-09-11):
- * - GET /api/store/stock-control/low-stock: permission literal 'stock:view' → 403 {code:'FORBIDDEN'};
- *   params countOnly=true → {data:{count}} (countOnly IGNORES the threshold param — early return);
+ * - GET /api/store/stock-control/low-stock: guard requirePermissionResponse(PERMISSIONS.STOCK.viewStock =
+ *   'stock:view') → 403 {code:'FORBIDDEN'};
+ *   params countOnly=true → {data:{count}} (M10-01: countOnly HONOURS the threshold override — same
+ *   predicate as the list/CSV path);
  *   format=csv → attachment low-stock-YYYY-MM-DD.csv;
- *   threshold (int override, still requires lowStockThreshold > 0); page (Math.max(1,parseInt)); limit clamp 1..100.
- *   NO zod. Verified behavior (probe 2026-09-12): threshold=abc → NaN → SQL "<= NaN" matches nothing →
- *   silent 200 {data:[],total:0} (BUG-81: misleading empty result, no 400); threshold > int4 → 500
- *   INTERNAL_ERROR (BUG-82: int4 overflow unhandled); page/limit NaN → silently first-page/25.
+ *   threshold (int override via XC-01 parseQueryInt, still requires lowStockThreshold > 0; malformed → 400
+ *   naming the param, out-of-range clamped to [0, int4 max] — BUG-81/82 fixed); page/limit via parseQueryInt
+ *   (malformed → 400; limit clamped 1..100).
+ *   NO zod.
  *   Predicate: tenantId, deletedAt null, product not archived, lowStockThreshold > 0, stockQuantity <= threshold.
  *   Row: {id, sku, form, pack_size, stock_quantity, low_stock_threshold, retail_price (text), product_name, category_name, shortfall}.
  *   Envelope {success, data, meta:{total,page,limit,totalPages}}; ORDER BY shortfall DESC.
@@ -113,9 +115,10 @@ test.describe.serial('Module 10 — Low-Stock Alerts & Reorder Thresholds', () =
     expect(raised.status()).toBe(200);
     const raisedCount = (await raised.json()).data.count;
     expect(raisedCount).toBeGreaterThanOrEqual(baseCount);
-    // Override still requires lowStockThreshold > 0 — but note: countOnly=true IGNORES the
-    // threshold param entirely (early return uses per-variant thresholds). The override only
-    // applies to the list/CSV path. Pin both behaviors.
+    // M10-01 (OBS-78 fixed): countOnly=true now HONOURS the threshold override — the count
+    // uses the same predicate as the list/CSV path (override when supplied, else the
+    // per-variant default). Override still requires lowStockThreshold > 0.
+    // Pin both behaviors.
     const zeroList = await page.request.get(`${LOWSTOCK_API}?threshold=0`);
     expect(zeroList.status()).toBe(200);
     const zeroBody = await zeroList.json();
@@ -397,43 +400,53 @@ test.describe.serial('Module 10 — Low-Stock Alerts & Reorder Thresholds', () =
   });
 
   // ─── §9 Boundary Inputs, Chaos & Unicode ──────────────────────────────
-  test('X1 — countOnly=true IGNORES the threshold param entirely (pin: negative threshold has no effect)', async ({ page }) => {
+  test('X1 — countOnly=true HONOURS the threshold override (M10-01: negative threshold clamps to 0)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     const base = await (await page.request.get(`${LOWSTOCK_API}?countOnly=true`)).json();
     const res = await page.request.get(`${LOWSTOCK_API}?countOnly=true&threshold=-5`);
-    // The countOnly branch early-returns with the per-variant predicate — threshold is never
-    // consulted. Pin: identical count regardless of the (nonsensical) override.
+    // FIXED (M10-01): the countOnly branch consults the threshold like the list path does.
+    // parseQueryInt clamps -5 to min 0 → stockQuantity <= 0 → only out-of-stock variants
+    // (still requiring lowStockThreshold > 0), so the count shrinks to the out-of-stock
+    // population instead of ignoring the override.
     expect(res.status()).toBe(200);
-    expect((await res.json()).data.count).toBe(base.data.count);
-    // List path DOES honour it: threshold=-5 → stockQuantity <= -5 → empty.
+    const negCount = (await res.json()).data.count;
+    expect(negCount).toBeLessThanOrEqual(base.data.count);
+    // List path matches the same clamped predicate.
     const list = await page.request.get(`${LOWSTOCK_API}?threshold=-5`);
     expect(list.status()).toBe(200);
-    expect((await list.json()).data).toHaveLength(0);
+    const listBody = await list.json();
+    for (const row of listBody.data as Array<{ stock_quantity: number }>) {
+      expect(row.stock_quantity).toBeLessThanOrEqual(0);
+    }
+    expect(listBody.meta.total).toBe(negCount);
+    // A raised override grows (or holds) the count — the param is honest on both paths.
+    const raised = await (await page.request.get(`${LOWSTOCK_API}?countOnly=true&threshold=999999`)).json();
+    expect(raised.data.count).toBeGreaterThanOrEqual(base.data.count);
   });
 
-  test('X2 — XSS/Unicode in threshold param does not corrupt output (500 or safe empty)', async ({ page }) => {
+  test('X2 — XSS/Unicode in threshold param → 400 naming the param (BUG-81 fixed by XC-01)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     const xss = await page.request.get(`${LOWSTOCK_API}?threshold=<script>`);
-    // parseInt('<script>') = NaN → silent 200 empty (BUG-81 class) — pin either way, never a data leak.
-    expect([200, 500]).toContain(xss.status());
-    if (xss.status() === 200) {
-      const body = await xss.json();
-      expect(JSON.stringify(body)).not.toContain('<script>');
-    }
+    // FIXED (XC-01): parseQueryInt rejects non-numeric threshold with a typed 400 instead of
+    // parseInt → NaN → silent empty 200. Never a data leak or 500.
+    expect(xss.status()).toBe(400);
+    const body = await xss.json();
+    expect(body.error.code).toBe('BAD_REQUEST');
+    expect(body.error.message).toContain('threshold');
   });
 
-  test('X3 — int4 boundary: threshold=2147483647 serves 200; threshold above int4 → unhandled 500 (BUG-82 pin)', async ({ page }) => {
+  test('X3 — int4 boundary: threshold=2147483647 serves 200; above int4 clamps to max (BUG-82 fixed)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     const maxInt = await page.request.get(`${LOWSTOCK_API}?threshold=2147483647`);
-    expect(maxInt.status()).toBe(200); // int4 max fits the column — all 7 low rows match
+    expect(maxInt.status()).toBe(200); // int4 max fits the column — all low rows match
     const overflow = await page.request.get(`${LOWSTOCK_API}?threshold=2147483648`);
-    // Pin current behavior: 500 INTERNAL_ERROR — no 400 for out-of-range ints.
-    // Flip to 400 when zod .int() bounds land.
-    expect(overflow.status()).toBe(500);
+    // FIXED (XC-01/M10-01): parseQueryInt clamps out-of-range ints to the int4 max instead of
+    // overflowing the SQL expression into a 500.
+    expect(overflow.status()).toBe(200);
     const ob = await overflow.json();
-    expect(ob.error?.code ?? ob.code).toBe('INTERNAL_ERROR');
+    expect(ob.success).toBe(true);
     const bigPage = await page.request.get(`${LOWSTOCK_API}?page=2147483648`);
-    expect(bigPage.status()).toBe(200); // page overflows harmlessly to an empty window
+    expect(bigPage.status()).toBe(200); // page clamps to a huge window → empty, no 500
     expect((await bigPage.json()).data).toHaveLength(0);
   });
 

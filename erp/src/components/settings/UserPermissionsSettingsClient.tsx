@@ -62,6 +62,7 @@ const GROUP_LABELS: Record<keyof typeof PERMISSIONS, string> = {
   DISCOUNT: 'Discounts',
   PRODUCT: 'Products',
   CUSTOMER: 'Customers',
+  BROADCAST: 'Broadcast',
   STOCK: 'Stock',
   SUPPLIER: 'Suppliers',
   STAFF: 'Staff',

@@ -95,6 +95,30 @@ async function createSale(page: Page, input: Record<string, unknown>) {
   return { response, body, sale: body?.data };
 }
 
+/**
+ * M14-04 / M14-01 fixture: an EXEMPT-taxed variant carrying a unique barcode.
+ * VAT/SSCL products can never total exactly zero with a full discount (the tax
+ * remainder makes the total non-zero — the old BUG-44 repro), so the zero-value
+ * and replacement paths need an untaxed item to build a genuine Rs. 0 sale.
+ */
+async function replacementFixture(page: Page) {
+  const categories = await json(await page.request.get('/api/store/categories'));
+  const list = Array.isArray(categories?.data) ? categories.data : categories?.data?.categories ?? [];
+  const categoryId = list[0]?.id as string;
+  expect(categoryId, 'a seeded category exists').toBeTruthy();
+  const barcode = `9${String(Date.now()).slice(-11)}`;
+  const created = await post(page, '/api/store/products', {
+    name: `QA Replacement Fixture ${RUN}`,
+    categoryId,
+    taxRule: 'EXEMPT',
+    variantDefinitions: [{ sku: `QA-${RUN}-R`, barcode, costPrice: 10, retailPrice: 100, initialStock: 3 }],
+  });
+  expect(created.status(), 'replacement fixture product created').toBe(201);
+  const variant = (await json(created))?.data?.variants?.[0];
+  expect(variant, 'fixture variant returned').toBeTruthy();
+  return { variantId: variant.id as string, retailPrice: 100, barcode };
+}
+
 async function voidSale(page: Page, saleId?: string) {
   if (!saleId) return;
   const response = await post(page, `/api/store/sales/${saleId}/void`);
@@ -103,7 +127,7 @@ async function voidSale(page: Page, saleId?: string) {
 
 test.describe('Module 14 - POS Billing & Checkout', () => {
   test.describe.configure({ mode: 'serial', timeout: 180_000 });
-  const state: { shiftId?: string; variant?: any; productName?: string; customer?: any; saleIds: string[]; baselineStock?: number } = { saleIds: [] };
+  const state: { shiftId?: string; variant?: any; productName?: string; customer?: any; saleIds: string[]; baselineStock?: number; replacement?: any } = { saleIds: [] };
 
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
@@ -112,8 +136,10 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
     const resolvedFixture = await fixture(page);
     state.variant = resolvedFixture.variant;
     state.productName = resolvedFixture.product.name;
-    state.baselineStock = state.variant.stockQuantity;
+    state.baselineStock = resolvedFixture.variant.stockQuantity;
     state.customer = await customer(page);
+    // M14-04 / M14-01: EXEMPT-taxed barcode variant for genuine zero-total sales.
+    state.replacement = await replacementFixture(page);
     await page.close();
   });
 
@@ -258,18 +284,82 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
 
   test('F9 zero-value checkout requires a reason and replacement requires a valid original reference', async ({ page }) => {
     await login(page);
-    const noReason = await createSale(page, {
-      customerId: state.customer.id, lines: [{ variantId: state.variant.id, quantity: 1 }],
+    // FIXED (M14-01/BUG-44): NONE is no longer a client-selectable tender —
+    // rejected at the validator when no zeroValueReason accompanies it, and
+    // (defense-in-depth) by the service whenever the computed total is
+    // non-zero. The old tax-remainder repro (VAT product, full discount,
+    // NONE) now returns 400 VALIDATION_ERROR instead of a 201 with no tender.
+    const noneWithoutReason = await createSale(page, {
+      shiftId: state.shiftId, customerId: state.customer.id,
+      lines: [{ variantId: state.variant.id, quantity: 1 }],
       paymentMethod: 'NONE', cartDiscountAmount: Number(state.variant.retailPrice),
     });
-    // Defect pin: NONE is accepted when tax makes the computed total non-zero.
-    expect([201, 400, 409]).toContain(noReason.response.status());
-    if (noReason.sale?.id) state.saleIds.push(noReason.sale.id);
+    expect(noneWithoutReason.response.status(), 'NONE without reason → 400').toBe(400);
+    expect(noneWithoutReason.body?.error?.code).toBe('VALIDATION_ERROR');
+    // A genuine zero-total sale (EXEMPT item, full discount) with a reason
+    // still completes and records paymentMethod NONE internally.
+    const zeroValueOk = await createSale(page, {
+      shiftId: state.shiftId, customerId: state.customer.id,
+      lines: [{ variantId: state.replacement.variantId, quantity: 1 }],
+      paymentMethod: 'NONE', zeroValueReason: 'COMPLIMENTARY_GIFT',
+      cartDiscountAmount: state.replacement.retailPrice,
+    });
+    expect(zeroValueOk.response.status(), 'zero-total + reason → 201').toBe(201);
+    expect(zeroValueOk.sale?.paymentMethod).toBe('NONE');
+    if (zeroValueOk.sale?.id) state.saleIds.push(zeroValueOk.sale.id);
     const replacementWithoutRef = await createSale(page, {
       customerId: state.customer.id, lines: [{ variantId: state.variant.id, quantity: 1 }],
       paymentMethod: 'NONE', zeroValueReason: 'PRODUCT_REPLACEMENT', cartDiscountAmount: Number(state.variant.retailPrice),
     });
     expect(replacementWithoutRef.response.status()).toBe(400);
+  });
+
+  test('F11 PRODUCT_REPLACEMENT requires a defective barcode that resolves to a tenant variant', async ({ page }) => {
+    await login(page);
+    // M14-04 (req 3.11 / D14 = order-ref AND barcode).
+    // Original order must exist first (the service resolves the order ref
+    // before the barcode), so create a paid EXEMPT sale to replace.
+    const original = await createSale(page, {
+      shiftId: state.shiftId, customerId: state.customer.id,
+      lines: [{ variantId: state.replacement.variantId, quantity: 1 }],
+      paymentMethod: 'CASH', cashReceived: state.replacement.retailPrice,
+    });
+    expect(original.response.status(), 'original sale → 201').toBe(201);
+    if (original.sale?.id) state.saleIds.push(original.sale.id);
+    // (a) Missing barcode → 400 naming defectiveBarcode (validator superRefine).
+    const missing = await createSale(page, {
+      shiftId: state.shiftId, customerId: state.customer.id,
+      lines: [{ variantId: state.replacement.variantId, quantity: 1 }],
+      paymentMethod: 'NONE', zeroValueReason: 'PRODUCT_REPLACEMENT',
+      zeroValueLinkedOrderRef: original.sale.id,
+      cartDiscountAmount: state.replacement.retailPrice,
+    });
+    expect(missing.response.status(), 'replacement without barcode → 400').toBe(400);
+    expect(JSON.stringify(missing.body)).toContain('defectiveBarcode');
+    // (b) Unknown barcode → typed 4xx naming defectiveBarcode (service lookup).
+    const unknown = await createSale(page, {
+      shiftId: state.shiftId, customerId: state.customer.id,
+      lines: [{ variantId: state.replacement.variantId, quantity: 1 }],
+      paymentMethod: 'NONE', zeroValueReason: 'PRODUCT_REPLACEMENT',
+      zeroValueLinkedOrderRef: original.sale.id,
+      defectiveBarcode: '900000000000',
+      cartDiscountAmount: state.replacement.retailPrice,
+    });
+    expect([400, 404, 422].includes(unknown.response.status()), 'unknown barcode → 4xx').toBeTruthy();
+    expect(JSON.stringify(unknown.body)).toContain('defectiveBarcode');
+    // (c) Valid order-ref + valid scanned barcode → 201, barcode persisted.
+    const replacement = await createSale(page, {
+      shiftId: state.shiftId, customerId: state.customer.id,
+      lines: [{ variantId: state.replacement.variantId, quantity: 1 }],
+      paymentMethod: 'NONE', zeroValueReason: 'PRODUCT_REPLACEMENT',
+      zeroValueLinkedOrderRef: original.sale.id,
+      defectiveBarcode: state.replacement.barcode,
+      cartDiscountAmount: state.replacement.retailPrice,
+    });
+    expect(replacement.response.status(), 'valid replacement → 201').toBe(201);
+    expect(replacement.sale?.defectiveBarcode, 'barcode persisted on the sale').toBe(state.replacement.barcode);
+    expect(replacement.sale?.paymentMethod).toBe('NONE');
+    if (replacement.sale?.id) state.saleIds.push(replacement.sale.id);
   });
 
   test('F10 rejects a closed or unknown shift and rejects cross-tenant variant/customer references', async ({ page }) => {
@@ -360,9 +450,20 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
   test('C4 validates future-dated and malformed sales filters without leaking data', async ({ page }) => {
     await login(page);
     const response = await page.request.get('/api/store/sales?from=not-a-date&to=2999-01-01');
-    // Defect pin: malformed date filters currently surface as an unhandled 500.
-    expect([400, 500]).toContain(response.status());
+    // FIXED (M14-02/BUG-45): from/to/page/limit now parse through the XC-01
+    // helpers — a malformed range is a typed 400 VALIDATION_ERROR naming the
+    // param instead of an Invalid Date reaching Prisma as an unhandled 500.
+    expect(response.status(), 'malformed date filters → 400 (BUG-45 fixed)').toBe(400);
     const body = await json(response);
+    expect(body?.error?.code).toBe('VALIDATION_ERROR');
+    expect(String(body?.error?.message ?? '')).toContain('from');
     expect(JSON.stringify(body)).not.toMatch(/DATABASE_URL|node_modules|prisma/i);
+    // Valid filters still work (no behavior change for good input).
+    const valid = await page.request.get('/api/store/sales?from=2020-01-01&to=2999-01-01&page=1&limit=5');
+    expect(valid.status(), 'valid filters → 200').toBe(200);
+    // Malformed pagination is 400 too, naming the param.
+    const badPage = await page.request.get('/api/store/sales?page=abc');
+    expect(badPage.status(), 'page=abc → 400').toBe(400);
+    expect(String(((await json(badPage))?.error?.message) ?? '')).toContain('page');
   });
 });

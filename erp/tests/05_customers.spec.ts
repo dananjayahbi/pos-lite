@@ -15,10 +15,11 @@ import { test, expect, type Page } from '@playwright/test';
  * Contracts verified by source inspection + API probes (READ-ONLY):
  *   • CreateCustomerSchema: name 1..100, phone 1..20, email valid optional,
  *     gender MALE|FEMALE|OTHER, birthday string, tags string[], notes ≤500.
- *   • Duplicate phone (per tenant, live rows only) → 409 CONFLICT.
+ *   • Duplicate phone (per tenant, ANY row incl. soft-deleted) → 409 CONFLICT.
  *   • DELETE is a SOFT delete (deletedAt + isActive=false); second DELETE → 404;
- *     PATCH after delete → 404; recreate same phone after soft delete → 201
- *     (phone has NO DB unique constraint — pre-check queries live rows only).
+ *     PATCH after delete → 404; recreate same phone after soft delete → 409
+ *     (D4: phone reserved while any row exists — @@unique([tenantId, phone]);
+ *     self-service restore deferred to XC-05).
  *   • Import: multipart 'csv', 400 no file, 413 >2MB, 415 non-CSV, 422 >500
  *     rows; per-row validation errors; duplicate phones skipped.
  *   • contact-export: CSV attachment (customer:view permission — CASHIER has it).
@@ -164,12 +165,9 @@ test.describe.serial('Module 5 — Customers CRM (full-scope QA)', () => {
     await waitForHydratedInput(page, '#name');
     await page.locator('#name').fill(name);
     await page.locator('#phone').fill(phone);
-    // NOTE: email is filled because leaving it empty currently blocks submission
-    // with "Invalid email address" (BUG-25 — dedicated pin at the end).
+    // Email/birthday are filled to keep this a full-field UI create; empty
+    // values are now accepted too (BUG-25/BUG-26 fixed — see B1/B2).
     await page.locator('#email').fill(`${RUN}.ui@example.com`);
-    // NOTE: birthday is set because the sheet always submits `birthday: ''`
-    // when untouched, which the API turns into `new Date('Invalid Date')` →
-    // 409 with raw Prisma internals (BUG-26 — dedicated pin at the end).
     await page.locator('#birthday').fill('1995-06-15');
     await page.getByRole('button', { name: 'Create', exact: true }).click();
 
@@ -274,8 +272,8 @@ test.describe.serial('Module 5 — Customers CRM (full-scope QA)', () => {
     await expect(page.getByText('Edit Customer', { exact: true })).toBeVisible({ timeout: 30_000 });
     await waitForHydratedInput(page, '#name');
     await page.locator('#name').fill(`${RUN} Detail Renamed`);
-    // BUG-25 workaround: empty optional email blocks submission.
-    // BUG-26 workaround: untouched birthday submits '' → API 409; set a value.
+    // Email/birthday fills are optional since M05-01/M05-02 (empty values
+    // now validate); kept to exercise the full-field update path.
     await page.locator('#email').fill(`${RUN}.detail@example.com`);
     await page.locator('#birthday').fill('1990-01-01');
     await page.getByRole('button', { name: 'Update', exact: true }).click();
@@ -298,6 +296,12 @@ test.describe.serial('Module 5 — Customers CRM (full-scope QA)', () => {
       ['notes 501 chars', { name: `${RUN} Notes`, phone: '0760000004', notes: 'x'.repeat(501) }],
       ['invalid gender', { name: `${RUN} BadGender`, phone: '0760000005', gender: 'HELICOPTER' }],
       ['tags not array', { name: `${RUN} BadTags`, phone: '0760000006', tags: { a: 1 } }],
+      // M14-03 (req 2.2): phone format is now enforced — the old length-only
+      // contract accepted 'abc'/'1'/'x'*20; these payloads are 400 now.
+      ['phone letters', { name: `${RUN} PLet`, phone: 'abcdefghij' }],
+      ['phone too short', { name: `${RUN} PShort`, phone: '1' }],
+      ['phone 20 alnum not SL', { name: `${RUN} P20x`, phone: 'x'.repeat(20) }],
+      ['phone 94 without plus', { name: `${RUN} PNoPlus`, phone: '94771234567' }],
     ];
 
     for (const [label, payload] of cases) {
@@ -306,6 +310,22 @@ test.describe.serial('Module 5 — Customers CRM (full-scope QA)', () => {
       expect(res.status(), `${label} → 400`).toBe(400);
       expect(body?.error?.code ?? '', label).toBe('VALIDATION_ERROR');
     }
+
+    // M14-03 happy path: valid SL formats are accepted and normalised to the
+    // +94XXXXXXXXX storage form; 077… and +9477… for the same number now
+    // collide under @@unique([tenantId, phone]).
+    const localPhone = `07${String(Date.now()).slice(-8)}`;
+    const local = await apiPost(page, '/api/store/customers', { name: `${RUN} PhoneLocal`, phone: localPhone });
+    expect(local.status(), '0XXXXXXXXX → 201').toBe(201);
+    const localBody = await json(local);
+    expect(localBody?.data?.phone, 'normalised to +94 form').toBe(`+94${localPhone.slice(1)}`);
+    if (localBody?.data?.id) state.createdIds.push(localBody.data.id);
+    const plusForm = await apiPost(page, '/api/store/customers', { name: `${RUN} PhonePlus`, phone: `+94${localPhone.slice(1)}` });
+    expect(plusForm.status(), 'same number in +94 form → 409 (normalized dedupe)').toBe(409);
+    const dashed = await apiPost(page, '/api/store/customers', { name: `${RUN} PhoneDash`, phone: `07-${String(Date.now()).slice(-4)}-${String(Date.now() + 1).slice(-4)}` });
+    expect(dashed.status(), 'separators stripped → 201').toBe(201);
+    const dashedBody = await json(dashed);
+    if (dashedBody?.data?.id) state.createdIds.push(dashedBody.data.id);
   });
 
   test('F6 CSV import: valid rows imported, dup phone skipped, bad row errored', async ({ page }) => {
@@ -600,7 +620,7 @@ test.describe.serial('Module 5 — Customers CRM (full-scope QA)', () => {
     expect(patch.status(), 'PATCH after delete → 404').toBe(404);
   });
 
-  test('A3 recreate same phone after soft delete → 201 (no DB unique; pin)', async ({ page }) => {
+  test('A3 recreate same phone after soft delete → 409 (D4 reserved; fixed)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
 
     const phone = `091${Date.now().toString(36).slice(-6) + Math.floor(Math.random() * 90 + 10)}`;
@@ -613,11 +633,14 @@ test.describe.serial('Module 5 — Customers CRM (full-scope QA)', () => {
       await page.request.delete(`/api/store/customers/${id}`).then((r) => r.status()),
     ).toBe(200);
 
-    // The duplicate pre-check only queries live rows and phone has no DB unique
-    // constraint, so recreation succeeds (differs from Category/Brand BUG-21
-    // behavior). Pin the ACCEPTABLE outcome: 201, never 500.
+    // FIXED (M05-03 / D4 policy): @@unique([tenantId, phone]) keeps the
+    // soft-deleted row RESERVING the phone, and the deletedAt-agnostic
+    // pre-check surfaces the archived-variant friendly message. Recreation
+    // is a 409, not a 201 duplicate and not a 500 raw P2002 dump.
     const re = await createCustomer(page, { name: `${RUN} Recreated`, phone });
-    expect(re.status, 'recreate after soft delete → 201 (not 500)').toBe(201);
+    expect(re.status, 'recreate after soft delete → 409 (reserved)').toBe(409);
+    expect(re.body?.error?.code ?? '').toBe('CONFLICT');
+    expect(String(re.body?.error?.message ?? '')).toContain('archived record uses this phone');
     if (re.body?.data?.id) state.createdIds.push(re.body.data.id);
   });
 
@@ -650,7 +673,7 @@ test.describe.serial('Module 5 — Customers CRM (full-scope QA)', () => {
     for (const id of ids) state.createdIds.push(id);
   });
 
-  test('R2 3-way concurrent same-phone create: zero 500s (BUG-27 pin)', async ({ page }) => {
+  test('R2 3-way concurrent same-phone create: one 201, two 409 (BUG-27 fixed)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
 
     const phone = `093${Date.now().toString(36).slice(-6) + Math.floor(Math.random() * 90 + 10)}`;
@@ -660,19 +683,18 @@ test.describe.serial('Module 5 — Customers CRM (full-scope QA)', () => {
       ),
     );
     const statuses = results.map((r) => r.status);
-    // DEFECT PIN: the duplicate-phone guard is a check-then-insert with NO DB
-    // unique constraint on (tenantId, phone), so fully concurrent creates can
-    // ALL pass the pre-check and insert duplicates (observed 3×201). The
-    // hard requirement is only that the API never 500s under race.
+    // FIXED (M05-03): @@unique([tenantId, phone]) closes the check-then-insert
+    // race — the pre-check wins sequentially, and concurrent losers hit the
+    // DB constraint (P2002 → 409 via mapPrismaError). Exactly one 201.
     expect(statuses.filter((s) => s >= 500).length, 'zero 500s under race').toBe(0);
-    expect(
-      statuses.filter((s) => s === 201).length,
-      'BUG-27: duplicates accepted under race (≥1 winner)',
-    ).toBeGreaterThanOrEqual(1);
+    expect(statuses.filter((s) => s === 201).length, 'exactly one winner').toBe(1);
+    expect(statuses.filter((s) => s === 409).length, 'two friendly 409 losers').toBe(2);
 
     for (const r of results) {
       if (r.status === 201 && r.body?.data?.id) state.createdIds.push(r.body.data.id);
     }
+    const ids = await findCustomerIdsByPhone(page, phone);
+    expect(ids.length, 'no duplicate rows survived').toBe(1);
   });
 
   // ── §6 Hardware & device simulation ────────────────────────────────────────
@@ -977,7 +999,7 @@ test.describe.serial('Module 5 — Customers CRM (full-scope QA)', () => {
 
   // ── §10 Time-travel & retroactive dates ────────────────────────────────────
 
-  test('T1 birthday: future date accepted; invalid date → 500 (BUG-29 pin)', async ({ page }) => {
+  test('T1 birthday: future date accepted; invalid date → 400 VALIDATION_ERROR (BUG-29 fixed)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
 
     // Future birthday is accepted (no past-date validation) — pin as-is.
@@ -990,15 +1012,16 @@ test.describe.serial('Module 5 — Customers CRM (full-scope QA)', () => {
     expect(future.status, 'future birthday → 201').toBe(201);
     if (future.body?.data?.id) state.createdIds.push(future.body.data.id);
 
-    // FIXED (INF-02): an unparseable birthday makes Prisma throw; the shared
-    // mapper now returns a typed 400 with a friendly message — no raw dump,
-    // no misleading 409 (BUG-29, BUG-21 class).
+    // FIXED (M05-02, on top of INF-02): the validator now rejects an
+    // unparseable non-empty birthday at the boundary → 400 VALIDATION_ERROR
+    // before the service or Prisma is ever reached — no 409, no internals.
     const bad = await createCustomer(page, {
       name: `${RUN} BadBday`,
       phone: `064${Date.now().toString(36).slice(-6) + Math.floor(Math.random() * 90 + 10)}`,
       birthday: 'not-a-date',
     });
     expect(bad.status, 'invalid birthday → 400 (BUG-29 fixed)').toBe(400);
+    expect(bad.body?.error?.code ?? '', 'not 409 — VALIDATION_ERROR').toBe('VALIDATION_ERROR');
     const msg = String(bad.body?.error?.message ?? '');
     expect(msg, 'no Prisma internals leak').not.toMatch(/prisma|\.next|chunk|Invalid value for argument/i);
   });
@@ -1033,10 +1056,10 @@ test.describe.serial('Module 5 — Customers CRM (full-scope QA)', () => {
     expect(preview.status(), 'preview must not 500 on month=13').toBe(200);
   });
 
-  test('B1 BUG-25 pin: empty optional email blocks UI create with "Invalid email address"', async ({ page }) => {
-    // DEFECT PIN: the API schema correctly marks email optional, but the UI
-    // sheet's resolver rejects submission when the field is left empty,
-    // showing "Invalid email address" under the optional Email input.
+  test('B1 BUG-25 pin: empty optional email no longer blocks UI create (M05-01 fixed)', async ({ page }) => {
+    // FIXED (M05-01): CreateCustomerSchema normalizes '' → undefined, so the
+    // sheet's resolver accepts an untouched (empty) Email field and the
+    // create succeeds. A malformed NON-empty email still 400s (F5).
     await login(page, OWNER.email, OWNER.password);
     await page.goto(`${BASE_URL}/customers`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Customers' })).toBeVisible({ timeout: 60_000 });
@@ -1045,27 +1068,24 @@ test.describe.serial('Module 5 — Customers CRM (full-scope QA)', () => {
     await page.getByRole('button', { name: 'Add Customer' }).click();
     await expect(page.getByText('New Customer', { exact: true })).toBeVisible({ timeout: 30_000 });
     await waitForHydratedInput(page, '#name');
+    const phone = `060${Date.now().toString(36).slice(-6) + Math.floor(Math.random() * 90 + 10)}`;
     await page.locator('#name').fill(`${RUN} NoEmail`);
-    await page.locator('#phone').fill(`060${Date.now().toString(36).slice(-6) + Math.floor(Math.random() * 90 + 10)}`);
+    await page.locator('#phone').fill(phone);
     // Email deliberately left empty.
     await page.getByRole('button', { name: 'Create', exact: true }).click();
 
-    // Documented defect: sheet stays open with the validation message; no
-    // customer is created. When fixed, flip to assert creation succeeds.
-    await expect(page.getByText('Invalid email address')).toBeVisible({ timeout: 15_000 });
-    const phoneProbe = page.locator('#phone');
-    const entered = await phoneProbe.inputValue();
-    const ids = await findCustomerIdsByPhone(page, entered);
-    expect(ids.length, 'customer must NOT be created while bug present').toBe(0);
+    await expect(page.getByText('Customer created')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('Invalid email address')).toBeHidden();
+    const ids = await findCustomerIdsByPhone(page, phone);
+    expect(ids.length, 'customer created with empty email').toBe(1);
+    for (const id of ids) state.createdIds.push(id);
   });
 
-  test('B2 BUG-26 pin: untouched birthday submits "" → 400, no raw Prisma leak (INF-02)', async ({ page }) => {
-    // INF-02 (W0) migrated this route's catch to mapPrismaError: an empty
-    // birthday makes `new Date('')` → Invalid Date → Prisma validation error,
-    // which now returns a typed 400 with a friendly message instead of the
-    // old misleading 409 that echoed the raw Prisma dump (which contained the
-    // text "already exists" in the source line). The remaining defect — an
-    // untouched "" should be treated as "no birthday" (201) — is M05-02 (W3).
+  test('B2 BUG-26 pin: birthday "" creates with no birthday → 201 (M05-02 fixed)', async ({ page }) => {
+    // FIXED (M05-02): the validator normalizes '' → undefined and the service
+    // only passes birthday when it is a valid Date, so the sheet's untouched
+    // date input (which submits birthday:"") now creates the customer instead
+    // of 409/400. Duplicate-phone friendly 409 unchanged (F3).
     await login(page, OWNER.email, OWNER.password);
 
     const phone = `061${Date.now().toString(36).slice(-6) + Math.floor(Math.random() * 90 + 10)}`;
@@ -1078,10 +1098,16 @@ test.describe.serial('Module 5 — Customers CRM (full-scope QA)', () => {
       notes: '',
     });
     const body = await json(res);
-    // FIXED (INF-02): no longer 500, no longer a leaky 409 — a clean 4xx.
-    expect(res.status(), 'birthday:"" → 400 (no leak, no misleading 409)').toBe(400);
-    const msg = String(body?.error?.message ?? '');
-    expect(msg, 'no Prisma internals leak').not.toMatch(/prisma|Invalid value for argument|\.next|chunk/i);
+    expect(res.status(), 'birthday:"" → 201 (empty = no birthday)').toBe(201);
+    expect(body?.data?.name).toBe(`${RUN} BdayEmpty`);
+    expect(body?.data?.birthday ?? null, 'birthday stored as null').toBeNull();
+    if (body?.data?.id) state.createdIds.push(body.data.id);
+
+    // Detail round-trip is correct: no birthday, email intact.
+    const got = await json(await page.request.get(`/api/store/customers/${body?.data?.id ?? ''}`));
+    expect(got?.data?.phone).toBe(phone);
+    expect(got?.data?.email).toBe(`${RUN}.be@example.com`);
+    expect(got?.data?.birthday ?? null).toBeNull();
   });
 
   // ── Cleanup (Appendix C.7 pattern) ─────────────────────────────────────────

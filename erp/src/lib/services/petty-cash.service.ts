@@ -358,6 +358,43 @@ export async function buildPettyCashExportData(
   };
 }
 
+/** Sentinel thrown when a linked expense would push a fund below zero (M19-01). */
+export const PETTY_CASH_OVERDRAW_SENTINEL = 'Petty cash fund cannot go negative';
+
+/**
+ * M19-01 (BUG-53, decision D2) — guard a spend against the fund's live balance.
+ *
+ * Policy D2 = (b): an overdraft is BLOCKED by default (typed 422), and is only
+ * allowed when the caller explicitly passes `overdrawApproved` AND holds a
+ * manager-ish permission. Throws the `PETTY_CASH_OVERDRAW_SENTINEL` message so
+ * the shared error mapper (INF-02) can turn it into a typed 422 rather than a
+ * raw 500; the approval path is audited by the caller.
+ *
+ * @param amount the spend being applied (positive LKR)
+ * @param approved explicit manager approval (already permission-checked)
+ */
+export async function assertFundCanSpend(
+  tenantId: string,
+  fundId: string,
+  amount: number,
+  approved: boolean,
+  credit = 0,
+) {
+  if (approved) return;
+  const fund = await prisma.pettyCashFund.findFirst({
+    where: { id: fundId, tenantId },
+    select: { currentBalance: true },
+  });
+  if (!fund) return;
+  // `credit` lets an EDIT re-check net of the old linked amount it is replacing.
+  const next = new Decimal(fund.currentBalance.toNumber()).plus(credit).minus(amount);
+  if (next.lessThan(0)) {
+    throw new Error(
+      `${PETTY_CASH_OVERDRAW_SENTINEL}: expense of ${amount.toFixed(2)} exceeds the available balance of ${new Decimal(fund.currentBalance.toNumber()).plus(credit).toNumber().toFixed(2)}`,
+    );
+  }
+}
+
 /**
  * Apply a spend delta (in LKR) to a fund's current balance. Called when a linked
  * expense is created/updated/deleted so the running balance stays in sync.

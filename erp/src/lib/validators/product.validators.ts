@@ -193,9 +193,33 @@ export const ProductListQuerySchema = z.object({
 
 // ── Stock Adjustment Schema ──────────────────────────────────────────────────
 
+/**
+ * M09-02/M09-03 — business ceiling on a single adjustment delta: ±1,000,000
+ * units. `stockQuantity` lives in a Postgres int4 column; an uncapped delta
+ * used to overflow it into an unhandled 500 (BUG-41). 1M units is already
+ * absurd for a POS line item and keeps `stockQuantity + delta` comfortably
+ * inside int4 even after repeated adds, so absurd values fail validation
+ * before touching the DB. The documented ceiling is this constant.
+ */
+export const MAX_STOCK_ADJUSTMENT_DELTA = 1_000_000;
+
+/** PostgreSQL int4 ceiling — the hard storage limit for `stockQuantity`. */
+export const MAX_STOCK_QUANTITY = 2_147_483_647;
+
 export const StockAdjustmentSchema = z.object({
   variantId: z.string().cuid(),
-  quantityDelta: z.number().int(),
+  quantityDelta: z
+    .number()
+    .int()
+    // M09-03 (OBS-19): parity with the bulk-adjust schema — a 0-delta
+    // adjustment is a silent no-op that still writes a noise row into the
+    // immutable ledger, so reject it up front.
+    .refine((v) => v !== 0, { message: 'quantityDelta cannot be zero' })
+    // M09-02 (BUG-41): bound the raw delta so the int4 overflow can never
+    // reach the DB (the route keeps a newQty guard as defense in depth).
+    .refine((v) => Math.abs(v) <= MAX_STOCK_ADJUSTMENT_DELTA, {
+      message: `quantityDelta must be between -${MAX_STOCK_ADJUSTMENT_DELTA} and ${MAX_STOCK_ADJUSTMENT_DELTA}`,
+    }),
   reason: z.nativeEnum(StockMovementReason),
   note: z.string().max(500).optional(),
 });
