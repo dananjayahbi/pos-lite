@@ -98,6 +98,23 @@ Shared inner hash:
 innerHash = UPPER(MD5(merchant_secret))
 ```
 
+⚠ **Uppercase applies to the hex DIGEST, not to the secret.** `MD5(secret)` is
+computed first, and its output is then upper-cased — **not** `MD5(secret.toUpperCase())`.
+The two produce different values whenever the secret contains a lowercase letter,
+and PayHere answers *Unauthorized payment request* for the wrong one. Every language
+sample on the vendor's page confirms the digest is what gets upper-cased:
+
+| Language | Sample |
+|---|---|
+| PHP | `strtoupper(md5($merchant_secret))` |
+| JavaScript | `md5(merchantSecret).toString().toUpperCase()` |
+| .NET | `ComputeMD5(...)` appending `"{b:X2}"` (uppercase hex) |
+| Java | `getMd5(...)` then `hashtext.toUpperCase()` |
+
+That last point is easy to miss precisely because this is the *same shape* of
+trap as §3's `status_code`: a formulation that is arithmetically plausible,
+passes a self-derived test, and is rejected by the live gateway.
+
 ### 3.1 `hash` — sent **to** PayHere with the checkout form
 
 ```

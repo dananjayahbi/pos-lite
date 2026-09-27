@@ -49,8 +49,9 @@ const RUN = (g.__m34run ??= `qa-m34-${Date.now()}`);
 const md5 = (value: string): string =>
   createHash('md5').update(value).digest('hex');
 
-/** PayHere's shared inner hash. */
-const innerHash = (secret: string): string => md5(secret.toUpperCase());
+/** PayHere's shared inner hash: UPPER(md5(SECRET)) — the uppercase applies to
+ *  the hex DIGEST, not to the secret before hashing. */
+const innerHash = (secret: string): string => md5(secret).toUpperCase();
 
 /** Checkout `hash` — what we SEND to the gateway. */
 function checkoutHash(fields: {

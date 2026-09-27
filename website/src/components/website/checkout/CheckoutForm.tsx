@@ -24,6 +24,8 @@ import {
 
 interface CheckoutFormProps {
   tenantSlug: string;
+  /** False when the ERP cannot complete a card payment (see the checkout page). */
+  cardPaymentAvailable?: boolean;
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -41,14 +43,19 @@ const FIELD_LABELS: Record<string, string> = {
 /** Fields the customer must fill before we can send them to PayHere. */
 const CARD_REQUIRED_FIELDS = ['email'] as const;
 
-export function CheckoutForm({ tenantSlug }: CheckoutFormProps) {
+export function CheckoutForm({ tenantSlug, cardPaymentAvailable = true }: CheckoutFormProps) {
   const lines = useCartStore((s) => s.carts[tenantSlug]?.lines ?? []);
   const clear = useCartStore((s) => s.clear);
 
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  // Never idle on CARD when the gateway is unavailable — the option is hidden,
+  // so a stale selection would submit a payment method that cannot complete.
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodValue>('COD');
+  const effectivePaymentMethod: PaymentMethodValue = cardPaymentAvailable
+    ? paymentMethod
+    : 'COD';
   const [confirmed, setConfirmed] = useState<{ orderRef: string } | null>(null);
   // Server-computed delivery-fee estimate (2dp string), requested once the
   // destination city is entered so the fee is visible before payment.
@@ -98,7 +105,7 @@ export function CheckoutForm({ tenantSlug }: CheckoutFormProps) {
 
     // PayHere rejects a checkout without a valid email, so catch it here rather
     // than letting the customer reach the gateway and fail.
-    if (paymentMethod === 'CARD') {
+    if (effectivePaymentMethod === 'CARD') {
       const missing = CARD_REQUIRED_FIELDS.filter((key) => !values[key]?.trim());
       if (missing.length > 0) {
         setErrors(
@@ -115,7 +122,7 @@ export function CheckoutForm({ tenantSlug }: CheckoutFormProps) {
       const result = await placeOrder(tenantSlug, parsed.data, lines, {
         codAmount: totals.subtotal,
         itemCount: totals.itemCount,
-        paymentMethod,
+        paymentMethod: effectivePaymentMethod,
       });
       clear(tenantSlug);
 
@@ -166,7 +173,7 @@ export function CheckoutForm({ tenantSlug }: CheckoutFormProps) {
         <div className="space-y-4">
           {Object.keys(FIELD_LABELS).map((key) => {
             const isEmail = key === 'email';
-            const emailRequired = isEmail && paymentMethod === 'CARD';
+            const emailRequired = isEmail && effectivePaymentMethod === 'CARD';
             return (
               <div key={key}>
                 <label htmlFor={key} className="mb-1 block text-sm font-medium text-[#cbd5e1]">
@@ -201,9 +208,10 @@ export function CheckoutForm({ tenantSlug }: CheckoutFormProps) {
 
         <div className="mt-6">
           <PaymentMethodSelector
-            value={paymentMethod}
+            value={effectivePaymentMethod}
             onChange={setPaymentMethod}
             totalLabel={orderTotalLabel}
+            cardAvailable={cardPaymentAvailable}
           />
         </div>
 
@@ -214,7 +222,7 @@ export function CheckoutForm({ tenantSlug }: CheckoutFormProps) {
         >
           {submitting
             ? 'Placing order…'
-            : paymentMethod === 'CARD'
+            : effectivePaymentMethod === 'CARD'
               ? 'Place order & pay'
               : 'Place order (COD)'}
         </button>

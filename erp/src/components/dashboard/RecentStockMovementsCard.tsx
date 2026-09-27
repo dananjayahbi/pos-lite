@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useRecentMovements } from '@/hooks/useRecentMovements';
+import { stockActorLabel } from '@/lib/stock/actor-label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -103,7 +104,9 @@ export function RecentStockMovementsCard() {
                             {positive ? `+${movement.quantityDelta}` : movement.quantityDelta}
                           </span>
                         </TableCell>
-                        <TableCell className="text-sm text-sand">{movement.actor.email}</TableCell>
+                        <TableCell className="text-sm text-sand">
+                          {stockActorLabel(movement.actor)}
+                        </TableCell>
                       </TableRow>
                     );
                   })}

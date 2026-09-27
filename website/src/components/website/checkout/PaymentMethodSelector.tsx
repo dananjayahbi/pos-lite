@@ -9,6 +9,11 @@ interface PaymentMethodSelectorProps {
   onChange: (value: PaymentMethodValue) => void;
   /** Total to charge (only used for display on the card option). */
   totalLabel: string;
+  /**
+   * Whether the ERP can complete a card payment. When false the card option is
+   * hidden rather than offered and then failing at the gateway.
+   */
+  cardAvailable?: boolean;
 }
 
 const METHODS: { value: PaymentMethodValue; label: string; hint: string }[] = [
@@ -24,12 +29,19 @@ export function PaymentMethodSelector({
   value,
   onChange,
   totalLabel,
+  cardAvailable = true,
 }: PaymentMethodSelectorProps) {
+  // Hide, never disable: an un-selectable radio pair invites the customer to
+  // ask why. A storefront that cannot take cards simply offers COD.
+  const methods = cardAvailable
+    ? METHODS
+    : METHODS.filter((method) => method.value !== 'CARD');
+
   return (
     <fieldset>
       <legend className="mb-3 text-sm font-medium text-[#cbd5e1]">Payment method</legend>
       <div className="space-y-3">
-        {METHODS.map((method) => {
+        {methods.map((method) => {
           const active = value === method.value;
           return (
             <label

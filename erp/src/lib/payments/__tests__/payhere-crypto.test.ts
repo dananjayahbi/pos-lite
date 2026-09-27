@@ -34,7 +34,8 @@ function referenceCheckoutHash(
       input.orderId +
       input.amount +
       input.currency +
-      md5(secret.toUpperCase()),
+      // UPPERCASE applies to the hex DIGEST, not to the secret.
+      md5(secret).toUpperCase(),
   ).toUpperCase();
 }
 
@@ -55,7 +56,7 @@ function referenceIpnSignature(
       input.amount +
       input.currency +
       input.statusCode +
-      md5(secret.toUpperCase()),
+      md5(secret).toUpperCase(),
   ).toUpperCase();
 }
 
@@ -82,10 +83,25 @@ afterEach(() => {
 });
 
 describe('computeInnerHash', () => {
-  it('uppercases the secret BEFORE hashing (PayHere contract)', () => {
-    expect(computeInnerHash('abc')).toBe(md5('ABC'));
-    // A lowercase and an uppercase secret must therefore differ.
-    expect(computeInnerHash('secret')).toBe(computeInnerHash('SECRET'));
+  it('hashes the secret FIRST and uppercases the resulting hex digest', () => {
+    // PayHere's contract (and every language sample on its docs page):
+    //   PHP  strtoupper(md5($secret))
+    //   JS   md5(secret).toString().toUpperCase()
+    // The uppercase applies to the DIGEST, not to the secret.
+    expect(computeInnerHash('abc')).toBe(md5('abc').toUpperCase());
+  });
+
+  it('is NOT the same as hashing the uppercased secret', () => {
+    // These coincide only when the secret is already all-uppercase, which is
+    // exactly why the wrong implementation looked correct. Use a secret with
+    // lowercase letters, like the real sandbox secret (base64 with '=' padding).
+    const secret = 'AbCdEf123+/=';
+    expect(computeInnerHash(secret)).not.toBe(md5(secret.toUpperCase()));
+    expect(computeInnerHash(secret)).toBe(md5(secret).toUpperCase());
+  });
+
+  it('is case-sensitive in the secret (a different case is a different key)', () => {
+    expect(computeInnerHash('secret')).not.toBe(computeInnerHash('SECRET'));
   });
 });
 
@@ -200,10 +216,21 @@ describe('verifyPayhereSignature', () => {
     });
   });
 
-  it('accepts a lowercase signature (gateway casing is tolerated)', () => {
+  it('accepts an UPPERCASE signature — the only casing the gateway sends', () => {
+    setSecret(SECRET);
+    const md5sig = referenceIpnSignature(SECRET, base).toUpperCase();
+    expect(verifyPayhereSignature({ ...base, md5sig }).valid).toBe(true);
+  });
+
+  it('rejects a lowercased signature (the contract uppercases the digest)', () => {
+    // Widening the gate to any casing buys nothing — PayHere only ever sends
+    // uppercase — and it weakens a security check for no benefit.
     setSecret(SECRET);
     const md5sig = referenceIpnSignature(SECRET, base).toLowerCase();
-    expect(verifyPayhereSignature({ ...base, md5sig }).valid).toBe(true);
+    expect(verifyPayhereSignature({ ...base, md5sig })).toEqual({
+      valid: false,
+      reason: 'BAD_SIGNATURE',
+    });
   });
 
   it('rejects a forged signature', () => {

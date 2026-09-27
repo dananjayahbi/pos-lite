@@ -14,10 +14,13 @@ import { createHash } from "crypto";
  *   md5sig   = UPPER(MD5(merchant_id + order_id + payhere_amount +
  *                        payhere_currency + status_code + inner))
  *
- * The only difference is `status_code`, which the gateway does not know at
- * checkout time. Source: `REFERENCES/payhere/scrapes/api-and-mobile-sdk/
- * 01-checkout-api.md` (§Generating 'hash' Value, §3 Verifying the Payment
- * Status) — see `REFERENCES/payhere/PAYHERE-INTEGRATION.md` §3.
+ * ⚠ `inner` uppercases the **hex digest of the secret** — NOT the secret itself
+ * before hashing. `md5(secret.toUpperCase())` is a DIFFERENT value and the
+ * gateway answers "Unauthorized payment request" for it. The two coincide only
+ * when the secret happens to be all-uppercase, which is why this is easy to get
+ * wrong and invisible in testing. Every language sample on the vendor's page
+ * agrees (PHP `strtoupper(md5($secret))`, JS
+ * `md5(secret).toString().toUpperCase()`, .NET `{b:X2}`, Java hex + `toUpperCase`).
  *
  * Deliberately dependency-free (no prisma, no `server-only`) so it runs in the
  * Node runtime of a route and in vitest's node environment alike.
@@ -70,12 +73,15 @@ const md5 = (value: string): string =>
   createHash("md5").update(value).digest("hex");
 
 /**
- * PayHere's shared inner hash: `UPPER(MD5(merchant_secret))`. The uppercasing
- * of the secret is part of the contract and is NOT applied to the outer
- * concatenation.
+ * PayHere's shared inner hash: `UPPER(MD5(merchant_secret))`.
+ *
+ * Uppercase is applied to the HEX DIGEST of the secret, not to the secret
+ * itself before hashing (`md5(secret.toUpperCase())` is a different value and
+ * the gateway rejects it). Kept in one exported function so the checkout hash
+ * and the IPN signature can never drift from this rule.
  */
 export function computeInnerHash(secret: string): string {
-  return md5(secret.toUpperCase());
+  return md5(secret).toUpperCase();
 }
 
 /**
@@ -179,9 +185,9 @@ export function resetSecretWarningThrottle(): void {
  * - signature does not match      → `{ valid:false, reason:'BAD_SIGNATURE' }`
  * - signature matches             → `{ valid:true,  reason:null }`
  *
- * Comparison is case-insensitive on both sides (the gateway transmits
- * uppercase hex; we normalise both so a case change on their side cannot
- * silently drop real payments).
+ * The comparison is exact, not case-insensitive: both sides are uppercase hex
+ * because the contract uppercases the digest. Accepting arbitrary casing would
+ * widen the gate for no benefit, since PayHere only ever sends uppercase.
  *
  * Verifying the signature is what makes a "payment succeeded" notification
  * trustworthy — without it a third party could POST a forged success.
@@ -198,7 +204,7 @@ export function verifyPayhereSignature(
 
   const expectedSig = computeIpnSignature(secret, payload);
 
-  if (expectedSig.toLowerCase() === payload.md5sig.toLowerCase()) {
+  if (expectedSig === payload.md5sig) {
     return { valid: true, reason: null };
   }
 

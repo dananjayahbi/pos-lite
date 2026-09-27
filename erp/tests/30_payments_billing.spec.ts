@@ -244,12 +244,16 @@ const EXPECTED_MISSING_SECRET_REASON: IpnRejectionReason =
  * The IPN signature, computed with the SAME algorithm the route uses:
  *
  *   md5(merchant_id + order_id + payhere_amount + payhere_currency +
- *       status_code + md5(secret.toUpperCase()))
+ *       status_code + UPPER(md5(secret)))
  *
  * mirrored independently from PayHere's published formula (Checkout API §3
- * Verifying the Payment Status). `status_code` is the field that distinguishes
- * a real IPN signature from the CHECKOUT hash — omitting it (as this helper and
- * the route both once did) meant every genuine notification failed the gate.
+ * Verifying the Payment Status). Note the inner hash uppercases the hex DIGEST
+ * of the secret — NOT the secret before hashing, which is a different value and
+ * one the gateway rejects with "Unauthorized payment request".
+ *
+ * `status_code` is the field that distinguishes a real IPN signature from the
+ * CHECKOUT hash — omitting it (as this helper and the route both once did)
+ * meant every genuine notification failed the gate.
  *
  * `ipnSig('', fields)` is the signature a DELIBERATELY-MISCONFIGURED deployment
  * would compute (inner hash = md5('')); the gate must reject it with
@@ -273,7 +277,7 @@ function ipnSig(
       fields.payhere_amount +
       fields.payhere_currency +
       (fields.status_code ?? '') +
-      md5(secret.toUpperCase()),
+      md5(secret).toUpperCase(),
   );
 }
 

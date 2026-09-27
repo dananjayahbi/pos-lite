@@ -5,6 +5,7 @@
 
 import type { Metadata } from 'next';
 import { getTenantInfo } from '@/lib/api/website';
+import { isCardPaymentAvailable } from '@/lib/api/payhereAvailability';
 import { CheckoutForm } from '@/components/website/checkout/CheckoutForm';
 import { StoreHeader } from '@/components/website/common/StoreHeader';
 
@@ -17,7 +18,12 @@ export const dynamic = 'force-dynamic';
 
 export default async function CheckoutPage({ params }: CheckoutPageProps) {
   const { tenantSlug } = await params;
-  const tenant = await getTenantInfo(tenantSlug).catch(() => null);
+  const [tenant, cardAvailable] = await Promise.all([
+    getTenantInfo(tenantSlug).catch(() => null),
+    // The card option is only offered when the ERP reports it can complete a
+    // payment — otherwise the customer is sent to a gateway that will fail.
+    isCardPaymentAvailable(),
+  ]);
 
   return (
     <div className="min-h-screen bg-[#051610] text-[#cbd5e1]">
@@ -30,7 +36,7 @@ export default async function CheckoutPage({ params }: CheckoutPageProps) {
         >
           Checkout
         </h1>
-        <CheckoutForm tenantSlug={tenantSlug} />
+        <CheckoutForm tenantSlug={tenantSlug} cardPaymentAvailable={cardAvailable} />
       </main>
     </div>
   );
