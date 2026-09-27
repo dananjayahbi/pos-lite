@@ -12,7 +12,7 @@ import {
 import {
   verifyPayhereSignature,
   type PayhereSignatureRejection,
-} from "@/lib/billing/payhere-signature";
+} from "@/lib/payments/payhere-crypto";
 import { processOrderPaymentStatus } from "@/lib/services/order-payment.service";
 
 // ── PayHere IPN Webhook ────────────────────────────────────────────────────
@@ -76,13 +76,16 @@ export async function POST(request: NextRequest) {
 
     // ─ Signature verification (GATE — first, before any DB access) ──────
     // `verifyPayhereSignature` owns the md5 algorithm and the rejection
-    // taxonomy (see src/lib/billing/payhere-signature.ts). A missing secret is
-    // warned about there, throttled so an IPN flood cannot spam logs/Sentry.
+    // taxonomy (see src/lib/payments/payhere-crypto.ts). The IPN signature
+    // INCLUDES `status_code` — omitting it (as this route once did) rejects
+    // every genuine notification. A missing secret is warned about there,
+    // throttled so an IPN flood cannot spam logs/Sentry.
     const { valid: signatureValid, reason } = verifyPayhereSignature({
       merchantId: merchant_id,
       orderId: order_id,
       amount: payhere_amount,
       currency: payhere_currency,
+      statusCode: status_code,
       md5sig,
     });
 
@@ -140,6 +143,13 @@ export async function POST(request: NextRequest) {
         const { updated, status } = await processOrderPaymentStatus(
           deliveryId,
           parseInt(status_code) || 0,
+          {
+            // PayHere's own references + the method the customer actually
+            // used (`VISA`, `GENIE`, `EZCASH`, …) — displayed on the order.
+            paymentId: params.get("payment_id") ?? null,
+            method: params.get("method") ?? null,
+            statusMessage: params.get("status_message") ?? null,
+          },
         );
         if (!updated) {
           console.warn(

@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
 import { getProviderConfigStatus } from '@/lib/notifications/provider-status';
-import { getBridgeAuthStatus } from '@/lib/internal-bridge-auth';
-
+import { getBridgeAuthStatus } from '@/lib/internal-bridge-auth';import { getPayhereConfigStatus } from "@/lib/payments/payhere-config";
 export async function GET() {
   const startTime = performance.now();
 
@@ -16,6 +15,10 @@ export async function GET() {
     // email/WhatsApp send silently failed — this makes that visible to any
     // uptime check.
     const providers = getProviderConfigStatus();
+    // Presence-only PayHere report (never a secret value). `checkoutReady`
+    // answers "can a card payment actually complete?" — an unset merchant
+    // secret silently fails every IPN, which used to look perfectly healthy.
+    const payhere = getPayhereConfigStatus();
 
     return NextResponse.json(
       {
@@ -25,7 +28,14 @@ export async function GET() {
         integrations: {
           email: { configured: providers.email },
           whatsapp: { configured: providers.whatsapp },
-          payhere: { configured: Boolean(process.env.PAYHERE_MERCHANT_SECRET) },
+          payhere: {
+            configured: payhere.checkoutReady,
+            mode: payhere.mode,
+            merchantId: payhere.merchantId,
+            merchantSecret: payhere.merchantSecret,
+            app: payhere.app,
+            checkoutReady: payhere.checkoutReady,
+          },
         },
         // M35-02 hardening: whether the Edge→Node bridge requires a shared
         // secret. 'enforced' is the intended state; anything else means the

@@ -25,8 +25,13 @@ def clean_fragment(
     """
     soup = BeautifulSoup(fragment_html, "html.parser")
 
-    _remove_noise(soup, config.fragment_noise_selectors)
+    # Extract code blocks FIRST, then strip noise. A sample such as
+    # ``<pre><code>&lt;form&gt;…`` may be served as unescaped markup, in which
+    # case html.parser builds real elements inside the <pre> and the noise
+    # pass would delete the code sample along with them. Replacing the <pre>
+    # with an opaque text token first makes it immune to that removal.
     placeholders = codeblocks.extract(soup)
+    _remove_noise(soup, config.fragment_noise_selectors)
 
     return soup.decode_contents().strip(), placeholders
 

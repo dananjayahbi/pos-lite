@@ -14,7 +14,11 @@ export interface PlaceOrderResult {
   orderRef: string;
   /** Server-computed delivery fee (2dp string) stored on the ERP Delivery. */
   shippingFee?: string;
-  /** Present for CARD orders — PayHere redirect target + hidden fields. */
+  /**
+   * Present for CARD orders — PayHere redirect target + hidden fields. Absent
+   * when the gateway is not configured, in which case the order stays unpaid
+   * and the caller shows the confirmation screen with a payment prompt.
+   */
   payment?: {
     payhereUrl: string;
     payload: Record<string, string>;
@@ -65,6 +69,9 @@ export async function placeOrder(
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
       ...address,
+      // An empty string would fail the ERP's `.email()` check, so omit it
+      // entirely when the customer left it blank on a COD order.
+      ...(address.email ? { email: address.email } : {}),
       lines: linePayload,
       codAmount: totals.codAmount,
       itemCount: totals.itemCount,

@@ -30,9 +30,10 @@ vi.mock('@/lib/prisma', () => ({
 
 import { POST } from '@/app/api/webhooks/payhere/route';
 import {
-  computePayhereSignature,
+  computeCheckoutHash,
+  computeIpnSignature,
   resetSecretWarningThrottle,
-} from '@/lib/billing/payhere-signature';
+} from '@/lib/payments/payhere-crypto';
 
 const SECRET = 'qa-secret-abc';
 const ORIGINAL_SECRET = process.env.PAYHERE_MERCHANT_SECRET;
@@ -56,12 +57,15 @@ function ipnRequest(md5sig: string): NextRequest {
   });
 }
 
-/** The camelCase shape `computePayhereSignature` expects. */
+/** The camelCase shape `computeIpnSignature` expects. The IPN digest INCLUDES
+ *  `status_code` — omitting it (as the route once did) rejects every genuine
+ *  notification, so the tests below would all fail on a wrong formula. */
 const SIG_PAYLOAD = {
   merchantId: IPN.merchant_id,
   orderId: IPN.order_id,
   amount: IPN.payhere_amount,
   currency: IPN.payhere_currency,
+  statusCode: IPN.status_code,
 };
 
 function setSecret(value: string | undefined): void {
@@ -118,7 +122,7 @@ describe('POST /api/webhooks/payhere — signature gate runs before any DB acces
 
   it('never accepts the empty-secret hash an unset secret would expect', async () => {
     setSecret(undefined);
-    const emptySecretSig = computePayhereSignature('', SIG_PAYLOAD);
+    const emptySecretSig = computeIpnSignature('', SIG_PAYLOAD);
 
     const res = await POST(ipnRequest(emptySecretSig));
 
@@ -128,7 +132,7 @@ describe('POST /api/webhooks/payhere — signature gate runs before any DB acces
 
   it('a verified IPN DOES reach the DB (non-vacuity guard)', async () => {
     setSecret(SECRET);
-    const validSig = computePayhereSignature(SECRET, SIG_PAYLOAD);
+    const validSig = computeIpnSignature(SECRET, SIG_PAYLOAD);
 
     const res = await POST(ipnRequest(validSig));
 
@@ -149,7 +153,7 @@ describe('POST /api/webhooks/payhere — signature gate runs before any DB acces
       subscriptionId: 'sub_1',
       tenantId: 'tenant_1',
     });
-    const validSig = computePayhereSignature(SECRET, SIG_PAYLOAD);
+    const validSig = computeIpnSignature(SECRET, SIG_PAYLOAD);
 
     await POST(ipnRequest(validSig));
 
@@ -161,5 +165,23 @@ describe('POST /api/webhooks/payhere — signature gate runs before any DB acces
         signatureValid: true,
       },
     });
+  });
+
+  it('rejects the CHECKOUT-hash shape (the signature this route used to accept)', async () => {
+    // Regression pin: the old gate computed md5(...currency + md5(secret)) with
+    // no status_code, so a notification signed that way verified. Real PayHere
+    // signatures never look like this, which is why no payment ever confirmed.
+    setSecret(SECRET);
+    const checkoutShaped = computeCheckoutHash(SECRET, {
+      merchantId: IPN.merchant_id,
+      orderId: IPN.order_id,
+      amount: IPN.payhere_amount,
+      currency: IPN.payhere_currency,
+    });
+
+    const res = await POST(ipnRequest(checkoutShaped));
+
+    expect((await res.json()).reason).toBe('BAD_SIGNATURE');
+    expect(mocks.invoiceFindUnique).not.toHaveBeenCalled();
   });
 });

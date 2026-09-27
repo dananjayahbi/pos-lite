@@ -241,15 +241,19 @@ const EXPECTED_MISSING_SECRET_REASON: IpnRejectionReason =
   'SECRET_NOT_CONFIGURED';
 
 /**
- * The IPN signature, computed with the SAME algorithm the route uses
- * (`md5(merchant_id + order_id + payhere_amount + payhere_currency +`
- * `md5(secret.toUpperCase()))` — mirrored from
- * `src/lib/billing/payhere-signature.ts`).
+ * The IPN signature, computed with the SAME algorithm the route uses:
  *
- * `ipnSig('')` is the signature a DELIBERATELY-MISCONFIGURED deployment
- * computes (inner hash = md5('')), i.e. what an unset PAYHERE_MERCHANT_SECRET
- * makes the route expect; the gate must reject it with SECRET_NOT_CONFIGURED
- * (never loosen the gate to accept an empty-secret/unsigned event).
+ *   md5(merchant_id + order_id + payhere_amount + payhere_currency +
+ *       status_code + md5(secret.toUpperCase()))
+ *
+ * mirrored independently from PayHere's published formula (Checkout API §3
+ * Verifying the Payment Status). `status_code` is the field that distinguishes
+ * a real IPN signature from the CHECKOUT hash — omitting it (as this helper and
+ * the route both once did) meant every genuine notification failed the gate.
+ *
+ * `ipnSig('', fields)` is the signature a DELIBERATELY-MISCONFIGURED deployment
+ * would compute (inner hash = md5('')); the gate must reject it with
+ * SECRET_NOT_CONFIGURED and never loosen to accept an unsigned event.
  */
 function ipnSig(
   secret: string,
@@ -258,6 +262,7 @@ function ipnSig(
     order_id: string;
     payhere_amount: string;
     payhere_currency: string;
+    status_code?: string;
   },
 ): string {
   const md5 = (value: string): string =>
@@ -267,6 +272,7 @@ function ipnSig(
       fields.order_id +
       fields.payhere_amount +
       fields.payhere_currency +
+      (fields.status_code ?? '') +
       md5(secret.toUpperCase()),
   );
 }
@@ -277,6 +283,7 @@ function emptySecretIpnSig(fields: {
   order_id: string;
   payhere_amount: string;
   payhere_currency: string;
+  status_code?: string;
 }): string {
   return ipnSig('', fields);
 }
@@ -652,6 +659,7 @@ test.describe('§4 Audit trail & idempotency', () => {
               order_id: string;
               payhere_amount: string;
               payhere_currency: string;
+              status_code?: string;
             },
           ),
         }),

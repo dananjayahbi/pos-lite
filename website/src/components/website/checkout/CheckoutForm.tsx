@@ -30,12 +30,16 @@ const FIELD_LABELS: Record<string, string> = {
   fullName: 'Full name',
   phone: 'Phone',
   phone2: 'Alternate phone (optional)',
+  email: 'Email',
   addressLine1: 'Address line 1',
   addressLine2: 'Address line 2 (optional)',
   cityName: 'City',
   districtName: 'District (optional)',
   postalCode: 'Postal code (optional)',
 };
+
+/** Fields the customer must fill before we can send them to PayHere. */
+const CARD_REQUIRED_FIELDS = ['email'] as const;
 
 export function CheckoutForm({ tenantSlug }: CheckoutFormProps) {
   const lines = useCartStore((s) => s.carts[tenantSlug]?.lines ?? []);
@@ -92,6 +96,20 @@ export function CheckoutForm({ tenantSlug }: CheckoutFormProps) {
       return;
     }
 
+    // PayHere rejects a checkout without a valid email, so catch it here rather
+    // than letting the customer reach the gateway and fail.
+    if (paymentMethod === 'CARD') {
+      const missing = CARD_REQUIRED_FIELDS.filter((key) => !values[key]?.trim());
+      if (missing.length > 0) {
+        setErrors(
+          Object.fromEntries(
+            missing.map((key) => [key, 'Required for card payments']),
+          ),
+        );
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const result = await placeOrder(tenantSlug, parsed.data, lines, {
@@ -101,8 +119,9 @@ export function CheckoutForm({ tenantSlug }: CheckoutFormProps) {
       });
       clear(tenantSlug);
 
-      // Card orders redirect to PayHere to complete payment. On return/cancel
-      // the customer lands back on the shop page (return/cancel URL).
+      // Card orders redirect to PayHere to complete payment. PayHere returns the
+      // browser to the checkout-return page (see `return_url`), which re-reads
+      // the real payment status from the ERP.
       if (result.payment) {
         submitPayHereRedirect(result.payment.payhereUrl, result.payment.payload);
         return;
@@ -145,20 +164,35 @@ export function CheckoutForm({ tenantSlug }: CheckoutFormProps) {
           Delivery address
         </h2>
         <div className="space-y-4">
-          {Object.keys(FIELD_LABELS).map((key) => (
-            <div key={key}>
-              <label htmlFor={key} className="mb-1 block text-sm font-medium text-[#cbd5e1]">
-                {FIELD_LABELS[key]}
-              </label>
-              <input
-                id={key}
-                value={values[key] ?? ''}
-                onChange={(e) => setValue(key, e.target.value)}
-                className="w-full rounded-lg border border-white/12 bg-[#051610] px-3 py-2 text-sm text-white focus:border-[#97c93e] focus:outline-none"
-              />
-              {errors[key] && <p className="mt-1 text-xs text-red-400">{errors[key]}</p>}
-            </div>
-          ))}
+          {Object.keys(FIELD_LABELS).map((key) => {
+            const isEmail = key === 'email';
+            const emailRequired = isEmail && paymentMethod === 'CARD';
+            return (
+              <div key={key}>
+                <label htmlFor={key} className="mb-1 block text-sm font-medium text-[#cbd5e1]">
+                  {FIELD_LABELS[key]}
+                  {emailRequired ? (
+                    <span className="ml-1 text-[#97c93e]">*</span>
+                  ) : (
+                    isEmail && (
+                      <span className="ml-1 text-xs text-[#64748b]">
+                        (required for card payments)
+                      </span>
+                    )
+                  )}
+                </label>
+                <input
+                  id={key}
+                  type={isEmail ? 'email' : 'text'}
+                  autoComplete={isEmail ? 'email' : undefined}
+                  value={values[key] ?? ''}
+                  onChange={(e) => setValue(key, e.target.value)}
+                  className="w-full rounded-lg border border-white/12 bg-[#051610] px-3 py-2 text-sm text-white focus:border-[#97c93e] focus:outline-none"
+                />
+                {errors[key] && <p className="mt-1 text-xs text-red-400">{errors[key]}</p>}
+              </div>
+            );
+          })}
         </div>
 
         {errors.form && (

@@ -55,7 +55,13 @@ export class OutOfStockError extends Error {
 export async function createWebsiteOrder(
   tenantId: string,
   input: WebsiteCheckoutInput,
-): Promise<{ deliveryId: string; orderRef: string; shippingFee: string | null }> {
+): Promise<{
+  deliveryId: string;
+  orderRef: string;
+  shippingFee: string | null;
+  /** Goods total (excl. shipping) as stored — used to quote the payable amount. */
+  codAmount: string;
+}> {
   setSentryTenantContext({ tenantId });
 
   // Default COD (unpaid-by-design). CARD orders start PENDING and are marked
@@ -198,6 +204,9 @@ export async function createWebsiteOrder(
           fullName: input.fullName,
           phone: input.phone,
           phone2: input.phone2 ?? null,
+          // PayHere requires a valid email on the checkout form; the IPN and
+          // the order record keep it for receipts too.
+          email: input.email ?? null,
           addressLine1: input.addressLine1,
           addressLine2: input.addressLine2 ?? null,
           cityName: input.cityName,
@@ -240,6 +249,7 @@ export async function createWebsiteOrder(
     deliveryId: delivery.id,
     orderRef: delivery.orderRef,
     shippingFee: shipping.shippingFee,
+    codAmount: delivery.codAmount.toString(),
   };
 }
 

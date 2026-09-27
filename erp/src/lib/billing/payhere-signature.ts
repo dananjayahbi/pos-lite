@@ -1,150 +1,32 @@
-import { createHash } from "crypto";
-
 /**
- * PayHere IPN signature verification (M30-02 / BUG-71, M30-03 / BUG-72).
+ * @deprecated Superseded by `src/lib/payments/payhere-crypto.ts`.
  *
- * Extracted verbatim from `src/app/api/webhooks/payhere/route.ts` so the MD5
- * algorithm and the rejection taxonomy live in one place and can be unit-tested
- * without a DB, a Next.js runtime or a live gateway. The route now gates on
- * this BEFORE any read or write, so a forged/unsigned IPN can never persist an
- * `InvoicePaymentEvent` row.
+ * This module used the CHECKOUT-hash formula for the IPN gate, omitting
+ * `status_code` from the digest — which meant every genuine PayHere payment
+ * notification failed verification. The corrected implementation (both
+ * signatures, side by side) lives in `@/lib/payments/payhere-crypto`; the
+ * names are re-exported here so any remaining import keeps resolving, and no
+ * caller can accidentally reach the wrong formula again.
  *
- * Deliberately dependency-free (no prisma, no `server-only`) — it runs in the
- * Node runtime of the route and in vitest's node environment.
+ * New code MUST import from `@/lib/payments/payhere-crypto`.
  */
 
-/** Why an IPN was rejected. `null` on the result means "verified". */
-export type PayhereSignatureRejection =
-  | "SECRET_NOT_CONFIGURED"
-  | "BAD_SIGNATURE";
+export {
+  computeCheckoutHash,
+  computeInnerHash,
+  computeIpnSignature,
+  formatPayhereAmount,
+  getPayhereMerchantSecret,
+  resetSecretWarningThrottle,
+  SECRET_WARNING_THROTTLE_MS,
+  verifyPayhereSignature,
+  warnSecretNotConfigured,
+} from "@/lib/payments/payhere-crypto";
 
-/**
- * Verification outcome. Modeled as a discriminated union so `reason` is
- * provably `null` for a verified IPN and provably one of the two codes for a
- * rejected one (callers get the narrowing for free).
- */
-export type PayhereSignatureResult =
-  | { valid: true; reason: null }
-  | { valid: false; reason: PayhereSignatureRejection };
-
-/** The IPN form fields the signature is computed from (snake_case names are
- *  the raw gateway field names the route parses). */
-export interface PayhereSignaturePayload {
-  /** `merchant_id` */
-  merchantId: string;
-  /** `order_id` */
-  orderId: string;
-  /** `payhere_amount` — used as the raw string the gateway sent. */
-  amount: string;
-  /** `payhere_currency` */
-  currency: string;
-  /** `md5sig` */
-  md5sig: string;
-}
-
-/** Throttle window for the unconfigured-secret warning: at most one log line
- *  (and therefore one Sentry event) per window, however hard IPNs flood in. */
-export const SECRET_WARNING_THROTTLE_MS = 5 * 60 * 1000;
-
-const md5 = (value: string): string =>
-  createHash("md5").update(value).digest("hex");
-
-/**
- * PayHere's documented IPN signature:
- *
- *   md5(merchant_id + order_id + payhere_amount + payhere_currency + md5(secret.toUpperCase()))
- *
- * Byte-for-byte the algorithm the route used before extraction — including the
- * `toUpperCase()` step, which is part of PayHere's contract and is NOT applied
- * to the outer concatenation.
- */
-export function computePayhereSignature(
-  secret: string,
-  payload: Pick<
-    PayhereSignaturePayload,
-    "merchantId" | "orderId" | "amount" | "currency"
-  >,
-): string {
-  const innerHash = md5(secret.toUpperCase());
-  return md5(
-    payload.merchantId +
-      payload.orderId +
-      payload.amount +
-      payload.currency +
-      innerHash,
-  );
-}
-
-/**
- * The configured merchant secret, or `null` when it is absent/blank.
- *
- * A whitespace-only value counts as NOT configured (an `.env` line like
- * `PAYHERE_MERCHANT_SECRET=" "` is a misconfiguration, not a secret), but a
- * real secret is returned untouched so hashing is unchanged.
- */
-export function getPayhereMerchantSecret(): string | null {
-  const secret = process.env.PAYHERE_MERCHANT_SECRET;
-  if (!secret || secret.trim() === "") return null;
-  return secret;
-}
-
-let lastSecretWarningAt = 0;
-
-/**
- * Emit the "secret is not configured" warning at most once per
- * `SECRET_WARNING_THROTTLE_MS`. Returns `true` when this call actually logged
- * (i.e. it was not throttled) so callers/tests can observe the throttle.
- *
- * With the secret unset the expected signature is derived from an empty secret,
- * so every real IPN fails the gate — the failure must be loud in logs/Sentry
- * rather than another silent always-200 (BUG-71).
- */
-export function warnSecretNotConfigured(now: number = Date.now()): boolean {
-  if (
-    lastSecretWarningAt !== 0 &&
-    now - lastSecretWarningAt < SECRET_WARNING_THROTTLE_MS
-  ) {
-    return false;
-  }
-  lastSecretWarningAt = now;
-  console.warn(
-    "[PayHere IPN] PAYHERE_MERCHANT_SECRET is not configured — every IPN will fail the signature gate " +
-      "(reason SECRET_NOT_CONFIGURED) and no payment will ever be recorded. " +
-      `Set PAYHERE_MERCHANT_SECRET; this warning is throttled to one per ${SECRET_WARNING_THROTTLE_MS / 1000}s.`,
-  );
-  return true;
-}
-
-/** Test hook: clear the warning throttle so both paths are assertable. */
-export function resetSecretWarningThrottle(): void {
-  lastSecretWarningAt = 0;
-}
-
-/**
- * Verify a PayHere IPN signature.
- *
- * - secret unset                  → `{ valid:false, reason:'SECRET_NOT_CONFIGURED' }`
- * - signature does not match      → `{ valid:false, reason:'BAD_SIGNATURE' }`
- * - signature matches             → `{ valid:true,  reason:null }`
- *
- * Comparison is case-insensitive on both sides, matching the gateway's hex
- * casing tolerance in the previous implementation.
- */
-export function verifyPayhereSignature(
-  payload: PayhereSignaturePayload,
-): PayhereSignatureResult {
-  const secret = getPayhereMerchantSecret();
-
-  if (secret === null) {
-    warnSecretNotConfigured();
-    return { valid: false, reason: "SECRET_NOT_CONFIGURED" };
-  }
-
-  const expectedSig = computePayhereSignature(secret, payload);
-
-  if (expectedSig.toLowerCase() === payload.md5sig.toLowerCase()) {
-    return { valid: true, reason: null };
-  }
-
-  return { valid: false, reason: "BAD_SIGNATURE" };
-}
+export type {
+  PayhereIpnSignatureInput,
+  PayhereSignatureBase,
+  PayhereSignaturePayload,
+  PayhereSignatureRejection,
+  PayhereSignatureResult,
+} from "@/lib/payments/payhere-crypto";
