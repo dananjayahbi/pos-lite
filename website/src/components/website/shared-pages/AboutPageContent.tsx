@@ -4,6 +4,7 @@ import { StaticPageShell } from '../static-pages/StaticPageShell';
 import { AboutStorySection } from '../static-pages/AboutStorySection';
 import { AboutMissionSection } from '../static-pages/AboutMissionSection';
 import { AboutValuesSection } from '../static-pages/AboutValuesSection';
+import { ConnectWithUsSection } from '../static-pages/ConnectWithUsSection';
 
 interface AboutPageContentProps {
   tenantSlug: string;
@@ -33,11 +34,52 @@ export async function AboutPageContent({ tenantSlug }: AboutPageContentProps) {
   const aboutHeroImageUrl = config?.aboutHeroImageUrl;
 
   const socialLinks = config?.socialLinks ?? {};
+  // `phone` is excluded here because it is rendered as a dedicated phone CTA
+  // button below (via aboutPhoneLabel/aboutPhoneNumber) instead of a pill.
   const socialEntries = Object.entries(socialLinks).filter(
-    ([, value]) => value && typeof value === 'string' && value.length > 0,
+    ([key, value]) =>
+      key !== 'phone' && value && typeof value === 'string' && value.length > 0,
   );
 
   const heroProps = aboutHeroImageUrl ? { heroImageUrl: aboutHeroImageUrl } : {};
+
+  // Reference defaults (mirror about.html) used when the ERP has no saved
+  // values for a given field. These keep the page looking intentional even if
+  // the admin hasn't configured every section yet.
+  const storyContent =
+    config?.aboutStoryContent ??
+    'It all started when our founders, direct descendants of royal Ceylon Ayurvedic physicians, recognized that modern wellness had lost touch with the pure botanical alchemy of ancestral medicine.\nRooted in centuries-old Ola Leaf manuscripts preserved through family generations, Wedagedara was born to revive authentic Ayurvedic remedies. We combine ethical forest harvesting with slow-fire earthen decoction methods to extract the unadulterated healing essence of nature.';
+
+  const missionContent =
+    config?.aboutMissionContent ??
+    'We believe in the timeless balance of mind, body, and spirit. Our sacred mission is to restore cellular vitality and holistic longevity by delivering purest, non-commercialized Ceylon Ayurvedic elixirs crafted with unwavering reverence for nature.';
+
+  const defaultValues = [
+    {
+      title: 'Ancestral Ola Leaf Purity',
+      description:
+        'Every formula adheres strictly to classical texts and ancestral decoction techniques without synthetic dilution.',
+    },
+    {
+      title: 'Ethical Forest Sanctuaries',
+      description:
+        'We sustainably wild-harvest herbs from certified organic Ceylon forest reserves, honoring the natural regeneration cycles of the earth.',
+    },
+    {
+      title: 'Tridosha Equilibrium',
+      description:
+        'Our remedies are carefully crafted to balance Vata, Pitta, and Kapha bio-energies for deep, holistic restoration.',
+    },
+    {
+      title: 'Sacred Sustainability',
+      description:
+        'From earthen brewing vessels to zero-waste glass bottling, every touchpoint reflects our deep reverence for mother earth.',
+    },
+  ];
+
+  const values = config?.aboutValues?.length
+    ? config.aboutValues
+    : defaultValues;
 
   return (
     <StaticPageShell
@@ -50,69 +92,31 @@ export async function AboutPageContent({ tenantSlug }: AboutPageContentProps) {
     >
       <div className="space-y-0">
         <AboutStorySection
-          title={config?.aboutStoryTitle ?? ''}
-          content={config?.aboutStoryContent ?? ''}
+          title={config?.aboutStoryTitle ?? 'Our Story'}
+          content={storyContent}
           imageUrl={config?.aboutStoryImageUrl ?? ''}
-          imagePosition="right"
+          imagePosition="left"
         />
 
-        <div className="my-4 flex justify-center">
-          <div className="w-16 h-px bg-[var(--site-accent,#b4946e)]" />
-        </div>
-
         <AboutMissionSection
-          title={config?.aboutMissionTitle ?? ''}
-          content={config?.aboutMissionContent ?? ''}
+          title={config?.aboutMissionTitle ?? 'Our Mission'}
+          content={missionContent}
         />
 
         <AboutValuesSection
-          title={config?.aboutValuesSectionTitle ?? ''}
-          values={config?.aboutValues ?? []}
+          title={config?.aboutValuesSectionTitle ?? 'Our Values'}
+          values={values}
         />
 
-        {(!config?.aboutValues || config.aboutValues.length === 0) && !config?.aboutMissionContent && !config?.aboutStoryContent && (
-          <AboutValuesSection
-            title="What We Stand For"
-            values={[
-              {
-                title: 'Quality First',
-                description: 'Every product meets our uncompromising standards for purity and excellence.',
-              },
-              {
-                title: 'Customer Commitment',
-                description: 'Your satisfaction is at the heart of everything we do.',
-              },
-              {
-                title: 'Authenticity',
-                description: 'We stay true to our values, our heritage, and our promises.',
-              },
-            ]}
-          />
-        )}
-
-        {socialEntries.length > 0 && (
-          <section className="py-12">
-            <h2
-              className="text-2xl font-medium mb-6 text-center text-[var(--site-primary,#0a0a0a)]"
-              style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-            >
-              Connect With Us
-            </h2>
-            <div className="flex flex-wrap justify-center gap-3">
-              {socialEntries.map(([key, value]) => (
-                <a
-                  key={key}
-                  href={value as string}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-5 py-2.5 text-sm text-gray-600 hover:border-[var(--site-accent,#b4946e)] hover:text-[var(--site-primary,#0a0a0a)] transition-all duration-300 capitalize bg-white hover:shadow-sm"
-                >
-                  {key}
-                </a>
-              ))}
-            </div>
-          </section>
-        )}
+        <ConnectWithUsSection
+          title="Connect With Us"
+          phoneLabel={config?.aboutPhoneLabel ?? 'Call Us'}
+          phoneNumber={config?.aboutPhoneNumber ?? ''}
+          socialEntries={socialEntries.map(([key, value]) => ({
+            key,
+            value: value as string,
+          }))}
+        />
       </div>
     </StaticPageShell>
   );

@@ -57,20 +57,40 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
   const freeBaseWeightKg = new Decimal(card.freeBaseWeightKg.toString());
 
   if (input.destinationCityId || input.destinationDistrictId) {
-    const override = await prisma.rateCardEntry.findFirst({
-      where: {
-        tenantId: input.tenantId,
-        rateCardId: card.id,
-        OR: [
-          ...(input.destinationCityId ? [{ destinationCityId: input.destinationCityId }] : []),
-          ...(input.destinationDistrictId
-            ? [{ destinationCityId: null, destinationDistrictId: input.destinationDistrictId }]
-            : []),
-          { destinationCityId: null, destinationDistrictId: null },
-        ],
-      },
-      orderBy: [{ destinationCityId: 'desc' }, { destinationDistrictId: 'desc' }],
-    });
+    // M25-01 (BUG-62): resolve precedence EXPLICITLY rather than relying on a
+    // single findFirst with `orderBy: [{destinationCityId:'desc'}, ...]`.
+    // Postgres puts NULLs FIRST for DESC, so a district-only row (city=null)
+    // always sorted ahead of the exact city match and city rates never applied.
+    // Three deterministic lookups encode the documented precedence:
+    //   1) exact city (+ district when supplied)  2) district-only  3) card default
+    const override =
+      (input.destinationCityId
+        ? await prisma.rateCardEntry.findFirst({
+            where: {
+              tenantId: input.tenantId,
+              rateCardId: card.id,
+              destinationCityId: input.destinationCityId,
+            },
+          })
+        : null) ??
+      (input.destinationDistrictId
+        ? await prisma.rateCardEntry.findFirst({
+            where: {
+              tenantId: input.tenantId,
+              rateCardId: card.id,
+              destinationCityId: null,
+              destinationDistrictId: input.destinationDistrictId,
+            },
+          })
+        : null) ??
+      (await prisma.rateCardEntry.findFirst({
+        where: {
+          tenantId: input.tenantId,
+          rateCardId: card.id,
+          destinationCityId: null,
+          destinationDistrictId: null,
+        },
+      }));
 
     if (override) {
       if (override.baseRate !== null && override.baseRate !== undefined) {

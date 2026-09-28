@@ -54,12 +54,16 @@ export async function exportToCSV(
 
 // ── Excel Export (HTML table → .xls) ───────────────────────────
 
-export async function exportToExcel(
-  rows: ReportRow[],
-  columns: ReportColumn[],
+/**
+ * M34-02 (BUG-77): the pure HTML builder, split out of `exportToExcel` so the
+ * escaping of the sheet name, headers and cells is directly unit-testable
+ * without a DOM. Every interpolated value goes through `escapeHTML`.
+ */
+export function buildXlsxHtml(
   sheetName: string,
-  filename: string,
-): Promise<void> {
+  columns: ReportColumn[],
+  rows: ReportRow[],
+): string {
   const thCells = columns
     .map(
       (c) =>
@@ -80,7 +84,7 @@ export async function exportToExcel(
     })
     .join("");
 
-  const html = `
+  return `
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
 <head><meta charset="utf-8">
 <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
@@ -90,6 +94,15 @@ export async function exportToExcel(
 </head>
 <body><table border="1"><thead><tr>${thCells}</tr></thead><tbody>${bodyRows}</tbody></table></body>
 </html>`.trim();
+}
+
+export async function exportToExcel(
+  rows: ReportRow[],
+  columns: ReportColumn[],
+  sheetName: string,
+  filename: string,
+): Promise<void> {
+  const html = buildXlsxHtml(sheetName, columns, rows);
 
   const blob = new Blob([html], { type: "application/vnd.ms-excel" });
   triggerDownload(blob, filename.endsWith(".xls") ? filename : `${filename}.xls`);
@@ -97,13 +110,18 @@ export async function exportToExcel(
 
 // ── PDF Export (printable HTML page) ───────────────────────────
 
-export async function exportToPDF(
+/**
+ * M34-02 (BUG-77): the pure printable-HTML builder, split out of `exportToPDF`
+ * so the title/dateRange/header/cell escaping is directly unit-testable. This is
+ * the path M34-02 flags as the real sink — `generateReportFile` renders saved
+ * reports server-side, so an unescaped saved-report name would land in HTML.
+ */
+export function buildPrintHtml(
   reportTitle: string,
   dateRange: string,
-  rows: ReportRow[],
   columns: ReportColumn[],
-  filename: string,
-): Promise<void> {
+  rows: ReportRow[],
+): string {
   const thCells = columns
     .map(
       (c) =>
@@ -126,8 +144,8 @@ export async function exportToPDF(
 
   const timestamp = formatTimestamp();
 
-  const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>${escapeHTML(filename)}</title>
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${escapeHTML(reportTitle)}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', system-ui, sans-serif; color: #3b2f2f; padding: 32px; }
@@ -147,6 +165,15 @@ export async function exportToPDF(
 <div class="footer">Generated: ${escapeHTML(timestamp)}</div>
 <script>window.onload=function(){window.print();}</script>
 </body></html>`;
+}
+export async function exportToPDF(
+  reportTitle: string,
+  dateRange: string,
+  rows: ReportRow[],
+  columns: ReportColumn[],
+  filename: string,
+): Promise<void> {
+  const html = buildPrintHtml(reportTitle, dateRange, columns, rows);
 
   const w = window.open("", "_blank");
   if (w) {
@@ -155,9 +182,10 @@ export async function exportToPDF(
   }
 }
 
-// ── HTML escaping ──────────────────────────────────────────────
+// ── HTML escaping ───────────────────────────────────────────
 
-function escapeHTML(str: string): string {
+/** M34-02 (BUG-77): exported so the XSS-sink audit can assert it directly. */
+export function escapeHTML(str: string): string {
   return str
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

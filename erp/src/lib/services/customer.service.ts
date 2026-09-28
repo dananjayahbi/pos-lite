@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import Decimal from 'decimal.js';
 import type { TxClient } from '@/lib/services/inventory.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { ApiError } from '@/lib/api/errors';
 
 // ── Private Helpers ──────────────────────────────────────────────────────────
 
@@ -15,6 +16,18 @@ async function assertCustomerBelongsToTenant(tenantId: string, customerId: strin
   return customer;
 }
 
+/**
+ * M05-02 (BUG-26/29) — normalize a birthday input to a valid Date, or
+ * undefined when absent/empty/unparseable. The validator already rejects
+ * garbage at the boundary; this guard keeps '' or Invalid Date out of Prisma
+ * for every caller (POST, PATCH, and direct service use).
+ */
+function toValidDate(value: string | Date | undefined): Date | undefined {
+  if (value === undefined || value === '') return undefined;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
 // ── Create ───────────────────────────────────────────────────────────────────
 
 interface CreateCustomerData {
@@ -22,27 +35,42 @@ interface CreateCustomerData {
   phone: string;
   email?: string | undefined;
   gender?: 'MALE' | 'FEMALE' | 'OTHER' | undefined;
-  birthday?: string | undefined;
+  /** Raw string or validator-parsed Date; guarded via `toValidDate`. */
+  birthday?: string | Date | undefined;
   tags?: string[] | undefined;
   notes?: string | undefined;
 }
 
 export async function createCustomer(tenantId: string, data: CreateCustomerData) {
+  // M05-03 (BUG-27 / D4 policy): the phone is RESERVED per tenant while any
+  // row carries it — live or soft-deleted — because @@unique([tenantId, phone])
+  // keeps archived rows holding the phone. This deletedAt-agnostic pre-check
+  // surfaces the friendly 409 on the sequential path (customer self-service
+  // restore is deferred to XC-05); the DB unique + mapPrismaError stays the
+  // concurrency guarantee — a race loser gets P2002 → 409, never a 500.
   const existing = await prisma.customer.findFirst({
-    where: { tenantId, phone: data.phone, deletedAt: null },
+    where: { tenantId, phone: data.phone },
+    select: { id: true, deletedAt: true },
   });
   if (existing) {
-    throw new Error('A customer with this phone number already exists');
+    throw ApiError.conflict(
+      existing.deletedAt
+        ? 'A customer with this phone number already exists (an archived record uses this phone)'
+        : 'A customer with this phone number already exists',
+    );
   }
+
+  // M05-02: only pass birthday when it resolves to a valid Date.
+  const birthday = toValidDate(data.birthday);
 
   return prisma.customer.create({
     data: {
       tenantId,
       name: data.name,
       phone: data.phone,
-      ...(data.email !== undefined && { email: data.email }),
+      ...(data.email !== undefined && data.email !== '' && { email: data.email }),
       ...(data.gender !== undefined && { gender: data.gender }),
-      ...(data.birthday !== undefined && { birthday: new Date(data.birthday) }),
+      ...(birthday !== undefined && { birthday }),
       ...(data.tags !== undefined && { tags: data.tags }),
       ...(data.notes !== undefined && { notes: data.notes }),
     },
@@ -56,7 +84,8 @@ interface UpdateCustomerData {
   phone?: string | undefined;
   email?: string | undefined;
   gender?: 'MALE' | 'FEMALE' | 'OTHER' | undefined;
-  birthday?: string | undefined;
+  /** Raw string or validator-parsed Date; guarded via `toValidDate`. */
+  birthday?: string | Date | undefined;
   tags?: string[] | undefined;
   notes?: string | undefined;
 }
@@ -82,14 +111,17 @@ export async function updateCustomer(
     }
   }
 
+  // M05-02: only pass birthday when it resolves to a valid Date (PATCH path).
+  const birthday = toValidDate(data.birthday);
+
   return prisma.customer.update({
     where: { id: customerId },
     data: {
       ...(data.name !== undefined && { name: data.name }),
       ...(data.phone !== undefined && { phone: data.phone }),
-      ...(data.email !== undefined && { email: data.email }),
+      ...(data.email !== undefined && data.email !== '' && { email: data.email }),
       ...(data.gender !== undefined && { gender: data.gender }),
-      ...(data.birthday !== undefined && { birthday: new Date(data.birthday) }),
+      ...(birthday !== undefined && { birthday }),
       ...(data.tags !== undefined && { tags: data.tags }),
       ...(data.notes !== undefined && { notes: data.notes }),
     },

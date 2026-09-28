@@ -47,7 +47,9 @@ const TIMEZONES = [
   'Pacific/Auckland',
 ];
 
-const CURRENCIES = ['LKR', 'USD', 'GBP', 'EUR', 'INR', 'AUD', 'SGD'];
+// The currency is always LKR for this on-premises deployment. It is locked here
+// so a new tenant can only be created with LKR as its currency.
+const LOCKED_CURRENCY = 'LKR';
 
 const STEPS = ['Store Details', 'Plan Selection', 'Review & Confirm'] as const;
 
@@ -351,26 +353,13 @@ function StepStoreDetails({
           </div>
 
           {/* Currency */}
+
           <div className="space-y-1">
             <label className="text-espresso text-sm font-medium">Currency</label>
-            <Select
-              defaultValue={defaultValues.currency}
-              onValueChange={(v) => setValue('currency', v, { shouldValidate: true })}
-            >
-              <SelectTrigger className="border-sand">
-                <SelectValue placeholder="Select currency" />
-              </SelectTrigger>
-              <SelectContent>
-                {CURRENCIES.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.currency && (
-              <p className="text-terracotta text-sm">{errors.currency.message}</p>
-            )}
+            <div className="flex h-10 items-center justify-between rounded-md border border-sand bg-linen/50 px-3 text-sm">
+              <span className="font-medium text-espresso">{LOCKED_CURRENCY}</span>
+              <span className="text-xs text-espresso/50">Locked · LKR</span>
+            </div>
           </div>
 
           <div className="flex justify-end">

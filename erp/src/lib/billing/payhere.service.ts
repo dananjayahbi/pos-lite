@@ -3,27 +3,26 @@ import "server-only";
 import { type Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getBaseUrl } from "@/lib/utils/url";
+import {
+  getPayhereCheckoutUrl,
+  getPayhereRestBaseUrl,
+} from "@/lib/payments/payhere-config";
+import { computeCheckoutHash, formatPayhereAmount } from "@/lib/payments/payhere-crypto";
+import { getPayhereMerchantId } from "@/lib/payments/payhere-config";
 import Decimal from "decimal.js";
 
 // ─── PayHere Portal Configuration ───────────────────────────────────────────
 // Dashboard: https://www.payhere.lk/merchant/
 // Sandbox:   https://sandbox.payhere.lk/merchant/
-// Required env vars:
-//   PAYHERE_MERCHANT_ID   — Merchant ID from PayHere dashboard
-//   PAYHERE_MERCHANT_SECRET — Used for MD5 signature verification
-//   PAYHERE_SANDBOX        — "true" to use sandbox endpoints
-//   AUTH_URL / NEXTAUTH_URL / VERCEL_URL — Base URL for return/cancel/notify URLs
+//
+// Hosts, credentials and the sandbox/live switch live in
+// `src/lib/payments/payhere-config.ts` — this module re-exports the two URLs the
+// billing UI needs so existing imports keep working.
 // ────────────────────────────────────────────────────────────────────────────
 
-export const PAYHERE_PAYMENT_URL =
-  process.env.PAYHERE_SANDBOX === "true"
-    ? "https://sandbox.payhere.lk/pay/checkout"
-    : "https://www.payhere.lk/pay/checkout";
+export const PAYHERE_PAYMENT_URL = getPayhereCheckoutUrl();
 
-export const PAYHERE_RECURRING_URL =
-  process.env.PAYHERE_SANDBOX === "true"
-    ? "https://sandbox.payhere.lk/merchant/v1/recurring/charge"
-    : "https://www.payhere.lk/merchant/v1/recurring/charge";
+export const PAYHERE_RECURRING_URL = `${getPayhereRestBaseUrl()}/recurring/charge`;
 
 export function buildPayhereCheckoutPayload(
   invoice: { id: string; amount: Decimal | { toString(): string } },
@@ -31,17 +30,19 @@ export function buildPayhereCheckoutPayload(
   tenant: { id: string; slug: string; name: string },
   ownerUser: { email: string },
 ): Record<string, string> {
-  const amount = new Decimal(invoice.amount.toString()).toFixed(2);
+  const amount = formatPayhereAmount(new Decimal(invoice.amount.toString()).toFixed(2));
   const baseUrl = getBaseUrl();
+  const merchantId = getPayhereMerchantId() ?? "";
+  const currency = "LKR";
 
   return {
-    merchant_id: process.env.PAYHERE_MERCHANT_ID || "",
+    merchant_id: merchantId,
     return_url: `${baseUrl}/${tenant.slug}/billing?status=success`,
     cancel_url: `${baseUrl}/${tenant.slug}/billing?status=cancelled`,
     notify_url: `${baseUrl}/api/webhooks/payhere`,
     order_id: invoice.id,
     items: `AyurPOS ${subscription.plan.name} Plan — Subscription`,
-    currency: "LKR",
+    currency,
     amount,
     first_name: ownerUser.email.split("@")[0] ?? "",
     last_name: "Owner",
@@ -52,6 +53,14 @@ export function buildPayhereCheckoutPayload(
     country: "Sri Lanka",
     custom_1: tenant.id,
     custom_2: subscription.id,
+    // Required by PayHere since 2023-01-16; computed server-side so the
+    // merchant secret never reaches the browser.
+    hash: computeCheckoutHash(process.env.PAYHERE_MERCHANT_SECRET ?? "", {
+      merchantId,
+      orderId: invoice.id,
+      amount,
+      currency,
+    }),
   };
 }
 

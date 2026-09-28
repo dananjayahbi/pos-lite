@@ -1,7 +1,9 @@
 import { prisma } from '@/lib/prisma';
 import Decimal from 'decimal.js';
 import { POStatus, StockMovementReason } from '@/generated/prisma/client';
-import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
+import type { Prisma } from '@/generated/prisma/client';
+import { adjustStockInTx } from '@/lib/services/inventory.service';
+import { lockForUpdate } from '@/lib/api/race-guard';
 // ── Private Helpers ──────────────────────────────────────────────────────────
 
 function buildVariantDescription(variant: {
@@ -242,13 +244,30 @@ interface ReceivePOLinesInput {
   receivedLines: ReceiveLineInput[];
 }
 
+/**
+ * M16-01 (BUG-48) — receive goods against a PO with an exactly-once contract.
+ *
+ * The check-then-write over-receipt guard used to read `line.receivedQty` from
+ * the transaction's snapshot; two concurrent full receipts could both read `0`
+ * and both report success (final quantity was correct, but one caller got a
+ * success it could not distinguish from the committed one).
+ *
+ * Fix shape (XC-06 read-modify-write family): lock every requested
+ * `PurchaseOrderLine` row with `SELECT ... FOR UPDATE` (sorted by id — stable
+ * order, no deadlock) BEFORE the pre-check, then re-read the committed
+ * `receivedQty`. The second receipt blocks, re-reads the committed value and,
+ * if it now breaches `orderedQty`, fails with the typed `OVER_RECEIPT`
+ * sentinel → 409 (the request in itself was valid, the row simply moved).
+ * A static payload that already breaches `orderedQty` keeps its long-standing
+ * `would exceed ordered qty` prose → 400.
+ */
 export async function receivePOLines(
   tenantId: string,
   poId: string,
   input: ReceivePOLinesInput,
   actorId: string,
 ) {
-  return prisma.$transaction(async (tx: TxClient) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const po = await tx.purchaseOrder.findFirst({
       where: { id: poId, tenantId },
       include: { lines: true },
@@ -258,16 +277,67 @@ export async function receivePOLines(
       throw new Error('Purchase order not found');
     }
 
-    if (po.status === POStatus.CANCELLED || po.status === POStatus.RECEIVED) {
-      throw new Error(`Cannot receive goods for a ${po.status} purchase order`);
-    }
-
     const lineMap = new Map(po.lines.map((l) => [l.id, l]));
     const costPricesChanged: Array<{
       variantId: string;
       oldCostPrice: string;
       newCostPrice: string;
     }> = [];
+
+    // ─ M16-01 (BUG-48): serialize concurrent receipts of the same lines.
+    // Lock every requested row with SELECT ... FOR UPDATE (sorted by id — a
+    // stable order, so two overlapping multi-line receipts can never deadlock)
+    // and then re-read the *committed* quantities. The old code compared
+    // against the transaction-start snapshot, which let two concurrent full
+    // receipts both read 0 and both report success. Only ids that actually
+    // belong to this PO are locked, so a hostile payload cannot lock foreign
+    // rows; unknown ids still fail the per-line check below.
+    const requestedLineIds = Array.from(
+      new Set(input.receivedLines.map((l) => l.lineId)),
+    )
+      .filter((lineId) => lineMap.has(lineId))
+      .sort();
+    for (const lineId of requestedLineIds) {
+      await lockForUpdate(tx, 'purchase_order_lines', '"id" = $1', [lineId]);
+    }
+    const committedReceivedQty = new Map<string, number>();
+    if (requestedLineIds.length > 0) {
+      const lockedLines = await tx.purchaseOrderLine.findMany({
+        where: { id: { in: requestedLineIds } },
+        select: { id: true, receivedQty: true },
+      });
+      for (const locked of lockedLines) {
+        committedReceivedQty.set(locked.id, locked.receivedQty);
+      }
+    }
+    /** Post-lock quantity: the committed value when the row exists, else the snapshot. */
+    const alreadyReceivedOf = (lineId: string): number =>
+      committedReceivedQty.get(lineId) ?? lineMap.get(lineId)?.receivedQty ?? 0;
+
+    if (po.status === POStatus.CANCELLED) {
+      throw new Error(`Cannot receive goods for a ${po.status} purchase order`);
+    }
+
+    if (po.status === POStatus.RECEIVED) {
+      // A concurrent receipt already closed this PO (its commit landed before
+      // this transaction's first read). When the payload adds nothing new —
+      // every requested line is already at/over its ordered qty — this is a
+      // duplicate replay of the same receipt, so it gets the typed 409 rather
+      // than the workflow-boundary 400.
+      const isDuplicateReplay =
+        input.receivedLines.length > 0 &&
+        input.receivedLines.every((received) => {
+          const line = lineMap.get(received.lineId);
+          if (!line) return false;
+          return alreadyReceivedOf(line.id) + received.receivedQty > line.orderedQty;
+        });
+      if (isDuplicateReplay) {
+        throw new Error(
+          `OVER_RECEIPT: purchase order ${poId} was already fully received by another receipt`,
+        );
+      }
+      throw new Error(`Cannot receive goods for a ${po.status} purchase order`);
+    }
 
     for (const received of input.receivedLines) {
       const line = lineMap.get(received.lineId);
@@ -279,10 +349,20 @@ export async function receivePOLines(
         throw new Error('Received quantity must be greater than 0');
       }
 
-      const totalReceived = line.receivedQty + received.receivedQty;
+      // The locked re-read is authoritative; `line.receivedQty` is only the
+      // transaction-start snapshot (kept for the 400 prose branch below).
+      const alreadyReceived = alreadyReceivedOf(line.id);
+      const totalReceived = alreadyReceived + received.receivedQty;
       if (totalReceived > line.orderedQty) {
+        if (alreadyReceived !== line.receivedQty) {
+          // Another receipt committed while this one waited on the row lock —
+          // this caller lost the race. Typed sentinel → 409 (INF-02).
+          throw new Error(
+            `OVER_RECEIPT: line ${line.id} would exceed ordered qty (${line.orderedQty}, already received ${alreadyReceived})`,
+          );
+        }
         throw new Error(
-          `Cannot receive ${received.receivedQty} for line ${received.lineId}: would exceed ordered qty (${line.orderedQty}, already received ${line.receivedQty})`,
+          `Cannot receive ${received.receivedQty} for line ${received.lineId}: would exceed ordered qty (${line.orderedQty}, already received ${alreadyReceived})`,
         );
       }
 

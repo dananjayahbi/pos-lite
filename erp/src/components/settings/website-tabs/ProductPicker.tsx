@@ -97,7 +97,39 @@ export function ProductPicker({ selectedIds, onChange, max = 7 }: ProductPickerP
 
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
-  // When selected IDs change from outside, merge with local cache
+  // Fetch any selected IDs that aren't yet in the local cache so the selected
+  // chips hydrate correctly (e.g. IDs persisted in config at load time).
+  useEffect(() => {
+    const missingIds = selectedIds.filter((id) => !selectedProducts.some((p) => p.id === id));
+    if (missingIds.length === 0) return;
+
+    let cancelled = false;
+
+    async function hydrateSelected() {
+      try {
+        const params = new URLSearchParams({ ids: missingIds.join(','), limit: '50' });
+        const res = await fetch(`/api/store/website/products?${params.toString()}`);
+        if (!res.ok) throw new Error('Failed to fetch selected products');
+        const json = await res.json();
+        if (!cancelled) {
+          const fetched = (json.data?.products as ProductOption[]) ?? [];
+          setSelectedProducts((prev) => {
+            const existing = new Set(prev.map((p) => p.id));
+            return [...prev, ...fetched.filter((p) => !existing.has(p.id))];
+          });
+        }
+      } catch {
+        // Silently fall back — the search dropdown will still surface products.
+      }
+    }
+
+    hydrateSelected();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedIds, selectedProducts]);
+
+  // When selected IDs change from outside, prune removed entries from cache.
   useEffect(() => {
     setSelectedProducts((prev) =>
       prev.filter((p) => selectedIdSet.has(p.id)),

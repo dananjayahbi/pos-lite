@@ -71,18 +71,68 @@ export async function POST(
 
     // For card orders, build the PayHere redirect payload so the storefront
     // can submit the customer to the gateway. COD orders need no payload.
+    //
+    // The customer's real contact details go to the gateway (PayHere validates
+    // the email/phone, and HelaPay fails without valid ones); the delivery's
+    // own address and line items price and itemise the payment.
     let payment: { payhereUrl: string; payload: Record<string, string> } | undefined;
     if (parsed.data.paymentMethod === 'CARD') {
       const order = await prisma.delivery.findUnique({
         where: { id: result.deliveryId },
-        select: { id: true, codAmount: true, orderRef: true },
+        select: {
+          id: true,
+          codAmount: true,
+          shippingFee: true,
+          orderRef: true,
+          tenantId: true,
+          itemCount: true,
+          address: {
+            select: {
+              fullName: true,
+              phone: true,
+              phone2: true,
+              email: true,
+              addressLine1: true,
+              addressLine2: true,
+              cityName: true,
+            },
+          },
+          lines: {
+            select: {
+              productNameSnapshot: true,
+              skuSnapshot: true,
+              quantity: true,
+              unitPrice: true,
+            },
+          },
+        },
       });
+
       if (order) {
-        payment = buildOrderPayherePayload(order, {
-          id: tenant.id,
-          slug: tenantSlug,
-          name: tenant.name,
-        });
+        const addressLine = [order.address?.addressLine1, order.address?.addressLine2]
+          .filter(Boolean)
+          .join(', ');
+        const built = buildOrderPayherePayload(
+          order,
+          { id: tenant.id, slug: tenantSlug, name: tenant.name },
+          {
+            fullName: order.address?.fullName ?? parsed.data.fullName,
+            email: order.address?.email ?? parsed.data.email ?? '',
+            phone: order.address?.phone ?? parsed.data.phone,
+            address: addressLine || parsed.data.addressLine1,
+            city: order.address?.cityName ?? parsed.data.cityName,
+          },
+        );
+
+        // A null payload means the gateway is not configured. Fall back to COD
+        // rather than sending the customer to a page that cannot complete.
+        if (built) {
+          payment = built;
+        } else {
+          console.warn(
+            '[POST /api/public/site/[tenantSlug]/orders] CARD requested but PayHere is not configured — order left unpaid',
+          );
+        }
       }
     }
 
@@ -102,6 +152,11 @@ export async function POST(
     );
   } catch (error) {
     console.error('POST /api/public/site/[tenantSlug]/orders error:', error);
+    // M28-01: a line that could not be reserved is a typed 409, not a 500.
+    const message = error instanceof Error ? error.message : '';
+    if (message === 'OUT_OF_STOCK') {
+      return errorWithCors(request, 409, 'One or more items are out of stock');
+    }
     return errorWithCors(request, 500, 'An unexpected error occurred');
   }
 }

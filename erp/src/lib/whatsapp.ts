@@ -1,6 +1,11 @@
 // WhatsApp Business messaging via Meta Cloud API v18.0.
 // Server-side only — references process.env.
 
+import {
+  WHATSAPP_NOT_CONFIGURED,
+  warnProviderNotConfigured,
+} from '@/lib/notifications/provider-status';
+
 export interface WhatsAppReceiptPayload {
   storeName: string;
   saleReference: string;
@@ -106,10 +111,21 @@ export async function sendWhatsAppReceiptMessage(
   }
 }
 
+/**
+ * Structured WhatsApp send outcome (M31-01): `code` lets a caller distinguish
+ * "provider not configured" from "provider rejected the send" without parsing
+ * the human-readable `error` string.
+ */
+export interface WhatsAppSendResult {
+  success: boolean;
+  error?: string;
+  code?: string;
+}
+
 export async function sendWhatsAppTextMessage(
   phoneNumber: string,
   message: string,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<WhatsAppSendResult> {
   let formattedPhone: string;
   try {
     formattedPhone = formatPhoneNumber(phoneNumber);
@@ -124,9 +140,14 @@ export async function sendWhatsAppTextMessage(
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
 
   if (!phoneNumberId || !accessToken) {
+    // M31-01 (BUG-73): a missing-credential deployment used to look healthy
+    // while every send failed. Warn loudly (throttled) and answer with a code
+    // the caller can surface instead of a generic failure string.
+    warnProviderNotConfigured('whatsapp');
     return {
       success: false,
       error: 'WhatsApp is not configured. Missing environment variables.',
+      code: WHATSAPP_NOT_CONFIGURED,
     };
   }
 

@@ -4,10 +4,10 @@
  */
 
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { tenantHomePath } from '@/lib/tenant';
 import { getTenantInfo } from '@/lib/api/website';
+import { isCardPaymentAvailable } from '@/lib/api/payhereAvailability';
 import { CheckoutForm } from '@/components/website/checkout/CheckoutForm';
+import { StoreHeader } from '@/components/website/common/StoreHeader';
 
 interface CheckoutPageProps {
   params: Promise<{ tenantSlug: string }>;
@@ -18,36 +18,25 @@ export const dynamic = 'force-dynamic';
 
 export default async function CheckoutPage({ params }: CheckoutPageProps) {
   const { tenantSlug } = await params;
-  const tenant = await getTenantInfo(tenantSlug).catch(() => null);
+  const [tenant, cardAvailable] = await Promise.all([
+    getTenantInfo(tenantSlug).catch(() => null),
+    // The card option is only offered when the ERP reports it can complete a
+    // payment — otherwise the customer is sent to a gateway that will fail.
+    isCardPaymentAvailable(),
+  ]);
 
   return (
-    <div className="min-h-screen bg-white">
-      <header className="border-b border-gray-100">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 py-3">
-          <Link
-            href={tenantHomePath(tenantSlug)}
-            className="text-lg font-medium"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-          >
-            {tenant?.name ?? 'Store'}
-          </Link>
-          <Link
-            href={tenantHomePath(tenantSlug)}
-            className="text-sm text-gray-500 hover:text-black transition-colors"
-          >
-            ← Back to store
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#051610] text-[#cbd5e1]">
+      <StoreHeader tenantSlug={tenantSlug} storeName={tenant?.name} />
 
       <main className="mx-auto max-w-7xl px-4 py-8">
         <h1
-          className="mb-6 text-2xl font-medium"
-          style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+          className="mb-6 text-2xl font-medium text-white"
+          style={{ fontFamily: 'var(--font-serif), serif' }}
         >
           Checkout
         </h1>
-        <CheckoutForm tenantSlug={tenantSlug} />
+        <CheckoutForm tenantSlug={tenantSlug} cardPaymentAvailable={cardAvailable} />
       </main>
     </div>
   );

@@ -4,6 +4,8 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { compileCustomerContactExport } from '@/lib/services/customer-contact-export.service';
 import type { ContactExportScope } from '@/lib/services/customer-contact-export-core';
+import { parseQueryInt } from '@/lib/api/query-params';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 /**
  * Ad-hoc Customer Contact Export (doc 18).
@@ -44,9 +46,8 @@ export async function GET(request: NextRequest) {
       rawScope === 'ALL' || rawScope === 'ACTIVE' || rawScope === 'NEW' || rawScope === 'REPEAT'
         ? rawScope
         : undefined;
-    const activeDays = searchParams.get('activeDays')
-      ? Number(searchParams.get('activeDays'))
-      : undefined;
+    // XC-01: malformed activeDays now 400 (was unclamped Number()).
+    const activeDays = parseQueryInt(searchParams, 'activeDays', { min: 1 });
 
     const compiled = await compileCustomerContactExport({
       tenantId,
@@ -75,10 +76,8 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('GET /api/store/customers/contact-export error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to export contacts' } },
-      { status: 500 },
-    );
+    // XC-01/INF-02: parser ApiErrors surface as their 400; unknown
+    // errors are logged and returned as a generic, leak-free 500.
+    return toErrorResponse(error, 'GET /api/store/customers/contact-export');
   }
 }

@@ -9,6 +9,8 @@ import {
 } from '@/lib/services/rawMaterial.service';
 import { CreateRawMaterialSchema } from '@/lib/validators/rawMaterial.validators';
 import { RAW_MATERIAL_CATEGORIES } from '@/lib/services/rawMaterial.core';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { parseQueryInt } from '@/lib/api/query-params';
 
 export async function GET(request: NextRequest) {
   try {
@@ -37,8 +39,9 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') ?? undefined;
     const categoryRaw = searchParams.get('category') ?? undefined;
     const stockStatus = searchParams.get('stockStatus') ?? undefined;
-    const page = Math.max(1, Number(searchParams.get('page') ?? '1'));
-    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') ?? '25')));
+    // XC-01: Math.max(1,Number('abc')) is NaN — malformed page/limit now 400.
+    const page = parseQueryInt(searchParams, 'page', { default: 1, min: 1 }) ?? 1;
+    const limit = parseQueryInt(searchParams, 'limit', { default: 25, min: 1, max: 100 }) ?? 25;
 
     const filters: ListRawMaterialsFilters = { search, page, limit };
     if (
@@ -60,11 +63,9 @@ export async function GET(request: NextRequest) {
       meta: { page, limit, total: result.total, totalPages },
     });
   } catch (error) {
-    console.error('GET /api/store/raw-materials error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // XC-01/INF-02: parser ApiErrors surface as their 400; unknown
+    // errors are logged and returned as a generic, leak-free 500.
+    return toErrorResponse(error, 'GET /api/store/raw-materials');
   }
 }
 
@@ -107,10 +108,8 @@ export async function POST(request: Request) {
     const material = await createRawMaterial(tenantId, session.user.id, parsed.data);
     return NextResponse.json({ success: true, data: material }, { status: 201 });
   } catch (error) {
-    console.error('POST /api/store/raw-materials error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // XC-01/INF-02: parser ApiErrors surface as their 400; unknown
+    // errors are logged and returned as a generic, leak-free 500.
+    return toErrorResponse(error, 'POST /api/store/raw-materials');
   }
 }

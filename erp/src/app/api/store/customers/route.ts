@@ -5,6 +5,8 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getCustomers, createCustomer } from '@/lib/services/customer.service';
 import { CreateCustomerSchema } from '@/lib/validators/customer.validators';
 import type { CreateCustomerInput } from '@/lib/validators/customer.validators';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { parseQueryInt, parseQueryNumber, parseQueryBool } from '@/lib/api/query-params';
 
 export async function GET(request: Request) {
   try {
@@ -37,20 +39,20 @@ export async function GET(request: Request) {
     const result = await getCustomers(tenantId, {
       search: searchParams.get('search') ?? undefined,
       tag: searchParams.get('tag') ?? undefined,
-      spendMin: searchParams.get('spendMin') ? Number(searchParams.get('spendMin')) : undefined,
-      spendMax: searchParams.get('spendMax') ? Number(searchParams.get('spendMax')) : undefined,
-      repeatBuyers: searchParams.get('repeatBuyers') === 'true' ? true : undefined,
-      page: searchParams.get('page') ? Number(searchParams.get('page')) : undefined,
-      limit: searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined,
+      // XC-01: malformed numerics now 400 (BUG-28); out-of-range still clamps.
+      spendMin: parseQueryNumber(searchParams, 'spendMin', { min: 0 }),
+      spendMax: parseQueryNumber(searchParams, 'spendMax', { min: 0 }),
+      repeatBuyers: parseQueryBool(searchParams, 'repeatBuyers'),
+      page: parseQueryInt(searchParams, 'page', { min: 1, max: 1_000_000 }),
+      limit: parseQueryInt(searchParams, 'limit', { min: 1, max: 200 }),
     });
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
-    console.error('GET /api/store/customers error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // INF-02: one-line error mapping — Prisma P2002/P2025 and service
+    // sentinels become typed envelope responses; unknown errors are logged
+    // server-side and returned as a generic 500 with no internals.
+    return toErrorResponse(error, 'GET /api/store/customers');
   }
 }
 
@@ -98,19 +100,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: customer }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : '';
-
-    if (message.includes('already exists')) {
-      return NextResponse.json(
-        { success: false, error: { code: 'CONFLICT', message } },
-        { status: 409 },
-      );
-    }
-
-    console.error('POST /api/store/customers error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // INF-02: one-line error mapping — Prisma P2002/P2025 and service
+    // sentinels become typed envelope responses; unknown errors are logged
+    // server-side and returned as a generic 500 with no internals.
+    return toErrorResponse(error, 'POST /api/store/customers');
   }
 }

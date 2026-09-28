@@ -42,7 +42,12 @@ export function WalkInCustomerForm({ open, onOpenChange, onLinked }: WalkInCusto
     }
   }, [open]);
 
-  const canSubmit = name.trim().length > 0 && phone.trim().length >= 7 && !isSubmitting;
+  // M14-03 (req 2.2): mirror the server `zSriLankaPhone` contract client-side —
+  // strip separators, then require +94XXXXXXXXX or 0XXXXXXXXX. Blocks submit on
+  // a malformed number and shows an inline hint (the API still re-validates).
+  const normalizedPhone = phone.trim().replace(/[\s\-().]/g, '');
+  const phoneValid = /^(\+94\d{9}|0\d{9})$/.test(normalizedPhone);
+  const canSubmit = name.trim().length > 0 && phoneValid && !isSubmitting;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,6 +120,11 @@ export function WalkInCustomerForm({ open, onOpenChange, onLinked }: WalkInCusto
               className="mt-1.5 font-mono"
               disabled={isSubmitting}
             />
+            {phone.trim().length > 0 && !phoneValid && (
+              <p className="mt-1 font-body text-xs text-[#9B2226]">
+                Use +94XXXXXXXXX or 0XXXXXXXXX
+              </p>
+            )}
           </div>
 
           {error && (

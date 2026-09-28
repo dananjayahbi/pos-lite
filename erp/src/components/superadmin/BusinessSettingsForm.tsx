@@ -34,18 +34,17 @@ const TIMEZONES = [
   'Pacific/Auckland',
 ];
 
-const CURRENCIES = ['LKR', 'USD', 'GBP', 'EUR', 'INR', 'AUD', 'SGD'];
+// The currency is always LKR for this on-premises deployment. It is locked
+// here and on the API side so it cannot be changed from the superadmin panel.
+const LOCKED_CURRENCY = 'LKR';
 
 type BusinessSettingsValues = {
   storeName: string;
   logoUrl: string;
   address: string;
   phoneNumber: string;
-  receiptFooter: string;
   currency: string;
   timezone: string;
-  vatRate: number;
-  ssclRate: number;
 };
 
 type Props = {
@@ -55,7 +54,10 @@ type Props = {
 
 export default function BusinessSettingsForm({ tenantId, initialValues }: Props) {
   const router = useRouter();
-  const [values, setValues] = useState<BusinessSettingsValues>(initialValues);
+  const [values, setValues] = useState<BusinessSettingsValues>({
+    ...initialValues,
+    currency: LOCKED_CURRENCY,
+  });
   const [saving, setSaving] = useState(false);
 
   const update = useCallback(
@@ -74,7 +76,7 @@ export default function BusinessSettingsForm({ tenantId, initialValues }: Props)
       const res = await fetch(`/api/superadmin/tenants/${tenantId}/settings`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
+        body: JSON.stringify({ ...values, currency: LOCKED_CURRENCY }),
       });
 
       const json = (await res.json()) as {
@@ -152,27 +154,22 @@ export default function BusinessSettingsForm({ tenantId, initialValues }: Props)
 
       <Card className="border-mist">
         <CardHeader>
-          <CardTitle className="font-display text-espresso">Regional & Tax Settings</CardTitle>
+          <CardTitle className="font-display text-espresso">Regional Settings</CardTitle>
           <CardDescription>
-            Configure currency, timezone, and tax rates for this business.
+            Configure the currency and timezone for this business. Tax and
+            receipt settings are managed from the business dashboard.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Currency</Label>
-              <Select value={values.currency} onValueChange={(v) => update('currency', v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select currency" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CURRENCIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex h-10 items-center justify-between rounded-md border border-espresso/15 bg-linen/50 px-3 text-sm">
+                <span className="font-medium text-espresso">
+                  {LOCKED_CURRENCY}
+                </span>
+                <span className="text-xs text-espresso/50">Locked · LKR</span>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -190,55 +187,6 @@ export default function BusinessSettingsForm({ tenantId, initialValues }: Props)
                 </SelectContent>
               </Select>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="vatRate">VAT Rate (%)</Label>
-              <Input
-                id="vatRate"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                value={values.vatRate}
-                onChange={(e) => update('vatRate', parseFloat(e.target.value) || 0)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="ssclRate">SSCL Rate (%)</Label>
-              <Input
-                id="ssclRate"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                value={values.ssclRate}
-                onChange={(e) => update('ssclRate', parseFloat(e.target.value) || 0)}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-mist">
-        <CardHeader>
-          <CardTitle className="font-display text-espresso">Receipt Settings</CardTitle>
-          <CardDescription>
-            Customize the footer text printed on receipts.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <Label htmlFor="receiptFooter">Receipt Footer</Label>
-            <Textarea
-              id="receiptFooter"
-              value={values.receiptFooter}
-              onChange={(e) => update('receiptFooter', e.target.value)}
-              rows={4}
-              placeholder="Thank you for shopping with us!"
-            />
           </div>
         </CardContent>
       </Card>

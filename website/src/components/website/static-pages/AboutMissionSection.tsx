@@ -1,48 +1,32 @@
 'use client';
 
 import React from 'react';
+import { useRevealOnScroll } from '@/hooks/useRevealOnScroll';
 
 interface AboutMissionSectionProps {
   title?: string;
   content?: string;
 }
 
+/**
+ * "Our Mission" — centered italic pull-quote (reference: `#about-mission`).
+ * Frames the quote with a heading, hairline divider and large italic accent
+ * typography.
+ */
 export function AboutMissionSection({
   title,
   content,
 }: AboutMissionSectionProps) {
+  const ref = useRevealOnScroll<HTMLDivElement>();
+
   if (!content) return null;
 
   return (
-    <section className="py-12 md:py-16">
-      <div className="max-w-3xl mx-auto text-center">
-        {title && (
-          <h2
-            className="text-2xl md:text-3xl font-medium mb-6 text-[var(--site-primary,#0a0a0a)]"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-          >
-            {title}
-          </h2>
-        )}
-        <div className="relative">
-          {/* Decorative quote mark */}
-          <span
-            className="absolute -top-4 -left-2 text-6xl text-[var(--site-accent,#b4946e)] opacity-20 leading-none select-none"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-          >
-            &ldquo;
-          </span>
-          <div className="prose prose-gray max-w-none relative z-10">
-            {content.split('\n').map((paragraph, i) => (
-              <p
-                key={i}
-                className="text-sm md:text-lg leading-relaxed text-gray-600 mb-3 italic"
-              >
-                {paragraph}
-              </p>
-            ))}
-          </div>
-        </div>
+    <section className="relative w-full py-16 sm:py-24 lg:py-32 overflow-hidden border-t border-white/5 bg-[#051610]">
+      <div ref={ref} className="relative z-10 max-w-5xl mx-auto px-6 sm:px-10 lg:px-16 text-center">
+        {title && <h2 className="mission-title">{title}</h2>}
+        <div className="w-16 h-[2px] bg-[#97c93e]/60 mx-auto mb-8" />
+        <p className="mission-text">&ldquo;{content}&rdquo;</p>
       </div>
     </section>
   );

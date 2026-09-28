@@ -10,10 +10,14 @@
     "start": "next start -p 3003",
     "start:3003": "next start -p 3003",
     "lint": "eslint src/ --max-warnings=0",
+    "lint:query-params": "node scripts/check-query-params.mjs",
+    "lint:permission-guards": "node scripts/check-permission-guards.mjs",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:all-browsers": "cross-env QA_ALL_BROWSERS=1 playwright test",
     "postinstall": "prisma generate"
   },
   "lint-staged": {
@@ -45,6 +49,8 @@
     "clsx": "^2.1.1",
     "decimal.js": "^10.6.0",
     "idb": "^8.0.3",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^0.577.0",
     "next": "16.1.7",
     "next-auth": "5.0.0-beta.30",
@@ -67,6 +73,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^3.0.0",
     "@types/node": "^20",
@@ -76,6 +83,7 @@
     "@types/react-dom": "^19",
     "@typescript-eslint/eslint-plugin": "^8.57.1",
     "@typescript-eslint/parser": "^8.57.1",
+    "cross-env": "^10.1.0",
     "dotenv": "^17.3.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.7",

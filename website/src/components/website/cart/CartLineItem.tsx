@@ -48,12 +48,12 @@ export function CartLineItem({
   const lineTotal = price * quantity;
 
   return (
-    <div className="flex gap-3 border-b border-gray-100 py-4 last:border-b-0">
+    <div className="flex gap-3 rounded-[20px] border border-white/10 bg-[#051610]/70 p-3">
       {/* Thumbnail */}
       <Link
         href={ROUTES.product(tenantSlug, productId)}
         {...(onNavigate ? { onClick: onNavigate } : {})}
-        className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded bg-gray-100"
+        className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl bg-[#082017]"
       >
         {image ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -63,7 +63,7 @@ export function CartLineItem({
             className="h-full w-full object-cover"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">
+          <div className="flex h-full w-full items-center justify-center text-[10px] text-[#64748b]">
             No image
           </div>
         )}
@@ -76,17 +76,17 @@ export function CartLineItem({
             <Link
               href={ROUTES.product(tenantSlug, productId)}
               {...(onNavigate ? { onClick: onNavigate } : {})}
-              className="line-clamp-2 text-sm font-medium text-gray-900 hover:underline"
+              className="line-clamp-2 text-sm font-medium text-white hover:underline"
             >
               {productName}
             </Link>
-            <p className="text-xs text-gray-500">SKU: {variantSku}</p>
+            <p className="text-xs text-[#94a3b8]">SKU: {variantSku}</p>
           </div>
           <button
             type="button"
             onClick={() => removeItem(tenantSlug, variantId)}
             aria-label={`Remove ${productName} from cart`}
-            className="rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-red-600"
+            className="rounded p-1 text-[#64748b] transition-colors hover:bg-white/10 hover:text-red-400"
           >
             <Trash2 size={14} />
           </button>
@@ -100,7 +100,7 @@ export function CartLineItem({
             size="sm"
             onChange={(q) => setQuantity(tenantSlug, variantId, q)}
           />
-          <p className="text-sm font-semibold tabular-nums">{formatLKR(lineTotal)}</p>
+          <p className="text-sm font-semibold tabular-nums text-white">{formatLKR(lineTotal)}</p>
         </div>
       </div>
     </div>

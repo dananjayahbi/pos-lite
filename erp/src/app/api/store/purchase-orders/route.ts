@@ -6,6 +6,8 @@ import { getPOs, createPO } from '@/lib/services/purchaseOrder.service';
 import { CreatePOSchema } from '@/lib/validators/purchaseOrder.validators';
 import type { CreatePOInput } from '@/lib/validators/purchaseOrder.validators';
 import { POStatus } from '@/generated/prisma/client';
+import { parseQueryInt } from '@/lib/api/query-params';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function GET(request: Request) {
   try {
@@ -41,17 +43,16 @@ export async function GET(request: Request) {
       status: statusParam && statusParam in POStatus ? (statusParam as POStatus) : undefined,
       from: searchParams.get('from') ?? undefined,
       to: searchParams.get('to') ?? undefined,
-      page: searchParams.get('page') ? Number(searchParams.get('page')) : undefined,
-      limit: searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined,
+      // XC-01: malformed page/limit now 400 instead of NaN → 500.
+      page: parseQueryInt(searchParams, 'page', { min: 1, max: 1_000_000 }),
+      limit: parseQueryInt(searchParams, 'limit', { min: 1, max: 200 }),
     });
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
-    console.error('GET /api/store/purchase-orders error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // XC-01/INF-02: parser ApiErrors surface as their 400; unknown
+    // errors are logged and returned as a generic, leak-free 500.
+    return toErrorResponse(error, 'GET /api/store/purchase-orders');
   }
 }
 

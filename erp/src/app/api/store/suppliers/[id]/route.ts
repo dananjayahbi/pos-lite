@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getSupplierById, updateSupplier } from '@/lib/services/supplier.service';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 import { UpdateSupplierSchema } from '@/lib/validators/supplier.validators';
 import type { UpdateSupplierInput } from '@/lib/validators/supplier.validators';
 
@@ -121,10 +122,9 @@ export async function PATCH(
       );
     }
 
-    console.error('PATCH /api/store/suppliers/[id] error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // M06-05 (OBS-11): the archived-edit guard throws ApiError.conflict
+    // ('Archived suppliers must be restored before editing') — passes
+    // through toErrorResponse as a typed 409 instead of the old 500 branch.
+    return toErrorResponse(error, 'PATCH /api/store/suppliers/[id]');
   }
 }

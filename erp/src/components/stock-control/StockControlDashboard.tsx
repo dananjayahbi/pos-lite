@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/table';
 import { useStockSummary } from '@/hooks/useStockSummary';
 import { useRecentMovements } from '@/hooks/useRecentMovements';
+import { stockActorLabel } from '@/lib/stock/actor-label';
 import { formatRupee } from '@/lib/format';
 import { LowStockAlertBadge } from '@/components/stock/LowStockAlertBadge';
 
@@ -279,7 +280,7 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
                         </span>
                       </TableCell>
                       <TableCell className="font-body text-sm text-espresso">
-                        {m.actor.email}
+                        {stockActorLabel(m.actor)}
                       </TableCell>
                     </TableRow>
                   );

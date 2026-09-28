@@ -65,6 +65,7 @@ export function RateCardPageClient() {
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<z.input<typeof UpsertRateCardSchema>, unknown, z.output<typeof UpsertRateCardSchema>>({
     resolver: standardSchemaResolver(UpsertRateCardSchema),
@@ -78,6 +79,28 @@ export function RateCardPageClient() {
     },
   });
 
+  // M25-02 (BUG-63): `defaultValues` are computed once from an initially-null
+  // card. A synchronous double-click could submit that never-hydrated form
+  // (empty numeric inputs → z.coerce.number() → 0) and wipe the card. Re-seed
+  // the form when the real data arrives so the first submit always carries the
+  // loaded values.
+  useEffect(() => {
+    if (!card) return;
+    reset({
+      name: card.name ?? 'Trans Express Standard',
+      baseRate: toNumber(card.baseRate),
+      extraKgRate: toNumber(card.extraKgRate),
+      freeBaseWeightKg: toNumber(card.freeBaseWeightKg),
+      coddCommissionPct: toNumber(card.coddCommissionPct),
+      vatRatePct: toNumber(card.vatRatePct),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  // M25-02: a synchronous latch (a ref, not React state) blocks the second
+  // click of a double-click before the mutation's isPending state can react.
+  const submittingRef = useRef(false);
+
   if (!canManage) {
     return (
       <Card className="border-mist">
@@ -89,12 +112,19 @@ export function RateCardPageClient() {
   }
 
   const onSave = (formData: z.output<typeof UpsertRateCardSchema>) => {
+    // M25-02: ignore a second submit that lands while the latch is held.
+    if (submittingRef.current) return;
+    // Refuse to submit before the card has loaded — an empty form would wipe it.
+    if (!card) return;
+    submittingRef.current = true;
     const body: Record<string, unknown> = { ...formData };
-    save.mutate(body);
+    save.mutate(body, { onSettled: () => { submittingRef.current = false; } });
   };
 
   const onSaveEntries = () => {
-    saveEntries.mutate(entries);
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    saveEntries.mutate(entries, { onSettled: () => { submittingRef.current = false; } });
   };
 
   return (

@@ -6,20 +6,35 @@ import { formatLKR } from '@/lib/utils';
 import { useCartStore, selectLineQuantity } from '@/stores/cartStore';
 import { AddToCartButton } from '@/components/website/cart/AddToCartButton';
 import { QuantityStepper } from '@/components/website/cart/QuantityStepper';
+import { ProductConcerns } from '@/components/website/product-detail/ProductConcerns';
+import { ProductTrustBar } from '@/components/website/product-detail/ProductTrustBar';
 
 interface ProductInfoProps {
   product: PublicProduct;
   tenantSlug: string;
+  /** Controlled selected variant id (lifted to the parent for cross-sync). */
+  selectedVariantId?: string | undefined;
+  /** Called when the visitor selects a variant through the UI. */
+  onVariantChange?: (variant: PublicProductVariant | undefined) => void;
+  /** Tenant display name (used in the trust bar). */
+  tenantName?: string | undefined;
 }
 
 /**
  * Product name, price, variant selector, quantity picker, and add-to-cart CTA.
  */
-export function ProductInfo({ product, tenantSlug }: ProductInfoProps) {
+export function ProductInfo({
+  product,
+  tenantSlug,
+  selectedVariantId,
+  onVariantChange,
+  tenantName,
+}: ProductInfoProps) {
   const variants = product.variants ?? [];
-  const [selected, setSelected] = useState<PublicProductVariant | undefined>(
-    product.primaryVariant ?? variants[0],
-  );
+  const selected =
+    variants.find((v) => v.id === selectedVariantId) ??
+    product.primaryVariant ??
+    variants[0];
 
   const price = selected?.retailPrice ?? variants[0]?.retailPrice ?? 0;
   const inStock = (selected?.stockQuantity ?? 0) > 0;
@@ -30,13 +45,17 @@ export function ProductInfo({ product, tenantSlug }: ProductInfoProps) {
   );
   const [qty, setQty] = useState(1);
 
+  const handleSelect = (v: PublicProductVariant) => {
+    onVariantChange?.(v);
+  };
+
   return (
     <div className="flex flex-col gap-6">
       {/* Title */}
       <div>
         <h1
-          className="text-2xl md:text-3xl font-medium"
-          style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+          className="text-2xl md:text-3xl font-medium text-white"
+          style={{ fontFamily: 'var(--font-serif), serif' }}
         >
           {product.name}
         </h1>
@@ -45,7 +64,7 @@ export function ProductInfo({ product, tenantSlug }: ProductInfoProps) {
             {(product.tags ?? []).map((tag) => (
               <span
                 key={tag}
-                className="inline-block rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600"
+                className="inline-block rounded-full border border-white/10 bg-[#082017] px-2.5 py-0.5 text-xs text-[#cbd5e1]"
               >
                 {tag}
               </span>
@@ -55,12 +74,12 @@ export function ProductInfo({ product, tenantSlug }: ProductInfoProps) {
       </div>
 
       {/* Price */}
-      <p className="text-xl font-semibold">{formatLKR(price)}</p>
+      <p className="text-xl font-semibold text-[#97c93e]">{formatLKR(price)}</p>
 
       {/* Variant selector */}
       {variants.length > 1 && (
         <div className="space-y-2">
-          <p className="text-sm font-medium uppercase tracking-wider text-gray-600">
+          <p className="text-sm font-medium uppercase tracking-wider text-[#94a3b8]">
             Select variant
           </p>
           <div className="flex flex-wrap gap-2">
@@ -68,11 +87,11 @@ export function ProductInfo({ product, tenantSlug }: ProductInfoProps) {
               <button
                 key={v.id}
                 type="button"
-                onClick={() => setSelected(v)}
-                className={`rounded border px-3 py-1.5 text-sm transition-colors ${
+                onClick={() => handleSelect(v)}
+                className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
                   selected?.id === v.id
-                    ? 'border-black bg-black text-white'
-                    : 'border-gray-300 hover:border-gray-500'
+                    ? 'border-[#97c93e] bg-[#97c93e] text-[#051610]'
+                    : 'border-white/15 text-[#cbd5e1] hover:border-[#97c93e]/50 hover:text-white'
                 }`}
               >
                 {v.sku}
@@ -83,15 +102,18 @@ export function ProductInfo({ product, tenantSlug }: ProductInfoProps) {
       )}
 
       {/* Stock status */}
-      <p className={`text-sm ${inStock ? 'text-green-700' : 'text-red-600'}`}>
+      <p className={`text-sm ${inStock ? 'text-[#97c93e]' : 'text-red-400'}`}>
         {inStock
           ? `In stock (${selected?.stockQuantity} available)`
           : 'Out of stock'}
       </p>
 
+      {/* Concern chips */}
+      <ProductConcerns concerns={product.healthConcerns} />
+
       {/* Description */}
       {product.description && (
-        <div className="prose prose-sm max-w-none text-gray-700">
+        <div className="prose prose-sm max-w-none text-[#cbd5e1]">
           <p>{product.description}</p>
         </div>
       )}
@@ -128,10 +150,13 @@ export function ProductInfo({ product, tenantSlug }: ProductInfoProps) {
       )}
 
       {currentQtyInCart > 0 && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-[#94a3b8]">
           {currentQtyInCart} of this item {currentQtyInCart === 1 ? 'is' : 'are'} already in your cart.
         </p>
       )}
+
+      {/* Trust highlights */}
+      <ProductTrustBar tenantName={tenantName} />
     </div>
   );
 }

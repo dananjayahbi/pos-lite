@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { deliverWebhook } from '@/lib/webhooks/send';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 export async function POST(
   _request: Request,
@@ -24,17 +26,14 @@ export async function POST(
       );
     }
 
-    if (session.user.role !== 'OWNER') {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Only owners can test webhook endpoints' } },
-        { status: 403 },
-      );
-    }
+    // XC-03: shared manage key replaces the bare `role !== 'OWNER'` check.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebhookEndpoints);
+    if (forbidden) return forbidden;
 
     const { endpointId } = await params;
 
     const endpoint = await prisma.webhookEndpoint.findFirst({
-      where: { id: endpointId, tenantId },
+      where: { id: endpointId, tenantId, deletedAt: null },
     });
 
     if (!endpoint) {

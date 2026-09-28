@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
-import { MetricCard } from "@/components/superadmin/MetricCard";
+import CombinedMetricsView from "@/components/superadmin/CombinedMetrics";
 import {
   Card,
   CardContent,
@@ -15,8 +15,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Store, Users, Package } from "lucide-react";
 import Link from "next/link";
+import { getCombinedBusinessStats } from '@/lib/superadmin/business-stats';
 
 function MetricsSkeleton() {
   return (
@@ -32,29 +32,11 @@ function MetricsSkeleton() {
 }
 
 async function DashboardMetrics() {
-  const [totalBusinesses, totalUsers, totalProducts] = await Promise.all([
-    prisma.tenant.count({ where: { deletedAt: null } }),
-    prisma.user.count({ where: { deletedAt: null, role: { not: "SUPER_ADMIN" } } }),
-    prisma.product.count({ where: { deletedAt: null } }),
-  ]);
+  const { combined, perTenant } = await getCombinedBusinessStats();
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-      <MetricCard
-        label="Total Businesses"
-        value={totalBusinesses}
-        icon={<Store className="h-6 w-6" />}
-      />
-      <MetricCard
-        label="Total Staff"
-        value={totalUsers}
-        icon={<Users className="h-6 w-6" />}
-      />
-      <MetricCard
-        label="Total Products"
-        value={totalProducts}
-        icon={<Package className="h-6 w-6" />}
-      />
+    <div className="space-y-8">
+      <CombinedMetricsView metrics={combined} tenantCount={perTenant.length} />
     </div>
   );
 }
@@ -79,6 +61,9 @@ async function BusinessOverview() {
       <Card>
         <CardHeader>
           <CardTitle>Business Overview</CardTitle>
+          <p className="text-mist text-sm">
+            Quick per-business snapshot. Click a business to manage it.
+          </p>
         </CardHeader>
         <CardContent>
           {businesses.length === 0 ? (

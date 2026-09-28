@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
+import { APPOINTMENT_BACKDATE_GRACE_MINUTES } from '@/lib/constants/appointments';
 
 /**
  * Public booking service for the customer-facing storefront.
@@ -17,6 +18,7 @@ import { createAuditLog } from '@/lib/services/audit.service';
  * Returns the created appointment, or throws:
  *  - `STAFF_UNAVAILABLE` when the slot is already booked / blocked
  *  - `SERVICE_NOT_FOUND` when the referenced service does not exist
+ *  - `BACKDATE_NOT_ALLOWED` when startTime is beyond the past-booking grace
  *  - `NO_OWNER` when the tenant has no OWNER user to attribute the booking to
  */
 export async function createPublicAppointment(
@@ -36,6 +38,11 @@ export async function createPublicAppointment(
 ) {
   const startTime = new Date(input.startTime);
   const endTime = new Date(input.endTime);
+
+  // M27-04/OBS-79: the public path has no privileged actor — the grace window
+  // applies unconditionally (no client can record a past visit).
+  const cutoff = new Date(Date.now() - APPOINTMENT_BACKDATE_GRACE_MINUTES * 60_000);
+  if (startTime < cutoff) throw new Error('BACKDATE_NOT_ALLOWED');
 
   // Resolve the acting owner for attribution + audit.
   const owner = await prisma.user.findFirst({

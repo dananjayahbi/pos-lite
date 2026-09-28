@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { signOut } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
 import type { UserRole } from '@/generated/prisma/client';
 import { PERMISSIONS, type PermissionKey } from '@/lib/constants/permissions';
@@ -20,7 +19,6 @@ interface NavGroup {
 }
 
 interface StoreSidebarProps {
-  userEmail: string;
   userRole: UserRole;
   permissions: string[];
   businessName: string;
@@ -323,6 +321,14 @@ const navGroups: NavGroup[] = [
         permission: PERMISSIONS.SETTINGS.manageTax,
       },
       {
+        // M07-02 (OBS-81): /settings/store is live again (tenant self-service
+        // store profile), so it gets the nav entry its permission always implied.
+        name: 'Store Profile',
+        href: '/settings/store',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.SETTINGS.manageStoreProfile,
+      },
+      {
         name: 'Team & Permissions',
         href: '/settings/users',
         roles: ['OWNER', 'MANAGER'],
@@ -338,6 +344,9 @@ const navGroups: NavGroup[] = [
         name: 'Website',
         href: '/settings/website',
         roles: ['OWNER', 'MANAGER'],
+        // M29-03 (OBS-41): the nav entry now carries the same permission the
+        // page + 7 API routes enforce (role list intentionally unchanged).
+        permission: PERMISSIONS.SETTINGS.manageWebsite,
       },
       {
         name: 'Webhooks',
@@ -388,7 +397,6 @@ function formatRole(role: UserRole): string {
 }
 
 export default function StoreSidebar({
-  userEmail,
   userRole,
   permissions,
   businessName,
@@ -415,7 +423,7 @@ export default function StoreSidebar({
         <div className="border-mist mx-5 border-b" />
       </div>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+      <nav className="min-h-0 flex-1 overflow-y-auto scrollbar-none px-3 py-4">
         {navGroups.map((group) => {
           const visibleItems = group.items.filter((item) =>
             canAccessItem(item, userRole, permissions),
@@ -427,10 +435,10 @@ export default function StoreSidebar({
 
           return (
             <div key={group.label} className="mb-6 last:mb-0">
-              <p className="text-sand/80 mb-2 px-3 text-xs font-semibold tracking-wider uppercase">
+              <p className="text-sand/80 mb-1.5 px-3 text-xs font-semibold tracking-wider uppercase">
                 {group.label}
               </p>
-              <ul className="space-y-1">
+              <ul className="flex flex-col">
                 {visibleItems.map((item) => {
                   const isActive = isActivePath(pathname, item.href, item.match);
 
@@ -443,7 +451,7 @@ export default function StoreSidebar({
                         href={item.href}
                         {...(onNavigate ? { onClick: onNavigate } : {})}
                         {...(isPosLink ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                        className={`block rounded-r-md border-l-[3px] px-3 py-2 text-sm font-medium transition-colors ${
+                        className={`flex h-9 items-center rounded-r-md border-l-[3px] px-3 text-sm font-medium transition-colors ${
                           isActive
                             ? 'border-terracotta bg-linen text-espresso'
                             : 'text-espresso/70 hover:bg-linen hover:text-espresso border-transparent'
@@ -459,19 +467,6 @@ export default function StoreSidebar({
           );
         })}
       </nav>
-
-      <div className="border-mist shrink-0 border-t px-4 py-4">
-        <p className="text-sand truncate text-xs">{userEmail}</p>
-        <button
-          type="button"
-          onClick={() => {
-            void signOut({ callbackUrl: `${window.location.origin}/login` });
-          }}
-          className="text-terracotta hover:text-espresso mt-2 text-xs transition-colors"
-        >
-          Log Out
-        </button>
-      </div>
     </div>
   );
 }

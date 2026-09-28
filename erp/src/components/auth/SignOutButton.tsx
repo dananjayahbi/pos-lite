@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { signOut } from 'next-auth/react';
+import { postLogoutAudit } from '@/lib/auth/logout-audit';
 
 interface SignOutButtonProps {
   /** Visual style variant */
@@ -25,6 +26,8 @@ export function SignOutButton({
 
   const handleSignOut = async () => {
     setLoading(true);
+    // M01-04: ledger the sign-out while the session cookie still exists.
+    await postLogoutAudit();
     // Use window.location.origin so the redirect is always correct,
     // regardless of what AUTH_URL / NEXTAUTH_URL is set to server-side.
     await signOut({ callbackUrl: `${window.location.origin}/login` });

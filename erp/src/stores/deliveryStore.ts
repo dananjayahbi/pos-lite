@@ -19,7 +19,10 @@ interface DeliveryStore {
 }
 
 export const useDeliveryStore = create<DeliveryStore>((set) => ({
-  statusFilter: null,
+  // The Delivery page is the dispatch/delivery queue: it defaults to showing
+  // only orders that are ready to be delivered (PENDING_DISPATCH). The Orders
+  // page shows all records, so the two pages are not redundant.
+  statusFilter: 'PENDING_DISPATCH',
   sourceFilter: null,
   search: '',
   setStatusFilter: (status) => set({ statusFilter: status }),

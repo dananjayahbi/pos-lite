@@ -36,7 +36,7 @@ export async function GET() {
       select: { actorId: true },
     });
 
-    const actorIds = distinctActors.map((m) => m.actorId);
+    const actorIds = distinctActors.map((m) => m.actorId).filter((id): id is string => id !== null);
 
     const actors = actorIds.length > 0
       ? await prisma.user.findMany({

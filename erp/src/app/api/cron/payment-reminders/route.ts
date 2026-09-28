@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import {
   InvoiceStatus,
@@ -9,6 +8,7 @@ import {
   PaymentReminderSendStatus,
   UserRole,
 } from "@/generated/prisma/client";
+import { isValidCronSecret } from "@/lib/cron-auth";
 
 // ── Date helpers (no date-fns) ───────────────────────────────────────────────
 
@@ -41,25 +41,6 @@ function normalizePhoneNumber(phone: string): string | null {
     return digits;
   }
   return null;
-}
-
-// ── Auth helper ──────────────────────────────────────────────────────────────
-
-function isValidCronSecret(authHeader: string | null): boolean {
-  const envSecret = process.env.CRON_SECRET;
-  if (!envSecret || !authHeader) return false;
-
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-  if (!token) return false;
-
-  try {
-    const a = Buffer.from(envSecret, "utf-8");
-    const b = Buffer.from(token, "utf-8");
-    if (a.length !== b.length) return false;
-    return timingSafeEqual(a, b);
-  } catch {
-    return false;
-  }
 }
 
 // ── Format helpers ───────────────────────────────────────────────────────────

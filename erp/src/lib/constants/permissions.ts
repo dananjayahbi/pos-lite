@@ -9,6 +9,21 @@ export const PERMISSIONS = {
     holdSale: 'sale:hold',
     resumeSale: 'sale:resume',
     reprintReceipt: 'sale:receipt:reprint',
+    // M31-02 (OBS-55): sending a receipt to an arbitrary phone number is not a
+    // cashier capability. Managers/owners may send to any number; a cashier is
+    // restricted to their own sale (enforced in the send-receipt route).
+    sendReceipt: 'sale:receipt:send',
+    // XC-03 (member OBS): the full sale-history ledger is a management view —
+    // cashiers see their own sales in the POS, not the tenant-wide list. The
+    // two sales pages and the list route each wrote this as an inline
+    // `['OWNER','MANAGER']` comparison; one key expresses it once. CASHIER and
+    // the other operational roles hold no SALE key beyond create/view/void/
+    // refund/hold/resume/reprint, so only OWNER and MANAGER receive this.
+    viewSaleHistory: 'sale:view_history',
+    // XC-03 (member OBS): recording a sale WITHOUT an open POS shift is a
+    // management capability (back-office entry). Cashiers transact through the
+    // terminal and must always be on a shift, so they hold no such key.
+    createSaleWithoutShift: 'sale:create_no_shift',
   },
   DISCOUNT: {
     applyDiscount: 'discount:apply',
@@ -42,6 +57,15 @@ export const PERMISSIONS = {
     viewCustomer: 'customer:view',
     viewCustomerBalance: 'customer:view_balance',
     mergeCustomer: 'customer:merge',
+  },
+  // M05-05 (OBS-51 / client decision D15): the broadcast composer family —
+  // send plus the audience preview/count endpoints that serve it. Its own key
+  // is required because CASHIER holds customer:create by design (OBS-4), so
+  // gating the audience PII reads on the customer keys could not block it.
+  // Derived sets mean OWNER + MANAGER get it automatically; CASHIER's
+  // explicit list deliberately omits it.
+  BROADCAST: {
+    send: 'broadcast:send',
   },
   SUPPLIER: {
     createSupplier: 'supplier:create',
@@ -82,6 +106,22 @@ export const PERMISSIONS = {
     manageReceiptTemplate: 'settings:receipt_template',
     manageStoreProfile: 'settings:store_profile',
     viewAuditLog: 'settings:view_audit_log',
+    // M29-03 (OBS-41): the customer-facing website CMS is owner/manager work.
+    // Key follows the two-segment `settings:<noun>` convention of every
+    // sibling manage* key. Adding it to the registry is enough to grant it to
+    // OWNER (spread of ALL_PERMISSIONS) and MANAGER (not in managerExcluded),
+    // while CASHIER's explicit list omits it — the same derivation W3 used
+    // for BROADCAST.send, so no role array is hand-edited here.
+    manageWebsite: 'settings:website',
+    // XC-03 (member docs M07-01 / M33): outgoing webhook endpoints. The gateway
+    // previously used three different role checks for one surface —
+    // `DENIED_ROLES` on the page (which let DISPATCH_STAFF through), an
+    // `ALLOWED_ROLES` set on the deliveries read, and a bare
+    // `role !== 'OWNER'` on write. One key expresses the gradient with no role
+    // arrays: OWNER and MANAGER hold both (management reporting), while
+    // CASHIER / STOCK_CLERK / DISPATCH_STAFF / FACTORY_MANAGER hold neither.
+    viewWebhookEndpoints: 'settings:webhooks:view',
+    manageWebhookEndpoints: 'settings:webhooks:manage',
   },
   PROMOTION: {
     createPromotion: 'promotion:create',
@@ -189,10 +229,28 @@ const managerExcluded = new Set<PermissionKey>([
   PERMISSIONS.REPORT.viewZeroValueReport,
 ]);
 
-export const ROLE_PERMISSIONS: Record<
-  'OWNER' | 'MANAGER' | 'CASHIER' | 'STOCK_CLERK' | 'DISPATCH_STAFF' | 'FACTORY_MANAGER',
-  PermissionKey[]
-> = {
+export type AssignableRole = Exclude<UserRole, 'SUPER_ADMIN'>;
+
+/**
+ * M03-01 (BUG-3) — SINGLE SOURCE OF TRUTH for roles an operator may be
+ * assigned. This tuple and ROLE_PERMISSIONS' keys are tied together by the
+ * `Record<AssignableRole, …>` type, so a role cannot exist in one list and be
+ * missing from the other. SUPER_ADMIN is excluded on purpose: the platform
+ * role is never assignable through the tenant staff API (the escalation
+ * guard is a passing QA contract — tests/03 8.7/8.8). The staff validator and
+ * both role dropdowns (staff page + settings editor) all consume this, which
+ * makes a UI↔API enum disagreement structurally impossible.
+ */
+export const ASSIGNABLE_ROLES: AssignableRole[] = [
+  'OWNER',
+  'MANAGER',
+  'CASHIER',
+  'STOCK_CLERK',
+  'DISPATCH_STAFF',
+  'FACTORY_MANAGER',
+];
+
+export const ROLE_PERMISSIONS: Record<AssignableRole, PermissionKey[]> = {
   OWNER: [...ALL_PERMISSIONS],
   MANAGER: ALL_PERMISSIONS.filter((permission) => !managerExcluded.has(permission)),
   CASHIER: [
@@ -253,6 +311,11 @@ export const ROLE_PERMISSIONS: Record<
   ],
 };
 
+/**
+ * Resolve the effective permission set for a user: role defaults from the
+ * matrix plus any explicitly assigned overrides (deduplicated). SUPER_ADMIN
+ * gets the full store set (platform controls live in /api/admin/*).
+ */
 export function getEffectivePermissions(
   role: UserRole | undefined,
   assignedPermissions: unknown,

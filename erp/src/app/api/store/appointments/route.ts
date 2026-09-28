@@ -8,6 +8,7 @@ import {
   CreateAppointmentSchema,
 } from '@/lib/validators/appointment.validators';
 import type { CreateAppointmentInput } from '@/lib/validators/appointment.validators';
+import { APPOINTMENT_BACKDATE_GRACE_MINUTES } from '@/lib/constants/appointments';
 
 export async function GET(request: Request) {
   try {
@@ -103,7 +104,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const appointment = await createAppointment(tenantId, session.user.id, parsed.data as CreateAppointmentInput);
+    const appointment = await createAppointment(
+      tenantId,
+      session.user.id,
+      parsed.data as CreateAppointmentInput,
+      session.user.role,
+      hasPermission(session.user, PERMISSIONS.APPOINTMENT.manageSettings),
+    );
 
     return NextResponse.json({ success: true, data: appointment }, { status: 201 });
   } catch (error) {
@@ -114,6 +121,20 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { success: false, error: { code: 'CONFLICT', message: 'Staff member is not available at the selected time' } },
         { status: 409 },
+      );
+    }
+
+    // M27-04/OBS-79: backdating beyond the grace needs appointment:settings:manage.
+    if (message === 'BACKDATE_NOT_ALLOWED') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'BACKDATE_NOT_ALLOWED',
+            message: `Start time must be within the last ${APPOINTMENT_BACKDATE_GRACE_MINUTES} minutes`,
+          },
+        },
+        { status: 400 },
       );
     }
 

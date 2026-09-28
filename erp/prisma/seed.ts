@@ -1,5 +1,6 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Prisma, PrismaClient } from '../src/generated/prisma/client';
+import { TRIAL_PERIOD_DAYS } from '../src/lib/billing/constants';
 import bcrypt from 'bcryptjs';
 import Decimal from 'decimal.js';
 
@@ -25,6 +26,26 @@ async function main() {
     await seedSecondBusiness();
   } catch (error) {
     console.error('Failed to seed second business:', error);
+    throw error;
+  }
+
+  // Seed/repair QA login accounts (M01-07 — BUG-54: these MUST exist even
+  // when demo-sales/audit sections skip; `update` repairs drift idempotently).
+  try {
+    await seedQaUsers();
+  } catch (error) {
+    console.error('Failed to seed QA users:', error);
+    throw error;
+  }
+
+  // Seed/repair subscription plans (M08-05 / OBS-12): the table was empty on
+  // pristine installs → superadmin MRR/revenueByPlan cards had no substrate.
+  // SubscriptionPlan is tenant-less (no tenantId); upsert-by-name with the
+  // same REPAIR semantics as seedQaUsers.
+  try {
+    await seedSubscriptionPlans();
+  } catch (error) {
+    console.error('Failed to seed subscription plans:', error);
     throw error;
   }
 
@@ -272,6 +293,13 @@ async function seedSampleTenant() {
         vatRate: 18,
         ssclRate: 2.5,
         receiptFooter: 'Thank you for shopping at Ayur Wellness Centre!',
+        // W7: the primary tenant's public storefront is live and is the fixture
+        // the whole tests/28 suite exercises — but the `website` flag was never
+        // set, so `/config` + `/tenant` 403'd at the module guard while
+        // /products (un-gated) still answered. Same seed-gap class as W6's
+        // missing `delivery` flag on Lanka. `delivery` and `appointments` are
+        // appended by the idempotent fixups later in this file.
+        enabledModules: ['website'],
       },
     },
   });
@@ -318,6 +346,11 @@ async function seedSecondBusiness() {
         timezone: 'Asia/Colombo',
         vatRate: 18,
         ssclRate: 2.5,
+        // W6/M25: the second tenant has the delivery module ENABLED but no
+        // rate card — this is the live fixture the cross-tenant rate-card pins
+        // (tests/25 F15/S4/S6, tests/26) exercise the "no active card" branch
+        // against. Without it those routes 403 at the module guard.
+        enabledModules: ['delivery'],
       },
     },
   });
@@ -658,6 +691,211 @@ async function seedInitialStockMovements() {
   console.log(`  Skipped (zero qty): ${allVariantsCount - variants.length}`);
 }
 
+// ── QA Login Accounts (M01-07 / BUG-54) ─────────────────────────────────────
+//
+// Every account the QA suites (tests/01, 03, 20) sign in with is seeded HERE,
+// at top level, with REPAIR semantics: an idempotent re-seed fixes a stale
+// hash, a flipped isActive, a soft-delete, or a wrong tenantId instead of
+// preserving the drift. Previously cashier1/cashier2 were created only inside
+// seedDemoSales() (skipped once ≥20 sales exist) and dispatch only inside
+// seedHardwareAndAuditData() — so a dirty DB could leave QA logins broken with
+// no way to recover except manual SQL (BUG-54 cause 1).
+// `npx prisma db seed` is the canonical reset for QA environments.
+async function seedQaUsers() {
+  const primary = await prisma.tenant.findFirst({ where: { slug: 'dilani' } });
+  const lanka = await prisma.tenant.findFirst({ where: { slug: 'lanka-electronics' } });
+  if (!primary || !lanka) {
+    console.log('Tenants missing, skipping QA users seed');
+    return;
+  }
+
+  const cashierPermissions = [
+    'sale:create',
+    'sale:view',
+    'sale:hold',
+    'sale:resume',
+    'sale:receipt:reprint',
+    'shift:open',
+    'shift:close',
+    'shift:view',
+  ];
+
+  const qaUsers = [
+    {
+      email: 'superadmin@ayurpos.dev',
+      password: process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'changeme123!',
+      role: 'SUPER_ADMIN' as const,
+      tenantId: null,
+      permissions: [],
+    },
+    {
+      email: 'owner@dilani-ayurwellness.lk',
+      password: 'owner123!',
+      role: 'OWNER' as const,
+      tenantId: primary.id,
+      permissions: [],
+    },
+    {
+      email: 'owner@lanka-electronics.lk',
+      password: 'owner123!',
+      role: 'OWNER' as const,
+      tenantId: lanka.id,
+      permissions: [],
+    },
+    {
+      email: 'cashier1@ayurpos.dev',
+      password: 'cashier123!',
+      role: 'CASHIER' as const,
+      tenantId: primary.id,
+      permissions: cashierPermissions,
+    },
+    {
+      email: 'cashier2@ayurpos.dev',
+      password: 'cashier123!',
+      role: 'CASHIER' as const,
+      tenantId: primary.id,
+      permissions: cashierPermissions,
+    },
+    {
+      email: 'cashier@lanka-electronics.lk',
+      password: 'cashier123!',
+      role: 'CASHIER' as const,
+      tenantId: lanka.id,
+      permissions: cashierPermissions,
+    },
+    {
+      email: 'dispatch@ayurpos.dev',
+      password: 'dispatch123!',
+      role: 'DISPATCH_STAFF' as const,
+      tenantId: primary.id,
+      permissions: [],
+    },
+    // M03-08 (GAP-3): known-password accounts for the roles that previously
+    // had none, so FACTORY_MANAGER isolation and MANAGER/STOCK_CLERK scoping
+    // become browser-verifiable (req 2.4 Roles 2–3).
+    {
+      email: 'manager@ayurpos.dev',
+      password: 'manager123!',
+      role: 'MANAGER' as const,
+      tenantId: primary.id,
+      permissions: [],
+    },
+    {
+      email: 'stockclerk@ayurpos.dev',
+      password: 'stock123!',
+      role: 'STOCK_CLERK' as const,
+      tenantId: primary.id,
+      permissions: [],
+    },
+    {
+      email: 'factory@ayurpos.dev',
+      password: 'factory123!',
+      role: 'FACTORY_MANAGER' as const,
+      tenantId: primary.id,
+      permissions: [],
+    },
+  ];
+
+  for (const qa of qaUsers) {
+    const passwordHash = await bcrypt.hash(qa.password, 12);
+    await prisma.user.upsert({
+      where: { email: qa.email },
+      create: {
+        email: qa.email,
+        passwordHash,
+        role: qa.role,
+        tenantId: qa.tenantId,
+        permissions: qa.permissions,
+        isActive: true,
+      },
+      // REPAIR semantics (BUG-54): re-seed fixes drift, never preserves it.
+      update: {
+        passwordHash,
+        role: qa.role,
+        tenantId: qa.tenantId,
+        permissions: qa.permissions,
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+  }
+
+  console.log(`QA login accounts seeded/repaired: ${qaUsers.length}`);
+}
+
+// ── Seed Subscription Plans (M08-05 / OBS-12) ────────────────────────────────
+
+// subscription_plans was never seeded → MRR/ARR/revenueByPlan were
+// structurally zero on a pristine install and the billing UI (M30-01) had no
+// pricing rows to render (OBS-12). Idempotent upsert-by-name with REPAIR
+// semantics (like seedQaUsers): re-seeding fixes drift instead of preserving
+// it; `name` is the @unique business key. Prices are realistic LKR SaaS
+// tiers using only columns the model actually has (schema.prisma
+// SubscriptionPlan: monthlyPrice/annualPrice Decimal(10,2), maxUsers,
+// maxProductVariants, features String[], isActive). All three tiers ship
+// active so revenueByPlan has ≥1 row for the MRR cards.
+async function seedSubscriptionPlans() {
+  const plans = [
+    {
+      name: 'STARTER',
+      monthlyPrice: new Decimal('4999.00'),
+      annualPrice: new Decimal('49990.00'), // 10× monthly (2 months free)
+      maxUsers: 3,
+      maxProductVariants: 500,
+      features: ['POS billing', 'Inventory', 'Single store', 'Email support'],
+      isActive: true,
+    },
+    {
+      name: 'GROWTH',
+      monthlyPrice: new Decimal('9999.00'),
+      annualPrice: new Decimal('99990.00'),
+      maxUsers: 10,
+      maxProductVariants: 5000,
+      features: [
+        'Everything in STARTER',
+        'Appointments',
+        'Delivery + courier rate cards',
+        'Website checkout',
+        'Priority support',
+      ],
+      isActive: true,
+    },
+    {
+      name: 'ENTERPRISE',
+      monthlyPrice: new Decimal('19999.00'),
+      annualPrice: new Decimal('199990.00'),
+      maxUsers: 50,
+      maxProductVariants: 100000,
+      features: [
+        'Everything in GROWTH',
+        'Factory / raw materials / BOM',
+        'Multi-store',
+        'Dedicated support',
+      ],
+      isActive: true,
+    },
+  ];
+
+  for (const plan of plans) {
+    await prisma.subscriptionPlan.upsert({
+      where: { name: plan.name },
+      create: plan,
+      // REPAIR semantics (OBS-12): a prior QA run archiving a seeded tier is
+      // drift, not intent — re-seed restores price, limits, and active flag.
+      update: {
+        monthlyPrice: plan.monthlyPrice,
+        annualPrice: plan.annualPrice,
+        maxUsers: plan.maxUsers,
+        maxProductVariants: plan.maxProductVariants,
+        features: plan.features,
+        isActive: plan.isActive,
+      },
+    });
+  }
+
+  console.log(`Subscription plans seeded/repaired: ${plans.length}`);
+}
+
 // ── Seed Demo Sales ──────────────────────────────────────────────────────────
 
 async function seedDemoSales() {
@@ -675,44 +913,18 @@ async function seedDemoSales() {
     return;
   }
 
-  // ── Create 2 cashier users ──
-  const cashierPassword = await bcrypt.hash('cashier123!', 12);
-  const cashierPermissions = [
-    'sale:create',
-    'sale:view',
-    'sale:hold',
-    'sale:resume',
-    'sale:receipt:reprint',
-    'shift:open',
-    'shift:close',
-    'shift:view',
-  ];
-
-  const cashier1 = await prisma.user.upsert({
+  // ── QA cashier accounts are created/repaired by seedQaUsers() (M01-07);
+  // demo sales only needs their ids. ──
+  const cashier1 = await prisma.user.findUnique({
     where: { email: 'cashier1@ayurpos.dev' },
-    create: {
-      email: 'cashier1@ayurpos.dev',
-      passwordHash: cashierPassword,
-      role: 'CASHIER',
-      tenantId,
-      permissions: cashierPermissions,
-      isActive: true,
-    },
-    update: {},
   });
-
-  const cashier2 = await prisma.user.upsert({
+  const cashier2 = await prisma.user.findUnique({
     where: { email: 'cashier2@ayurpos.dev' },
-    create: {
-      email: 'cashier2@ayurpos.dev',
-      passwordHash: cashierPassword,
-      role: 'CASHIER',
-      tenantId,
-      permissions: cashierPermissions,
-      isActive: true,
-    },
-    update: {},
   });
+  if (!cashier1 || !cashier2) {
+    console.log('QA cashier users missing, skipping demo sales seed');
+    return;
+  }
 
   const cashiers = [cashier1, cashier2];
 
@@ -1640,6 +1852,28 @@ async function seedStaffPromotionsExpenses() {
   ];
 
   let expensesCreated = 0;
+
+  // M19-01 (D2): a funded petty-cash float is required now that linked expenses
+  // cannot overdraw the fund. Create the tenant's main fund (or REPAIR a fund
+  // that was lazily auto-created at 0 before this policy), link the seeded
+  // expenses to it, then size the opening balance to leave a healthy working
+  // headroom ABOVE the seeded spend so the balance equation
+  // (opening − Σ expenses = current) holds with a positive running balance.
+  const PETTY_CASH_HEADROOM = 5000;
+  const existingFund = await prisma.pettyCashFund.findFirst({ where: { tenantId } });
+  let fund = existingFund;
+  if (!fund) {
+    fund = await prisma.pettyCashFund.create({
+      data: {
+        tenantId,
+        name: 'Main Petty Cash',
+        openingBalance: 0,
+        currentBalance: 0,
+        activeCategories: ['STAFF_MEALS', 'TEA_SUGAR', 'OFFICE_STATIONERY', 'TRAVEL', 'MISCELLANEOUS'],
+      },
+    });
+  }
+
   for (const exp of expenseDefs) {
     const existingExpense = await prisma.expense.findFirst({
       where: { tenantId, category: exp.category, description: exp.description },
@@ -1655,12 +1889,28 @@ async function seedStaffPromotionsExpenses() {
           description: exp.description,
           recordedById: recorder.id,
           expenseDate: now,
+          pettyCashFundId: fund.id,
         },
       });
       expensesCreated++;
     }
   }
-  console.log(`Expenses: ${expensesCreated} created`);
+
+  // Size the float so the balance equation leaves a positive running balance,
+  // then persist it — a reseed never leaves opening/current inconsistent.
+  const linkedTotal = await prisma.expense.aggregate({
+    where: { tenantId, pettyCashFundId: fund.id },
+    _sum: { amount: true },
+  });
+  const spent = linkedTotal._sum.amount?.toNumber() ?? 0;
+  const openingBalance = new Prisma.Decimal(spent).plus(PETTY_CASH_HEADROOM).toNumber();
+  await prisma.pettyCashFund.update({
+    where: { id: fund.id },
+    data: { openingBalance, currentBalance: openingBalance - spent },
+  });
+  console.log(
+    `Expenses: ${expensesCreated} created (petty-cash opening ${openingBalance}, spent ${spent}, balance ${openingBalance - spent})`,
+  );
 
   // ── 5. Seed CashMovements ──
   const demoShift = await prisma.shift.findFirst({
@@ -1770,6 +2020,29 @@ async function seedHardwareAndAuditData() {
     console.log('Delivery module already enabled, skipping');
   }
 
+  // ── 1b1. Dev Trans Express CourierAccount (M24-01) ──
+  // Fresh DBs previously had NO CourierAccount, so dispatch took the
+  // COURIER_ACCOUNT_NOT_CONFIGURED (409) path and the auth-failure path was
+  // unreachable in a predictable way. Seed an obviously-fake sandbox account so
+  // both branches are exercisable deterministically. The credentials are
+  // intentionally invalid — a real integration must replace them via the
+  // courier-settings UI (which now has a Test-connection button).
+  const existingCourierAccount = await prisma.courierAccount.findFirst({ where: { tenantId } });
+  if (!existingCourierAccount) {
+    await prisma.courierAccount.create({
+      data: {
+        tenantId,
+        env: 'STAGING',
+        email: 'dev-sandbox@example.invalid',
+        password: 'dev-sandbox-not-a-real-credential',
+        isActive: true,
+      },
+    });
+    console.log('Dev Trans Express courier account seeded (STAGING, fake credentials)');
+  } else {
+    console.log('Courier account already present, skipping');
+  }
+
   // ── 1b2. Enable appointments module on the primary tenant ──
   // Re-read settings to include any modules enabled above.
   const currentSettings2 = (await prisma.tenant.findUnique({ where: { id: tenantId } }))
@@ -1793,26 +2066,117 @@ async function seedHardwareAndAuditData() {
     console.log('Appointments module already enabled, skipping');
   }
 
-  // ── 1c. Seed a DISPATCH_STAFF demo user for the primary tenant ──
-  const dispatchStaffEmail = 'dispatch@ayurpos.dev';
-  const existingDispatch = await prisma.user.findFirst({
-    where: { tenantId, email: dispatchStaffEmail, deletedAt: null },
-  });
-  if (!existingDispatch) {
-    await prisma.user.create({
+  // ─ 1b3. Enable website module on the primary tenant ─
+  // Guards `/api/public/site/[slug]/config` + `/tenant`. Added in W7 after the
+  // storefront suite exposed the gap (module disabled → 403 on those two routes
+  // while the un-gated catalog routes kept answering).
+  const currentSettingsW = (await prisma.tenant.findUnique({ where: { id: tenantId } }))
+    ?.settings as Record<string, unknown> | null;
+  const settingsNowW = currentSettingsW ?? {};
+  const enabledModulesW: string[] = Array.isArray(settingsNowW.enabledModules)
+    ? (settingsNowW.enabledModules as string[])
+    : [];
+  if (!enabledModulesW.includes('website')) {
+    await prisma.tenant.update({
+      where: { id: tenantId },
       data: {
-        email: dispatchStaffEmail,
-        passwordHash: await bcrypt.hash('dispatch123!', 12),
-        role: 'DISPATCH_STAFF',
-        tenantId,
-        permissions: [],
-        isActive: true,
+        settings: {
+          ...settingsNowW,
+          enabledModules: [...enabledModulesW, 'website'],
+        },
       },
     });
-    console.log(`Created DISPATCH_STAFF user: ${dispatchStaffEmail}`);
+    console.log('Website module enabled on primary tenant');
   } else {
-    console.log('DISPATCH_STAFF user already exists, skipping');
+    console.log('Website module already enabled, skipping');
   }
+
+  // ── 1d. TRIAL subscription for the demo tenant (M30-01 / BUG-70) ──
+  // BUG-70: NO Subscription row existed for ANY tenant on a freshly seeded
+  // install, so `/billing` and `/billing/payment-methods` hard-redirected to
+  // `/` and `initiateCheckout` answered "No subscription found" — the entire
+  // billing UI was unreachable. (The write path, `createTrialSubscription`,
+  // had zero callers; the tenant-create route now calls it via
+  // src/lib/billing/provisioning.ts.) This block gives the demo tenant the
+  // same TRIAL subscription a newly created tenant receives.
+  //
+  // Trial policy ASSUMPTION — the client's D-level answer is still outstanding
+  // (full statement in src/lib/billing/provisioning.ts):
+  //   • duration  30 days — TRIAL_PERIOD_DAYS, byte-identical to the math
+  //     createTrialSubscription has always applied.
+  //   • plan      STARTER — the entry tier (resolved by name; SubscriptionPlan
+  //     ids are per-database cuids), the same plan the upgrade card offers.
+  //   • grace     none added here: the existing check-subscriptions cron moves
+  //     TRIAL → PAST_DUE at trialEndsAt and suspends after GRACE_PERIOD_DAYS
+  //     (7), so trial → past_due → suspended stays a single timeline.
+  //
+  // Idempotent with the REPAIR idiom used by seedQaUsers()/
+  // seedSubscriptionPlans(): create when absent; a CANCELLED demo row (left
+  // over from a QA cancel round) is restored to the TRIAL baseline so a reseed
+  // is the canonical reset; any other existing status is left untouched.
+  // Placed before the 1c demo-user early-return below so it can never be
+  // skipped by a missing demo user.
+  {
+    const plan = await prisma.subscriptionPlan.findUnique({
+      where: { name: 'STARTER' },
+    });
+    // main() runs seedSubscriptionPlans() (M08-05) before this section, so
+    // STARTER is present and active; degrade to a skip — never a crash — on a
+    // database seeded before M08-05.
+    if (!plan || !plan.isActive) {
+      console.log('STARTER plan missing/inactive, skipping demo trial subscription');
+    } else {
+      const existingSubscription = await prisma.subscription.findUnique({
+        where: { tenantId },
+      });
+      const trialNow = new Date();
+      const trialEndsAt = new Date(
+        trialNow.getTime() + TRIAL_PERIOD_DAYS * 24 * 60 * 60 * 1000,
+      );
+
+      if (!existingSubscription) {
+        await prisma.subscription.create({
+          data: {
+            tenantId,
+            planId: plan.id,
+            status: 'TRIAL',
+            trialEndsAt,
+            currentPeriodStart: trialNow,
+            currentPeriodEnd: trialEndsAt,
+          },
+        });
+        await prisma.tenant.update({
+          where: { id: tenantId },
+          data: { subscriptionStatus: 'TRIAL' },
+        });
+        console.log(
+          `Demo TRIAL subscription seeded (${TRIAL_PERIOD_DAYS}d, ${plan.name})`,
+        );
+      } else if (existingSubscription.status === 'CANCELLED') {
+        await prisma.subscription.update({
+          where: { tenantId },
+          data: {
+            planId: plan.id,
+            status: 'TRIAL',
+            trialEndsAt,
+            currentPeriodStart: trialNow,
+            currentPeriodEnd: trialEndsAt,
+            cancelledAt: null,
+          },
+        });
+        await prisma.tenant.update({
+          where: { id: tenantId },
+          data: { subscriptionStatus: 'TRIAL' },
+        });
+        console.log('Demo subscription was CANCELLED — restored to TRIAL baseline');
+      } else {
+        console.log('Demo subscription already present, skipping');
+      }
+    }
+  }
+
+  // ── 1c. DISPATCH_STAFF demo user is seeded/repaired by seedQaUsers()
+  // (M01-07) — no creation here so a hardware-section skip can't lose it. ──
 
   // Fetch demo users
   const owner = await prisma.user.findFirst({

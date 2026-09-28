@@ -1,3 +1,5 @@
+import { escapeHtml } from '@/lib/utils/escape-html';
+
 export interface DailySummaryData {
   tenantName: string;
   date: string; // formatted date string e.g. "March 20, 2026"
@@ -21,14 +23,14 @@ export function composeDailySummaryEmail(data: DailySummaryData): string {
     tenantSlug,
   } = data;
 
-  const reportsUrl = `https://${tenantSlug}.ayurpos.com/reports`;
+  const reportsUrl = `https://${escapeHtml(tenantSlug)}.ayurpos.com/reports`;
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Daily Sales Summary — ${tenantName}</title>
+  <title>Daily Sales Summary — ${escapeHtml(tenantName)}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#f5f1ec;font-family:Arial,Helvetica,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f1ec;padding:32px 16px;">
@@ -39,7 +41,7 @@ export function composeDailySummaryEmail(data: DailySummaryData): string {
           <tr>
             <td style="background-color:#3A2D28;padding:24px 32px;">
               <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">AyurPOS</h1>
-              <p style="margin:4px 0 0;color:#CBAD8D;font-size:14px;">${tenantName}</p>
+              <p style="margin:4px 0 0;color:#CBAD8D;font-size:14px;">${escapeHtml(tenantName)}</p>
             </td>
           </tr>
 
@@ -73,7 +75,7 @@ export function composeDailySummaryEmail(data: DailySummaryData): string {
                   <td width="50%" style="padding:8px 8px 8px 0;vertical-align:top;">
                     <div style="background-color:#f9f6f3;border-radius:8px;padding:20px;border-left:4px solid #CBAD8D;">
                       <p style="margin:0;color:#6b6b6b;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Top Product</p>
-                      <p style="margin:6px 0 0;color:#3A2D28;font-size:16px;font-weight:700;">${topProductName ?? 'N/A'}</p>
+                      <p style="margin:6px 0 0;color:#3A2D28;font-size:16px;font-weight:700;">${escapeHtml(topProductName ?? 'N/A')}</p>
                       ${topProductName ? `<p style="margin:2px 0 0;color:#6b6b6b;font-size:12px;">${topProductQty} units sold</p>` : ''}
                     </div>
                   </td>
@@ -98,7 +100,7 @@ export function composeDailySummaryEmail(data: DailySummaryData): string {
           <!-- Footer -->
           <tr>
             <td style="background-color:#EBE3DB;padding:20px 32px;">
-              <p style="margin:0;color:#6b6b6b;font-size:12px;text-align:center;">This is an automated summary from AyurPOS. You receive this because you are an owner of ${tenantName}.</p>
+              <p style="margin:0;color:#6b6b6b;font-size:12px;text-align:center;">This is an automated summary from AyurPOS. You receive this because you are an owner of ${escapeHtml(tenantName)}.</p>
             </td>
           </tr>
         </table>

@@ -2,8 +2,8 @@ import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { auth } from '@/lib/auth';
+import { denialRouteFor, hasPermissionPage } from '@/lib/auth/page-guards';
 import { getSaleById } from '@/lib/services/sale.service';
-import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -44,12 +44,11 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
   if (!session?.user) redirect('/login');
 
   const tenantId = session.user.tenantId;
-  if (!tenantId) redirect('/login');
+  if (!tenantId) redirect(denialRouteFor(session.user));
 
-  if (session.user.role !== 'OWNER' && session.user.role !== 'MANAGER') {
-    redirect('/dashboard');
-  }
-  if (!hasPermission(session.user, PERMISSIONS.SALE.viewSale)) {
+  // XC-03: same key as the sales list page — the detail view is part of the
+  // same management ledger, so the two pages cannot drift apart.
+  if (!hasPermissionPage(session.user, PERMISSIONS.SALE.viewSaleHistory)) {
     redirect('/dashboard');
   }
 

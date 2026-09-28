@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 
-import { requireDeliveryAuth, validationError, internalError, mapDeliveryError } from '@/lib/api/delivery-route';
+import { requireDeliveryAuth, validationError, internalError, conflict, mapDeliveryError } from '@/lib/api/delivery-route';
+import { upstreamError } from '@/lib/api/error-envelope';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { transExpressAuthenticate } from '@/lib/courier/trans-express/auth';
 import { CourierSettingsSchema } from '@/lib/validators/courier.validators';
 import type { CourierSettingsInput } from '@/lib/validators/courier.validators';
 
@@ -76,4 +78,38 @@ export async function PUT(request: Request) {
     if (mapped) return mapped;
     return internalError('An unexpected error occurred');
   }
+}
+
+/**
+ * POST /api/store/delivery/settings/test-connection
+ *
+ * M24-01: lets an operator verify saved Trans Express credentials and tell an
+ * auth/credential failure apart from an outage before dispatching (pairs with
+ * INF-03's credential health matrix). Calls the same `transExpressAuthenticate`
+ * the dispatch path uses, so a green test means dispatch will authenticate too.
+ */
+export async function POST() {
+  const guard = await requireDeliveryAuth(PERMISSIONS.DELIVERY.manageCourierSettings);
+  if (!guard.ok) return guard.response;
+
+  const account = await prisma.courierAccount.findFirst({ where: { tenantId: guard.tenantId } });
+  if (!account) {
+    return conflict('Save your Trans Express account before testing the connection');
+  }
+
+  const auth = await transExpressAuthenticate({
+    ...(account.email ? { email: account.email } : {}),
+    ...(account.password ? { password: account.password } : {}),
+    ...(account.apiKey ? { apiKey: account.apiKey } : {}),
+    env: account.env,
+  });
+
+  if (!auth.ok) {
+    return upstreamError('COURIER_AUTH_FAILED', auth.error.message);
+  }
+
+  return NextResponse.json({
+    success: true,
+    data: { ok: true, env: account.env, tokenType: account.apiKey ? 'API_KEY' : 'PASSWORD' },
+  });
 }

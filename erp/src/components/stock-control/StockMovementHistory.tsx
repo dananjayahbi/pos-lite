@@ -19,6 +19,7 @@ import { STOCK_MOVEMENT_REASONS } from '@/lib/constants/stock-movement';
 import { mergeSearchParams } from '@/lib/urlUtils';
 import { useGlobalStockMovements } from '@/hooks/useGlobalStockMovements';
 import { useStockActors } from '@/hooks/useStockActors';
+import { stockActorLabel } from '@/lib/stock/actor-label';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -495,7 +496,10 @@ function StockMovementHistoryInner() {
           )}
           {reasonsParam !== ALL_REASONS.join(',') && (
             <Badge variant="secondary" className="gap-1">
-              {selectedReasons.size} of {ALL_REASONS.length} reasons
+              {/* M09-03 (OBS-22): the chips are an exclusion model (all
+                  reasons start selected; clicking one excludes it), so the
+                  pill spells that out instead of reading inverted. */}
+              Showing {selectedReasons.size} of {ALL_REASONS.length} reasons — click to exclude
               <button onClick={() => updateParams({ reasons: null, page: '1' })} aria-label="Reset reasons filter">
                 <X className="h-3 w-3" />
               </button>
@@ -585,7 +589,7 @@ function StockMovementHistoryInner() {
                         <TableCell className={`text-right text-sm font-medium ${isLow ? 'text-red-600' : 'text-espresso'}`}>
                           {m.quantityAfter}
                         </TableCell>
-                        <TableCell className="text-sm text-mist">{m.actor.email}</TableCell>
+                        <TableCell className="text-sm text-mist">{stockActorLabel(m.actor)}</TableCell>
                         <TableCell className="max-w-50 text-sm text-mist">
                           {m.note ? (
                             <span title={m.note}>{truncate(m.note, 60)}</span>

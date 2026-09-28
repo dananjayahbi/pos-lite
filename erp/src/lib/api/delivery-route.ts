@@ -8,6 +8,12 @@ import { isModuleEnabled } from '@/lib/feature-guard';
 import { prisma } from '@/lib/prisma';
 import type { PermissionKey } from '@/lib/constants/permissions';
 
+// INF-02: the typed error builders live in the canonical modules now; this
+// file re-exports them so the delivery route family keeps compiling
+// unchanged (back-compat per the INF-02 design).
+import { unauthorized, forbidden, badRequest, conflict, notFound, upstreamError } from './error-envelope';
+export { unauthorized, forbidden, validationError, notFound, conflict, badRequest, internalError } from './error-envelope';
+
 /**
  * Shared route guards for the delivery feature: auth + tenant + feature-module
  * + permission. Returns the resolved tenantId on success, or a Response to
@@ -38,59 +44,11 @@ export async function requireDeliveryAuth(permission?: PermissionKey): Promise<
   return { ok: true, tenantId, userId: session.user.id };
 }
 
-export function unauthorized(message: string): NextResponse {
-  return NextResponse.json(
-    { success: false, error: { code: 'UNAUTHORIZED', message } },
-    { status: 401 },
-  );
-}
-
-export function forbidden(message: string): NextResponse {
-  return NextResponse.json(
-    { success: false, error: { code: 'FORBIDDEN', message } },
-    { status: 403 },
-  );
-}
-
-export function validationError(details: unknown, message = 'Validation failed'): NextResponse {
-  return NextResponse.json(
-    { success: false, error: { code: 'VALIDATION_ERROR', message, details } },
-    { status: 400 },
-  );
-}
-
-export function notFound(message: string): NextResponse {
-  return NextResponse.json(
-    { success: false, error: { code: 'NOT_FOUND', message } },
-    { status: 404 },
-  );
-}
-
-export function conflict(message: string): NextResponse {
-  return NextResponse.json(
-    { success: false, error: { code: 'CONFLICT', message } },
-    { status: 409 },
-  );
-}
-
-export function badRequest(message: string): NextResponse {
-  return NextResponse.json(
-    { success: false, error: { code: 'BAD_REQUEST', message } },
-    { status: 400 },
-  );
-}
-
-export function internalError(message: string): NextResponse {
-  return NextResponse.json(
-    { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message } },
-    { status: 500 },
-  );
-}
-
 /**
  * Map delivery-service sentinel errors (and courier-prefixed errors) to HTTP
  * responses. Returns null when the error is not recognized (caller falls back
- * to a 500).
+ * to a 500). Delivery-specific friendly copy; the generic classification for
+ * other routes lives in `map-service-error.ts`.
  */
 export function mapDeliveryError(error: unknown): NextResponse | null {
   const message = error instanceof Error ? error.message : '';
@@ -102,11 +60,26 @@ export function mapDeliveryError(error: unknown): NextResponse | null {
   if (message === 'DELIVERY_NOT_RECOVERABLE') return conflict('Delivery is not in a recoverable state');
   if (message === 'DELIVERY_ALREADY_DISPATCHED') return conflict('Delivery already has an active shipment');
   if (message === 'DELIVERY_MISSING_ADDRESS') return badRequest('Delivery has no shipping address');
+  // NEW-F (M24-01): payment-settlement block is a state conflict, not a crash.
+  if (message === 'DELIVERY_PAYMENT_NOT_SETTLED') return conflict('Delivery payment has not been settled');
+
+  // M26-02/BUG-66: reconciliation-dispute sentinels. These were unmapped, so
+  // routine client errors (unknown id, double-dispute, cross-tenant id) 500'd
+  // across five QA pins.
+  if (message === 'LEDGER_ENTRY_NOT_FOUND') return notFound('Ledger entry not found');
+  if (message === 'DISPUTE_NOT_FOUND') return notFound('Dispute not found');
+  if (message === 'ALREADY_DISPUTED') return conflict('This ledger entry already has an open dispute');
+  // M26-03: corrupt/unreadable statement file is a client-input error.
+  if (message === 'STATEMENT_PARSE_FAILED') return badRequest('Could not parse statement file');
+
   if (message === 'COURIER_ACCOUNT_NOT_CONFIGURED') return conflict('Save your Trans Express account before syncing locations');
   if (message === 'COURIER_CREDENTIALS_MISSING') return badRequest('Add an email or API key to your Trans Express account before syncing locations');
-  if (message.startsWith('COURIER_AUTH_FAILED')) return badRequest('Trans Express authentication failed');
-  if (message.startsWith('COURIER_UPLOAD_FAILED')) return badRequest('Trans Express could not issue the waybill');
-  if (message.startsWith('COURIER_TRACKING_FAILED')) return badRequest('Could not fetch tracking from Trans Express');
-  if (message.startsWith('LOCATION_SYNC_FAILED')) return badRequest('Could not sync locations from Trans Express');
+  // M24-01/OBS-32: upstream-courier failures are infrastructure faults, not
+  // client errors. 502 Bad Gateway separates an outage from a bad request so
+  // operators/monitors can distinguish them (previously all mapped to 400).
+  if (message.startsWith('COURIER_AUTH_FAILED')) return upstreamError('COURIER_AUTH_FAILED', 'Trans Express authentication failed');
+  if (message.startsWith('COURIER_UPLOAD_FAILED')) return upstreamError('COURIER_UPLOAD_FAILED', 'Trans Express could not issue the waybill');
+  if (message.startsWith('COURIER_TRACKING_FAILED')) return upstreamError('COURIER_TRACKING_FAILED', 'Could not fetch tracking from Trans Express');
+  if (message.startsWith('LOCATION_SYNC_FAILED')) return upstreamError('LOCATION_SYNC_FAILED', 'Could not sync locations from Trans Express');
   return null;
 }

@@ -145,6 +145,13 @@ export async function DELETE(
     if (message === 'SERVICE_NOT_FOUND') {
       return NextResponse.json({ success: false, error: { code: 'NOT_FOUND', message: 'Service not found' } }, { status: 404 });
     }
+    // M27-05/BUG-90: a service referenced by upcoming appointments cannot be removed.
+    if (message === 'SERVICE_IN_USE') {
+      return NextResponse.json(
+        { success: false, error: { code: 'SERVICE_IN_USE', message: 'This service is used by upcoming appointments and cannot be deleted' } },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message } }, { status: 500 });
   }
 }

@@ -5,10 +5,9 @@
  */
 
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { tenantHomePath } from '@/lib/tenant';
 import { getTenantInfo } from '@/lib/api/website';
 import { CartView } from '@/components/website/cart/CartView';
+import { StoreHeader } from '@/components/website/common/StoreHeader';
 
 interface CartPageProps {
   params: Promise<{ tenantSlug: string }>;
@@ -20,24 +19,8 @@ export default async function CartPage({ params }: CartPageProps) {
   const tenant = await getTenantInfo(tenantSlug).catch(() => null);
 
   return (
-    <div className="min-h-screen bg-white">
-      <header className="border-b border-gray-100">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 py-3">
-          <Link
-            href={tenantHomePath(tenantSlug)}
-            className="text-lg font-medium"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-          >
-            {tenant?.name ?? 'Store'}
-          </Link>
-          <Link
-            href={tenantHomePath(tenantSlug)}
-            className="text-sm text-gray-500 hover:text-black transition-colors"
-          >
-            ← Back to store
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#051610] text-[#cbd5e1]">
+      <StoreHeader tenantSlug={tenantSlug} storeName={tenant?.name} />
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         <CartView tenantSlug={tenantSlug} />

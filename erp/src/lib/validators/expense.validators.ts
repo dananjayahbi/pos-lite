@@ -21,6 +21,9 @@ export const CreateExpenseSchema = z.object({
   expenseDate: z.string().min(1),
   receiptImageUrl: z.string().url().optional(),
   pettyCashFundId: z.string().cuid().optional(),
+  // M19-01 (D2): explicit manager approval to let a linked expense overdraw the
+  // petty-cash fund. The route additionally checks the actor's permission.
+  overdrawApproved: z.boolean().optional(),
 });
 
 export const UpdateExpenseSchema = CreateExpenseSchema.partial();

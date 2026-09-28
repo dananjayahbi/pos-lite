@@ -6,18 +6,40 @@ import { prisma } from '@/lib/prisma';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import type { TxClient } from '@/lib/services/inventory.service';
 import type { CreatePackagingItemInput, UpdatePackagingItemInput } from '@/lib/validators/packaging.validators';
+import { serializeMoneyOrNull } from '@/lib/api/serialize';
+import { comparePackagingItems } from '@/lib/constants/packaging';
+import type { PackagingItem } from '@/generated/prisma/client';
 
 /**
  * Packaging inventory service: CRUD for packaging items plus automatic
  * per-parcel deduction on dispatch (recorded as PackagingConsumption).
  * Deduction warns rather than blocks when stock is insufficient.
+ *
+ * INF-04: routes receive DTOs, never raw Prisma rows — the Decimal column
+ * `consumptionPerParcel` is serialized to a 2-dp string by contract.
  */
 
-export async function getPackagingItems(tenantId: string) {
-  return prisma.packagingItem.findMany({
+export interface PackagingItemDto extends Omit<PackagingItem, 'consumptionPerParcel'> {
+  consumptionPerParcel: string | null;
+}
+
+function toPackagingItemDto(item: PackagingItem): PackagingItemDto {
+  return {
+    ...item,
+    consumptionPerParcel: serializeMoneyOrNull(item.consumptionPerParcel),
+  };
+}
+
+export async function getPackagingItems(tenantId: string): Promise<PackagingItemDto[]> {
+  const items = await prisma.packagingItem.findMany({
     where: { tenantId, deletedAt: null },
-    orderBy: [{ category: 'asc' }, { name: 'asc' }],
+    // BUG-58/M23-02: Postgres native enums order by declaration position, not
+    // alphabetically, so a DB-level `orderBy: { category: 'asc' }` does not
+    // produce the pinned order. The list is small and unpaginated — sort
+    // in-process against the category/name text instead.
+    orderBy: [{ name: 'asc' }],
   });
+  return items.slice().sort(comparePackagingItems).map(toPackagingItemDto);
 }
 
 export async function createPackagingItem(tenantId: string, input: CreatePackagingItemInput) {
@@ -34,7 +56,7 @@ export async function createPackagingItem(tenantId: string, input: CreatePackagi
       ...(input.consumptionPerParcel !== undefined ? { consumptionPerParcel: input.consumptionPerParcel } : {}),
     },
   });
-  return item;
+  return toPackagingItemDto(item);
 }
 
 export async function updatePackagingItem(
@@ -70,7 +92,7 @@ export async function updatePackagingItem(
     action: AUDIT_ACTIONS.PACKAGING_STOCK_ADJUSTED,
     after: { name: updated.name, quantityOnHand: updated.quantityOnHand },
   });
-  return updated;
+  return toPackagingItemDto(updated);
 }
 
 /** Manual stock-in/out with an audit trail. Delta can be positive or negative. */
@@ -99,7 +121,7 @@ export async function adjustPackagingStock(
     before: { quantityOnHand: existing.quantityOnHand },
     after: { quantityOnHand: updated.quantityOnHand, note },
   });
-  return updated;
+  return toPackagingItemDto(updated);
 }
 
 export interface DeductionResult {

@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { AUTH_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
-import { clearSessionVersionCacheForUser } from '@/lib/auth/session-version-cache';
+import { AUTH_ACTIONS, writeAuditLog } from '@/lib/services/audit.service';
 import { getClientIp } from '@/lib/utils/request';
 
 export async function POST(
@@ -45,18 +44,20 @@ export async function POST(
     }
   }
 
-  await prisma.user.update({
+  const bumped = await prisma.user.update({
     where: { id: targetUser.id },
     data: {
       sessionVersion: {
         increment: 1,
       },
     },
+    select: { sessionVersion: true },
   });
 
-  clearSessionVersionCacheForUser(targetUser.id);
+  // M01-06: the proxy gate reads sessionVersion straight from the DB (no
+  // cache), so the bump above is effective on the target's very next request.
 
-  await createAuditLog({
+  await writeAuditLog({
     tenantId: actor.tenantId,
     actorId: actor.id,
     actorRole: actor.role,
@@ -67,9 +68,12 @@ export async function POST(
     userAgent: request.headers.get('user-agent') ?? undefined,
   });
 
+  // M03-03 item 2: report the new version so the admin UI can show certainty.
   return NextResponse.json(
     {
       message: 'User sessions have been invalidated.',
+      sessionVersion: bumped.sessionVersion,
+      revokedAt: new Date().toISOString(),
     },
     { status: 200 },
   );

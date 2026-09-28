@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getWebsiteConfig, getAds, createAd, upsertWebsiteConfig } from '@/lib/services/website.service';
 import { WebsiteAdSchema } from '@/lib/validators/website.validators';
 import { revalidateTenantStorefront } from '@/lib/revalidate-website';
@@ -13,6 +15,10 @@ export async function GET() {
         { status: 401 },
       );
     }
+
+    // M29-03 (OBS-41): website CMS read — owner/manager permission.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebsite);
+    if (forbidden) return forbidden;
 
     const ads = await getAds(session.user.tenantId);
     return NextResponse.json({ success: true, data: ads });
@@ -34,6 +40,10 @@ export async function POST(request: Request) {
         { status: 401 },
       );
     }
+
+    // M29-03 (OBS-41): website CMS write — owner/manager permission.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebsite);
+    if (forbidden) return forbidden;
 
     // Ensure config exists
     let existingConfig = await getWebsiteConfig(session.user.tenantId);

@@ -1,9 +1,9 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
-import { Facebook, Instagram, Mail, MessageCircle } from 'lucide-react';
 import type { WebsiteConfigData } from '@/types/website.types';
+import { tenantHomePath } from '@/lib/tenant';
+import { SectionAmbience } from '@/components/website/sections/SectionAmbience';
 
 interface WebsiteFooterProps {
   config: Record<string, unknown>;
@@ -11,261 +11,317 @@ interface WebsiteFooterProps {
   tenantSlug: string;
 }
 
-const SOCIAL_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
-  facebook: Facebook,
-  instagram: Instagram,
-  email: Mail,
-  whatsapp: MessageCircle,
-};
-
 /**
- * Dark-brown footer with up to 4 columns (Quick Links, Categories, Customer Service,
- * About + Social Icons) and a copyright bottom bar.
+ * Section 10 — 3-column ancestral footer (dark gradient).
+ * Col 1: brand logo + heritage blurb + social icons
+ * Col 2: "EXPLORE APOTHECARY" navigation
+ * Col 3: "ABOUT US" + sanctuary hours card
+ * Plus a bottom bar with copyright + back-to-top button.
  */
-export function WebsiteFooter({ websiteConfig }: WebsiteFooterProps) {
-  const footerColumns = websiteConfig.footerColumns ?? [];
+export function WebsiteFooter({ websiteConfig, tenantSlug }: WebsiteFooterProps) {
   const socialLinks = websiteConfig.socialLinks ?? {};
-  const footerAbout = websiteConfig.footerAbout;
-  const siteName = websiteConfig.siteName || 'Our Store';
+  const siteName = websiteConfig.siteName || 'WEDAGEDARA';
+  const logoUrl = websiteConfig.logoUrl;
+  const homeHref = tenantHomePath(tenantSlug);
   const year = new Date().getFullYear();
 
-  // Build social entries with proper href formatting
-  const socialEntries = Object.entries(socialLinks)
-    .filter(([, value]) => value && typeof value === 'string' && value.length > 0)
-    .map(([key, value]) => {
-      let href = value as string;
-      if (key === 'email' && !href.startsWith('mailto:')) {
-        href = `mailto:${href}`;
-      }
-      if (key === 'whatsapp' && !href.startsWith('https://')) {
-        href = `https://wa.me/${href.replace(/^\+/, '')}`;
-      }
-      return { key, href };
-    });
+  const socialEntries = (
+    [
+      { key: 'instagram', icon: 'fa-brands fa-instagram', href: socialLinks.instagram },
+      { key: 'facebook', icon: 'fa-brands fa-facebook-f', href: socialLinks.facebook },
+      { key: 'whatsapp', icon: 'fa-brands fa-whatsapp', href: socialLinks.whatsapp },
+      { key: 'youtube', icon: 'fa-brands fa-youtube', href: socialLinks.youtube },
+    ] as const
+  ).filter((s) => s.href);
 
-  // Prefer configured columns; fall back to sensible defaults
-  const columns = footerColumns.length > 0 ? footerColumns : getDefaultColumns();
-
-  // Distribute columns: first 3 from config, 4th is always About
-  const linkColumns = columns.slice(0, 3);
+  const scrollTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 
   return (
-    <footer className="site-footer-wrapper">
-      <div className="site-footer">
-        <div className="max-w-7xl mx-auto px-4 md:px-8">
-          <div className="footer-grid">
-            {/* Link columns */}
-            {linkColumns.map((col, i) => (
-              <div key={i} className="footer-column">
-                <h4 className="footer-column-title">{col.title}</h4>
-                <ul className="footer-links">
-                  {(col.links ?? []).map((link, j) => (
-                    <li key={j}>
-                      <Link href={link.href} className="footer-link">
-                        {link.label}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
+    <footer id="main-footer" className="relative w-full pt-20 pb-12 bg-gradient-to-b from-[#051610] via-[#030e0a] to-[#010705] overflow-hidden border-t border-white/10">
+      <SectionAmbience
+        leaves={[
+          { icon: 'fa-solid fa-leaf', classes: 'top-10 right-10 text-6xl text-[#97c93e]', speed: 0.18 },
+          { icon: 'fa-solid fa-seedling', classes: 'bottom-14 left-8 text-7xl text-emerald-400', speed: 0.25 },
+        ]}
+        glows={['top-0 left-1/4 w-96 h-96 bg-[#97c93e]/10', 'bottom-0 right-1/4 w-80 h-80 bg-emerald-500/10']}
+      />
+
+      <div className="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
+        <div className="footer-grid reveal-on-scroll">
+          {/* Col 1: brand */}
+          <div className="flex flex-col">
+            <a href={homeHref} className="footer-brand-logo group">
+              <div className="w-10 h-10 rounded-xl bg-white p-1 border border-[#97c93e]/40 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform overflow-hidden flex-shrink-0">
+                {logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={logoUrl} alt={`${siteName} logo`} className="w-full h-full object-contain" />
+                ) : (
+                  <span className="w-full h-full flex items-center justify-center text-[#051610] font-serif text-lg font-bold">
+                    W
+                  </span>
+                )}
               </div>
-            ))}
+              <span className="font-cinzel tracking-[0.12em] font-extrabold text-[1.375rem] text-white">
+                {siteName}
+              </span>
+            </a>
 
-            {/* About column — always the 4th */}
-            <div className="footer-column">
-              <h4 className="footer-column-title">About</h4>
-              {footerAbout ? (
-                <p className="footer-about">{footerAbout}</p>
-              ) : (
-                <p className="footer-about">
-                  {siteName} — premium products crafted with care and tradition.
-                </p>
-              )}
+            <p className="footer-brand-text">
+              {websiteConfig.footerAbout ||
+                'Rooted in ancestral Ola Leaf manuscripts and ethical Ceylon forest sanctuaries. We slow-decoct sacred botanicals to preserve the purest healing potency for cellular vitality and timeless wellness.'}
+            </p>
 
-              {/* Social icons */}
-              {socialEntries.length > 0 && (
-                <div className="footer-social">
-                  {socialEntries.map(({ key, href }) => {
-                    const Icon = SOCIAL_ICONS[key];
-                    if (!Icon) return null;
-                    return (
-                      <a
-                        key={key}
-                        href={href}
-                        className="footer-social-icon"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label={key}
-                      >
-                        <Icon size={16} />
-                      </a>
-                    );
-                  })}
-                </div>
-              )}
+            <div className="footer-social-wrap">
+              {socialEntries.map((s) => (
+                <a
+                  key={s.key}
+                  href={s.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="footer-social-btn"
+                  aria-label={s.key}
+                >
+                  <i className={s.icon} />
+                </a>
+              ))}
+            </div>
+          </div>
+
+          {/* Col 2: navigation */}
+          <div className="flex flex-col">
+            <h3 className="footer-col-title">Explore Apothecary</h3>
+            <nav className="footer-nav-list">
+              <a href={`${homeHref}#products-section`} className="footer-nav-link group">
+                <i className="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors" />
+                <span>Featured Elixirs &amp; Oils</span>
+              </a>
+              <a href={`${homeHref}#top-selling-section`} className="footer-nav-link group">
+                <i className="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors" />
+                <span>Top Selling Remedies</span>
+              </a>
+              <a href={`${homeHref}#categories-section`} className="footer-nav-link group">
+                <i className="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors" />
+                <span>Botanical Categories</span>
+              </a>
+              <a href={`${homeHref}#latest-products-section`} className="footer-nav-link group">
+                <i className="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors" />
+                <span>Fresh Herbal Arrivals</span>
+              </a>
+              <a href={`${homeHref}#store-reference-section`} className="footer-nav-link group">
+                <i className="fa-solid fa-seedling text-[11px] text-[#97c93e]/60 group-hover:text-[#97c93e] transition-colors" />
+                <span>Physical Sanctuary</span>
+              </a>
+            </nav>
+          </div>
+
+          {/* Col 3: about us */}
+          <div className="flex flex-col">
+            <h3 className="footer-col-title">About Us</h3>
+            <p className="footer-about-text">
+              {websiteConfig.footerAbout ||
+                'Wedagedara represents a multi-generational lineage of Ceylon Ayurvedic masters and certified herbalists. We bridge 5,000-year-old botanical alchemy with modern purity standards, sourcing every root from pesticide-free indigenous soils.'}
+            </p>
+
+            <div className="footer-hours-card">
+              <span className="footer-hours-label">Sanctuary Consultation Hours</span>
+              <span className="footer-hours-val">Monday – Sunday: 8:00 AM – 7:00 PM</span>
+              <span className="text-xs text-gray-400 mt-1 font-sans">
+                {websiteConfig.contactAddress || '42 Horton Place, Colombo 07'}
+              </span>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Bottom bar */}
-      <div className="footer-bottom">
-        <div className="max-w-7xl mx-auto px-4 md:px-8">
-          <p className="footer-copyright">
-            Copyright {year} &copy; {siteName}. All rights reserved.
+        {/* Bottom bar */}
+        <div className="footer-bottom-bar reveal-on-scroll">
+          <p className="footer-copy-text">
+            &copy; {year} {siteName}. All Rights Reserved. Crafted with Ancestral Wisdom.
           </p>
+          <button onClick={scrollTop} className="footer-back-top-btn" aria-label="Back to Top">
+            <span>TOP</span>
+            <i className="fa-solid fa-arrow-up text-xs" />
+          </button>
         </div>
       </div>
 
       <style jsx>{`
-        /* ── Footer wrapper ── */
-        .site-footer-wrapper {
-          font-family: 'Montserrat', sans-serif;
-        }
-
-        /* ── Main footer ── */
-        .site-footer {
-          background-color: #2b2520;
-          padding: 56px 0 40px;
-          color: #f5ede3;
-        }
-
-        /* ── Grid layout ── */
         .footer-grid {
           display: grid;
           grid-template-columns: 1fr;
-          gap: 36px;
+          gap: 40px;
         }
-
-        @media (min-width: 640px) {
+        @media (min-width: 768px) {
           .footer-grid {
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 48px;
           }
         }
-
         @media (min-width: 1024px) {
           .footer-grid {
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 56px;
           }
         }
-
-        /* ── Column title ── */
-        .footer-column-title {
-          font-size: 13px;
-          letter-spacing: 2px;
+        .footer-col-title {
+          font-family: var(--font-serif);
+          font-size: 1.0625rem;
+          font-weight: 700;
+          color: #ffffff;
+          letter-spacing: 0.1em;
           text-transform: uppercase;
-          color: #b08d6d;
-          font-weight: 600;
-          margin-bottom: 16px;
+          margin-bottom: 22px;
+          position: relative;
+          padding-bottom: 12px;
         }
-
-        /* ── Link list ── */
-        .footer-links {
-          list-style: none;
-          padding: 0;
-          margin: 0;
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
+        .footer-col-title::after {
+          content: '';
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          width: 36px;
+          height: 2px;
+          background: #97c93e;
+          border-radius: 9999px;
         }
-
-        .footer-link {
-          font-size: 13px;
-          color: #c4b8a8;
+        .footer-brand-logo {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
           text-decoration: none;
-          transition: color 0.2s ease;
+          transition: opacity 200ms ease;
         }
-
-        .footer-link:hover {
-          color: #f5ede3;
+        .footer-brand-logo:hover {
+          opacity: 0.9;
         }
-
-        /* ── About text ── */
-        .footer-about {
-          font-size: 13px;
+        .footer-brand-text {
+          font-size: 0.875rem;
+          color: #94a3b8;
+          font-weight: 300;
           line-height: 1.7;
-          color: #c4b8a8;
-          margin-bottom: 16px;
+          margin-top: 18px;
+          font-family: var(--font-sans);
         }
-
-        /* ── Social icons ── */
-        .footer-social {
+        .footer-social-wrap {
           display: flex;
           gap: 12px;
+          margin-top: 24px;
         }
-
-        .footer-social-icon {
-          display: flex;
+        .footer-social-btn {
+          width: 40px;
+          height: 40px;
+          border-radius: 9999px;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          color: #cbd5e1;
+          display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 34px;
-          height: 34px;
-          border-radius: 50%;
-          border: 1px solid #5a4e44;
-          color: #c4b8a8;
-          transition: all 0.2s ease;
+          font-size: 15px;
           text-decoration: none;
+          transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
         }
-
-        .footer-social-icon:hover {
-          border-color: #b08d6d;
-          color: #b08d6d;
-          background-color: rgba(176, 141, 109, 0.08);
+        .footer-social-btn:hover {
+          background: #97c93e;
+          color: #051610;
+          transform: translateY(-3px);
+          box-shadow: 0 8px 20px rgba(151, 201, 62, 0.3);
         }
-
-        /* ── Bottom bar ── */
-        .footer-bottom {
-          background-color: #1f1b17;
-          padding: 18px 0;
-          text-align: center;
+        .footer-nav-list {
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
         }
-
-        .footer-copyright {
-          font-size: 12px;
-          color: #8a7e72;
-          letter-spacing: 0.5px;
+        .footer-nav-link {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          color: #94a3b8;
+          font-size: 0.875rem;
+          text-decoration: none;
+          transition: all 250ms ease;
         }
-
-        /* ── Mobile adjustments ── */
-        @media (max-width: 639px) {
-          .site-footer {
-            padding: 40px 0 28px;
+        @media (min-width: 640px) {
+          .footer-nav-link {
+            font-size: 0.9375rem;
           }
-
-          .footer-grid {
-            gap: 28px;
+        }
+        .footer-nav-link:hover {
+          color: #97c93e;
+          transform: translateX(6px);
+        }
+        .footer-about-text {
+          font-size: 0.875rem;
+          color: #94a3b8;
+          font-weight: 300;
+          line-height: 1.7;
+          font-family: var(--font-sans);
+        }
+        .footer-hours-card {
+          margin-top: 18px;
+          padding: 14px 18px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 18px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .footer-hours-label {
+          font-size: 0.6875rem;
+          font-weight: 600;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: #97c93e;
+          font-family: var(--font-sans);
+        }
+        .footer-hours-val {
+          font-size: 0.8125rem;
+          color: #e2e8f0;
+          font-family: var(--font-sans);
+        }
+        .footer-bottom-bar {
+          border-top: 1px solid rgba(255, 255, 255, 0.06);
+          padding-top: 28px;
+          margin-top: 56px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 18px;
+          justify-content: space-between;
+        }
+        @media (min-width: 640px) {
+          .footer-bottom-bar {
+            flex-direction: row;
           }
+        }
+        .footer-copy-text {
+          font-size: 0.8125rem;
+          color: #64748b;
+          font-family: var(--font-sans);
+        }
+        .footer-back-top-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 16px;
+          border-radius: 9999px;
+          background: rgba(8, 32, 23, 0.8);
+          border: 1px solid rgba(151, 201, 62, 0.3);
+          color: #97c93e;
+          font-size: 0.75rem;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          cursor: pointer;
+          transition: all 300ms ease;
+        }
+        .footer-back-top-btn:hover {
+          background: #97c93e;
+          color: #051610;
+          transform: translateY(-3px);
+          box-shadow: 0 8px 25px rgba(151, 201, 62, 0.35);
         }
       `}</style>
     </footer>
   );
-}
-
-/** Sensible default columns when no footerColumns are configured. */
-function getDefaultColumns() {
-  return [
-    {
-      title: 'Quick Links',
-      links: [
-        { label: 'Shop', href: '/shop' },
-        { label: 'About', href: '/about' },
-        { label: 'Contact', href: '/contact' },
-      ],
-    },
-    {
-      title: 'Categories',
-      links: [
-        { label: 'All Products', href: '/shop' },
-      ],
-    },
-    {
-      title: 'Customer Service',
-      links: [
-        { label: 'Track Order', href: '/track' },
-        { label: 'Contact Us', href: '/contact' },
-        { label: 'FAQ', href: '/faq' },
-        { label: 'Shipping Info', href: '/shipping' },
-        { label: 'Returns Policy', href: '/returns' },
-      ],
-    },
-  ];
 }

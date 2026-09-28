@@ -2,6 +2,7 @@
 
 import React, { useMemo, useEffect } from 'react';
 import { WebsiteHeader } from './sections/WebsiteHeader';
+import { AnnouncementBar } from './sections/AnnouncementBar';
 import { HeroSection } from './sections/HeroSection';
 import { ImageSliderSection } from './sections/ImageSliderSection';
 import { BestSelling } from './sections/BestSelling';
@@ -14,6 +15,7 @@ import { WebsiteFooter } from './sections/WebsiteFooter';
 import { AdBanner } from './sections/AdBanner';
 import { BackToTop } from './sections/BackToTop';
 import { CartDrawerHost } from './cart/CartDrawerHost';
+import { useParallaxEngine } from '@/hooks/useParallaxEngine';
 import type {
   WebsiteConfigData,
   SectionKey,
@@ -201,6 +203,9 @@ export function WebsiteShell({
     };
   }, [websiteConfig.primaryColor, websiteConfig.accentColor, websiteConfig.bgColor, websiteConfig.faviconUrl, websiteConfig.metaTitle, websiteConfig.siteName, websiteConfig.headingFontFamily, websiteConfig.bodyFontFamily, websiteConfig.headingColor, websiteConfig.bodyColor]);
 
+  // Run the global scroll-reveal + parallax engine once per page load.
+  useParallaxEngine();
+
   const sortedSections = useMemo(
     () => getSortedSections(websiteConfig.sections),
     [websiteConfig.sections],
@@ -213,6 +218,10 @@ export function WebsiteShell({
 
   return (
     <div className="site-wrapper">
+      {/* Site-wide announcement top-bar (req 3.4) — normal flow, above the
+          fixed header, which offsets itself via --announcement-bar-height. */}
+      <AnnouncementBar config={websiteConfig} />
+
       {/* Header Ads */}
       {headerAds.map((ad) => (
         <AdBanner key={ad.id} ad={ad} />
@@ -222,7 +231,7 @@ export function WebsiteShell({
       <WebsiteHeader config={websiteConfig} tenantSlug={tenantSlug} />
 
       {/* Sections */}
-      {sortedSections.map(({ key, config: sectionConfig }, idx) => {
+      {sortedSections.map(({ key, config: sectionConfig }) => {
         const SectionComponent = getSectionComponent(key);
         if (!SectionComponent) return null;
 
@@ -235,16 +244,13 @@ export function WebsiteShell({
           categories,
         };
 
-        // Alternating backgrounds for visual separation
-        const isEven = idx % 2 === 0;
-        const bgClass = isEven ? 'bg-white' : 'bg-stone-50/60';
-        // Hero is full-bleed — only bottom gap, no internal padding
+        // All sections share the dark Ayurveda background; hero is full-bleed.
         const isHero = key === 'hero';
 
         return (
           <div
             key={key}
-            className={`section-wrapper ${bgClass} ${isHero ? 'pt-0 pb-0' : 'py-6 md:py-8'} mb-[10px]`}
+            className={`section-wrapper ${isHero ? 'pt-0 pb-0' : ''} bg-[#051610]`}
           >
             <SectionComponent {...sectionProps} />
             {/* Inject ads after this section */}

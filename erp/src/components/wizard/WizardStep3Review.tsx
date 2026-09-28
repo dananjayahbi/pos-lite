@@ -1,9 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, Loader2, Package } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Loader2, Package } from 'lucide-react';
 import { useProductWizardStore } from '@/stores/productWizardStore';
 import { useCategories } from '@/hooks/useCategories';
 import { useBrands } from '@/hooks/useBrands';
@@ -11,6 +12,11 @@ import type { HealthConcern } from '@/generated/prisma/client';
 import { Button } from '@/components/ui/button';
 import { formatRupee } from '@/lib/format';
 import { getPendingImages, clearPendingFiles } from '@/lib/wizardPendingFiles';
+import {
+  classifyProductCreateResponse,
+  type ProductCreateOutcome,
+  type ProductCreateResponseJson,
+} from '@/components/wizard/create-result';
 import {
   PRODUCT_FORM_LABELS,
   PRODUCT_FORM_ICONS,
@@ -20,6 +26,11 @@ import {
 export function WizardStep3Review() {
   const router = useRouter();
   const { step1Data, step2Data, goToStep, resetWizard } = useProductWizardStore();
+  // BUG-2: set when the API answered 207 PARTIAL_SUCCESS so the review step
+  // keeps the user here with the warning visible instead of a success toast.
+  const [partialWarning, setPartialWarning] = useState<
+    Extract<ProductCreateOutcome, { kind: 'partial' }> | null
+  >(null);
 
   const { data: categoriesRes } = useCategories();
   const { data: brandsRes } = useBrands();
@@ -37,7 +48,7 @@ export function WizardStep3Review() {
     : '—';
 
   const { mutate: createProduct, isPending } = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<ProductCreateOutcome> => {
       if (!step1Data || !step2Data)
         throw new Error('Wizard data is incomplete');
 
@@ -102,16 +113,23 @@ export function WizardStep3Review() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const json = (await res.json()) as {
-        success: boolean;
-        error?: { message: string };
-      };
-      if (!json.success)
-        throw new Error(json.error?.message ?? 'Failed to create product');
-      clearPendingFiles();
-      return json;
+      const json = (await res.json().catch(() => null)) as ProductCreateResponseJson | null;
+      // BUG-2: a 207 PARTIAL_SUCCESS (product saved, variants rejected) must
+      // NOT be reported as plain success — classify before branching.
+      const outcome = classifyProductCreateResponse(res.status, json);
+      if (outcome.kind === 'failure') throw new Error(outcome.message);
+      if (outcome.kind === 'success') clearPendingFiles();
+      return outcome;
     },
-    onSuccess: () => {
+    onSuccess: (outcome) => {
+      if (outcome.kind === 'partial') {
+        // Stay on the review step with an inline warning banner — no success
+        // toast, no navigation. The product exists; variants must be added
+        // from its edit page (re-submitting would duplicate the product).
+        setPartialWarning(outcome);
+        toast.warning(outcome.message);
+        return;
+      }
       toast.success('Product created successfully');
       resetWizard();
       router.push('/inventory');
@@ -142,6 +160,39 @@ export function WizardStep3Review() {
           Check the details below before saving the product.
         </p>
       </div>
+
+      {/* BUG-2: partial-success warning — product created, variants failed. */}
+      {partialWarning && (
+        <div
+          role="alert"
+          data-testid="partial-success-warning"
+          className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="text-sm">
+            <p className="font-semibold text-amber-900">
+              Product created — variants failed
+            </p>
+            <p className="mt-1 text-amber-800">{partialWarning.message}</p>
+            <p className="mt-1 text-amber-800">
+              The product was saved but no variants were created. Fix the
+              variant data and add variants from the product&rsquo;s edit page
+              — do not submit this form again.
+            </p>
+            {partialWarning.productId && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                onClick={() => router.push(`/inventory/${partialWarning.productId}`)}
+              >
+                Go to product page
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Product details */}
       <section className="rounded-xl border border-mist bg-white">

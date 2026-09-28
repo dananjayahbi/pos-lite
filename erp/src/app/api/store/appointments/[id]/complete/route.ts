@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { hasPermission } from '@/lib/utils/permissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { completeAppointment } from '@/lib/services/appointment.service';
 
 export async function POST(
@@ -20,6 +22,16 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: 'No tenant associated' } },
         { status: 401 },
+      );
+    }
+
+    // M27-02/BUG-86: completing an appointment is a status transition — it was
+    // previously gated on session+tenant only, so any authenticated cashier
+    // could complete any appointment. Mirror the sibling routes.
+    if (!hasPermission(session.user, PERMISSIONS.APPOINTMENT.editAppointment)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
       );
     }
 

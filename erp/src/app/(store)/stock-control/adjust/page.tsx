@@ -1,4 +1,5 @@
 import { auth } from '@/lib/auth';
+import { denialRouteFor } from '@/lib/auth/page-guards';
 import { redirect } from 'next/navigation';
 import { StockAdjustmentForm } from '@/components/stock-control/StockAdjustmentForm';
 
@@ -12,7 +13,7 @@ interface StockAdjustmentPageProps {
 
 export default async function StockAdjustmentPage({ searchParams }: StockAdjustmentPageProps) {
   const session = await auth();
-  if (!session?.user?.tenantId) redirect('/login');
+  if (!session?.user?.tenantId) redirect(denialRouteFor(session?.user));
 
   const { variantId } = await searchParams;
 

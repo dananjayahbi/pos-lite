@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getAvailableSlots } from '@/lib/services/appointment-availability.service';
+import { parseQueryDate } from '@/lib/api/query-params';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function GET(request: Request) {
   try {
@@ -30,25 +32,24 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url);
-    const date = url.searchParams.get('date');
+    const dateRaw = url.searchParams.get('date');
     const staffId = url.searchParams.get('staffId') ?? undefined;
     const serviceId = url.searchParams.get('serviceId') ?? undefined;
 
-    if (!date) {
+    if (!dateRaw) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message: 'date parameter is required' } },
         { status: 400 },
       );
     }
 
+    // M27-07/BUG-89: malformed `date` used to reach new Date() → 500.
+    const date = parseQueryDate(url.searchParams, 'date')!.toISOString().slice(0, 10);
+
     const slots = await getAvailableSlots(tenantId, date, staffId, serviceId);
 
     return NextResponse.json({ success: true, data: slots });
   } catch (error) {
-    console.error('GET /api/store/appointments/slots error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'GET /api/store/appointments/slots');
   }
 }

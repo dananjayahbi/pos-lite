@@ -2,6 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { WebsiteHeader } from './sections/WebsiteHeader';
+import { AnnouncementBar } from './sections/AnnouncementBar';
 import { HeroSection } from './sections/HeroSection';
 import { CategoryGrid } from './sections/CategoryGrid';
 import { SolutionsByConcern } from './sections/SolutionsByConcern';
@@ -130,6 +131,9 @@ export function WebsiteShell({ tenantName, tenantSlug, config }: WebsiteShellPro
 
   return (
     <div className="site-wrapper">
+      {/* Site-wide announcement top-bar (req 3.4) — mirrors the storefront. */}
+      <AnnouncementBar config={websiteConfig} />
+
       {/* Header Ads */}
       {headerAds.map((ad) => (
         <AdBanner key={ad.id} ad={ad} />

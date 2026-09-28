@@ -61,12 +61,12 @@ export function ProductCard({
   const inStock = (variant?.stockQuantity ?? 0) > 0;
 
   return (
-    <article className="product-card group flex h-full flex-col">
+    <article className="product-card group flex h-full flex-col rounded-xl border border-white/10 bg-[#082017] p-3">
       <Link
         href={ROUTES.product(tenantSlug, product.id)}
         className="flex flex-1 flex-col"
       >
-        <div className="product-card-image">
+        <div className="product-card-image aspect-square overflow-hidden rounded-lg bg-[#051610] ring-1 ring-white/5">
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -76,16 +76,19 @@ export function ProductCard({
               loading="lazy"
             />
           ) : (
-            <div className="flex aspect-square items-center justify-center text-xs text-gray-400">
+            <div className="flex aspect-square items-center justify-center text-xs text-[#64748b]">
               Image unavailable
             </div>
           )}
         </div>
         <div className="p-3 text-center">
-          <h4 className="mb-1 line-clamp-2 text-xs font-medium md:text-sm">
+          <h4
+            className="mb-1 line-clamp-2 text-xs font-medium text-white md:text-sm"
+            style={{ fontFamily: 'var(--font-serif), serif' }}
+          >
             {product.name}
           </h4>
-          <p className="text-sm font-semibold">{formatLKR(price)}</p>
+          <p className="text-sm font-semibold text-[#97c93e]">{formatLKR(price)}</p>
         </div>
       </Link>
       <div className="px-3 pb-3">
@@ -101,7 +104,7 @@ export function ProductCard({
           />
         </div>
         {!inStock && (
-          <p className="mt-1 text-center text-[11px] text-red-600">Out of stock</p>
+          <p className="mt-1 text-center text-[11px] text-red-400">Out of stock</p>
         )}
       </div>
     </article>

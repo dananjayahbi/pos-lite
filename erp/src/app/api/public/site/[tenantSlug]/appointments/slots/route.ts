@@ -86,6 +86,7 @@ export async function GET(
       startTime: true,
       endTime: true,
       staffId: true,
+      staff: { select: { id: true, email: true } },
     },
   });
 

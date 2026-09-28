@@ -5,17 +5,36 @@
  * Node.js modules. This API route acts as a bridge — middleware calls this
  * endpoint via fetch() for any database operations it needs.
  *
- * IMPORTANT: This route must be excluded from the middleware matcher to
- * prevent infinite loops. See middleware.ts → config.matcher.
+ * IMPORTANT: This route must be excluded from the proxy matcher to
+ * prevent infinite loops. See src/proxy.ts → config.matcher.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { AUTH_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
+import {
+  INTERNAL_BRIDGE_HEADER,
+  authorizeBridgeRequest,
+  getBridgeAuthStatus,
+} from '@/lib/internal-bridge-auth';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
+    // M35-02 hardening: this endpoint writes audit rows and reads user/tenant
+    // state for an Edge caller, so it verifies the caller. See
+    // `internal-bridge-auth.ts` for the enforcement model (secret configured →
+    // constant-time check; unconfigured → refused in production, allowed in dev).
+    const authorization = authorizeBridgeRequest(request.headers.get(INTERNAL_BRIDGE_HEADER));
+    if (!authorization.allowed) {
+      const status = getBridgeAuthStatus();
+      console.warn('Internal bridge rejected request:', authorization.reason, status);
+      return NextResponse.json(
+        { error: 'Unauthorized', code: authorization.reason },
+        { status: 401 },
+      );
+    }
+
     const body = await request.json();
     const { action } = body;
 
@@ -34,8 +53,11 @@ export async function POST(request: NextRequest) {
 
       case 'checkTenantStatus': {
         const { tenantId } = body;
+        // NEW-B (M01-06): a missing/invalid tenantId is an explicit "no tenant"
+        // answer — 200 {status:null} — so the proxy denies based on data
+        // instead of a 400 turning into a silent skip behind `if (res.ok)`.
         if (!tenantId || typeof tenantId !== 'string') {
-          return NextResponse.json({ error: 'Invalid tenantId' }, { status: 400 });
+          return NextResponse.json({ status: null, deletedAt: null });
         }
         const tenant = await prisma.tenant.findUnique({
           where: { id: tenantId },
@@ -45,7 +67,7 @@ export async function POST(request: NextRequest) {
             deletedAt: true,
           },
         });
-        return NextResponse.json(tenant);
+        return NextResponse.json(tenant ?? { status: null, deletedAt: null });
       }
 
       case 'checkTenantSlug': {

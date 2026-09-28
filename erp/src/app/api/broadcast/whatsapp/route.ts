@@ -2,12 +2,21 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { sendWhatsAppTextMessage } from '@/lib/whatsapp';
+import { PERMISSIONS } from '@/lib/constants/permissions';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import {
+  BROADCAST_ERROR_SAMPLE_LIMIT,
+  createBroadcastRecord,
+  scheduleBroadcastDispatch,
+  type BroadcastRecipient,
+} from '@/lib/services/broadcast-dispatch.service';
 import type { Prisma, Gender } from '@/generated/prisma/client';
 
-// NOTE: Serverless functions have a timeout (typically 10-60s depending on
-// the platform/plan). For large recipient lists, consider offloading to a
-// background job queue (e.g. Inngest, QStash) instead of sequential sends.
+// M31-03 (OBS-53): the send loop no longer runs inside this request. The audit
+// row is created first (status SENDING) and dispatch continues *after* the
+// response via Next's `after()`, so a large audience can no longer time out the
+// request and destroy the broadcast record. The full rationale lives in
+// `src/lib/services/broadcast-dispatch.service.ts`.
 
 const BroadcastBodySchema = z.object({
   filters: z.object({
@@ -19,8 +28,6 @@ const BroadcastBodySchema = z.object({
   }).optional(),
   message: z.string().min(1).max(500),
 });
-
-const RESTRICTED_ROLES = ['CASHIER', 'STOCK_CLERK'] as const;
 
 export async function POST(request: Request) {
   try {
@@ -41,12 +48,11 @@ export async function POST(request: Request) {
       );
     }
 
-    if (RESTRICTED_ROLES.includes(session.user.role as (typeof RESTRICTED_ROLES)[number])) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions to send broadcasts' } },
-        { status: 403 },
-      );
-    }
+    // M31-02 (OBS-51 / decision D15): the broadcast composer's own permission
+    // gates the send. The audience preview/count endpoints use the same key so
+    // the data needed to send is not readable by roles that cannot send.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.BROADCAST.send);
+    if (forbidden) return forbidden;
 
     const body = await request.json();
     const parsed = BroadcastBodySchema.safeParse(body);
@@ -119,55 +125,45 @@ export async function POST(request: Request) {
     });
     const storeName = tenant?.name ?? '';
 
-    // Send messages sequentially with 1s delay
-    let sent = 0;
-    let failed = 0;
-    const errors: string[] = [];
+    // RECORD FIRST — the audit row exists before a single message is sent, so
+    // an interrupted dispatch can no longer destroy the broadcast record.
+    const broadcast = await createBroadcastRecord({
+      tenantId,
+      message,
+      sentById: session.user.id,
+      recipientCount: customers.length,
+      criteria: (filters ?? {}) as Record<string, unknown>,
+    });
 
-    for (const customer of customers) {
-      const firstName = customer.name.split(' ')[0] ?? '';
-      const personalizedMessage = message
-        .replaceAll('{{name}}', firstName)
-        .replaceAll('{{storeName}}', storeName);
+    const recipients: BroadcastRecipient[] = customers.map((c) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+    }));
 
-      const result = await sendWhatsAppTextMessage(customer.phone, personalizedMessage);
+    // SEND AFTER THE RESPONSE — answer immediately, dispatch in the background.
+    scheduleBroadcastDispatch({
+      broadcastId: broadcast.id,
+      recipients,
+      message,
+      storeName,
+    });
 
-      if (result.success) {
-        sent++;
-      } else {
-        failed++;
-        errors.push(`${customer.phone}: ${result.error ?? 'Unknown error'}`);
-      }
-
-      // 1s delay between sends to avoid rate limiting
-      if (customers.indexOf(customer) < customers.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-    }
-
-    // Record broadcast
-    await prisma.customerBroadcast.create({
-      data: {
-        tenantId,
-        message,
-        recipientCount: customers.length,
-        sentById: session.user.id,
-        filters: {
-          criteria: filters ?? {},
-          analytics: {
-            sent,
-            failed,
-            total: customers.length,
-            errors: errors.slice(0, 10),
-          },
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          broadcastId: broadcast.id,
+          status: 'SENDING',
+          sent: 0,
+          failed: 0,
+          total: customers.length,
+          errors: [] as string[],
+          errorSampleLimit: BROADCAST_ERROR_SAMPLE_LIMIT,
         },
       },
-    });
-
-    return NextResponse.json({
-      success: true,
-      data: { sent, failed, total: customers.length, errors: errors.slice(0, 10) },
-    });
+      { status: 202 },
+    );
   } catch (error) {
     console.error('POST /api/broadcast/whatsapp error:', error);
     return NextResponse.json(

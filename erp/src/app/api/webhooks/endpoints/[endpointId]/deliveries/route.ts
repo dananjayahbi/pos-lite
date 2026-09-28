@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-
-const ALLOWED_ROLES = new Set(['OWNER', 'MANAGER']);
+import { parseQueryInt as parseIntParamSafe } from '@/lib/api/query-params';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 export async function GET(
   request: NextRequest,
@@ -25,18 +27,18 @@ export async function GET(
       );
     }
 
-    if (!ALLOWED_ROLES.has(session.user.role)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
-        { status: 403 },
-      );
-    }
+    // XC-03: one guard, one key — replaces the local ALLOWED_ROLES set.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.viewWebhookEndpoints);
+    if (forbidden) return forbidden;
 
     const { endpointId } = await params;
-    const limit = Math.min(Math.max(Number(new URL(request.url).searchParams.get('limit') ?? '15') || 15, 1), 50);
+    // XC-01: malformed limit → typed 400 (was a silent `|| 15` fallback, which
+    // masked a caller's mistake); out-of-range still clamps to [1, 50].
+    const limit =
+      parseIntParamSafe(request.nextUrl.searchParams, 'limit', { default: 15, min: 1, max: 50 }) ?? 15;
 
     const endpoint = await prisma.webhookEndpoint.findFirst({
-      where: { id: endpointId, tenantId },
+      where: { id: endpointId, tenantId, deletedAt: null },
       select: { id: true },
     });
 
@@ -55,10 +57,8 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: deliveries });
   } catch (error) {
-    console.error('GET /api/webhooks/endpoints/[endpointId]/deliveries error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch webhook deliveries' } },
-      { status: 500 },
-    );
+    // XC-01/XC-02: a malformed `limit` is a typed 400 via the shared envelope
+    // handler, not a generic 500.
+    return toErrorResponse(error, 'GET /api/webhooks/endpoints/[endpointId]/deliveries');
   }
 }

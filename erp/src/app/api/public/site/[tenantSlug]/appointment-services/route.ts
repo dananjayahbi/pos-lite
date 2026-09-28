@@ -52,7 +52,11 @@ export async function GET(
   }
 
   const services = await prisma.appointmentService.findMany({
-    where: { tenantId: tenant.id, deletedAt: null, isActive: true },
+    where: {
+      tenantId: tenant.id,
+      deletedAt: null,
+      isActive: true,
+    },
     orderBy: { sortOrder: 'asc' },
     select: {
       id: true,
@@ -64,7 +68,24 @@ export async function GET(
     },
   });
 
-  return jsonWithCors(request, { success: true, data: services }, {
+  // Honor the owner's service selection from the website config's
+  // `appointments.serviceIds`. When set (non-empty), only those services are
+  // offered to customers; when empty, all active services are shown so the
+  // public page stays in sync with the ERP's configured offering.
+  const websiteConfig = await prisma.websiteConfig.findUnique({
+    where: { tenantId: tenant.id },
+    select: { appointments: true },
+  });
+  const appointmentConfig = (websiteConfig?.appointments ?? {}) as {
+    serviceIds?: string[] | null;
+  };
+  const selectedIds = appointmentConfig.serviceIds ?? [];
+  const publicServices =
+    selectedIds.length > 0
+      ? services.filter((s) => selectedIds.includes(s.id))
+      : services;
+
+  return jsonWithCors(request, { success: true, data: publicServices }, {
     headers: {
       // Public cache: 60s, stale-while-revalidate 5 minutes
       'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',

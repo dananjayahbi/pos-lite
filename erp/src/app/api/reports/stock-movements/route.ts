@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
       quantityDelta: m.quantityDelta,
       quantityBefore: m.quantityBefore,
       quantityAfter: m.quantityAfter,
-      actorEmail: m.actor.email,
+      actorEmail: m.actor?.email ?? null,
       note: m.note,
       saleId: m.saleId,
       purchaseOrderId: m.purchaseOrderId,

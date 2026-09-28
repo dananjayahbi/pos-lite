@@ -133,14 +133,22 @@ export function BroadcastPageClient() {
         return;
       }
 
-      const { sent, failed, total } = json.data as { sent: number; failed: number; total: number };
+      // M31-03: the send now continues after the response, so this call returns
+      // a queued acknowledgement rather than final delivery counts.
+      const { total, status } = json.data as {
+        total: number;
+        status?: string;
+        broadcastId?: string;
+      };
 
-      if (failed === 0) {
-        toast.success(`Broadcast sent to ${sent} customer${sent !== 1 ? 's' : ''}`);
-      } else if (sent > 0) {
-        toast.warning(`Sent to ${sent}/${total}. ${failed} failed.`);
+      if (total === 0) {
+        toast.warning('No customers matched these filters — nothing was sent.');
+      } else if (status === 'SENDING') {
+        toast.success(
+          `Broadcast queued for ${total} customer${total !== 1 ? 's' : ''}. Delivery continues in the background — check Broadcast History for the result.`,
+        );
       } else {
-        toast.error(`Broadcast failed. 0/${total} delivered.`);
+        toast.success(`Broadcast started for ${total} customer${total !== 1 ? 's' : ''}.`);
       }
 
       router.push('/customers/broadcast/history');

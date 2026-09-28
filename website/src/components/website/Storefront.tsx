@@ -35,7 +35,12 @@ export async function Storefront({ tenantSlug }: StorefrontProps) {
   try {
     tenant = await getTenantInfo(tenantSlug);
   } catch (err) {
-    if (err instanceof ApiError && err.status === 404) notFound();
+    if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
+      // 404 = unknown tenant; 403 = the "Public Website" feature module has been
+      // disabled for this business from the superadmin panel. Either way the
+      // storefront should not exist.
+      notFound();
+    }
     // Other errors (network, 5xx) — fall through to the friendly error UI.
     // eslint-disable-next-line no-console
     console.error('[storefront] tenant lookup failed', err);

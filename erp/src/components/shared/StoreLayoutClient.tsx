@@ -3,9 +3,13 @@
 import { useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
+import { postLogoutAudit } from '@/lib/auth/logout-audit';
 import type { UserRole } from '@/generated/prisma/client';
 import StoreSidebar from '@/components/layout/StoreSidebar';
 import { NotificationPopover } from '@/components/notifications/NotificationPopover';
+import NavSearchTrigger from '@/components/navigation/NavSearchTrigger';
+import NavSearchModal from '@/components/navigation/NavSearchModal';
+import { useCommandK } from '@/hooks/useCommandK';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -34,16 +38,20 @@ export default function StoreLayoutClient({
 }: StoreLayoutClientProps) {
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+
+  useCommandK(() => setGlobalSearchOpen(true));
 
   const showSidebar = !pathname.startsWith('/pos');
 
   return (
     <>
+      <NavSearchModal open={globalSearchOpen} onOpenChange={setGlobalSearchOpen} />
+
       {showSidebar ? (
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <aside className="hidden w-64 shrink-0 overflow-hidden border-r border-mist bg-pearl md:flex">
             <StoreSidebar
-              userEmail={userEmail}
               userRole={userRole}
               permissions={permissions}
               businessName={businessName}
@@ -54,7 +62,7 @@ export default function StoreLayoutClient({
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {/* Desktop header */}
             <header className="sticky top-0 z-40 hidden items-center justify-between border-b border-mist bg-pearl/95 px-6 py-3 backdrop-blur-sm md:flex">
-              <div />
+              <NavSearchTrigger onOpen={() => setGlobalSearchOpen(true)} />
               <div className="flex items-center gap-3">
                 <NotificationPopover />
                 <span className="max-w-[180px] truncate rounded-full bg-linen px-3 py-1 text-xs text-espresso/70">
@@ -62,7 +70,11 @@ export default function StoreLayoutClient({
                 </span>
                 <button
                   type="button"
-                  onClick={() => void signOut({ callbackUrl: `${window.location.origin}/login` })}
+                  onClick={async () => {
+                    // M01-04: ledger the sign-out before the cookie is cleared.
+                    await postLogoutAudit();
+                    await signOut({ callbackUrl: `${window.location.origin}/login` });
+                  }}
                   className="text-xs text-terracotta transition-colors hover:text-espresso"
                 >
                   Log Out
@@ -81,7 +93,6 @@ export default function StoreLayoutClient({
                 <SheetContent side="left" className="w-72 bg-pearl p-0">
                   <SheetTitle className="sr-only">Store navigation</SheetTitle>
                   <StoreSidebar
-                    userEmail={userEmail}
                     userRole={userRole}
                     permissions={permissions}
                     businessName={businessName}
@@ -91,7 +102,8 @@ export default function StoreLayoutClient({
                 </SheetContent>
               </Sheet>
 
-              <div className="flex items-center gap-2">
+              <div className="ml-auto flex items-center gap-2">
+                <NavSearchTrigger onOpen={() => setGlobalSearchOpen(true)} />
                 {businessLogoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={businessLogoUrl} alt="" className="h-6 w-6 rounded object-contain" />

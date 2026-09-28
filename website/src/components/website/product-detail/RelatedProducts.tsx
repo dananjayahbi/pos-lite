@@ -37,33 +37,36 @@ export function RelatedProducts({ products, tenantSlug }: RelatedProductsProps) 
     <section className="py-12 md:py-16">
       <div className="max-w-7xl mx-auto px-4">
         <h2
-          className="text-xl md:text-2xl mb-6"
-          style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+          className="text-xl md:text-2xl mb-6 text-white"
+          style={{ fontFamily: 'var(--font-serif), serif' }}
         >
           You may also like
         </h2>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {products.map((p) => (
             <Link
               key={p.id}
               href={ROUTES.product(tenantSlug, p.id)}
-              className="product-card group block"
+              className="product-card group block rounded-xl border border-white/10 bg-[#082017] p-3"
             >
-              <div className="product-card-image">
+              <div className="product-card-image aspect-square overflow-hidden rounded-lg bg-[#051610] ring-1 ring-white/5">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={pickImage(p)}
                   alt={p.name}
-                  className="primary"
+                  className="primary object-contain"
                   loading="lazy"
                 />
               </div>
               <div className="p-3 text-center">
-                <h4 className="text-xs md:text-sm font-medium mb-1 line-clamp-2">
+                <h4
+                  className="text-xs md:text-sm font-medium mb-1 line-clamp-2 text-white"
+                  style={{ fontFamily: 'var(--font-serif), serif' }}
+                >
                   {p.name}
                 </h4>
-                <p className="text-sm font-semibold">{formatLKR(pickPrice(p))}</p>
+                <p className="text-sm font-semibold text-[#97c93e]">{formatLKR(pickPrice(p))}</p>
               </div>
             </Link>
           ))}

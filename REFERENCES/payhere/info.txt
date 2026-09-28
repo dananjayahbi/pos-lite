@@ -1,0 +1,16 @@
+PayHere allows the following formats depending on your setup:
+
+# For standard local development: localhost
+# If you use local loopback IP: 127.0.0.1
+# If you use a custom local host/subdomain: e.g., local.test or app.localhost
+# If you are tunneling webhooks (recommended for payment notifications): Use your active tunnel domain without protocols or paths (e.g., abc123xyz.ngrok-free.app or your-tunnel.loca.lt).
+
+Important Formatting Rules for This Field
+# Do not include protocols: Omit http:// or https:// (entering http://localhost will trigger a validation error).
+# Do not include port numbers: Omit :3000, :8000, etc. (just enter localhost).
+# Do not include trailing slashes or paths: E.g., no localhost/.
+# Multiple domains: If you want to allow both local development and a staging/tunnel URL, separate them with a comma or press enter (e.g., localhost, *.ngrok-free.app).
+
+Note on PayHere Checkout & Webhooks (notify_url)
+# Initiating checkout from frontend: Entering localhost satisfies PayHere's domain verification when initializing payments from your browser.
+# Receiving server-to-server callbacks (notify_url): PayHere servers cannot reach http://localhost:... directly to deliver payment status updates. For testing backend webhook verification, run a tunnel tool (such as ngrok or Cloudflare Tunnel) and pass the tunnel URL as your notify_url.

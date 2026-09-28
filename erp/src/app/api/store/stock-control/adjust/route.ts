@@ -3,7 +3,10 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { StockAdjustmentSchema } from '@/lib/validators/product.validators';
+import {
+  StockAdjustmentSchema,
+  MAX_STOCK_QUANTITY,
+} from '@/lib/validators/product.validators';
 
 export async function POST(request: NextRequest) {
   try {
@@ -60,6 +63,12 @@ export async function POST(request: NextRequest) {
       const newQty = variant.stockQuantity + quantityDelta;
       if (newQty < 0) {
         throw new Error('BELOW_ZERO');
+      }
+      // M09-02 (BUG-41): the schema caps the raw delta, but keep the stored
+      // total bounded here too (defense in depth) so the int4 increment can
+      // never reach Postgres and fail as an unhandled 500.
+      if (newQty > MAX_STOCK_QUANTITY) {
+        throw new Error('ABOVE_MAX');
       }
 
       await tx.productVariant.update({
@@ -143,6 +152,18 @@ export async function POST(request: NextRequest) {
       if (error.message === 'BELOW_ZERO') {
         return NextResponse.json(
           { success: false, error: { code: 'VALIDATION_ERROR', message: 'Stock cannot go below zero' } },
+          { status: 400 },
+        );
+      }
+      if (error.message === 'ABOVE_MAX') {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Adjustment would exceed the maximum stock quantity',
+            },
+          },
           { status: 400 },
         );
       }

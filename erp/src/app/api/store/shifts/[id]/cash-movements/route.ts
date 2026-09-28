@@ -84,26 +84,19 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
 
     const { id } = await props.params;
 
-    const shift = await prisma.shift.findFirst({
-      where: { id, tenantId },
-      select: { id: true, status: true },
-    });
-
-    if (!shift) {
+    // M18/XC-01: validate the payload BEFORE mutating-state checks. A malformed
+    // body is a 400 regardless of the shift's open/closed state, so an invalid
+    // type never masquerades as a 409 conflict (makes the contract order-stable).
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
       return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message: 'Shift not found' } },
-        { status: 404 },
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid JSON body' } },
+        { status: 400 },
       );
     }
 
-    if (shift.status === ('CLOSED' satisfies ShiftStatus)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'CONFLICT', message: 'Cannot add cash movements to a closed shift' } },
-        { status: 409 },
-      );
-    }
-
-    const body = await request.json();
     const { amount, reason, type } = body as { amount: unknown; reason: unknown; type: unknown };
 
     if (typeof type !== 'string' || !VALID_TYPES.includes(type as CashMovementType)) {
@@ -128,6 +121,25 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
           { status: 400 },
         );
       }
+    }
+
+    const shift = await prisma.shift.findFirst({
+      where: { id, tenantId },
+      select: { id: true, status: true },
+    });
+
+    if (!shift) {
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_FOUND', message: 'Shift not found' } },
+        { status: 404 },
+      );
+    }
+
+    if (shift.status === ('CLOSED' satisfies ShiftStatus)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'CONFLICT', message: 'Cannot add cash movements to a closed shift' } },
+        { status: 409 },
+      );
     }
 
     const movement = await prisma.cashMovement.create({

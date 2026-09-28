@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getAllProducts } from '@/lib/services/product.service';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { parseQueryInt } from '@/lib/api/query-params';
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,13 +24,22 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // M29-03 (OBS-41): the product picker belongs to the website CMS.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebsite);
+    if (forbidden) return forbidden;
+
     const { searchParams } = request.nextUrl;
     const search = searchParams.get('search') ?? undefined;
-    const page = Math.max(1, Number(searchParams.get('page')) || 1);
-    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 20));
+    const idsParam = searchParams.get('ids');
+    const ids = idsParam ? idsParam.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+    // XC-01: malformed page/limit → 400 (the `|| 1` fallback caught NaN but
+    // silently ignored the caller's intent; now a 400 names the param).
+    const page = parseQueryInt(searchParams, 'page', { default: 1, min: 1 }) ?? 1;
+    const limit = parseQueryInt(searchParams, 'limit', { default: 20, min: 1, max: 100 }) ?? 20;
 
     const { products, total } = await getAllProducts(tenantId, {
       search,
+      ids,
       page,
       limit,
       isArchived: false,
@@ -50,13 +63,8 @@ export async function GET(request: NextRequest) {
       data: { products: simplified, total },
     });
   } catch (error) {
-    console.error('GET /api/store/website/products error:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' },
-      },
-      { status: 500 },
-    );
+    // XC-01/INF-02: parser ApiErrors surface as their 400; unknown
+    // errors are logged and returned as a generic, leak-free 500.
+    return toErrorResponse(error, 'GET /api/store/website/products');
   }
 }

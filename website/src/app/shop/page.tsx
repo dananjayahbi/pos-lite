@@ -5,7 +5,15 @@ import { ShopPageContent } from '@/components/website/shared-pages/ShopPageConte
 import { SITE } from '@/config/site';
 
 interface ShopPageProps {
-  searchParams: Promise<{ category?: string; sort?: string }>;
+  searchParams: Promise<{
+    category?: string;
+    sort?: string;
+    priceMin?: string;
+    priceMax?: string;
+    concern?: string;
+    form?: string;
+    q?: string;
+  }>;
 }
 
 export default async function ShopRootPage({ searchParams }: ShopPageProps) {
@@ -15,6 +23,11 @@ export default async function ShopRootPage({ searchParams }: ShopPageProps) {
       tenantSlug={SITE.defaultTenantSlug}
       category={sp.category ?? ''}
       sort={sp.sort ?? ''}
+      priceMin={sp.priceMin}
+      priceMax={sp.priceMax}
+      concern={sp.concern ?? ''}
+      form={sp.form ?? ''}
+      q={sp.q ?? ''}
     />
   );
 }

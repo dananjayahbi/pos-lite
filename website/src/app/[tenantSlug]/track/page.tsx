@@ -4,10 +4,9 @@
  */
 
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { tenantHomePath } from '@/lib/tenant';
 import { getTenantInfo } from '@/lib/api/website';
 import { TrackingLookupForm } from '@/components/website/tracking/TrackingLookupForm';
+import { StoreHeader } from '@/components/website/common/StoreHeader';
 
 interface TrackPageProps {
   params: Promise<{ tenantSlug: string }>;
@@ -20,33 +19,17 @@ export default async function TrackPage({ params }: TrackPageProps) {
   const tenant = await getTenantInfo(tenantSlug).catch(() => null);
 
   return (
-    <div className="min-h-screen bg-white">
-      <header className="border-b border-gray-100">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <Link
-            href={tenantHomePath(tenantSlug)}
-            className="text-lg font-medium"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-          >
-            {tenant?.name ?? 'Store'}
-          </Link>
-          <Link
-            href={tenantHomePath(tenantSlug)}
-            className="text-sm text-gray-500 transition-colors hover:text-black"
-          >
-            ← Back to store
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#051610] text-[#cbd5e1]">
+      <StoreHeader tenantSlug={tenantSlug} storeName={tenant?.name} />
 
       <main className="mx-auto max-w-3xl px-4 py-10">
         <h1
-          className="mb-1 text-2xl font-medium"
-          style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+          className="mb-1 text-2xl font-medium text-white"
+          style={{ fontFamily: 'var(--font-serif), serif' }}
         >
           Track your order
         </h1>
-        <p className="mb-6 text-sm text-gray-500">
+        <p className="mb-6 text-sm text-[#94a3b8]">
           Enter your order reference or phone number to see the latest delivery
           status and timeline.
         </p>

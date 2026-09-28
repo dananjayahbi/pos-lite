@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { AUDIT_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
+import { lockForUpdate } from '@/lib/api/race-guard';
 import Decimal from 'decimal.js';
 
 type CommissionPayoutMetadata = {
@@ -159,6 +160,11 @@ export async function createCommissionPayout(input: {
   proofReference?: string | undefined;
 }) {
   return prisma.$transaction(async (tx) => {
+    // M20-02 (XC-06): serialize concurrent double-submits for the same staff
+    // member by locking the user row first — the loser re-reads isPaid=true and
+    // finds no unpaid records, so exactly one payout is created.
+    await lockForUpdate(tx, 'users', '"id" = $1', [input.userId]);
+
     const unpaidRecords = await tx.commissionRecord.findMany({
       where: {
         tenantId: input.tenantId,

@@ -2,9 +2,14 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
-import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import type { TenantStatus } from '@/generated/prisma/client';
+import { requireSuperAdmin } from '@/lib/api/superadmin-guard';
+import { provisionTrialSubscriptionSafely } from '@/lib/billing/provisioning';
+
+// The currency is always LKR for this on-premises deployment. It is locked on
+// the server side so only LKR can be persisted for any business.
+const LOCKED_CURRENCY = 'LKR';
 
 const createTenantSchema = z.object({
   storeName: z.string().min(2).max(80),
@@ -15,14 +20,9 @@ const createTenantSchema = z.object({
   currency: z.string().min(1),
 });
 
-const PAGE_SIZE = 20;
-
 export async function GET(request: NextRequest) {
-  const session = await auth();
-
-  if (!session || session.user?.role !== 'SUPER_ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const guard = await requireSuperAdmin();
+  if (!guard.ok) return guard.response;
 
   const { searchParams } = request.nextUrl;
   const search = searchParams.get('search') ?? '';
@@ -45,11 +45,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-
-  if (!session || session.user?.role !== 'SUPER_ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const guard = await requireSuperAdmin();
+  if (!guard.ok) return guard.response;
 
   // Check if 2 businesses already exist
   const existingCount = await prisma.tenant.count({ where: { deletedAt: null } });
@@ -70,7 +67,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { storeName, slug, ownerEmail, ownerPassword, timezone, currency } = parsed.data;
+  const { storeName, slug, ownerEmail, ownerPassword, timezone } = parsed.data;
 
   try {
     const existingTenant = await prisma.tenant.findFirst({
@@ -97,7 +94,8 @@ export async function POST(request: NextRequest) {
         slug,
         status: 'ACTIVE',
         settings: {
-          currency,
+          // Currency is always LKR for this deployment — ignore any client value.
+          currency: LOCKED_CURRENCY,
           timezone,
           vatRate: 0,
           ssclRate: 0,
@@ -115,6 +113,15 @@ export async function POST(request: NextRequest) {
         role: 'OWNER',
       },
     });
+
+    // ─ Billing provisioning (M30-01 / BUG-70) ──────────────────────────────
+    // Give the new tenant a TRIAL Subscription now that its row exists, so
+    // `/billing` is reachable from day one instead of redirecting to `/`
+    // (`createTrialSubscription` previously had zero callers). The hook is
+    // non-fatal by design — a tenant must still be created when the plan
+    // table is empty or provisioning hiccups. When the 2-business cap above
+    // is lifted, this stays the single place billing is provisioned.
+    await provisionTrialSubscriptionSafely(tenant.id);
 
     return NextResponse.json({ id: tenant.id }, { status: 201 });
   } catch {

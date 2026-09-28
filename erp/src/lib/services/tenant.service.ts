@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import type { TenantStatus } from '@/generated/prisma/client';
 import { Prisma } from '@/generated/prisma/client';
+import { provisionTrialSubscriptionSafely } from '@/lib/billing/provisioning';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,7 +62,7 @@ export async function getTenantById(tenantId: string) {
 }
 
 export async function createTenant(input: CreateTenantInput) {
-  const { storeName, slug, ownerEmail, ownerPasswordHash, timezone, currency } = input;
+  const { storeName, slug, ownerEmail, ownerPasswordHash, timezone } = input;
 
   // Check if 2 businesses already exist
   const existingCount = await prisma.tenant.count({ where: { deletedAt: null } });
@@ -70,14 +71,15 @@ export async function createTenant(input: CreateTenantInput) {
   }
 
   try {
-    return await prisma.$transaction(async (tx) => {
-      const tenant = await tx.tenant.create({
+    const tenant = await prisma.$transaction(async (tx) => {
+      const created = await tx.tenant.create({
         data: {
           name: storeName,
           slug,
           status: 'ACTIVE',
           settings: {
-            currency,
+            // Currency is always LKR for this deployment — ignore any input value.
+            currency: 'LKR',
             timezone,
             vatRate: 0,
             ssclRate: 0,
@@ -92,14 +94,25 @@ export async function createTenant(input: CreateTenantInput) {
           email: ownerEmail,
           passwordHash: ownerPasswordHash,
           role: 'OWNER',
-          tenantId: tenant.id,
+          tenantId: created.id,
           permissions: [],
           isActive: true,
         },
       });
 
-      return tenant;
+      return created;
     });
+
+    // ── Billing provisioning (M30-01 / BUG-70) ────────────────────────────
+    // Deliberately OUTSIDE the transaction: provisionTrialSubscriptionSafely
+    // must never be able to roll back a successfully created tenant + owner.
+    // This service currently has no callers (the live path is
+    // POST /api/superadmin/tenants, which has its own hook), but the hook
+    // belongs wherever a tenant row is inserted so the wiring is not lost
+    // when this becomes the create path.
+    await provisionTrialSubscriptionSafely(tenant.id);
+
+    return tenant;
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2002') {

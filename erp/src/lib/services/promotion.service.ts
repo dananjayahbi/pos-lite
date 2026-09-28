@@ -72,6 +72,12 @@ export async function fetchActivePromotions(tenantId: string): Promise<GroupedPr
         { startsAt: { lte: now }, endsAt: { gte: now } },
       ],
     },
+    // Deterministic precedence: newest campaign wins. Evaluation is
+    // first-match-wins per line (`alreadyDiscounted`), so without an explicit
+    // order two active promos targeting the same category would resolve
+    // arbitrarily depending on physical row order — the merchant's most
+    // recently created promotion must take effect, reproducibly.
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
   });
 
   const grouped: GroupedPromotions = {

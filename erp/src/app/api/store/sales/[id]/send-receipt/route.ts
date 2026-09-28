@@ -2,14 +2,30 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { PERMISSIONS } from '@/lib/constants/permissions';
+import { hasPermission } from '@/lib/utils/permissions';
 import { getSaleById } from '@/lib/services/sale.service';
 import { sendWhatsAppReceiptMessage } from '@/lib/whatsapp';
 import { formatRupee } from '@/lib/format';
 import { createAuditLog } from '@/lib/services/audit.service';
+import { providerErrorCode } from '@/lib/notifications/provider-status';
+
+// M31-02 (OBS-55): this route could previously be used by ANY authenticated
+// role to WhatsApp an arbitrary attacker-supplied phone number. The phone must
+// now belong to the sale's customer, and an arbitrary override requires the
+// dedicated receipt-send permission — EXCEPT when a cashier is re-sending the
+// receipt for their OWN sale, which stays allowed (their legitimate flow).
 
 const bodySchema = z.object({
   phoneNumber: z.string().min(7).max(20),
 });
+
+/** Normalises a Sri Lankan phone number to its bare digit form for comparison. */
+function normalisePhone(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  if (digits.startsWith('94') && digits.length === 11) return '0' + digits.slice(2);
+  return digits;
+}
 
 export async function POST(request: Request, props: { params: Promise<{ id: string }> }) {
   try {
@@ -47,6 +63,40 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Sale not found' } },
         { status: 404 },
+      );
+    }
+
+    // ── Authorization (M31-02 / OBS-55) ──────────────────────────────────────
+    // The requested number must belong to the sale's customer. Sending to any
+    // other number is an override that requires the receipt-send permission.
+    const saleCustomer = sale.customerId
+      ? await prisma.customer.findFirst({
+          where: { id: sale.customerId, tenantId },
+          select: { phone: true },
+        })
+      : null;
+
+    const requestedPhone = normalisePhone(parsed.data.phoneNumber);
+    const customerPhone = saleCustomer?.phone ? normalisePhone(saleCustomer.phone) : null;
+    const isCustomerPhone = customerPhone !== null && customerPhone === requestedPhone;
+
+    const canOverride = hasPermission(session.user, PERMISSIONS.SALE.sendReceipt);
+    const isOwnSale = sale.cashier?.id === session.user.id;
+
+    if (!isCustomerPhone && !canOverride) {
+      // A cashier may still re-send for their own sale — but only to that
+      // sale's customer number (already excluded above), so this is a 403.
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: isOwnSale
+              ? 'Receipt can only be sent to this sale customer\u2019s phone number'
+              : 'Insufficient permissions to send a receipt to an arbitrary number',
+          },
+        },
+        { status: 403 },
       );
     }
 
@@ -97,7 +147,12 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
 
     return NextResponse.json({
       success: false,
-      error: { code: 'WHATSAPP_FAILED', message: result.error ?? 'WhatsApp dispatch failed' },
+      error: {
+        // M31-01 (BUG-73): distinguish "provider not configured" from a real
+        // provider rejection so the UI can tell the operator what to fix.
+        code: providerErrorCode('whatsapp', result.error),
+        message: result.error ?? 'WhatsApp dispatch failed',
+      },
     });
   } catch (error) {
     console.error('POST /api/store/sales/[id]/send-receipt error:', error);

@@ -1,13 +1,21 @@
 import { notFound } from 'next/navigation';
 import { getTenantInfo, getPublicWebsiteConfig } from '@/lib/api/website';
 import { StaticPageShell } from '../static-pages/StaticPageShell';
-import { ContactForm } from '../static-pages/ContactForm';
-import { ContactInfoCards } from '../static-pages/ContactInfoCards';
-import { MapEmbed } from '../static-pages/MapEmbed';
+import { ContactInfoSection } from '../static-pages/ContactInfoSection';
 
 interface ContactPageContentProps {
   tenantSlug: string;
 }
+
+// Reference defaults (mirror contact.html) used when the ERP has no saved
+// value for a given field, so the page still looks intentional.
+const DEFAULT_CONTACT_INFO = {
+  title: 'Get in Touch',
+  address: 'No. 42, Horton Place, Colombo 07, Western Province, Sri Lanka (00700)',
+  phone: '+94 (0) 11 234 5678',
+  email: 'care@wedagedara.lk',
+  businessHours: 'Monday – Sunday: 8:00 AM – 7:00 PM',
+};
 
 export async function ContactPageContent({ tenantSlug }: ContactPageContentProps) {
   let tenant = null;
@@ -27,9 +35,22 @@ export async function ContactPageContent({ tenantSlug }: ContactPageContentProps
 
   const config = configResponse?.config;
   const contactTitle = config?.contactPageTitle || 'Contact Us';
-  const contactSubtitle =
-    config?.contactPageSubtitle || "We'd love to hear from you. Get in touch with us.";
+  const contactSubtitle = config?.contactPageSubtitle || "We'd love to hear from you";
   const contactHeroImageUrl = config?.contactHeroImageUrl;
+
+  // Fall back to socialLinks when dedicated contact fields are empty, then to
+  // the reference defaults so the section always renders intentionally.
+  const address = config?.contactAddress || DEFAULT_CONTACT_INFO.address;
+  const phone =
+    config?.contactPhoneDisplay ||
+    config?.socialLinks?.phone ||
+    DEFAULT_CONTACT_INFO.phone;
+  const email =
+    config?.contactEmailDisplay ||
+    config?.socialLinks?.email ||
+    DEFAULT_CONTACT_INFO.email;
+  const businessHours =
+    config?.contactBusinessHours || DEFAULT_CONTACT_INFO.businessHours;
 
   const heroProps = contactHeroImageUrl ? { heroImageUrl: contactHeroImageUrl } : {};
 
@@ -42,54 +63,18 @@ export async function ContactPageContent({ tenantSlug }: ContactPageContentProps
       subtitle={contactSubtitle}
       {...heroProps}
     >
-      <div className="space-y-0">
-        <ContactInfoCards
-          title={config?.contactInfoTitle ?? ''}
-          address={config?.contactAddress ?? ''}
-          phone={config?.contactPhoneDisplay ?? ''}
-          email={config?.contactEmailDisplay ?? ''}
-          businessHours={config?.contactBusinessHours ?? ''}
-        />
-
-        {!config?.contactAddress &&
-          !config?.contactPhoneDisplay &&
-          !config?.contactEmailDisplay &&
-          !config?.contactBusinessHours && (
-            <ContactInfoCards
-              title="Get In Touch"
-              address=""
-              phone={config?.socialLinks?.phone ?? ''}
-              email={config?.socialLinks?.email ?? ''}
-              businessHours={
-                config?.socialLinks?.whatsapp
-                  ? `WhatsApp: ${config.socialLinks.whatsapp}`
-                  : ''
-              }
-            />
-          )}
-
-        <MapEmbed
-          embedUrl={config?.contactMapEmbedUrl ?? ''}
-          address={config?.contactAddress ?? ''}
-        />
-
-        <section className="py-8">
-          <div className="bg-[var(--site-light-gray,#f5f5f5)] rounded-xl p-6 md:p-10">
-            <h2
-              className="text-xl md:text-2xl font-medium mb-2 text-center text-[var(--site-primary,#0a0a0a)]"
-              style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-            >
-              Send a Message
-            </h2>
-            <p className="text-sm text-gray-500 mb-6 text-center">
-              Fill out the form below and we&apos;ll get back to you as soon as possible.
-            </p>
-            <div className="max-w-lg mx-auto">
-              <ContactForm />
-            </div>
-          </div>
-        </section>
-      </div>
+      <ContactInfoSection
+        {...(config?.contactInfoTitle
+          ? { title: config.contactInfoTitle }
+          : { title: DEFAULT_CONTACT_INFO.title })}
+        {...(address ? { address } : {})}
+        {...(phone ? { phone } : {})}
+        {...(email ? { email } : {})}
+        {...(businessHours ? { businessHours } : {})}
+        {...(config?.contactMapEmbedUrl
+          ? { mapEmbedUrl: config.contactMapEmbedUrl }
+          : {})}
+      />
     </StaticPageShell>
   );
 }

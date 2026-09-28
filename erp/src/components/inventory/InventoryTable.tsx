@@ -24,6 +24,8 @@ interface InventoryTableProps {
   isLoading: boolean;
   permissions: string[];
   hasActiveFilters: boolean;
+  /** M02-03 — true when the list is the "Deleted" view (?status=deleted). */
+  isDeletedView?: boolean;
   onClearFilters: () => void;
   onArchive?: (id: string, isArchived: boolean) => void;
   onDelete?: (id: string) => void;
@@ -151,6 +153,7 @@ export function InventoryTable({
   isLoading,
   permissions,
   hasActiveFilters,
+  isDeletedView = false,
   onClearFilters,
   onArchive,
   onDelete,
@@ -197,7 +200,7 @@ export function InventoryTable({
               Brand
             </TableHead>
             <TableHead className="font-body text-xs font-semibold uppercase tracking-wider text-espresso/70">
-              Gender
+              Variants
             </TableHead>
             <TableHead className="font-body text-xs font-semibold uppercase tracking-wider text-espresso/70">
               Stock
@@ -264,6 +267,7 @@ export function InventoryTable({
                       productId={product.id}
                       productName={product.name}
                       isArchived={product.isArchived}
+                      isDeleted={isDeletedView}
                       canArchive={canArchive}
                       canDelete={canDelete}
                       onArchive={onArchive}

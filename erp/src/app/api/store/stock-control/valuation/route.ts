@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { csvCell } from '@/lib/export';
 
 interface ValuationRow {
   retail_value: string;
@@ -97,18 +98,28 @@ export async function GET(request: NextRequest) {
       const lines: string[] = [];
       lines.push('Stock Valuation Summary');
       lines.push('Metric,Value');
-      lines.push(`Total Retail Value,"${retailValue.toFixed(2)}"`);
-      lines.push(`Total Cost Value,"${costValue.toFixed(2)}"`);
-      lines.push(`Estimated Margin (Rs.),"${estimatedMargin.toFixed(2)}"`);
-      lines.push(`Estimated Margin (%),${roundedMarginPercent}`);
+      lines.push(`Total Retail Value,${csvCell(retailValue.toFixed(2))}`);
+      lines.push(`Total Cost Value,${csvCell(costValue.toFixed(2))}`);
+      lines.push(`Estimated Margin (Rs.),${csvCell(estimatedMargin.toFixed(2))}`);
+      lines.push(`Estimated Margin (%),${csvCell(roundedMarginPercent)}`);
       lines.push('');
       lines.push('Category Breakdown');
+      // M35-01 (BUG-79): the two summary headers are already unquoted; the data
+      // rows below now use the shared `csvCell` so numeric cells stop being
+      // needlessly quoted and a comma in a category name can never break a row.
       lines.push('Category,Variants in Stock,Retail Value (Rs.),Cost Value (Rs.),Margin %,Share of Total');
       for (const cat of breakdown) {
         const catMargin = cat.retailValue > 0 ? ((cat.retailValue - cat.costValue) / cat.retailValue) * 100 : 0;
         const share = retailValue > 0 ? (cat.retailValue / retailValue) * 100 : 0;
         lines.push(
-          `"${cat.categoryName}",${cat.variantCount},"${cat.retailValue.toFixed(2)}","${cat.costValue.toFixed(2)}",${catMargin.toFixed(2)},${share.toFixed(2)}`,
+          [
+            csvCell(cat.categoryName),
+            csvCell(cat.variantCount),
+            csvCell(cat.retailValue.toFixed(2)),
+            csvCell(cat.costValue.toFixed(2)),
+            csvCell(catMargin.toFixed(2)),
+            csvCell(share.toFixed(2)),
+          ].join(','),
         );
       }
 

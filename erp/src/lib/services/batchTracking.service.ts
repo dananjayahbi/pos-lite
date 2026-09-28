@@ -12,7 +12,11 @@ import type {
   Prisma,
 } from '@/generated/prisma/client';
 import type { TxClient } from '@/lib/services/inventory.service';
-import { getBatchExpiryStatus, type BatchExpiryStatus } from '@/lib/services/batchTracking.core';
+import {
+  EXPIRE_SOON_WINDOW_DAYS,
+  getBatchExpiryStatus,
+  type BatchExpiryStatus,
+} from '@/lib/services/batchTracking.core';
 
 // ── Public Types ─────────────────────────────────────────────────────────────
 
@@ -110,19 +114,40 @@ export async function listBatches(
 ): Promise<{ batches: BatchListItem[]; total: number }> {
   const { variantId, source, expiryStatus, search, page = 1, limit = 50 } = filters;
 
+  // M11-01/BUG-83: expiryStatus used to be a post-filter applied AFTER pagination, so
+  // `total` counted every batch and page math broke. The predicate now lives in the SQL
+  // and mirrors getBatchExpiryStatus's boundaries exactly:
+  //   EXPIRED        remainingDays <= 0            → expiryDate <= now
+  //   EXPIRING_SOON  0 < remainingDays <= 30d      → now < expiryDate <= now + 30d
+  //   OK             remainingDays > 30d, or null  → expiryDate > now + 30d, or null
+  const now = new Date();
+  const expiringSoonCutoff = new Date(now.getTime() + EXPIRE_SOON_WINDOW_DAYS * 86_400_000);
+
+  // The OR-bearing clauses (expiry buckets, search) live in an AND array so they can
+  // coexist — a top-level `OR` from two sources would otherwise clobber one another.
+  const and: Prisma.BatchTrackingWhereInput[] = [];
+  if (expiryStatus === 'EXPIRED') {
+    and.push({ expiryDate: { lte: now } });
+  } else if (expiryStatus === 'EXPIRING_SOON') {
+    and.push({ expiryDate: { gt: now, lte: expiringSoonCutoff } });
+  } else if (expiryStatus === 'OK') {
+    and.push({ OR: [{ expiryDate: null }, { expiryDate: { gt: expiringSoonCutoff } }] });
+  }
+  if (search) {
+    and.push({
+      OR: [
+        { batchNumber: { contains: search, mode: 'insensitive' } },
+        { variant: { sku: { contains: search, mode: 'insensitive' } } },
+        { variant: { product: { name: { contains: search, mode: 'insensitive' } } } },
+      ],
+    });
+  }
+
   const where: Prisma.BatchTrackingWhereInput = {
     tenantId,
     ...(variantId ? { variantId } : {}),
     ...(source ? { source } : {}),
-    ...(search
-      ? {
-          OR: [
-            { batchNumber: { contains: search, mode: 'insensitive' } },
-            { variant: { sku: { contains: search, mode: 'insensitive' } } },
-            { variant: { product: { name: { contains: search, mode: 'insensitive' } } } },
-          ],
-        }
-      : {}),
+    ...(and.length > 0 ? { AND: and } : {}),
   };
 
   const [rows, total] = await Promise.all([
@@ -136,24 +161,21 @@ export async function listBatches(
     prisma.batchTracking.count({ where }),
   ]);
 
-  const batches = rows
-    .map((row) => {
-      const expiryStatus = getBatchExpiryStatus(row.expiryDate);
-      return {
-        id: row.id,
-        variantId: row.variantId,
-        batchNumber: row.batchNumber,
-        expiryDate: row.expiryDate ? row.expiryDate.toISOString() : null,
-        quantity: row.quantity,
-        source: row.source,
-        receivedAt: row.receivedAt.toISOString(),
-        sku: row.variant.sku,
-        productName: row.variant.product.name,
-        variantLabel: [row.variant.form, row.variant.packSize].filter(Boolean).join(' · ') || row.variant.sku,
-        expiryStatus,
-      };
-    })
-    .filter((b) => (expiryStatus ? b.expiryStatus === expiryStatus : true));
+  // M11-01: no post-filter — the SQL `where` already restricted by expiryStatus; each row
+  // is only labelled with its status here.
+  const batches = rows.map<BatchListItem>((row) => ({
+    id: row.id,
+    variantId: row.variantId,
+    batchNumber: row.batchNumber,
+    expiryDate: row.expiryDate ? row.expiryDate.toISOString() : null,
+    quantity: row.quantity,
+    source: row.source,
+    receivedAt: row.receivedAt.toISOString(),
+    sku: row.variant.sku,
+    productName: row.variant.product.name,
+    variantLabel: [row.variant.form, row.variant.packSize].filter(Boolean).join(' · ') || row.variant.sku,
+    expiryStatus: getBatchExpiryStatus(row.expiryDate),
+  }));
 
   return { batches, total };
 }

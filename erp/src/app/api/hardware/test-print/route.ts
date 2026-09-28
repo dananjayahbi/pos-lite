@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { testPrint, type PrinterConfig } from '@/lib/hardware/printer';
-
-const DENIED_ROLES = new Set(['CASHIER', 'STOCK_CLERK']);
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 export async function POST() {
   const startedAt = Date.now();
@@ -24,12 +24,13 @@ export async function POST() {
       );
     }
 
-    if (DENIED_ROLES.has(session.user.role)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
-        { status: 403 },
-      );
-    }
+    // M07-01 (BUG-80): permission gate replaces the role denylist; the tenant
+    // check above still runs first so a tenantless SUPER_ADMIN is rejected.
+    const forbidden = requirePermissionResponse(
+      session.user,
+      PERMISSIONS.SETTINGS.manageHardware,
+    );
+    if (forbidden) return forbidden;
 
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
     const settings = tenant.settings as Record<string, unknown> | null;

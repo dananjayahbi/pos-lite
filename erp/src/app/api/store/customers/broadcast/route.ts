@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
-import { hasPermission } from '@/lib/utils/permissions';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import { sendWhatsAppTextMessage } from '@/lib/whatsapp';
@@ -34,12 +34,11 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!hasPermission(session.user, PERMISSIONS.CUSTOMER.createCustomer)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
-        { status: 403 },
-      );
-    }
+    // M05-05 (D15): the composer's own permission, not customer:create —
+    // CASHIER holds createCustomer by design (OBS-4), so the old gate let a
+    // cashier reach the send path. Same 403 envelope shape as before.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.BROADCAST.send);
+    if (forbidden) return forbidden;
 
     const body = await request.json();
     const parsed = BroadcastSchema.safeParse(body);

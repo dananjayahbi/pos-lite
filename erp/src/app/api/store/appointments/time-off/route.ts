@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getStaffTimeOff, requestTimeOff } from '@/lib/services/appointment-availability.service';
+import { parseQueryDate } from '@/lib/api/query-params';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 import { StaffTimeOffSchema } from '@/lib/validators/appointment.validators';
 import type { StaffTimeOffInput } from '@/lib/validators/appointment.validators';
 
@@ -24,20 +26,27 @@ export async function GET(request: Request) {
       );
     }
 
+    // M27-02/OBS-80: reading the staff leave roster was the only appointment
+    // list endpoint without a permission gate. Align with the siblings (the
+    // availability calendar already gates `viewAppointment`).
+    if (!hasPermission(session.user, PERMISSIONS.APPOINTMENT.viewAppointment)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
+      );
+    }
+
     const url = new URL(request.url);
     const staffId = url.searchParams.get('staffId') ?? undefined;
-    const dateFrom = url.searchParams.get('dateFrom') ?? undefined;
-    const dateTo = url.searchParams.get('dateTo') ?? undefined;
+    // M27-07/BUG-89: malformed date params used to reach new Date() → 500.
+    const dateFrom = parseQueryDate(url.searchParams, 'dateFrom')?.toISOString();
+    const dateTo = parseQueryDate(url.searchParams, 'dateTo')?.toISOString();
 
     const timeOff = await getStaffTimeOff(tenantId, staffId, dateFrom, dateTo);
 
     return NextResponse.json({ success: true, data: timeOff });
   } catch (error) {
-    console.error('GET /api/store/appointments/time-off error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'GET /api/store/appointments/time-off');
   }
 }
 

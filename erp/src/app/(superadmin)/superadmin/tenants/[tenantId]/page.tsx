@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import TenantStatusBadge from '@/components/superadmin/TenantStatusBadge';
-import TenantAdminActions from '@/components/superadmin/TenantAdminActions';
+import TenantDisableToggle from '@/components/superadmin/TenantDisableToggle';
 import BusinessSettingsForm from '@/components/superadmin/BusinessSettingsForm';
 import FeatureModulesManager from '@/components/superadmin/FeatureModulesManager';
 import { getEnabledModules } from '@/lib/feature-guard';
@@ -39,11 +39,8 @@ export default async function BusinessDetailPage({ params }: PageProps) {
     logoUrl: tenant.logoUrl ?? '',
     address: typeof settings.address === 'string' ? settings.address : '',
     phoneNumber: typeof settings.phoneNumber === 'string' ? settings.phoneNumber : '',
-    receiptFooter: typeof settings.receiptFooter === 'string' ? settings.receiptFooter : '',
     currency: typeof settings.currency === 'string' ? settings.currency : 'LKR',
     timezone: typeof settings.timezone === 'string' ? settings.timezone : 'Asia/Colombo',
-    vatRate: typeof settings.vatRate === 'number' ? settings.vatRate : 0,
-    ssclRate: typeof settings.ssclRate === 'number' ? settings.ssclRate : 0,
   };
 
   return (
@@ -107,10 +104,10 @@ export default async function BusinessDetailPage({ params }: PageProps) {
         <BusinessSettingsForm tenantId={tenant.id} initialValues={settingsInitialValues} />
       </div>
 
-      {/* Admin Actions */}
+      {/* Business Access */}
       <div className="space-y-4">
-        <h2 className="font-display text-xl font-semibold text-espresso">Admin Actions</h2>
-        <TenantAdminActions tenantId={tenant.id} currentStatus={tenant.status} />
+        <h2 className="font-display text-xl font-semibold text-espresso">Business Access</h2>
+        <TenantDisableToggle tenantId={tenant.id} isActive={tenant.status === 'ACTIVE'} />
       </div>
 
       {/* Feature Modules */}

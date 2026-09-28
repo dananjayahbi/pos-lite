@@ -12,6 +12,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { isModuleEnabled } from '@/lib/feature-guard';
 import {
   buildCorsHeaders,
   errorWithCors,
@@ -39,7 +40,7 @@ export async function GET(
 
   const tenant = await prisma.tenant.findFirst({
     where: { slug: tenantSlug, deletedAt: null },
-    select: { id: true, slug: true, name: true, logoUrl: true, status: true },
+    select: { id: true, slug: true, name: true, logoUrl: true, status: true, settings: true },
   });
 
   if (!tenant) {
@@ -47,6 +48,12 @@ export async function GET(
   }
 
   if (tenant.status === 'SUSPENDED') {
+    return errorWithCors(request, 403, 'Storefront unavailable');
+  }
+
+  // The "website" feature module can be disabled per tenant from the superadmin
+  // panel. When disabled, the public storefront is unavailable for this business.
+  if (!isModuleEnabled((tenant.settings ?? {}) as Record<string, unknown>, 'website')) {
     return errorWithCors(request, 403, 'Storefront unavailable');
   }
 

@@ -33,7 +33,7 @@ export interface RawMaterialItem {
   stockStatus: RawMaterialStockStatus;
 }
 
-function toRawMaterialItem(m: RawMaterial): RawMaterialItem {
+export function toRawMaterialItem(m: RawMaterial): RawMaterialItem {
   const quantity = m.quantity.toNumber();
   const lowStockThreshold = m.lowStockThreshold.toNumber();
   return {

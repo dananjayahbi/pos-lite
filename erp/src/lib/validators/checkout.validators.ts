@@ -22,6 +22,11 @@ export const WebsiteCheckoutSchema = z.object({
     .max(20)
     .regex(/^[0-9+\-\s()]+$/, 'Enter a valid phone number'),
   phone2: z.string().max(20).optional(),
+  // PayHere requires a VALID email format on the checkout form (and HelaPay
+  // payments fail outright without valid contact details), so it is captured
+  // with the address. Optional here so non-card orders may omit it; the
+  // CARD path requires it (see the route's payment-method refinement).
+  email: z.string().email('Enter a valid email').max(120).optional(),
   addressLine1: z.string().min(1, 'Address is required').max(255),
   addressLine2: z.string().max(255).optional(),
   cityName: z.string().min(1, 'City is required').max(120),
@@ -34,6 +39,17 @@ export const WebsiteCheckoutSchema = z.object({
   lines: z.array(CheckoutLineSchema).max(200).optional(),
   // Payment selection: COD (default) or CARD via PayHere.
   paymentMethod: z.enum(['COD', 'CARD']).default('COD'),
-});
+})
+  // A card order is rejected by PayHere without a valid email, so require it
+  // here rather than letting the customer reach the gateway and fail.
+  .superRefine((value, ctx) => {
+    if (value.paymentMethod === 'CARD' && !value.email) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['email'],
+        message: 'Email is required for card payments',
+      });
+    }
+  });
 
 export type WebsiteCheckoutInput = z.infer<typeof WebsiteCheckoutSchema>;

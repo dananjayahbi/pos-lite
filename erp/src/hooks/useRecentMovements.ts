@@ -8,7 +8,13 @@ interface StockMovementItem {
   reason: string;
   quantityDelta: number;
   variant: { sku: string };
-  actor: { email: string };
+  /**
+   * Nullable in the database: automated movements (storefront checkout
+   * reservations, courier syncs) have no acting user. Consumers must go
+   * through `stockActorLabel()` rather than reading `.email` directly —
+   * assuming non-null here is what crashed the dashboard card.
+   */
+  actor: { email: string } | null;
 }
 
 export function useRecentMovements() {

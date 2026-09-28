@@ -9,12 +9,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SavedReportOpenButton } from '@/components/reports/SavedReportOpenButton';
+import { buildReportHref, isKnownReportSlug } from '@/lib/reports/report-config';
 
 interface SavedReportRecord {
   id: string;
   name: string;
   reportType: string;
   filters: Record<string, unknown>;
+  format?: string;
+  storageKey?: string | null;
+  fileUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -24,8 +29,22 @@ function formatReportType(reportType: string) {
   return cleaned.replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+/**
+ * M34-01 (BUG-78): the href is ALWAYS composed from a known slug.
+ *
+ * The old builder walked `reportType.startsWith('/') ? reportType : ...`,
+ * which turned a persisted `//evil.com/x` into a protocol-relative href
+ * (confirmed reachable today, since it passes the `startsWith('/')` test)
+ * — one click navigated off-site. Even with the new server-side allowlist,
+ * the client never trusts the stored string.
+ */
 function buildSavedReportHref(savedReport: SavedReportRecord) {
-  const route = savedReport.reportType.startsWith('/') ? savedReport.reportType : `/reports/${savedReport.reportType}`;
+  const route = isKnownReportSlug(savedReport.reportType)
+    ? buildReportHref(savedReport.reportType)
+    : null;
+
+  if (!route) return null;
+
   const params = new URLSearchParams();
 
   Object.entries(savedReport.filters ?? {}).forEach(([key, value]) => {
@@ -129,7 +148,12 @@ export default function SavedReportsPage() {
                 {groupReports.map((report) => (
                   <div key={report.id} className="flex flex-col gap-4 rounded-lg border border-mist bg-pearl/40 p-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-1">
-                      <p className="font-medium text-espresso">{report.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-espresso">{report.name}</p>
+                        <span className="rounded bg-mist/50 px-1.5 py-0.5 font-mono text-[10px] uppercase text-sand">
+                          {report.format ?? "pdf"}
+                        </span>
+                      </div>
                       <p className="text-xs text-sand">Created {new Date(report.createdAt).toLocaleString()} · Updated {new Date(report.updatedAt).toLocaleString()}</p>
                       <p className="font-mono text-[11px] text-sand break-all">
                         {Object.keys(report.filters ?? {}).length === 0 ? 'No filters saved' : JSON.stringify(report.filters)}
@@ -137,8 +161,18 @@ export default function SavedReportsPage() {
                     </div>
                     <div className="flex flex-wrap gap-2 lg:justify-end">
                       <Button variant="outline" asChild>
-                        <a href={buildSavedReportHref(report)}>Open</a>
+                        <a
+                          href={`/api/reports/saved/${report.id}/download?view=1`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          View
+                        </a>
                       </Button>
+                      <Button variant="outline" asChild>
+                        <a href={`/api/reports/saved/${report.id}/download`}>Download</a>
+                      </Button>
+                      <SavedReportOpenButton href={buildSavedReportHref(report)} />
                       <Button
                         variant="outline"
                         onClick={() => {

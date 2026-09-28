@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { DeferredMediaUploader } from '@/components/shared/DeferredMediaUploader';
+import { AnnouncementBarSettingsForm } from '@/components/settings/AnnouncementBarSettingsForm';
 import type { WebsiteConfigData } from '@/types/website.types';
 
 interface GeneralTabProps {
@@ -16,6 +17,9 @@ interface GeneralTabProps {
 export function GeneralTab({ config, onChange }: GeneralTabProps) {
   return (
     <div className="space-y-6">
+      {/* Announcement top-bar (req 3.4) */}
+      <AnnouncementBarSettingsForm config={config} onChange={onChange} />
+
       {/* Branding */}
       <div>
         <h3 className="text-sm font-semibold text-espresso mb-3">Branding</h3>

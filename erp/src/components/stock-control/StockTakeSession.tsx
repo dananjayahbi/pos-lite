@@ -469,6 +469,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
                       <Input
                         type="number"
                         min={0}
+                        step={1}
                         defaultValue={item.countedQuantity ?? ''}
                         onBlur={(e) => {
                           const val = e.target.value;

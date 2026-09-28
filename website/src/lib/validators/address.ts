@@ -2,7 +2,11 @@ import { z } from 'zod';
 
 /**
  * Client-side address validation for the website checkout. Mirrors the ERP
- * `WebsiteCheckoutSchema` so the user sees errors before submitting.
+ * [`WebsiteCheckoutSchema`] so the user sees errors before submitting.
+ *
+ * `email` is optional for cash on delivery but REQUIRED for a card payment
+ * (PayHere validates the email address). `CheckoutForm` enforces the
+ * card-specific requirement so the user is never sent to the gateway to fail.
  */
 export const CheckoutAddressSchema = z.object({
   fullName: z.string().min(1, 'Name is required').max(120),
@@ -12,6 +16,12 @@ export const CheckoutAddressSchema = z.object({
     .max(20)
     .regex(/^[0-9+\-\s()]+$/, 'Enter a valid phone number'),
   phone2: z.string().max(20).optional(),
+  email: z
+    .string()
+    .email('Enter a valid email')
+    .max(120)
+    .optional()
+    .or(z.literal('')),
   addressLine1: z.string().min(1, 'Address is required').max(255),
   addressLine2: z.string().max(255).optional(),
   cityName: z.string().min(1, 'City is required').max(120),

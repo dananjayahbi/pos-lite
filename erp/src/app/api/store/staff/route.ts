@@ -4,7 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getStaffMembers, createStaffMember } from '@/lib/services/staff.service';
 import { CreateStaffSchema } from '@/lib/validators/staff.validators';
-import type { CreateStaffInput } from '@/lib/validators/staff.validators';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function GET(request: Request) {
   try {
@@ -88,19 +88,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const staff = await createStaffMember(tenantId, parsed.data as CreateStaffInput);
+    const staff = await createStaffMember(tenantId, parsed.data);
 
     return NextResponse.json({ success: true, data: staff }, { status: 201 });
   } catch (error) {
+    // M03-06 (BUG-8): P2002 races now surface as a typed 409 CONFLICT via the
+    // INF-02 mapper — never a 500. The escalation guard prose keeps its exact
+    // 400 VALIDATION_ERROR contract (tests 8.7/8.8).
     const message = error instanceof Error ? error.message : '';
-
-    if (message === 'A user with this email already exists') {
-      return NextResponse.json(
-        { success: false, error: { code: 'CONFLICT', message } },
-        { status: 409 },
-      );
-    }
-
     if (message === 'Cannot assign SUPER_ADMIN role') {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message } },
@@ -108,10 +103,6 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error('POST /api/store/staff error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'staff create');
   }
 }

@@ -1,14 +1,11 @@
 import { NextResponse } from 'next/server';
 import Decimal from 'decimal.js';
-import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { requireSuperAdmin } from '@/lib/api/superadmin-guard';
 
 export async function GET() {
-  const session = await auth();
-
-  if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const guard = await requireSuperAdmin();
+  if (!guard.ok) return guard.response;
 
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);

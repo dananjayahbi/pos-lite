@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { timingSafeEqual } from 'crypto';
 import { prisma } from '@/lib/prisma';
+import { isValidCronSecret } from '@/lib/cron-auth';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -10,23 +10,6 @@ interface BirthdayCustomerRow {
   phone: string;
   tenantId: string;
   lastBirthdayMessageSentYear: number | null;
-}
-
-function isValidCronSecret(authHeader: string | null): boolean {
-  const envSecret = process.env.CRON_SECRET;
-  if (!envSecret || !authHeader) return false;
-
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-  if (!token) return false;
-
-  try {
-    const a = Buffer.from(envSecret, 'utf-8');
-    const b = Buffer.from(token, 'utf-8');
-    if (a.length !== b.length) return false;
-    return timingSafeEqual(a, b);
-  } catch {
-    return false;
-  }
 }
 
 export async function GET(request: NextRequest) {

@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
+import { ApiError } from '@/lib/api/errors';
 import type { SaleStatus, TaxRule } from '@/generated/prisma/client';
 import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
@@ -176,6 +177,18 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     // non-zero total must never carry a zero-value reason. PRODUCT_REPLACEMENT
     // must resolve to an existing, non-voided historical order in this tenant.
     const isZeroValue = totalAmount.lte(0);
+
+    // M14-01 (BUG-44) defense-in-depth: the validator rejects NONE without a
+    // reason, but only the service can see the COMPUTED total. A NONE tender
+    // on a non-zero sale would complete with no Payment leg at all, bypassing
+    // tender reconciliation — block it for every caller, API or internal.
+    if (input.paymentMethod === 'NONE' && !isZeroValue) {
+      throw new ApiError(
+        422,
+        'NONE_PAYMENT_REQUIRES_ZERO_VALUE',
+        'A non-zero sale requires CASH/CARD/SPLIT/LANKAQR — NONE is reserved for zero-value sales',
+      );
+    }
     if (isZeroValue && !input.zeroValueReason) {
       throw new Error('A zero-value sale requires a zeroValueReason');
     }
@@ -197,6 +210,31 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
         throw new Error(`Original order ${ref} not found — replacement cannot be linked`);
       }
       resolvedLinkedOrderRef = ref;
+    }
+
+    // M14-04 (req 3.11 / D14): a replacement must also carry the scanned
+    // barcode of the defective item, validated against this tenant's variant
+    // barcodes (same lookup the /variants/barcode/[barcode] route uses via
+    // product.service.getVariantByBarcode — replicated here on the tx client
+    // so the check is transactional). Miss → typed 400 naming the field.
+    let resolvedDefectiveBarcode: string | null = null;
+    if (input.defectiveBarcode) {
+      const barcode = input.defectiveBarcode.trim();
+      if (barcode) {
+        const defective = await tx.productVariant.findFirst({
+          where: { tenantId, barcode, deletedAt: null },
+          select: { id: true },
+        });
+        if (!defective) {
+          throw new ApiError(
+            400,
+            'DEFECTIVE_BARCODE_NOT_FOUND',
+            `defectiveBarcode "${barcode}" does not match any product barcode in this store`,
+            { path: ['defectiveBarcode'] },
+          );
+        }
+        resolvedDefectiveBarcode = barcode;
+      }
     }
 
     // Zero-value sales settle with no payment leg.
@@ -222,6 +260,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
         paymentMethod: effectivePaymentMethod,
         zeroValueReason: input.zeroValueReason ?? null,
         zeroValueLinkedOrderRef: resolvedLinkedOrderRef,
+        defectiveBarcode: resolvedDefectiveBarcode,
         status: 'COMPLETED',
         completedAt: new Date(),
         lines: {

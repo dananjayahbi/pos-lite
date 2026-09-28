@@ -4,7 +4,18 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { receivePOLines } from '@/lib/services/purchaseOrder.service';
 import { ReceivePOLinesSchema } from '@/lib/validators/purchaseOrder.validators';
+import { envelopeError, toErrorResponse } from '@/lib/api/error-envelope';
+import { mapServiceError } from '@/lib/api/map-service-error';
 
+/**
+ * POST /api/store/purchase-orders/[id]/receive — post a goods receipt.
+ *
+ * M16-01 (BUG-48): the catch now delegates typed service sentinels to the
+ * INF-02 mapper, so a receipt that loses the row-lock race surfaces as a typed
+ * 409 (`OVER_RECEIPT`) instead of a generic 500. The happy-path response
+ * contract (`{ success:true, data:{ updatedPO, costPricesChanged,
+ * costPriceChangedCount } }` at 200) is unchanged.
+ */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -55,6 +66,12 @@ export async function POST(
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
 
+    // M16-01 (BUG-48): typed sentinels first — OVER_RECEIPT is a 409, and its
+    // prose happens to contain "would exceed", so it must not fall into the
+    // legacy 400 branch below. Unregistered messages return null and continue.
+    const mapped = mapServiceError(error);
+    if (mapped) return envelopeError(mapped);
+
     if (message === 'Purchase order not found') {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message } },
@@ -74,10 +91,6 @@ export async function POST(
       );
     }
 
-    console.error('POST /api/store/purchase-orders/[id]/receive error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'POST /api/store/purchase-orders/[id]/receive');
   }
 }

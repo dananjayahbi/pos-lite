@@ -1,12 +1,14 @@
 import { z } from 'zod';
 
+import { TENANT_FEATURE_MODULES } from '@/lib/constants/tenant-modules';
+
 // ── Appointment Service ───────────────────────────────────────────────────────
 
 export const AppointmentServiceSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
   description: z.string().max(500).optional().nullable(),
   durationMins: z.number().int().min(5, 'Minimum 5 minutes').max(480, 'Maximum 8 hours'),
-  price: z.number().min(0, 'Price cannot be negative'),
+  price: z.number().min(0, 'Price cannot be negative').max(99999999.99, 'Price exceeds the maximum supported amount'),
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, 'Must be a valid hex color')
@@ -30,7 +32,7 @@ export const CreateAppointmentSchema = z
     startTime: z.string().datetime({ message: 'Start time must be a valid ISO datetime' }),
     endTime: z.string().datetime({ message: 'End time must be a valid ISO datetime' }),
     durationMins: z.number().int().min(5),
-    price: z.number().min(0),
+    price: z.number().min(0).max(99999999.99),
     depositAmount: z.number().min(0).optional().nullable(),
     title: z.string().min(1).max(200).optional(),
     description: z.string().max(1000).optional().nullable(),
@@ -58,7 +60,7 @@ export const UpdateAppointmentSchema = z
     startTime: z.string().datetime().optional(),
     endTime: z.string().datetime().optional(),
     durationMins: z.number().int().min(5).optional(),
-    price: z.number().min(0).optional(),
+    price: z.number().min(0).max(99999999.99).optional(),
     depositAmount: z.number().min(0).optional().nullable(),
     title: z.string().min(1).max(200).optional(),
     description: z.string().max(1000).optional().nullable(),
@@ -134,8 +136,13 @@ export const AppointmentFiltersSchema = z.object({
 
 // ── Feature Module Toggle ────────────────────────────────────────────────────
 
+// M08-04 (BUG-38): allowlist against the canonical module registry — unknown
+// names → 400 VALIDATION_ERROR via the route's safeParse path. `[]` is valid
+// (clears all modules); duplicates are deduped server-side.
 export const FeatureModuleToggleSchema = z.object({
-  modules: z.array(z.string()),
+  modules: z
+    .array(z.enum(TENANT_FEATURE_MODULES))
+    .transform((modules) => [...new Set(modules)]),
 });
 
 // ── Types ─────────────────────────────────────────────────────────────────────

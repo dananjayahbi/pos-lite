@@ -1,0 +1,8 @@
+Mobile--------------
+Merchant Secret: NTI3MzE2ODIxMTY1MDk1MDEwODMyNjI5MDYwNTY3Mjg3NTg1MjY=
+DOMAIN/APP: localhost
+Merchant ID: 1238284
+
+API------
+App ID: 4OVzEdIGi7E4JH5FPFFQXp3HB
+App Secret: 4JAeaxNNUhi4Oa48RvwsPU8my2ZKwabah4OTNonSZgOs

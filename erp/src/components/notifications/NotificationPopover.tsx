@@ -3,15 +3,6 @@
 import { useRouter } from 'next/navigation';
 import {
   Bell,
-  AlertTriangle,
-  ClipboardList,
-  CheckCircle2,
-  XCircle,
-  Info,
-  ShoppingCart,
-  RotateCcw,
-  Clock,
-  Wallet,
 } from 'lucide-react';
 import {
   Popover,
@@ -20,6 +11,7 @@ import {
 } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { useGetNotifications, useInvalidateNotifications } from '@/hooks/useGetNotifications';
+import { getNotificationIcon } from '@/lib/constants/notification-types';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,18 +29,6 @@ function formatRelativeTime(dateStr: string): string {
   if (days < 7) return `${days}d ago`;
   return new Date(dateStr).toLocaleDateString();
 }
-
-const TYPE_ICONS: Record<string, typeof Bell> = {
-  LOW_STOCK_ALERT: AlertTriangle,
-  STOCK_TAKE_SUBMITTED: ClipboardList,
-  STOCK_TAKE_APPROVED: CheckCircle2,
-  STOCK_TAKE_REJECTED: XCircle,
-  SYSTEM_ALERT: Info,
-  SALE_COMPLETED: ShoppingCart,
-  RETURN_PROCESSED: RotateCcw,
-  SHIFT_CLOSED: Clock,
-  PETTY_CASH_LOW: Wallet,
-};
 
 function getNotificationHref(type: string, relatedEntityId: string | null): string | null {
   switch (type) {
@@ -141,7 +121,7 @@ export function NotificationPopover() {
             </div>
           ) : (
             notifications.map((n) => {
-              const Icon = TYPE_ICONS[n.type] ?? Info;
+              const Icon = getNotificationIcon(n.type);
               return (
                 <button
                   key={n.id}

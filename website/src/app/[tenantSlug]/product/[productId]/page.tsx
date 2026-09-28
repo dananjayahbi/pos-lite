@@ -1,16 +1,14 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import Link from 'next/link';
-import { getPublicProduct, getPublicProducts } from '@/lib/api/products';
-import { getTenantInfo, getPublicWebsiteConfig } from '@/lib/api/website';
+import { getPublicProduct, getPublicProducts, getBestSellingProducts } from '@/lib/api/products';
+import { getTenantInfo } from '@/lib/api/website';
 import { tenantHomePath } from '@/lib/tenant';
-import { formatLKR } from '@/lib/utils';
 import { SITE } from '@/config/site';
-import { ProductGallery } from '@/components/website/product-detail/ProductGallery';
-import { ProductInfo } from '@/components/website/product-detail/ProductInfo';
+import { ProductDetail } from '@/components/website/product-detail/ProductDetail';
 import { ProductHealthSections } from '@/components/website/product-detail/ProductHealthSections';
 import { RelatedProducts } from '@/components/website/product-detail/RelatedProducts';
 import { Breadcrumb } from '@/components/website/product-detail/Breadcrumb';
+import { StoreHeader } from '@/components/website/common/StoreHeader';
 import type { PublicProduct } from '@/types/website.types';
 
 interface ProductPageProps {
@@ -28,40 +26,38 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   if (!product || !tenant) notFound();
 
-  // Fetch related products from the same category (best-effort)
+  // Fetch related products from the same category (best-effort). If the
+  // category has few items, top up from the store's best-sellers so the grid
+  // stays full and doesn't look sparse.
   let related: PublicProduct[] = [];
   if (product.categoryId) {
     try {
       const res = await getPublicProducts(tenantSlug, {
         categoryId: product.categoryId,
-        limit: 5,
+        limit: 12,
       });
-      related = res.products.filter((p) => p.id !== product.id).slice(0, 4);
+      related = res.products.filter((p) => p.id !== product.id).slice(0, 8);
     } catch {
       // Graceful — related section simply won't render
     }
   }
 
+  if (related.length < 8) {
+    try {
+      const best = await getBestSellingProducts(tenantSlug, 12);
+      related = [
+        ...related,
+        ...best.filter((p) => p.id !== product.id && !related.some((r) => r.id === p.id)),
+      ].slice(0, 8);
+    } catch {
+      // Best-effort only
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-white">
-      {/* Minimal top bar */}
-      <header className="border-b border-gray-100">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 py-3">
-          <Link
-            href={tenantHomePath(tenantSlug)}
-            className="text-lg font-medium"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-          >
-            {tenant.name}
-          </Link>
-          <Link
-            href={tenantHomePath(tenantSlug)}
-            className="text-sm text-gray-500 hover:text-black transition-colors"
-          >
-            ← Back to store
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#051610] text-[#cbd5e1]">
+      {/* Common top bar with cart button */}
+      <StoreHeader tenantSlug={tenantSlug} storeName={tenant.name} />
 
       <main className="max-w-7xl mx-auto px-4 py-6">
         {/* Breadcrumb */}
@@ -75,18 +71,8 @@ export default async function ProductPage({ params }: ProductPageProps) {
           />
         </div>
 
-        {/* Product layout */}
-        <div className="grid gap-8 md:grid-cols-2">
-          <ProductGallery
-            variants={product.variants}
-            productName={product.name}
-            mainImageUrl={product.mainImageUrl}
-          />
-          <ProductInfo
-            product={product}
-            tenantSlug={tenantSlug}
-          />
-        </div>
+        {/* Product layout — gallery + info kept in sync (variant ↔ image) */}
+        <ProductDetail product={product} tenantSlug={tenantSlug} tenantName={tenant.name} />
 
         {/* Structured Ayurvedic health/usage content */}
         <ProductHealthSections product={product} />
@@ -114,9 +100,6 @@ export async function generateMetadata({
 
     if (!product) return { title: 'Product not found' };
 
-    const price =
-      product.variants?.[0]?.retailPrice ??
-      product.primaryVariant?.retailPrice;
     const image =
       product.mainImageUrl ??
       product.variants?.[0]?.imageUrls?.[0] ??

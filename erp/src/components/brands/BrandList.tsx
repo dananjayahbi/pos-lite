@@ -3,7 +3,7 @@
 import type { Brand } from '@/hooks/useBrands';
 import { Badge } from '@/components/ui/badge';
 import { Pencil } from 'lucide-react';
-import { BrandDeleteButton } from '@/components/brands/BrandDeleteButton';
+import { ResourceDeleteButton, productsAssignedReason } from '@/components/shared/ResourceDeleteButton';
 
 interface BrandListProps {
   brands: Brand[];
@@ -90,13 +90,18 @@ export function BrandList({
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
               )}
-              {canDelete && brand._count.products === 0 && (
-                <BrandDeleteButton
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete?.(brand);
-                  }}
-                  brandName={brand.name}
+              {/* M04-02: in-use brands show the same disabled lock + tooltip
+                  as categories instead of hiding the button entirely. */}
+              {canDelete && (
+                <ResourceDeleteButton
+                  canDelete
+                  label={brand.name}
+                  onDelete={() => onDelete?.(brand)}
+                  blockedReason={
+                    brand._count.products > 0
+                      ? productsAssignedReason(brand._count.products)
+                      : undefined
+                  }
                 />
               )}
             </div>

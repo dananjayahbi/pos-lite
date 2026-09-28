@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import {
   getWebsiteConfig,
@@ -34,6 +36,11 @@ export async function GET() {
       );
     }
 
+    // M29-03 (OBS-41): the website CMS was auth-only — any authenticated
+    // session (CASHIER included) could read the tenant's whole site config.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebsite);
+    if (forbidden) return forbidden;
+
     const config = await getWebsiteConfig(tenantId);
     return NextResponse.json({ success: true, data: config });
   } catch (error) {
@@ -63,6 +70,11 @@ export async function PUT(request: Request) {
       );
     }
 
+    // M29-03 (OBS-41): without this, a CASHIER could rewrite the tenant's
+    // public site (branding, SEO, slides, ads, sections).
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebsite);
+    if (forbidden) return forbidden;
+
     const body = await request.json();
     const parsed = WebsiteConfigSchema.safeParse(body);
 
@@ -85,12 +97,14 @@ export async function PUT(request: Request) {
     // ads are stored as dedicated relation rows (the storefront's source of
     // truth), so they are reconciled separately rather than persisted in the
     // JSON blob. We validate each item so malformed rows never reach the DB.
-    const rawHeroSlides = Array.isArray(body.heroSlides) ? body.heroSlides : undefined;
-    const rawAds = Array.isArray(body.ads)
+    const rawHeroSlides: Record<string, unknown>[] | undefined = Array.isArray(body.heroSlides)
+      ? (body.heroSlides as Record<string, unknown>[])
+      : undefined;
+    const rawAds: Record<string, unknown>[] | undefined = Array.isArray(body.ads)
       ? (body.ads as Record<string, unknown>[]).map((ad) => ({
           ...ad,
           // The form's sanitizer converts null dates to '' — normalize back
-          // to undefined so the datetime validator accepts them.
+          // to undefined so the date validator leaves them untouched.
           startsAt: ad.startsAt && ad.startsAt !== '' ? ad.startsAt : undefined,
           endsAt: ad.endsAt && ad.endsAt !== '' ? ad.endsAt : undefined,
         }))
@@ -98,7 +112,16 @@ export async function PUT(request: Request) {
 
     let heroSlides: z.infer<typeof WebsiteHeroSlideSchema>[] | undefined;
     if (rawHeroSlides !== undefined) {
-      const parsedSlides = WebsiteHeroSlideSchema.array().safeParse(rawHeroSlides);
+      // OBS-43: the media-less draft filter runs PER ITEM *before* the survivor
+      // array is schema-validated. Previously the whole array went through
+      // `WebsiteHeroSlideSchema.array().safeParse` first, so a single empty
+      // draft (`mediaUrl: ''`) failed `min(1)` and rejected the entire save,
+      // even though the documented contract is "skip incomplete drafts".
+      // The UI's client-side strip behaviour is unchanged.
+      const draftSlides = (rawHeroSlides as Record<string, unknown>[]).filter(
+        (slide) => typeof slide?.mediaUrl === 'string' && slide.mediaUrl.trim().length > 0,
+      );
+      const parsedSlides = WebsiteHeroSlideSchema.array().safeParse(draftSlides);
       if (!parsedSlides.success) {
         return NextResponse.json(
           {
@@ -120,7 +143,15 @@ export async function PUT(request: Request) {
 
     let ads: z.infer<typeof WebsiteAdSchema>[] | undefined;
     if (rawAds !== undefined) {
-      const parsedAds = WebsiteAdSchema.array().safeParse(rawAds);
+      // OBS-43: same per-item draft filter as the hero slides above.
+      const draftAds = rawAds.filter(
+        (ad) =>
+          typeof ad?.name === 'string' &&
+          ad.name.trim().length > 0 &&
+          typeof ad?.mediaUrl === 'string' &&
+          ad.mediaUrl.trim().length > 0,
+      );
+      const parsedAds = WebsiteAdSchema.array().safeParse(draftAds);
       if (!parsedAds.success) {
         return NextResponse.json(
           {
@@ -208,6 +239,10 @@ export async function DELETE() {
         { status: 401 },
       );
     }
+
+    // M29-03 (OBS-41): resetting the public site is owner/manager work.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebsite);
+    if (forbidden) return forbidden;
 
     const reset = await resetWebsiteConfig(tenantId);
 

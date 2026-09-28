@@ -1,107 +1,80 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
-import { CarouselSlider } from '@/components/website/sections/CarouselSlider';
-import type {
-  ImageSliderSection as ImageSliderSectionConfig,
-  ImageSliderItem,
-} from '@/types/website.types';
+import type { ImageSliderSection as ImageSliderSectionConfig, PublicProduct } from '@/types/website.types';
+import { DarkProductCard } from '@/components/website/sections/DarkProductCard';
+import { DarkCarousel } from '@/components/website/sections/DarkCarousel';
+import { SectionTitle } from '@/components/website/sections/SectionTitle';
+import { SectionAmbience } from '@/components/website/sections/SectionAmbience';
 
 interface ImageSliderSectionProps {
   config: Record<string, unknown>;
   websiteConfig: Record<string, unknown>;
   tenantSlug: string;
+  latestProducts?: PublicProduct[];
+  bestSellingProducts?: PublicProduct[];
 }
 
 /**
- * Section 02 — Horizontal image slider.
- * - 100% width, max-height 400px
- * - Uses shared CarouselSlider for scroll-snap horizontal sliding
- * - Up to 7 configurable images, filtered to active only
- * - Each card fills its container with object-fit: cover
- * - Optional linkUrl wraps image in anchor tag
+ * Section 02 — "AUTHENTIC AYURVEDIC CARE / CURATED BOTANICAL COLLECTIONS".
+ * A full-width horizontal slider of dark tilt product cards flanked by arrows,
+ * with edge fades and a progress bar. The eyebrow / heading / subtitle texts
+ * and the featured product selection are driven by ERP config (like the
+ * "Top Selling Items" section). Falls back to config-supplied products or the
+ * most recent products when no explicit pick is set.
  */
-export function ImageSliderSection({ config }: ImageSliderSectionProps) {
+export function ImageSliderSection({
+  tenantSlug,
+  config,
+  latestProducts,
+  bestSellingProducts,
+}: ImageSliderSectionProps) {
   const section = config as unknown as ImageSliderSectionConfig;
 
-  if (!section.isActive) return null;
+  // Featured products come from curated selection (productIds), else fall back
+  // to the best-selling / latest products passed down from the data layer.
+  let source = bestSellingProducts?.length ? bestSellingProducts : latestProducts ?? [];
 
-  const activeImages: ImageSliderItem[] = (section.images ?? [])
-    .filter((item) => item.isActive)
-    .sort((a, b) => a.sortOrder - b.sortOrder)
-    .slice(0, 7);
+  if (section.productIds && section.productIds.length > 0) {
+    const idSet = new Set(section.productIds);
+    source = source.filter((p) => idSet.has(p.id));
+  }
 
-  if (activeImages.length === 0) return null;
-
-  const cards = activeImages.map((item, idx) => {
-    const imgElement = (
-      <img
-        src={item.imageUrl}
-        alt={item.alt || ''}
-        className="w-full h-full object-cover"
-        loading={idx < 3 ? 'eager' : 'lazy'}
-      />
-    );
-
-    const card = (
-      <div className="image-slider-card" key={idx}>
-        {item.linkUrl ? (
-          <Link
-            href={item.linkUrl}
-            className="block w-full h-full"
-            aria-label={item.alt || 'Slider image'}
-          >
-            {imgElement}
-          </Link>
-        ) : (
-          imgElement
-        )}
-      </div>
-    );
-
-    return card;
-  });
+  const display = source.slice(0, section.productCount || 7);
+  if (display.length === 0) return null;
 
   return (
-    <section className="image-slider-section">
-      <CarouselSlider
-        sliderId="image-slider"
-        desktopCards={3}
-        tabletCards={2}
-        mobileCards={1}
-        gap={8}
-        infinite
-      >
-        {cards}
-      </CarouselSlider>
+    <section id="products-section" className="section-dark relative w-full py-20 sm:py-28 lg:py-32 overflow-hidden">
+      <SectionAmbience
+        leaves={[
+          { icon: 'fa-solid fa-leaf', classes: 'top-10 left-6 text-6xl text-[#97c93e]', speed: 0.2 },
+          { icon: 'fa-solid fa-seedling', classes: 'bottom-16 right-10 text-7xl text-emerald-400', speed: 0.32 },
+          { icon: 'fa-solid fa-spa', classes: 'top-1/2 left-1/4 text-5xl text-lime-300', speed: 0.14 },
+          { icon: 'fa-solid fa-cannabis', classes: 'top-20 right-1/4 text-4xl text-emerald-300', speed: 0.25 },
+        ]}
+      />
 
-      <style jsx>{`
-        .image-slider-section {
-          width: 100%;
-          overflow: hidden;
+      <SectionTitle
+        label={section.label || 'AUTHENTIC AYURVEDIC CARE'}
+        title={section.title || 'CURATED BOTANICAL COLLECTIONS'}
+        subtitle={
+          section.subtitle ||
+          'Handcrafted formulas extracted from Ceylon medicinal herbs to balance mind, body, and spirit. Click any product to explore detailed benefits.'
         }
+      />
 
-        :global(.image-slider-card) {
-          aspect-ratio: 16 / 9;
-          max-height: 400px;
-          overflow: hidden;
-          border-radius: 4px;
-        }
-
-        :global(.image-slider-card img) {
-          display: block;
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-        }
-
-        @media (max-width: 600px) {
-          :global(.image-slider-card) {
-            max-height: 280px;
-          }
-        }
-      `}</style>
+      <DarkCarousel sliderId="products" showProgress className="relative">
+        {display.map((product, i) => (
+          <DarkProductCard
+            key={product.id}
+            product={product}
+            tenantSlug={tenantSlug}
+            variant="tilt"
+            index={i + 1}
+            total={display.length}
+          />
+        ))}
+      </DarkCarousel>
     </section>
   );
 }

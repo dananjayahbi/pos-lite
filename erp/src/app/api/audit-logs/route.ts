@@ -1,8 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@/generated/prisma/client';
 import { auth } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getAuditLogs } from '@/lib/services/audit.service';
+import { parseQueryInt, parseQueryDate } from '@/lib/api/query-params';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { toCsvLines } from '@/lib/export';
+
+/**
+ * M35-01 (BUG-79): the audit CSV column order, named so the export, the spec
+ * pin and any future email/attachment path all reference one definition.
+ */
+const AUDIT_CSV_HEADERS = [
+  'createdAt',
+  'entityType',
+  'entityId',
+  'action',
+  'actorId',
+  'actorRole',
+  'ipAddress',
+] as const;
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,8 +33,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // M08-03 (BUG-37): SUPER_ADMIN is tenantless by design — serve the
+    // cross-tenant system ledger instead of 401ing before the permission
+    // check. An optional ?tenantId= narrows the view to one business.
+    const isSuperAdmin = session.user.role === 'SUPER_ADMIN';
     const tenantId = session.user.tenantId;
-    if (!tenantId) {
+    if (!isSuperAdmin && !tenantId) {
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: 'No tenant associated' } },
         { status: 401 },
@@ -30,30 +53,43 @@ export async function GET(request: NextRequest) {
     const entityType = searchParams.get('entityType') ?? undefined;
     const action = searchParams.get('action') ?? undefined;
     const userId = searchParams.get('userId') ?? undefined;
-    const startDate = searchParams.get('startDate')
-      ? new Date(searchParams.get('startDate')!)
-      : undefined;
-    const endDate = searchParams.get('endDate')
-      ? new Date(searchParams.get('endDate')!)
-      : undefined;
-    const page = parseInt(searchParams.get('page') ?? '1', 10) || 1;
-    const pageSize = parseInt(searchParams.get('pageSize') ?? '50', 10) || 50;
+    // XC-01 + XC-02: dates validated (garbage → 400, not Invalid Date in a
+    // Prisma filter); pagination clamped.
+    const startDate = parseQueryDate(searchParams, 'startDate');
+    const endDate = parseQueryDate(searchParams, 'endDate');
+    const page = parseQueryInt(searchParams, 'page', { default: 1, min: 1, max: 1_000_000 }) ?? 1;
+    const pageSize = parseQueryInt(searchParams, 'pageSize', { default: 50, min: 1, max: 200 }) ?? 50;
     const format = searchParams.get('format') ?? 'json';
 
-    const result = await getAuditLogs(tenantId, {
-      entityType,
-      action,
-      startDate,
-      endDate,
-      userId,
-      page,
-      pageSize,
-    });
+    const result = isSuperAdmin
+      ? await getCrossTenantAuditLogs(searchParams.get('tenantId') ?? undefined, {
+          entityType,
+          action,
+          startDate,
+          endDate,
+          userId,
+          page,
+          pageSize,
+        })
+      : await getAuditLogs(tenantId as string, {
+          entityType,
+          action,
+          startDate,
+          endDate,
+          userId,
+          page,
+          pageSize,
+        });
 
     if (format === 'csv') {
-      const csvRows = [
-        ['createdAt', 'entityType', 'entityId', 'action', 'actorId', 'actorRole', 'ipAddress'],
-        ...result.data.map((entry) => [
+      // M35-01 (BUG-79): the header row is emitted UNQUOTED and data cells are
+      // quoted only when they need it, via the shared `toCsvLines` writer. The
+      // old inline mapper quoted every cell — including the header — producing
+      // `"createdAt","entityType",...`, which Excel/Sheets render with literal
+      // quotes in some locales and which makes diffs noisy (RULE: RULE-EXPORT-CSV).
+      const csv = toCsvLines(
+        AUDIT_CSV_HEADERS,
+        result.data.map((entry) => [
           entry.createdAt.toISOString(),
           entry.entityType,
           entry.entityId,
@@ -62,11 +98,7 @@ export async function GET(request: NextRequest) {
           entry.actorRole,
           entry.ipAddress ?? '',
         ]),
-      ];
-
-      const csv = csvRows
-        .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-        .join('\n');
+      );
 
       return new NextResponse(csv, {
         status: 200,
@@ -77,12 +109,66 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ success: true, data: result });
+    return NextResponse.json({
+      success: true,
+      // XC-02: canonical list envelope — `data` is the array, pagination lives
+      // in `meta` (was the nested `data.data` object that broke integrators,
+      // BUG-59).
+      data: result.data,
+      meta: {
+        page: result.page,
+        limit: result.pageSize,
+        total: result.total,
+        hasMore: result.page * result.pageSize < result.total,
+      },
+    });
   } catch (error) {
-    console.error('GET /api/audit-logs error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch audit logs' } },
-      { status: 500 },
-    );
+    // XC-01/INF-02: parser ApiErrors surface as their 400; unknown
+    // errors are logged and returned as a generic, leak-free 500.
+    return toErrorResponse(error, 'GET /api/audit-logs');
   }
+}
+
+interface CrossTenantFilters {
+  entityType?: string | undefined;
+  action?: string | undefined;
+  startDate?: Date | undefined;
+  endDate?: Date | undefined;
+  userId?: string | undefined;
+  page?: number | undefined;
+  pageSize?: number | undefined;
+}
+
+/**
+ * M08-03 (BUG-37) — SUPER_ADMIN system-wide ledger. Mirrors the pagination
+ * and where-clause shape of `getAuditLogs` but omits `tenantId` entirely
+ * (or filters to one business when `?tenantId=` is given), so tenantless
+ * bridge rows (`tenantId:null` auth events, OBS-72) are visible here.
+ */
+async function getCrossTenantAuditLogs(
+  tenantId: string | undefined,
+  filters: CrossTenantFilters,
+) {
+  const page = Math.max(1, filters.page ?? 1);
+  const pageSize = Math.min(Math.max(1, filters.pageSize ?? 50), 100);
+  const skip = (page - 1) * pageSize;
+
+  const where: Prisma.AuditLogWhereInput = {};
+  if (tenantId !== undefined) where.tenantId = tenantId;
+  if (filters.entityType !== undefined) where.entityType = filters.entityType;
+  if (filters.action !== undefined) where.action = filters.action;
+  if (filters.userId !== undefined) where.actorId = filters.userId;
+  if (filters.startDate !== undefined || filters.endDate !== undefined) {
+    where.createdAt = {
+      ...(filters.startDate !== undefined ? { gte: filters.startDate } : {}),
+      ...(filters.endDate !== undefined ? { lte: filters.endDate } : {}),
+    };
+  }
+
+  const [data, total] = await Promise.all([
+    prisma.auditLog.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: pageSize }),
+    prisma.auditLog.count({ where }),
+  ]);
+
+  return { data, total, page, pageSize };
 }

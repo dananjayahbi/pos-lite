@@ -39,7 +39,7 @@ export function QuantityStepper({
   return (
     <div
       className={cn(
-        'inline-flex items-center rounded border border-gray-300 bg-white',
+        'inline-flex items-center rounded-full border border-white/15 bg-[#082017]',
         className,
       )}
       role="group"
@@ -52,7 +52,7 @@ export function QuantityStepper({
         aria-label="Decrease quantity"
         className={cn(
           dims,
-          'flex items-center justify-center text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40',
+          'flex items-center justify-center text-[#cbd5e1] transition-colors hover:bg-[#97c93e] hover:text-[#051610] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#cbd5e1]',
           'rounded-l',
         )}
       >
@@ -60,7 +60,7 @@ export function QuantityStepper({
       </button>
       <span
         className={cn(
-          'min-w-[2.25rem] border-x border-gray-300 px-2 text-center font-medium tabular-nums',
+          'min-w-[2.25rem] border-x border-white/15 px-2 text-center font-medium tabular-nums text-white',
           size === 'sm' ? 'text-xs' : 'text-sm',
         )}
         aria-live="polite"
@@ -74,7 +74,7 @@ export function QuantityStepper({
         aria-label="Increase quantity"
         className={cn(
           dims,
-          'flex items-center justify-center text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40',
+          'flex items-center justify-center text-[#cbd5e1] transition-colors hover:bg-[#97c93e] hover:text-[#051610] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#cbd5e1]',
           'rounded-r',
         )}
       >

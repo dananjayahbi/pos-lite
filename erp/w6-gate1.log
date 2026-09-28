@@ -1,0 +1,353 @@
+◇ injected env (0) from .env.local // tip: ⌁ auth for agents [www.vestauth.com]
+◇ injected env (22) from .env // tip: ⌘ enable debugging { debug: true }
+
+Running 180 tests using 1 worker
+
+  ✓    1 [chromium] › tests\23_packaging_stock.spec.ts:41:7 › Module 23: Packaging Consumables Stock › §1.F1 — Packaging page loads with delivery module enabled (28.2s)
+  ✓    2 [chromium] › tests\23_packaging_stock.spec.ts:54:7 › Module 23: Packaging Consumables Stock › §1.F2 — GET /api/store/packaging returns empty list on fresh tenant (8.0s)
+  ✓    3 [chromium] › tests\23_packaging_stock.spec.ts:66:7 › Module 23: Packaging Consumables Stock › §1.F3 — POST /api/store/packaging creates a packaging item (7.0s)
+  ✓    4 [chromium] › tests\23_packaging_stock.spec.ts:98:7 › Module 23: Packaging Consumables Stock › §1.F4 — POST /api/store/packaging creates label item (LABEL category) (7.4s)
+  ✓    5 [chromium] › tests\23_packaging_stock.spec.ts:124:7 › Module 23: Packaging Consumables Stock › §1.F5 — POST /api/store/packaging creates manual-adjust item (autoDeduct=false) (6.5s)
+  ✓    6 [chromium] › tests\23_packaging_stock.spec.ts:149:7 › Module 23: Packaging Consumables Stock › §1.F6 — GET /api/store/packaging lists created items sorted by category, name (10.0s)
+  ✓    7 [chromium] › tests\23_packaging_stock.spec.ts:187:7 › Module 23: Packaging Consumables Stock › §2.P1 — consumptionPerParcel stored as Decimal with precision (6,2) (6.7s)
+  ✓    8 [chromium] › tests\23_packaging_stock.spec.ts:214:7 › Module 23: Packaging Consumables Stock › §2.P2 — quantityOnHand precision: integer stock, auto-deduct rounds consumption down (6.9s)
+  ✓    9 [chromium] › tests\23_packaging_stock.spec.ts:240:7 › Module 23: Packaging Consumables Stock › §4.A1 — PATCH /api/store/packaging/[id] creates audit log (13.8s)
+  ✓   10 [chromium] › tests\23_packaging_stock.spec.ts:283:7 › Module 23: Packaging Consumables Stock › §4.A2 — Soft delete (deletedAt) prevents list retrieval but does not hard-delete (8.2s)
+  ✓   11 [chromium] › tests\23_packaging_stock.spec.ts:313:7 › Module 23: Packaging Consumables Stock › §4.A3 — Recreate after soft-delete should succeed (no hard constraint) (7.6s)
+  ✓   12 [chromium] › tests\23_packaging_stock.spec.ts:340:7 › Module 23: Packaging Consumables Stock › §5.R1 — Double-click create prevents duplicate (idempotency) (6.4s)
+  ✓   13 [chromium] › tests\23_packaging_stock.spec.ts:377:7 › Module 23: Packaging Consumables Stock › §5.R2 — Concurrent updates to same item do not corrupt quantityOnHand (10.0s)
+  ✓   14 [chromium] › tests\23_packaging_stock.spec.ts:414:7 › Module 23: Packaging Consumables Stock › §6.H1 — Stock adjustment via POST with delta (increment) (9.2s)
+  ✓   15 [chromium] › tests\23_packaging_stock.spec.ts:448:7 › Module 23: Packaging Consumables Stock › §6.H2 — Stock adjustment via POST with delta (decrement) (8.2s)
+  ✓   16 [chromium] › tests\23_packaging_stock.spec.ts:482:7 › Module 23: Packaging Consumables Stock › §7.N1 — Graceful 500 error handling (invalid JSON body) (7.2s)
+  ✓   17 [chromium] › tests\23_packaging_stock.spec.ts:493:7 › Module 23: Packaging Consumables Stock › §7.N2 — Graceful 404 for non-existent packaging item (7.8s)
+  ✓   18 [chromium] › tests\23_packaging_stock.spec.ts:503:7 › Module 23: Packaging Consumables Stock › §8.S1 — RBAC: Owner can access /delivery/packaging (9.5s)
+  ✓   19 [chromium] › tests\23_packaging_stock.spec.ts:512:7 › Module 23: Packaging Consumables Stock › §8.S2 — RBAC: API requires DELIVERY.managePackaging permission for GET (6.7s)
+  ✓   20 [chromium] › tests\23_packaging_stock.spec.ts:518:7 › Module 23: Packaging Consumables Stock › §8.S3 — Tenant isolation: packaging items scoped to tenant (7.6s)
+  ✓   21 [chromium] › tests\23_packaging_stock.spec.ts:544:7 › Module 23: Packaging Consumables Stock › §9.X1 — Boundary: name length (max 120 chars) (6.4s)
+  ✓   22 [chromium] › tests\23_packaging_stock.spec.ts:563:7 › Module 23: Packaging Consumables Stock › §9.X2 — Boundary: SKU max 60 chars (6.4s)
+  ✓   23 [chromium] › tests\23_packaging_stock.spec.ts:582:7 › Module 23: Packaging Consumables Stock › §9.X3 — Chaos: negative quantityOnHand rejected (6.2s)
+  ✓   24 [chromium] › tests\23_packaging_stock.spec.ts:599:7 › Module 23: Packaging Consumables Stock › §9.X4 — Chaos: Unicode in name (Sinhala) (7.2s)
+  ✓   25 [chromium] › tests\23_packaging_stock.spec.ts:620:7 › Module 23: Packaging Consumables Stock › §9.X5 — XSS: script tag in name is stored inert (6.6s)
+  ✓   26 [chromium] › tests\23_packaging_stock.spec.ts:641:7 › Module 23: Packaging Consumables Stock › §10.T1 — createdAt/updatedAt timestamps preserved (no forgery) (6.9s)
+  ✓   27 [chromium] › tests\23_packaging_stock.spec.ts:668:7 › Module 23: Packaging Consumables Stock › §10.T2 — Recreate item after soft-delete (same name, different outcome) (9.8s)
+Module 23 test suite completed.
+Test items created for validation:
+  - Polymailer (auto-deduct)
+  - Label (auto-deduct)
+  - Tape (manual adjustment)
+  - Bubble Wrap (soft-delete test)
+  ✓   28 [chromium] › tests\23_packaging_stock.spec.ts:698:7 › Module 23: Packaging Consumables Stock › cleanup: collect test results (6.3s)
+  ✓   29 [chromium] › tests\25_rate_cards.spec.ts:140:7 › §0 Rate card baseline capture › captures original card state for restoration (14.8s)
+  ✓   30 [chromium] › tests\25_rate_cards.spec.ts:163:7 › §1 Functional & business logic › F1: GET active rate card returns the seeded deterministic card (8.5s)
+  ✓   31 [chromium] › tests\25_rate_cards.spec.ts:173:7 › §1 Functional & business logic › F2: PUT upserts the same active card (no duplicate cards created) (12.7s)
+  ✓   32 [chromium] › tests\25_rate_cards.spec.ts:183:7 › §1 Functional & business logic › F3: PUT with partial body preserves unspecified fields (14.4s)
+  ✓   33 [chromium] › tests\25_rate_cards.spec.ts:193:7 › §1 Functional & business logic › F4: rate-preview at base weight returns base rate exactly (8.8s)
+  ✓   34 [chromium] › tests\25_rate_cards.spec.ts:201:7 › §1 Functional & business logic › F5: rate-preview below base weight still charges base rate only (7.2s)
+  ✓   35 [chromium] › tests\25_rate_cards.spec.ts:207:7 › §1 Functional & business logic › F6: rate-preview extra weight applies ceil(weight - free) * extraKgRate (8.5s)
+  ✓   36 [chromium] › tests\25_rate_cards.spec.ts:217:7 › §1 Functional & business logic › F7: rate-preview with no weight defaults to 0kg (base rate) (7.7s)
+  ✓   37 [chromium] › tests\25_rate_cards.spec.ts:223:7 › §1 Functional & business logic › F8: zone override (district-level) changes the fee for matching destination (13.0s)
+  ✓   38 [chromium] › tests\25_rate_cards.spec.ts:244:7 › §1 Functional & business logic › F9: non-matching destination falls back to card default (12.2s)
+  ✓   39 [chromium] › tests\25_rate_cards.spec.ts:251:7 › §1 Functional & business logic › F10 (BUG-62 pin): city-level override must beat district-level override (18.8s)
+  ✓   40 [chromium] › tests\25_rate_cards.spec.ts:272:7 › §1 Functional & business logic › F11: entries PUT replaces the full matrix (deleted overrides stop applying) (16.5s)
+  ✓   41 [chromium] › tests\25_rate_cards.spec.ts:289:7 › §1 Functional & business logic › F12: entries PUT with ids updates existing rows instead of duplicating (13.7s)
+  ✓   42 [chromium] › tests\25_rate_cards.spec.ts:298:7 › §1 Functional & business logic › F13: public shipping-quote mirrors the rate engine for default zones (10.9s)
+  ✓   43 [chromium] › tests\25_rate_cards.spec.ts:308:7 › §1 Functional & business logic › F14: public shipping-quote accepts city/district names without auth (1.2s)
+  ✘   44 [chromium] › tests\25_rate_cards.spec.ts:321:7 › §1 Functional & business logic › F15: entries PUT on a tenant with no active card is rejected (8.5s)
+  ✓   45 [chromium] › tests\25_rate_cards.spec.ts:337:7 › §2 Financial & calculation precision › P1: fee fields are serialized to exactly 2 decimals (7.6s)
+  ✓   46 [chromium] › tests\25_rate_cards.spec.ts:346:7 › §2 Financial & calculation precision › P2: fractional rupee rates keep 2-decimal precision (no float drift) (13.0s)
+  ✓   47 [chromium] › tests\25_rate_cards.spec.ts:355:7 › §2 Financial & calculation precision › P3: coddCommissionPct and vatRatePct persist Decimal(5,2) values (13.2s)
+  ✓   48 [chromium] › tests\25_rate_cards.spec.ts:366:7 › §2 Financial & calculation precision › P4: very large rates do not lose integer precision (11.1s)
+  ✓   49 [chromium] › tests\25_rate_cards.spec.ts:373:7 › §2 Financial & calculation precision › P5: zero-value rates are legal (free delivery config) (13.8s)
+  ✓   50 [chromium] › tests\25_rate_cards.spec.ts:386:7 › §3 Cross-module cascade & ledger impact › L1: rate change flows through to rate-preview immediately (single source of truth) (12.0s)
+  ✓   51 [chromium] › tests\25_rate_cards.spec.ts:395:7 › §3 Cross-module cascade & ledger impact › L2: website shipping-quote reflects an ERP-side card edit (shared engine) (15.6s)
+  ✓   52 [chromium] › tests\25_rate_cards.spec.ts:406:7 › §3 Cross-module cascade & ledger impact › L3: computeNetPayout contract — Net = GrossCOD − (fee + COD% + VAT%) (11.1s)
+  ✓   53 [chromium] › tests\25_rate_cards.spec.ts:428:7 › §4 Audit trail, void & cancellation › A1: rate card updates write an audit log entry (RATE_CARD_UPDATED) (13.6s)
+  ✓   54 [chromium] › tests\25_rate_cards.spec.ts:447:7 › §4 Audit trail, void & cancellation › A2: entries upsert also writes an audit log entry (15.2s)
+  ✓   55 [chromium] › tests\25_rate_cards.spec.ts:463:7 › §4 Audit trail, void & cancellation › A3: card updates are in-place (id stable) — no soft-delete churn (12.0s)
+  ✓   56 [chromium] › tests\25_rate_cards.spec.ts:476:7 › §5 Chaos, button spamming & race conditions › R1: rapid double PUT cannot create a second active card (16.5s)
+  ✓   57 [chromium] › tests\25_rate_cards.spec.ts:490:7 › §5 Chaos, button spamming & race conditions › R2: concurrent entries PUTs converge to a single consistent matrix (15.7s)
+  ✓   58 [chromium] › tests\25_rate_cards.spec.ts:508:7 › §5 Chaos, button spamming & race conditions › R3 (BUG-63 pin): double-clicking Save Rate Card must not wipe card values (18.2s)
+  ✓   59 [chromium] › tests\25_rate_cards.spec.ts:535:7 › §6 Hardware & device simulation › H1: number inputs accept rapid scanner-like paste of numeric payload (10.2s)
+  ✓   60 [chromium] › tests\25_rate_cards.spec.ts:549:7 › §6 Hardware & device simulation › H2: rate-preview accepts scale-style decimal weight strings (10.3s)
+  ✓   61 [chromium] › tests\25_rate_cards.spec.ts:562:7 › §7 Network resilience & offline sync › N1: PUT /ratecard with malformed JSON returns VALIDATION_ERROR not a 500 (7.1s)
+  ✓   62 [chromium] › tests\25_rate_cards.spec.ts:573:7 › §7 Network resilience & offline sync › N2: public shipping-quote with malformed JSON returns a 4xx (not 5xx) (580ms)
+  ✓   63 [chromium] › tests\25_rate_cards.spec.ts:583:7 › §7 Network resilience & offline sync › N3: rate-preview tolerates unknown district ids gracefully (fallback, no 500) (10.4s)
+  ✓   64 [chromium] › tests\25_rate_cards.spec.ts:590:7 › §7 Network resilience & offline sync › N4: public shipping-quote survives an injected 500 on the quote endpoint (page-level) (2.0s)
+  ✓   65 [chromium] › tests\25_rate_cards.spec.ts:616:7 › §8 Security, RBAC & multi-tenant isolation › S1: unauthenticated access to ratecard APIs is rejected with 401 (227ms)
+  ✓   66 [chromium] › tests\25_rate_cards.spec.ts:623:7 › §8 Security, RBAC & multi-tenant isolation › S2: cashier cannot read or mutate the rate card (no delivery:ratecard:manage) (14.5s)
+  ✓   67 [chromium] › tests\25_rate_cards.spec.ts:633:7 › §8 Security, RBAC & multi-tenant isolation › S3: dispatch staff can preview rates but cannot manage the rate card (10.8s)
+  ✘   68 [chromium] › tests\25_rate_cards.spec.ts:643:7 › §8 Security, RBAC & multi-tenant isolation › S4: Lanka owner reads its own (empty) card — no dilani data leaks (7.4s)
+  ✓   69 [chromium] › tests\25_rate_cards.spec.ts:655:7 › §8 Security, RBAC & multi-tenant isolation › S5: non-managers are blocked from the rate-card surface (11.3s)
+  ✘   70 [chromium] › tests\25_rate_cards.spec.ts:665:7 › §8 Security, RBAC & multi-tenant isolation › S6: cross-tenant quote — Lanka slug never quotes dilani pricing (695ms)
+  ✓   71 [chromium] › tests\25_rate_cards.spec.ts:677:7 › §8 Security, RBAC & multi-tenant isolation › S7: unknown tenant slug on public quote returns 404 (617ms)
+  ✓   72 [chromium] › tests\25_rate_cards.spec.ts:684:7 › §8 Security, RBAC & multi-tenant isolation › S8: rate card data never leaks across tenants (Lanka sees its own card/null only) (7.5s)
+  ✓   73 [chromium] › tests\25_rate_cards.spec.ts:700:7 › §9 Boundary inputs & chaos data › X1: negative rates are rejected by validation (7.1s)
+  ✓   74 [chromium] › tests\25_rate_cards.spec.ts:708:7 › §9 Boundary inputs & chaos data › X2: negative entry rates are rejected (6.8s)
+  ✓   75 [chromium] › tests\25_rate_cards.spec.ts:716:7 › §9 Boundary inputs & chaos data › X3: name longer than 120 chars is rejected (6.7s)
+  ✓   76 [chromium] › tests\25_rate_cards.spec.ts:722:7 › §9 Boundary inputs & chaos data › X4: name with XSS payload is stored safely and echoed without execution (16.0s)
+  ✓   77 [chromium] › tests\25_rate_cards.spec.ts:737:7 › §9 Boundary inputs & chaos data › X5: Unicode (Sinhala/Tamil/emoji) name round-trips intact (10.9s)
+  ✓   78 [chromium] › tests\25_rate_cards.spec.ts:745:7 › §9 Boundary inputs & chaos data › X6: zero and fractional freeBaseWeightKg behave per engine contract (15.8s)
+  ✓   79 [chromium] › tests\25_rate_cards.spec.ts:757:7 › §9 Boundary inputs & chaos data › X7: entries payload over 200 rows is rejected (8.0s)
+  ✓   80 [chromium] › tests\25_rate_cards.spec.ts:764:7 › §9 Boundary inputs & chaos data › X8: integer overflow-ish district ids are coerced/rejected without a 500 (13.7s)
+  ✓   81 [chromium] › tests\25_rate_cards.spec.ts:771:7 › §9 Boundary inputs & chaos data › X9: boolean/NaN-ish garbage payloads are validation-rejected (9.9s)
+  ✓   82 [chromium] › tests\25_rate_cards.spec.ts:784:7 › §10 Time-travel & retroactive handling › T1: card createdAt/updatedAt behavior — updates bump updatedAt only (14.9s)
+  ✓   83 [chromium] › tests\25_rate_cards.spec.ts:796:7 › §10 Time-travel & retroactive handling › T2: expired/disabled card (isActive=false path) — engine falls back safely (11.2s)
+  ✓   84 [chromium] › tests\25_rate_cards.spec.ts:817:7 › §10 Time-travel & retroactive handling › T3: retroactive weight (future-dated payloads) does not alter quoting (11.8s)
+  ✓   85 [chromium] › tests\25_rate_cards.spec.ts:832:7 › cleanup: restore original rate card state › restores original card + zone overrides (11.6s)
+  ✓   86 [chromium] › tests\26_courier_reconciliation.spec.ts:105:7 › §1 Functional & business logic › F1: GET reconciliation returns the full dashboard envelope (10.4s)
+  ✓   87 [chromium] › tests\26_courier_reconciliation.spec.ts:117:7 › §1 Functional & business logic › F2: aging summary exposes the 3 buckets + totals with correct types (8.2s)
+  ✓   88 [chromium] › tests\26_courier_reconciliation.spec.ts:130:7 › §1 Functional & business logic › F3: audit report exposes byStatus + totals (zero-base math, no NaN) (7.4s)
+  ✓   89 [chromium] › tests\26_courier_reconciliation.spec.ts:144:7 › §1 Functional & business logic › F4: status filter narrows the ledger (valid enum accepted) (7.3s)
+  ✓   90 [chromium] › tests\26_courier_reconciliation.spec.ts:155:7 › §1 Functional & business logic › F5: search filter is accepted and scoped (waybill/orderRef OR-search) (7.5s)
+  ✓   91 [chromium] › tests\26_courier_reconciliation.spec.ts:163:7 › §1 Functional & business logic › F6: invalid filter enum is rejected with 400 VALIDATION_ERROR (6.7s)
+  ✓   92 [chromium] › tests\26_courier_reconciliation.spec.ts:171:7 › §1 Functional & business logic › F7: pagination contract — limit>200 and page=0 CLAMP (XC-02 uniform policy) (11.1s)
+  ✓   93 [chromium] › tests\26_courier_reconciliation.spec.ts:184:7 › §1 Functional & business logic › F8 (BUG-65 gate pin): ledger is empty because upstream dispatch is blocked (7.4s)
+  ✓   94 [chromium] › tests\26_courier_reconciliation.spec.ts:200:7 › §1 Functional & business logic › F9: import with a valid CSV but no matching waybills completes with zero matches (8.9s)
+  ✓   95 [chromium] › tests\26_courier_reconciliation.spec.ts:214:7 › §1 Functional & business logic › F10: import is idempotent-safe — re-upload of unmatched rows creates a second import record, never settles (10.6s)
+  ✓   96 [chromium] › tests\26_courier_reconciliation.spec.ts:226:7 › §1 Functional & business logic › F11: import rejects non-statement files with 400 (7.4s)
+  ✓   97 [chromium] › tests\26_courier_reconciliation.spec.ts:234:7 › §1 Functional & business logic › F12: import without a file is rejected with 400 (7.7s)
+  ✓   98 [chromium] › tests\26_courier_reconciliation.spec.ts:245:7 › §1 Functional & business logic › F13: disputes list returns an array (empty ledger -> empty list) (8.4s)
+  ✓   99 [chromium] › tests\26_courier_reconciliation.spec.ts:254:7 › §1 Functional & business logic › F14: dispute status filter accepts a valid enum (7.5s)
+  ✓  100 [chromium] › tests\26_courier_reconciliation.spec.ts:262:7 › §1 Functional & business logic › F15: opening a dispute for an unknown ledger entry fails with a typed error (not 500) (7.3s)
+  ✓  101 [chromium] › tests\26_courier_reconciliation.spec.ts:275:7 › §1 Functional & business logic › F16: dispute POST validation — missing entry, missing reason, negative amount (9.9s)
+  ✓  102 [chromium] › tests\26_courier_reconciliation.spec.ts:291:7 › §1 Functional & business logic › F17: dispute PATCH with an invalid status enum is rejected (9.5s)
+  ✓  103 [chromium] › tests\26_courier_reconciliation.spec.ts:301:7 › §1 Functional & business logic › F18: dispute PATCH on an unknown id fails typed (not silent 200) (7.5s)
+  ✓  104 [chromium] › tests\26_courier_reconciliation.spec.ts:317:7 › §2 Financial & calculation precision › P1: aging totalPendingCod is a finite 2-dp-safe number (no NaN/string) (7.8s)
+  ✓  105 [chromium] › tests\26_courier_reconciliation.spec.ts:326:7 › §2 Financial & calculation precision › P2: audit totals are finite numbers (Decimal sums serialized safely) (8.6s)
+  ✓  106 [chromium] › tests\26_courier_reconciliation.spec.ts:335:7 › §2 Financial & calculation precision › P3: net-payout formula contract — Net = GrossCOD − (fee + COD% + VAT%) (142ms)
+  ✓  107 [chromium] › tests\26_courier_reconciliation.spec.ts:349:7 › §2 Financial & calculation precision › P4: deduction-audit classification thresholds (±0.01 tolerance) (153ms)
+  ✓  108 [chromium] › tests\26_courier_reconciliation.spec.ts:366:7 › §3 Cross-module cascade & ledger impact › L1 (BUG-65 gate pin): no ledger rows exist without a DELIVERED delivery (7.3s)
+  ✓  109 [chromium] › tests\26_courier_reconciliation.spec.ts:376:7 › §3 Cross-module cascade & ledger impact › L2: import creates a StatementImport record visible in the audit trail (9.7s)
+  ✓  110 [chromium] › tests\26_courier_reconciliation.spec.ts:402:7 › §4 Audit trail & immutability › A1: no hard-delete surface on disputes (DELETE -> 404/405) (6.7s)
+  ✓  111 [chromium] › tests\26_courier_reconciliation.spec.ts:408:7 › §4 Audit trail & immutability › A2: no hard-delete surface on the reconciliation collection (6.9s)
+  ✓  112 [chromium] › tests\26_courier_reconciliation.spec.ts:414:7 › §4 Audit trail & immutability › A3: import audit rows persist (append-only — repeated imports accumulate) (10.6s)
+  ✓  113 [chromium] › tests\26_courier_reconciliation.spec.ts:432:7 › §5 Chaos, button spamming & race conditions › R1: concurrent imports never 500 and each completes atomically (7.6s)
+  ✓  114 [chromium] › tests\26_courier_reconciliation.spec.ts:447:7 › §5 Chaos, button spamming & race conditions › R2: double-clicking Choose File + rapid re-upload does not corrupt state (16.5s)
+  ✓  115 [chromium] › tests\26_courier_reconciliation.spec.ts:465:7 › §5 Chaos, button spamming & race conditions › R3: concurrent dispute POSTs for the same unknown entry never 500 (7.3s)
+  ✓  116 [chromium] › tests\26_courier_reconciliation.spec.ts:484:7 › §6 Hardware & device simulation › H1: file input accepts a scanner-style rapid CSV upload (setInputFiles) (12.7s)
+  ✓  117 [chromium] › tests\26_courier_reconciliation.spec.ts:499:7 › §6 Hardware & device simulation › H2: XLSX statement (binary workbook) is accepted by the parser (7.0s)
+  ✓  118 [chromium] › tests\26_courier_reconciliation.spec.ts:518:7 › §7 Network resilience & offline sync › N1: dashboard survives a mocked 500 on the reconciliation API (12.0s)
+  ✓  119 [chromium] › tests\26_courier_reconciliation.spec.ts:533:7 › §7 Network resilience & offline sync › N2: import failure surfaces a toast and the page stays interactive (13.0s)
+  ✓  120 [chromium] › tests\26_courier_reconciliation.spec.ts:549:7 › §7 Network resilience & offline sync › N3: malformed JSON body on dispute POST returns 400 (not 500) (7.6s)
+  ✓  121 [chromium] › tests\26_courier_reconciliation.spec.ts:563:7 › §8 Security, RBAC & multi-tenant isolation › S1: unauthenticated access to all reconciliation endpoints is rejected (232ms)
+  ✓  122 [chromium] › tests\26_courier_reconciliation.spec.ts:572:7 › §8 Security, RBAC & multi-tenant isolation › S2: cashier is blocked from the reconciliation surface (no recon permissions) (14.2s)
+  ✓  123 [chromium] › tests\26_courier_reconciliation.spec.ts:584:7 › §8 Security, RBAC & multi-tenant isolation › S3: dispatch staff is fully blocked — no viewReconciliation, no import (17.9s)
+  ✘  124 [chromium] › tests\26_courier_reconciliation.spec.ts:601:7 › §8 Security, RBAC & multi-tenant isolation › S4: Lanka owner is tenant-scoped — sees its own empty ledger, never dilani rows (10.4s)
+  ✘  125 [chromium] › tests\26_courier_reconciliation.spec.ts:611:7 › §8 Security, RBAC & multi-tenant isolation › S5: cross-tenant dispute PATCH is scoped (foreign id -> typed failure) (8.0s)
+  ✓  126 [chromium] › tests\26_courier_reconciliation.spec.ts:627:7 › §9 Boundary inputs & chaos data › X1: dispute reason over 1000 chars is rejected (7.4s)
+  ✓  127 [chromium] › tests\26_courier_reconciliation.spec.ts:635:7 › §9 Boundary inputs & chaos data › X2: Unicode (Sinhala/Tamil/emoji) search round-trips without 500 (7.6s)
+  ✓  128 [chromium] › tests\26_courier_reconciliation.spec.ts:643:7 › §9 Boundary inputs & chaos data › X3: XSS payload in search is accepted but never executes in the UI (14.0s)
+  ✓  129 [chromium] › tests\26_courier_reconciliation.spec.ts:656:7 › §9 Boundary inputs & chaos data › X4: hostile filter values (page=-1, limit=abc, huge search) never 500 (11.0s)
+  ✓  130 [chromium] › tests\26_courier_reconciliation.spec.ts:665:7 › §9 Boundary inputs & chaos data › X5: CSV with hostile cell content (formula injection, huge fields) parses safely (8.0s)
+  ✓  131 [chromium] › tests\26_courier_reconciliation.spec.ts:681:7 › §9 Boundary inputs & chaos data › X6: empty CSV (header only) imports with zero rows (7.9s)
+  ✓  132 [chromium] › tests\26_courier_reconciliation.spec.ts:690:7 › §9 Boundary inputs & chaos data › X7: dispute amount boundary — 0 accepted shape, huge finite number typed (8.6s)
+  ✓  133 [chromium] › tests\26_courier_reconciliation.spec.ts:711:7 › §10 Time-travel & retroactive handling › T1: statement import timestamps are server-owned (uploadedAt sane) (8.0s)
+  ✓  134 [chromium] › tests\26_courier_reconciliation.spec.ts:723:7 › §10 Time-travel & retroactive handling › T2: retroactive statement dates (1999, future 2099) do not corrupt aging (9.4s)
+  ✓  135 [chromium] › tests\26_courier_reconciliation.spec.ts:737:7 › §10 Time-travel & retroactive handling › T3: completedAt is stamped only on COMPLETED imports (7.8s)
+  ✓  136 [chromium] › tests\26_courier_reconciliation.spec.ts:754:7 › cleanup: verify no reconciliation state was mutated › ledger remains empty and dashboard coherent (read-only suite) (7.9s)
+  ✓  137 [chromium] › tests\27_appointments.spec.ts:147:7 › Module 27 — Doctor Appointments & Clinic Management › F1 — walk-in booking: 201, SCHEDULED, default title, full shape (12.6s)
+  ✓  138 [chromium] › tests\27_appointments.spec.ts:161:7 › Module 27 — Doctor Appointments & Clinic Management › F2 — create validation: patient identity refine + time/price/duration bounds → 400 (10.1s)
+  ✓  139 [chromium] › tests\27_appointments.spec.ts:185:7 › Module 27 — Doctor Appointments & Clinic Management › F3 — customer-linked booking resolves the patient (no walk-in fields) (10.4s)
+  ✓  140 [chromium] › tests\27_appointments.spec.ts:199:7 › Module 27 — Doctor Appointments & Clinic Management › F4 — list envelope, startTime-asc order and zod filters (400 on hostile params) (10.8s)
+  ✓  141 [chromium] › tests\27_appointments.spec.ts:213:7 › Module 27 — Doctor Appointments & Clinic Management › F5 — GET by id + PATCH (title/notes/price persist); unknown id → 404 (17.8s)
+  ✓  142 [chromium] › tests\27_appointments.spec.ts:230:7 › Module 27 — Doctor Appointments & Clinic Management › F6 — lifecycle: confirm → check-in → complete stamps timestamps (24.5s)
+  ✓  143 [chromium] › tests\27_appointments.spec.ts:249:7 › Module 27 — Doctor Appointments & Clinic Management › F7 — cancel with reason; DELETE is a soft cancel (row survives) (26.7s)
+  ✓  144 [chromium] › tests\27_appointments.spec.ts:269:7 › Module 27 — Doctor Appointments & Clinic Management › F8 — convert-to-sale completes with sale linkage; guards intact (27.8s)
+  ✓  145 [chromium] › tests\27_appointments.spec.ts:304:7 › Module 27 — Doctor Appointments & Clinic Management › F9 — service catalogue CRUD with duplicate + hex-color guards (15.2s)
+  ✓  146 [chromium] › tests\27_appointments.spec.ts:328:7 › Module 27 — Doctor Appointments & Clinic Management › F10 — service soft-delete + recreate-after-soft-delete 500 (BUG-90 pin) (16.8s)
+  ✓  147 [chromium] › tests\27_appointments.spec.ts:349:7 › Module 27 — Doctor Appointments & Clinic Management › F11 — slot generation is idempotent (@@unique staff/date/start) (10.1s)
+  ✓  148 [chromium] › tests\27_appointments.spec.ts:362:7 › Module 27 — Doctor Appointments & Clinic Management › F12 — availability roster: bulk upsert + read-back (13.4s)
+  ✓  149 [chromium] › tests\27_appointments.spec.ts:383:7 › Module 27 — Doctor Appointments & Clinic Management › F13 — time-off request → approval flow (17.2s)
+  ✓  150 [chromium] › tests\27_appointments.spec.ts:399:7 › Module 27 — Doctor Appointments & Clinic Management › F14 — stats envelope: total/byStatus/noShowRate/revenue (8.3s)
+  ✓  151 [chromium] › tests\27_appointments.spec.ts:412:7 › Module 27 — Doctor Appointments & Clinic Management › F15 — UI calendar renders view toggles; list page opens the booking dialog (13.6s)
+  ✓  152 [chromium] › tests\27_appointments.spec.ts:431:7 › Module 27 — Doctor Appointments & Clinic Management › P1 — price Decimal(10,2): 100.456 → 100.46; depositAmount defaults 0 (13.1s)
+  ✓  153 [chromium] › tests\27_appointments.spec.ts:445:7 › Module 27 — Doctor Appointments & Clinic Management › P2 — int4-exceeding price → 500 numeric overflow (BUG-91 pin: zod min(0) has no max) (8.3s)
+  ✓  154 [chromium] › tests\27_appointments.spec.ts:456:7 › Module 27 — Doctor Appointments & Clinic Management › L1 — staff overlap guard: same-staff double-book → 409; cancelled frees the window (21.4s)
+  ✓  155 [chromium] › tests\27_appointments.spec.ts:478:7 › Module 27 — Doctor Appointments & Clinic Management › L2 — audit trail: CREATE + CANCEL rows land for appointment actions (14.7s)
+  ✓  156 [chromium] › tests\27_appointments.spec.ts:488:7 › Module 27 — Doctor Appointments & Clinic Management › A1 — PATCH/check-in/complete write NO audit rows (pin: trail gap) (23.5s)
+  ✓  157 [chromium] › tests\27_appointments.spec.ts:504:7 › Module 27 — Doctor Appointments & Clinic Management › A2 — audit actorRole hardcoded OWNER even when CASHIER is the actor (BUG-93 pin) (15.1s)
+  ✓  158 [chromium] › tests\27_appointments.spec.ts:521:7 › Module 27 — Doctor Appointments & Clinic Management › R1 — double-cancel is idempotent (200/200, still CANCELLED) (18.6s)
+  ✓  159 [chromium] › tests\27_appointments.spec.ts:531:7 › Module 27 — Doctor Appointments & Clinic Management › R2 — 3 concurrent same-staff bookings ALL succeed → double-book race (BUG-92 pin) (12.6s)
+  ✓  160 [chromium] › tests\27_appointments.spec.ts:547:7 › Module 27 — Doctor Appointments & Clinic Management › R3 — concurrent reads (list/stats/services) all 200 with consistent totals (7.5s)
+  ✓  161 [chromium] › tests\27_appointments.spec.ts:560:7 › Module 27 — Doctor Appointments & Clinic Management › H1 — mobile viewport (390px): calendar renders without horizontal overflow (7.3s)
+  ✓  162 [chromium] › tests\27_appointments.spec.ts:570:7 › Module 27 — Doctor Appointments & Clinic Management › N1 — malformed JSON body → 400 (not 500) (6.0s)
+  ✓  163 [chromium] › tests\27_appointments.spec.ts:577:7 › Module 27 — Doctor Appointments & Clinic Management › N2 — stats/slots/time-off malformed date params → 500 (BUG-89 pin: new Date() unvalidated) (9.5s)
+  ✓  164 [chromium] › tests\27_appointments.spec.ts:589:7 › Module 27 — Doctor Appointments & Clinic Management › N3 — mocked 500 on the appointments feed → UI survives (7.1s)
+  ✓  165 [chromium] › tests\27_appointments.spec.ts:602:7 › Module 27 — Doctor Appointments & Clinic Management › S1 — unauthenticated → 401 on every appointment surface (1.0s)
+  ✓  166 [chromium] › tests\27_appointments.spec.ts:610:7 › Module 27 — Doctor Appointments & Clinic Management › S2 — CASHIER: view/create/check-in allowed; edit/cancel/services/schedule 403 (17.4s)
+  ✓  167 [chromium] › tests\27_appointments.spec.ts:625:7 › Module 27 — Doctor Appointments & Clinic Management › S3 — complete/no-show/convert are gated on editAppointment (CASHIER → 403) (21.7s)
+  ✓  168 [chromium] › tests\27_appointments.spec.ts:635:7 › Module 27 — Doctor Appointments & Clinic Management › S4 — DISPATCH 403 (no appointment perms); SUPER_ADMIN 401 (no tenant) (12.4s)
+  ✓  169 [chromium] › tests\27_appointments.spec.ts:644:7 › Module 27 — Doctor Appointments & Clinic Management › S5 — cross-tenant: foreign owner gets 404 on dilani appointments (20.8s)
+  ✓  170 [chromium] › tests\27_appointments.spec.ts:655:7 › Module 27 — Doctor Appointments & Clinic Management › S6 — reminders route has NO tenant scoping (BUG-87 IDOR pin) (17.8s)
+  ✓  171 [chromium] › tests\27_appointments.spec.ts:669:7 › Module 27 — Doctor Appointments & Clinic Management › S7 — public booking: unauthenticated 201 lands in the tenant feed (13.8s)
+  ✓  172 [chromium] › tests\27_appointments.spec.ts:684:7 › Module 27 — Doctor Appointments & Clinic Management › S8 — time-off GET has no permission gate (OBS-80 pin: any session reads the roster) (6.1s)
+  ✓  173 [chromium] › tests\27_appointments.spec.ts:693:7 › Module 27 — Doctor Appointments & Clinic Management › X1 — Sinhala/Tamil/emoji in patient name, title and notes round-trip (11.3s)
+  ✓  174 [chromium] › tests\27_appointments.spec.ts:707:7 › Module 27 — Doctor Appointments & Clinic Management › X2 — script payload in title stored VERBATIM by the API (BUG-94 pin), inert in React UI (13.6s)
+  ✓  175 [chromium] › tests\27_appointments.spec.ts:724:7 › Module 27 — Doctor Appointments & Clinic Management › X3 — boundary strings: 100-char name ok, 101 rejected; 200-char title ok, 201 rejected (10.2s)
+  ✓  176 [chromium] › tests\27_appointments.spec.ts:741:7 › Module 27 — Doctor Appointments & Clinic Management › X4 — PATCH cannot smuggle unknown fields or forged ids (12.1s)
+  ✓  177 [chromium] › tests\27_appointments.spec.ts:756:7 › Module 27 — Doctor Appointments & Clinic Management › T1 — backdated booking accepted (OBS-79 pin: no past-date guard) (8.6s)
+  ✓  178 [chromium] › tests\27_appointments.spec.ts:766:7 › Module 27 — Doctor Appointments & Clinic Management › T2 — stats window: dateFrom/dateTo bound the population (retro rows counted) (7.0s)
+  ✓  179 [chromium] › tests\27_appointments.spec.ts:774:7 › Module 27 — Doctor Appointments & Clinic Management › T3 — list pagination windows are deterministic (page 1 == page 1 across calls) (9.6s)
+M27_CLEANUP run=qa-m27-1789599947261 scanned=36 cancelled=29
+  ✓  180 [chromium] › tests\27_appointments.spec.ts:785:7 › Module 27 — Doctor Appointments & Clinic Management › Z1 — cleanup: cancel every qa-m27 walk-in booking created by this suite (any run) (2.1m)
+
+
+  1) [chromium] › tests\25_rate_cards.spec.ts:321:7 › §1 Functional & business logic › F15: entries PUT on a tenant with no active card is rejected 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 400
+    Received: 403
+
+      324 |     await login(page, LANKA_OWNER_EMAIL, LANKA_OWNER_PASSWORD);
+      325 |     const res = await putEntries(page, []);
+    > 326 |     expect(res.status()).toBe(400);
+          |                          ^
+      327 |     const json = await res.json();
+      328 |     expect(json.error.code).toBe('BAD_REQUEST');
+      329 |     expect(json.error.message).toContain('No active rate card exists');
+        at E:\work_git_repos\pos-lite\erp\tests\25_rate_cards.spec.ts:326:26
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\25_rate_cards-§1-Functiona-4c842--no-active-card-is-rejected-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\25_rate_cards-§1-Functiona-4c842--no-active-card-is-rejected-chromium\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\25_rate_cards-§1-Functiona-4c842--no-active-card-is-rejected-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\25_rate_cards-§1-Functiona-4c842--no-active-card-is-rejected-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › tests\25_rate_cards.spec.ts:643:7 › §8 Security, RBAC & multi-tenant isolation › S4: Lanka owner reads its own (empty) card — no dilani data leaks 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 403
+
+      647 |     await login(page, LANKA_OWNER_EMAIL, LANKA_OWNER_PASSWORD);
+      648 |     const get = await page.request.get(RATECARD_URL);
+    > 649 |     expect(get.status()).toBe(200);
+          |                          ^
+      650 |     const json = await get.json();
+      651 |     expect(json.success).toBe(true);
+      652 |     expect(json.data).toBeNull();
+        at E:\work_git_repos\pos-lite\erp\tests\25_rate_cards.spec.ts:649:26
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\25_rate_cards-§8-Security--a418c-card-—-no-dilani-data-leaks-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\25_rate_cards-§8-Security--a418c-card-—-no-dilani-data-leaks-chromium\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\25_rate_cards-§8-Security--a418c-card-—-no-dilani-data-leaks-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\25_rate_cards-§8-Security--a418c-card-—-no-dilani-data-leaks-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [chromium] › tests\25_rate_cards.spec.ts:665:7 › §8 Security, RBAC & multi-tenant isolation › S6: cross-tenant quote — Lanka slug never quotes dilani pricing 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 409
+
+      669 |     // Live env: delivery module enabled on Lanka but no rate card -> fee 0.00.
+      670 |     // The security contract: Lanka's quote must never carry dilani's 350.00.
+    > 671 |     expect(res.status()).toBe(200);
+          |                          ^
+      672 |     const json = await res.json();
+      673 |     expect(json.data.shippingFee).not.toBe('350.00');
+      674 |     expect(json.data.shippingFee).toBe('0.00');
+        at E:\work_git_repos\pos-lite\erp\tests\25_rate_cards.spec.ts:671:26
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\25_rate_cards-§8-Security--f7463-never-quotes-dilani-pricing-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\25_rate_cards-§8-Security--f7463-never-quotes-dilani-pricing-chromium\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\25_rate_cards-§8-Security--f7463-never-quotes-dilani-pricing-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\25_rate_cards-§8-Security--f7463-never-quotes-dilani-pricing-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4) [chromium] › tests\26_courier_reconciliation.spec.ts:601:7 › §8 Security, RBAC & multi-tenant isolation › S4: Lanka owner is tenant-scoped — sees its own empty ledger, never dilani rows 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 403
+
+      603 |     const res = await page.request.get(RECON_URL);
+      604 |     // Lanka has the delivery module enabled (live env) but no recon data.
+    > 605 |     expect(res.status()).toBe(200);
+          |                          ^
+      606 |     const json = await res.json();
+      607 |     expect(json.data.total).toBe(0);
+      608 |     expect(json.data.items).toEqual([]);
+        at E:\work_git_repos\pos-lite\erp\tests\26_courier_reconciliation.spec.ts:605:26
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\26_courier_reconciliation--bea18-ty-ledger-never-dilani-rows-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\26_courier_reconciliation--bea18-ty-ledger-never-dilani-rows-chromium\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\26_courier_reconciliation--bea18-ty-ledger-never-dilani-rows-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\26_courier_reconciliation--bea18-ty-ledger-never-dilani-rows-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5) [chromium] › tests\26_courier_reconciliation.spec.ts:611:7 › §8 Security, RBAC & multi-tenant isolation › S5: cross-tenant dispute PATCH is scoped (foreign id -> typed failure) 
+
+    Error: expect(received).toContain(expected) // indexOf
+
+    Expected value: 403
+    Received array: [400, 404, 500]
+
+      614 |       data: { status: 'UNDER_REVIEW' },
+      615 |     });
+    > 616 |     expect([400, 404, 500]).toContain(res.status());
+          |                             ^
+      617 |     if (res.status() === 500) {
+      618 |       throw new Error('DEFECT: cross-tenant dispute PATCH produced an unhandled 500');
+      619 |     }
+        at E:\work_git_repos\pos-lite\erp\tests\26_courier_reconciliation.spec.ts:616:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\26_courier_reconciliation--a45cf-foreign-id---typed-failure--chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\26_courier_reconciliation--a45cf-foreign-id---typed-failure--chromium\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\26_courier_reconciliation--a45cf-foreign-id---typed-failure--chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\26_courier_reconciliation--a45cf-foreign-id---typed-failure--chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Slow test file: [chromium] › tests\27_appointments.spec.ts (11.8m)
+  Consider running tests from slow files in parallel. See: https://playwright.dev/docs/test-parallel
+  5 failed
+    [chromium] › tests\25_rate_cards.spec.ts:321:7 › §1 Functional & business logic › F15: entries PUT on a tenant with no active card is rejected 
+    [chromium] › tests\25_rate_cards.spec.ts:643:7 › §8 Security, RBAC & multi-tenant isolation › S4: Lanka owner reads its own (empty) card — no dilani data leaks 
+    [chromium] › tests\25_rate_cards.spec.ts:665:7 › §8 Security, RBAC & multi-tenant isolation › S6: cross-tenant quote — Lanka slug never quotes dilani pricing 
+    [chromium] › tests\26_courier_reconciliation.spec.ts:601:7 › §8 Security, RBAC & multi-tenant isolation › S4: Lanka owner is tenant-scoped — sees its own empty ledger, never dilani rows 
+    [chromium] › tests\26_courier_reconciliation.spec.ts:611:7 › §8 Security, RBAC & multi-tenant isolation › S5: cross-tenant dispute PATCH is scoped (foreign id -> typed failure) 
+  175 passed (33.8m)

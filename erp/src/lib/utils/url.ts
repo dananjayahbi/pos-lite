@@ -17,3 +17,19 @@ export function getBaseUrl(): string {
   // Local development
   return 'http://localhost:3000';
 }
+
+/**
+ * Returns the canonical base URL of the customer-facing storefront.
+ *
+ * This is a DIFFERENT origin from `getBaseUrl()` (which resolves the ERP/admin
+ * app). The distinction matters for payment redirects: PayHere's `return_url`
+ * and `cancel_url` send the customer's BROWSER there, so pointing them at the
+ * ERP would drop the shopper into the back office.
+ *
+ * One env var, so a deployment cannot accidentally target the wrong storefront.
+ */
+export function getWebsiteBaseUrl(): string {
+  const configured = process.env.WEBSITE_URL;
+  if (configured) return configured.replace(/\/+$/, '');
+  return 'http://localhost:3002';
+}

@@ -22,6 +22,11 @@ DEFAULT_WAIT_MS = 3_000
 HEADLESS = True
 
 
+# Default container that holds the article body on a conventional
+# documentation page (as opposed to Postman's ``#doc-wrapper``).
+DEFAULT_CONTENT_SELECTOR = "main"
+
+
 @dataclass
 class CrawlConfig:
     """Runtime configuration passed through the pipeline."""
@@ -32,6 +37,11 @@ class CrawlConfig:
     wait_ms: int = DEFAULT_WAIT_MS
     headless: bool = HEADLESS
     output_dir: str = "output"
+
+    # CSS selector for the element whose inner HTML is the article body.
+    # Only used by the single-article pipeline (``fetch_article``); the
+    # Postman pipeline walks ``#doc-wrapper > section[id]`` instead.
+    content_selector: str = DEFAULT_CONTENT_SELECTOR
 
     # Structural rules used by the cleaner step.
     # Elements to strip from a content fragment (the fetcher already targets

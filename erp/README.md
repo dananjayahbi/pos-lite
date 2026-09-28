@@ -57,9 +57,12 @@ Open `.env.local` and update every value. The required variables are:
 | `DATABASE_URL`                 | PostgreSQL connection string                                   |
 | `AUTH_SECRET`                  | Auth.js signing secret (`pnpm dlx auth secret`)                |
 | `AUTH_URL`                     | Canonical app URL (`http://localhost:3000` locally)            |
+| `WEBSITE_URL`                  | Storefront origin — target of PayHere's `return_url`/`cancel_url` |
+| `PAYHERE_SANDBOX`              | `"true"` routes every PayHere URL to `sandbox.payhere.lk`       |
 | `PAYHERE_MERCHANT_ID`          | PayHere merchant identifier                                    |
-| `PAYHERE_MERCHANT_SECRET`      | PayHere signing secret                                         |
-| `PAYHERE_MODE`                 | `sandbox` or `live`                                            |
+| `PAYHERE_MERCHANT_SECRET`      | PayHere signing secret (domain/app scoped; required for both signatures) |
+| `PAYHERE_APP_ID`               | PayHere REST API app id (retrieval/refund)                     |
+| `PAYHERE_APP_SECRET`           | PayHere REST API app secret                                    |
 | `WHATSAPP_ACCESS_TOKEN`        | Meta Cloud API access token                                    |
 | `WHATSAPP_PHONE_NUMBER_ID`     | Registered WhatsApp phone number ID                            |
 | `WHATSAPP_BUSINESS_ACCOUNT_ID` | WhatsApp Business Account ID                                   |
@@ -75,6 +78,12 @@ Open `.env.local` and update every value. The required variables are:
 | `NEXT_PUBLIC_APP_NAME`         | Display name shown in UI and emails                            |
 | `SEED_SUPER_ADMIN_EMAIL`       | Initial super-admin email used by seed script                  |
 | `SEED_SUPER_ADMIN_PASSWORD`    | Initial super-admin password used by seed script               |
+
+> PayHere's merchant secret is **domain/app scoped**: each additional storefront
+> origin needs its own secret issued from the Merchant Portal. `GET /api/health`
+> reports `integrations.payhere.checkoutReady` so a missing secret is visible to
+> monitoring instead of silently failing every payment notification.
+> See `REFERENCES/payhere/PAYHERE-INTEGRATION.md` for the full field contract.
 
 ---
 

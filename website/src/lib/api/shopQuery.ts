@@ -39,7 +39,13 @@ export function buildShopUrl(
   if (state.q) params.set('q', state.q);
 
   const query = params.toString();
-  return `${tenantHomePath(tenantSlug)}/shop${query ? `?${query}` : ''}`;
+  const homePath = tenantHomePath(tenantSlug);
+  // Guard against a double slash when the default tenant yields a root path
+  // (e.g. "/" + "/shop" → "//shop" is a protocol-relative URL that resolves
+  // to `http://shop/`). Collapse the join so the default tenant still gets
+  // the clean canonical `/shop?…` form.
+  const base = homePath === '/' ? '' : homePath;
+  return `${base}/shop${query ? `?${query}` : ''}`;
 }
 
 /**

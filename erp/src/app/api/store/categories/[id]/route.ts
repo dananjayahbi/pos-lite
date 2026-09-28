@@ -10,6 +10,7 @@ import {
 import type { UpdateCategoryInput } from '@/lib/services/product.service';
 import { UpdateCategorySchema } from '@/lib/validators/category.validators';
 import { revalidateTenantStorefront } from '@/lib/revalidate-website';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function GET(
   _request: Request,
@@ -38,20 +39,10 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: category });
   } catch (error) {
-    const message = error instanceof Error ? error.message : '';
-
-    if (message === 'Category not found') {
-      return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message } },
-        { status: 404 },
-      );
-    }
-
-    console.error('GET /api/store/categories/[id] error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // INF-02: one-line error mapping — Prisma P2002/P2025 and service
+    // sentinels become typed envelope responses; unknown errors are logged
+    // server-side and returned as a generic 500 with no internals.
+    return toErrorResponse(error, 'GET /api/store/categories/[id]');
   }
 }
 
@@ -110,27 +101,10 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
-    const message = error instanceof Error ? error.message : '';
-
-    if (message === 'Category not found') {
-      return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message } },
-        { status: 404 },
-      );
-    }
-
-    if (message.includes('already exists')) {
-      return NextResponse.json(
-        { success: false, error: { code: 'CONFLICT', message } },
-        { status: 409 },
-      );
-    }
-
-    console.error('PATCH /api/store/categories/[id] error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // INF-02: one-line error mapping — Prisma P2002/P2025 and service
+    // sentinels become typed envelope responses; unknown errors are logged
+    // server-side and returned as a generic 500 with no internals.
+    return toErrorResponse(error, 'PATCH /api/store/categories/[id]');
   }
 }
 
@@ -175,26 +149,9 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, data: deleted });
   } catch (error) {
-    const message = error instanceof Error ? error.message : '';
-
-    if (message === 'Category not found') {
-      return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message } },
-        { status: 404 },
-      );
-    }
-
-    if (message.includes('products are assigned')) {
-      return NextResponse.json(
-        { success: false, error: { code: 'CATEGORY_IN_USE', message } },
-        { status: 409 },
-      );
-    }
-
-    console.error('DELETE /api/store/categories/[id] error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // INF-02: one-line error mapping — Prisma P2002/P2025 and service
+    // sentinels become typed envelope responses; unknown errors are logged
+    // server-side and returned as a generic 500 with no internals.
+    return toErrorResponse(error, 'DELETE /api/store/categories/[id]');
   }
 }

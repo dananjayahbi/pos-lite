@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
 import { uploadFile } from '@/lib/storage';
+import { requireSuperAdmin } from '@/lib/api/superadmin-guard';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
 const MAX_SIZE = 2 * 1024 * 1024; // 2 MB for logos
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
-    return NextResponse.json(
-      { error: 'Super admin access required' },
-      { status: 403 },
-    );
-  }
+  const guard = await requireSuperAdmin();
+  if (!guard.ok) return guard.response;
 
   const formData = await req.formData();
   const file = formData.get('file');

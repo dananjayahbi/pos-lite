@@ -19,10 +19,10 @@ export function CheckoutSummary({ lines, shippingFee }: CheckoutSummaryProps) {
   const orderTotal = totals.subtotal + (fee ?? 0);
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
+    <div className="rounded-2xl border border-white/10 bg-[#082017]/70 p-4 backdrop-blur-sm">
       <h2
-        className="mb-4 text-lg font-medium"
-        style={{ fontFamily: 'var(--font-dm-serif), serif' }}
+        className="mb-4 text-lg font-medium text-white"
+        style={{ fontFamily: 'var(--font-serif), serif' }}
       >
         Your order
       </h2>
@@ -38,40 +38,40 @@ export function CheckoutSummary({ lines, shippingFee }: CheckoutSummaryProps) {
                 className="h-12 w-12 rounded object-cover"
               />
             ) : (
-              <div className="h-12 w-12 rounded bg-gray-100" />
+              <div className="h-12 w-12 rounded bg-[#051610] ring-1 ring-white/10" />
             )}
             <div className="flex-1">
-              <p className="text-sm font-medium text-gray-800">{line.productName}</p>
-              <p className="text-xs text-gray-500">Qty {line.quantity}</p>
+              <p className="text-sm font-medium text-white">{line.productName}</p>
+              <p className="text-xs text-[#94a3b8]">Qty {line.quantity}</p>
             </div>
-            <p className="text-sm font-medium text-gray-800">
+            <p className="text-sm font-medium text-white">
               {formatLKR(line.quantity * line.price)}
             </p>
           </li>
         ))}
       </ul>
 
-      <div className="mt-4 space-y-2 border-t border-gray-100 pt-4 text-sm">
+      <div className="mt-4 space-y-2 border-t border-white/10 pt-4 text-sm">
         <div className="flex items-center justify-between">
-          <span className="text-gray-500">Subtotal</span>
-          <span className="font-medium text-gray-800">{totals.formattedSubtotal}</span>
+          <span className="text-[#94a3b8]">Subtotal</span>
+          <span className="font-medium text-white">{totals.formattedSubtotal}</span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-gray-500">Delivery</span>
+          <span className="text-[#94a3b8]">Delivery</span>
           {fee === null ? (
-            <span className="text-gray-500">Calculated on delivery</span>
+            <span className="text-[#64748b]">Calculated on delivery</span>
           ) : (
-            <span className="font-medium text-gray-800">{formatLKR(fee)}</span>
+            <span className="font-medium text-white">{formatLKR(fee)}</span>
           )}
         </div>
-        <div className="flex items-center justify-between border-t border-gray-100 pt-2">
-          <span className="font-medium text-gray-800">Order total</span>
-          <span className="text-lg font-semibold text-gray-900">{formatLKR(orderTotal)}</span>
+        <div className="flex items-center justify-between border-t border-white/10 pt-2">
+          <span className="font-medium text-white">Order total</span>
+          <span className="text-lg font-semibold text-[#97c93e]">{formatLKR(orderTotal)}</span>
         </div>
       </div>
 
-      <p className="mt-4 rounded bg-gray-50 px-3 py-2 text-xs text-gray-500">
-        You will pay <strong>cash on delivery</strong> when your order arrives.
+      <p className="mt-4 rounded bg-white/5 px-3 py-2 text-xs text-[#94a3b8]">
+        You will pay <strong className="text-white">cash on delivery</strong> when your order arrives.
       </p>
     </div>
   );

@@ -13,8 +13,31 @@ import { Button } from '@/components/ui/button';
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 type Entry = { startTime: string; endTime: string; isAvailable: boolean; slotDurationMins: number };
+type AvailabilityEntry = { dayOfWeek: number; startTime: string; endTime: string; isAvailable: boolean; slotDurationMins: number };
 
 const DEFAULT_ENTRY: Entry = { startTime: '09:00', endTime: '17:00', isAvailable: false, slotDurationMins: 15 };
+
+// Stable empty reference — a plain `[]` literal in the destructuring default
+// would be recreated on EVERY render, making `availability` a new reference
+// each time and looping the `useEffect([availability])` sync below.
+const EMPTY_AVAILABILITY: AvailabilityEntry[] = [];
+
+/** Shallow equality across all 7 days — bails out of the sync when nothing changed. */
+function entriesEqual(a: Record<number, Entry>, b: Record<number, Entry>): boolean {
+  for (let i = 0; i < 7; i++) {
+    const ea = a[i];
+    const eb = b[i];
+    if (
+      ea?.isAvailable !== eb?.isAvailable ||
+      ea?.startTime !== eb?.startTime ||
+      ea?.endTime !== eb?.endTime ||
+      ea?.slotDurationMins !== eb?.slotDurationMins
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 export function StaffAvailabilityManager() {
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
@@ -29,25 +52,32 @@ export function StaffAvailabilityManager() {
     staleTime: 60_000,
   });
 
-  const { data: availability = [] } = useStaffAvailability(selectedStaffId || undefined);
+  const { data: availability = EMPTY_AVAILABILITY } = useStaffAvailability(selectedStaffId || undefined);
   const upsertMutation = useUpsertAvailability();
 
-  const getDefaultEntries = (): Record<number, Entry> => {
+  const [entries, setEntries] = useState<Record<number, Entry>>(() => {
     const map: Record<number, Entry> = {};
     for (let i = 0; i < 7; i++) {
-      const existing = availability.find((a: { dayOfWeek: number }) => a.dayOfWeek === i);
+      const existing = availability.find((a: AvailabilityEntry) => a.dayOfWeek === i);
       map[i] = existing
         ? { startTime: existing.startTime, endTime: existing.endTime, isAvailable: existing.isAvailable, slotDurationMins: existing.slotDurationMins }
         : { ...DEFAULT_ENTRY, isAvailable: i !== 0 };
     }
     return map;
-  };
+  });
 
-  const [entries, setEntries] = useState<Record<number, Entry>>(getDefaultEntries);
-
-  // Update entries when availability changes
+  // Sync entries from server data whenever availability changes. Bail out if
+  // the derived map is unchanged to avoid an infinite setState→render→effect
+  // loop when the data reference changes without a real content change.
   useEffect(() => {
-    setEntries(getDefaultEntries());
+    const next: Record<number, Entry> = {};
+    for (let i = 0; i < 7; i++) {
+      const existing = availability.find((a: AvailabilityEntry) => a.dayOfWeek === i);
+      next[i] = existing
+        ? { startTime: existing.startTime, endTime: existing.endTime, isAvailable: existing.isAvailable, slotDurationMins: existing.slotDurationMins }
+        : { ...DEFAULT_ENTRY, isAvailable: i !== 0 };
+    }
+    setEntries((prev) => (entriesEqual(prev, next) ? prev : next));
   }, [availability]);
 
   const updateEntry = (i: number, patch: Partial<Entry>) => {

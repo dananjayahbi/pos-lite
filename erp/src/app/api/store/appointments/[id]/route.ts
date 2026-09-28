@@ -117,6 +117,20 @@ export async function PATCH(
       );
     }
 
+    // M27-04/BUG-88: an illegal lifecycle jump is a state conflict, not a crash.
+    if (message === 'INVALID_STATUS_TRANSITION') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_STATUS_TRANSITION',
+            message: 'That status change is not allowed from the appointment\'s current state',
+          },
+        },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message } },
       { status: 500 },
@@ -153,7 +167,7 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    await cancelAppointment(tenantId, id, session.user.id);
+    await cancelAppointment(tenantId, id, session.user.id, undefined, session.user.role);
 
     return NextResponse.json({ success: true, data: null });
   } catch (error) {

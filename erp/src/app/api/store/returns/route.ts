@@ -6,8 +6,37 @@ import { ReturnCreateSchema } from '@/lib/validators/return.validators';
 import { initiateReturn, getReturns } from '@/lib/services/return.service';
 import { createNegativeCommissionRecord } from '@/lib/services/commission.service';
 import { prisma } from '@/lib/prisma';
+import { parsePagination, parseQueryDate } from '@/lib/api/query-params';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { ApiError, isApiError } from '@/lib/api/errors';
 import type { ReturnRefundMethod } from '@/generated/prisma/client';
 
+/**
+ * M17-02 (BUG-51) — XC-01 query parsers throw a 400 `BAD_REQUEST`; the
+ * Module 17 GET contract (and its QA pin) is `400 VALIDATION_ERROR` naming the
+ * offending param, so the parse errors are promoted here.
+ */
+function parseValidated<T>(parse: () => T): T {
+  try {
+    return parse();
+  } catch (error) {
+    if (isApiError(error) && error.status === 400) {
+      throw new ApiError(400, 'VALIDATION_ERROR', error.message);
+    }
+    throw error;
+  }
+}
+
+/**
+ * POST /api/store/returns — process a refund/return.
+ *
+ * M17-01 (BUG-50): the catch delegates to the shared INF-02 mapper, so the
+ * return-eligibility family is sentinel-driven (`SALE_NOT_FOUND`,
+ * `RETURN_WINDOW_EXPIRED`, `RETURN_QTY_EXCEEDS_RETURNABLE`, … → 422) and a
+ * cross-tenant `originalSaleId` fails closed as a typed 404
+ * (`FOREIGN_TENANT_RESOURCE`) instead of falling through to a 500. The 201
+ * happy-path envelope is unchanged.
+ */
 export async function POST(request: Request) {
   try {
     const session = await auth();
@@ -106,24 +135,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: result }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'An unexpected error occurred';
-
-    // Service-layer validation errors (return window, quantity)
-    if (message.includes('Return window expired') ||
-        message.includes('Cannot return') ||
-        message.includes('Sale status must be') ||
-        message.includes('Sale not found')) {
-      return NextResponse.json(
-        { success: false, error: { code: 'UNPROCESSABLE', message } },
-        { status: 422 },
-      );
-    }
-
-    console.error('POST /api/store/returns error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // M17-01 (BUG-50): one mapper for the whole return-eligibility family —
+    // typed sentinels (422) plus the cross-tenant 404. Unknown errors stay a
+    // logged, leak-free 500.
+    return toErrorResponse(error, 'POST /api/store/returns');
   }
 }
 
@@ -155,10 +170,15 @@ export async function GET(request: NextRequest) {
     const url = request.nextUrl;
     const originalSaleId = url.searchParams.get('originalSaleId') ?? undefined;
     const refundMethod = (url.searchParams.get('refundMethod') as ReturnRefundMethod) ?? undefined;
-    const from = url.searchParams.get('from') ? new Date(url.searchParams.get('from')!) : undefined;
-    const to = url.searchParams.get('to') ? new Date(url.searchParams.get('to')!) : undefined;
-    const page = url.searchParams.get('page') ? Number(url.searchParams.get('page')) : 1;
-    const limit = url.searchParams.get('limit') ? Number(url.searchParams.get('limit')) : 25;
+    // M17-02 (BUG-51): XC-01 parsing — a malformed `from`/`to` is a typed 400
+    // VALIDATION_ERROR naming the param instead of an Invalid Date reaching
+    // Prisma as an unhandled 500. page/limit go through the same helper so
+    // `page=abc` is a typed 400 rather than NaN.
+    const from = parseValidated(() => parseQueryDate(url.searchParams, 'from'));
+    const to = parseValidated(() => parseQueryDate(url.searchParams, 'to'));
+    const { page, limit } = parseValidated(() =>
+      parsePagination(url.searchParams, { defaultLimit: 25, maxLimit: 100 }),
+    );
 
     const result = await getReturns(tenantId, { originalSaleId, refundMethod, from, to, page, limit });
 
@@ -168,10 +188,8 @@ export async function GET(request: NextRequest) {
       pagination: { total: result.total, page, limit, totalPages: Math.ceil(result.total / limit) },
     });
   } catch (error) {
-    console.error('GET /api/store/returns error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // XC-01/INF-02: parser ApiErrors surface as their typed 400; unknown errors
+    // are logged and returned as a generic, leak-free 500.
+    return toErrorResponse(error, 'GET /api/store/returns');
   }
 }

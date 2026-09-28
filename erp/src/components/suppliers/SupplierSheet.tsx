@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
 import {
@@ -41,6 +41,19 @@ interface SupplierSheetProps {
   onSuccess: () => void;
 }
 
+// ── Form values ──────────────────────────────────────────────────────────────
+
+const toFormValues = (supplier?: SupplierFromAPI): CreateSupplierInput => ({
+  name: supplier?.name ?? '',
+  contactName: supplier?.contactName ?? undefined,
+  phone: supplier?.phone ?? '',
+  whatsappNumber: supplier?.whatsappNumber ?? undefined,
+  email: supplier?.email ?? undefined,
+  address: supplier?.address ?? undefined,
+  leadTimeDays: supplier?.leadTimeDays ?? 7,
+  notes: supplier?.notes ?? undefined,
+});
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function SupplierSheet({ supplier, open, onOpenChange, onSuccess }: SupplierSheetProps) {
@@ -54,31 +67,24 @@ export function SupplierSheet({ supplier, open, onOpenChange, onSuccess }: Suppl
     formState: { errors },
   } = useForm<CreateSupplierInput>({
     resolver: standardSchemaResolver(CreateSupplierSchema),
-    defaultValues: {
-      name: supplier?.name ?? '',
-      contactName: supplier?.contactName ?? undefined,
-      phone: supplier?.phone ?? '',
-      whatsappNumber: supplier?.whatsappNumber ?? undefined,
-      email: supplier?.email ?? undefined,
-      address: supplier?.address ?? undefined,
-      leadTimeDays: supplier?.leadTimeDays ?? 7,
-      notes: supplier?.notes ?? undefined,
-    },
+    defaultValues: toFormValues(supplier),
   });
+
+  // BUG-34 (M06-04): useForm captures defaultValues once at mount, but the
+  // sheet stays mounted for the page lifetime, so the FIRST edit-open showed
+  // blank fields. Re-apply the current supplier's values on every open (and
+  // whenever the selected supplier changes while mounted); create mode
+  // (no supplier) resets to empty.
+  useEffect(() => {
+    if (open) {
+      reset(toFormValues(supplier));
+    }
+  }, [open, supplier, reset]);
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
       if (!nextOpen) {
-        reset({
-          name: supplier?.name ?? '',
-          contactName: supplier?.contactName ?? undefined,
-          phone: supplier?.phone ?? '',
-          whatsappNumber: supplier?.whatsappNumber ?? undefined,
-          email: supplier?.email ?? undefined,
-          address: supplier?.address ?? undefined,
-          leadTimeDays: supplier?.leadTimeDays ?? 7,
-          notes: supplier?.notes ?? undefined,
-        });
+        reset(toFormValues(supplier));
       }
       onOpenChange(nextOpen);
     },
@@ -176,7 +182,21 @@ export function SupplierSheet({ supplier, open, onOpenChange, onSuccess }: Suppl
             <Input
               id="leadTimeDays"
               type="number"
-              {...register('leadTimeDays', { valueAsNumber: true })}
+              {...register('leadTimeDays', {
+                // BUG-33 (M06-03): valueAsNumber turns an empty input into
+                // NaN, which the resolver rejects with a raw message. Do the
+                // same numeric coercion via setValueAs, mapping empty or
+                // invalid input to undefined so .optional() passes and the
+                // API default (7) applies. (valueAsNumber takes precedence
+                // over setValueAs in RHF, so it must not be combined.)
+                setValueAs: (value) => {
+                  if (value === '' || value === null || value === undefined) {
+                    return undefined;
+                  }
+                  const n = typeof value === 'number' ? value : Number(value);
+                  return Number.isNaN(n) ? undefined : n;
+                },
+              })}
               placeholder="7"
               min={1}
               max={365}

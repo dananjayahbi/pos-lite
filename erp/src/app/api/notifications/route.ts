@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parseQueryInt } from '@/lib/api/query-params';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,8 +23,10 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const limit = Math.min(Math.max(parseInt(searchParams.get('limit') ?? '10', 10) || 10, 1), 50);
-    const page = Math.max(parseInt(searchParams.get('page') ?? '1', 10) || 1, 1);
+    // XC-01: malformed limit/page now 400 naming the param (BUG-45 class);
+    // out-of-range still clamps to the [1,50] / [1,∞) windows.
+    const limit = parseQueryInt(searchParams, 'limit', { default: 10, min: 1, max: 50 }) ?? 10;
+    const page = parseQueryInt(searchParams, 'page', { default: 1, min: 1, max: 1_000_000 }) ?? 1;
     const includeRead = searchParams.get('includeRead') === 'true';
     const statusParam = searchParams.get('status');
     const status = statusParam === 'all' || statusParam === 'read' || statusParam === 'unread'
@@ -67,10 +71,8 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Notifications fetch error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch notifications' } },
-      { status: 500 },
-    );
+    // XC-01/INF-02: parser ApiErrors surface as their 400; unknown
+    // errors are logged and returned as a generic, leak-free 500.
+    return toErrorResponse(error, 'Notifications fetch');
   }
 }

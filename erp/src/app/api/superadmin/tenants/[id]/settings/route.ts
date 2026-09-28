@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { requireSuperAdmin } from '@/lib/api/superadmin-guard';
+
+// The currency is always LKR for this on-premises deployment. It is locked here
+// so no client can change it for a business via the superadmin settings API.
+const LOCKED_CURRENCY = 'LKR';
 
 const businessSettingsSchema = z.object({
   storeName: z.string().trim().min(2, 'Store name must be at least 2 characters').max(80),
   logoUrl: z.string().trim().url('Logo URL must be a valid URL').or(z.literal('')),
   address: z.string().trim().max(160, 'Address must be 160 characters or less'),
   phoneNumber: z.string().trim().max(40, 'Phone number must be 40 characters or less'),
-  receiptFooter: z.string().trim().max(240, 'Receipt footer must be 240 characters or less'),
   currency: z.string().trim().min(1, 'Currency is required'),
   timezone: z.string().trim().min(1, 'Timezone is required'),
-  vatRate: z.coerce.number().min(0).max(100),
-  ssclRate: z.coerce.number().min(0).max(100),
 });
 
 export async function PATCH(
@@ -20,13 +21,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const session = await auth();
-    if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Super admin access required' } },
-        { status: 403 },
-      );
-    }
+    const guard = await requireSuperAdmin();
+    if (!guard.ok) return guard.response;
 
     const { id } = await params;
     const body: unknown = await request.json();
@@ -59,11 +55,9 @@ export async function PATCH(
       ...currentSettings,
       address: parsed.data.address,
       phoneNumber: parsed.data.phoneNumber,
-      receiptFooter: parsed.data.receiptFooter,
-      currency: parsed.data.currency,
+      // Currency is always LKR for this deployment — ignore any client value.
+      currency: LOCKED_CURRENCY,
       timezone: parsed.data.timezone,
-      vatRate: parsed.data.vatRate,
-      ssclRate: parsed.data.ssclRate,
     };
 
     const updated = await prisma.tenant.update({

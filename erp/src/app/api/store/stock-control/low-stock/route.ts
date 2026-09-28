@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { parseQueryInt } from '@/lib/api/query-params';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
+import { toCsvLines } from '@/lib/export';
 
 interface LowStockRow {
   id: string;
@@ -34,36 +39,46 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const userPermissions = Array.isArray(session.user.permissions)
-      ? session.user.permissions.filter((p): p is string => typeof p === 'string')
-      : [];
-
-    if (!userPermissions.includes('stock:view')) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Missing stock:view permission' } },
-        { status: 403 },
-      );
-    }
+    // XC-03: shared guard replaces the hand-rolled permissions.includes check.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.STOCK.viewStock);
+    if (forbidden) return forbidden;
 
     const { searchParams } = request.nextUrl;
     const countOnly = searchParams.get('countOnly') === 'true';
     const format = searchParams.get('format');
-    const thresholdParam = searchParams.get('threshold');
-    const threshold = thresholdParam ? parseInt(thresholdParam, 10) : null;
-    const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '25', 10)));
+    // XC-01: threshold=abc used to be parseInt→NaN→silent empty 200 (BUG-81)
+    // and >int4 crashed with 500 (BUG-82). Now: malformed → 400, clamped to a
+    // sane int4 window.
+    const threshold = parseQueryInt(searchParams, 'threshold', { min: 0, max: 2_147_483_647 });
+    const page = parseQueryInt(searchParams, 'page', { default: 1, min: 1 }) ?? 1;
+    const limit = parseQueryInt(searchParams, 'limit', { default: 25, min: 1, max: 100 }) ?? 25;
 
     if (countOnly) {
-      const result = await prisma.$queryRaw<[{ count: bigint }]>`
-        SELECT COUNT(*) as count FROM product_variants pv
-        JOIN products p ON pv."productId" = p.id
-        WHERE pv."tenantId" = ${tenantId}
-          AND pv."deletedAt" IS NULL
-          AND p."deletedAt" IS NULL
-          AND p."isArchived" = false
-          AND pv."lowStockThreshold" > 0
-          AND pv."stockQuantity" <= pv."lowStockThreshold"
-      `;
+      // M10-01/OBS-78: countOnly used to ignore the threshold override (the list/CSV
+      // paths honored it, counts did not). The count now uses the exact same predicate
+      // as the list path: the explicit override when supplied, else the per-variant default.
+      const result =
+        threshold != null
+          ? await prisma.$queryRaw<[{ count: bigint }]>`
+              SELECT COUNT(*) as count FROM product_variants pv
+              JOIN products p ON pv."productId" = p.id
+              WHERE pv."tenantId" = ${tenantId}
+                AND pv."deletedAt" IS NULL
+                AND p."deletedAt" IS NULL
+                AND p."isArchived" = false
+                AND pv."lowStockThreshold" > 0
+                AND pv."stockQuantity" <= ${threshold}
+            `
+          : await prisma.$queryRaw<[{ count: bigint }]>`
+              SELECT COUNT(*) as count FROM product_variants pv
+              JOIN products p ON pv."productId" = p.id
+              WHERE pv."tenantId" = ${tenantId}
+                AND pv."deletedAt" IS NULL
+                AND p."deletedAt" IS NULL
+                AND p."isArchived" = false
+                AND pv."lowStockThreshold" > 0
+                AND pv."stockQuantity" <= pv."lowStockThreshold"
+            `;
 
       return NextResponse.json({
         success: true,
@@ -141,11 +156,25 @@ export async function GET(request: NextRequest) {
 
     if (isCsv) {
       const today = new Date().toISOString().split('T')[0];
-      const header = 'Product Name,Category,SKU,Form,Pack Size,Current Stock,Threshold,Shortfall,Retail Price';
-      const rows = variants.map((v) =>
+      // M35-01 (BUG-79): shared CSV writer. The previous inline version quoted
+      // product/category unconditionally but left SKU, form and pack size RAW,
+      // so a comma in any of those broke the row. `csvCell` quotes exactly the
+      // cells that need it and leaves the header row unquoted.
+      const csv = toCsvLines(
         [
-          `"${v.product_name.replace(/"/g, '""')}"`,
-          `"${v.category_name.replace(/"/g, '""')}"`,
+          'Product Name',
+          'Category',
+          'SKU',
+          'Form',
+          'Pack Size',
+          'Current Stock',
+          'Threshold',
+          'Shortfall',
+          'Retail Price',
+        ],
+        variants.map((v) => [
+          v.product_name,
+          v.category_name,
           v.sku,
           v.form ?? '',
           v.pack_size ?? '',
@@ -153,9 +182,8 @@ export async function GET(request: NextRequest) {
           v.low_stock_threshold,
           v.shortfall,
           v.retail_price,
-        ].join(','),
+        ]),
       );
-      const csv = [header, ...rows].join('\n');
 
       return new NextResponse(csv, {
         status: 200,
@@ -177,10 +205,8 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Low stock query error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch low stock data' } },
-      { status: 500 },
-    );
+    // XC-01/INF-02: parser ApiErrors surface as their 400; unknown
+    // errors are logged and returned as a generic, leak-free 500.
+    return toErrorResponse(error, 'Low stock query');
   }
 }

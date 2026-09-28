@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { markAllNotificationsRead } from '@/lib/notifications/read-all';
 
 export async function PATCH() {
   try {
@@ -20,14 +20,14 @@ export async function PATCH() {
       );
     }
 
-    const result = await prisma.notificationRecord.updateMany({
-      where: { tenantId, recipientId: session.user.id, isRead: false },
-      data: { isRead: true },
-    });
+    // M32-02 (OBS-61): chunked sweep (lib/notifications/read-all.ts) instead of
+    // one unbounded updateMany — response shape and exact-count semantics are
+    // unchanged (the count is the sum of the per-chunk updates).
+    const count = await markAllNotificationsRead(tenantId, session.user.id);
 
     return NextResponse.json({
       success: true,
-      data: { count: result.count },
+      data: { count },
     });
   } catch (error) {
     console.error('Mark all notifications read error:', error);

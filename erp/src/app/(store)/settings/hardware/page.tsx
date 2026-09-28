@@ -1,11 +1,11 @@
 import { auth } from '@/lib/auth';
+import { denialRouteFor, requirePagePermission } from '@/lib/auth/page-guards';
 import { prisma } from '@/lib/prisma';
 import { redirect } from 'next/navigation';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import HardwareSettingsForm from '@/components/settings/HardwareSettingsForm';
 
 export const metadata = { title: 'Hardware Settings | AyurPOS' };
-
-const DENIED_ROLES = new Set(['CASHIER', 'STOCK_CLERK']);
 
 type HardwareSettings = {
   printerType: 'NETWORK' | 'USB';
@@ -45,8 +45,12 @@ function parseHardwareSettings(settings: unknown): HardwareSettings {
 
 export default async function HardwareSettingsPage() {
   const session = await auth();
-  if (!session?.user?.tenantId) redirect('/login');
-  if (DENIED_ROLES.has(session.user.role)) redirect('/pos');
+  // Tenant check first (M03-07): a tenantless SUPER_ADMIN is funnelled away
+  // before the permission guard, which would otherwise pass them (ALL_PERMISSIONS).
+  if (!session?.user?.tenantId) redirect(denialRouteFor(session?.user));
+  // M07-01 (BUG-80): permission gate replaces the role denylist; denied roles
+  // redirect to /pos, matching the destination QA pins (tests/07 S3).
+  requirePagePermission(session.user, PERMISSIONS.SETTINGS.manageHardware);
 
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: session.user.tenantId },

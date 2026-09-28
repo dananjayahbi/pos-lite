@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import Link from 'next/link';
 import { getPublicCategory } from '@/lib/api/categories';
 import { getPublicProducts } from '@/lib/api/products';
 import { getTenantInfo } from '@/lib/api/website';
@@ -9,6 +8,7 @@ import { SITE } from '@/config/site';
 import { CategoryBreadcrumb } from '@/components/website/category/CategoryBreadcrumb';
 import { CategoryHeader } from '@/components/website/category/CategoryHeader';
 import { CategoryProductGrid } from '@/components/website/category/CategoryProductGrid';
+import { StoreHeader } from '@/components/website/common/StoreHeader';
 
 interface CategoryPageProps {
   params: Promise<{ tenantSlug: string; categoryId: string }>;
@@ -30,25 +30,9 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
   if (!category || !tenant) notFound();
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="border-b border-gray-100">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 py-3">
-          <Link
-            href={tenantHomePath(tenantSlug)}
-            className="text-lg font-medium"
-            style={{ fontFamily: 'var(--font-dm-serif), serif' }}
-          >
-            {tenant.name}
-          </Link>
-          <Link
-            href={tenantHomePath(tenantSlug)}
-            className="text-sm text-gray-500 hover:text-black transition-colors"
-          >
-            ← Back to store
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#051610] text-[#cbd5e1]">
+      {/* Common top bar with cart button */}
+      <StoreHeader tenantSlug={tenantSlug} storeName={tenant.name} />
 
       <main className="max-w-7xl mx-auto px-4 py-6">
         {/* Breadcrumb */}

@@ -1,4 +1,3 @@
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -14,6 +13,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
+import { getStorageMetrics } from "@/lib/superadmin/storage-metrics";
+import StorageMetricsCard from "@/components/superadmin/StorageMetricsCard";
 
 async function checkDatabaseHealth() {
   try {
@@ -38,6 +39,7 @@ const envLabel: Record<string, { label: string; className: string }> = {
 
 export default async function SystemHealthPage() {
   const db = await checkDatabaseHealth();
+  const storage = await getStorageMetrics();
 
   const logs = await prisma.auditLog.findMany({
     orderBy: { createdAt: "desc" },
@@ -113,21 +115,7 @@ export default async function SystemHealthPage() {
         </Card>
 
         {/* Storage Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-espresso">Storage</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <p className="text-espresso/70">Media Storage</p>
-            <p className="text-espresso/60">
-              Storage metrics require integration with the configured media
-              storage provider (Supabase Storage or Cloudinary).
-            </p>
-            <Badge className="bg-mist text-espresso/60">
-              Coming in Phase 5
-            </Badge>
-          </CardContent>
-        </Card>
+        <StorageMetricsCard metrics={storage} />
       </div>
 
       {/* Recent Activity */}

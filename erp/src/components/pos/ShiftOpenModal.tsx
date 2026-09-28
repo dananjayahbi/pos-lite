@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
+import { postLogoutAudit } from '@/lib/auth/logout-audit';
 
 interface ShiftOpenModalProps {
   cashierName: string;
@@ -94,6 +95,8 @@ export function ShiftOpenModal({
               type="button"
               onClick={async () => {
                 setReturningToLogin(true);
+                // M01-04: ledger the sign-out before the cookie is cleared.
+                await postLogoutAudit();
                 await signOut({ callbackUrl: `${window.location.origin}/login` });
               }}
               disabled={returningToLogin}

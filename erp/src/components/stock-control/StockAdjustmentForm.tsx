@@ -147,6 +147,9 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
   const [searchResults, setSearchResults] = useState<ProductSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
+  // M09-03 (OBS-18): highlighted result index for keyboard/scanner selection
+  // inside the search popover. Enter selects it instead of dismissing.
+  const [activeIndex, setActiveIndex] = useState(0);
   const [selectedProduct, setSelectedProduct] = useState<ProductSearchResult | null>(null);
   const [variants, setVariants] = useState<VariantData[]>([]);
   const [selectedVariant, setSelectedVariant] = useState<VariantData | null>(null);
@@ -222,10 +225,10 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
 
   // ── Product search with debounce ───────────────────────────────────────────
 
-  const searchProducts = useCallback(async (term: string) => {
+  const searchProducts = useCallback(async (term: string): Promise<ProductSearchResult[]> => {
     if (term.length < 1) {
       setSearchResults([]);
-      return;
+      return [];
     }
     setIsSearching(true);
     try {
@@ -234,10 +237,14 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
       );
       const json = await res.json();
       if (json.success) {
-        setSearchResults(json.data ?? []);
+        const results: ProductSearchResult[] = json.data ?? [];
+        setSearchResults(results);
+        return results;
       }
+      return [];
     } catch {
       // silently fail search
+      return [];
     } finally {
       setIsSearching(false);
     }
@@ -257,6 +264,43 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
     };
   }, [productSearch, searchProducts]);
 
+  // Reset the keyboard highlight whenever the result set changes.
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [searchResults]);
+
+  // ── Scanner/keyboard resolve: Enter selects the highlighted result ─────────
+  // M09-03 (OBS-18): a hardware scanner terminates its keystroke burst with
+  // Enter. Previously that Enter dismissed the Radix popover (and triggered
+  // implicit form submission) without selecting anything. Now Enter selects
+  // the highlighted result — defaulting to the top hit — and if the burst
+  // outran the 300 ms debounce, the search is flushed immediately first.
+  // Escape keeps its default dismiss behaviour.
+  const handleSearchKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') return; // let Radix dismiss
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (searchResults.length === 0) return;
+      e.preventDefault();
+      setPopoverOpen(true);
+      setActiveIndex((i) => {
+        const n = searchResults.length;
+        return e.key === 'ArrowDown' ? (i + 1) % n : (i - 1 + n) % n;
+      });
+      return;
+    }
+    if (e.key !== 'Enter') return;
+    e.preventDefault(); // never submit the form from the search field
+    const term = productSearch.trim();
+    if (!term) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const pool =
+      searchResults.length > 0 ? searchResults : await searchProducts(term);
+    if (pool.length === 0) return;
+    const pick = (searchResults.length > 0 ? pool[activeIndex] : pool[0]) ?? pool[0];
+    if (!pick) return;
+    await handleSelectProduct(pick);
+  };
+
   // ── Select a product → fetch variants ──────────────────────────────────────
 
   const handleSelectProduct = async (product: ProductSearchResult) => {
@@ -264,6 +308,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
     setPopoverOpen(false);
     setProductSearch('');
     setSearchResults([]);
+    setActiveIndex(0);
     setSelectedVariant(null);
     setVariants([]);
     form.setValue('productId', product.id, { shouldValidate: true });
@@ -449,6 +494,9 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                             setPopoverOpen(true);
                           }
                         }}
+                        onKeyDown={(e) => {
+                          void handleSearchKeyDown(e);
+                        }}
                         onFocus={() => {
                           if (productSearch.trim().length > 0) setPopoverOpen(true);
                         }}
@@ -474,11 +522,15 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                       </p>
                     ) : (
                       <ul className="max-h-60 overflow-y-auto py-1">
-                        {searchResults.map((p) => (
+                        {searchResults.map((p, i) => (
                           <li key={p.id}>
                             <button
                               type="button"
-                              className="flex w-full flex-col px-3 py-2 text-left hover:bg-linen/60"
+                              data-highlighted={i === activeIndex ? '' : undefined}
+                              className={`flex w-full flex-col px-3 py-2 text-left hover:bg-linen/60 ${
+                                i === activeIndex ? 'bg-linen/80' : ''
+                              }`}
+                              onMouseEnter={() => setActiveIndex(i)}
                               onClick={() => handleSelectProduct(p)}
                             >
                               <span className="font-body text-sm font-medium text-espresso">

@@ -17,12 +17,12 @@ interface BreadcrumbProps {
  */
 export function Breadcrumb({ items, tenantSlug }: BreadcrumbProps) {
   return (
-    <nav aria-label="Breadcrumb" className="text-sm text-gray-500">
+    <nav aria-label="Breadcrumb" className="text-sm text-[#94a3b8]">
       <ol className="flex flex-wrap items-center gap-1">
         <li key="home">
           <Link
             href={tenantHomePath(tenantSlug)}
-            className="hover:text-black transition-colors"
+            className="hover:text-[#97c93e] transition-colors"
           >
             Home
           </Link>
@@ -33,12 +33,12 @@ export function Breadcrumb({ items, tenantSlug }: BreadcrumbProps) {
             {item.href ? (
               <Link
                 href={item.href}
-                className="hover:text-black transition-colors"
+                className="hover:text-[#97c93e] transition-colors"
               >
                 {item.label}
               </Link>
             ) : (
-              <span className="text-black">{item.label}</span>
+              <span className="text-white">{item.label}</span>
             )}
           </li>
         ))}

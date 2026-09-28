@@ -3,32 +3,31 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  AlertTriangle,
   Bell,
   Check,
   CheckCheck,
-  CheckCircle2,
-  ClipboardList,
-  Info,
-  Wallet,
-  XCircle,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useGetNotifications, useInvalidateNotifications } from '@/hooks/useGetNotifications';
+import { getNotificationIcon } from '@/lib/constants/notification-types';
 
 type NotificationStatusFilter = 'all' | 'read' | 'unread';
 
-const TYPE_ICONS = {
-  LOW_STOCK_ALERT: AlertTriangle,
-  STOCK_TAKE_SUBMITTED: ClipboardList,
-  STOCK_TAKE_APPROVED: CheckCircle2,
-  STOCK_TAKE_REJECTED: XCircle,
-  SYSTEM_ALERT: Info,
-  PETTY_CASH_LOW: Wallet,
-} as const;
+/**
+ * OBS-57 (documentation only — no behaviour change): this is a `'use client'`
+ * page with no server-side auth gate of its own. The redirect for an
+ * unauthenticated visitor (→ `/login?callbackUrl=/notifications`, pinned by
+ * tests/32 S5) comes from the centralized proxy gate in `src/proxy.ts`: its
+ * `PUBLIC_PATH_PREFIXES` allowlist does not contain `/notifications`. Keep it
+ * that way — registering `/notifications` (or a parent prefix) as public would
+ * expose this shell, since the client component cannot gate itself.
+ *
+ * M32-02 (OBS-59): the icon table is now shared with the header popover — see
+ * `getNotificationIcon` in `src/lib/constants/notification-types.ts`.
+ */
 
 function formatRelativeTime(dateStr: string): string {
   const now = Date.now();
@@ -170,7 +169,7 @@ export default function NotificationsPage() {
             </div>
           ) : (
             notifications.map((notification) => {
-              const Icon = TYPE_ICONS[notification.type as keyof typeof TYPE_ICONS] ?? Info;
+              const Icon = getNotificationIcon(notification.type);
               const href = getNotificationHref(notification.type, notification.relatedEntityId);
 
               return (

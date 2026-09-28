@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { hasPermission } from '@/lib/utils/permissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { markNoShow } from '@/lib/services/appointment.service';
 
 export async function POST(
@@ -20,6 +22,15 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: 'No tenant associated' } },
         { status: 401 },
+      );
+    }
+
+    // M27-02/BUG-86: no-show is a status transition — gate on editAppointment
+    // (same key as complete/cancel siblings), not session-only.
+    if (!hasPermission(session.user, PERMISSIONS.APPOINTMENT.editAppointment)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
       );
     }
 

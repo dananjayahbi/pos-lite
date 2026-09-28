@@ -28,7 +28,8 @@ interface MovementItem {
     lowStockThreshold: number;
     product: { id: string; name: string; category: { name: string } };
   };
-  actor: { id: string; email: string };
+  /** Nullable: automated movements have no acting user (see `stockActorLabel`). */
+  actor: { id: string; email: string } | null;
 }
 
 interface MovementsResponse {

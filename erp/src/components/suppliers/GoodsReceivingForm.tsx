@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Minus, Plus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+// M16-02 (BUG-49): per-line batch number / expiry date capture.
+import { GrnBatchFields } from '@/components/suppliers/GrnBatchFields';
 
 export interface POLine {
   id: string;
@@ -55,6 +57,10 @@ export interface PurchaseOrderDetail {
 interface ReceivingEntry {
   thisQty: number;
   actualCostPrice: string;
+  /** M16-02 (BUG-49): optional batch traceability captured on this receipt. */
+  batchNumber: string;
+  /** M16-02 (BUG-49): local `YYYY-MM-DD` from the date input; '' = not tracked. */
+  expiryDate: string;
 }
 
 interface GoodsReceivingFormProps {
@@ -80,18 +86,27 @@ export function GoodsReceivingForm({
   const [receivingEntries, setReceivingEntries] = useState<Record<string, ReceivingEntry>>({});
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
+  // Seed the per-line entry state from the PO. This runs during render (React's
+  // "adjust state when props change" pattern) instead of in an effect: the
+  // entries are derived from `po.lines`, and seeding them in an effect caused a
+  // cascading second render on every PO load. The `po` identity guard keeps
+  // in-flight edits intact when the component re-renders for its own reasons.
+  const [seededPo, setSeededPo] = useState<PurchaseOrderDetail | null>(null);
+  if (seededPo !== po) {
+    setSeededPo(po);
     const entries: Record<string, ReceivingEntry> = {};
     for (const line of po.lines) {
       if (!line.isFullyReceived) {
         entries[line.id] = {
           thisQty: 0,
           actualCostPrice: String(line.expectedCostPrice),
+          batchNumber: '',
+          expiryDate: '',
         };
       }
     }
     setReceivingEntries(entries);
-  }, [po.lines]);
+  }
 
   const displayableLines = useMemo(
     () => po.lines.filter((line) => !line.isFullyReceived),
@@ -109,6 +124,22 @@ export function GoodsReceivingForm({
     setReceivingEntries((prev) => ({
       ...prev,
       [lineId]: { ...prev[lineId]!, actualCostPrice: value },
+    }));
+  }, []);
+
+  // M16-02 (BUG-49): keep the batch traceability fields in the same line-entry
+  // state as qty/cost so the POST payload is built from one source.
+  const updateBatchNumber = useCallback((lineId: string, value: string) => {
+    setReceivingEntries((prev) => ({
+      ...prev,
+      [lineId]: { ...prev[lineId]!, batchNumber: value },
+    }));
+  }, []);
+
+  const updateExpiryDate = useCallback((lineId: string, value: string) => {
+    setReceivingEntries((prev) => ({
+      ...prev,
+      [lineId]: { ...prev[lineId]!, expiryDate: value },
     }));
   }, []);
 
@@ -153,10 +184,20 @@ export function GoodsReceivingForm({
       .map((line) => {
         const entry = receivingEntries[line.id]!;
         const trimmed = entry.actualCostPrice.trim();
+        // M16-02 (BUG-49): send batchNumber/expiryDate only when actually
+        // supplied — an omitted key keeps a non-batch line's receipt byte-for-byte
+        // identical to the pre-change payload (the API treats undefined as
+        // "no batch" and skips the BatchTracking write entirely).
+        const batchNumber = entry.batchNumber.trim();
+        const expiryDate = entry.expiryDate;
         return {
           lineId: line.id,
           receivedQty: entry.thisQty,
           actualCostPrice: Number(trimmed !== '' ? trimmed : line.expectedCostPrice),
+          ...(batchNumber !== '' ? { batchNumber } : {}),
+          // The API contract is `z.string().datetime()`, so the date input's
+          // local YYYY-MM-DD is anchored to UTC midnight before sending.
+          ...(expiryDate !== '' ? { expiryDate: new Date(`${expiryDate}T00:00:00.000Z`).toISOString() } : {}),
         };
       });
 
@@ -219,6 +260,8 @@ export function GoodsReceivingForm({
               <TableHead className="text-center">Prev. Received</TableHead>
               <TableHead className="text-center">Remaining</TableHead>
               <TableHead className="text-center">This Receiving</TableHead>
+              {/* M16-02 (BUG-49): batch/expiry traceability capture point. */}
+              <TableHead className="text-left">Batch / Expiry</TableHead>
               <TableHead className="text-right">Actual Cost Rs.</TableHead>
             </TableRow>
           </TableHeader>
@@ -281,7 +324,18 @@ export function GoodsReceivingForm({
                       </Button>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right">
+                  {/* M16-02 (BUG-49): modular per-line batch/expiry subcomponent. */}
+                  <TableCell className="align-top pt-3">
+                    <GrnBatchFields
+                      lineId={line.id}
+                      batchNumber={entry?.batchNumber ?? ''}
+                      expiryDate={entry?.expiryDate ?? ''}
+                      disabled={submitting}
+                      onBatchNumberChange={(value) => updateBatchNumber(line.id, value)}
+                      onExpiryDateChange={(value) => updateExpiryDate(line.id, value)}
+                    />
+                  </TableCell>
+                  <TableCell className="text-right align-top pt-3">
                     <Input
                       type="text"
                       inputMode="decimal"
@@ -307,6 +361,8 @@ export function GoodsReceivingForm({
           </p>
           <p className="text-xs text-mist mt-1">
             Adjust actual cost prices only when the supplier invoice differs from the expected amount.
+            Batch number and expiry date are optional — fill them in to keep the received goods
+            traceable in Inventory → Batches.
           </p>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
