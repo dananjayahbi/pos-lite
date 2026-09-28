@@ -28,7 +28,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -141,11 +141,73 @@ function loadSnapshot(): Record<string, any> | null {
   }
 }
 
+/**
+ * Durable, never-deleted snapshot copy.
+ *
+ * `SNAPSHOT_PATH` lives in the OS temp dir and §11 deletes it on success, so
+ * after a wipe the ONLY recovery source removed itself. Keep a timestamped
+ * copy under `test-results/` so a wipe is always recoverable by hand.
+ */
+function saveSnapshotBackup(data: Record<string, any>): string | null {
+  try {
+    const dir = join(process.cwd(), 'test-results');
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, `m29-snapshot-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+    writeFileSync(file, JSON.stringify(data, null, 2));
+    return file;
+  } catch {
+    return null; // Best effort — the temp snapshot is still written.
+  }
+}
+
+/**
+ * Does the stored config hold content a human authored (as opposed to an
+ * empty, seeded, or test-only config)?
+ *
+ * WHY THIS EXISTS — §0 performs a DESTRUCTIVE "deterministic baseline" (PUT
+ * with `heroSlides: []`, `ads: []`) and §11 restores from a temp-file snapshot
+ * that it deletes on success. If the suite aborts between the two, the tenant
+ * is left permanently wiped with no undo: `AuditLog` does not record
+ * WebsiteConfig writes. On 2026-09-17 exactly that happened to the `dilani`
+ * storefront — authored copy and image links replaced by `example.com/qa-m29-*`
+ * fixtures — and it cost the owner hours of CMS work to rebuild.
+ *
+ * So: never run the destructive baseline over authored content.
+ */
+function looksLikeRealContent(config: Record<string, any>): boolean {
+  const media = [
+    ...(config.heroSlides ?? []).map((s: any) => s?.mediaUrl),
+    ...(config.ads ?? []).map((a: any) => a?.mediaUrl),
+  ].filter((u: unknown): u is string => typeof u === 'string' && u.length > 0);
+
+  const hasRealMedia = media.some((u) => !u.includes('example.com'));
+  const hasAuthoredCopy =
+    typeof config.footerAbout === 'string' && config.footerAbout.trim().length > 0;
+  const siteName = typeof config.siteName === 'string' ? config.siteName : '';
+  const hasBrandName = siteName.trim().length > 0 && !siteName.includes('qa-m');
+
+  return hasRealMedia || hasAuthoredCopy || hasBrandName;
+}
+
 test.describe('§0 Snapshot & baseline', () => {
   test('captures the tenant website config for exact restore', async ({ page }) => {
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
     const snap = await getConfig(page);
     saveSnapshot(snap);
+    const backup = saveSnapshotBackup(snap);
+
+    // Never destroy authored content — see looksLikeRealContent().
+    if (looksLikeRealContent(snap)) {
+      test.skip(
+        true,
+        `Refusing to run: tenant "${snap.siteName}" holds real content ` +
+          `(${(snap.heroSlides ?? []).length} hero slides, ${(snap.ads ?? []).length} ads). ` +
+          `§0 empties the config and §11 restores only from a temp file, so an ` +
+          `aborted run would destroy it with no undo. Run against a disposable DB. ` +
+          `Backup for manual restore: ${backup ?? SNAPSHOT_PATH}`,
+      );
+    }
+
     // Deterministic baseline: PUT with explicit empty arrays reconciles the
     // relation rows to none, so per-test creates are isolated.
     const res = await putConfig(page, { heroSlides: [], ads: [] });
@@ -900,7 +962,8 @@ test.describe('cleanup: restore original website config', () => {
     expect(after.siteName).toBe(snapshot.siteName);
     expect(after.heroSlides).toHaveLength(snapshot.heroSlides?.length ?? 0);
     expect(after.ads).toHaveLength(snapshot.ads?.length ?? 0);
-    // Snapshot consumed — remove so a stale file never leaks into a later run.
+    // Consume the TEMP snapshot so a stale file never leaks into a later run.
+    // The durable copy in test-results/ (see saveSnapshotBackup) is kept.
     rmSync(SNAPSHOT_PATH, { force: true });
   });
 });

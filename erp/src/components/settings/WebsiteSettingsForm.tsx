@@ -433,7 +433,7 @@ export default function WebsiteSettingsForm() {
                 disabled={isSaving}
                 type="button"
               >
-                Reset to Defaults
+                Delete all content
               </Button>
 
               <div className="flex items-center gap-3">
@@ -482,12 +482,27 @@ export default function WebsiteSettingsForm() {
           </div>
         )}
 
-        {/* Reset confirmation dialog */}
+        {/* Reset confirmation dialog.
+            NOTE: `handleReset` calls DELETE /api/store/website, which is a HARD
+            RESET — it nulls every field, deletes all hero slides/ads and all
+            uploaded website assets. The wording below must therefore describe
+            that, not a harmless "discard unsaved changes". */}
         <ResetConfirmDialog
           open={showResetDialog}
           onOpenChange={setShowResetDialog}
           onConfirm={handleReset}
           disabled={isSaving}
+          title="Delete all website content"
+          description={
+            <>
+              This permanently deletes <strong>all saved website content</strong> — branding,
+              page copy, navigation, hero slides, ads{config.logoUrl ? ', the logo' : ''} and
+              uploaded website images{config.logoUrl ? '' : ''}. The storefront will fall back to
+              built-in defaults. <strong>This cannot be undone.</strong>
+            </>
+          }
+          confirmPhrase="delete everything"
+          confirmLabel="Delete all content"
         />
       </div>
     </div>

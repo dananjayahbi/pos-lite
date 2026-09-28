@@ -18,10 +18,22 @@ interface ResetConfirmDialogProps {
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
   disabled?: boolean;
+  /** Dialog heading. */
+  title?: string;
+  /** Warning copy. Defaults to the generic (non-destructive) wording. */
+  description?: React.ReactNode;
+  /**
+   * Phrase the operator must type to enable the confirm button.
+   * Defaults to `confirm`. Destructive actions should pass something that
+   * names the loss (e.g. `delete everything`).
+   */
+  confirmPhrase?: string;
+  /** Confirm button label. */
+  confirmLabel?: string;
 }
 
 /**
- * A confirmation dialog that requires the user to type "confirm"
+ * A confirmation dialog that requires the user to type a phrase
  * before the reset action can be executed. Prevents accidental data loss.
  */
 export function ResetConfirmDialog({
@@ -29,10 +41,14 @@ export function ResetConfirmDialog({
   onOpenChange,
   onConfirm,
   disabled = false,
+  title = 'Reset Configuration',
+  description = 'This will discard all unsaved changes and restore the last saved configuration. This action cannot be undone.',
+  confirmPhrase = 'confirm',
+  confirmLabel = 'Reset Configuration',
 }: ResetConfirmDialogProps) {
   const [typedValue, setTypedValue] = useState('');
 
-  const isValid = typedValue.toLowerCase() === 'confirm';
+  const isValid = typedValue.trim().toLowerCase() === confirmPhrase.toLowerCase();
 
   const handleConfirm = useCallback(() => {
     if (!isValid) return;
@@ -59,10 +75,9 @@ export function ResetConfirmDialog({
               <AlertTriangle className="h-5 w-5 text-amber-600" />
             </div>
             <div>
-              <DialogTitle className="text-espresso">Reset Configuration</DialogTitle>
+              <DialogTitle className="text-espresso">{title}</DialogTitle>
               <DialogDescription className="text-sand mt-1">
-                This will discard all unsaved changes and restore the last saved
-                configuration. This action cannot be undone.
+                {description}
               </DialogDescription>
             </div>
           </div>
@@ -70,12 +85,12 @@ export function ResetConfirmDialog({
 
         <div className="mt-4 space-y-3">
           <p className="text-sm text-sand">
-            Type <span className="font-semibold text-espresso">confirm</span> to proceed:
+            Type <span className="font-semibold text-espresso">{confirmPhrase}</span> to proceed:
           </p>
           <Input
             value={typedValue}
             onChange={(e) => setTypedValue(e.target.value)}
-            placeholder="Type 'confirm' here"
+            placeholder={`Type '${confirmPhrase}' here`}
             className="h-10"
             autoFocus
             onKeyDown={(e) => {
@@ -95,7 +110,7 @@ export function ResetConfirmDialog({
             disabled={!isValid || disabled}
             className="bg-amber-600 hover:bg-amber-700 text-white"
           >
-            Reset Configuration
+            {confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

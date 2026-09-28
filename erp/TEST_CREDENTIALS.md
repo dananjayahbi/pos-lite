@@ -4,6 +4,87 @@
 
 ---
 
+## URLs (local dev)
+
+Two separate Next.js apps run side by side. Both `.env` files are pre-wired for
+the hostnames below, which are mapped to `127.0.0.1` in
+`C:\Windows\System32\drivers\etc\hosts`:
+
+```
+127.0.0.1  ruhunuwedagedara.lk
+127.0.0.1  admin.ruhunuwedagedara.lk
+```
+
+| App | Base URL | Port |
+| --- | --- | --- |
+| **ERP** (AyurPOS admin + API) | `http://admin.ruhunuwedagedara.lk:3003` | 3003 |
+| **Website** (customer storefront) | `http://ruhunuwedagedara.lk:3002` | 3002 |
+
+`http://localhost:3003` and `http://localhost:3002` reach the same two apps, so
+either form works — but the **hostnamed** form is what the env files, default-tenant
+resolution and `allowedDevOrigins` assume, so prefer it when anything behaves oddly.
+
+Start them with (from each app folder):
+
+```
+erp/      npm run dev     # -> http://admin.ruhunuwedagedara.lk:3003
+website/  npm run dev     # -> http://ruhunuwedagedara.lk:3002
+```
+
+### ERP — one host, tenant follows the signed-in account
+
+The ERP has **no tenant segment in its URL**. There is a single host; which business
+you see is determined by *which account you sign in with*.
+
+| Page | URL (prefix `http://admin.ruhunuwedagedara.lk:3003`) |
+| --- | --- |
+| Sign in | `/login` |
+| Dashboard (OWNER / MANAGER / STOCK_CLERK) | `/dashboard` |
+| POS (CASHIER) | `/pos` |
+| Inventory | `/inventory` |
+| Sales / Orders | `/sales`, `/orders` |
+| Customers / Suppliers | `/customers`, `/suppliers` |
+| Categories / Brands | `/categories`, `/brands` |
+| Promotions | `/promotions` |
+| Stock control | `/stock-control` |
+| Delivery (DISPATCH_STAFF) | `/delivery` |
+| Expenses / Petty cash | `/expenses`, `/petty-cash` |
+| Returns | `/returns` |
+| Factory (FACTORY_MANAGER) | `/factory` |
+| Appointments | `/appointments` |
+| Reports | `/reports` |
+| Staff | `/staff` |
+| Settings | `/settings` |
+| **Website CMS** | `/settings/website` |
+| Billing | `/billing` |
+| **Super Admin** (SUPER_ADMIN only) | `/superadmin/dashboard` |
+
+> Signing in as `owner@dilani-ayurwellness.lk` puts you in **Ayur Wellness Centre**;
+> signing in as `owner@lanka-electronics.lk` puts you in **Lanka Electronics** — same
+> URLs, different tenant. A signed-out visit to any protected path 307-redirects to
+> `/login` (a `307` for `/dashboard` is therefore correct, not a broken URL).
+
+### Website — tenant slug IS in the URL
+
+| Page | URL (prefix `http://ruhunuwedagedara.lk:3002`) |
+| --- | --- |
+| Default tenant home (bare root → `dilani`) | `/` |
+| Tenant home (explicit) | `/dilani` |
+| Lanka Electronics home | `/lanka-electronics` |
+| Shop | `/dilani/shop` |
+| Product | `/dilani/product/<productId>` |
+| Category | `/dilani/category/<categoryId-or-slug>` |
+| About / Contact / Appointments | `/dilani/about`, `/dilani/contact`, `/dilani/appointments` |
+| Cart | `/dilani/cart` |
+| Checkout | `/dilani/checkout` |
+| Checkout return (PayHere) | `/dilani/checkout/return?order=<orderRef>` |
+| Order tracking | `/dilani/track` |
+
+> `NEXT_PUBLIC_DEFAULT_TENANT_SLUG=dilani`, so the bare root `/` renders the
+> `dilani` storefront.
+
+---
+
 ## Super Admin
 
 | Field    | Value                       |
@@ -16,6 +97,10 @@
 ---
 
 ## Business 1 — Ayur Wellness Centre
+
+> Tenant slug `dilani` → storefront `http://ruhunuwedagedara.lk:3002/dilani`
+> (also the default tenant, so `/` renders it). This is the tenant with the
+> Website CMS configured.
 
 ### Owner
 
@@ -39,6 +124,9 @@
 ---
 
 ## Business 2 — Lanka Electronics
+
+> Tenant slug `lanka-electronics` → storefront `http://ruhunuwedagedara.lk:3002/lanka-electronics`
+> (not the default tenant, so the bare `/` does **not** render it).
 
 ### Owner
 
