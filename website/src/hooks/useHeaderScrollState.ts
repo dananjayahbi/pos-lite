@@ -33,7 +33,7 @@ import { useEffect, useRef, useState } from 'react';
  * pre-feature layout exactly.
  */
 
-/** Fallback used before the variable is published (SSR / first paint). */
+/** Distance, in px of document scroll, at which the header condenses. */
 const DEFAULT_SCROLL_THRESHOLD = 40;
 
 function readAnnouncementBarHeight(): number {

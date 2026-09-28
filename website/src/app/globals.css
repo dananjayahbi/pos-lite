@@ -693,9 +693,13 @@ section.website-section {
 .latest-product-img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  /* `cover`, not `contain`: the product art is a tall 3:4 pack shot, so
+     `contain` letterboxes it inside the wide 16:10 / 1:1 frame and leaves
+     dead background bands above and below the artwork (visible as stray
+     whitespace under the image). `cover` fills the frame edge to edge; the
+     centre-weighted source keeps the product itself uncropped. */
+  object-fit: cover;
   object-position: center;
-  padding: 8px;
   transition: transform 700ms cubic-bezier(0.2, 1, 0.3, 1);
   will-change: transform;
   z-index: 1;
@@ -1006,6 +1010,23 @@ section.website-section {
   );
   pointer-events: none;
   z-index: 2;
+}
+
+/* Bottom dissolve for the static-page hero.
+   The radial vignette above is sized to the farthest CORNER, so on a wide, short
+   hero the bottom-centre only reaches ~34% of the gradient ray and never
+   arrives at the solid page colour — leaving a visible horizontal seam where
+   the hero meets the section below. This linear ramp guarantees the last 160px
+   lands exactly on the page background, so the image fades out with no line. */
+.hero-bottom-fade {
+  z-index: 3;
+  background: linear-gradient(
+    to bottom,
+    rgba(5, 22, 16, 0) 0%,
+    rgba(5, 22, 16, 0.35) 45%,
+    rgba(5, 22, 16, 0.82) 78%,
+    #051610 100%
+  );
 }
 
 .about-hero-content {
@@ -1557,6 +1578,48 @@ a.contact-val:hover {
   color: #97c93e;
   font-family: var(--font-sans);
   margin-top: 6px;
+}
+
+/* Add-to-Cart CTA — matches AddToCartButton but styled to the reference pill */
+
+/* The CTA occupies real space rather than being absolutely positioned.
+   Previously it lived in a `mt-3` wrapper while the card was
+   `justify-content: space-between` and stretched by the grid row, which left a
+   measured ~81px band of empty card below the price whenever the CTA was not
+   shown — the whitespace the screenshot reported. Flowing it inline keeps the
+   gap at a constant 12px and removes the dead band entirely. The CTA is still
+   revealed on hover (and on keyboard focus, which opacity-only hid before). */
+.shop-card-cta-slot {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-top: 0;
+  opacity: 0;
+  transition:
+    grid-template-rows 300ms cubic-bezier(0.16, 1, 0.3, 1),
+    margin-top 300ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 200ms ease;
+}
+.shop-card-cta-slot > * {
+  min-height: 0;
+  overflow: hidden;
+}
+.shop-card-cta-inner {
+  min-height: 0;
+}
+.shop-card:hover .shop-card-cta-slot,
+.shop-card:focus-within .shop-card-cta-slot {
+  grid-template-rows: 1fr;
+  margin-top: 12px;
+  opacity: 1;
+}
+/* Touch devices have no hover: keep the CTA permanently visible so the card
+   is usable and the space it needs is never phantom padding. */
+@media (hover: none) {
+  .shop-card-cta-slot {
+    grid-template-rows: 1fr;
+    margin-top: 12px;
+    opacity: 1;
+  }
 }
 
 /* Add-to-Cart CTA — matches AddToCartButton but styled to the reference pill */

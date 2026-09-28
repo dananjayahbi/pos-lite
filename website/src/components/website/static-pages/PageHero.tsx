@@ -3,6 +3,7 @@
 import React from 'react';
 import { useParallaxEngine } from '@/hooks/useParallaxEngine';
 import { useRevealOnScroll } from '@/hooks/useRevealOnScroll';
+import { HeroBottomFade } from './HeroBottomFade';
 
 /**
  * Shared parallax hero for CMS static pages (About, Contact).
@@ -33,7 +34,7 @@ export function PageHero({
 
   return (
     <section
-      className="relative pt-[112px] border-b border-white/5 overflow-hidden"
+      className="relative pt-[112px] border-0 overflow-hidden"
       style={
         heroImageUrl
           ? {
@@ -55,6 +56,9 @@ export function PageHero({
       )}
       {/* Readability vignette */}
       <div className="about-hero-vignette" />
+
+      {/* Dissolve the hero's bottom edge into the page colour (see HeroBottomFade) */}
+      <HeroBottomFade />
 
       <div
         ref={contentRef}

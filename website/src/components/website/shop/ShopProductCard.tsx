@@ -64,8 +64,13 @@ export function ShopProductCard({ product, tenantSlug }: ShopProductCardProps) {
         <p className="shop-card-price">{formatLKR(price)}</p>
       </Link>
 
-      <div className="mt-3">
-        <div className="opacity-0 transition-opacity group-hover:opacity-100">
+      {/* Collapsed slot for the hover-revealed CTA. The inner wrapper is what
+          actually collapses to 0 height — animating `grid-template-rows` on a
+          wrapper whose only child is the button leaves the button's own height
+          as the row size, so the slot never collapses and leaves a dead band
+          under the price. */}
+      <div className="shop-card-cta-slot">
+        <div className="shop-card-cta-inner">
           <AddToCartButton
             tenantSlug={tenantSlug}
             variant={variant}
@@ -75,10 +80,10 @@ export function ShopProductCard({ product, tenantSlug }: ShopProductCardProps) {
             className="shop-card-cta"
             hideIcon
           />
+          {!inStock && (
+            <p className="mt-1 text-center text-[11px] text-red-400">Out of stock</p>
+          )}
         </div>
-        {!inStock && (
-          <p className="mt-1 text-center text-[11px] text-red-400">Out of stock</p>
-        )}
       </div>
     </article>
   );
