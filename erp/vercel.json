@@ -1,13 +1,14 @@
 {
   "framework": "nextjs",
+  "_comment_crons": "Cron schedules are kept here at a DAILY cadence so a committed vercel.json can never block a deploy on Vercel's Hobby plan (which rejects any cron that fires more than once per day, at build time). Both routes are fail-closed on `Authorization: Bearer $CRON_SECRET` - without that env var set in production every tick 401s. Neither route is part of the PayHere flow. To run them more often, upgrade to Pro or set the schedules in the Vercel dashboard instead of this file.",
   "crons": [
     {
       "path": "/api/cron/appointment-reminders",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 9 * * *"
     },
     {
       "path": "/api/cron/webhook-retries",
-      "schedule": "*/5 * * * *"
-    }
+      "schedule": "0 9 * * *"
+    } 
   ]
 }
