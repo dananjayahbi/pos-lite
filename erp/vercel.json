@@ -9,6 +9,6 @@
     {
       "path": "/api/cron/webhook-retries",
       "schedule": "0 9 * * *"
-    }
+    } 
   ]
 }

@@ -35,9 +35,6 @@ yarn-error.log*
 # ...but the template IS committed (it holds placeholders, never real secrets).
 !.env.example
 
-# vercel
-.vercel
-
 # typescript
 *.tsbuildinfo
 next-env.d.ts
