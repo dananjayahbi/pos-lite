@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation';
 import type { WebsiteConfigData } from '@/types/website.types';
 import { tenantHomePath } from '@/lib/tenant';
 import { buildHeaderNav, resolveNavHref, isNavActive } from '@/lib/navigation';
+import { useHeaderScrollState } from '@/hooks/useHeaderScrollState';
 import { CartIcon } from '@/components/website/cart/CartIcon';
 import { HeaderNavLink } from './HeaderNavLink';
 
@@ -25,21 +26,17 @@ interface WebsiteHeaderProps {
  * Gets a frosted `.glass-nav` + shrink effect when scrolled past 40px.
  */
 export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
-  const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
+
+  // `announcementOffset` is the part of the announcement bar still on screen,
+  // so the header tracks it down and takes over the top edge once it is gone.
+  // `condensed` is the shrink + frosted-glass treatment.
+  const { announcementOffset, condensed } = useHeaderScrollState();
 
   const logoUrl = config.logoUrl;
   const siteName = config.siteName || 'Wedagedara';
   const homeHref = tenantHomePath(tenantSlug);
-
-  // Track scroll to apply the glass + shrink header.
-  React.useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 40);
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll();
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
 
   // Lock body scroll when the mobile drawer is open.
   React.useEffect(() => {
@@ -62,9 +59,9 @@ export function WebsiteHeader({ config, tenantSlug }: WebsiteHeaderProps) {
     <>
       <header
         id="main-header"
-        style={{ top: 'var(--announcement-bar-height, 0px)' }}
-        className={`fixed top-0 left-0 right-0 z-40 transition-all duration-300 px-6 sm:px-10 lg:px-16 py-5 ${
-          scrolled ? 'glass-nav py-3.5 shadow-2xl' : ''
+        style={{ top: announcementOffset }}
+        className={`fixed left-0 right-0 z-40 transition-all duration-300 px-6 sm:px-10 lg:px-16 py-5 ${
+          condensed ? 'glass-nav py-3.5 shadow-2xl' : ''
         }`}
       >
         <div className="max-w-7xl mx-auto flex items-center justify-between">

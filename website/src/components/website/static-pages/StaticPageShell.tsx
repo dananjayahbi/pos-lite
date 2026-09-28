@@ -2,6 +2,7 @@ import React from 'react';
 import { AnnouncementBar } from '../sections/AnnouncementBar';
 import { WebsiteHeader } from '../sections/WebsiteHeader';
 import { WebsiteFooter } from '../sections/WebsiteFooter';
+import { CartDrawerHost } from '../cart/CartDrawerHost';
 import { PageHero } from './PageHero';
 import type { WebsiteConfigData } from '@/types/website.types';
 
@@ -69,6 +70,12 @@ export function StaticPageShell({
         websiteConfig={websiteConfig}
         tenantSlug={tenantSlug}
       />
+
+      {/* Cart drawer. <WebsiteHeader> renders the cart button, which only
+          flips `drawerTenant` in the store — the panel itself has to be
+          mounted somewhere. Without this host the button is a no-op on every
+          page built on this shell (/shop, /about, /contact, /appointments). */}
+      <CartDrawerHost tenantSlug={tenantSlug} />
     </div>
   );
 }
