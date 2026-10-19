@@ -41,6 +41,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { buildBridgeAuthHeaders } from '@/lib/internal-bridge-headers';
+import { clearSessionCookies } from '@/lib/session-cookies';
 
 // ── In-memory caches ───────────────────────────────────────────────────────
 // Only the (harmless, additive) tenant-slug existence cache lives here; the
@@ -134,12 +135,9 @@ function isSuspensionBypassPath(pathname: string): boolean {
   );
 }
 
-function clearSessionCookies(response: NextResponse): void {
-  response.cookies.delete('authjs.session-token');
-  response.cookies.delete('__Secure-authjs.session-token');
-  response.cookies.delete('next-auth.session-token');
-  response.cookies.delete('__Secure-next-auth.session-token');
-}
+// Session-cookie expiry lives in @/lib/session-cookies: the string-form
+// `cookies.delete(name)` emitted no `Secure` attribute, so browsers discarded
+// the `__Secure-` deletion and a denied request looped /login ⇄ /dashboard.
 
 async function middlewareApi(
   request: NextRequest,
