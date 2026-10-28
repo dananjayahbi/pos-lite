@@ -52,12 +52,16 @@ you see is determined by *which account you sign in with*.
 | Returns | `/returns` |
 | Factory (FACTORY_MANAGER) | `/factory` |
 | Appointments | `/appointments` |
-| Reports | `/reports` |
+| Reports (hub) | `/reports` |
 | Staff | `/staff` |
-| Settings | `/settings` |
+| Settings (hub) | `/settings` |
 | **Website CMS** | `/settings/website` |
 | Billing | `/billing` |
 | **Super Admin** (SUPER_ADMIN only) | `/superadmin/dashboard` |
+
+> `/reports` and `/settings` are permission-filtered hubs that list only the
+> sections the signed-in role may open. A CASHIER sees just *My Account* under
+> `/settings` and is redirected to `/pos` from `/reports`.
 
 > Signing in as `owner@dilani-ayurwellness.lk` puts you in **Ayur Wellness Centre**;
 > signing in as `owner@lanka-electronics.lk` puts you in **Lanka Electronics** — same

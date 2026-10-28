@@ -16,6 +16,12 @@ const nextConfig: NextConfig = {
     '192.168.1.92',
   ],
   images: {
+    // Local dev on this machine resolves public hosts (pub-*.r2.dev, res.cloudinary.com)
+    // through a DNS proxy that answers with private-range IPs (198.18.x.x / fc00::5).
+    // Next 16 refuses upstream images resolving to private IPs, which broke every
+    // remote product/staff image with a 400. The host allowlist below still gates
+    // which upstreams may be optimized.
+    dangerouslyAllowLocalIP: process.env.NODE_ENV === "development",
     remotePatterns: [
       {
         protocol: "https",
