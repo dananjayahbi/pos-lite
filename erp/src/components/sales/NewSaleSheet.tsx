@@ -9,6 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { formatRupee } from '@/lib/format';
+import { toYMD } from '@/lib/date-range';
+import { CustomerPicker, type PickedCustomer } from '@/components/sales/CustomerPicker';
+import { saleQueryKey } from '@/components/sales/saleQueryKey';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -59,6 +62,9 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
   const [cashReceived, setCashReceived] = useState('');
   const [cardRef, setCardRef] = useState('');
   const [cardAmount, setCardAmount] = useState('');
+  const [customer, setCustomer] = useState<PickedCustomer | null>(null);
+  const [saleDate, setSaleDate] = useState(() => toYMD(new Date()));
+  const [deliveryCharge, setDeliveryCharge] = useState('');
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -98,7 +104,8 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
     return sum + item.unitPrice * item.quantity * (1 - item.discountPercent / 100);
   }, 0);
   const discountAmt = Math.min(parseFloat(cartDiscount) || 0, cartSubtotal);
-  const total = cartSubtotal - discountAmt;
+  const deliveryAmt = Math.max(parseFloat(deliveryCharge) || 0, 0);
+  const total = cartSubtotal - discountAmt + deliveryAmt;
 
   const addVariant = useCallback((product: Product, variant: ProductVariant) => {
     const desc = [variant.form, variant.packSize].filter(Boolean).join(' / ') || 'Default';
@@ -136,7 +143,23 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
         })),
         cartDiscountAmount: discountAmt,
         paymentMethod,
+        deliveryCharge: deliveryAmt,
       };
+      // Guest / walk-in sales send no customerId and flag themselves explicitly
+      // so the POS-requires-a-customer guard is relaxed on purpose.
+      if (customer) {
+        body.customerId = customer.id;
+      } else {
+        body.isGuestSale = true;
+      }
+      // The date input is `yyyy-mm-dd`; pin it to local noon so a backdated
+      // entry can never drift into the previous day via a UTC shift.
+      if (saleDate) {
+        const parsedDate = new Date(`${saleDate}T12:00:00`);
+        if (!Number.isNaN(parsedDate.getTime())) {
+          body.saleDate = parsedDate.toISOString();
+        }
+      }
       if (paymentMethod === 'CASH') {
         body.cashReceived = parseFloat(cashReceived);
       }
@@ -160,7 +183,9 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
     },
     onSuccess: () => {
       toast.success('Sale recorded successfully');
-      void qc.invalidateQueries({ queryKey: ['sales'] });
+      // `saleQueryKey()` is the same prefix SaleHistoryTable reads, so the list
+      // refetches in place — no manual reload, no stale row.
+      void qc.invalidateQueries({ queryKey: saleQueryKey() });
       onSuccess?.();
       resetForm();
       onOpenChange(false);
@@ -178,6 +203,9 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
     setCashReceived('');
     setCardRef('');
     setCardAmount('');
+    setCustomer(null);
+    setSaleDate(toYMD(new Date()));
+    setDeliveryCharge('');
   }
 
   const cashNum = parseFloat(cashReceived) || 0;
@@ -209,6 +237,50 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
         </SheetHeader>
 
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+          {/* Customer (or guest / walk-in) + selling date */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <CustomerPicker
+              value={customer}
+              onChange={setCustomer}
+              disabled={isPending}
+              className="sm:col-span-2"
+            />
+            <div>
+              <Label
+                htmlFor="sale-date"
+                className="text-espresso mb-1.5 block text-xs font-semibold"
+              >
+                Selling Date
+              </Label>
+              <Input
+                id="sale-date"
+                type="date"
+                value={saleDate}
+                max={toYMD(new Date())}
+                onChange={(e) => setSaleDate(e.target.value)}
+                disabled={isPending}
+              />
+            </div>
+            <div>
+              <Label
+                htmlFor="delivery-charge"
+                className="text-espresso mb-1.5 block text-xs font-semibold"
+              >
+                Delivery Charge (LKR)
+              </Label>
+              <Input
+                id="delivery-charge"
+                type="number"
+                min="0"
+                step="1"
+                value={deliveryCharge}
+                onChange={(e) => setDeliveryCharge(e.target.value)}
+                placeholder="0"
+                disabled={isPending}
+              />
+            </div>
+          </div>
+
           {/* Product search */}
           <div className="relative" ref={dropdownRef}>
             <Label
@@ -360,6 +432,12 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                   <dt className="text-sand">Subtotal</dt>
                   <dd className="text-espresso font-medium">{formatRupee(cartSubtotal)}</dd>
                 </div>
+                {deliveryAmt > 0 && (
+                  <div className="flex justify-between px-3 py-1.5">
+                    <dt className="text-sand">Delivery</dt>
+                    <dd className="text-espresso font-medium">{formatRupee(deliveryAmt)}</dd>
+                  </div>
+                )}
                 {discountAmt > 0 && (
                   <div className="text-terracotta flex justify-between px-3 py-1.5">
                     <dt>Discount</dt>

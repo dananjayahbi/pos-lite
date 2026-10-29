@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { CheckCircle2, Loader2, Printer, Plus, Send } from 'lucide-react';
-import { toast } from 'sonner';
+import { useCallback } from 'react';
+import { CheckCircle2, Printer, Plus } from 'lucide-react';
 import Decimal from 'decimal.js';
 import { formatRupee } from '@/lib/format';
 import {
@@ -12,7 +11,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import type { CompletedSale } from '@/types/pos.types';
 
 interface ReceiptPreviewDialogProps {
@@ -23,8 +21,6 @@ interface ReceiptPreviewDialogProps {
   changeAmount: Decimal | null;
 }
 
-type WhatsAppStatus = 'idle' | 'loading' | 'sent' | 'error';
-
 export function ReceiptPreviewDialog({
   open,
   onClose,
@@ -32,55 +28,6 @@ export function ReceiptPreviewDialog({
   completedSale,
   changeAmount,
 }: ReceiptPreviewDialogProps) {
-  const [phone, setPhone] = useState('');
-  const [waStatus, setWaStatus] = useState<WhatsAppStatus>('idle');
-  const [waError, setWaError] = useState('');
-  const sentTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  // Reset whatsapp state when dialog closes
-  useEffect(() => {
-    if (!open) {
-      setPhone('');
-      setWaStatus('idle');
-      setWaError('');
-      if (sentTimerRef.current !== undefined) {
-        clearTimeout(sentTimerRef.current);
-        sentTimerRef.current = undefined;
-      }
-    }
-  }, [open]);
-
-  const handleSendWhatsApp = useCallback(async () => {
-    if (!completedSale || !phone.trim()) return;
-
-    setWaStatus('loading');
-    setWaError('');
-
-    try {
-      const res = await fetch(`/api/store/sales/${completedSale.id}/send-receipt`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber: phone.trim() }),
-      });
-
-      const json = await res.json();
-
-      if (json.success) {
-        setWaStatus('sent');
-        sentTimerRef.current = setTimeout(() => {
-          setWaStatus('idle');
-          sentTimerRef.current = undefined;
-        }, 3000);
-      } else {
-        setWaStatus('error');
-        setWaError(json.error?.message ?? 'Failed to send WhatsApp receipt');
-      }
-    } catch {
-      setWaStatus('error');
-      setWaError('Network error — please try again');
-    }
-  }, [completedSale, phone]);
-
   const handlePrint = useCallback(() => {
     if (!completedSale) return;
     window.open(`/api/store/sales/${completedSale.id}/receipt`, '_blank', 'noopener');
@@ -140,45 +87,6 @@ export function ReceiptPreviewDialog({
               >
                 {formatRupee(changeAmount.toNumber())}
               </span>
-            </div>
-          )}
-        </div>
-
-        {/* WhatsApp section */}
-        <div className="space-y-2 pt-2">
-          <span className="font-body text-sm text-mist">Send Receipt via WhatsApp</span>
-          <div className="flex gap-2">
-            <Input
-              type="tel"
-              placeholder="e.g. 077 123 4567"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="flex-1 font-mono"
-              disabled={waStatus === 'loading' || waStatus === 'sent'}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-terracotta border-terracotta hover:bg-terracotta/10 shrink-0"
-              onClick={handleSendWhatsApp}
-              disabled={!phone.trim() || waStatus === 'loading' || waStatus === 'sent'}
-            >
-              {waStatus === 'loading' && <Loader2 className="h-4 w-4 animate-spin" />}
-              {waStatus === 'sent' && 'Sent ✓'}
-              {waStatus === 'idle' && <><Send className="h-4 w-4 mr-1" /> Send</>}
-              {waStatus === 'error' && <><Send className="h-4 w-4 mr-1" /> Send</>}
-            </Button>
-          </div>
-          {waStatus === 'error' && (
-            <div className="bg-[#9B2226]/10 text-[#9B2226] rounded-md px-3 py-2 text-xs font-body flex items-center justify-between">
-              <span>{waError}</span>
-              <button
-                type="button"
-                onClick={handleSendWhatsApp}
-                className="underline text-xs font-bold ml-2 shrink-0"
-              >
-                Retry
-              </button>
             </div>
           )}
         </div>

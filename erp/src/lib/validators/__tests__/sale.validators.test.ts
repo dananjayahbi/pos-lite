@@ -30,6 +30,121 @@ describe('CreateSaleSchema — mandatory customer (doc 32)', () => {
     }
   });
 
+  it('accepts an explicit guest (walk-in) sale with no customerId', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'CASH',
+      cashReceived: 100,
+      isGuestSale: true,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('rejects a guest sale that tries to redeem store credit', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'CASH',
+      cashReceived: 100,
+      isGuestSale: true,
+      appliedStoreCredit: '25',
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((i) => i.path.includes('appliedStoreCredit'))).toBe(true);
+    }
+  });
+
+  it('accepts an optional deliveryCharge and an explicit saleDate', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'CASH',
+      cashReceived: 300,
+      customerId: 'cust-1',
+      deliveryCharge: 250,
+      saleDate: '2026-01-15T12:00:00.000Z',
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.deliveryCharge).toBe(250);
+      expect(parsed.data.saleDate).toBeInstanceOf(Date);
+    }
+  });
+
+  it('defaults deliveryCharge to 0 so POS totals are unchanged', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'CASH',
+      cashReceived: 100,
+      customerId: 'cust-1',
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.deliveryCharge).toBe(0);
+  });
+
+  it('rejects a negative deliveryCharge', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'CASH',
+      cashReceived: 100,
+      customerId: 'cust-1',
+      deliveryCharge: -5,
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('rejects a saleDate far in the future', () => {
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'CASH',
+      cashReceived: 100,
+      customerId: 'cust-1',
+      saleDate: future,
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((i) => i.path.includes('saleDate'))).toBe(true);
+    }
+  });
+
+  it('rejects an absurdly old saleDate', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'CASH',
+      cashReceived: 100,
+      customerId: 'cust-1',
+      saleDate: '1900-01-01T00:00:00.000Z',
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('rejects an unparseable saleDate', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'CASH',
+      cashReceived: 100,
+      customerId: 'cust-1',
+      saleDate: 'not-a-date',
+    });
+    expect(parsed.success).toBe(false);
+  });
+
   it('accepts a management sale without a shiftId', () => {
     const parsed = CreateSaleSchema.safeParse({
       lines: baseLine,

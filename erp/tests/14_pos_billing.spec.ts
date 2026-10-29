@@ -155,19 +155,29 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
     await page.goto(`${BASE_URL}/pos`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByPlaceholder(/search products, sku, barcode/i)).toBeVisible({ timeout: 45_000 });
     await expect(page.getByPlaceholder('Link customer...')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Walk-in Customer' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add Customer' })).toBeVisible();
   });
 
   test('F1 rejects malformed checkout payloads and missing mandatory customer', async ({ page }) => {
     await login(page);
     const missingLines = await createSale(page, { shiftId: state.shiftId, paymentMethod: 'CASH', cashReceived: 100 });
     expect(missingLines.response.status()).toBe(400);
+    // A POS sale still requires a customer unless the operator explicitly
+    // records a walk-in/guest sale — the invariant is preserved.
     const missingCustomer = await createSale(page, {
       shiftId: state.shiftId, lines: [{ variantId: state.variant.id, quantity: 1 }],
       paymentMethod: 'CASH', cashReceived: 100,
     });
     expect(missingCustomer.response.status()).toBe(400);
     expect(JSON.stringify(missingCustomer.body)).toMatch(/customer/i);
+    // …but an explicit guest sale is accepted with no customerId at all.
+    const guestSale = await createSale(page, {
+      shiftId: state.shiftId, lines: [{ variantId: state.variant.id, quantity: 1 }],
+      paymentMethod: 'CASH', cashReceived: 100, isGuestSale: true,
+    });
+    expect(guestSale.response.status()).toBe(201);
+    expect(guestSale.sale?.customerId ?? null).toBeNull();
+    if (guestSale.sale?.id) state.saleIds.push(guestSale.sale.id);
   });
 
   test('F2 completes a cash checkout and persists customer, payment, tax, and sale line data', async ({ page }) => {

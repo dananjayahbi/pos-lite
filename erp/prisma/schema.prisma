@@ -1057,6 +1057,13 @@ model Sale {
   discountAmount        Decimal        @default(0) @db.Decimal(12, 2)
   taxAmount             Decimal        @db.Decimal(12, 2)
   totalAmount           Decimal        @db.Decimal(12, 2)
+  // Accounting date of the sale (backdated / missed sales). Nullable on
+  // purpose: rows created before this column fall back to createdAt, so no
+  // destructive backfill is needed and existing rows stay truthful.
+  saleDate              DateTime?
+  // Optional delivery charge, already folded into totalAmount. Defaults to 0
+  // so every POS sale (which never sends it) keeps its previous totals.
+  deliveryCharge        Decimal        @default(0) @db.Decimal(12, 2)
   changeGiven           Decimal?       @db.Decimal(12, 2)
   authorizingManagerId  String?
   authorizingManager    User?          @relation("SaleAuthorizingManager", fields: [authorizingManagerId], references: [id])

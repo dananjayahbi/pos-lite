@@ -7,6 +7,47 @@ const CreateSaleLineSchema = z.object({
   discountPercent: z.number().min(0).max(100).default(0),
 });
 
+/**
+ * Backdated sales are a management/back-office capability, so the window is
+ * deliberately generous (10 years back covers any plausible missed entry) but
+ * bounded — a typo like `0202-01-01` must not silently become a sale.
+ */
+const MAX_BACKDATE_YEARS = 10;
+/** Allow "today" from any timezone, nothing further ahead. */
+const MAX_FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
+
+export function parseSaleDate(raw: string): Date | null {
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
+ * Shared shape for the editable sale date. Accepts an ISO string or a
+ * `yyyy-mm-dd` value from `<input type="date">` (both parse through `Date`)
+ * and always yields a `Date`, so callers never persist a string.
+ */
+export const SaleDateSchema = z
+  .union([z.string().min(1), z.date()])
+  .superRefine((value, ctx) => {
+    const parsed = value instanceof Date ? value : parseSaleDate(value);
+    if (!parsed || Number.isNaN(parsed.getTime())) {
+      ctx.addIssue({ code: 'custom', message: 'saleDate must be a valid date' });
+      return;
+    }
+    if (parsed.getTime() > Date.now() + MAX_FUTURE_SKEW_MS) {
+      ctx.addIssue({ code: 'custom', message: 'saleDate cannot be in the future' });
+      return;
+    }
+    if (parsed.getTime() < Date.now() - MAX_BACKDATE_YEARS * 365 * 24 * 60 * 60 * 1000) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `saleDate cannot be more than ${MAX_BACKDATE_YEARS} years in the past`,
+      });
+    }
+  })
+  // Only reached when the checks above passed, so the value is a valid Date.
+  .transform((value) => (value instanceof Date ? value : parseSaleDate(value)) as Date);
+
 export const CreateSaleSchema = z
   .object({
     shiftId: z.string().min(1).optional(),
@@ -19,9 +60,17 @@ export const CreateSaleSchema = z
     cardAmount: z.number().positive().optional(),
     splitLegMethod: z.enum(['CARD', 'LANKAQR']).optional(),
     customerId: z.string().min(1).optional(),
+    // Walk-in mode: a POS sale may be completed with no customer identity at
+    // all ("just put the bill"). Only meaningful when customerId is absent.
+    isGuestSale: z.boolean().optional(),
     appliedStoreCredit: z.string().optional().default('0'),
     appliedPromotions: z.any().optional(),
     promoCode: z.string().max(50).optional(),
+    // Backdated / missed-entry sales carry their own accounting date.
+    saleDate: SaleDateSchema.optional(),
+    // Delivery charge is folded into the sale total; it is optional so the POS
+    // terminal (which never sends it) keeps producing identical totals.
+    deliveryCharge: z.number().min(0).default(0),
     // Doc 33 / 34: zero-value reason + original order reference for replacements.
     zeroValueReason: z.nativeEnum(ZeroValueReason).optional(),
     zeroValueLinkedOrderRef: z.string().trim().min(1).max(64).optional(),
@@ -69,14 +118,27 @@ export const CreateSaleSchema = z
         });
       }
     }
-    // POS sales must be linked to a customer. Shiftless sales are created from
-    // the owner/manager sales page, where a customer may be intentionally omitted.
-    if (data.shiftId && !data.customerId) {
+    // POS sales must be linked to a customer, UNLESS the operator explicitly
+    // recorded a walk-in/guest sale (`isGuestSale: true`). Shiftless sales are
+    // created from the owner/manager sales page, where a customer may be
+    // intentionally omitted.
+    if (data.shiftId && !data.customerId && !data.isGuestSale) {
       ctx.addIssue({
         code: 'custom',
         path: ['customerId'],
         message: 'A customer must be linked to finalize a POS sale',
       });
+    }
+    // Store credit is customer-scoped: a guest sale must never redeem it.
+    if (data.isGuestSale && !data.customerId) {
+      const credit = Number.parseFloat(data.appliedStoreCredit ?? '0');
+      if (Number.isFinite(credit) && credit > 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['appliedStoreCredit'],
+          message: 'Store credit cannot be applied to a guest sale — link a customer first',
+        });
+      }
     }
     // Doc 34: a replacement must point at an original order reference.
     // M14-04 (req 3.11 / D14 = BOTH): and must carry the defective item barcode.
@@ -99,6 +161,32 @@ export const CreateSaleSchema = z
   });
 
 export type CreateSaleInput = z.infer<typeof CreateSaleSchema>;
+
+// ── Update Sale (amend mutable details only) ─────────────────────────────────
+
+/**
+ * Only financially-inert fields are amendable after a sale is COMPLETED.
+ * Line items, prices, discounts and payment legs are immutable by design —
+ * corrections to those go through returns/voids, which restore stock and
+ * produce an audit trail.
+ */
+export const UpdateSaleSchema = z
+  .object({
+    // `null` explicitly means "make this a walk-in/guest sale".
+    customerId: z.string().min(1).nullable().optional(),
+    // `null` clears an override and falls back to the stored sale date.
+    saleDate: SaleDateSchema.nullable().optional(),
+    deliveryCharge: z.number().min(0).max(1_000_000).optional(),
+  })
+  .refine(
+    (data) =>
+      data.customerId !== undefined ||
+      data.saleDate !== undefined ||
+      data.deliveryCharge !== undefined,
+    { error: 'At least one of customerId, saleDate or deliveryCharge must be provided' },
+  );
+
+export type UpdateSaleInput = z.infer<typeof UpdateSaleSchema>;
 
 // ── Hold Sale ────────────────────────────────────────────────────────────────
 

@@ -18,7 +18,7 @@ import { CardPaymentModal } from '@/components/pos/CardPaymentModal';
 import { SplitPaymentModal } from '@/components/pos/SplitPaymentModal';
 import { LankaQRPaymentModal } from '@/components/pos/LankaQRPaymentModal';
 import { ZeroValuePaymentModal } from '@/components/pos/ZeroValuePaymentModal';
-import { WalkInCustomerForm } from '@/components/pos/WalkInCustomerForm';
+import { AddCustomerDialog } from '@/components/pos/AddCustomerDialog';
 import { ReceiptPreviewDialog } from '@/components/pos/ReceiptPreviewDialog';
 import type { CreateSalePayload, CompletedSale } from '@/types/pos.types';
 import { CustomerSearchDropdown } from '@/components/customers/CustomerSearchDropdown';
@@ -66,7 +66,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
   const [retrieveOpen, setRetrieveOpen] = useState(false);
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card' | 'split' | 'lankaqr' | null>(null);
   const [paymentPopoverOpen, setPaymentPopoverOpen] = useState(false);
-  const [walkInOpen, setWalkInOpen] = useState(false);
+  const [addCustomerOpen, setAddCustomerOpen] = useState(false);
   const [zeroValueOpen, setZeroValueOpen] = useState(false);
   const [completedSale, setCompletedSale] = useState<CompletedSale | null>(null);
   const [changeAmount, setChangeAmount] = useState<Decimal | null>(null);
@@ -89,9 +89,12 @@ export function CartPanel({ shiftId }: CartPanelProps) {
   const heldCount = heldSalesData?.total ?? 0;
 
   const hasItems = items.length > 0;
-  // Mandatory customer gate (doc 32): a finalized POS sale needs a linked
-  // customer that carries both a name and a mobile number.
-  const hasValidCustomer = !!linkedCustomerId && !!linkedCustomerPhone;
+  // Guest-by-default (task "Walk-In customer issue"): a POS sale no longer
+  // requires a customer. An unlinked cart is a guest sale — the cashier can
+  // optionally attribute it by picking an existing customer or adding one.
+  // A linked customer must still carry a phone, otherwise it is not usable.
+  const isGuestSale = !linkedCustomerId;
+  const hasValidCustomer = isGuestSale || !!linkedCustomerPhone;
   const totalDiscount = discountEffective.toNumber();
   const appliedCreditDec = new Decimal(appliedStoreCredit);
   const promoDiscountDec = new Decimal(totalPromotionDiscount);
@@ -123,7 +126,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
     cartDiscountAmount: discountEffective.toNumber(),
     ...(authorizingManagerId ? { authorizingManagerId } : {}),
     ...(authorizingManagerId ? { authorizingManagerId } : {}),
-    ...(linkedCustomerId ? { customerId: linkedCustomerId } : {}),
+    ...(linkedCustomerId ? { customerId: linkedCustomerId } : { isGuestSale: true }),
     ...(appliedCreditDec.greaterThan(0) ? { appliedStoreCredit } : {}),
     ...(appliedPromotions.length > 0 ? { appliedPromotions } : {}),
     ...(appliedPromoCode ? { promoCode: appliedPromoCode } : {}),
@@ -135,12 +138,16 @@ export function CartPanel({ shiftId }: CartPanelProps) {
     setChangeAmount(change);
     setPaymentMode(null);
     setReceiptOpen(true);
+    // Clear the cart as soon as the sale is committed rather than only on the
+    // explicit "New Sale" button. The receipt dialog can be dismissed any other
+    // way (X, backdrop, Esc) and the cashier may navigate straight back to the
+    // grid — without this the sold items stay in the cart and get charged twice.
+    clearCart();
+    clearCartSnapshot('ayurpos_cart_default').catch(() => {});
     toast.success(`Sale completed — ${formatRupee(sale.totalAmount)}`);
   };
 
   const handleNewSale = () => {
-    clearCart();
-    clearCartSnapshot('ayurpos_cart_default').catch(() => {});
     setReceiptOpen(false);
     setCompletedSale(null);
     setChangeAmount(null);
@@ -218,12 +225,15 @@ export function CartPanel({ shiftId }: CartPanelProps) {
             />
             <button
               type="button"
-              onClick={() => setWalkInOpen(true)}
+              onClick={() => setAddCustomerOpen(true)}
               className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-sand px-3 py-1.5 font-body text-xs text-sand hover:text-espresso hover:border-terracotta transition-colors"
             >
               <UserPlus className="h-3.5 w-3.5" />
-              Walk-in Customer
+              Add Customer
             </button>
+            <p className="text-center font-body text-[11px] text-mist">
+              No customer selected — this will be billed as a guest sale.
+            </p>
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -388,9 +398,10 @@ export function CartPanel({ shiftId }: CartPanelProps) {
 
           {/* Action buttons */}
           <div className="px-4 pb-4 space-y-2">
-            {hasItems && !hasValidCustomer && (
+            {hasItems && !isGuestSale && !hasValidCustomer && (
               <p className="rounded-md bg-[#FCE9E8] px-3 py-2 text-center font-body text-xs text-[#9B2226]">
-                Select or create a customer to finalize the sale.
+                The linked customer has no mobile number — unlink them to bill as
+                a guest, or add a new customer.
               </p>
             )}
             <HoldSaleButton shiftId={shiftId} />
@@ -507,11 +518,11 @@ export function CartPanel({ shiftId }: CartPanelProps) {
         totalAmount={amountDue}
         salePayload={salePayload}
       />
-      <WalkInCustomerForm
-        open={walkInOpen}
-        onOpenChange={setWalkInOpen}
+      <AddCustomerDialog
+        open={addCustomerOpen}
+        onOpenChange={setAddCustomerOpen}
         onLinked={(c) => {
-          setWalkInOpen(false);
+          setAddCustomerOpen(false);
           linkCustomer(c.id, c.name, c.phone, c.creditBalance);
         }}
       />

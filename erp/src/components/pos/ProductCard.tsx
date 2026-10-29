@@ -20,7 +20,10 @@ export function ProductCard({
   const variants = product.variants ?? [];
   const totalStock = variants.reduce((sum, v) => sum + v.stockQuantity, 0);
 
-  const firstImage = variants.find((v) => v.imageUrls.length > 0)?.imageUrls[0];
+  // Product-level image takes precedence; variant images are only a fallback.
+  const firstImage =
+    product.mainImageUrl ??
+    variants.find((v) => v.imageUrls.length > 0)?.imageUrls[0];
 
   // Any variant with an expired or near-expiry batch triggers the badge.
   const hasNearExpiry = variants.some((v) =>

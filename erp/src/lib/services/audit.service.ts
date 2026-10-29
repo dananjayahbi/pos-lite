@@ -49,6 +49,9 @@ export const AUDIT_ACTIONS = {
   SALE_COMPLETED: 'SALE_COMPLETED',
   SALE_ZERO_VALUE_COMPLETED: 'SALE_ZERO_VALUE_COMPLETED',
   SALE_VOIDED: 'SALE_VOIDED',
+  // TASK B: amendments to a completed sale's mutable details (customer,
+  // accounting date, delivery charge). Line items/payments are immutable.
+  SALE_DETAILS_UPDATED: 'SALE_DETAILS_UPDATED',
   // Return
   RETURN_COMPLETED: 'RETURN_COMPLETED',
   // Customer

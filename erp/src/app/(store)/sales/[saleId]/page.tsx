@@ -94,8 +94,21 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
           <p className="text-espresso mt-1 truncate text-sm font-medium">{sale.cashier.email}</p>
         </div>
         <div className="border-mist rounded-xl border bg-white px-4 py-3">
+          <p className="text-sand text-xs">Customer</p>
+          {sale.customer ? (
+            <>
+              <p className="text-espresso mt-1 truncate text-sm font-medium">{sale.customer.name}</p>
+              <p className="text-sand font-mono text-xs">{sale.customer.phone}</p>
+            </>
+          ) : (
+            <p className="text-sand mt-1 text-sm font-medium italic">Walk-in / Guest</p>
+          )}
+        </div>
+        <div className="border-mist rounded-xl border bg-white px-4 py-3">
           <p className="text-sand text-xs">Date</p>
-          <p className="text-espresso mt-1 text-sm font-medium">{formatDateTime(sale.createdAt)}</p>
+          <p className="text-espresso mt-1 text-sm font-medium">
+            {formatDateTime(sale.saleDate ?? sale.createdAt)}
+          </p>
         </div>
         <div className="border-mist rounded-xl border bg-white px-4 py-3">
           <p className="text-sand text-xs">Shift</p>
@@ -218,6 +231,14 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
             <div className="flex justify-between px-5 py-2.5">
               <dt className="text-sand">Tax</dt>
               <dd className="text-espresso font-medium">{formatRupee(taxAmount)}</dd>
+            </div>
+          )}
+          {Number(sale.deliveryCharge) > 0 && (
+            <div className="flex justify-between px-5 py-2.5">
+              <dt className="text-sand">Delivery</dt>
+              <dd className="text-espresso font-medium">
+                {formatRupee(Number(sale.deliveryCharge))}
+              </dd>
             </div>
           )}
           <div className="flex justify-between px-5 py-3">

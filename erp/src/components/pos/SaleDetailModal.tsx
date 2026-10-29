@@ -17,10 +17,8 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Printer, MessageCircle } from 'lucide-react';
-import { useState } from 'react';
+import { Printer } from 'lucide-react';
 import { CopyableText } from '@/components/shared/CopyableText';
-import { WhatsAppReceiptSender } from '@/components/pos/WhatsAppReceiptSender';
 
 interface SaleLine {
   id: string;
@@ -72,16 +70,6 @@ export function SaleDetailModal({
   open,
   onOpenChange,
 }: SaleDetailModalProps) {
-  const [showWhatsApp, setShowWhatsApp] = useState(false);
-
-  // Reset the WhatsApp panel when the target sale changes, without an effect.
-  // (React-recommended "adjust state during render" pattern.)
-  const [prevSaleId, setPrevSaleId] = useState<string | null>(null);
-  if (sale && sale.id !== prevSaleId) {
-    setPrevSaleId(sale.id);
-    setShowWhatsApp(false);
-  }
-
   if (!sale) return null;
 
   const shortId = sale.id.slice(0, 8).toUpperCase();
@@ -233,21 +221,7 @@ export function SaleDetailModal({
             <Printer className="h-4 w-4 mr-1" />
             Print Receipt
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowWhatsApp((v) => !v)}
-            disabled={sale.status !== 'COMPLETED'}
-          >
-            <MessageCircle className="h-4 w-4 mr-1" />
-            WhatsApp Receipt
-          </Button>
         </div>
-
-        {/* Inline WhatsApp send field */}
-        {showWhatsApp && (
-          <WhatsAppReceiptSender saleId={sale.id} className="mt-2 pt-2 border-t border-mist/30" />
-        )}
       </DialogContent>
     </Dialog>
   );

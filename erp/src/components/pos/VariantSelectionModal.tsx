@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
 import { X, Minus, Plus, type LucideIcon } from 'lucide-react';
@@ -32,13 +32,16 @@ export function VariantSelectionModal({
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [hoveredVariantId, setHoveredVariantId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const [activeProductId, setActiveProductId] = useState(productId);
   const addItem = useCartStore((s) => s.addItem);
 
-  useEffect(() => {
+  // Adjust state during render when the product changes (avoids an extra effect pass).
+  if (activeProductId !== productId) {
+    setActiveProductId(productId);
     setSelectedVariantId(null);
     setHoveredVariantId(null);
     setQuantity(1);
-  }, [productId]);
+  }
 
   // Search all cached pos-products pages (new server-side pagination uses keyed queries)
   const cachedEntries = queryClient.getQueriesData<{ data: ProductListItem[]; success: boolean }>({
@@ -46,7 +49,7 @@ export function VariantSelectionModal({
   });
   const product =
     cachedEntries.flatMap(([, data]) => data?.data ?? []).find((p) => p.id === productId) ?? null;
-  const variants = product?.variants ?? [];
+  const variants = useMemo(() => product?.variants ?? [], [product]);
 
   const packSizes = useMemo(
     () => [...new Set(variants.map((v) => v.packSize).filter(Boolean))] as string[],
@@ -72,7 +75,8 @@ export function VariantSelectionModal({
   const selectedVariant = variants.find((v) => v.id === selectedVariantId);
   const hoveredVariant = variants.find((v) => v.id === hoveredVariantId);
   const displayVariant = hoveredVariant ?? selectedVariant ?? variants[0];
-  const thumbnail = displayVariant?.imageUrls?.[0];
+  // The selected/hovered variant image wins; otherwise use the product-level image.
+  const thumbnail = displayVariant?.imageUrls?.[0] ?? product?.mainImageUrl ?? null;
 
   const variantDescriptor = selectedVariant
     ? [selectedVariant.form, selectedVariant.packSize].filter(Boolean).join(' / ')

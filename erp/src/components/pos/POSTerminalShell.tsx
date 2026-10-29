@@ -54,6 +54,12 @@ interface POSTerminalShellProps {
   showOwnerDashboardShortcut?: boolean;
   businessName: string;
   businessLogoUrl: string | null;
+  /**
+   * History surfaces (Sale History, Return History) are read-only reviews of
+   * past sales — they have nothing to sell, so the cart column and its
+   * customer-linking section are hidden and the content takes the full width.
+   */
+  showCart?: boolean;
   children: React.ReactNode;
 }
 
@@ -64,6 +70,7 @@ export function POSTerminalShell({
   showOwnerDashboardShortcut = false,
   businessName,
   businessLogoUrl,
+  showCart = true,
   children,
 }: POSTerminalShellProps) {
   const [closeModalOpen, setCloseModalOpen] = useState(false);
@@ -154,16 +161,18 @@ export function POSTerminalShell({
       {/* Main content */}
       <div className="flex flex-1 flex-col md:flex-row overflow-hidden">
         {/* Left panel */}
-        <div className="w-full md:w-[63%] bg-linen overflow-y-auto">
+        <div className={`w-full bg-linen overflow-y-auto ${showCart ? 'md:w-[63%]' : 'md:w-full'}`}>
           {children}
         </div>
 
         {/* Right panel */}
-        <div className="w-full md:w-[37%] bg-pearl overflow-hidden">
-          <ErrorBoundary>
-            <CartPanel shiftId={shiftId} />
-          </ErrorBoundary>
-        </div>
+        {showCart && (
+          <div className="w-full md:w-[37%] bg-pearl overflow-hidden">
+            <ErrorBoundary>
+              <CartPanel shiftId={shiftId} />
+            </ErrorBoundary>
+          </div>
+        )}
       </div>
 
       <ShiftCloseModal
