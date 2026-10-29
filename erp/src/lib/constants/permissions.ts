@@ -143,6 +143,17 @@ export const PERMISSIONS = {
     viewPettyCash: 'petty_cash:view',
     managePettyCash: 'petty_cash:manage',
   },
+  // Ledger-backed money containers (cash drawer, banks, gateways, couriers).
+  // `view` is broad so a cashier can pick a destination account; `transfer`,
+  // `deposit` and `close` move or retire money and stay with OWNER/MANAGER.
+  PAYMENT_ACCOUNT: {
+    viewPaymentAccount: 'payment_account:view',
+    managePaymentAccount: 'payment_account:manage',
+    transferFunds: 'payment_account:transfer',
+    depositFunds: 'payment_account:deposit',
+    closePaymentAccount: 'payment_account:close',
+    settlePurchaseOrder: 'payment_account:po_settle',
+  },
   BILLING: {
     viewBilling: 'billing:view',
     manageBilling: 'billing:manage',
@@ -270,6 +281,9 @@ export const ROLE_PERMISSIONS: Record<AssignableRole, PermissionKey[]> = {
     PERMISSIONS.APPOINTMENT.viewAppointment,
     PERMISSIONS.APPOINTMENT.createAppointment,
     PERMISSIONS.APPOINTMENT.checkInAppointment,
+    // Cashiers pick which account a POS payment lands in (default: Cash), but
+    // cannot create, transfer from, deposit into, or close accounts.
+    PERMISSIONS.PAYMENT_ACCOUNT.viewPaymentAccount,
   ],
   STOCK_CLERK: [
     PERMISSIONS.PRODUCT.viewProduct,
@@ -282,6 +296,7 @@ export const ROLE_PERMISSIONS: Record<AssignableRole, PermissionKey[]> = {
     PERMISSIONS.SUPPLIER.viewSupplier,
     PERMISSIONS.BATCH.viewBatch,
     PERMISSIONS.BATCH.viewBatchStats,
+    PERMISSIONS.PAYMENT_ACCOUNT.viewPaymentAccount,
   ],
   DISPATCH_STAFF: [
     PERMISSIONS.DELIVERY.viewDelivery,

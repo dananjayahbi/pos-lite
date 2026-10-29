@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Archive, Eye, Pencil, Trash2 } from 'lucide-react';
+import { Archive, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RestoreProductButton } from '@/components/inventory/RestoreProductButton';
 
@@ -21,7 +21,12 @@ interface InventoryRowActionsProps {
  * Row-level actions for the inventory table.
  *
  * Modularized so the table itself can stay focused on layout. Renders a fixed
- * order: View → Edit → Archive → Delete, hiding actions the user cannot run.
+ * order: Edit → Archive → Delete, hiding actions the user cannot run.
+ *
+ * There is deliberately no View action: `/inventory/[productId]` and
+ * `/inventory/[productId]?edit=1` open the same screen, so a second eye icon
+ * only duplicated the Edit affordance.
+ *
  * In the "Deleted" view (M02-03) the row is soft-deleted, so the detail/edit
  * routes 404 and archive/delete are meaningless — only Restore is offered
  * (gated on the same `product:archive` permission the restore route requires).
@@ -51,18 +56,6 @@ export function InventoryRowActions({
 
   return (
     <div className="flex items-center gap-1">
-      <Button
-        variant="ghost"
-        size="icon"
-        className={iconButton}
-        asChild
-        aria-label={`View ${productName}`}
-      >
-        <Link href={`/inventory/${productId}`}>
-          <Eye className="h-4 w-4" />
-        </Link>
-      </Button>
-
       <Button
         variant="ghost"
         size="icon"

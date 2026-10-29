@@ -4,7 +4,6 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getPOs, createPO } from '@/lib/services/purchaseOrder.service';
 import { CreatePOSchema } from '@/lib/validators/purchaseOrder.validators';
-import type { CreatePOInput } from '@/lib/validators/purchaseOrder.validators';
 import { POStatus } from '@/generated/prisma/client';
 import { parseQueryInt } from '@/lib/api/query-params';
 import { toErrorResponse } from '@/lib/api/error-envelope';
@@ -96,7 +95,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const po = await createPO(tenantId, session.user.id, parsed.data as CreatePOInput);
+    const po = await createPO(tenantId, session.user.id, {
+      ...parsed.data,
+      ...(parsed.data.discountType !== undefined
+        ? { discountType: parsed.data.discountType }
+        : {}),
+    });
 
     return NextResponse.json({ success: true, data: po }, { status: 201 });
   } catch (error) {
@@ -113,6 +117,20 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message } },
         { status: 400 },
+      );
+    }
+
+    if (message.includes('already in use') || message.includes('not found or closed')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'CONFLICT', message } },
+        { status: 409 },
+      );
+    }
+
+    if (message.startsWith('Could not allocate a purchase order reference')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'CONFLICT', message } },
+        { status: 409 },
       );
     }
 

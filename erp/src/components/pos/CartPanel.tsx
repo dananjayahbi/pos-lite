@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Decimal from 'decimal.js';
 import { formatRupee } from '@/lib/format';
 import { useCartStore, getCartTotal } from '@/stores/cartStore';
+import { createCartPromotionSnapshot } from '@/stores/cartPromotions';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CartLineItem } from '@/components/pos/CartLineItem';
 import { LineItemDiscountControl } from '@/components/pos/LineItemDiscountControl';
@@ -54,7 +55,17 @@ export function CartPanel({ shiftId }: CartPanelProps) {
   const evaluatePromotionsAction = useCartStore((s) => s.evaluatePromotions);
 
   // Persist cart to IndexedDB
-  usePersistCartEffect({ items, cartDiscountPercent, cartDiscountAmount });
+  usePersistCartEffect({
+    items,
+    cartDiscountPercent,
+    cartDiscountAmount,
+    promotions: {
+      appliedPromotions,
+      skippedPromotions,
+      totalPromotionDiscount,
+      appliedPromoCode,
+    },
+  });
 
   const { subtotal, discountEffective, taxAmount, total } = getCartTotal(
     items,
@@ -164,13 +175,26 @@ export function CartPanel({ shiftId }: CartPanelProps) {
     const snapshot = [...items];
     const snapDiscPct = cartDiscountPercent;
     const snapDiscAmt = cartDiscountAmount;
+    // Capture the promotion state too — clearCart() drops it, so undo has to
+    // put it back or the restored cart shows no promotions and full price.
+    const snapPromotions = createCartPromotionSnapshot({
+      appliedPromotions,
+      skippedPromotions,
+      totalPromotionDiscount,
+      appliedPromoCode,
+    });
     clearCart();
     clearCartSnapshot('ayurpos_cart_default').catch(() => {});
     toast('Cart cleared', {
       action: {
         label: 'Undo',
         onClick: () => {
-          useCartStore.getState().replaceCart(snapshot, snapDiscPct, snapDiscAmt);
+          useCartStore.getState().restoreCartWithPromotions({
+            items: snapshot,
+            cartDiscountPercent: snapDiscPct,
+            cartDiscountAmount: snapDiscAmt,
+            promotions: snapPromotions,
+          });
         },
       },
       duration: 3000,

@@ -1,19 +1,16 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Loader2, Search, UserRound, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { CUSTOMER_SEARCH_MIN_LENGTH } from '@/lib/api/customers';
+import { useCustomerSearch } from '@/hooks/useCustomerSearch';
 
 export interface PickedCustomer {
   id: string;
   name: string;
   phone: string;
-}
-
-interface CustomerOption extends PickedCustomer {
-  creditBalance?: string | number;
 }
 
 interface CustomerPickerProps {
@@ -64,23 +61,7 @@ export function CustomerPicker({
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const { data: customers, isFetching } = useQuery<CustomerOption[]>({
-    queryKey: ['customer-search', debouncedSearch],
-    queryFn: async () => {
-      const params = new URLSearchParams({ search: debouncedSearch, limit: '8' });
-      const res = await fetch(`/api/store/customers?${params.toString()}`);
-      if (!res.ok) throw new Error('Failed to search customers');
-      const json = (await res.json()) as {
-        success: boolean;
-        data?: { customers?: CustomerOption[] };
-      };
-      return json.data?.customers ?? [];
-    },
-    enabled: debouncedSearch.trim().length >= 2,
-    staleTime: 30_000,
-  });
-
-  const options = customers ?? [];
+  const { customers: options, isFetching } = useCustomerSearch({ search: debouncedSearch });
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
@@ -131,7 +112,7 @@ export function CustomerPicker({
             <span>{guestHint}</span>
           </p>
 
-          {showDropdown && debouncedSearch.trim().length >= 2 && (
+          {showDropdown && debouncedSearch.trim().length >= CUSTOMER_SEARCH_MIN_LENGTH && (
             <div className="border-mist absolute top-full left-0 z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border bg-white shadow-lg">
               {options.length === 0 && !isFetching && (
                 <p className="text-sand px-3 py-2 text-xs">No customers found</p>

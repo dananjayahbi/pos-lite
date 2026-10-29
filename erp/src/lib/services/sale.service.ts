@@ -5,6 +5,7 @@ import type { SaleStatus, TaxRule } from '@/generated/prisma/client';
 import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { createPayment } from '@/lib/services/payment.service';
+import { buildSaleAccountLegs, postSaleToAccounts, reverseSaleAccounts } from '@/lib/services/saleAccounts';
 import { redeemCredit, addToSpendTotal } from '@/lib/services/customer.service';
 import { kickCashDrawer } from '@/lib/hardware/cashDrawer';
 import type { PrinterConfig } from '@/lib/hardware/printer';
@@ -394,6 +395,24 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       }
       await addToSpendTotal(tenantId, input.customerId, totalAmount, tx);
     }
+
+    // Route the collected money into payment accounts. Inside the transaction
+    // so the sale and the money commit together; a tenant with no accounts yet
+    // simply writes nothing and the sale still completes.
+    await postSaleToAccounts(
+      tx,
+      tenantId,
+      input.cashierId,
+      sale.id,
+      sale.id.slice(0, 8).toUpperCase(),
+      buildSaleAccountLegs({
+        paymentMethod: effectivePaymentMethod,
+        totalAmount,
+        ...(input.cardAmount !== undefined && { cardAmount: input.cardAmount }),
+        ...(input.splitLegMethod !== undefined && { splitLegMethod: input.splitLegMethod }),
+      }),
+      input.paymentAccountId !== undefined ? { CASH: input.paymentAccountId } : {},
+    );
 
     const completeSale = await tx.sale.findUniqueOrThrow({
       where: { id: sale.id },
@@ -828,6 +847,10 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
         saleId: sale.id,
       });
     }
+
+    // Put the money back where it came from. Mirrors the entries written by
+    // `postSaleToAccounts` at collection time.
+    await reverseSaleAccounts(tx, tenantId, actorId, sale.id, sale.id.slice(0, 8).toUpperCase());
 
     return updatedSale;
   });

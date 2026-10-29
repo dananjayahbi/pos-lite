@@ -1,18 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Check, ChevronsUpDown, UserPlus } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-
-interface CustomerOption {
-  id: string;
-  name: string;
-  phone: string;
-}
+import { CUSTOMER_SEARCH_MIN_LENGTH } from '@/lib/api/customers';
+import { useCustomerSearch } from '@/hooks/useCustomerSearch';
 
 interface CustomerSelectorProps {
   value: string | null;
@@ -27,19 +22,7 @@ export function CustomerSelector({ value, onChange, onWalkInChange, walkInName, 
   const [open, setOpen] = useState(false);
   const [showWalkIn, setShowWalkIn] = useState(false);
 
-  const { data } = useQuery({
-    queryKey: ['customers', 'search', search],
-    queryFn: async () => {
-      const res = await fetch(`/api/store/customers?search=${encodeURIComponent(search)}&limit=20`);
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error?.message);
-      return json.data as { customers: CustomerOption[] };
-    },
-    enabled: search.length >= 2,
-    staleTime: 60_000,
-  });
-
-  const customers = data?.customers ?? [];
+  const { customers } = useCustomerSearch({ search, limit: 20 });
 
   return (
     <div className="space-y-3">
@@ -86,7 +69,7 @@ export function CustomerSelector({ value, onChange, onWalkInChange, walkInName, 
                     {value === c.id && <Check className="h-4 w-4 text-green-500" />}
                   </button>
                 ))}
-                {customers.length === 0 && search.length >= 2 && (
+                {customers.length === 0 && search.length >= CUSTOMER_SEARCH_MIN_LENGTH && (
                   <p className="text-sm text-espresso/40 text-center py-4">No customers found</p>
                 )}
               </div>

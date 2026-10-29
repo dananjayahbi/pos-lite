@@ -103,6 +103,12 @@ const navGroups: NavGroup[] = [
         permission: PERMISSIONS.SUPPLIER.viewSupplier,
       },
       {
+        name: 'Payment Accounts',
+        href: '/payment-accounts',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.PAYMENT_ACCOUNT.viewPaymentAccount,
+      },
+      {
         name: 'Stock Control',
         href: '/stock-control',
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],

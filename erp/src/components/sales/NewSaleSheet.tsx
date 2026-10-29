@@ -11,6 +11,7 @@ import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/com
 import { formatRupee } from '@/lib/format';
 import { toYMD } from '@/lib/date-range';
 import { CustomerPicker, type PickedCustomer } from '@/components/sales/CustomerPicker';
+import { ProductThumbnail, resolveProductImage } from '@/components/sales/ProductThumbnail';
 import { saleQueryKey } from '@/components/sales/saleQueryKey';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -22,11 +23,13 @@ interface ProductVariant {
   packSize: string | null;
   stockQuantity: number;
   retailPrice: string;
+  imageUrls?: string[];
 }
 
 interface Product {
   id: string;
   name: string;
+  mainImageUrl: string | null;
   variants: ProductVariant[];
 }
 
@@ -38,6 +41,7 @@ interface CartItem {
   unitPrice: number;
   quantity: number;
   discountPercent: number;
+  imageUrl: string | null;
 }
 
 type PaymentMethod = 'CASH' | 'CARD' | 'SPLIT';
@@ -126,6 +130,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
           unitPrice: parseFloat(variant.retailPrice),
           quantity: 1,
           discountPercent: 0,
+          imageUrl: resolveProductImage(product.mainImageUrl, variant.imageUrls),
         },
       ];
     });
@@ -316,9 +321,14 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                       key={variant.id}
                       type="button"
                       onClick={() => addVariant(product, variant)}
-                      className="hover:bg-linen flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors"
+                      className="hover:bg-linen flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors"
                     >
-                      <div className="min-w-0">
+                      <ProductThumbnail
+                        src={resolveProductImage(product.mainImageUrl, variant.imageUrls)}
+                        alt={product.name}
+                        size={36}
+                      />
+                      <div className="min-w-0 flex-1">
                         <span className="text-espresso font-medium">{product.name}</span>
                         {(variant.form ?? variant.packSize) && (
                           <span className="text-sand ml-1.5 text-xs">
@@ -342,6 +352,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
             <div className="border-mist divide-mist/40 divide-y rounded-lg border">
               {cart.map((item) => (
                 <div key={item.variantId} className="flex items-center gap-2 px-3 py-2">
+                  <ProductThumbnail src={item.imageUrl} alt={item.productName} size={32} />
                   <div className="min-w-0 flex-1">
                     <p className="text-espresso truncate text-sm font-medium">{item.productName}</p>
                     <p className="text-sand text-xs">

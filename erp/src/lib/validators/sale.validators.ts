@@ -71,6 +71,11 @@ export const CreateSaleSchema = z
     // Delivery charge is folded into the sale total; it is optional so the POS
     // terminal (which never sends it) keeps producing identical totals.
     deliveryCharge: z.number().min(0).default(0),
+    // Which payment account the collected money lands in. Optional: when it is
+    // absent the service resolves a per-tenant default for the tender method,
+    // and when the tenant has no accounts at all the ledger entry is skipped
+    // so accounting can never block a sale.
+    paymentAccountId: z.string().min(1).optional(),
     // Doc 33 / 34: zero-value reason + original order reference for replacements.
     zeroValueReason: z.nativeEnum(ZeroValueReason).optional(),
     zeroValueLinkedOrderRef: z.string().trim().min(1).max(64).optional(),

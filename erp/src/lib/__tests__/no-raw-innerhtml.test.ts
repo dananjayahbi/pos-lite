@@ -7,7 +7,7 @@
  *
  * Keep this a fast pure file-scan (no build, no DOM).
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, relative } from 'node:path';
 
@@ -26,34 +26,44 @@ const MARKER = 'dangerouslySetInnerHTML';
 const SCAN_EXT = /\.(ts|tsx)$/;
 const SKIP_DIRS = new Set(['node_modules', 'generated', '.next']);
 
+/**
+ * The scan reads every `.ts`/`.tsx` file under `src/`, so its cost grows with
+ * the tree. Vitest's 5s default started failing once the tree passed a few
+ * hundred files on a loaded machine; this is a byte scan, not a slow test.
+ */
+const SCAN_TIMEOUT_MS = 30_000;
+
 function walk(dir: string, out: string[]): void {
-  for (const entry of readdirSync(dir)) {
-    if (SKIP_DIRS.has(entry)) continue;
-    const full = join(dir, entry);
-    const st = statSync(full);
-    if (st.isDirectory()) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (SKIP_DIRS.has(entry.name)) continue;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
       walk(full, out);
-    } else if (SCAN_EXT.test(entry)) {
+    } else if (SCAN_EXT.test(entry.name)) {
       out.push(full);
     }
   }
 }
 
 describe('XC-04 no-raw-innerhtml guard', () => {
-  it('finds no dangerouslySetInnerHTML in src/ outside the allowlist', () => {
-    const files: string[] = [];
-    walk(SRC_ROOT, files);
+  it(
+    'finds no dangerouslySetInnerHTML in src/ outside the allowlist',
+    () => {
+      const files: string[] = [];
+      walk(SRC_ROOT, files);
 
-    const offenders: string[] = [];
-    for (const file of files) {
-      const rel = relative(SRC_ROOT, file).replace(/\\/g, '/');
-      // This guard file necessarily mentions the marker itself.
-      if (rel === 'lib/__tests__/no-raw-innerhtml.test.ts') continue;
-      if (ALLOWLIST.has(rel)) continue;
-      const content = readFileSync(file, 'utf8');
-      if (content.includes(MARKER)) offenders.push(rel);
-    }
+      const offenders: string[] = [];
+      for (const file of files) {
+        const rel = relative(SRC_ROOT, file).replace(/\\/g, '/');
+        // This guard file necessarily mentions the marker itself.
+        if (rel === 'lib/__tests__/no-raw-innerhtml.test.ts') continue;
+        if (ALLOWLIST.has(rel)) continue;
+        const content = readFileSync(file, 'utf8');
+        if (content.includes(MARKER)) offenders.push(rel);
+      }
 
-    expect(offenders).toEqual([]);
-  });
+      expect(offenders).toEqual([]);
+    },
+    SCAN_TIMEOUT_MS,
+  );
 });

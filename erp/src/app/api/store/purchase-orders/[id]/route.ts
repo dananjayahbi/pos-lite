@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { getPOById, updatePOStatus } from '@/lib/services/purchaseOrder.service';
-import { UpdatePOStatusSchema } from '@/lib/validators/purchaseOrder.validators';
+import { getPOById, updatePO, updatePOStatus } from '@/lib/services/purchaseOrder.service';
+import { UpdatePOSchema, UpdatePOStatusSchema } from '@/lib/validators/purchaseOrder.validators';
 
 export async function GET(
   _request: Request,
@@ -87,10 +87,39 @@ export async function PATCH(
 
     const { id } = await params;
     const body = await request.json();
-    const parsed = UpdatePOStatusSchema.safeParse(body);
 
-    if (!parsed.success) {
-      const errors = parsed.error.issues.map((i) => ({
+    // A `status`-only body is the long-standing send/cancel transition; any
+    // other field set is a draft edit. Keeping them on one PATCH avoids a
+    // second endpoint the UI would have to know about.
+    if (body && typeof body === 'object' && Object.keys(body).length === 1 && 'status' in body) {
+      const parsed = UpdatePOStatusSchema.safeParse(body);
+
+      if (!parsed.success) {
+        const errors = parsed.error.issues.map((i) => ({
+          path: i.path.join('.'),
+          message: i.message,
+        }));
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: 'Validation failed', details: errors } },
+          { status: 400 },
+        );
+      }
+
+      const po = await updatePOStatus(tenantId, id, parsed.data.status);
+      return NextResponse.json({ success: true, data: po });
+    }
+
+    if (!hasPermission(session.user, PERMISSIONS.SUPPLIER.createPurchaseOrder)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
+      );
+    }
+
+    const parsedEdit = UpdatePOSchema.safeParse(body);
+
+    if (!parsedEdit.success) {
+      const errors = parsedEdit.error.issues.map((i) => ({
         path: i.path.join('.'),
         message: i.message,
       }));
@@ -100,9 +129,8 @@ export async function PATCH(
       );
     }
 
-    const po = await updatePOStatus(tenantId, id, parsed.data.status);
-
-    return NextResponse.json({ success: true, data: po });
+    const edited = await updatePO(tenantId, id, parsedEdit.data);
+    return NextResponse.json({ success: true, data: edited });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
 
@@ -113,10 +141,25 @@ export async function PATCH(
       );
     }
 
-    if (message.startsWith('Cannot transition')) {
+    if (message.startsWith('Cannot transition') || message.startsWith('Cannot edit')) {
       return NextResponse.json(
         { success: false, error: { code: 'BAD_REQUEST', message } },
         { status: 400 },
+      );
+    }
+
+    // Status/state guards that make the request valid but impossible right now.
+    if (message.startsWith('Lines cannot be edited') || message.startsWith('A cancelled purchase order')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'CONFLICT', message } },
+        { status: 409 },
+      );
+    }
+
+    if (message.includes('already in use') || message.includes('not found or closed')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'CONFLICT', message } },
+        { status: 409 },
       );
     }
 
