@@ -97,6 +97,57 @@ The app will be available at http://admin.ruhunuwedagedara.lk:3003 (or
 http://localhost:3003). Use the hostnamed form — the env files, default-tenant
 resolution and `allowedDevOrigins` all assume it.
 
+### Sharing the dev server through a tunnel
+
+A dev tunnel (VS Code port forwarding, ngrok, Cloudflare Tunnel) puts an HTTPS
+reverse proxy in front of the plain-HTTP dev server. Two things follow, and both
+are handled for you:
+
+- Next rebuilds `request.url` from the forwarded `Host` + `x-forwarded-proto`,
+  so the Edge proxy sees `https://localhost:3003`. Its internal bridge call must
+  therefore not be derived from that URL (it would speak TLS to an HTTP server
+  and fail with `ERR_SSL_PACKET_LENGTH_TOO_LONG`, denying every request
+  fail-closed). `resolveInternalBridgeUrl()` pins it to loopback in dev; override
+  with `INTERNAL_BRIDGE_ORIGIN` if the Node server lives elsewhere.
+- Auth.js derives its `baseUrl` the same way, which rejects the absolute
+  `callbackUrl` the sign-out button builds from `window.location.origin`. The
+  `redirect` callback accepts it when its host matches the request's
+  `x-forwarded-host`, so the browser is sent back to the tunnel, not to
+  `localhost`.
+
+`*.use.devtunnels.ms` and `*.lhr.life` are allowed in `allowedDevOrigins`; for any
+other tunnel domain set `NEXT_DEV_TUNNEL_ORIGIN` and restart the dev server (the
+value is read at boot). If you set `AUTH_URL`, it must be the public tunnel
+origin, otherwise server-rendered absolute links still point at localhost.
+
+#### `next dev` is not good enough for a free tunnel
+
+A free tunnel truncates chunked responses under parallel load
+(`ERR_INCOMPLETE_CHUNKED_ENCODING`), and `next dev` requests ~25 uncompressed
+chunks per page plus an HMR WebSocket. Scripts start but React never hydrates,
+so the page renders and the sign-in button submits as a plain GET. Serve a
+production build instead — it ships a handful of compressed chunks:
+
+```bash
+npx next build
+npx next start -p 3003
+ssh -T -R 80:localhost:3003 nokey@localhost.run   # prints https://<id>.lhr.life
+```
+
+A production build changes three things, each of which breaks auth on its own:
+
+| Setting | Why it is needed |
+| --- | --- |
+| `AUTH_TRUST_HOST=true` | Auth.js rejects an unknown `Host` outside dev (`UntrustedHost`) and returns 500 from `/api/auth/session`. |
+| `INTERNAL_BRIDGE_ORIGIN=http://127.0.0.1:3003` | Otherwise the Edge proxy dials the *tunnel* origin from inside the server. |
+| `INTERNAL_BRIDGE_SECRET=<anything>` | The bridge is fail-closed in production (`SECRET_NOT_CONFIGURED`). |
+
+`INTERNAL_BRIDGE_SECRET` is inlined into the Edge bundle **at build time**, so
+it must be present for `next build`, not just `next start` — setting it only on
+`next start` yields `BAD_SECRET` because the proxy signs with nothing while the
+Node route verifies against the real value. Put all three in `.env.local`
+(git-ignored) rather than passing them inline, so build and start agree.
+
 ### Remote images in local dev
 
 `next/image` refuses to optimize an upstream image whose hostname resolves to a

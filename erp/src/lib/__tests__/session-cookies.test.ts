@@ -80,9 +80,49 @@ describe('clearSessionCookies (development)', () => {
   });
 });
 
+describe('clearSessionCookies (chunked cookies)', () => {
+  it('expires chunked session cookies when the request carries them', () => {
+    const headers = setCookieHeaders(
+      clearSessionCookiesAndReturn({
+        'authjs.session-token.0': 'chunk-a',
+        'authjs.session-token.1': 'chunk-b',
+      }),
+    );
+    expect(headers.some((h) => h.startsWith('authjs.session-token.0='))).toBe(true);
+    expect(headers.some((h) => h.startsWith('authjs.session-token.1='))).toBe(true);
+  });
+
+  it('does not invent chunk names the client never sent', () => {
+    const headers = setCookieHeaders(
+      clearSessionCookiesAndReturn({ 'authjs.session-token.0': 'chunk-a' }),
+    );
+    expect(headers.some((h) => h.startsWith('authjs.session-token.0='))).toBe(true);
+    expect(headers.some((h) => h.startsWith('authjs.session-token.1='))).toBe(false);
+  });
+
+  it('ignores non-numeric suffixes', () => {
+    const headers = setCookieHeaders(
+      clearSessionCookiesAndReturn({ 'authjs.session-token.foo': 'x' }),
+    );
+    expect(headers).toHaveLength(SESSION_COOKIE_NAMES.length);
+  });
+});
+
+/** Minimal stand-in for NextRequest.cookies. */
+function cookieSource(cookies: Record<string, string>) {
+  return {
+    getAll: () => Object.entries(cookies).map(([name, value]) => ({ name, value })),
+  };
+}
+
 /** Build a redirect-shaped response and clear cookies on it, as `denySession` does. */
-function clearSessionCookiesAndReturn(): NextResponse {
+function clearSessionCookiesAndReturn(
+  requestCookies?: Record<string, string>,
+): NextResponse {
   const response = NextResponse.redirect(new URL('http://localhost/login'));
-  clearSessionCookies(response);
+  clearSessionCookies(
+    response,
+    requestCookies ? cookieSource(requestCookies) : undefined,
+  );
   return response;
 }

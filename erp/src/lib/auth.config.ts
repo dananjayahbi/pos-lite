@@ -9,6 +9,8 @@
  * files here. Only import type-only from packages that support Edge Runtime.
  */
 import type { NextAuthConfig } from 'next-auth';
+import { headers } from 'next/headers';
+import { resolveAuthRedirect } from '@/lib/auth/auth-redirect';
 
 // Inlined Prisma enum — avoids importing @/generated/prisma/client which pulls
 // in node:process/node:path/node:url and breaks the Edge Runtime bundler.
@@ -27,6 +29,18 @@ export const authConfig: NextAuthConfig = {
   useSecureCookies: process.env.NODE_ENV === 'production',
   providers: [],
   callbacks: {
+    /**
+     * Dev-tunnel / reverse-proxy support. `SignOutButton` and the login form
+     * pass an absolute `callbackUrl` built from `window.location.origin`, but
+     * Auth.js compares it against a `baseUrl` derived from `request.url` —
+     * which a tunnel makes `https://localhost:3003`. Without this callback the
+     * user is redirected to that unreachable host. See
+     * `@/lib/auth/auth-redirect` for the same-origin guard.
+     */
+    async redirect({ url, baseUrl }) {
+      const requestHeaders = await headers();
+      return resolveAuthRedirect(url, baseUrl, requestHeaders);
+    },
     async jwt({ token, user }: { token: any; user?: any }) {
       if (user) {
         token.id = user.id;
