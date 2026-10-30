@@ -72,6 +72,7 @@ const GROUP_LABELS: Record<keyof typeof PERMISSIONS, string> = {
   BILLING: 'Billing',
   EXPENSE: 'Expenses',
   PETTY_CASH: 'Petty Cash',
+  PAYMENT_ACCOUNT: 'Payment Accounts',
   APPOINTMENT: 'Appointments',
   DELIVERY: 'Delivery & Courier',
   RAW_MATERIAL: 'Raw Materials',

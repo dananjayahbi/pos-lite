@@ -1,9 +1,14 @@
 import { prisma } from '@/lib/prisma';
 import Decimal from 'decimal.js';
 import { POStatus, StockMovementReason } from '@/generated/prisma/client';
-import type { Prisma } from '@/generated/prisma/client';
+import type { DiscountType, Prisma } from '@/generated/prisma/client';
 import { adjustStockInTx } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
+import { computePurchaseOrderTotals } from '@/lib/services/purchaseOrderTotals';
+import {
+  generatePurchaseOrderReference,
+  isPurchaseOrderReferenceTaken,
+} from '@/lib/services/purchaseOrderReference';
 // ── Private Helpers ──────────────────────────────────────────────────────────
 
 function buildVariantDescription(variant: {
@@ -32,9 +37,21 @@ interface CreatePOLineInput {
 interface CreatePOInput {
   supplierId: string;
   lines: CreatePOLineInput[];
+  /** Operator-supplied reference; auto-generated per tenant/month when absent. */
+  referenceNo?: string | undefined;
+  /** Document date; defaults to now. Lets a manager backdate a PO. */
+  orderDate?: string | Date | undefined;
   expectedDeliveryDate?: string | undefined;
   notes?: string | undefined;
+  discountType?: DiscountType | null | undefined;
+  discountValue?: number | string | null | undefined;
+  paymentTermDays?: number | null | undefined;
+  paymentAccountId?: string | null | undefined;
+  /** Create as SENT straight away instead of the DRAFT default. */
+  status?: POStatus | undefined;
 }
+
+const MAX_REFERENCE_ATTEMPTS = 5;
 
 export async function createPO(tenantId: string, createdById: string, input: CreatePOInput) {
   if (input.lines.length === 0) {
@@ -49,6 +66,16 @@ export async function createPO(tenantId: string, createdById: string, input: Cre
     throw new Error('Supplier not found');
   }
 
+  if (input.paymentAccountId) {
+    const account = await prisma.paymentAccount.findFirst({
+      where: { id: input.paymentAccountId, tenantId, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (!account) {
+      throw new Error('Payment account not found or closed');
+    }
+  }
+
   // Fetch all variants with their products
   const variantIds = input.lines.map((l) => l.variantId);
   const variants = await prisma.productVariant.findMany({
@@ -58,15 +85,12 @@ export async function createPO(tenantId: string, createdById: string, input: Cre
 
   const variantMap = new Map(variants.map((v) => [v.id, v]));
 
-  // Build lines data and compute total
-  let totalAmount = new Decimal(0);
   const linesData = input.lines.map((line) => {
     const variant = variantMap.get(line.variantId);
     if (!variant) {
       throw new Error(`Variant not found: ${line.variantId}`);
     }
     const cost = new Decimal(line.expectedCostPrice);
-    totalAmount = totalAmount.plus(cost.times(line.orderedQty));
 
     return {
       variantId: line.variantId,
@@ -77,25 +101,74 @@ export async function createPO(tenantId: string, createdById: string, input: Cre
     };
   });
 
-  return prisma.purchaseOrder.create({
-    data: {
-      tenantId,
-      supplierId: input.supplierId,
-      createdById,
-      totalAmount: totalAmount.toDecimalPlaces(2).toNumber(),
-      ...(input.expectedDeliveryDate !== undefined && {
-        expectedDeliveryDate: new Date(input.expectedDeliveryDate),
-      }),
-      ...(input.notes !== undefined && { notes: input.notes }),
-      lines: {
-        create: linesData,
-      },
-    },
-    include: {
-      lines: true,
-      supplier: true,
-    },
-  });
+  // One shared calculation so the form preview, the API validator and the
+  // stored totals can never disagree.
+  const totals = computePurchaseOrderTotals(
+    input.lines.map((line) => ({ orderedQty: line.orderedQty, unitCost: line.expectedCostPrice })),
+    { discountType: input.discountType ?? null, discountValue: input.discountValue ?? null },
+  );
+
+  const orderDate = input.orderDate ? new Date(input.orderDate) : new Date();
+
+  const customReference = input.referenceNo?.trim();
+
+  // A user-typed reference must be unique; a generated one can lose a race with
+  // a concurrent create, so retry instead of surfacing a 409 the user can't fix.
+  for (let attempt = 1; attempt <= MAX_REFERENCE_ATTEMPTS; attempt += 1) {
+    const referenceNo = customReference || (await generatePurchaseOrderReference(tenantId, orderDate));
+
+    if (customReference) {
+      const taken = await isPurchaseOrderReferenceTaken(tenantId, customReference);
+      if (taken) {
+        throw new Error(`Reference "${customReference}" is already in use`);
+      }
+    }
+
+    try {
+      return await prisma.purchaseOrder.create({
+        data: {
+          tenantId,
+          referenceNo,
+          supplierId: input.supplierId,
+          createdById,
+          orderDate,
+          status: input.status ?? POStatus.DRAFT,
+          subtotalAmount: totals.subtotal,
+          discountType: input.discountType ?? null,
+          discountValue: new Decimal(input.discountValue ?? 0).toDecimalPlaces(4).toNumber(),
+          discountAmount: totals.discountAmount,
+          totalAmount: totals.total,
+          ...(input.expectedDeliveryDate !== undefined && {
+            expectedDeliveryDate: new Date(input.expectedDeliveryDate),
+          }),
+          ...(input.paymentTermDays !== undefined && input.paymentTermDays !== null
+            ? { paymentTermDays: input.paymentTermDays }
+            : {}),
+          ...(input.paymentAccountId ? { paymentAccountId: input.paymentAccountId } : {}),
+          ...(input.notes !== undefined && { notes: input.notes }),
+          lines: {
+            create: linesData,
+          },
+        },
+        include: {
+          lines: true,
+          supplier: true,
+        },
+      });
+    } catch (error) {
+      const isReferenceCollision =
+        !customReference &&
+        error instanceof Error &&
+        'code' in error &&
+        (error as { code?: string }).code === 'P2002';
+
+      if (!isReferenceCollision || attempt === MAX_REFERENCE_ATTEMPTS) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error('Could not allocate a purchase order reference — please retry');
 }
 
 // ── Get PO by ID ─────────────────────────────────────────────────────────────
@@ -129,7 +202,16 @@ export async function getPOById(tenantId: string, poId: string) {
     throw new Error('Purchase order not found');
   }
 
-  return po;
+  return {
+    ...po,
+    /**
+     * Whether the ordered lines may still be rewritten. Receiving goods creates
+     * stock movements and per-line received quantities, so the line set freezes
+     * as soon as anything has been received. The UI uses this to disable only
+     * the line editor while keeping the header fields editable.
+     */
+    linesEditable: po.lines.every((line) => line.receivedQty === 0),
+  };
 }
 
 // ── List POs ─────────────────────────────────────────────────────────────────
@@ -204,6 +286,156 @@ export async function updatePOStatus(tenantId: string, poId: string, newStatus: 
   return prisma.purchaseOrder.update({
     where: { id: poId },
     data: { status: newStatus },
+  });
+}
+
+// ── Update PO (draft / sent only) ────────────────────────────────────────────
+
+/**
+ * Edit a purchase order that has not been received.
+ *
+ * Only financially-inert fields plus the discount are editable. Once goods are
+ * received the lines carry stock consequences, so those POs must be cancelled
+ * and re-issued instead — `VALID_TRANSITIONS` already funnels that.
+ */
+export async function updatePO(
+  tenantId: string,
+  poId: string,
+  input: {
+    referenceNo?: string | undefined;
+    orderDate?: string | undefined;
+    expectedDeliveryDate?: string | null | undefined;
+    notes?: string | null | undefined;
+    discountType?: DiscountType | null | undefined;
+    discountValue?: number | undefined;
+    paymentTermDays?: number | null | undefined;
+    paymentAccountId?: string | null | undefined;
+    lines?: Array<{ variantId: string; orderedQty: number; expectedCostPrice: number }> | undefined;
+  },
+) {
+  const po = await prisma.purchaseOrder.findFirst({
+    where: { id: poId, tenantId },
+    include: { lines: true },
+  });
+
+  if (!po) {
+    throw new Error('Purchase order not found');
+  }
+
+  // Editing is allowed at every status except CANCELLED — a manager must be able
+  // to fix a reference, date, terms, discount or payment account after the goods
+  // arrive. LINE changes are the one thing that is status-gated (below), because
+  // receiving already moved stock.
+  if (po.status === POStatus.CANCELLED) {
+    throw new Error('A cancelled purchase order cannot be edited');
+  }
+
+  if (input.lines) {
+    // Receiving goods creates stock movements, batches and per-line received
+    // quantities. Rewriting the ordered lines afterwards would leave those
+    // records describing products/quantities that no longer exist on the PO,
+    // so once ANY line has been received the line set is frozen and the
+    // corrective path is a return/adjustment, not an edit.
+    const received = po.lines.filter((line) => line.receivedQty > 0);
+    if (received.length > 0) {
+      throw new Error(
+        'Lines cannot be edited after goods have been received — adjust stock or raise a new purchase order instead',
+      );
+    }
+  }
+
+  if (input.referenceNo && input.referenceNo !== po.referenceNo) {
+    const taken = await isPurchaseOrderReferenceTaken(tenantId, input.referenceNo, poId);
+    if (taken) {
+      throw new Error(`Reference "${input.referenceNo}" is already in use`);
+    }
+  }
+
+  if (input.paymentAccountId) {
+    const account = await prisma.paymentAccount.findFirst({
+      where: { id: input.paymentAccountId, tenantId, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (!account) {
+      throw new Error('Payment account not found or closed');
+    }
+  }
+
+  // Recompute totals from whichever line set will end up persisted, so editing
+  // a line and the discount together cannot drift.
+  let linesData: Array<{
+    variantId: string;
+    orderedQty: number;
+    expectedCostPrice: number;
+    productNameSnapshot: string;
+    variantDescriptionSnapshot: string;
+  }> | null = null;
+
+  const effectiveLines = input.lines ?? po.lines.map((line) => ({
+    variantId: line.variantId,
+    orderedQty: line.orderedQty,
+    expectedCostPrice: Number(line.expectedCostPrice),
+  }));
+
+  if (input.lines) {
+    const variantIds = input.lines.map((line) => line.variantId);
+    const variants = await prisma.productVariant.findMany({
+      where: { id: { in: variantIds }, tenantId },
+      include: { product: { select: { name: true } } },
+    });
+    const variantMap = new Map(variants.map((variant) => [variant.id, variant]));
+
+    linesData = input.lines.map((line) => {
+      const variant = variantMap.get(line.variantId);
+      if (!variant) {
+        throw new Error(`Variant not found: ${line.variantId}`);
+      }
+      return {
+        variantId: line.variantId,
+        orderedQty: line.orderedQty,
+        expectedCostPrice: new Decimal(line.expectedCostPrice).toDecimalPlaces(2).toNumber(),
+        productNameSnapshot: variant.product.name,
+        variantDescriptionSnapshot: buildVariantDescription(variant),
+      };
+    });
+  }
+
+  const discountType = input.discountType !== undefined ? input.discountType : po.discountType;
+  const discountValue =
+    input.discountValue !== undefined ? input.discountValue : Number(po.discountValue);
+
+  const totals = computePurchaseOrderTotals(
+    effectiveLines.map((line) => ({ orderedQty: line.orderedQty, unitCost: line.expectedCostPrice })),
+    { discountType: discountType ?? null, discountValue },
+  );
+
+  return prisma.purchaseOrder.update({
+    where: { id: poId },
+    data: {
+      ...(input.referenceNo !== undefined ? { referenceNo: input.referenceNo } : {}),
+      ...(input.orderDate !== undefined ? { orderDate: new Date(input.orderDate) } : {}),
+      ...(input.expectedDeliveryDate !== undefined
+        ? {
+            expectedDeliveryDate: input.expectedDeliveryDate
+              ? new Date(input.expectedDeliveryDate)
+              : null,
+          }
+        : {}),
+      ...(input.notes !== undefined ? { notes: input.notes } : {}),
+      discountType: discountType ?? null,
+      discountValue: new Decimal(discountValue).toDecimalPlaces(4).toNumber(),
+      discountAmount: totals.discountAmount,
+      subtotalAmount: totals.subtotal,
+      totalAmount: totals.total,
+      ...(input.paymentTermDays !== undefined ? { paymentTermDays: input.paymentTermDays } : {}),
+      ...(input.paymentAccountId !== undefined
+        ? { paymentAccountId: input.paymentAccountId }
+        : {}),
+      ...(linesData
+        ? { lines: { deleteMany: {}, create: linesData } }
+        : {}),
+    },
+    include: { lines: true, supplier: true },
   });
 }
 

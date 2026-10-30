@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import Decimal from 'decimal.js';
 import type { AppliedDiscount, SkippedPromotion } from '@/lib/services/promotion.service';
 import type { CFDCartPayload } from '@/lib/cfdEmitter';
+import { createCartPromotionSnapshot } from '@/stores/cartPromotions';
+import type { CartPromotionSnapshot } from '@/stores/cartPromotions';
 
 export interface CartItem {
   variantId: string;
@@ -50,6 +52,12 @@ interface CartState {
   setTaxRate: (rate: number) => void;
   clearCart: () => void;
   replaceCart: (items: CartItem[], cartDiscountPercent: number, cartDiscountAmount: number) => void;
+  restoreCartWithPromotions: (snapshot: {
+    items: CartItem[];
+    cartDiscountPercent: number;
+    cartDiscountAmount: number;
+    promotions?: CartPromotionSnapshot;
+  }) => void;
   setExchangeCredit: (returnId: string, credit: number, ref: string) => void;
   clearExchangeCredit: () => void;
   linkCustomer: (id: string, name: string, phone: string, creditBalance: string) => void;
@@ -236,6 +244,32 @@ export const useCartStore = create<CartState>((set, get) => ({
   replaceCart: (items, cartDiscountPercent, cartDiscountAmount) => {
     set({ items, cartDiscountPercent, cartDiscountAmount, authorizingManagerId: null, activeLineId: null });
     sendCFDUpdate(get());
+  },
+
+  /**
+   * Restores a previously captured cart (undo after clear, held-sale retrieve,
+   * IndexedDB reload) together with the promotion state that was priced against
+   * those lines. Clearing the cart drops the promotions, so restoring the lines
+   * alone leaves the cart at full price with an empty Promotions row.
+   * Promotion state is then re-evaluated in the background to catch promotions
+   * that changed while the cart was parked.
+   */
+  restoreCartWithPromotions: ({ items, cartDiscountPercent, cartDiscountAmount, promotions }) => {
+    const restored = createCartPromotionSnapshot(promotions);
+    set({
+      items,
+      cartDiscountPercent,
+      cartDiscountAmount,
+      authorizingManagerId: null,
+      activeLineId: null,
+      appliedPromotions: restored.appliedPromotions,
+      skippedPromotions: restored.skippedPromotions,
+      totalPromotionDiscount: restored.totalPromotionDiscount,
+      appliedPromoCode: restored.appliedPromoCode,
+      isEvaluatingPromotions: false,
+    });
+    sendCFDUpdate(get());
+    if (items.length > 0) schedulePromoEval(get);
   },
 
   setExchangeCredit: (returnId, credit, ref) =>

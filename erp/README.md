@@ -93,13 +93,28 @@ Open `.env.local` and update every value. The required variables are:
 pnpm dev
 ```
 
-The app will be available at http://localhost:3000.
+The app will be available at http://admin.ruhunuwedagedara.lk:3003 (or
+http://localhost:3003). Use the hostnamed form — the env files, default-tenant
+resolution and `allowedDevOrigins` all assume it.
+
+### Remote images in local dev
+
+`next/image` refuses to optimize an upstream image whose hostname resolves to a
+private IP range. On networks where a DNS proxy/VPN answers public hostnames
+with `198.18.x.x` / `fc00:…` addresses, every R2/Cloudinary image fails with
+`400 "url" parameter is not allowed` and the server logs
+`upstream image … resolved to private ip`.
+
+Both apps therefore set `images.dangerouslyAllowLocalIP` when
+`NODE_ENV === "development"`. The `remotePatterns` allowlist still gates which
+upstreams are eligible, so this only lifts the IP check in dev — production
+keeps the default (disabled).
 
 ---
 
 ## Database Migrations
 
-Run database migrations against the active `DATABASE_URL` in `.env.local`:
+Run database migrations against the active `DATABASE_URL`:
 
 ```bash
 # Apply pending migrations and regenerate the Prisma client
@@ -110,6 +125,33 @@ To inspect the current migration state without applying changes:
 
 ```bash
 pnpm prisma migrate status
+```
+
+### `prisma.config.ts` and env files
+
+The Prisma CLI does **not** read `.env` files automatically once a Prisma config
+file exists — `prisma.config.ts` loads them explicitly. It mirrors Next.js
+precedence: `.env` first, then `.env.local` (which wins when present). If you
+move `DATABASE_URL` into a different file, update that loader or every CLI
+command will fail with `The datasource.url property is required`.
+
+### Schema drift (`P2022` column errors)
+
+This project's active dev workflow is `prisma db push`, and the database has no
+`_prisma_migrations` table — the migration folders are production deliverables,
+not a record of local state. When the schema gains a column, apply it with:
+
+```bash
+pnpm prisma db push       # syncs schema.prisma → live DB
+pnpm prisma generate      # refreshes the typed client
+```
+
+Skipping this surfaces as runtime `PrismaClientKnownRequestError` (`P2022`, "The
+column `X` does not exist in the current database") on pages and API routes that
+read the new field. To see exactly what is out of sync before pushing:
+
+```bash
+pnpm prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script
 ```
 
 ---

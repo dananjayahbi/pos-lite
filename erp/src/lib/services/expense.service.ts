@@ -3,6 +3,8 @@ import type { ExpenseCategory } from '@/generated/prisma/client';
 import type { CreateExpenseInput, UpdateExpenseInput } from '@/lib/validators/expense.validators';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { adjustFundBalance, assertFundCanSpend } from '@/lib/services/petty-cash.service';
+import { PaymentEntrySource } from '@/generated/prisma/client';
+import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/paymentAccount.service';
 
 interface ExpenseFilters {
   category?: string | undefined;
@@ -80,10 +82,36 @@ export async function createExpense(
       expenseDate: new Date(data.expenseDate),
       ...(data.receiptImageUrl !== undefined && { receiptImageUrl: data.receiptImageUrl }),
       ...(data.pettyCashFundId !== undefined && { pettyCashFundId: data.pettyCashFundId }),
+      ...(data.paymentAccountId !== undefined && { paymentAccountId: data.paymentAccountId }),
       recordedById: data.recordedById,
     },
     include: { recordedBy: { select: { email: true } } },
   });
+
+  // Settle the expense out of its payment account. Separate from the
+  // petty-cash path: a fund is a till sub-balance, an account is a real money
+  // container, and a tenant may use either or both.
+  if (data.paymentAccountId) {
+    await prisma.$transaction(async (tx) => {
+      await assertSufficientFunds(
+        tx,
+        tenantId,
+        data.paymentAccountId!,
+        data.amount,
+        data.overdrawApproved === true,
+      );
+      await postLedgerEntries(tx, tenantId, data.recordedById, [
+        {
+          accountId: data.paymentAccountId!,
+          source: PaymentEntrySource.EXPENSE,
+          sourceId: expense.id,
+          description: `${data.category} — ${data.description}`.slice(0, 200),
+          credit: data.amount,
+          entryDate: new Date(data.expenseDate),
+        },
+      ]);
+    });
+  }
 
   // A linked petty-cash expense reduces the fund's running balance.
   if (data.pettyCashFundId) {
@@ -166,6 +194,7 @@ export async function updateExpense(
       ...(data.expenseDate !== undefined && { expenseDate: new Date(data.expenseDate) }),
       ...(data.receiptImageUrl !== undefined && { receiptImageUrl: data.receiptImageUrl }),
       ...(data.pettyCashFundId !== undefined && { pettyCashFundId: data.pettyCashFundId }),
+      ...(data.paymentAccountId !== undefined && { paymentAccountId: data.paymentAccountId }),
     },
     include: { recordedBy: { select: { email: true } } },
   });

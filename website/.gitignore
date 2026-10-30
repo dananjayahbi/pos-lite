@@ -38,3 +38,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local dev server stdout/stderr captures
+dev-run.log
+dev-run.err.log

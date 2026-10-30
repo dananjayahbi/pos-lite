@@ -44,6 +44,10 @@ export function ShiftGate({
 }: ShiftGateProps) {
   const pathname = usePathname();
   const isShiftReport = pathname.startsWith('/pos/shift-report');
+  // Read-only history surfaces show past sales/returns — a live cart (and its
+  // customer-linking section) is meaningless there, so it is hidden entirely.
+  const isHistorySurface =
+    pathname.startsWith('/pos/history') || pathname.startsWith('/pos/returns');
 
   if (!hasOpenShift) {
     if (isShiftReport) {
@@ -69,6 +73,7 @@ export function ShiftGate({
       showOwnerDashboardShortcut={showOwnerDashboardShortcut}
       businessName={businessName}
       businessLogoUrl={businessLogoUrl}
+      showCart={!isHistorySurface}
     >
       {children}
     </POSTerminalShell>

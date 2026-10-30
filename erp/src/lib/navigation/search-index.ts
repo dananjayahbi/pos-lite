@@ -49,6 +49,9 @@ export const NAV_SEARCH_INDEX: NavSearchEntry[] = [
 
   // ── Operations: Purchasing / Stock ────────────────────────────
   { title: 'Purchase Orders', path: '/suppliers/purchase-orders', description: 'List of purchase orders.', keywords: ['po', 'supplier'], group: 'Operations', permission: 'supplier:view' },
+  { title: 'Payment Accounts', path: '/payment-accounts', description: 'Cash, bank and gateway accounts with their ledgers.', keywords: ['bank', 'cash', 'wallet', 'gateway', 'ledger', 'balance', 'transfer', 'deposit'], group: 'Operations', permission: 'payment_account:view' },
+  { title: 'Add Payment Account', path: '/payment-accounts', description: 'Create a new payment account.', keywords: ['new account', 'add account', 'bank account', 'create account'], group: 'Operations', permission: 'payment_account:manage', kind: 'action' },
+  { title: 'Fund Transfer', path: '/payment-accounts', description: 'Move money between payment accounts.', keywords: ['transfer', 'move money', 'bank deposit'], group: 'Operations', permission: 'payment_account:transfer', kind: 'action' },
   { title: 'New Purchase Order', path: '/suppliers/purchase-orders/new', description: 'Create a purchase order.', keywords: ['create', 'po'], group: 'Operations', permission: 'purchase_order:create', kind: 'action' },
   { title: 'Stock Control', path: '/stock-control', description: 'Stock overview dashboard.', keywords: ['inventory', 'levels'], group: 'Operations', permission: 'stock:view' },
   { title: 'Low Stock', path: '/stock-control/low-stock', description: 'Products at or below reorder level.', keywords: ['reorder', 'alert'], group: 'Operations', permission: 'stock:view' },

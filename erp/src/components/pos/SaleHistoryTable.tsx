@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, Ban, ChevronLeft, ChevronRight, RotateCcw, Copy, Check } from 'lucide-react';
+import { Eye, Ban, ChevronLeft, ChevronRight, RotateCcw, Copy, Check, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatRupee } from '@/lib/format';
 import { copyTextToClipboard } from '@/lib/clipboard';
@@ -32,6 +32,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SaleDetailModal } from '@/components/pos/SaleDetailModal';
 import { ReturnWizardSheet } from '@/components/pos/ReturnWizardSheet';
+import { SaleEditSheet, type EditableSale } from '@/components/sales/SaleEditSheet';
+import { SALES_QUERY_KEY } from '@/components/sales/saleQueryKey';
 
 interface SaleLine {
   id: string;
@@ -47,32 +49,63 @@ interface SaleLine {
   returnedQuantity: number;
 }
 
+interface SaleCustomer {
+  id: string;
+  name: string;
+  phone: string;
+}
+
 interface Sale {
   id: string;
   shiftId: string;
   cashierId: string;
+  customerId: string | null;
+  customer?: SaleCustomer | null;
   subtotal: number;
   discountAmount: number;
   taxAmount: number;
+  deliveryCharge: number;
   totalAmount: number;
   paymentMethod: 'CASH' | 'CARD' | 'SPLIT' | null;
   status: 'OPEN' | 'COMPLETED' | 'VOIDED';
   authorizingManagerId: string | null;
+  saleDate: string | null;
   completedAt: string | null;
   createdAt: string;
   lines: SaleLine[];
 }
 
-function formatTime(dateStr: string): string {
+/** Accounting date of the sale; pre-migration rows fall back to createdAt. */
+export function saleAccountingDate(sale: Pick<Sale, 'saleDate' | 'createdAt'>): string {
+  return sale.saleDate ?? sale.createdAt;
+}
+
+/** Stable, human-readable reference derived from the sale cuid. */
+export function getShortId(id: string): string {
+  return id.slice(0, 8).toUpperCase();
+}
+
+/** `dd MMM yyyy` in the operator's local timezone. */
+function formatDate(dateStr: string): string {
   const d = new Date(dateStr);
-  return d.toLocaleTimeString('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
   });
 }
 
-function getShortId(id: string): string {
-  return id.slice(0, 8).toUpperCase();
+/** `HH:mm` in the operator's local timezone. */
+function formatTime(dateStr: string): string {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Guest sales have no customer record — never render a blank or "null". */
+function customerLabel(sale: Sale): string {
+  return sale.customer?.name?.trim() || 'Walk-in / Guest';
 }
 
 function PaymentBadge({ method }: { method: string | null }) {
@@ -107,6 +140,7 @@ export function SaleHistoryTable() {
   const { hasPermission } = usePermissions();
   const queryClient = useQueryClient();
   const canVoid = hasPermission(PERMISSIONS.SALE.voidSale);
+  const canEdit = hasPermission(PERMISSIONS.SALE.editSale);
 
   // Filters
   const [status, setStatus] = useState('');
@@ -119,6 +153,9 @@ export function SaleHistoryTable() {
 
   // Detail modal
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+
+  // Edit sheet (customer / date / delivery charge only)
+  const [editSale, setEditSale] = useState<EditableSale | null>(null);
 
   // Return wizard
   const [returnSaleId, setReturnSaleId] = useState<string | null>(null);
@@ -142,7 +179,7 @@ export function SaleHistoryTable() {
 
   // Fetch sales
   const { data, isLoading } = useQuery({
-    queryKey: ['sale-history', status, dateRange, page, limit],
+    queryKey: [SALES_QUERY_KEY, status, dateRange, page, limit],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (status) params.set('status', status);
@@ -199,7 +236,7 @@ export function SaleHistoryTable() {
       toast.success(
         `Sale ${getShortId(voidSaleTarget.id)} has been voided and stock restored`,
       );
-      void queryClient.invalidateQueries({ queryKey: ['sale-history'] });
+      void queryClient.invalidateQueries({ queryKey: [SALES_QUERY_KEY] });
     } catch {
       toast.error('Network error. Please try again.');
     } finally {
@@ -269,8 +306,9 @@ export function SaleHistoryTable() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="font-body text-xs">Sale ID</TableHead>
-              <TableHead className="font-body text-xs">Time</TableHead>
+              <TableHead className="font-body text-xs">Invoice No</TableHead>
+              <TableHead className="font-body text-xs">Date</TableHead>
+              <TableHead className="font-body text-xs">Customer</TableHead>
               <TableHead className="font-body text-xs text-center">
                 Items
               </TableHead>
@@ -293,16 +331,16 @@ export function SaleHistoryTable() {
                       type="button"
                       onClick={() => setSelectedSaleId(sale.id)}
                       className="font-mono text-xs text-espresso hover:text-terracotta transition-colors"
-                      title="Click to view sale details"
+                      title={`Click to view sale details (${sale.id})`}
                     >
-                      {sale.id}
+                      {getShortId(sale.id)}
                     </button>
                     <button
                       type="button"
                       onClick={() => copyToClipboard(sale.id)}
                       className="shrink-0 p-0.5 text-mist hover:text-espresso transition-colors"
                       aria-label="Copy sale ID"
-                      title="Copy sale ID"
+                      title="Copy full sale ID"
                     >
                       {copiedId === sale.id ? (
                         <Check className="h-3 w-3 text-[#2D6A4F]" />
@@ -312,8 +350,35 @@ export function SaleHistoryTable() {
                     </button>
                   </div>
                 </TableCell>
+                <TableCell className="font-body text-xs text-espresso whitespace-nowrap">
+                  {sale.saleDate ? (
+                    <div>
+                      <p>{formatDate(sale.saleDate)}</p>
+                      {/* A backdated sale carries a synthetic 12:00 anchor (the
+                          date input is day-granular), so the real clock time only
+                          exists for same-day entries — show createdAt's time. */}
+                      <p className="font-mono text-[10px] text-mist">
+                        {formatTime(sale.createdAt)}
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p>{formatDate(sale.createdAt)}</p>
+                      <p className="font-mono text-[10px] text-mist">
+                        {formatTime(sale.createdAt)}
+                      </p>
+                    </div>
+                  )}
+                </TableCell>
                 <TableCell className="font-body text-xs text-espresso">
-                  {formatTime(sale.createdAt)}
+                  {sale.customer?.name ? (
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{customerLabel(sale)}</p>
+                      <p className="font-mono text-[10px] text-mist">{sale.customer.phone}</p>
+                    </div>
+                  ) : (
+                    <span className="text-sand italic">{customerLabel(sale)}</span>
+                  )}
                 </TableCell>
                 <TableCell className="text-center">
                   <span className="inline-flex items-center justify-center bg-mist/30 text-espresso font-body text-xs px-2 py-0.5 rounded-full">
@@ -322,6 +387,11 @@ export function SaleHistoryTable() {
                 </TableCell>
                 <TableCell className="text-right font-mono text-sm font-bold text-espresso">
                   {formatRupee(sale.totalAmount)}
+                  {Number(sale.deliveryCharge ?? 0) > 0 && (
+                    <span className="block font-body text-[10px] font-normal text-mist">
+                      incl. {formatRupee(sale.deliveryCharge)} delivery
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell>
                   <PaymentBadge method={sale.paymentMethod} />
@@ -339,6 +409,17 @@ export function SaleHistoryTable() {
                     >
                       <Eye className="h-4 w-4" />
                     </button>
+                    {canEdit && sale.status === 'COMPLETED' && (
+                      <button
+                        type="button"
+                        onClick={() => setEditSale(sale as EditableSale)}
+                        className="p-1 text-espresso hover:text-terracotta transition-colors"
+                        aria-label="Edit sale details"
+                        title="Edit customer, date and delivery charge"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    )}
                     {canVoid && sale.status === 'COMPLETED' && (
                       <button
                         type="button"
@@ -466,6 +547,15 @@ export function SaleHistoryTable() {
         }}
       />
 
+      {/* Edit sheet — customer, accounting date and delivery charge only */}
+      <SaleEditSheet
+        sale={editSale}
+        open={editSale !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditSale(null);
+        }}
+      />
+
       {/* Return wizard */}
       <ReturnWizardSheet
         saleId={returnSaleId}
@@ -475,7 +565,7 @@ export function SaleHistoryTable() {
         }}
         onReturnComplete={() => {
           setReturnSaleId(null);
-          void queryClient.invalidateQueries({ queryKey: ['sale-history'] });
+          void queryClient.invalidateQueries({ queryKey: [SALES_QUERY_KEY] });
         }}
       />
     </div>

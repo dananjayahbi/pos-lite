@@ -26,6 +26,12 @@ const nextConfig: NextConfig = {
     '192.168.1.92',
   ],
   images: {
+    // Local dev on this machine resolves public hosts (pub-*.r2.dev,
+    // res.cloudinary.com) through a DNS proxy that answers with private-range
+    // IPs (198.18.x.x / fc00::5). Next 16 refuses upstream images that resolve
+    // to private IPs, so every remote product image 400'd. The host allowlist
+    // below still gates which upstreams are eligible for optimization.
+    dangerouslyAllowLocalIP: process.env.NODE_ENV === 'development',
     remotePatterns: [
       // Cloudflare R2 public bucket (the ERP uploads media here)
       {

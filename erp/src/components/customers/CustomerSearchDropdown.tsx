@@ -1,18 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { LoyaltyBadge } from '@/components/customers/LoyaltyBadge';
-
-interface CustomerResult {
-  id: string;
-  name: string;
-  phone: string;
-  creditBalance: string;
-  orderCount: number;
-}
+import { CUSTOMER_SEARCH_MIN_LENGTH } from '@/lib/api/customers';
+import { useCustomerSearch } from '@/hooks/useCustomerSearch';
 
 interface CustomerSearchDropdownProps {
   onSelect: (customer: { id: string; name: string; phone: string; creditBalance: string }) => void;
@@ -43,17 +36,7 @@ export function CustomerSearchDropdown({ onSelect, onClear }: CustomerSearchDrop
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const { data } = useQuery<{ success: boolean; data: { customers: CustomerResult[] } }>({
-    queryKey: ['customer-search', debouncedSearch],
-    queryFn: async () => {
-      const res = await fetch(`/api/store/customers?search=${encodeURIComponent(debouncedSearch)}&limit=5`);
-      if (!res.ok) throw new Error('Failed to search customers');
-      return res.json();
-    },
-    enabled: debouncedSearch.length >= 2,
-  });
-
-  const customers = data?.data?.customers ?? [];
+  const { customers } = useCustomerSearch({ search: debouncedSearch, limit: 5 });
 
   return (
     <div ref={containerRef} className="relative">
@@ -68,7 +51,7 @@ export function CustomerSearchDropdown({ onSelect, onClear }: CustomerSearchDrop
             setOpen(true);
           }}
           onFocus={() => {
-            if (debouncedSearch.length >= 2) setOpen(true);
+            if (debouncedSearch.length >= CUSTOMER_SEARCH_MIN_LENGTH) setOpen(true);
           }}
           className="pl-8 h-8 text-sm"
         />

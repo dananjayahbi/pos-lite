@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Loader2, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -14,33 +14,51 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-interface WalkInCustomerFormProps {
+/**
+ * Field limits mirror the server contracts so the UI cannot submit something
+ * the API will reject: `WalkInSchema.name` is unbounded-trimmed but the shared
+ * `CreateCustomerSchema` caps names at 100, and `zSriLankaPhone` caps the raw
+ * input at 20 characters (+94XXXXXXXXX is 12).
+ */
+const NAME_MAX_LENGTH = 100;
+const PHONE_MAX_LENGTH = 20;
+
+interface AddCustomerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onLinked: (customer: { id: string; name: string; phone: string; creditBalance: string }) => void;
 }
 
+interface AddCustomerFormProps {
+  onCancel: () => void;
+  onLinked: (customer: { id: string; name: string; phone: string; creditBalance: string }) => void;
+}
+
 /**
- * Quick walk-in customer capture for the POS (doc 32).
+ * Quick customer capture for the POS (doc 32).
  *
- * POS sales require a linked customer with a name and a mobile number. This
- * inline form captures just those two fields and creates/links the customer so
- * a cashier can finalize an anonymous walk-in without the full CRM flow.
+ * A created-and-linked customer is optional: the cart can also complete the
+ * sale in pure guest mode (see `CartPanel`'s "Continue as guest" action). When
+ * the cashier does want to attribute the sale, this inline form captures just
+ * a name and a mobile number instead of the full CRM flow.
  */
-export function WalkInCustomerForm({ open, onOpenChange, onLinked }: WalkInCustomerFormProps) {
+export function AddCustomerDialog({ open, onOpenChange, onLinked }: AddCustomerDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        {/* Keying on `open` remounts the form on every open, so its state is
+            fresh without a state-resetting effect. */}
+        {open && <AddCustomerForm onCancel={() => onOpenChange(false)} onLinked={onLinked} />}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AddCustomerForm({ onCancel, onLinked }: AddCustomerFormProps) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (open) {
-      setName('');
-      setPhone('');
-      setError('');
-      setIsSubmitting(false);
-    }
-  }, [open]);
 
   // M14-03 (req 2.2): mirror the server `zSriLankaPhone` contract client-side —
   // strip separators, then require +94XXXXXXXXX or 0XXXXXXXXX. Blocks submit on
@@ -66,7 +84,7 @@ export function WalkInCustomerForm({ open, onOpenChange, onLinked }: WalkInCusto
         error?: { code: string; message: string };
       };
       if (!res.ok || !json.success) {
-        setError(json.error?.message ?? 'Failed to create walk-in customer');
+        setError(json.error?.message ?? 'Failed to add customer');
         setIsSubmitting(false);
         return;
       }
@@ -79,57 +97,63 @@ export function WalkInCustomerForm({ open, onOpenChange, onLinked }: WalkInCusto
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !isSubmitting && onOpenChange(next)}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="font-display">Walk-in Customer</DialogTitle>
-          <DialogDescription className="font-body text-sm text-mist">
-            A customer is required to finalize a sale. Enter their name and mobile
-            to create a walk-in profile.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <DialogHeader>
+        <DialogTitle className="font-display">Add Customer</DialogTitle>
+        <DialogDescription className="font-body text-sm text-mist">
+          Enter a name and mobile number to save this customer and link them to
+          the current sale.
+        </DialogDescription>
+      </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="walkin-name" className="font-body">
+            <Label htmlFor="add-customer-name" className="font-body">
               Customer Name
             </Label>
             <Input
-              id="walkin-name"
+              id="add-customer-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Walk-in Customer"
+              placeholder="e.g. Nimal Perera"
+              maxLength={NAME_MAX_LENGTH}
               className="mt-1.5"
               disabled={isSubmitting}
               autoFocus
             />
+            <p className="mt-1 text-right font-body text-[11px] text-mist">
+              {name.length}/{NAME_MAX_LENGTH}
+            </p>
           </div>
 
           <div>
-            <Label htmlFor="walkin-phone" className="font-body">
+            <Label htmlFor="add-customer-phone" className="font-body">
               Mobile Number
             </Label>
             <Input
-              id="walkin-phone"
+              id="add-customer-phone"
               type="tel"
               inputMode="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="e.g. 0771234567"
+              maxLength={PHONE_MAX_LENGTH}
               className="mt-1.5 font-mono"
               disabled={isSubmitting}
             />
-            {phone.trim().length > 0 && !phoneValid && (
+            {phone.trim().length > 0 && !phoneValid ? (
               <p className="mt-1 font-body text-xs text-[#9B2226]">
                 Use +94XXXXXXXXX or 0XXXXXXXXX
+              </p>
+            ) : (
+              <p className="mt-1 text-right font-body text-[11px] text-mist">
+                {phone.length}/{PHONE_MAX_LENGTH}
               </p>
             )}
           </div>
 
-          {error && (
-            <p className="text-sm font-body text-[#9B2226]">{error}</p>
-          )}
+          {error && <p className="text-sm font-body text-[#9B2226]">{error}</p>}
 
           <Button
             type="submit"
@@ -141,21 +165,20 @@ export function WalkInCustomerForm({ open, onOpenChange, onLinked }: WalkInCusto
             ) : (
               <>
                 <UserPlus className="h-5 w-5" />
-                Create &amp; Link Customer
+                Add &amp; Link Customer
               </>
             )}
           </Button>
 
           <button
             type="button"
-            onClick={() => onOpenChange(false)}
+            onClick={onCancel}
             disabled={isSubmitting}
             className="w-full text-center font-body text-sm text-mist hover:text-espresso transition-colors"
           >
             Cancel
           </button>
         </form>
-      </DialogContent>
-    </Dialog>
+    </>
   );
 }

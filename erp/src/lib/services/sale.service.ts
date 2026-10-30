@@ -5,10 +5,11 @@ import type { SaleStatus, TaxRule } from '@/generated/prisma/client';
 import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { createPayment } from '@/lib/services/payment.service';
+import { buildSaleAccountLegs, postSaleToAccounts, reverseSaleAccounts } from '@/lib/services/saleAccounts';
 import { redeemCredit, addToSpendTotal } from '@/lib/services/customer.service';
 import { kickCashDrawer } from '@/lib/hardware/cashDrawer';
 import type { PrinterConfig } from '@/lib/hardware/printer';
-import type { CreateSaleInput, HoldSaleInput } from '@/lib/validators/sale.validators';
+import type { CreateSaleInput, HoldSaleInput, UpdateSaleInput } from '@/lib/validators/sale.validators';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 
@@ -61,11 +62,24 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       }
     }
 
-    // POS sales must be linked to a customer. Management sales may omit the
-    // customer, but still validate the link when one is supplied.
-    if (input.shiftId && !input.customerId) {
+    // POS sales must be linked to a customer unless the operator recorded an
+    // explicit walk-in/guest sale. Management sales may omit the customer, but
+    // still validate the link when one is supplied.
+    if (input.shiftId && !input.customerId && !input.isGuestSale) {
       throw new Error('A customer must be linked to finalize a POS sale');
     }
+    // Store credit is customer-scoped: a guest sale must never redeem it.
+    const requestedCredit = Number.parseFloat(input.appliedStoreCredit ?? '0');
+    if (!input.customerId && Number.isFinite(requestedCredit) && requestedCredit > 0) {
+      throw new ApiError(
+        400,
+        'STORE_CREDIT_REQUIRES_CUSTOMER',
+        'Store credit cannot be applied to a guest sale — link a customer first',
+        { path: ['appliedStoreCredit'] },
+      );
+    }
+    // `isGuestSale` without an open shift is a management back-office sale; it
+    // is persisted as customerId = null exactly like a shiftless one.
     if (input.customerId) {
       const linkedCustomer = await tx.customer.findFirst({
         where: { id: input.customerId, tenantId, deletedAt: null },
@@ -167,9 +181,23 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       .reduce((sum, l) => sum.plus(l.lineTax), new Decimal(0))
       .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
+    // Delivery charge is part of what the customer pays (it is folded into
+    // totalAmount so payment legs, change and shift reconciliation stay
+    // consistent). Absent → 0, so the POS terminal's totals are unchanged.
+    const deliveryCharge = new Decimal(input.deliveryCharge ?? 0).toDecimalPlaces(
+      2,
+      Decimal.ROUND_HALF_UP,
+    );
+    if (deliveryCharge.isNegative()) {
+      throw new ApiError(400, 'INVALID_DELIVERY_CHARGE', 'Delivery charge cannot be negative', {
+        path: ['deliveryCharge'],
+      });
+    }
+
     const totalAmount = subtotal
       .minus(cartDiscount)
       .plus(totalTax)
+      .plus(deliveryCharge)
       .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
     // ── Zero-value verification (doc 33 / 34) ───────────────────────────
@@ -257,6 +285,12 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
         discountAmount: cartDiscount.toNumber(),
         taxAmount: totalTax.toNumber(),
         totalAmount: totalAmount.toNumber(),
+        deliveryCharge: deliveryCharge.toNumber(),
+        // Guest sales are stored exactly like shiftless management sales:
+        // customerId stays NULL. `isGuestSale` only relaxes the validator.
+        // Backdated entries carry the operator's date; everything else stamps
+        // "now" exactly as createdAt would, so the Date column is always real.
+        saleDate: input.saleDate ?? new Date(),
         paymentMethod: effectivePaymentMethod,
         zeroValueReason: input.zeroValueReason ?? null,
         zeroValueLinkedOrderRef: resolvedLinkedOrderRef,
@@ -351,7 +385,9 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       }
     }
 
-    // Customer credit redemption and spend tracking
+    // Customer credit redemption and spend tracking. Guest sales never reach
+    // this block: with no customerId there is no ledger to touch, so a walk-in
+    // bill accrues no loyalty spend and consumes no store credit.
     if (input.customerId) {
       const creditAmount = new Decimal(input.appliedStoreCredit ?? '0');
       if (creditAmount.greaterThan(0)) {
@@ -359,6 +395,24 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       }
       await addToSpendTotal(tenantId, input.customerId, totalAmount, tx);
     }
+
+    // Route the collected money into payment accounts. Inside the transaction
+    // so the sale and the money commit together; a tenant with no accounts yet
+    // simply writes nothing and the sale still completes.
+    await postSaleToAccounts(
+      tx,
+      tenantId,
+      input.cashierId,
+      sale.id,
+      sale.id.slice(0, 8).toUpperCase(),
+      buildSaleAccountLegs({
+        paymentMethod: effectivePaymentMethod,
+        totalAmount,
+        ...(input.cardAmount !== undefined && { cardAmount: input.cardAmount }),
+        ...(input.splitLegMethod !== undefined && { splitLegMethod: input.splitLegMethod }),
+      }),
+      input.paymentAccountId !== undefined ? { CASH: input.paymentAccountId } : {},
+    );
 
     const completeSale = await tx.sale.findUniqueOrThrow({
       where: { id: sale.id },
@@ -379,6 +433,9 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       totalAmount: result.totalAmount,
       paymentMethod: result.paymentMethod,
       lineCount: result.lines.length,
+      deliveryCharge: result.deliveryCharge,
+      customerId: result.customerId ?? null,
+      saleDate: result.saleDate?.toISOString() ?? null,
       ...(zeroValue && {
         zeroValueReason: result.zeroValueReason,
         zeroValueLinkedOrderRef: result.zeroValueLinkedOrderRef,
@@ -399,12 +456,22 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       .findUnique({ where: { id: tenantId }, select: { settings: true } })
       .then((tenant) => {
         if (!tenant) return;
-        const hw = (tenant.settings as any)?.hardware?.printer;
+        const settings = tenant.settings as {
+          hardware?: {
+            printer?: {
+              type?: PrinterConfig['type'];
+              host?: string;
+              port?: number;
+              paperWidth?: PrinterConfig['paperWidth'];
+            };
+          };
+        } | null;
+        const hw = settings?.hardware?.printer;
         if (!hw?.host) return;
         const printerConfig: PrinterConfig = {
           type: hw.type ?? 'NETWORK',
           host: hw.host,
-          port: hw.port,
+          ...(hw.port !== undefined ? { port: hw.port } : {}),
           paperWidth: hw.paperWidth ?? '58mm',
         };
         void kickCashDrawer(printerConfig);
@@ -461,6 +528,9 @@ export async function getSaleById(tenantId: string, saleId: string) {
         },
       },
       cashier: { select: { id: true, email: true } },
+      // Guest sales have customerId = null; the detail page renders a
+      // "Walk-in / Guest" label rather than a blank.
+      customer: { select: { id: true, name: true, phone: true } },
       authorizingManager: { select: { id: true, email: true } },
       shift: { select: { id: true, openedAt: true, status: true } },
       payments: true,
@@ -502,16 +572,24 @@ export async function getSales(tenantId: string, filters: GetSalesFilters) {
   if (filters.cashierId) where.cashierId = filters.cashierId;
   if (filters.status) where.status = filters.status;
   if (filters.from || filters.to) {
-    const createdAt: Record<string, Date> = {};
-    if (filters.from) createdAt.gte = filters.from;
-    if (filters.to) createdAt.lte = filters.to;
-    where.createdAt = createdAt;
+    // Backdated sales must be findable under their accounting date, so the
+    // range matches `saleDate` when it is set and falls back to `createdAt`
+    // for rows recorded before that column existed.
+    const range: Record<string, Date> = {};
+    if (filters.from) range.gte = filters.from;
+    if (filters.to) range.lte = filters.to;
+    where.OR = [{ saleDate: range }, { saleDate: null, createdAt: range }];
   }
 
   const [sales, total] = await Promise.all([
     prisma.sale.findMany({
       where,
-      include: { lines: { include: { returnLines: { select: { quantity: true } } } } },
+      include: {
+        lines: { include: { returnLines: { select: { quantity: true } } } },
+        // TASK B: the management table shows the customer name, so the list
+        // response carries the minimum identity fields (never the full record).
+        customer: { select: { id: true, name: true, phone: true } },
+      },
       orderBy: { createdAt: 'desc' },
       skip,
       take: limit,
@@ -770,6 +848,10 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
       });
     }
 
+    // Put the money back where it came from. Mirrors the entries written by
+    // `postSaleToAccounts` at collection time.
+    await reverseSaleAccounts(tx, tenantId, actorId, sale.id, sale.id.slice(0, 8).toUpperCase());
+
     return updatedSale;
   });
 
@@ -785,6 +867,202 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
   }).catch(() => {});
 
   return result;
+}
+
+// ── Update Sale (amend mutable details) ──────────────────────────────────────
+
+/**
+ * Amend the financially-inert details of a COMPLETED sale.
+ *
+ * Deliberately narrow: the customer link, the accounting date and the delivery
+ * charge may change; line items, unit prices, discounts and tender METHODS may
+ * NOT (those are financially immutable and must go through a return or a void,
+ * which restores stock and leaves its own audit trail).
+ *
+ * The delivery charge is a component of `totalAmount`, so changing it re-bases
+ * the total and the existing payment legs are re-scaled to match — the
+ * `sum(payments) === totalAmount` invariant is preserved rather than edited by
+ * hand. The operator never types a payment amount; the legs follow the total.
+ */
+export async function updateSale(
+  tenantId: string,
+  saleId: string,
+  actorId: string,
+  input: UpdateSaleInput,
+) {
+  const before = await prisma.sale.findFirst({
+    where: { id: saleId, tenantId },
+    include: { payments: { orderBy: { createdAt: 'asc' } } },
+  });
+
+  if (!before) {
+    // Typed 404 so the route maps it without a message-substring comparison.
+    throw new ApiError(404, 'NOT_FOUND', 'Sale not found');
+  }
+  if (before.status !== 'COMPLETED') {
+    throw new ApiError(
+      400,
+      'SALE_NOT_EDITABLE',
+      'Only completed sales can be edited — held and voided sales cannot be amended',
+    );
+  }
+
+  if (input.customerId) {
+    const customer = await prisma.customer.findFirst({
+      where: { id: input.customerId, tenantId, deletedAt: null },
+      select: { id: true, name: true, phone: true },
+    });
+    if (!customer) {
+      throw new ApiError(400, 'CUSTOMER_NOT_FOUND', 'Linked customer not found');
+    }
+    if (!customer.name || !customer.phone) {
+      throw new ApiError(400, 'INVALID_CUSTOMER_LINK', 'Linked customer must have a name and a mobile number');
+    }
+  }
+
+  const previousTotal = new Decimal(before.totalAmount.toString());
+  const previousDelivery = new Decimal(before.deliveryCharge.toString());
+
+  const data: {
+    customerId?: string | null;
+    saleDate?: Date | null;
+    deliveryCharge?: number;
+    totalAmount?: number;
+    changeGiven?: number | null;
+  } = {};
+
+  if (input.customerId !== undefined) data.customerId = input.customerId ?? null;
+  if (input.saleDate !== undefined) data.saleDate = input.saleDate ?? null;
+
+  let nextTotal = previousTotal;
+  if (input.deliveryCharge !== undefined) {
+    const nextDelivery = new Decimal(input.deliveryCharge).toDecimalPlaces(
+      2,
+      Decimal.ROUND_HALF_UP,
+    );
+    const delta = nextDelivery.minus(previousDelivery);
+    nextTotal = previousTotal.plus(delta).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    // A delivery charge cannot turn a paid sale negative (e.g. removing a
+    // charge larger than the goods total).
+    if (nextTotal.isNegative()) {
+      throw new ApiError(
+        400,
+        'INVALID_DELIVERY_CHARGE',
+        'Delivery charge cannot reduce the sale total below zero',
+      );
+    }
+    // The tender legs are derived, not typed, so re-basing the total requires
+    // them to currently reconcile. A sale whose payments already disagree with
+    // its total is a data-integrity case for a void, never for an edit.
+    if (!delta.isZero() && before.payments.length > 0) {
+      const settled = before.payments.reduce(
+        (sum, p) => sum.plus(new Decimal(p.amount.toString())),
+        new Decimal(0),
+      );
+      if (!settled.equals(previousTotal)) {
+        throw new ApiError(
+          400,
+          'SALE_PAYMENTS_OUT_OF_BALANCE',
+          'This sale\u2019s payments no longer reconcile with its total — void it instead of editing the delivery charge',
+        );
+      }
+    }
+    data.deliveryCharge = nextDelivery.toNumber();
+    if (!delta.isZero()) {
+      data.totalAmount = nextTotal.toNumber();
+      // Change handed back is derived from the settled cash portion, so it has
+      // to move with the total or the drawer reconciliation drifts.
+      if (before.changeGiven !== null && before.changeGiven !== undefined) {
+        const newChange = new Decimal(before.changeGiven.toString()).minus(delta);
+        data.changeGiven = newChange.isNegative() ? null : newChange.toNumber();
+      }
+    }
+  }
+
+  // A completed sale always carries settled tenders. Removing a delivery
+  // charge must never re-base the total to (or below) zero — that would leave
+  // zero-amount payment legs, which is a refund/void scenario, not an edit.
+  if (!nextTotal.equals(previousTotal) && before.payments.length > 0 && nextTotal.lte(0)) {
+    throw new ApiError(
+      400,
+      'INVALID_DELIVERY_CHARGE',
+      'This delivery charge would reduce the settled total to zero — void the sale instead',
+    );
+  }
+
+  const updated = await prisma.$transaction(async (tx: TxClient) => {
+    // Re-scale existing tender legs so they still sum to the new total. The
+    // split shape (how many legs, which methods, which card references) is
+    // preserved; only the amounts follow the total.
+    if (
+      !nextTotal.equals(previousTotal) &&
+      before.payments.length > 0 &&
+      previousTotal.greaterThan(0)
+    ) {
+      const legs = before.payments;
+      let allocated = new Decimal(0);
+      for (let i = 0; i < legs.length; i += 1) {
+        const leg = legs[i]!;
+        const isLast = i === legs.length - 1;
+        const amount = isLast
+          ? nextTotal.minus(allocated)
+          : new Decimal(leg.amount.toString())
+              .mul(nextTotal)
+              .div(previousTotal)
+              .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        if (amount.isNegative()) {
+          throw new ApiError(
+            400,
+            'INVALID_DELIVERY_CHARGE',
+            'This delivery charge cannot be applied to the existing payment split',
+          );
+        }
+        allocated = allocated.plus(amount);
+        await tx.payment.update({
+          where: { id: leg.id },
+          data: { amount: amount.toFixed(2) },
+        });
+      }
+    }
+
+    return tx.sale.update({
+      where: { id: saleId },
+      data,
+      include: {
+        lines: { include: { returnLines: { select: { quantity: true } } } },
+        customer: { select: { id: true, name: true, phone: true } },
+      },
+    });
+  });
+
+  void createAuditLog({
+    tenantId,
+    actorId,
+    actorRole: 'USER',
+    entityType: 'Sale',
+    entityId: saleId,
+    action: AUDIT_ACTIONS.SALE_DETAILS_UPDATED,
+    before: {
+      customerId: before.customerId,
+      saleDate: before.saleDate?.toISOString() ?? null,
+      deliveryCharge: before.deliveryCharge.toString(),
+      totalAmount: before.totalAmount.toString(),
+    },
+    after: {
+      customerId: updated.customerId,
+      saleDate: updated.saleDate?.toISOString() ?? null,
+      deliveryCharge: updated.deliveryCharge.toString(),
+      totalAmount: updated.totalAmount.toString(),
+    },
+  }).catch(() => {});
+
+  return {
+    ...updated,
+    lines: updated.lines.map((line) => ({
+      ...line,
+      returnedQuantity: line.returnLines.reduce((sum, rl) => sum + rl.quantity, 0),
+    })),
+  };
 }
 
 // ── Get Shift Sales ──────────────────────────────────────────────────────────

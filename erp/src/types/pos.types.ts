@@ -11,6 +11,13 @@ export interface CreateSalePayload {
   cartDiscountAmount: number;
   authorizingManagerId?: string;
   customerId?: string | undefined;
+  /**
+   * Guest mode: the sale is attributed to no customer. The POS defaults to
+   * this so a cashier can bill an anonymous walk-in without capturing any
+   * details; sending `customerId` (or creating one inline) switches the sale
+   * to an attributed sale instead.
+   */
+  isGuestSale?: boolean | undefined;
   splitLegMethod?: 'CARD' | 'LANKAQR' | undefined;
   appliedStoreCredit?: string | undefined;
   appliedPromotions?: unknown | undefined;

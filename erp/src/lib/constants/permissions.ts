@@ -9,6 +9,11 @@ export const PERMISSIONS = {
     holdSale: 'sale:hold',
     resumeSale: 'sale:resume',
     reprintReceipt: 'sale:receipt:reprint',
+    // Amending a COMPLETED sale's inert details (customer link, accounting
+    // date, delivery charge). Line items/prices/tenders stay immutable — those
+    // go through returns and voids. Derives to OWNER/MANAGER only, mirroring
+    // the management ledger it is invoked from.
+    editSale: 'sale:edit',
     // M31-02 (OBS-55): sending a receipt to an arbitrary phone number is not a
     // cashier capability. Managers/owners may send to any number; a cashier is
     // restricted to their own sale (enforced in the send-receipt route).
@@ -138,6 +143,17 @@ export const PERMISSIONS = {
     viewPettyCash: 'petty_cash:view',
     managePettyCash: 'petty_cash:manage',
   },
+  // Ledger-backed money containers (cash drawer, banks, gateways, couriers).
+  // `view` is broad so a cashier can pick a destination account; `transfer`,
+  // `deposit` and `close` move or retire money and stay with OWNER/MANAGER.
+  PAYMENT_ACCOUNT: {
+    viewPaymentAccount: 'payment_account:view',
+    managePaymentAccount: 'payment_account:manage',
+    transferFunds: 'payment_account:transfer',
+    depositFunds: 'payment_account:deposit',
+    closePaymentAccount: 'payment_account:close',
+    settlePurchaseOrder: 'payment_account:po_settle',
+  },
   BILLING: {
     viewBilling: 'billing:view',
     manageBilling: 'billing:manage',
@@ -265,6 +281,9 @@ export const ROLE_PERMISSIONS: Record<AssignableRole, PermissionKey[]> = {
     PERMISSIONS.APPOINTMENT.viewAppointment,
     PERMISSIONS.APPOINTMENT.createAppointment,
     PERMISSIONS.APPOINTMENT.checkInAppointment,
+    // Cashiers pick which account a POS payment lands in (default: Cash), but
+    // cannot create, transfer from, deposit into, or close accounts.
+    PERMISSIONS.PAYMENT_ACCOUNT.viewPaymentAccount,
   ],
   STOCK_CLERK: [
     PERMISSIONS.PRODUCT.viewProduct,
@@ -277,6 +296,7 @@ export const ROLE_PERMISSIONS: Record<AssignableRole, PermissionKey[]> = {
     PERMISSIONS.SUPPLIER.viewSupplier,
     PERMISSIONS.BATCH.viewBatch,
     PERMISSIONS.BATCH.viewBatchStats,
+    PERMISSIONS.PAYMENT_ACCOUNT.viewPaymentAccount,
   ],
   DISPATCH_STAFF: [
     PERMISSIONS.DELIVERY.viewDelivery,
