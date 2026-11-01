@@ -5,12 +5,7 @@
  * `RAW_MATERIAL_LOW_STOCK` / `RAW_MATERIAL_CRITICAL` notification types.
  */
 import { prisma } from '@/lib/prisma';
-import type {
-  RawMaterial,
-  RawMaterialCategory,
-  Unit,
-  UserRole,
-} from '@/generated/prisma/client';
+import type { RawMaterial, Unit, UserRole } from '@/generated/prisma/client';
 import { getRawMaterialStockStatus } from '@/lib/services/rawMaterial.core';
 
 export type RawMaterialAlertSeverity = 'LOW' | 'CRITICAL';
@@ -18,7 +13,7 @@ export type RawMaterialAlertSeverity = 'LOW' | 'CRITICAL';
 export interface RawMaterialAlert {
   rawMaterialId: string;
   name: string;
-  category: RawMaterialCategory;
+  category: string;
   unit: Unit;
   quantity: number;
   lowStockThreshold: number;

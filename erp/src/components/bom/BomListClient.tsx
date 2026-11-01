@@ -33,7 +33,7 @@ export function BomListClient({ permissions }: BomListClientProps) {
   const items = data?.data ?? [];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold text-espresso">Bill of Materials</h1>

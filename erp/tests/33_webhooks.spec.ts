@@ -4,8 +4,7 @@
  * Target: tests/33_webhooks.spec.ts
  *
  * Inspected surfaces (read-only inspection; tests drive only reachable paths):
- * - UI   : /settings/webhooks        (server component; CASHIER/STOCK_CLERK → /pos;
- *                                     unauth → /login; renders WebhooksPageClient)
+ * - UI   : /settings/webhooks        (REMOVED — asserts 404; no management UI)
  * - API  : GET    /api/webhooks/endpoints            (OWNER+MANAGER; tenant-scoped;
  *                                     includes lastDelivery summary per endpoint)
  * - API  : POST   /api/webhooks/endpoints            (OWNER-only; zod: HTTPS-only URL,
@@ -93,12 +92,11 @@ function endpointBody(overrides: Record<string, unknown> = {}) {
 // §1 — Functional & business logic
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('§1 Functional & business logic', () => {
-  test('F1: webhooks settings page loads for owner', async ({ page }) => {
+  test('F1: webhooks settings page has been removed (404)', async ({ page }) => {
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
     const res = await page.goto(PAGE_URL);
     await page.waitForLoadState('networkidle');
-    expect(res?.status()).toBe(200);
-    expect(page.url()).toContain('/settings/webhooks');
+    expect(res?.status()).toBe(404);
   });
 
   test('F2: endpoints list returns typed payload and pagination meta', async ({ page }) => {
@@ -482,12 +480,12 @@ test.describe('§5 Chaos, button spamming & race conditions', () => {
 // §6 — Hardware & device simulation
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('§6 Hardware & device simulation', () => {
-  test('H1: settings page renders on a POS-tablet viewport (1280x800)', async ({ page }) => {
+  test('H1: removed settings page returns 404 on a POS-tablet viewport (1280x800)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await login(page, OWNER_EMAIL, OWNER_PASSWORD);
     const res = await page.goto(PAGE_URL);
     await page.waitForLoadState('networkidle');
-    expect(res?.status()).toBe(200);
+    expect(res?.status()).toBe(404);
   });
 
   test('H2: rapid-fire endpoint list polling stays stable', async ({ page }) => {
@@ -557,7 +555,7 @@ test.describe('§8 Security, RBAC & multi-tenant isolation', () => {
     expect(del.status()).toBe(401);
   });
 
-  test('S2: cashier is blocked from webhook APIs and redirected from the settings page', async ({ page }) => {
+  test('S2: cashier is blocked from webhook APIs and the settings page is gone for everyone', async ({ page }) => {
     await login(page, CASHIER1_EMAIL, CASHIER1_PASSWORD);
     const list = await page.request.get(ENDPOINTS_URL);
     expect(list.status()).toBe(403);
@@ -569,9 +567,8 @@ test.describe('§8 Security, RBAC & multi-tenant isolation', () => {
     expect(retry.status()).toBe(403);
     const del = await page.request.delete(`${ENDPOINTS_URL}/${primaryEndpointId ?? 'cmnonexistent000000000000'}`);
     expect(del.status()).toBe(403);
-    await page.goto(PAGE_URL);
-    await page.waitForLoadState('networkidle');
-    expect(page.url()).not.toContain('/settings/webhooks');
+    const res = await page.goto(PAGE_URL);
+    expect(res?.status()).toBe(404);
   });
 
   test('S3: secret is returned ONLY on create — never in list or deliveries', async ({ page }) => {

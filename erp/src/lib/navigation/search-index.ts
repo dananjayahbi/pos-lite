@@ -118,7 +118,6 @@ export const NAV_SEARCH_INDEX: NavSearchEntry[] = [
   { title: 'Hardware Settings', path: '/settings/hardware', description: 'Configure printers and peripherals.', keywords: ['printer', 'device'], group: 'Settings', permission: 'settings:hardware' },
   { title: 'Store Profile', path: '/settings/store', description: 'Store and business profile details.', keywords: ['business', 'profile'], group: 'Settings', permission: 'settings:store_profile' },
   { title: 'Website', path: '/settings/website', description: 'Configure the public storefront website.', keywords: ['storefront', 'theme'], group: 'Settings' },
-  { title: 'Webhooks', path: '/settings/webhooks', description: 'Manage outbound webhooks.', keywords: ['hooks', 'integrations'], group: 'Settings' },
   { title: 'Audit Log', path: '/settings/audit-log', description: 'System audit trail with export.', keywords: ['logs', 'history'], group: 'Settings', permission: 'settings:view_audit_log' },
 
   // ── Notable actions ───────────────────────────────────────────

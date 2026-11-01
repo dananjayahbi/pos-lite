@@ -16,11 +16,13 @@ export const RAW_MATERIAL_CATEGORY_LABELS: Record<RawMaterialCategory, string> =
 export const UNIT_LABELS: Record<Unit, string> = {
   LITERS: 'Liters',
   KILOGRAMS: 'Kilograms',
+  UNITS: 'Units',
 };
 
 export const UNIT_SHORT_LABELS: Record<Unit, string> = {
   LITERS: 'L',
   KILOGRAMS: 'kg',
+  UNITS: 'unit',
 };
 
 export const RAW_MATERIAL_CATEGORIES = Object.keys(
@@ -29,8 +31,48 @@ export const RAW_MATERIAL_CATEGORIES = Object.keys(
 
 export const UNITS = Object.keys(UNIT_LABELS) as Unit[];
 
-export function getRawMaterialCategoryLabel(category: RawMaterialCategory): string {
-  return RAW_MATERIAL_CATEGORY_LABELS[category] ?? category;
+/**
+ * Built-in categories seeded for every tenant. Tenants can create additional
+ * categories; keys are unique per tenant and stay stable when the display name
+ * is renamed.
+ */
+export const DEFAULT_RAW_MATERIAL_CATEGORIES: ReadonlyArray<{
+  key: RawMaterialCategory;
+  name: string;
+}> = RAW_MATERIAL_CATEGORIES.map((key) => ({
+  key,
+  name: RAW_MATERIAL_CATEGORY_LABELS[key],
+}));
+
+/** Turn an arbitrary category key into a readable fallback label. */
+export function humanizeRawMaterialCategoryKey(key: string): string {
+  return key
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/**
+ * Derive a stable category key from a display name, e.g. "Bottles & Caps"
+ * becomes "BOTTLES_CAPS". Falls back to "CATEGORY" when the name has no
+ * alphanumeric characters.
+ */
+export function slugifyRawMaterialCategoryKey(name: string): string {
+  const key = name
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return key || 'CATEGORY';
+}
+
+export function getRawMaterialCategoryLabel(category: string): string {
+  return (
+    RAW_MATERIAL_CATEGORY_LABELS[category as RawMaterialCategory] ??
+    humanizeRawMaterialCategoryKey(category)
+  );
 }
 
 export function getUnitLabel(unit: Unit): string {

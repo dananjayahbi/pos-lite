@@ -13,6 +13,7 @@ export function CartLineItem({ item }: CartLineItemProps) {
   const updateQuantity = useCartStore((s) => s.updateQuantity);
   const removeItem = useCartStore((s) => s.removeItem);
   const setActiveLine = useCartStore((s) => s.setActiveLine);
+  const setLineDiscount = useCartStore((s) => s.setLineDiscount);
   const activeLineId = useCartStore((s) => s.activeLineId);
   const appliedPromotions = useCartStore((s) => s.appliedPromotions);
   const isActive = activeLineId === item.variantId;
@@ -33,7 +34,22 @@ export function CartLineItem({ item }: CartLineItemProps) {
         <p className="font-body text-sm text-espresso truncate">{item.productName}</p>
         <p className="font-body text-xs text-mist truncate">{item.variantDescription}</p>
         {item.discountPercent > 0 && (
-          <span className="font-body text-xs text-[#2D6A4F]">-{item.discountPercent}%</span>
+          <span className="inline-flex items-center gap-1 font-body text-xs text-[#2D6A4F]">
+            -{item.discountPercent}%
+            <button
+              type="button"
+              onClick={(e) => {
+                // Stop the row click so the line editor does not open on removal.
+                e.stopPropagation();
+                setLineDiscount(item.variantId, 0);
+              }}
+              className="text-[#9B2226]/70 hover:text-[#9B2226] transition-colors"
+              aria-label={`Remove discount from ${item.productName}`}
+              title="Remove line discount"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
         )}
         {linePromos.map((p) => (
           <span key={p.promotionId} className="flex items-center gap-0.5 font-body text-xs text-green-700">

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildProductionBatchNumber,
   computeConsumptionPlan,
   computeIngredientRequirement,
   getInsufficientIngredients,
@@ -9,6 +10,26 @@ import {
   type BomIngredient,
 } from '@/lib/services/bom.core';
 import { Prisma } from '@/generated/prisma/client';
+
+describe('bom.core — buildProductionBatchNumber', () => {
+  it('builds a deterministic MFG batch number from the production-log id', () => {
+    expect(buildProductionBatchNumber('cmabc123xyz789', new Date('2026-11-01T12:00:00Z'))).toBe(
+      'MFG-20261101-23XYZ789',
+    );
+  });
+
+  it('strips non-alphanumerics and uppercases the suffix', () => {
+    expect(buildProductionBatchNumber('ab-cd_ef', new Date('2026-01-02T00:00:00Z'))).toBe(
+      'MFG-20260102-ABCDEF',
+    );
+  });
+
+  it('falls back to BATCH when the id has no usable characters', () => {
+    expect(buildProductionBatchNumber('---', new Date('2026-01-02T00:00:00Z'))).toBe(
+      'MFG-20260102-BATCH',
+    );
+  });
+});
 
 describe('bom.core — computeIngredientRequirement', () => {
   it('multiplies quantity per unit by units produced', () => {

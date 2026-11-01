@@ -45,12 +45,6 @@ export const SETTINGS_CATALOG: SettingsCatalogEntry[] = [
     permission: PERMISSIONS.SETTINGS.manageWebsite,
   },
   {
-    href: '/settings/webhooks',
-    label: 'Webhooks',
-    description: 'Outbound endpoints and delivery retry history.',
-    permission: PERMISSIONS.SETTINGS.viewWebhookEndpoints,
-  },
-  {
     href: '/settings/audit-log',
     label: 'Audit Log',
     description: 'Immutable trail of privileged actions, exportable to CSV.',

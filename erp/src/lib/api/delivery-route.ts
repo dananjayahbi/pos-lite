@@ -55,6 +55,12 @@ export function mapDeliveryError(error: unknown): NextResponse | null {
   if (message === 'DELIVERY_NOT_FOUND') return notFound('Delivery not found');
   if (message === 'SHIPMENT_NOT_FOUND') return notFound('Shipment not found');
   if (message === 'PACKAGING_ITEM_NOT_FOUND') return notFound('Packaging item not found');
+  if (message === 'INSUFFICIENT_PACKAGING_STOCK') return conflict('Adjustment would take packaging stock below zero');
+  // A category was deleted/renamed out from under an item payload.
+  if (message === 'CATEGORY_NOT_FOUND') return badRequest('Packaging category does not exist');
+  if (message === 'CATEGORY_IN_USE') return conflict('This category is used by packaging items and cannot be deleted');
+  if (message === 'LAST_CATEGORY') return conflict('At least one packaging category is required');
+  if (message === 'BUILT_IN_CATEGORY') return badRequest('Built-in categories can be renamed but not deactivated');
   if (message === 'DELIVERY_NOT_EDITABLE') return badRequest('Delivery can only be edited before dispatch');
   if (message === 'DELIVERY_NOT_DISPATCHABLE') return conflict('Delivery is not in a dispatchable state');
   if (message === 'DELIVERY_NOT_RECOVERABLE') return conflict('Delivery is not in a recoverable state');

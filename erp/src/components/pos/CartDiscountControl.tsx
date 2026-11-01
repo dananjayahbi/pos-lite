@@ -38,6 +38,9 @@ export function CartDiscountControl() {
   const newTotal = subtotal - discountAmount;
   const exceedsTotal = newTotal < 0;
   const needsOverride = !isPrivileged && effectivePercent > POS_DISCOUNT_THRESHOLDS.cartMaxPercent;
+  // What is actually applied (the input preview is a separate, in-progress value).
+  const appliedDiscountAmount =
+    cartDiscountPercent > 0 ? (subtotal * cartDiscountPercent) / 100 : cartDiscountAmount;
 
   const handleApply = () => {
     if (exceedsTotal || parsedInput <= 0) return;
@@ -65,11 +68,22 @@ export function CartDiscountControl() {
             type="button"
             onClick={handleClear}
             className="font-body text-[11px] text-[#9B2226] hover:text-[#9B2226]/80 transition-colors"
+            aria-label="Remove cart discount"
           >
-            Clear
+            Remove
           </button>
         )}
       </div>
+
+      {hasActiveDiscount && (
+        <p className="mb-1.5 font-body text-[11px] text-[#2D6A4F]">
+          Applied:{' '}
+          {cartDiscountPercent > 0
+            ? `${cartDiscountPercent}% off`
+            : `${formatRupee(cartDiscountAmount)} off`}{' '}
+          ({formatRupee(Math.min(subtotal, appliedDiscountAmount))})
+        </p>
+      )}
 
       <div className="flex items-center gap-2">
         {/* Mode toggle */}

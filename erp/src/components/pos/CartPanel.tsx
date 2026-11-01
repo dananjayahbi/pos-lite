@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Decimal from 'decimal.js';
 import { formatRupee } from '@/lib/format';
-import { useCartStore, getCartTotal } from '@/stores/cartStore';
+import { useCartStore, getCartTotal, getSaleDiscountAmount } from '@/stores/cartStore';
 import { createCartPromotionSnapshot } from '@/stores/cartPromotions';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CartLineItem } from '@/components/pos/CartLineItem';
@@ -134,7 +134,15 @@ export function CartPanel({ shiftId }: CartPanelProps) {
       quantity: item.quantity,
       discountPercent: Number(item.discountPercent),
     })),
-    cartDiscountAmount: discountEffective.toNumber(),
+    // ISSUE 7: promotions are a real discount, and the API only knows one
+    // discount field. Sending the cart discount alone persisted a promotion-
+    // discounted sale at full price and made a promotion-zeroed cart fail as a
+    // non-zero NONE tender, so both are folded into `cartDiscountAmount`.
+    cartDiscountAmount: getSaleDiscountAmount(
+      subtotal,
+      discountEffective,
+      promoDiscountDec,
+    ).toNumber(),
     ...(authorizingManagerId ? { authorizingManagerId } : {}),
     ...(authorizingManagerId ? { authorizingManagerId } : {}),
     ...(linkedCustomerId ? { customerId: linkedCustomerId } : { isGuestSale: true }),

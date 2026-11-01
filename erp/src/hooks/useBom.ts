@@ -216,6 +216,20 @@ export function useProduceGoods() {
       qc.invalidateQueries({ queryKey: ['bom-plan'] });
       qc.invalidateQueries({ queryKey: ['production-logs'] });
       qc.invalidateQueries({ queryKey: ['raw-material-alerts'] });
+      // Production changes raw-material stock, finished-good stock, batches and
+      // the stock ledger. Invalidate every surface that reads them so the
+      // inventory page reflects the run immediately instead of serving a
+      // 30-second stale cache.
+      qc.invalidateQueries({ queryKey: ['raw-materials'] });
+      qc.invalidateQueries({ queryKey: ['raw-material-stats'] });
+      qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: ['product'] });
+      qc.invalidateQueries({ queryKey: ['batches'] });
+      qc.invalidateQueries({ queryKey: ['stock-movements'] });
+      qc.invalidateQueries({ queryKey: ['stock-summary'] });
+      qc.invalidateQueries({ queryKey: ['stock-valuation'] });
+      qc.invalidateQueries({ queryKey: ['low-stock-count'] });
+      qc.invalidateQueries({ queryKey: ['low-stock-variants'] });
     },
   });
 }

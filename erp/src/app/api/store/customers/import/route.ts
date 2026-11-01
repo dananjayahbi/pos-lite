@@ -4,21 +4,14 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import Papa from 'papaparse';
-import { z } from 'zod';
 import { Gender } from '@/generated/prisma/client';
+import {
+  CustomerCsvRowSchema,
+  normalizeSriLankaPhone,
+} from '@/lib/validators/customer-import.validators';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 const MAX_ROWS = 500;
-
-const CsvRowSchema = z.object({
-  Name: z.string().trim().min(1, 'Name is required').max(100),
-  Phone: z.string().trim().max(20).optional().default(''),
-  Email: z.string().trim().email('Invalid email').optional().or(z.literal('')),
-  Gender: z.string().trim().toUpperCase().pipe(z.enum(['MALE', 'FEMALE', 'OTHER'])).optional().or(z.literal('')),
-  Birthday: z.string().trim().optional().or(z.literal('')),
-  Tags: z.string().trim().optional().or(z.literal('')),
-  Notes: z.string().trim().max(500).optional().or(z.literal('')),
-});
 
 function parseBirthday(value: string | undefined): Date | undefined {
   if (!value || value.trim() === '') return undefined;
@@ -107,7 +100,9 @@ export async function POST(request: Request) {
       where: { tenantId, deletedAt: null },
       select: { phone: true },
     });
-    const existingPhones = new Set(existingCustomers.map((c) => c.phone));
+    const existingPhones = new Set(
+      existingCustomers.map((c) => normalizeSriLankaPhone(c.phone)),
+    );
 
     const imported: string[] = [];
     const skipped: string[] = [];
@@ -127,7 +122,7 @@ export async function POST(request: Request) {
       const rawRow = parsed.data[i];
       const rowNum = i + 2; // +2 for header row + 0-index
 
-      const result = CsvRowSchema.safeParse(rawRow);
+      const result = CustomerCsvRowSchema.safeParse(rawRow);
       if (!result.success) {
         const msg = result.error.issues.map((issue) => issue.message).join('; ');
         errors.push({ row: rowNum, message: msg });
@@ -136,9 +131,9 @@ export async function POST(request: Request) {
 
       const row = result.data;
       const name = row.Name;
-      const phone = (row.Phone ?? '').trim();
+      const phone = row.Phone;
 
-      if (phone && existingPhones.has(phone)) {
+      if (existingPhones.has(normalizeSriLankaPhone(phone))) {
         skipped.push(`Row ${rowNum}: ${name} (duplicate phone ${phone})`);
         continue;
       }
@@ -152,7 +147,7 @@ export async function POST(request: Request) {
       toCreate.push({
         tenantId,
         name,
-        phone: phone || '',
+        phone,
         email,
         gender: gender ?? null,
         birthday: birthday ?? null,
@@ -160,7 +155,7 @@ export async function POST(request: Request) {
         notes,
       });
 
-      if (phone) existingPhones.add(phone);
+      existingPhones.add(normalizeSriLankaPhone(phone));
       imported.push(name);
     }
 

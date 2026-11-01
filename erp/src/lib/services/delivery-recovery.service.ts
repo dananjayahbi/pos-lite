@@ -178,7 +178,7 @@ export async function redeliverDelivery(
   });
   if (!upload.ok) throw new Error(`COURIER_UPLOAD_FAILED:${upload.error.message}`);
 
-  const dispatched = await prisma.$transaction(async (tx: TxClient) => {
+  const { dispatched, deductions } = await prisma.$transaction(async (tx: TxClient) => {
     const updated = await tx.delivery.update({
       where: { id: deliveryId },
       data: {
@@ -231,11 +231,13 @@ export async function redeliverDelivery(
       after: { waybillId: upload.data.waybillId, waybillMode: input.waybillMode },
     });
 
-    return updated;
+    // Deduct packaging for the new shipment atomically with the status flip.
+    const deductions = await autoDeductPackaging(tenantId, deliveryId, { tx });
+
+    return { dispatched: updated, deductions };
   });
 
-  // Non-blocking packaging deduction for the new shipment.
-  const deductions = await autoDeductPackaging(tenantId, deliveryId);
+  // Non-blocking low-stock notification for the redelivered parcel.
   if (deductions.length > 0) {
     await notifyLowStock(tenantId, deliveryId, deductions);
   }

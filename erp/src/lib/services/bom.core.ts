@@ -114,3 +114,19 @@ export type ProductSourceValue = 'MANUFACTURED' | 'TRADED';
 export function isSourceEligibleForProduction(source: ProductSourceValue): boolean {
   return source === 'MANUFACTURED';
 }
+
+/**
+ * Build a deterministic, human-readable batch number for a production run.
+ *
+ * Example: `MFG-20261101-8FK2M1QZ`. The suffix comes from the production-log
+ * id so repeated runs of the same product never collide.
+ */
+export function buildProductionBatchNumber(seed: string, date: Date = new Date()): string {
+  const day = date.toISOString().slice(0, 10).replace(/-/g, '');
+  const suffix =
+    seed
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(-8)
+      .toUpperCase() || 'BATCH';
+  return `MFG-${day}-${suffix}`;
+}

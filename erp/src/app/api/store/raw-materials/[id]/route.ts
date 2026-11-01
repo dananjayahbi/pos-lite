@@ -9,6 +9,7 @@ import {
   toRawMaterialItem,
 } from '@/lib/services/rawMaterial.service';
 import { UpdateRawMaterialSchema } from '@/lib/validators/rawMaterial.validators';
+import { getRawMaterialCategoryNameMap } from '@/lib/services/rawMaterialCategory.service';
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -60,6 +61,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
+      );
+    }
+    if (error instanceof Error && error.message === 'CATEGORY_NOT_FOUND') {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Unknown raw material category' } },
+        { status: 400 },
       );
     }
     console.error('PATCH /api/store/raw-materials/[id] error:', error);
@@ -153,7 +160,11 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
         { status: 404 },
       );
     }
-    return NextResponse.json({ success: true, data: toRawMaterialItem(material) });
+    const categoryNames = await getRawMaterialCategoryNameMap(tenantId);
+    return NextResponse.json({
+      success: true,
+      data: toRawMaterialItem(material, categoryNames.get(material.category)),
+    });
   } catch (error) {
     console.error('GET /api/store/raw-materials/[id] error:', error);
     return NextResponse.json(

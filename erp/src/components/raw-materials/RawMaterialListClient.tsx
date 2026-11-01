@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus } from 'lucide-react';
+import { Plus, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -28,12 +28,9 @@ import { RawMaterialFormDialog } from '@/components/raw-materials/RawMaterialFor
 import { RawMaterialAdjustDialog } from '@/components/raw-materials/RawMaterialAdjustDialog';
 import { useRawMaterials } from '@/hooks/useRawMaterials';
 import type { RawMaterialItem } from '@/hooks/useRawMaterials';
-import type { RawMaterialCategory } from '@/generated/prisma/client';
+import { useRawMaterialCategories } from '@/hooks/useRawMaterialCategories';
+import { RawMaterialCategoryManagerDialog } from '@/components/raw-materials/RawMaterialCategoryManagerDialog';
 import type { RawMaterialStockStatus } from '@/lib/services/rawMaterial.core';
-import {
-  RAW_MATERIAL_CATEGORIES,
-  getRawMaterialCategoryLabel,
-} from '@/lib/services/rawMaterial.core';
 
 interface RawMaterialListClientProps {
   permissions: string[];
@@ -48,9 +45,9 @@ export function RawMaterialListClient({ permissions }: RawMaterialListClientProp
   const limit = 25;
   const search = searchParams.get('search') ?? undefined;
   const categoryRaw = searchParams.get('category');
-  const category = (RAW_MATERIAL_CATEGORIES as string[]).includes(categoryRaw ?? '')
-    ? (categoryRaw as RawMaterialCategory)
-    : undefined;
+  const category = categoryRaw ?? undefined;
+  const { data: categoriesData } = useRawMaterialCategories();
+  const categories = categoriesData?.data ?? [];
   const stockStatusRaw = searchParams.get('stockStatus');
   const stockStatus: RawMaterialStockStatus | undefined =
     stockStatusRaw === 'OK' || stockStatusRaw === 'LOW' || stockStatusRaw === 'OUT'
@@ -61,6 +58,7 @@ export function RawMaterialListClient({ permissions }: RawMaterialListClientProp
   const [editing, setEditing] = useState<RawMaterialItem | null>(null);
   const [adjustTarget, setAdjustTarget] = useState<RawMaterialItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RawMaterialItem | null>(null);
+  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
 
   const [searchInput, setSearchInput] = useState(search ?? '');
 
@@ -122,24 +120,32 @@ export function RawMaterialListClient({ permissions }: RawMaterialListClientProp
   const showTo = Math.min(page * limit, total);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold text-espresso">Raw Materials</h1>
           <p className="mt-1 font-body text-sm text-mist">
-            Track bulk ingredients (oils, powders, chemicals) by liter or kilogram.
+            Track bulk ingredients and packaging items (oils, powders, bottles, caps) by
+            liter, kilogram, or unit.
           </p>
         </div>
-        {canCreate && (
-          <Button
-            onClick={() => {
-              setEditing(null);
-              setFormOpen(true);
-            }}
-          >
-            <Plus className="mr-2 h-4 w-4" /> Add raw material
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <Button variant="outline" onClick={() => setCategoryManagerOpen(true)}>
+              <Settings2 className="mr-2 h-4 w-4" /> Categories
+            </Button>
+          )}
+          {canCreate && (
+            <Button
+              onClick={() => {
+                setEditing(null);
+                setFormOpen(true);
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" /> Add raw material
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -159,9 +165,9 @@ export function RawMaterialListClient({ permissions }: RawMaterialListClientProp
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All categories</SelectItem>
-            {RAW_MATERIAL_CATEGORIES.map((cat) => (
-              <SelectItem key={cat} value={cat}>
-                {getRawMaterialCategoryLabel(cat)}
+            {categories.map((cat) => (
+              <SelectItem key={cat.id} value={cat.key}>
+                {cat.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -227,6 +233,10 @@ export function RawMaterialListClient({ permissions }: RawMaterialListClientProp
         )}
       </div>
 
+      <RawMaterialCategoryManagerDialog
+        open={categoryManagerOpen}
+        onOpenChange={setCategoryManagerOpen}
+      />
       <RawMaterialFormDialog
         open={formOpen}
         onOpenChange={setFormOpen}

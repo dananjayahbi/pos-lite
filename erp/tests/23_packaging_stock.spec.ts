@@ -691,6 +691,104 @@ test.describe('Module 23: Packaging Consumables Stock', () => {
     expect([201, 409]).toContain(res2.status());
   });
 
+  test('§1.F7 — Tenant-managed categories can be added, renamed and deleted', async ({ page }) => {
+    const name = `Courier Bags ${Date.now()}`;
+
+    const createRes = await page.request.post(`${BASE_URL}/api/store/packaging-categories`, {
+      data: { name },
+    });
+    const created = await createRes.json();
+    expect(createRes.status()).toBe(201);
+    expect(created.data.name).toBe(name);
+    expect(created.data.key).toMatch(/^COURIER_BAGS/);
+
+    const renameRes = await page.request.patch(
+      `${BASE_URL}/api/store/packaging-categories/${created.data.id}`,
+      { data: { name: `${name} v2` } },
+    );
+    const renamed = await renameRes.json();
+    expect(renameRes.status()).toBe(200);
+    expect(renamed.data.name).toBe(`${name} v2`);
+    // Renaming keeps the stable key so item references stay intact.
+    expect(renamed.data.key).toBe(created.data.key);
+
+    const deleteRes = await page.request.delete(
+      `${BASE_URL}/api/store/packaging-categories/${created.data.id}`,
+    );
+    expect(deleteRes.status()).toBe(200);
+
+    const listRes = await page.request.get(`${BASE_URL}/api/store/packaging-categories`);
+    const list = await listRes.json();
+    expect(list.data.some((c: any) => c.id === created.data.id)).toBe(false);
+  });
+
+  test('§1.F8 — Category in use cannot be deleted (409)', async ({ page }) => {
+    const name = `In Use ${Date.now()}`;
+    const createRes = await page.request.post(`${BASE_URL}/api/store/packaging-categories`, {
+      data: { name },
+    });
+    const category = (await createRes.json()).data;
+
+    await page.request.post(`${BASE_URL}/api/store/packaging`, {
+      data: {
+        category: category.key,
+        name: `Item in ${name}`,
+        unit: 'PIECE',
+        quantityOnHand: 5,
+        lowStockThreshold: 1,
+      },
+    });
+
+    const deleteRes = await page.request.delete(
+      `${BASE_URL}/api/store/packaging-categories/${category.id}`,
+    );
+    expect(deleteRes.status()).toBe(409);
+    const json = await deleteRes.json();
+    expect(json.error.code).toBe('CATEGORY_IN_USE');
+  });
+
+  test('§1.F9 — autoGenerateSku derives a unique SKU', async ({ page }) => {
+    const payload = {
+      category: 'POLYMAILER',
+      name: `Auto Sku ${Date.now()}`,
+      unit: 'PIECE',
+      quantityOnHand: 10,
+      lowStockThreshold: 1,
+      autoGenerateSku: true,
+    };
+
+    const firstRes = await page.request.post(`${BASE_URL}/api/store/packaging`, { data: payload });
+    const secondRes = await page.request.post(`${BASE_URL}/api/store/packaging`, { data: payload });
+
+    expect(firstRes.status()).toBe(201);
+    expect(secondRes.status()).toBe(201);
+    const first = (await firstRes.json()).data;
+    const second = (await secondRes.json()).data;
+    expect(first.sku).toBeTruthy();
+    expect(first.sku).toMatch(/^POLY-/);
+    expect(second.sku).not.toBe(first.sku);
+  });
+
+  test('§1.F10 — DELETE /api/store/packaging/[id] soft-deletes the item', async ({ page }) => {
+    const createRes = await page.request.post(`${BASE_URL}/api/store/packaging`, {
+      data: {
+        category: 'OTHER',
+        name: `Delete Me ${Date.now()}`,
+        unit: 'PIECE',
+        quantityOnHand: 1,
+        lowStockThreshold: 0,
+      },
+    });
+    const itemId = (await createRes.json()).data.id;
+
+    const deleteRes = await page.request.delete(`${BASE_URL}/api/store/packaging/${itemId}`);
+    expect(deleteRes.status()).toBe(200);
+
+    const listRes = await page.request.get(`${BASE_URL}/api/store/packaging`);
+    const items = (await listRes.json()).data;
+    expect(items.some((i: any) => i.id === itemId)).toBe(false);
+  });
+
   // ============================================================================
   // Cleanup: Document any defects found during live execution
   // ============================================================================

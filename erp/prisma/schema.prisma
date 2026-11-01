@@ -124,6 +124,7 @@ enum RawMaterialCategory {
 enum Unit {
   LITERS
   KILOGRAMS
+  UNITS
 }
 
 enum StockTakeStatus {
@@ -635,12 +636,14 @@ model Tenant {
   rateCards                   RateCard[]
   rateCardEntries             RateCardEntry[]
   packagingItems              PackagingItem[]
+  packagingCategories         PackagingCategoryOption[]
   packagingConsumptions       PackagingConsumption[]
   deliveryRecoveries          DeliveryRecovery[]
   reconciliationLedgerEntries ReconciliationLedgerEntry[]
   reconciliationDisputes      ReconciliationDispute[]
   statementImports            StatementImport[]
   rawMaterials                RawMaterial[]
+  rawMaterialCategories       RawMaterialCategoryOption[]
   billOfMaterials             BillOfMaterials[]
   productionLogs              ProductionLog[]
   batchTrackings              BatchTracking[]
@@ -908,7 +911,9 @@ model RawMaterial {
   tenantId           String
   tenant             Tenant             @relation(fields: [tenantId], references: [id])
   name               String
-  category           RawMaterialCategory
+  // Stable category key. Default keys live in RAW_MATERIAL_CATEGORIES; tenants
+  // can add their own keys through RawMaterialCategoryOption.
+  category           String
   unit               Unit
   quantity           Decimal            @default(0)
   lowStockThreshold  Decimal            @default(0)
@@ -923,6 +928,24 @@ model RawMaterial {
   @@index([tenantId])
   @@index([tenantId, category])
   @@map("raw_materials")
+}
+
+// Tenant-managed raw-material categories. The three built-in categories are
+// seeded per tenant; custom ones (e.g. Bottles & Caps) are added from the UI.
+model RawMaterialCategoryOption {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key       String
+  name      String
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("raw_material_categories")
 }
 
 model BillOfMaterials {
@@ -2281,7 +2304,9 @@ model PackagingItem {
   id                   String            @id @default(cuid())
   tenantId             String
   tenant               Tenant            @relation(fields: [tenantId], references: [id])
-  category             PackagingCategory
+  // Tenant-defined category key (see PackagingCategoryOption). Was a closed
+  // enum until tenants needed to add their own categories.
+  category             String
   name                 String
   sku                  String?
   unit                 PackagingUnit     @default(PIECE)
@@ -2297,6 +2322,25 @@ model PackagingItem {
 
   @@index([tenantId, category])
   @@map("packaging_items")
+}
+
+/// Tenant-managed packaging categories. The enum above only pins the built-in
+/// defaults that are seeded lazily for every tenant; tenants can add, rename
+/// or retire categories without a schema change.
+model PackagingCategoryOption {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key       String
+  name      String
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("packaging_category_options")
 }
 
 model PackagingConsumption {

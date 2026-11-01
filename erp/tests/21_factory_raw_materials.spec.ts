@@ -161,4 +161,106 @@ test.describe('Module 21 - Factory Raw Materials', () => {
     const factoryRoleExists = emails.some((email: string) => factoryManagerUsers.includes(email));
     expect(factoryRoleExists).toBe(true);
   });
+
+  test('T6 owner can add a custom raw-material category and use the "Units" unit', async ({ page }) => {
+    await login(page, OWNER);
+
+    const categoryName = uniqueName('QA Bottles & Caps');
+    const createCategory = await page.request.post('/api/store/raw-material-categories', {
+      data: { name: categoryName },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(createCategory.status()).toBe(201);
+    const categoryBody = await json(createCategory);
+    expect(categoryBody?.success).toBe(true);
+    expect(categoryBody?.data?.name).toBe(categoryName);
+    expect(categoryBody?.data?.key).toMatch(/^QA_BOTTLES_CAPS/);
+    const categoryId = categoryBody?.data?.id;
+    expect(categoryId).toBeTruthy();
+
+    const list = await page.request.get('/api/store/raw-material-categories');
+    expect(list.status()).toBe(200);
+    const listBody = await json(list);
+    expect((listBody?.data ?? []).some((row: any) => row.id === categoryId)).toBe(true);
+
+    const materialRes = await page.request.post('/api/store/raw-materials', {
+      data: {
+        name: uniqueName('qa-bottle-cap'),
+        category: categoryBody?.data?.key,
+        unit: 'UNITS',
+        quantity: '120',
+        lowStockThreshold: '20',
+        description: 'QA custom category + unit',
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(materialRes.status()).toBe(201);
+    const materialBody = await json(materialRes);
+    expect(materialBody?.data?.unit).toBe('UNITS');
+    expect(materialBody?.data?.categoryName).toBe(categoryName);
+    const materialId = materialBody?.data?.id;
+
+    const rename = await page.request.patch(`/api/store/raw-material-categories/${categoryId}`, {
+      data: { name: `${categoryName} renamed` },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(rename.status()).toBe(200);
+    expect((await json(rename))?.data?.name).toBe(`${categoryName} renamed`);
+
+    const blockedDelete = await page.request.delete(
+      `/api/store/raw-material-categories/${categoryId}`,
+    );
+    expect(blockedDelete.status()).toBe(409);
+    expect((await json(blockedDelete))?.error?.code).toBe('CATEGORY_IN_USE');
+
+    const deleteMaterial = await page.request.delete(`/api/store/raw-materials/${materialId}`);
+    expect(deleteMaterial.status()).toBe(200);
+
+    const deleteCategory = await page.request.delete(
+      `/api/store/raw-material-categories/${categoryId}`,
+    );
+    expect(deleteCategory.status()).toBe(200);
+  });
+
+  test('T7 raw-materials page content has padding instead of touching the main edges', async ({ page }) => {
+    await login(page, OWNER);
+    await page.goto(`${BASE_URL}/factory/raw-materials`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: /^Raw Materials$/i })).toBeVisible({ timeout: 20_000 });
+    await page.waitForLoadState('networkidle');
+
+    const main = page.locator('main#main-content');
+    const content = main.locator('> div').first();
+    const mainBox = await main.boundingBox();
+    const contentBox = await content.boundingBox();
+    expect(mainBox).not.toBeNull();
+    expect(contentBox).not.toBeNull();
+
+    const padding = await content.evaluate((el) => getComputedStyle(el).paddingLeft);
+    expect(parseFloat(padding)).toBeGreaterThanOrEqual(16);
+
+    const headingBox = await page.getByRole('heading', { name: /^Raw Materials$/i }).boundingBox();
+    expect(headingBox).not.toBeNull();
+    expect(headingBox!.x - mainBox!.x).toBeGreaterThanOrEqual(16);
+  });
+
+  test('T8 factory dashboard content has padding instead of touching the main edges', async ({ page }) => {
+    await login(page, OWNER);
+    await page.goto(`${BASE_URL}/factory`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: /Factory Dashboard/i })).toBeVisible({ timeout: 20_000 });
+    await page.waitForLoadState('networkidle');
+
+    const main = page.locator('main#main-content');
+    const content = main.locator('> div').first();
+    const mainBox = await main.boundingBox();
+    const contentBox = await content.boundingBox();
+    expect(mainBox).not.toBeNull();
+    expect(contentBox).not.toBeNull();
+
+    const padding = await content.evaluate((el) => getComputedStyle(el).paddingLeft);
+    expect(parseFloat(padding)).toBeGreaterThanOrEqual(16);
+
+    const headingBox = await page.getByRole('heading', { name: /Factory Dashboard/i }).boundingBox();
+    expect(headingBox).not.toBeNull();
+    expect(headingBox!.x - mainBox!.x).toBeGreaterThanOrEqual(16);
+  });
 });

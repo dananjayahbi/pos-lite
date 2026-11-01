@@ -168,21 +168,22 @@ function LineChart({
   const plotW = w - pad * 2;
   const plotH = h - pad * 2;
 
-  function toPoints(values: number[]): string {
-    return values
-      .map((v, i) => {
-        const x =
-          data.length === 1
-            ? pad + plotW / 2
-            : pad + (i / (data.length - 1)) * plotW;
-        const y = pad + plotH - (v / maxVal) * plotH;
-        return `${x},${y}`;
-      })
-      .join(" ");
+  function toCoords(values: number[]): Array<{ x: number; y: number }> {
+    return values.map((v, i) => ({
+      x:
+        data.length === 1
+          ? pad + plotW / 2
+          : pad + (i / (data.length - 1)) * plotW,
+      y: pad + plotH - (v / maxVal) * plotH,
+    }));
   }
 
-  const revenuePoints = toPoints(revenues);
-  const returnPoints = toPoints(returns);
+  const toPointString = (coords: Array<{ x: number; y: number }>) =>
+    coords.map((c) => `${c.x},${c.y}`).join(" ");
+
+  const revenueCoords = toCoords(revenues);
+  const returnCoords = toCoords(returns);
+  const baseline = pad + plotH;
 
   return (
     <div>
@@ -206,23 +207,70 @@ function LineChart({
             />
           );
         })}
-        {/* revenue line */}
-        <polyline
-          points={revenuePoints}
-          fill="none"
-          stroke="#A48374"
-          strokeWidth="0.6"
-          strokeLinejoin="round"
-        />
-        {/* returns line */}
-        <polyline
-          points={returnPoints}
-          fill="none"
-          stroke="#3A2D28"
-          strokeWidth="0.4"
-          strokeDasharray="1,1"
-          strokeLinejoin="round"
-        />
+        {/* ISSUE 9: a polyline needs two points — a single monthly bucket
+            rendered nothing. Draw a bar (and a dot) for that case. */}
+        {data.length === 1 ? (
+          <>
+            <rect
+              x={revenueCoords[0]!.x - 2}
+              y={revenueCoords[0]!.y}
+              width={4}
+              height={Math.max(baseline - revenueCoords[0]!.y, 0.5)}
+              fill="#A48374"
+              opacity={0.55}
+            />
+            <rect
+              x={returnCoords[0]!.x - 3.5}
+              y={returnCoords[0]!.y}
+              width={3}
+              height={Math.max(baseline - returnCoords[0]!.y, 0)}
+              fill="#3A2D28"
+              opacity={0.5}
+            />
+          </>
+        ) : (
+          <>
+            {/* revenue line */}
+            <polyline
+              points={toPointString(revenueCoords)}
+              fill="none"
+              stroke="#A48374"
+              strokeWidth="0.6"
+              strokeLinejoin="round"
+            />
+            {/* returns line */}
+            <polyline
+              points={toPointString(returnCoords)}
+              fill="none"
+              stroke="#3A2D28"
+              strokeWidth="0.4"
+              strokeDasharray="1,1"
+              strokeLinejoin="round"
+            />
+          </>
+        )}
+        {/* data points (always visible, including the single-point case) */}
+        {revenueCoords.map((c, i) => (
+          <circle key={`rev-${data[i]!.date}`} cx={c.x} cy={c.y} r={1.1} fill="#A48374">
+            <title>
+              {`${fmtDate(data[i]!.date, granularity)}: ${fmtCurrency(revenues[i]!)}`}
+            </title>
+          </circle>
+        ))}
+        {returnCoords.map((c, i) => (
+          <circle
+            key={`ret-${data[i]!.date}`}
+            cx={c.x}
+            cy={c.y}
+            r={0.9}
+            fill="#3A2D28"
+            opacity={0.8}
+          >
+            <title>
+              {`${fmtDate(data[i]!.date, granularity)} returns: ${fmtCurrency(returns[i]!)}`}
+            </title>
+          </circle>
+        ))}
       </svg>
       <div className="mt-1 flex items-center gap-4 text-xs text-mist">
         <span className="flex items-center gap-1">
@@ -254,24 +302,37 @@ function LineChart({
 
 function PeakHoursChart({ data }: { data: PeakHourPoint[] }) {
   const maxRevenue = Math.max(...data.map((d) => parseFloat(d.revenue)), 1);
+  const maxCount = Math.max(...data.map((d) => d.count), 1);
+  const hasRevenue = data.some((d) => parseFloat(d.revenue) > 0);
+  // Fixed pixel bar area: percentage heights inside an auto-height flex column
+  // resolved to 0, so every bar was invisible (ISSUE 9). When revenue is zero
+  // but transactions exist, fall back to transaction counts.
+  const BAR_AREA_PX = 112;
+  const max = hasRevenue ? maxRevenue : maxCount;
 
   return (
-    <div className="flex h-32 items-end gap-[2px]">
+    <div className="flex items-end gap-[2px]">
       {data.map((d) => {
-        const pct = parseFloat(d.revenue) / maxRevenue;
+        const value = hasRevenue ? parseFloat(d.revenue) : d.count;
+        const pct = max > 0 ? value / max : 0;
         return (
           <div
             key={d.hour}
             className="group relative flex flex-1 flex-col items-center"
           >
             <div
-              className="w-full rounded-t-sm bg-terracotta transition-opacity"
-              style={{
-                height: `${Math.max(pct * 100, 2)}%`,
-                opacity: Math.max(pct, 0.15),
-              }}
-              title={`${fmtHour(d.hour)}: ${fmtCurrency(d.revenue)} (${d.count} sales)`}
-            />
+              className="flex w-full items-end"
+              style={{ height: `${BAR_AREA_PX}px` }}
+            >
+              <div
+                className="w-full rounded-t-sm bg-terracotta transition-opacity"
+                style={{
+                  height: `${Math.max(pct * BAR_AREA_PX, 2)}px`,
+                  opacity: Math.max(pct, 0.15),
+                }}
+                title={`${fmtHour(d.hour)}: ${fmtCurrency(d.revenue)} (${d.count} sales)`}
+              />
+            </div>
             <span className="mt-1 text-[8px] text-mist">
               {d.hour % 3 === 0 ? fmtHour(d.hour) : ""}
             </span>

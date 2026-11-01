@@ -406,7 +406,7 @@ export async function dispatchDelivery(
   });
   if (!upload.ok) throw new Error(`COURIER_UPLOAD_FAILED:${upload.error.message}`);
 
-  const dispatched = await prisma.$transaction(async (tx: TxClient) => {
+  const { dispatched, deductions } = await prisma.$transaction(async (tx: TxClient) => {
     const updated = await tx.delivery.update({
       where: { id },
       data: {
@@ -449,11 +449,16 @@ export async function dispatchDelivery(
       after: { waybillId: upload.data.waybillId, waybillMode: input.waybillMode },
     });
 
-    return updated;
+    // M23: packaging auto-deduction runs inside the same transaction as the
+    // status flip, so a parcel can never be marked DISPATCHED with its
+    // packaging stock left un-deducted. The low-stock notification stays
+    // outside the transaction (notifications must not roll stock back).
+    const deductions = await autoDeductPackaging(tenantId, id, { tx });
+
+    return { dispatched: updated, deductions };
   });
 
-  // Non-blocking packaging auto-deduction.
-  const deductions = await autoDeductPackaging(tenantId, id);
+  // Non-blocking low-stock notification for anything that fell short.
   if (deductions.length > 0) {
     await notifyLowStock(tenantId, id, deductions);
   }

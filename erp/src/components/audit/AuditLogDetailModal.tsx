@@ -16,6 +16,7 @@ interface AuditLogEntry {
   entityId: string;
   action: string;
   actorId: string | null;
+  actorName: string;
   actorRole: string;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
@@ -90,9 +91,9 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
             <span className="font-mono text-espresso">{entry.entityId}</span>
           </div>
           <div className="flex gap-2">
-            <span className="text-sand">Performed By:</span>
+            <span className="text-sand">User:</span>
             <span className="text-espresso">
-              {entry.actorId ?? 'System'}
+              {entry.actorName}
               {entry.actorRole && (
                 <Badge variant="outline" className="ml-2 text-xs border-mist">
                   {entry.actorRole.replace('_', ' ')}

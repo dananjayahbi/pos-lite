@@ -63,6 +63,8 @@ function roleBadgeVariant(
 
 interface StaffRow {
   userId: string;
+  /** Human-readable label (EMAIL's local part, e.g. "cashier1@" → "Cashier 1"). */
+  name: string;
   email: string;
   role: string;
   salesCount: number;
@@ -174,7 +176,7 @@ export default function StaffPerformanceClient() {
   useEffect(() => {
     if (!data) return;
     const rows: Record<string, unknown>[] = data.staff.map((s) => ({
-      Email: s.email,
+      Staff: s.name,
       Role: s.role,
       "Hours Worked": s.hoursWorked,
       "Sales Count": s.salesCount,
@@ -273,8 +275,8 @@ export default function StaffPerformanceClient() {
           <CardContent className="space-y-2 pt-4">
             {chartStaff.map((s) => (
               <div key={s.userId} className="flex items-center gap-3">
-                <span className="w-40 truncate text-sm text-espresso">
-                  {s.email}
+                <span className="w-40 truncate text-sm text-espresso" title={s.email}>
+                  {s.name}
                 </span>
                 <div className="relative flex-1 rounded-full bg-pearl h-6">
                   <div
@@ -359,7 +361,9 @@ export default function StaffPerformanceClient() {
                 <TableBody>
                   {sorted.map((s) => (
                     <TableRow key={s.userId}>
-                      <TableCell className="font-medium">{s.email}</TableCell>
+                      <TableCell className="font-medium" title={s.email}>
+                        {s.name}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={roleBadgeVariant(s.role)}>
                           {s.role}

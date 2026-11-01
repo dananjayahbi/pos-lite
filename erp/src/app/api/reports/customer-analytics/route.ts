@@ -5,6 +5,7 @@ import { Prisma } from "@/generated/prisma/client";
 import Decimal from "decimal.js";
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { getRepeatBadge } from '@/lib/services/customer-loyalty';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -73,8 +74,8 @@ export async function GET(request: NextRequest) {
     const cutoff365 = new Date(to);
     cutoff365.setDate(cutoff365.getDate() - 365);
 
-    // ── 3 parallel queries ───────────────────────────────────────
-    const [saleGroups, newVsReturningRows, churnRiskRows] = await Promise.all([
+    // ── 4 parallel queries ───────────────────────────────────────
+    const [saleGroups, lifetimeGroups, newVsReturningRows, churnRiskRows] = await Promise.all([
       // a. Top customers — groupBy customerId
       prisma.sale.groupBy({
         by: ["customerId"],
@@ -89,6 +90,18 @@ export async function GET(request: NextRequest) {
         _max: { createdAt: true },
         orderBy: { _sum: { totalAmount: "desc" } },
         take: 50,
+      }),
+
+      // b. Lifetime order count per customer — drives the repeat-buyer metal
+      //    badge (period counts alone would label a 20-order regular "New").
+      prisma.sale.groupBy({
+        by: ["customerId"],
+        where: {
+          tenantId,
+          status: "COMPLETED",
+          customerId: { not: null },
+        },
+        _count: true,
       }),
 
       // b. New vs Returning by week
@@ -161,6 +174,11 @@ export async function GET(request: NextRequest) {
         : [];
 
     const customerMap = new Map(customers.map((c) => [c.id, c]));
+    const lifetimeOrderMap = new Map(
+      lifetimeGroups
+        .filter((g) => g.customerId !== null)
+        .map((g) => [g.customerId as string, g._count]),
+    );
 
     const topCustomers = saleGroups
       .filter((g): g is typeof g & { customerId: string } => g.customerId !== null)
@@ -170,12 +188,15 @@ export async function GET(request: NextRequest) {
         const orderCount = g._count;
         const aov =
           orderCount > 0 ? totalSpend.div(orderCount).toFixed(2) : "0.00";
+        const lifetimeOrders = lifetimeOrderMap.get(g.customerId) ?? orderCount;
         return {
           rank: idx + 1,
           customerId: g.customerId,
           name: cust?.name ?? "Unknown",
           phone: cust?.phone ?? "",
           totalOrders: orderCount,
+          lifetimeOrders,
+          repeatBadge: getRepeatBadge(lifetimeOrders),
           totalSpend: totalSpend.toFixed(2),
           aov,
           lastVisit: g._max.createdAt?.toISOString() ?? null,

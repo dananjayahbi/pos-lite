@@ -28,6 +28,8 @@ export function LineItemDiscountControl({ item }: LineItemDiscountControlProps) 
 
   const lineTotal = item.unitPrice * item.quantity;
   const parsedInput = parseFloat(inputValue) || 0;
+  const hasActiveDiscount = item.discountPercent > 0;
+  const appliedDiscountAmount = (lineTotal * item.discountPercent) / 100;
 
   const effectivePercent =
     mode === 'percent'
@@ -51,8 +53,38 @@ export function LineItemDiscountControl({ item }: LineItemDiscountControlProps) 
     setActiveLine(null);
   };
 
+  /** Explicit removal — typing 0 cannot clear because Apply needs a positive value. */
+  const handleRemove = () => {
+    setLineDiscount(item.variantId, 0);
+    setInputValue('');
+    setOverrideBlocked(false);
+    setActiveLine(null);
+  };
+
   return (
     <div className="px-4 py-2 bg-linen/50 border-t border-mist/20">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="font-body text-[11px] text-mist">
+          Line discount{hasActiveDiscount ? ` — applied ${item.discountPercent}% off` : ''}
+        </span>
+        {hasActiveDiscount && (
+          <button
+            type="button"
+            onClick={handleRemove}
+            className="font-body text-[11px] text-[#9B2226] hover:text-[#9B2226]/80 transition-colors"
+            aria-label={`Remove discount from ${item.productName}`}
+          >
+            Remove discount
+          </button>
+        )}
+      </div>
+
+      {hasActiveDiscount && (
+        <p className="mb-1.5 font-body text-[11px] text-[#2D6A4F]">
+          Applied: {item.discountPercent}% off ({formatRupee(appliedDiscountAmount)})
+        </p>
+      )}
+
       <div className="flex items-center gap-2">
         {/* Mode toggle */}
         <div className="flex shrink-0">

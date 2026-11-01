@@ -12,10 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { RawMaterialStatusBadge } from '@/components/raw-materials/RawMaterialStatusBadge';
 import { RawMaterialRowActions } from '@/components/raw-materials/RawMaterialRowActions';
-import {
-  getRawMaterialCategoryLabel,
-  getUnitShortLabel,
-} from '@/lib/services/rawMaterial.core';
+import { getUnitShortLabel } from '@/lib/services/rawMaterial.core';
 import type { RawMaterialItem } from '@/hooks/useRawMaterials';
 
 interface RawMaterialTableProps {
@@ -108,7 +105,7 @@ export function RawMaterialTable({
           <TableRow key={material.id}>
             <TableCell className="font-medium text-espresso">{material.name}</TableCell>
             <TableCell>
-              <Badge variant="secondary">{getRawMaterialCategoryLabel(material.category)}</Badge>
+              <Badge variant="secondary">{material.categoryName}</Badge>
             </TableCell>
             <TableCell className="text-mist">{getUnitShortLabel(material.unit)}</TableCell>
             <TableCell className="text-right font-semibold text-espresso">

@@ -25,6 +25,7 @@ interface AuditLogEntry {
   entityId: string;
   action: string;
   actorId: string | null;
+  actorName: string;
   actorRole: string;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
@@ -67,10 +68,6 @@ function formatDate(dateStr: string): string {
   const hours = String(d.getHours()).padStart(2, '0');
   const minutes = String(d.getMinutes()).padStart(2, '0');
   return `${day} ${month} ${year}, ${hours}:${minutes}`;
-}
-
-function truncateId(id: string): string {
-  return id.length > 8 ? `${id.slice(0, 8)}…` : id;
 }
 
 // ── Props ────────────────────────────────────────────────────────────────────
@@ -182,9 +179,8 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
           <TableHeader>
             <TableRow className="bg-linen/40">
               <TableHead className="text-espresso">Entity Type</TableHead>
-              <TableHead className="text-espresso">Entity ID</TableHead>
               <TableHead className="text-espresso">Action</TableHead>
-              <TableHead className="text-espresso">Performed By</TableHead>
+              <TableHead className="text-espresso">User</TableHead>
               <TableHead className="text-espresso">Date</TableHead>
             </TableRow>
           </TableHeader>
@@ -202,14 +198,11 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
                     {entry.entityType.replace(/([a-z])([A-Z])/g, '$1 $2')}
                   </Badge>
                 </TableCell>
-                <TableCell className="font-mono text-xs text-sand">
-                  {truncateId(entry.entityId)}
-                </TableCell>
                 <TableCell className="text-sm text-espresso">
                   {formatActionName(entry.action)}
                 </TableCell>
                 <TableCell className="text-sm text-espresso">
-                  {entry.actorId ?? 'System'}
+                  {entry.actorName}
                 </TableCell>
                 <TableCell className="text-sm text-sand">
                   {formatDate(entry.createdAt)}

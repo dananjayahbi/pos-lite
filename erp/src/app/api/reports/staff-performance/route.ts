@@ -5,6 +5,7 @@ import { Prisma } from "@/generated/prisma/client";
 import Decimal from "decimal.js";
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -218,6 +219,9 @@ export async function GET(request: NextRequest) {
 
       return {
         userId,
+        // The User model has no name column; derive a readable label from the
+        // mailbox and keep the email for tooltips/export.
+        name: staffDisplayName(user?.email),
         email: user?.email ?? "Unknown",
         role: user?.role ?? "CASHIER",
         salesCount,

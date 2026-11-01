@@ -34,6 +34,17 @@ function isValidGranularity(v: string): v is GranularityUnit {
   return VALID_GRANULARITIES.has(v as GranularityUnit);
 }
 
+/** Accept only an IANA zone the runtime understands; fall back to UTC. */
+function safeTimezone(candidate: string | undefined): string {
+  if (!candidate) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: candidate }).format(new Date());
+    return candidate;
+  } catch {
+    return "UTC";
+  }
+}
+
 function buildRevenueSql(
   granularity: GranularityUnit,
   tenantId: string,
@@ -196,16 +207,28 @@ export async function GET(request: NextRequest) {
     );
 
     // ── 3. Peak hours ────────────────────────────────────────────
+    // Bucket by the store's local clock: `createdAt` is stored in UTC, so a
+    // 9am Colombo sale would otherwise land in the 3am bucket (ISSUE 9).
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { settings: true },
+    });
+    const settings = (tenant?.settings ?? {}) as { timezone?: string };
+    const timezone = safeTimezone(settings.timezone);
     const peakHourRows = await prisma.$queryRaw<PeakHourRow[]>(Prisma.sql`
-      SELECT EXTRACT(HOUR FROM "createdAt")::int AS hour,
+      SELECT hour,
              COALESCE(SUM("totalAmount"), 0) AS revenue,
              COUNT(*)::bigint AS sale_count
-      FROM sales
-      WHERE "tenantId" = ${tenantId}
-        AND "status" = 'COMPLETED'
-        AND "createdAt" >= ${from}
-        AND "createdAt" <= ${to}
-      GROUP BY EXTRACT(HOUR FROM "createdAt")
+      FROM (
+        SELECT EXTRACT(HOUR FROM "createdAt" AT TIME ZONE ${timezone})::int AS hour,
+               "totalAmount"
+        FROM sales
+        WHERE "tenantId" = ${tenantId}
+          AND "status" = 'COMPLETED'
+          AND "createdAt" >= ${from}
+          AND "createdAt" <= ${to}
+      ) AS local_sales
+      GROUP BY hour
       ORDER BY hour
     `);
 

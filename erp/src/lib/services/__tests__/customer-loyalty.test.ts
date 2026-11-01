@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   getLoyaltyTier,
+  getRepeatBadge,
   LOYALTY_TIER_META,
+  REPEAT_BADGE_META,
   REPEAT_ORDER_THRESHOLD,
   LOYAL_ORDER_THRESHOLD,
 } from '@/lib/services/customer-loyalty';
@@ -29,6 +31,34 @@ describe('getLoyaltyTier', () => {
       expect(LOYALTY_TIER_META[tier].label.length).toBeGreaterThan(0);
       expect(LOYALTY_TIER_META[tier].hint.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('getRepeatBadge', () => {
+  it('gives first-time buyers no badge', () => {
+    expect(getRepeatBadge(0)).toBeNull();
+    expect(getRepeatBadge(1)).toBeNull();
+  });
+
+  it('awards bronze for 2–4 lifetime orders', () => {
+    expect(getRepeatBadge(2)).toBe('BRONZE');
+    expect(getRepeatBadge(4)).toBe('BRONZE');
+  });
+
+  it('awards silver for 5–9 lifetime orders', () => {
+    expect(getRepeatBadge(5)).toBe('SILVER');
+    expect(getRepeatBadge(9)).toBe('SILVER');
+  });
+
+  it('awards gold from 10 lifetime orders', () => {
+    expect(getRepeatBadge(10)).toBe('GOLD');
+    expect(getRepeatBadge(42)).toBe('GOLD');
+  });
+
+  it('labels every metal', () => {
+    expect(REPEAT_BADGE_META.GOLD.label).toBe('Gold');
+    expect(REPEAT_BADGE_META.SILVER.label).toBe('Silver');
+    expect(REPEAT_BADGE_META.BRONZE.label).toBe('Bronze');
   });
 });
 

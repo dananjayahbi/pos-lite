@@ -105,6 +105,12 @@ export const AUDIT_ACTIONS = {
   COURIER_SETTINGS_UPDATED: 'COURIER_SETTINGS_UPDATED',
   LABEL_TEMPLATE_UPDATED: 'LABEL_TEMPLATE_UPDATED',
   PACKAGING_STOCK_ADJUSTED: 'PACKAGING_STOCK_ADJUSTED',
+  PACKAGING_ITEM_CREATED: 'PACKAGING_ITEM_CREATED',
+  PACKAGING_ITEM_UPDATED: 'PACKAGING_ITEM_UPDATED',
+  PACKAGING_ITEM_DELETED: 'PACKAGING_ITEM_DELETED',
+  PACKAGING_CATEGORY_CREATED: 'PACKAGING_CATEGORY_CREATED',
+  PACKAGING_CATEGORY_UPDATED: 'PACKAGING_CATEGORY_UPDATED',
+  PACKAGING_CATEGORY_DELETED: 'PACKAGING_CATEGORY_DELETED',
   RECONCILIATION_IMPORTED: 'RECONCILIATION_IMPORTED',
   // M26-02/OBS-40: dispute operations were all logged as RECONCILIATION_IMPORTED,
   // so the ledger could not tell open/update/resolve apart.
@@ -116,6 +122,9 @@ export const AUDIT_ACTIONS = {
   RAW_MATERIAL_UPDATED: 'RAW_MATERIAL_UPDATED',
   RAW_MATERIAL_DELETED: 'RAW_MATERIAL_DELETED',
   RAW_MATERIAL_STOCK_ADJUSTED: 'RAW_MATERIAL_STOCK_ADJUSTED',
+  RAW_MATERIAL_CATEGORY_CREATED: 'RAW_MATERIAL_CATEGORY_CREATED',
+  RAW_MATERIAL_CATEGORY_UPDATED: 'RAW_MATERIAL_CATEGORY_UPDATED',
+  RAW_MATERIAL_CATEGORY_DELETED: 'RAW_MATERIAL_CATEGORY_DELETED',
   // Bill of Materials & Production (Factory)
   BOM_CREATED: 'BOM_CREATED',
   BOM_UPDATED: 'BOM_UPDATED',
@@ -263,4 +272,31 @@ export async function getAuditLogs(tenantId: string, filters: GetAuditLogsFilter
   ]);
 
   return { data, total, page, pageSize };
+}
+
+/**
+ * Resolve `actorId` values to human-readable user labels for the audit log UI
+ * and export. System-generated rows (no actor) render as "System"; deleted or
+ * unknown users fall back to a neutral label instead of leaking a bare CUID.
+ */
+export async function attachAuditActorNames<T extends { actorId: string | null }>(
+  entries: T[],
+): Promise<Array<T & { actorName: string }>> {
+  const actorIds = Array.from(
+    new Set(entries.map((entry) => entry.actorId).filter((id): id is string => Boolean(id))),
+  );
+
+  const users =
+    actorIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: actorIds } },
+          select: { id: true, email: true },
+        })
+      : [];
+  const emailById = new Map(users.map((user) => [user.id, user.email]));
+
+  return entries.map((entry) => ({
+    ...entry,
+    actorName: entry.actorId ? (emailById.get(entry.actorId) ?? 'Unknown user') : 'System',
+  }));
 }

@@ -355,11 +355,6 @@ const navGroups: NavGroup[] = [
         permission: PERMISSIONS.SETTINGS.manageWebsite,
       },
       {
-        name: 'Webhooks',
-        href: '/settings/webhooks',
-        roles: ['OWNER', 'MANAGER'],
-      },
-      {
         name: 'Audit Log',
         href: '/settings/audit-log',
         roles: ['OWNER', 'MANAGER'],

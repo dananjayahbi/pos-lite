@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { getAuditLogs } from '@/lib/services/audit.service';
+import { getAuditLogs, attachAuditActorNames } from '@/lib/services/audit.service';
 import { parseQueryInt, parseQueryDate } from '@/lib/api/query-params';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { toCsvLines } from '@/lib/export';
@@ -18,6 +18,7 @@ const AUDIT_CSV_HEADERS = [
   'entityType',
   'entityId',
   'action',
+  'actorName',
   'actorId',
   'actorRole',
   'ipAddress',
@@ -81,6 +82,8 @@ export async function GET(request: NextRequest) {
           pageSize,
         });
 
+    const entries = await attachAuditActorNames(result.data);
+
     if (format === 'csv') {
       // M35-01 (BUG-79): the header row is emitted UNQUOTED and data cells are
       // quoted only when they need it, via the shared `toCsvLines` writer. The
@@ -89,11 +92,12 @@ export async function GET(request: NextRequest) {
       // quotes in some locales and which makes diffs noisy (RULE: RULE-EXPORT-CSV).
       const csv = toCsvLines(
         AUDIT_CSV_HEADERS,
-        result.data.map((entry) => [
+        entries.map((entry) => [
           entry.createdAt.toISOString(),
           entry.entityType,
           entry.entityId,
           entry.action,
+          entry.actorName,
           entry.actorId ?? '',
           entry.actorRole,
           entry.ipAddress ?? '',
@@ -114,7 +118,7 @@ export async function GET(request: NextRequest) {
       // XC-02: canonical list envelope — `data` is the array, pagination lives
       // in `meta` (was the nested `data.data` object that broke integrators,
       // BUG-59).
-      data: result.data,
+      data: entries,
       meta: {
         page: result.page,
         limit: result.pageSize,

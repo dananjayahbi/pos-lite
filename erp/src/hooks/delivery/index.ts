@@ -6,9 +6,20 @@ export { useCancelDelivery } from './useCancelDelivery';
 export { useShipmentTracking } from './useShipmentTracking';
 export { useRateCard } from './useRateCard';
 export { useRatePreview } from './useRatePreview';
-export { usePackaging } from './usePackaging';
+export {
+  usePackaging,
+  usePackagingCategories,
+  useCreatePackagingCategory,
+  useUpdatePackagingCategory,
+  useDeletePackagingCategory,
+} from './usePackaging';
+export type { PackagingItemRow, PackagingCategoryItem } from './usePackaging';
 export { useReconciliation } from './useReconciliation';
 export { useCourierSettings } from './useCourierSettings';
 export { useLabelTemplate } from './useLabelTemplate';
 export { useLocations } from './useLocations';
-export { useLogRecoveryAction, useRedeliverDelivery, usePermanentCancelDelivery } from './useRecoveryActions';
+export {
+  useLogRecoveryAction,
+  useRedeliverDelivery,
+  usePermanentCancelDelivery,
+} from './useRecoveryActions';

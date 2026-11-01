@@ -5,15 +5,17 @@ import {
   getRawMaterialStockStatus,
   getUnitLabel,
   getUnitShortLabel,
+  humanizeRawMaterialCategoryKey,
   isRawMaterialLowStock,
   RAW_MATERIAL_CATEGORY_LABELS,
   RAW_MATERIAL_CATEGORIES,
+  slugifyRawMaterialCategoryKey,
   UNIT_LABELS,
   UNITS,
 } from '@/lib/services/rawMaterial.core';
 
 describe('rawMaterial.core — categories & units', () => {
-  it('exposes all three raw material categories', () => {
+  it('exposes all three built-in raw material categories', () => {
     expect(RAW_MATERIAL_CATEGORIES).toEqual([
       'OILS_LIQUIDS',
       'POWDERS_HERBS',
@@ -21,8 +23,8 @@ describe('rawMaterial.core — categories & units', () => {
     ]);
   });
 
-  it('exposes liters and kilograms units', () => {
-    expect(UNITS).toEqual(['LITERS', 'KILOGRAMS']);
+  it('exposes liters, kilograms and unit-count units', () => {
+    expect(UNITS).toEqual(['LITERS', 'KILOGRAMS', 'UNITS']);
   });
 
   it('returns human-readable category labels', () => {
@@ -32,12 +34,35 @@ describe('rawMaterial.core — categories & units', () => {
     expect(Object.keys(RAW_MATERIAL_CATEGORY_LABELS).length).toBe(3);
   });
 
+  it('falls back to a humanized label for tenant-defined categories', () => {
+    expect(getRawMaterialCategoryLabel('BOTTLES_CAPS')).toBe('Bottles Caps');
+  });
+
   it('returns unit labels and short labels', () => {
     expect(getUnitLabel('LITERS')).toBe('Liters');
     expect(getUnitLabel('KILOGRAMS')).toBe('Kilograms');
+    expect(getUnitLabel('UNITS')).toBe('Units');
     expect(getUnitShortLabel('LITERS')).toBe('L');
     expect(getUnitShortLabel('KILOGRAMS')).toBe('kg');
-    expect(Object.keys(UNIT_LABELS).length).toBe(2);
+    expect(getUnitShortLabel('UNITS')).toBe('unit');
+    expect(Object.keys(UNIT_LABELS).length).toBe(3);
+  });
+});
+
+describe('rawMaterial.core — custom category keys', () => {
+  it('slugs category names into stable uppercase keys', () => {
+    expect(slugifyRawMaterialCategoryKey('Bottles & Caps')).toBe('BOTTLES_CAPS');
+    expect(slugifyRawMaterialCategoryKey('  Labels  ')).toBe('LABELS');
+    expect(slugifyRawMaterialCategoryKey('Boxes/Containers')).toBe('BOXES_CONTAINERS');
+  });
+
+  it('falls back to CATEGORY when a name has no alphanumerics', () => {
+    expect(slugifyRawMaterialCategoryKey('***')).toBe('CATEGORY');
+  });
+
+  it('humanizes keys when no stored display name is available', () => {
+    expect(humanizeRawMaterialCategoryKey('BOTTLES_CAPS')).toBe('Bottles Caps');
+    expect(humanizeRawMaterialCategoryKey('OILS_LIQUIDS')).toBe('Oils Liquids');
   });
 });
 
