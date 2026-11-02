@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import type { CashMovementType, ShiftStatus } from '@/generated/prisma/client';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 const VALID_TYPES: CashMovementType[] = ['PETTY_CASH_OUT', 'MANUAL_IN', 'MANUAL_OUT'];
 
@@ -50,7 +51,7 @@ export async function GET(_request: Request, props: { params: Promise<{ id: stri
       type: m.type,
       amount: Number(m.amount),
       reason: m.reason,
-      authorizedByName: m.authorizedBy?.email ?? null,
+      authorizedByName: m.authorizedBy ? staffDisplayName(m.authorizedBy.email) : null,
       createdAt: m.createdAt.toISOString(),
     }));
 

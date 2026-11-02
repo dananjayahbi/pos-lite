@@ -37,6 +37,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useStockTakeSession, type StockTakeItemDetail } from '@/hooks/useStockTakeSession';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface StockTakeSessionProps {
   sessionId: string;
@@ -344,7 +345,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
             <div>
               <p className="font-body text-xs text-mist uppercase tracking-wider">Started By</p>
               <p className="font-body text-sm text-espresso mt-1">
-                {stockSession.initiatedBy.email}
+                {staffDisplayName(stockSession.initiatedBy.email)}
               </p>
             </div>
             <div>

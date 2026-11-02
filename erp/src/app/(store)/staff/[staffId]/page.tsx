@@ -41,6 +41,7 @@ import { toast } from 'sonner';
 import { UpdateStaffSchema } from '@/lib/validators/staff.validators';
 import { formatRupee } from '@/lib/format';
 import { TimeClockHistoryPanel } from '@/components/staff/TimeClockHistoryPanel';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 import type { UpdateStaffInput } from '@/lib/validators/staff.validators';
 
 
@@ -153,7 +154,7 @@ export default function StaffDetailPage({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-display font-bold text-espresso truncate">
-              {staffMember.email}
+              {staffDisplayName(staffMember.email)}
             </h1>
             <RoleBadge role={staffMember.role} />
           </div>
@@ -357,7 +358,7 @@ function ProfileTab({
           <DialogHeader>
             <DialogTitle className="font-display">Force Logout User</DialogTitle>
             <DialogDescription>
-              This will immediately invalidate all active sessions for {staffMember.email}.
+              This will immediately invalidate all active sessions for {staffDisplayName(staffMember.email)}.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

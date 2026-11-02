@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface BroadcastHistoryItem {
   id: string;
@@ -79,7 +80,7 @@ export function BroadcastHistoryClient() {
                 <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="space-y-2">
                     <p className="line-clamp-2 font-medium text-espresso">{broadcast.message}</p>
-                    <p className="text-xs text-sand">Sent {new Date(broadcast.sentAt).toLocaleString()} by {broadcast.sentByEmail}</p>
+                    <p className="text-xs text-sand">Sent {new Date(broadcast.sentAt).toLocaleString()} by {staffDisplayName(broadcast.sentByEmail)}</p>
                     <div className="flex flex-wrap gap-2 text-xs text-sand">
                       <span className="rounded-full bg-pearl px-2 py-1">Recipients {broadcast.recipientCount}</span>
                       <span className="rounded-full bg-pearl px-2 py-1">Sent {sent}</span>
@@ -132,7 +133,7 @@ export function BroadcastHistoryClient() {
                     <div className="rounded-lg border border-mist p-4"><p className="text-xs uppercase tracking-[0.2em] text-sand">Recipients</p><p className="mt-2 font-display text-3xl text-espresso">{selected.recipientCount}</p></div>
                     <div className="rounded-lg border border-mist p-4"><p className="text-xs uppercase tracking-[0.2em] text-sand">Sent</p><p className="mt-2 font-display text-3xl text-espresso">{sent}</p></div>
                     <div className="rounded-lg border border-mist p-4"><p className="text-xs uppercase tracking-[0.2em] text-sand">Failed</p><p className="mt-2 font-display text-3xl text-espresso">{failed}</p></div>
-                    <div className="rounded-lg border border-mist p-4"><p className="text-xs uppercase tracking-[0.2em] text-sand">Operator</p><p className="mt-2 text-sm text-espresso">{selected.sentByEmail}</p></div>
+                    <div className="rounded-lg border border-mist p-4"><p className="text-xs uppercase tracking-[0.2em] text-sand">Operator</p><p className="mt-2 text-sm text-espresso">{staffDisplayName(selected.sentByEmail)}</p></div>
                   </div>
                 </div>
 

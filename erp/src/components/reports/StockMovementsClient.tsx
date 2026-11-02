@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useReportContext } from "@/lib/reports/ReportContext";
+import { staffDisplayName } from "@/lib/utils/staff-name";
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -241,7 +242,7 @@ export default function StockMovementsClient() {
       Delta: m.quantityDelta,
       "Qty Before": m.quantityBefore,
       "Qty After": m.quantityAfter,
-      Actor: m.actorEmail,
+      Actor: m.actorEmail ? staffDisplayName(m.actorEmail) : 'System',
       Reference: m.saleId
         ? `Sale: ${m.saleId}`
         : m.purchaseOrderId
@@ -383,7 +384,7 @@ export default function StockMovementsClient() {
                     <TableCell className={`text-right ${delta.className}`}>
                       {delta.text}
                     </TableCell>
-                    <TableCell className="text-sm">{m.actorEmail}</TableCell>
+                    <TableCell className="text-sm">{m.actorEmail ? staffDisplayName(m.actorEmail) : 'System'}</TableCell>
                     <TableCell>
                       <ReferenceCell movement={m} />
                     </TableCell>

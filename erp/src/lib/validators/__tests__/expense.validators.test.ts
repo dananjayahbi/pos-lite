@@ -73,4 +73,24 @@ describe('CreateExpenseSchema — petty-cash categories & receipt (docs 37, 38)'
     });
     expect(parsed.success).toBe(false);
   });
+
+  it('accepts a payment account link and an explicit unlink', () => {
+    const linked = CreateExpenseSchema.safeParse({
+      category: 'MISCELLANEOUS',
+      amount: 100,
+      description: 'Linked expense',
+      expenseDate: '2026-08-07',
+      paymentAccountId: 'cmaccount000000000000000',
+    });
+    expect(linked.success).toBe(true);
+
+    const unlinked = CreateExpenseSchema.safeParse({
+      category: 'MISCELLANEOUS',
+      amount: 100,
+      description: 'Unlinked expense',
+      expenseDate: '2026-08-07',
+      paymentAccountId: null,
+    });
+    expect(unlinked.success).toBe(true);
+  });
 });

@@ -53,43 +53,43 @@ function buildRevenueSql(
 ) {
   if (granularity === "week") {
     return Prisma.sql`
-      SELECT DATE_TRUNC('week', "createdAt") AS bucket,
+      SELECT DATE_TRUNC('week', COALESCE("saleDate", "createdAt")) AS bucket,
              COALESCE(SUM("totalAmount"), 0) AS revenue,
              COUNT(*)::bigint AS sale_count
       FROM sales
       WHERE "tenantId" = ${tenantId}
         AND "status" = 'COMPLETED'
-        AND "createdAt" >= ${from}
-        AND "createdAt" <= ${to}
-      GROUP BY DATE_TRUNC('week', "createdAt")
+        AND COALESCE("saleDate", "createdAt") >= ${from}
+        AND COALESCE("saleDate", "createdAt") <= ${to}
+      GROUP BY DATE_TRUNC('week', COALESCE("saleDate", "createdAt"))
       ORDER BY bucket
     `;
   }
   if (granularity === "month") {
     return Prisma.sql`
-      SELECT DATE_TRUNC('month', "createdAt") AS bucket,
+      SELECT DATE_TRUNC('month', COALESCE("saleDate", "createdAt")) AS bucket,
              COALESCE(SUM("totalAmount"), 0) AS revenue,
              COUNT(*)::bigint AS sale_count
       FROM sales
       WHERE "tenantId" = ${tenantId}
         AND "status" = 'COMPLETED'
-        AND "createdAt" >= ${from}
-        AND "createdAt" <= ${to}
-      GROUP BY DATE_TRUNC('month', "createdAt")
+        AND COALESCE("saleDate", "createdAt") >= ${from}
+        AND COALESCE("saleDate", "createdAt") <= ${to}
+      GROUP BY DATE_TRUNC('month', COALESCE("saleDate", "createdAt"))
       ORDER BY bucket
     `;
   }
   // default: day
   return Prisma.sql`
-    SELECT DATE_TRUNC('day', "createdAt") AS bucket,
+    SELECT DATE_TRUNC('day', COALESCE("saleDate", "createdAt")) AS bucket,
            COALESCE(SUM("totalAmount"), 0) AS revenue,
            COUNT(*)::bigint AS sale_count
     FROM sales
     WHERE "tenantId" = ${tenantId}
       AND "status" = 'COMPLETED'
-      AND "createdAt" >= ${from}
-      AND "createdAt" <= ${to}
-    GROUP BY DATE_TRUNC('day', "createdAt")
+      AND COALESCE("saleDate", "createdAt") >= ${from}
+      AND COALESCE("saleDate", "createdAt") <= ${to}
+    GROUP BY DATE_TRUNC('day', COALESCE("saleDate", "createdAt"))
     ORDER BY bucket
   `;
 }
@@ -225,8 +225,8 @@ export async function GET(request: NextRequest) {
         FROM sales
         WHERE "tenantId" = ${tenantId}
           AND "status" = 'COMPLETED'
-          AND "createdAt" >= ${from}
-          AND "createdAt" <= ${to}
+          AND COALESCE("saleDate", "createdAt") >= ${from}
+          AND COALESCE("saleDate", "createdAt") <= ${to}
       ) AS local_sales
       GROUP BY hour
       ORDER BY hour

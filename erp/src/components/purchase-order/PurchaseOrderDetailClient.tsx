@@ -15,6 +15,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -242,7 +243,7 @@ export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
         paymentTermDays={po.paymentTermDays}
         orderDate={po.orderDate}
         createdAt={po.createdAt}
-        createdByEmail={po.createdBy.email}
+        createdByName={staffDisplayName(po.createdBy.email)}
       />
 
       {/* Totals */}

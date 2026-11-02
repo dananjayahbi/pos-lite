@@ -38,6 +38,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useStockTakeSession, type StockTakeItemDetail } from '@/hooks/useStockTakeSession';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface StockTakeReviewProps {
   sessionId: string;
@@ -323,7 +324,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
               </p>
               <p className="text-sm text-emerald-700">
                 {sessionData.approvedBy
-                  ? `Approved by ${sessionData.approvedBy.email}`
+                  ? `Approved by ${staffDisplayName(sessionData.approvedBy.email)}`
                   : 'Approved'}
                 {sessionData.approvedAt && ` on ${formatDateTime(sessionData.approvedAt)}`}
               </p>
@@ -342,7 +343,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
               </p>
               <p className="text-sm text-red-700">
                 {sessionData.approvedBy
-                  ? `Rejected by ${sessionData.approvedBy.email}`
+                  ? `Rejected by ${staffDisplayName(sessionData.approvedBy.email)}`
                   : 'Rejected'}
               </p>
               {sessionData.notes && (
@@ -385,7 +386,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
                 Started By
               </dt>
               <dd className="text-sm text-espresso">
-                {sessionData.initiatedBy.email}
+                {staffDisplayName(sessionData.initiatedBy.email)}
               </dd>
             </div>
             <div>

@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { formatRupee } from '@/lib/format';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 import { Eye, PlusCircle, Wallet } from 'lucide-react';
 
 interface StaffMember {
@@ -246,7 +247,7 @@ export default function StaffShiftsPage() {
                 <SelectItem value="ALL">All staff</SelectItem>
                 {staff.map((member) => (
                   <SelectItem key={member.id} value={member.id}>
-                    {member.email}
+                    {staffDisplayName(member.email)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -324,7 +325,7 @@ export default function StaffShiftsPage() {
                   <TableRow key={shift.id}>
                     <TableCell>
                       <div>
-                        <p className="font-medium text-espresso">{shift.cashier?.email ?? '—'}</p>
+                        <p className="font-medium text-espresso">{shift.cashier ? staffDisplayName(shift.cashier.email) : '—'}</p>
                         <p className="text-xs uppercase tracking-[0.2em] text-sand">{shift.cashier?.role.replace(/_/g, ' ') ?? ''}</p>
                       </div>
                     </TableCell>
@@ -391,7 +392,7 @@ export default function StaffShiftsPage() {
 
       {openShiftFlow && (
         <ShiftOpenModal
-          cashierName={sessionData?.user?.email ?? 'Cashier'}
+          cashierName={sessionData?.user?.email ? staffDisplayName(sessionData.user.email) : 'Cashier'}
           showOwnerDashboardShortcut={false}
           onOpened={() => {
             setOpenShiftFlow(false);

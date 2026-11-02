@@ -81,7 +81,8 @@ export default function CashFlowPage() {
     data &&
     (parseFloat(data.totalIncome) !== 0 ||
       parseFloat(data.totalExpenses) !== 0 ||
-      data.cashMovements.length > 0);
+      data.cashMovements.length > 0 ||
+      data.paymentAccountActivity.length > 0);
 
   const netCashFlowNum = data ? parseFloat(data.netCashFlow) : 0;
 
@@ -277,6 +278,75 @@ export default function CashFlowPage() {
                     </TableRow>
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Payment Account Activity */}
+          {data.paymentAccountActivity.length > 0 && (
+            <Card className="border-mist">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-display text-espresso">Payment Account Activity</CardTitle>
+                <Link href="/payment-accounts" className="text-sm text-terracotta hover:underline">
+                  Manage accounts
+                </Link>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-linen/40">
+                      <TableHead className="text-espresso">Account</TableHead>
+                      <TableHead className="text-espresso">Type</TableHead>
+                      <TableHead className="text-right text-espresso">Money In</TableHead>
+                      <TableHead className="text-right text-espresso">Money Out</TableHead>
+                      <TableHead className="text-right text-espresso">Net</TableHead>
+                      <TableHead className="text-right text-espresso">Current Balance</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.paymentAccountActivity.map((account) => (
+                      <TableRow key={account.accountId}>
+                        <TableCell className="font-medium">{account.accountName}</TableCell>
+                        <TableCell className="text-sand">{account.accountType.replace(/_/g, ' ')}</TableCell>
+                        <TableCell className="text-right font-mono text-green-700">
+                          {formatRupee(account.debit)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-terracotta">
+                          {formatRupee(account.credit)}
+                        </TableCell>
+                        <TableCell
+                          className={`text-right font-mono ${
+                            parseFloat(account.net) >= 0 ? 'text-green-700' : 'text-terracotta'
+                          }`}
+                        >
+                          {formatRupee(account.net)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {formatRupee(account.currentBalance)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="bg-linen/40 font-semibold">
+                      <TableCell colSpan={2}>Total</TableCell>
+                      <TableCell className="text-right font-mono text-green-700">
+                        {formatRupee(data.paymentAccountTotals.debit)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-terracotta">
+                        {formatRupee(data.paymentAccountTotals.credit)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {formatRupee(data.paymentAccountTotals.net)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {formatRupee(data.paymentAccountTotals.totalActiveBalance)}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+                <p className="mt-2 text-xs text-sand">
+                  Ledger totals include sales, refunds, expenses, deposits, withdrawals and internal
+                  transfers for the selected window. Internal transfers net to zero.
+                </p>
               </CardContent>
             </Card>
           )}

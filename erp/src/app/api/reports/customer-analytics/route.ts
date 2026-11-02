@@ -6,6 +6,7 @@ import Decimal from "decimal.js";
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getRepeatBadge } from '@/lib/services/customer-loyalty';
+import { saleAccountingDateWhere } from '@/lib/reports/accounting';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -83,11 +84,11 @@ export async function GET(request: NextRequest) {
           tenantId,
           status: "COMPLETED",
           customerId: { not: null },
-          createdAt: { gte: from, lte: to },
+          ...saleAccountingDateWhere(from, to),
         },
         _sum: { totalAmount: true },
         _count: true,
-        _max: { createdAt: true },
+        _max: { createdAt: true, saleDate: true },
         orderBy: { _sum: { totalAmount: "desc" } },
         take: 50,
       }),
@@ -107,7 +108,7 @@ export async function GET(request: NextRequest) {
       // b. New vs Returning by week
       prisma.$queryRaw<NewVsReturningRow[]>(Prisma.sql`
         WITH first_sales AS (
-          SELECT "customerId", MIN("createdAt") AS first_sale_date
+          SELECT "customerId", MIN(COALESCE("saleDate", "createdAt")) AS first_sale_date
           FROM sales
           WHERE "tenantId" = ${tenantId}
             AND status = 'COMPLETED'
@@ -116,13 +117,13 @@ export async function GET(request: NextRequest) {
         ),
         weekly_customers AS (
           SELECT DISTINCT s."customerId",
-            date_trunc('week', s."createdAt") AS week_start
+            date_trunc('week', COALESCE(s."saleDate", s."createdAt")) AS week_start
           FROM sales s
           WHERE s."tenantId" = ${tenantId}
             AND s.status = 'COMPLETED'
             AND s."customerId" IS NOT NULL
-            AND s."createdAt" >= ${from}
-            AND s."createdAt" <= ${to}
+            AND COALESCE(s."saleDate", s."createdAt") >= ${from}
+            AND COALESCE(s."saleDate", s."createdAt") <= ${to}
         )
         SELECT
           wc.week_start AS "weekStart",
@@ -147,16 +148,16 @@ export async function GET(request: NextRequest) {
           c.name,
           c.phone,
           c."totalSpend" AS "lifetimeSpend",
-          MAX(s."createdAt") AS "lastPurchaseDate"
+          MAX(COALESCE(s."saleDate", s."createdAt")) AS "lastPurchaseDate"
         FROM customers c
         JOIN sales s ON s."customerId" = c.id AND s."tenantId" = c."tenantId"
         WHERE c."tenantId" = ${tenantId}
           AND s.status = 'COMPLETED'
           AND c."deletedAt" IS NULL
         GROUP BY c.id, c.name, c.phone, c."totalSpend"
-        HAVING MAX(s."createdAt") <= ${cutoff60}
-           AND MAX(s."createdAt") >= ${cutoff365}
-        ORDER BY MAX(s."createdAt") ASC
+        HAVING MAX(COALESCE(s."saleDate", s."createdAt")) <= ${cutoff60}
+           AND MAX(COALESCE(s."saleDate", s."createdAt")) >= ${cutoff365}
+        ORDER BY MAX(COALESCE(s."saleDate", s."createdAt")) ASC
       `),
     ]);
 
@@ -189,6 +190,7 @@ export async function GET(request: NextRequest) {
         const aov =
           orderCount > 0 ? totalSpend.div(orderCount).toFixed(2) : "0.00";
         const lifetimeOrders = lifetimeOrderMap.get(g.customerId) ?? orderCount;
+        const lastVisit = g._max.saleDate ?? g._max.createdAt;
         return {
           rank: idx + 1,
           customerId: g.customerId,
@@ -199,7 +201,7 @@ export async function GET(request: NextRequest) {
           repeatBadge: getRepeatBadge(lifetimeOrders),
           totalSpend: totalSpend.toFixed(2),
           aov,
-          lastVisit: g._max.createdAt?.toISOString() ?? null,
+          lastVisit: lastVisit?.toISOString() ?? null,
         };
       });
 

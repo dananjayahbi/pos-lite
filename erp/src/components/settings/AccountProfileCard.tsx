@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Mail, ShieldCheck, Clock, Tag } from 'lucide-react';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 export interface AccountProfile {
   id: string;
@@ -24,6 +25,8 @@ function formatDate(value?: string | null): string {
 }
 
 export default function AccountProfileCard({ profile }: { profile: AccountProfile }) {
+  const displayName = staffDisplayName(profile.email);
+
   return (
     <Card className="border border-espresso/10">
       <CardHeader>
@@ -33,10 +36,10 @@ export default function AccountProfileCard({ profile }: { profile: AccountProfil
       <CardContent className="space-y-4">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-full bg-linen font-display text-lg font-bold text-espresso">
-            {profile.email.charAt(0).toUpperCase()}
+            {displayName.charAt(0).toUpperCase()}
           </div>
           <div>
-            <p className="font-medium text-espresso">{profile.email}</p>
+            <p className="font-medium text-espresso">{displayName}</p>
             <p className="text-xs text-espresso/50">{profile.role.replace(/_/g, ' ')}</p>
           </div>
         </div>

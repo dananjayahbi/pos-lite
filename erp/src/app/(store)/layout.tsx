@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import StoreLayoutClient from '@/components/shared/StoreLayoutClient';
 import { getEffectivePermissions } from '@/lib/constants/permissions';
 import { getTenantBranding } from '@/lib/tenant-branding';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 export default async function StoreLayout({
   children,
@@ -45,7 +46,7 @@ export default async function StoreLayout({
       </a>
       <div className="flex min-h-0 flex-1">
         <StoreLayoutClient
-          userEmail={session.user.email ?? 'signed-in-user@ayurpos.dev'}
+          userName={staffDisplayName(session.user.email)}
           userRole={session.user.role}
           permissions={permissions}
           businessName={branding.name}

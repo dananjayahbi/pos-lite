@@ -11,9 +11,10 @@ import { z } from 'zod';
  * the existing valid promotion flows (percentages, cent-level fixed discounts,
  * whole free-item quantities) are untouched:
  *
- *  - PERCENTAGE types (`CART_PERCENTAGE`, `CATEGORY_PERCENTAGE`, `PROMO_CODE`)
- *    are consumed as `subtotal * value / 100` → cap at 100 so a "discount" can
- *    never credit the customer more than the cart is worth.
+ *  - PERCENTAGE types (`CART_PERCENTAGE`, `CATEGORY_PERCENTAGE`,
+ *    `PRODUCT_PERCENTAGE`, `PROMO_CODE`) are consumed as `subtotal * value /
+ *    100` → cap at 100 so a "discount" can never credit the customer more than
+ *    the cart is worth.
  *  - `CART_FIXED` is an LKR amount stored in `Promotion.value Decimal(12,2)`
  *    → cap at the column ceiling and require ≤ 2 decimal places.
  *  - `BOGO` / `MIX_AND_MATCH` carry a whole free-item quantity (the "item value
@@ -29,7 +30,7 @@ const MAX_FREE_ITEM_QTY = 100000;
 /** `minQuantity` ceiling: keeps the Int column and `evaluateBOGO`'s division sane. */
 const MAX_MIN_QUANTITY = 1_000_000;
 
-const PERCENTAGE_TYPES = ['CART_PERCENTAGE', 'CATEGORY_PERCENTAGE', 'PROMO_CODE'] as const;
+const PERCENTAGE_TYPES = ['CART_PERCENTAGE', 'CATEGORY_PERCENTAGE', 'PRODUCT_PERCENTAGE', 'PROMO_CODE'] as const;
 const ITEM_QUANTITY_TYPES = ['BOGO', 'MIX_AND_MATCH'] as const;
 
 /** At most 2 decimal places, tolerant of binary-float representation error. */
@@ -116,10 +117,11 @@ function assertValueBounds(
 
 const PromotionBaseSchema = z.object({
   name: z.string().min(1).max(100),
-  type: z.enum(['CART_PERCENTAGE', 'CART_FIXED', 'CATEGORY_PERCENTAGE', 'BOGO', 'MIX_AND_MATCH', 'PROMO_CODE']),
+  type: z.enum(['CART_PERCENTAGE', 'CART_FIXED', 'CATEGORY_PERCENTAGE', 'PRODUCT_PERCENTAGE', 'BOGO', 'MIX_AND_MATCH', 'PROMO_CODE']),
   value: z.number().min(0),
   promoCode: z.string().max(50).optional(),
   targetCategoryId: z.string().optional(),
+  targetProductId: z.string().optional(),
   // M15-02: int column bound; min stays 1 because `evaluateBOGO` divides by
   // `minQuantity` (0 would make free units Infinity).
   minQuantity: z.number().int().min(1).max(MAX_MIN_QUANTITY).optional(),

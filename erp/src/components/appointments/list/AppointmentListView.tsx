@@ -7,6 +7,7 @@ import { AppointmentFilters } from './AppointmentFilters';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '../shared/EmptyState';
 import { CalendarDays } from 'lucide-react';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface AppointmentListViewProps {
   onAppointmentClick: (id: string) => void;
@@ -93,7 +94,7 @@ export function AppointmentListView({ onAppointmentClick, onNewClick }: Appointm
                       {appt.service?.name ?? '—'}
                     </td>
                     <td className="px-4 py-3 text-sm text-espresso/60">
-                      {appt.staff?.email ?? '—'}
+                      {appt.staff ? staffDisplayName(appt.staff.email) : '—'}
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={appt.status} />

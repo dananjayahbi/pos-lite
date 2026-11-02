@@ -2,9 +2,8 @@
  * GET /api/public/site/[tenantSlug]/appointment-doctors
  *
  * Public list of bookable physicians (staff who have generated appointment
- * slots) for a tenant. Returns id + email (the User model has no name field,
- * so the email is the display handle). Returns an empty array for tenants
- * that have the appointments module disabled.
+ * slots) for a tenant. Returns id, display name and email. Returns an empty
+ * array for tenants that have the appointments module disabled.
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -15,6 +14,7 @@ import {
   jsonWithCors,
 } from '@/lib/api/cors';
 import { isModuleEnabled } from '@/lib/feature-guard';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface RouteContext {
   params: Promise<{ tenantSlug: string }>;
@@ -63,7 +63,7 @@ export async function GET(
   const doctors = staff
     .map((s) => s.staff)
     .filter((s) => s.isActive && !s.deletedAt)
-    .map((s) => ({ id: s.id, name: s.email, email: s.email }));
+    .map((s) => ({ id: s.id, name: staffDisplayName(s.email), email: s.email }));
 
   return jsonWithCors(request, { success: true, data: doctors }, {
     headers: {

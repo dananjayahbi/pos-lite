@@ -7,6 +7,7 @@ import {
   StockAdjustmentSchema,
   MAX_STOCK_QUANTITY,
 } from '@/lib/validators/product.validators';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 export async function POST(request: NextRequest) {
   try {
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
 
         if (recipients.length > 0) {
           const title = `${productName} — ${sku} is low on stock`;
-          const body = `Current stock: ${newQty} units. Threshold: ${variant.lowStockThreshold} units. Adjusted by: ${session.user.name ?? 'Staff'}.`;
+          const body = `Current stock: ${newQty} units. Threshold: ${variant.lowStockThreshold} units. Adjusted by: ${staffDisplayName(session.user.email)}.`;
 
           await tx.notificationRecord.createMany({
             data: recipients.map((r) => ({

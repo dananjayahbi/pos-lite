@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getCurrentShift } from '@/lib/services/shift.service';
 import { ShiftGate } from '@/components/pos/ShiftGate';
 import { getTenantBranding } from '@/lib/tenant-branding';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 export default async function POSLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -36,7 +37,7 @@ export default async function POSLayout({ children }: { children: React.ReactNod
       hasOpenShift={Boolean(shift)}
       shiftId={shift?.id}
       shiftOpenedAt={shift?.openedAt.toISOString()}
-      cashierName={session.user.name ?? 'Cashier'}
+      cashierName={staffDisplayName(session.user.email)}
       showOwnerDashboardShortcut={showOwnerDashboardShortcut}
       businessName={branding.name}
       businessLogoUrl={branding.logoUrl}

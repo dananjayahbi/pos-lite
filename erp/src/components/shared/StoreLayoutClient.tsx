@@ -21,7 +21,7 @@ import { MenuIcon } from 'lucide-react';
 
 interface StoreLayoutClientProps {
   children: ReactNode;
-  userEmail: string;
+  userName: string;
   userRole: UserRole;
   permissions: string[];
   businessName: string;
@@ -30,7 +30,7 @@ interface StoreLayoutClientProps {
 
 export default function StoreLayoutClient({
   children,
-  userEmail,
+  userName,
   userRole,
   permissions,
   businessName,
@@ -66,7 +66,7 @@ export default function StoreLayoutClient({
               <div className="flex items-center gap-3">
                 <NotificationPopover />
                 <span className="max-w-[180px] truncate rounded-full bg-linen px-3 py-1 text-xs text-espresso/70">
-                  {userEmail}
+                  {userName}
                 </span>
                 <button
                   type="button"

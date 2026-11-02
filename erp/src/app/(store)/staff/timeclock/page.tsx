@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface StaffMember {
   id: string;
@@ -88,7 +89,7 @@ export default function TimeclockPage() {
                 <SelectContent>
                   {staff.map((member) => (
                     <SelectItem key={member.id} value={member.id}>
-                      {member.email}
+                      {staffDisplayName(member.email)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -102,7 +103,7 @@ export default function TimeclockPage() {
         <ErrorBoundary>
           <TimeClockHistoryPanel
             staffId={selectedUserId}
-            title={selectedStaff ? `${selectedStaff.email} — Time Clock` : 'Time Clock History'}
+            title={selectedStaff ? `${staffDisplayName(selectedStaff.email)} — Time Clock` : 'Time Clock History'}
           />
         </ErrorBoundary>
       )}

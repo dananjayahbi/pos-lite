@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import Decimal from "decimal.js";
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { staffDisplayName } from '@/lib/utils/staff-name';
+import { saleAccountingDateWhere } from '@/lib/reports/accounting';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -56,7 +58,7 @@ export async function GET(request: NextRequest) {
       where: {
         tenantId,
         status: "COMPLETED",
-        createdAt: { gte: from, lte: to },
+        ...saleAccountingDateWhere(from, to),
       },
       _sum: { totalAmount: true },
       _count: true,
@@ -92,7 +94,7 @@ export async function GET(request: NextRequest) {
       by: ["userId"],
       where: {
         tenantId,
-        createdAt: { gte: from, lte: to },
+        sale: saleAccountingDateWhere(from, to),
         userId: { in: cashierIds },
       },
       _sum: { earnedAmount: true },
@@ -124,7 +126,7 @@ export async function GET(request: NextRequest) {
 
       return {
         cashierId: g.cashierId,
-        staffName: user?.email ?? "Unknown",
+        staffName: staffDisplayName(user?.email),
         role: user?.role ?? "CASHIER",
         transactions: count,
         totalRevenue: revenue,

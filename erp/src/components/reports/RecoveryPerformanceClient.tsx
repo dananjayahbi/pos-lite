@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useReportContext } from '@/lib/reports/ReportContext';
 import type { RecoveryStaffPerformance, RecoveryStaffRow } from '@/lib/services/recovery-stats.service';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 function defaultFrom(): string {
   const d = new Date();
@@ -82,7 +83,7 @@ export default function RecoveryPerformanceClient() {
   useEffect(() => {
     if (!data) return;
     const rows: Record<string, unknown>[] = data.staff.map((s) => ({
-      Staff: s.email,
+      Staff: staffDisplayName(s.email),
       Role: s.role,
       'Assigned Failed': s.assignedFailed,
       'Total Attempts': s.totalAttempts,
@@ -171,7 +172,7 @@ export default function RecoveryPerformanceClient() {
                 <TableBody>
                   {sorted.map((row) => (
                     <TableRow key={row.staffId}>
-                      <TableCell className="font-medium">{row.email}</TableCell>
+                      <TableCell className="font-medium">{staffDisplayName(row.email)}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{row.role.replace(/_/g, ' ')}</Badge>
                       </TableCell>

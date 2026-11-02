@@ -15,7 +15,7 @@ interface POHeaderCardsProps {
   paymentTermDays: number | null;
   orderDate: string;
   createdAt: string;
-  createdByEmail: string;
+  createdByName: string;
 }
 
 export function POHeaderCards({
@@ -25,7 +25,7 @@ export function POHeaderCards({
   paymentTermDays,
   orderDate,
   createdAt,
-  createdByEmail,
+  createdByName,
 }: POHeaderCardsProps) {
   return (
     <div className="grid gap-4 md:grid-cols-4">
@@ -59,7 +59,7 @@ export function POHeaderCards({
         <CardContent className="pt-6">
           <p className="text-xs text-mist">Created</p>
           <p className="font-medium text-espresso">{formatPoDate(createdAt)}</p>
-          <p className="text-xs text-mist">by {createdByEmail}</p>
+          <p className="text-xs text-mist">by {createdByName}</p>
         </CardContent>
       </Card>
     </div>

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
-import type { ExpenseCategory } from '@/generated/prisma/client';
+import Decimal from 'decimal.js';
+import type { ExpenseCategory, Prisma } from '@/generated/prisma/client';
 import type { CreateExpenseInput, UpdateExpenseInput } from '@/lib/validators/expense.validators';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { adjustFundBalance, assertFundCanSpend } from '@/lib/services/petty-cash.service';
@@ -57,6 +58,48 @@ export async function getExpenseById(tenantId: string, id: string) {
   });
 }
 
+/**
+ * Reverse the EXPENSE ledger lines for an expense being edited or deleted.
+ * Reversals are new ADJUSTMENT entries (the ledger is append-only); the
+ * originating `sourceId` keeps them linked to the expense.
+ */
+async function reverseExpenseLedger(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  actorId: string,
+  expenseId: string,
+  description: string,
+): Promise<void> {
+  const entries = await tx.paymentAccountEntry.findMany({
+    where: {
+      tenantId,
+      source: PaymentEntrySource.EXPENSE,
+      sourceId: expenseId,
+    },
+    select: { accountId: true, debit: true, credit: true },
+  });
+
+  const lines = entries
+    .map((entry) => {
+      const net = new Decimal(entry.debit.toString()).minus(entry.credit.toString());
+      if (net.isZero()) return null;
+      return {
+        accountId: entry.accountId,
+        source: PaymentEntrySource.ADJUSTMENT,
+        sourceId: expenseId,
+        description: `Expense reversal — ${description}`.slice(0, 200),
+        ...(net.greaterThan(0)
+          ? { credit: net }
+          : { debit: net.abs() }),
+      };
+    })
+    .filter((line): line is NonNullable<typeof line> => line !== null);
+
+  if (lines.length > 0) {
+    await postLedgerEntries(tx, tenantId, actorId, lines);
+  }
+}
+
 export async function createExpense(
   tenantId: string,
   data: CreateExpenseInput & { recordedById: string; overdrawApproved?: boolean | undefined },
@@ -73,45 +116,47 @@ export async function createExpense(
     );
   }
 
-  const expense = await prisma.expense.create({
-    data: {
-      tenantId,
-      category: data.category as ExpenseCategory,
-      amount: data.amount,
-      description: data.description,
-      expenseDate: new Date(data.expenseDate),
-      ...(data.receiptImageUrl !== undefined && { receiptImageUrl: data.receiptImageUrl }),
-      ...(data.pettyCashFundId !== undefined && { pettyCashFundId: data.pettyCashFundId }),
-      ...(data.paymentAccountId !== undefined && { paymentAccountId: data.paymentAccountId }),
-      recordedById: data.recordedById,
-    },
-    include: { recordedBy: { select: { email: true } } },
-  });
+  const expense = await prisma.$transaction(async (tx) => {
+    const created = await tx.expense.create({
+      data: {
+        tenantId,
+        category: data.category as ExpenseCategory,
+        amount: data.amount,
+        description: data.description,
+        expenseDate: new Date(data.expenseDate),
+        ...(data.receiptImageUrl !== undefined && { receiptImageUrl: data.receiptImageUrl }),
+        ...(data.pettyCashFundId !== undefined && { pettyCashFundId: data.pettyCashFundId }),
+        ...(data.paymentAccountId !== undefined && { paymentAccountId: data.paymentAccountId }),
+        recordedById: data.recordedById,
+      },
+      include: { recordedBy: { select: { email: true } } },
+    });
 
-  // Settle the expense out of its payment account. Separate from the
-  // petty-cash path: a fund is a till sub-balance, an account is a real money
-  // container, and a tenant may use either or both.
-  if (data.paymentAccountId) {
-    await prisma.$transaction(async (tx) => {
+    // Settle the expense out of its payment account in the SAME transaction as
+    // the expense row. If the account is closed or short of funds, nothing is
+    // written — previously the expense could exist without its ledger entry.
+    if (data.paymentAccountId) {
       await assertSufficientFunds(
         tx,
         tenantId,
-        data.paymentAccountId!,
+        data.paymentAccountId,
         data.amount,
         data.overdrawApproved === true,
       );
       await postLedgerEntries(tx, tenantId, data.recordedById, [
         {
-          accountId: data.paymentAccountId!,
+          accountId: data.paymentAccountId,
           source: PaymentEntrySource.EXPENSE,
-          sourceId: expense.id,
+          sourceId: created.id,
           description: `${data.category} — ${data.description}`.slice(0, 200),
           credit: data.amount,
           entryDate: new Date(data.expenseDate),
         },
       ]);
-    });
-  }
+    }
+
+    return created;
+  });
 
   // A linked petty-cash expense reduces the fund's running balance.
   if (data.pettyCashFundId) {
@@ -185,18 +230,61 @@ export async function updateExpense(
     }
   }
 
-  const expense = await prisma.expense.update({
-    where: { id },
-    data: {
-      ...(data.category !== undefined && { category: data.category as ExpenseCategory }),
-      ...(data.amount !== undefined && { amount: data.amount }),
-      ...(data.description !== undefined && { description: data.description }),
-      ...(data.expenseDate !== undefined && { expenseDate: new Date(data.expenseDate) }),
-      ...(data.receiptImageUrl !== undefined && { receiptImageUrl: data.receiptImageUrl }),
-      ...(data.pettyCashFundId !== undefined && { pettyCashFundId: data.pettyCashFundId }),
-      ...(data.paymentAccountId !== undefined && { paymentAccountId: data.paymentAccountId }),
-    },
-    include: { recordedBy: { select: { email: true } } },
+  const oldAccountId = existing.paymentAccountId;
+  const newAccountId =
+    data.paymentAccountId !== undefined ? data.paymentAccountId : oldAccountId;
+  const newExpenseDate =
+    data.expenseDate !== undefined ? new Date(data.expenseDate) : existing.expenseDate;
+  const accountChanged = newAccountId !== oldAccountId;
+  const amountChanged = data.amount !== undefined && data.amount !== oldAmount;
+  const dateChanged =
+    data.expenseDate !== undefined &&
+    newExpenseDate.getTime() !== existing.expenseDate.getTime();
+
+  const expense = await prisma.$transaction(async (tx) => {
+    const updated = await tx.expense.update({
+      where: { id },
+      data: {
+        ...(data.category !== undefined && { category: data.category as ExpenseCategory }),
+        ...(data.amount !== undefined && { amount: data.amount }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.expenseDate !== undefined && { expenseDate: new Date(data.expenseDate) }),
+        ...(data.receiptImageUrl !== undefined && { receiptImageUrl: data.receiptImageUrl }),
+        ...(data.pettyCashFundId !== undefined && { pettyCashFundId: data.pettyCashFundId }),
+        ...(data.paymentAccountId !== undefined && { paymentAccountId: data.paymentAccountId }),
+      },
+      include: { recordedBy: { select: { email: true } } },
+    });
+
+    // Keep the payment-account ledger aligned with the edited expense. A changed
+    // account/amount/date reverses the old EXPENSE entries and posts the new
+    // amount, all in the same transaction as the expense row.
+    if (accountChanged || amountChanged || dateChanged) {
+      const actorId = data.actorId ?? existing.recordedById;
+      await reverseExpenseLedger(tx, tenantId, actorId, id, existing.description);
+
+      if (newAccountId) {
+        await assertSufficientFunds(
+          tx,
+          tenantId,
+          newAccountId,
+          newAmount,
+          data.overdrawApproved === true,
+        );
+        await postLedgerEntries(tx, tenantId, actorId, [
+          {
+            accountId: newAccountId,
+            source: PaymentEntrySource.EXPENSE,
+            sourceId: id,
+            description: `${updated.category} — ${updated.description}`.slice(0, 200),
+            credit: newAmount,
+            entryDate: newExpenseDate,
+          },
+        ]);
+      }
+    }
+
+    return updated;
   });
 
   // Keep the fund balance in sync with a single net delta when the fund is
@@ -218,12 +306,21 @@ export async function deleteExpense(tenantId: string, id: string, actorId: strin
     throw new Error('Expense not found');
   }
 
+  await prisma.$transaction(async (tx) => {
+    await reverseExpenseLedger(
+      tx,
+      tenantId,
+      actorId,
+      expense.id,
+      expense.description,
+    );
+    await tx.expense.delete({ where: { id } });
+  });
+
   // Restore the fund balance when a linked petty-cash expense is removed.
   if (expense.pettyCashFundId) {
     await adjustFundBalance(tenantId, expense.pettyCashFundId, expense.amount.toNumber());
   }
-
-  await prisma.expense.delete({ where: { id } });
 
   void createAuditLog({
     tenantId,

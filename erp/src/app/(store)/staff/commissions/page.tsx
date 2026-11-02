@@ -25,6 +25,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { formatRupee } from '@/lib/format';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface CommissionSummary {
   userId: string;
@@ -157,9 +158,9 @@ export default function CommissionReportsPage() {
       return;
     }
     const rows: string[][] = [
-      ['Staff Email', 'Role', 'Total Earned (LKR)', 'Total Paid (LKR)', 'Unpaid Balance (LKR)', 'Period Start', 'Period End'],
+      ['Staff', 'Role', 'Total Earned (LKR)', 'Total Paid (LKR)', 'Unpaid Balance (LKR)', 'Period Start', 'Period End'],
       ...summaries.map((s) => [
-        s.email,
+        staffDisplayName(s.email),
         s.role,
         Number(s.totalEarned).toFixed(2),
         Number(s.totalPaid).toFixed(2),
@@ -260,7 +261,7 @@ export default function CommissionReportsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Staff Email</TableHead>
+                  <TableHead>Staff</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead className="text-right">Total Earned</TableHead>
                   <TableHead className="text-right">Total Paid</TableHead>
@@ -271,7 +272,7 @@ export default function CommissionReportsPage() {
               <TableBody>
                 {summaries.map((s) => (
                   <TableRow key={s.userId}>
-                    <TableCell className="text-espresso">{s.email}</TableCell>
+                    <TableCell className="text-espresso">{staffDisplayName(s.email)}</TableCell>
                     <TableCell>
                       <Badge className={`${ROLE_COLORS[s.role] ?? 'bg-mist text-espresso'} hover:opacity-90`}>
                         {s.role.replace('_', ' ')}
@@ -340,8 +341,8 @@ export default function CommissionReportsPage() {
                   <TableRow key={payout.id}>
                     <TableCell>
                       <div>
-                        <p className="font-medium text-espresso">{payout.userEmail}</p>
-                        <p className="text-xs text-sand">Approved by {payout.authorizedByEmail}</p>
+                        <p className="font-medium text-espresso">{staffDisplayName(payout.userEmail)}</p>
+                        <p className="text-xs text-sand">Approved by {staffDisplayName(payout.authorizedByEmail)}</p>
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-sand">{new Date(payout.paidAt).toLocaleString()}</TableCell>
@@ -372,7 +373,7 @@ export default function CommissionReportsPage() {
               <p className="text-sm text-espresso">
                 Record payout of{' '}
                 <span className="font-semibold">{formatRupee(payoutTarget.unpaid)}</span>{' '}
-                to <span className="font-semibold">{payoutTarget.email}</span> for the period{' '}
+                to <span className="font-semibold">{staffDisplayName(payoutTarget.email)}</span> for the period{' '}
                 {periodStart} to {periodEnd}?
               </p>
               <div className="grid gap-4 md:grid-cols-2">
@@ -415,7 +416,7 @@ export default function CommissionReportsPage() {
               <div className="space-y-4 text-sm">
                 <div className="rounded-lg border border-mist bg-pearl/40 p-4">
                   <p className="text-xs uppercase tracking-[0.2em] text-sand">Staff Member</p>
-                  <p className="mt-1 font-medium text-espresso">{selectedHistory.userEmail}</p>
+                  <p className="mt-1 font-medium text-espresso">{staffDisplayName(selectedHistory.userEmail)}</p>
                   <p className="text-xs text-sand">Role: {selectedHistory.userRole.replace('_', ' ')}</p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -432,7 +433,7 @@ export default function CommissionReportsPage() {
                   <p><span className="font-medium text-espresso">Commission window:</span> {new Date(selectedHistory.periodStart).toLocaleDateString()} → {new Date(selectedHistory.periodEnd).toLocaleDateString()}</p>
                   <p><span className="font-medium text-espresso">Payment method:</span> {selectedHistory.paymentMethod ?? 'Manual / not specified'}</p>
                   <p><span className="font-medium text-espresso">Proof reference:</span> {selectedHistory.proofReference ?? 'Not recorded'}</p>
-                  <p><span className="font-medium text-espresso">Authorised by:</span> {selectedHistory.authorizedByEmail}</p>
+                  <p><span className="font-medium text-espresso">Authorised by:</span> {staffDisplayName(selectedHistory.authorizedByEmail)}</p>
                 </div>
                 <div className="rounded-lg border border-dashed border-mist bg-pearl/30 p-4">
                   <p className="text-xs uppercase tracking-[0.2em] text-sand">Notes</p>

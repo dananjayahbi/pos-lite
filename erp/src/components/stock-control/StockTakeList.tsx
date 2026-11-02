@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/table';
 import { useStockTakeSessions } from '@/hooks/useStockTakeSessions';
 import { useCategories } from '@/hooks/useCategories';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface StockTakeListProps {
   permissions: string[];
@@ -415,7 +416,7 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
                         {badge.label}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-body text-sm text-mist">{s.initiatedBy}</TableCell>
+                    <TableCell className="font-body text-sm text-mist">{staffDisplayName(s.initiatedBy)}</TableCell>
                     <TableCell className="font-body text-sm text-mist">
                       {formatDateTime(s.startedAt)}
                     </TableCell>

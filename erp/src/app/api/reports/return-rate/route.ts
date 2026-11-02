@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@/generated/prisma/client";
 import Decimal from "decimal.js";
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { saleAccountingDateWhere, netRefundAmount } from '@/lib/reports/accounting';
+import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -26,23 +27,16 @@ function defaultTo(): Date {
   return d;
 }
 
-// ── Raw query row types ──────────────────────────────────────────
-
-interface CategorySalesRow {
+interface CategoryTotals {
   categoryId: string;
   categoryName: string;
   totalSales: Decimal;
-}
-
-interface CategoryReturnsRow {
-  categoryId: string;
-  categoryName: string;
   totalRefunds: Decimal;
 }
 
-interface TopReturnedRow {
+interface ProductReturnTotals {
   productName: string;
-  unitsReturned: bigint;
+  unitsReturned: number;
   returnValue: Decimal;
 }
 
@@ -72,122 +66,121 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Parallel queries ─────────────────────────────────────────
-
-    const [
-      salesAggregate,
-      returnsAggregate,
-      returnsCount,
-      categorySalesRows,
-      categoryReturnsRows,
-      reasonGroups,
-      topReturnedRows,
-    ] = await Promise.all([
-      // a) Total revenue from COMPLETED sales
+    const [salesAggregate, returns, saleLines, returnLines] = await Promise.all([
+      // a) Product revenue for the accounting period. Excludes tax/delivery and
+      //    includes the cart-level discount.
       prisma.sale.aggregate({
         where: {
           tenantId,
           status: "COMPLETED",
-          createdAt: { gte: from, lte: to },
+          ...saleAccountingDateWhere(from, to),
         },
-        _sum: { totalAmount: true },
+        _sum: { subtotal: true, discountAmount: true },
       }),
 
-      // a) Total refunds from COMPLETED returns
-      prisma.return.aggregate({
+      // b) Completed returns in the period, with the original sale so refunds
+      //    can be restated on the same post-cart-discount basis.
+      prisma.return.findMany({
         where: {
           tenantId,
           status: "COMPLETED",
           createdAt: { gte: from, lte: to },
         },
-        _sum: { refundAmount: true },
-      }),
-
-      // a) Return count
-      prisma.return.count({
-        where: {
-          tenantId,
-          status: "COMPLETED",
-          createdAt: { gte: from, lte: to },
+        select: {
+          id: true,
+          reason: true,
+          refundAmount: true,
+          originalSale: { select: { subtotal: true, discountAmount: true } },
         },
       }),
 
-      // b) Category sales: SaleLine → ProductVariant → Product → Category
-      prisma.$queryRaw<CategorySalesRow[]>(Prisma.sql`
-        SELECT
-          c."id" AS "categoryId",
-          c."name" AS "categoryName",
-          COALESCE(SUM(sl."lineTotalAfterDiscount"), 0) AS "totalSales"
-        FROM "sale_lines" sl
-        JOIN "sales" s ON s."id" = sl."saleId"
-        JOIN "product_variants" pv ON pv."id" = sl."variantId"
-        JOIN "products" p ON p."id" = pv."productId"
-        JOIN "categories" c ON c."id" = p."categoryId"
-        WHERE s."tenantId" = ${tenantId}
-          AND s."status" = 'COMPLETED'
-          AND s."createdAt" >= ${from}
-          AND s."createdAt" <= ${to}
-        GROUP BY c."id", c."name"
-        ORDER BY "totalSales" DESC
-      `),
-
-      // c) Category returns: ReturnLine → ProductVariant → Product → Category
-      prisma.$queryRaw<CategoryReturnsRow[]>(Prisma.sql`
-        SELECT
-          c."id" AS "categoryId",
-          c."name" AS "categoryName",
-          COALESCE(SUM(rl."lineRefundAmount"), 0) AS "totalRefunds"
-        FROM "return_lines" rl
-        JOIN "returns" r ON r."id" = rl."returnId"
-        JOIN "product_variants" pv ON pv."id" = rl."variantId"
-        JOIN "products" p ON p."id" = pv."productId"
-        JOIN "categories" c ON c."id" = p."categoryId"
-        WHERE r."tenantId" = ${tenantId}
-          AND r."status" = 'COMPLETED'
-          AND r."createdAt" >= ${from}
-          AND r."createdAt" <= ${to}
-        GROUP BY c."id", c."name"
-        ORDER BY "totalRefunds" DESC
-      `),
-
-      // d) Return reasons grouped
-      prisma.return.groupBy({
-        by: ["reason"],
+      // c) Sale lines for category attribution.
+      prisma.saleLine.findMany({
         where: {
-          tenantId,
-          status: "COMPLETED",
-          createdAt: { gte: from, lte: to },
+          sale: {
+            tenantId,
+            status: "COMPLETED",
+            ...saleAccountingDateWhere(from, to),
+          },
         },
-        _count: { _all: true },
-        _sum: { refundAmount: true },
+        select: {
+          id: true,
+          saleId: true,
+          variantId: true,
+          lineTotalAfterDiscount: true,
+          sale: { select: { subtotal: true, discountAmount: true } },
+          variant: {
+            select: {
+              product: {
+                select: { category: { select: { id: true, name: true } } },
+              },
+            },
+          },
+        },
+        orderBy: [{ saleId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
       }),
 
-      // e) Top 10 most-returned products
-      prisma.$queryRaw<TopReturnedRow[]>(Prisma.sql`
-        SELECT
-          p."name" AS "productName",
-          SUM(rl."quantity") AS "unitsReturned",
-          SUM(rl."lineRefundAmount") AS "returnValue"
-        FROM "return_lines" rl
-        JOIN "returns" r ON r."id" = rl."returnId"
-        JOIN "product_variants" pv ON pv."id" = rl."variantId"
-        JOIN "products" p ON p."id" = pv."productId"
-        WHERE r."tenantId" = ${tenantId}
-          AND r."status" = 'COMPLETED'
-          AND r."createdAt" >= ${from}
-          AND r."createdAt" <= ${to}
-        GROUP BY p."id", p."name"
-        ORDER BY "unitsReturned" DESC
-        LIMIT 10
-      `),
+      // d) Return lines for category + product attribution.
+      prisma.returnLine.findMany({
+        where: {
+          return: {
+            tenantId,
+            status: "COMPLETED",
+            createdAt: { gte: from, lte: to },
+          },
+        },
+        select: {
+          variantId: true,
+          quantity: true,
+          lineRefundAmount: true,
+          return: {
+            select: {
+              originalSale: {
+                select: { subtotal: true, discountAmount: true },
+              },
+            },
+          },
+        },
+      }),
     ]);
 
-    // ── Overall stats ────────────────────────────────────────────
+    // ReturnLine has no direct variant relation, so resolve product/category
+    // labels for the returned variants in one extra query.
+    const returnVariantIds = [...new Set(returnLines.map((line) => line.variantId))];
+    const returnVariants =
+      returnVariantIds.length > 0
+        ? await prisma.productVariant.findMany({
+            where: { id: { in: returnVariantIds }, tenantId },
+            select: {
+              id: true,
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  category: { select: { id: true, name: true } },
+                },
+              },
+            },
+          })
+        : [];
+    const returnVariantMap = new Map(returnVariants.map((v) => [v.id, v]));
 
+    // ── Overall stats ────────────────────────────────────────────
     const totalRevenue = new Decimal(
-      salesAggregate._sum.totalAmount?.toString() ?? "0",
+      salesAggregate._sum.subtotal?.toString() ?? "0",
+    ).minus(
+      new Decimal(salesAggregate._sum.discountAmount?.toString() ?? "0"),
     );
-    const totalRefunds = new Decimal(
-      returnsAggregate._sum.refundAmount?.toString() ?? "0",
+    const totalRefunds = returns.reduce(
+      (sum, row) =>
+        sum.plus(
+          netRefundAmount(
+            row.refundAmount,
+            row.originalSale.subtotal,
+            row.originalSale.discountAmount,
+          ),
+        ),
+      new Decimal(0),
     );
     const overallReturnRate = totalRevenue.isZero()
       ? "0.00"
@@ -196,38 +189,62 @@ export async function GET(request: NextRequest) {
     const overall = {
       totalRevenue: totalRevenue.toFixed(2),
       totalRefunds: totalRefunds.toFixed(2),
-      totalReturns: returnsCount,
+      totalReturns: returns.length,
       returnRate: overallReturnRate,
     };
 
     // ── Merge category data ──────────────────────────────────────
+    const categoryMap = new Map<string, CategoryTotals>();
 
-    const categoryMap = new Map<
-      string,
-      { categoryId: string; categoryName: string; totalSales: Decimal; totalRefunds: Decimal }
-    >();
+    const linesBySale = new Map<string, typeof saleLines>();
+    for (const line of saleLines) {
+      const current = linesBySale.get(line.saleId);
+      if (current) current.push(line);
+      else linesBySale.set(line.saleId, [line]);
+    }
 
-    for (const row of categorySalesRows) {
-      categoryMap.set(row.categoryId, {
-        categoryId: row.categoryId,
-        categoryName: row.categoryName,
-        totalSales: new Decimal(row.totalSales.toString()),
-        totalRefunds: new Decimal(0),
+    for (const lines of linesBySale.values()) {
+      const lineTotals = lines.map(
+        (line) => new Decimal(line.lineTotalAfterDiscount.toString()),
+      );
+      const cartDiscount = new Decimal(
+        lines[0]!.sale.discountAmount.toString(),
+      );
+      const shares = allocateCartDiscountShares(lineTotals, cartDiscount);
+
+      lines.forEach((line, index) => {
+        const category = line.variant.product.category;
+        const entry = categoryMap.get(category.id) ?? {
+          categoryId: category.id,
+          categoryName: category.name,
+          totalSales: new Decimal(0),
+          totalRefunds: new Decimal(0),
+        };
+        entry.totalSales = entry.totalSales.plus(
+          lineTotals[index]!.minus(shares[index]!),
+        );
+        categoryMap.set(category.id, entry);
       });
     }
 
-    for (const row of categoryReturnsRows) {
-      const existing = categoryMap.get(row.categoryId);
-      if (existing) {
-        existing.totalRefunds = new Decimal(row.totalRefunds.toString());
-      } else {
-        categoryMap.set(row.categoryId, {
-          categoryId: row.categoryId,
-          categoryName: row.categoryName,
-          totalSales: new Decimal(0),
-          totalRefunds: new Decimal(row.totalRefunds.toString()),
-        });
-      }
+    for (const line of returnLines) {
+      const product = returnVariantMap.get(line.variantId)?.product;
+      if (!product) continue;
+      const category = product.category;
+      const entry = categoryMap.get(category.id) ?? {
+        categoryId: category.id,
+        categoryName: category.name,
+        totalSales: new Decimal(0),
+        totalRefunds: new Decimal(0),
+      };
+      entry.totalRefunds = entry.totalRefunds.plus(
+        netRefundAmount(
+          line.lineRefundAmount,
+          line.return.originalSale.subtotal,
+          line.return.originalSale.discountAmount,
+        ),
+      );
+      categoryMap.set(category.id, entry);
     }
 
     const categories = Array.from(categoryMap.values()).map((cat) => ({
@@ -244,26 +261,61 @@ export async function GET(request: NextRequest) {
     categories.sort((a, b) => parseFloat(b.returnRate) - parseFloat(a.returnRate));
 
     // ── Reasons ──────────────────────────────────────────────────
+    const reasonMap = new Map<string, { count: number; refundAmount: Decimal }>();
+    for (const row of returns) {
+      const entry = reasonMap.get(row.reason) ?? {
+        count: 0,
+        refundAmount: new Decimal(0),
+      };
+      entry.count += 1;
+      entry.refundAmount = entry.refundAmount.plus(
+        netRefundAmount(
+          row.refundAmount,
+          row.originalSale.subtotal,
+          row.originalSale.discountAmount,
+        ),
+      );
+      reasonMap.set(row.reason, entry);
+    }
 
-    const reasons = reasonGroups.map((g) => ({
-      reason: g.reason,
-      count: g._count._all,
-      refundAmount: new Decimal(
-        g._sum.refundAmount?.toString() ?? "0",
-      ).toFixed(2),
-    }));
-
-    // Sort by count descending
-    reasons.sort((a, b) => b.count - a.count);
+    const reasons = Array.from(reasonMap.entries())
+      .map(([reason, entry]) => ({
+        reason,
+        count: entry.count,
+        refundAmount: entry.refundAmount.toFixed(2),
+      }))
+      .sort((a, b) => b.count - a.count);
 
     // ── Top returned products ────────────────────────────────────
+    const productMap = new Map<string, ProductReturnTotals>();
+    for (const line of returnLines) {
+      const product = returnVariantMap.get(line.variantId)?.product;
+      if (!product) continue;
+      const entry = productMap.get(product.id) ?? {
+        productName: product.name,
+        unitsReturned: 0,
+        returnValue: new Decimal(0),
+      };
+      entry.unitsReturned += line.quantity;
+      entry.returnValue = entry.returnValue.plus(
+        netRefundAmount(
+          line.lineRefundAmount,
+          line.return.originalSale.subtotal,
+          line.return.originalSale.discountAmount,
+        ),
+      );
+      productMap.set(product.id, entry);
+    }
 
-    const topReturned = topReturnedRows.map((row, i) => ({
-      rank: i + 1,
-      productName: row.productName,
-      unitsReturned: Number(row.unitsReturned),
-      returnValue: new Decimal(row.returnValue.toString()).toFixed(2),
-    }));
+    const topReturned = Array.from(productMap.values())
+      .sort((a, b) => b.unitsReturned - a.unitsReturned)
+      .slice(0, 10)
+      .map((row, i) => ({
+        rank: i + 1,
+        productName: row.productName,
+        unitsReturned: row.unitsReturned,
+        returnValue: row.returnValue.toFixed(2),
+      }));
 
     return NextResponse.json({
       success: true,
@@ -274,3 +326,4 @@ export async function GET(request: NextRequest) {
     return errorJson("INTERNAL_ERROR", "Failed to generate report", 500);
   }
 }
+

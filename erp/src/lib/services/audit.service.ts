@@ -25,6 +25,7 @@
 import { createHash } from 'crypto';
 import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 export const AUTH_ACTIONS = {
   LOGIN_SUCCESS: 'LOGIN_SUCCESS',
@@ -297,6 +298,6 @@ export async function attachAuditActorNames<T extends { actorId: string | null }
 
   return entries.map((entry) => ({
     ...entry,
-    actorName: entry.actorId ? (emailById.get(entry.actorId) ?? 'Unknown user') : 'System',
+    actorName: entry.actorId ? staffDisplayName(emailById.get(entry.actorId)) : 'System',
   }));
 }

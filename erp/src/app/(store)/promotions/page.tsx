@@ -61,6 +61,7 @@ const PROMOTION_TYPE_LABELS: Record<string, string> = {
   CART_PERCENTAGE: 'Cart Percentage',
   CART_FIXED: 'Cart Fixed',
   CATEGORY_PERCENTAGE: 'Category Percentage',
+  PRODUCT_PERCENTAGE: 'Product Percentage',
   BOGO: 'Buy One Get One',
   MIX_AND_MATCH: 'Mix & Match',
   PROMO_CODE: 'Promo Code',
@@ -70,6 +71,7 @@ const PROMOTION_TYPES = [
   'CART_PERCENTAGE',
   'CART_FIXED',
   'CATEGORY_PERCENTAGE',
+  'PRODUCT_PERCENTAGE',
   'BOGO',
   'MIX_AND_MATCH',
   'PROMO_CODE',
@@ -87,6 +89,8 @@ interface PromotionRow {
   promoCode: string | null;
   targetCategoryId: string | null;
   targetCategory: { id: string; name: string } | null;
+  targetProductId: string | null;
+  targetProduct: { id: string; name: string } | null;
   minQuantity: number | null;
   startsAt: string | null;
   endsAt: string | null;
@@ -99,6 +103,11 @@ interface CategoryOption {
   name: string;
 }
 
+interface ProductOption {
+  id: string;
+  name: string;
+}
+
 // ── Badge Style Helper ───────────────────────────────────────────────────────
 
 function getTypeBadgeClasses(type: string): string {
@@ -107,6 +116,7 @@ function getTypeBadgeClasses(type: string): string {
     case 'CART_FIXED':
       return 'bg-sand text-espresso';
     case 'CATEGORY_PERCENTAGE':
+    case 'PRODUCT_PERCENTAGE':
       return 'bg-mist text-espresso';
     case 'BOGO':
     case 'MIX_AND_MATCH':
@@ -120,7 +130,7 @@ function getTypeBadgeClasses(type: string): string {
 
 function formatValue(type: string, value: string | number): string {
   const v = new Decimal(value.toString());
-  if (type === 'CART_PERCENTAGE' || type === 'CATEGORY_PERCENTAGE' || type === 'PROMO_CODE') {
+  if (type === 'CART_PERCENTAGE' || type === 'CATEGORY_PERCENTAGE' || type === 'PRODUCT_PERCENTAGE' || type === 'PROMO_CODE') {
     return `${v.toString()}%`;
   }
   return formatRupee(v.toNumber());
@@ -135,15 +145,23 @@ function formatDateRange(startsAt: string | null, endsAt: string | null): string
 }
 
 function getValueLabel(type: PromotionTypeValue): string {
-  if (type === 'CART_PERCENTAGE' || type === 'CATEGORY_PERCENTAGE' || type === 'PROMO_CODE') return 'Discount %';
+  if (type === 'CART_PERCENTAGE' || type === 'CATEGORY_PERCENTAGE' || type === 'PRODUCT_PERCENTAGE' || type === 'PROMO_CODE') return 'Discount %';
   if (type === 'CART_FIXED') return 'Discount Amount';
   return 'Item Value Cap';
 }
 
 function getPreviewText(name: string, type: PromotionTypeValue, value: number): string {
   if (!name || value <= 0) return '';
-  if (type === 'CART_PERCENTAGE' || type === 'CATEGORY_PERCENTAGE' || type === 'PROMO_CODE') {
-    return `${name} — ${value}% off${type === 'CART_PERCENTAGE' ? ' your entire cart' : type === 'CATEGORY_PERCENTAGE' ? ' category' : ' with code'}`;
+  if (type === 'CART_PERCENTAGE' || type === 'CATEGORY_PERCENTAGE' || type === 'PRODUCT_PERCENTAGE' || type === 'PROMO_CODE') {
+    return `${name} — ${value}% off${
+      type === 'CART_PERCENTAGE'
+        ? ' your entire cart'
+        : type === 'CATEGORY_PERCENTAGE'
+          ? ' category'
+          : type === 'PRODUCT_PERCENTAGE'
+            ? ' selected product'
+            : ' with code'
+    }`;
   }
   if (type === 'CART_FIXED') return `${name} — ${formatRupee(value)} off your cart`;
   return `${name} — Buy ${value}+ get one free`;
@@ -154,12 +172,13 @@ function getPreviewText(name: string, type: PromotionTypeValue, value: number): 
 interface PromotionFormProps {
   defaultValues?: Partial<CreatePromotionInput>;
   categories: CategoryOption[];
+  products: ProductOption[];
   onSubmit: (data: CreatePromotionInput) => void;
   isSubmitting: boolean;
   submitLabel: string;
 }
 
-function PromotionForm({ defaultValues, categories, onSubmit, isSubmitting, submitLabel }: PromotionFormProps) {
+function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmitting, submitLabel }: PromotionFormProps) {
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<CreatePromotionInput>({
     resolver: standardSchemaResolver(CreatePromotionSchema),
     defaultValues: {
@@ -188,7 +207,12 @@ function PromotionForm({ defaultValues, categories, onSubmit, isSubmitting, subm
         <Label htmlFor="type" className="font-body text-sm text-espresso">Type</Label>
         <Select
           value={watchedType}
-          onValueChange={(v) => setValue('type', v as PromotionTypeValue)}
+          onValueChange={(v) => {
+            const next = v as PromotionTypeValue;
+            setValue('type', next);
+            if (next !== 'PRODUCT_PERCENTAGE') setValue('targetProductId', undefined);
+            if (next !== 'CATEGORY_PERCENTAGE') setValue('targetCategoryId', undefined);
+          }}
         >
           <SelectTrigger className="font-body">
             <SelectValue />
@@ -237,6 +261,27 @@ function PromotionForm({ defaultValues, categories, onSubmit, isSubmitting, subm
               {categories.map((c) => (
                 <SelectItem key={c.id} value={c.id} className="font-body">
                   {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {watchedType === 'PRODUCT_PERCENTAGE' && (
+        <div className="space-y-1.5">
+          <Label htmlFor="targetProductId" className="font-body text-sm text-espresso">Product</Label>
+          <Select
+            value={watch('targetProductId') ?? ''}
+            onValueChange={(v) => setValue('targetProductId', v)}
+          >
+            <SelectTrigger className="font-body">
+              <SelectValue placeholder="Select product" />
+            </SelectTrigger>
+            <SelectContent>
+              {products.map((p) => (
+                <SelectItem key={p.id} value={p.id} className="font-body">
+                  {p.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -319,6 +364,17 @@ export default function PromotionsPage() {
       if (!res.ok) return [];
       const json = await res.json();
       return (json.data ?? []) as CategoryOption[];
+    },
+  });
+
+  // Fetch products for product-wise promotion select
+  const { data: products = [] } = useQuery({
+    queryKey: ['products-list-promotions'],
+    queryFn: async () => {
+      const res = await fetch('/api/store/products?status=active&limit=1000');
+      if (!res.ok) return [];
+      const json = await res.json();
+      return (json.data ?? []) as ProductOption[];
     },
   });
 
@@ -428,6 +484,7 @@ export default function PromotionsPage() {
             </DialogHeader>
             <PromotionForm
               categories={categories}
+              products={products}
               onSubmit={(data) => createMutation.mutate(data)}
               isSubmitting={createMutation.isPending}
               submitLabel="Create Promotion"
@@ -495,7 +552,15 @@ export default function PromotionsPage() {
                 <TableBody>
                   {promotions.map((promo) => (
                     <TableRow key={promo.id} className="hover:bg-linen/30">
-                      <TableCell className="font-body text-sm text-espresso font-medium">{promo.name}</TableCell>
+                      <TableCell className="font-body text-sm text-espresso font-medium">
+                        <div>{promo.name}</div>
+                        {promo.type === 'PRODUCT_PERCENTAGE' && promo.targetProduct && (
+                          <div className="mt-0.5 text-xs font-normal text-mist">Product: {promo.targetProduct.name}</div>
+                        )}
+                        {promo.type === 'CATEGORY_PERCENTAGE' && promo.targetCategory && (
+                          <div className="mt-0.5 text-xs font-normal text-mist">Category: {promo.targetCategory.name}</div>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge variant="secondary" className={`font-body text-xs ${getTypeBadgeClasses(promo.type)}`}>
                           {PROMOTION_TYPE_LABELS[promo.type] ?? promo.type}
@@ -552,12 +617,14 @@ export default function PromotionsPage() {
                       value: new Decimal(editPromo.value.toString()).toNumber(),
                       promoCode: editPromo.promoCode ?? undefined,
                       targetCategoryId: editPromo.targetCategoryId ?? undefined,
+                      targetProductId: editPromo.targetProductId ?? undefined,
                       minQuantity: editPromo.minQuantity ?? undefined,
                       startsAt: editPromo.startsAt ? editPromo.startsAt.slice(0, 10) : undefined,
                       endsAt: editPromo.endsAt ? editPromo.endsAt.slice(0, 10) : undefined,
                       description: editPromo.description ?? undefined,
                     }}
                     categories={categories}
+                    products={products}
                     onSubmit={(data) => updateMutation.mutate({ id: editPromo.id, data })}
                     isSubmitting={updateMutation.isPending}
                     submitLabel="Save Changes"

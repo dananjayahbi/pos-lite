@@ -15,6 +15,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReportContext } from "@/lib/reports/ReportContext";
+import { salesProductLabel } from "@/lib/reports/sales-report";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -51,6 +52,8 @@ interface ProductRow {
   productName: string;
   variantDescription: string;
   unitsSold: number;
+  returnedUnits: number;
+  netUnits: number;
   grossRevenue: string;
   returns: string;
   netRevenue: string;
@@ -59,6 +62,8 @@ interface ProductRow {
 
 interface SalesTotals {
   totalUnits: number;
+  totalReturnedUnits: number;
+  totalNetUnits: number;
   grossRevenue: string;
   totalReturns: string;
   netRevenue: string;
@@ -104,6 +109,11 @@ function sortProducts(
   });
 }
 
+/** Chart labels must be unique per variant, not just per product. */
+function productChartLabel(row: ProductRow): string {
+  return salesProductLabel(row);
+}
+
 // ── Component ────────────────────────────────────────────────────
 
 export default function SalesReportClient() {
@@ -138,6 +148,8 @@ export default function SalesReportClient() {
       Product: p.productName,
       Variant: p.variantDescription,
       "Units Sold": p.unitsSold,
+      "Returned Qty": p.returnedUnits,
+      "Net Units": p.netUnits,
       "Gross Revenue": p.grossRevenue,
       Returns: p.returns,
       "Net Revenue": p.netRevenue,
@@ -204,8 +216,8 @@ export default function SalesReportClient() {
             <div className="space-y-2">
               {top10.map((item) => (
                 <div key={item.variantId} className="flex items-center gap-3">
-                  <span className="w-32 truncate text-sm text-espresso">
-                    {item.productName}
+                  <span className="w-64 truncate text-sm text-espresso" title={productChartLabel(item)}>
+                    {productChartLabel(item)}
                   </span>
                   <div className="flex-1 bg-pearl rounded-full h-6">
                     <div
@@ -250,6 +262,8 @@ export default function SalesReportClient() {
                   >
                     Units Sold{sortIndicator("unitsSold")}
                   </TableHead>
+                  <TableHead className="text-right">Returned Qty</TableHead>
+                  <TableHead className="text-right">Net Units</TableHead>
                   <TableHead
                     className="text-right cursor-pointer select-none"
                     onClick={() => toggleSort("grossRevenue")}
@@ -278,6 +292,12 @@ export default function SalesReportClient() {
                     <TableCell className="text-right font-mono">
                       {p.unitsSold}
                     </TableCell>
+                    <TableCell className="text-right font-mono text-red-600">
+                      {p.returnedUnits}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {p.netUnits}
+                    </TableCell>
                     <TableCell className="text-right font-mono">
                       {fmtCurrency(p.grossRevenue)}
                     </TableCell>
@@ -300,6 +320,12 @@ export default function SalesReportClient() {
                   <TableCell colSpan={2}>Grand Total</TableCell>
                   <TableCell className="text-right font-mono">
                     {data.totals.totalUnits}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-red-600">
+                    {data.totals.totalReturnedUnits}
+                  </TableCell>
+                  <TableCell className="text-right font-mono">
+                    {data.totals.totalNetUnits}
                   </TableCell>
                   <TableCell className="text-right font-mono">
                     {fmtCurrency(data.totals.grossRevenue)}

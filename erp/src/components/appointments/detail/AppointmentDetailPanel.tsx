@@ -5,6 +5,7 @@ import { StatusBadge } from '../shared/StatusBadge';
 import { AppointmentStatusTimeline } from './AppointmentStatusTimeline';
 import { AppointmentActions } from './AppointmentActions';
 import { useAppointment } from '@/hooks/appointments';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface AppointmentDetailPanelProps {
   appointmentId: string | null;
@@ -92,7 +93,7 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
               {appointment.staff && (
                 <div>
                   <span className="text-espresso/50">Staff</span>
-                  <p className="text-espresso font-medium">{appointment.staff.email}</p>
+                  <p className="text-espresso font-medium">{staffDisplayName(appointment.staff.email)}</p>
                 </div>
               )}
 

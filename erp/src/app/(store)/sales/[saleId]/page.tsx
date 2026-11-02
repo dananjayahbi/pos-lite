@@ -15,6 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { formatRupee } from '@/lib/format';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="border-mist rounded-xl border bg-white px-4 py-3">
           <p className="text-sand text-xs">Cashier</p>
-          <p className="text-espresso mt-1 truncate text-sm font-medium">{sale.cashier.email}</p>
+          <p className="text-espresso mt-1 truncate text-sm font-medium">{staffDisplayName(sale.cashier.email)}</p>
         </div>
         <div className="border-mist rounded-xl border bg-white px-4 py-3">
           <p className="text-sand text-xs">Customer</p>
@@ -127,7 +128,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
           <div className="border-mist rounded-xl border bg-white px-4 py-3">
             <p className="text-sand text-xs">Authorized by</p>
             <p className="text-espresso mt-1 truncate text-sm font-medium">
-              {sale.authorizingManager.email}
+              {staffDisplayName(sale.authorizingManager.email)}
             </p>
           </div>
         )}

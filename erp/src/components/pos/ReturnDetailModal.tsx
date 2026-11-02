@@ -18,6 +18,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SaleDetailModal } from '@/components/pos/SaleDetailModal';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 import { Printer, Check, Minus } from 'lucide-react';
 import { useState } from 'react';
 
@@ -63,8 +64,8 @@ interface ReturnData {
       lineTotalAfterDiscount: number;
     }>;
   };
-  initiatedBy: { id: string; name: string };
-  authorizedBy: { id: string; name: string };
+  initiatedBy: { id: string; email: string };
+  authorizedBy: { id: string; email: string };
 }
 
 interface ReturnDetailModalProps {
@@ -136,11 +137,11 @@ export function ReturnDetailModal({
             </div>
             <div>
               <span className="text-mist text-xs">Cashier</span>
-              <p className="text-espresso">{returnData.initiatedBy.name}</p>
+              <p className="text-espresso">{staffDisplayName(returnData.initiatedBy.email)}</p>
             </div>
             <div>
               <span className="text-mist text-xs">Manager</span>
-              <p className="text-espresso">{returnData.authorizedBy.name}</p>
+              <p className="text-espresso">{staffDisplayName(returnData.authorizedBy.email)}</p>
             </div>
             <div>
               <span className="text-mist text-xs">Refund Method</span>

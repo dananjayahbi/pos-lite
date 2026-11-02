@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, PackageCheck } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 import { GoodsReceivingForm, type PurchaseOrderDetail } from '@/components/suppliers/GoodsReceivingForm';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -158,7 +159,7 @@ export default function PurchaseOrderReceivePage({
           <CardContent className="pt-6">
             <p className="text-xs text-mist">Created</p>
             <p className="font-medium text-espresso">{formatDate(po.createdAt)}</p>
-            <p className="text-xs text-mist">by {po.createdBy.email}</p>
+            <p className="text-xs text-mist">by {staffDisplayName(po.createdBy.email)}</p>
           </CardContent>
         </Card>
       </div>

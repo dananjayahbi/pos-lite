@@ -5,6 +5,7 @@ import { Prisma } from "@/generated/prisma/client";
 import Decimal from "decimal.js";
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { saleAccountingDateWhere, netRefundAmount } from '@/lib/reports/accounting';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -56,32 +57,44 @@ export async function GET(request: NextRequest) {
       where: {
         tenantId,
         status: "COMPLETED",
-        createdAt: { gte: from, lte: to },
+        ...saleAccountingDateWhere(from, to),
       },
-      _sum: { totalAmount: true },
+      _sum: { subtotal: true, discountAmount: true },
       _count: true,
     });
 
+    // Product revenue = line totals after line discounts, less the cart-level
+    // discount. Tax and delivery are pass-through amounts, not trading revenue.
     const grossRevenue = new Decimal(
-      revenueAgg._sum.totalAmount?.toString() ?? "0",
-    );
+      revenueAgg._sum.subtotal?.toString() ?? "0",
+    ).minus(new Decimal(revenueAgg._sum.discountAmount?.toString() ?? "0"));
     const saleCount = revenueAgg._count;
 
     // ── 2. Returns: completed returns aggregate ──────────────────
-    const returnAgg = await prisma.return.aggregate({
+    const returnRows = await prisma.return.findMany({
       where: {
         tenantId,
         status: "COMPLETED",
         createdAt: { gte: from, lte: to },
       },
-      _sum: { refundAmount: true },
-      _count: true,
+      select: {
+        refundAmount: true,
+        originalSale: { select: { subtotal: true, discountAmount: true } },
+      },
     });
 
-    const totalReturns = new Decimal(
-      returnAgg._sum.refundAmount?.toString() ?? "0",
+    const totalReturns = returnRows.reduce(
+      (sum, row) =>
+        sum.plus(
+          netRefundAmount(
+            row.refundAmount,
+            row.originalSale.subtotal,
+            row.originalSale.discountAmount,
+          ),
+        ),
+      new Decimal(0),
     );
-    const returnCount = returnAgg._count;
+    const returnCount = returnRows.length;
 
     // ── 3. Revenue by payment method ─────────────────────────────
     const revenueByMethod = await prisma.sale.groupBy({
@@ -89,28 +102,30 @@ export async function GET(request: NextRequest) {
       where: {
         tenantId,
         status: "COMPLETED",
-        createdAt: { gte: from, lte: to },
+        ...saleAccountingDateWhere(from, to),
       },
-      _sum: { totalAmount: true },
+      _sum: { subtotal: true, discountAmount: true },
     });
 
     const revenueByPaymentMethod = revenueByMethod.map((r) => ({
       method: r.paymentMethod ?? "UNKNOWN",
-      total: new Decimal(r._sum.totalAmount?.toString() ?? "0").toFixed(2),
+      total: new Decimal(r._sum.subtotal?.toString() ?? "0")
+        .minus(new Decimal(r._sum.discountAmount?.toString() ?? "0"))
+        .toFixed(2),
     }));
 
     // ── 4. COGS: join sale_lines → product_variants for costPrice ─
     const cogsResult = await prisma.$queryRaw<
       { total_cogs: Decimal | null }[]
     >(Prisma.sql`
-      SELECT COALESCE(SUM(pv."costPrice" * sl."quantity"), 0) AS total_cogs
+      SELECT COALESCE(SUM(COALESCE(sl."costPriceSnapshot", pv."costPrice") * sl."quantity"), 0) AS total_cogs
       FROM sale_lines sl
       JOIN sales s ON sl."saleId" = s."id"
       JOIN product_variants pv ON sl."variantId" = pv."id"
       WHERE s."tenantId" = ${tenantId}
         AND s."status" = 'COMPLETED'
-        AND s."createdAt" >= ${from}
-        AND s."createdAt" <= ${to}
+        AND COALESCE(s."saleDate", s."createdAt") >= ${from}
+        AND COALESCE(s."saleDate", s."createdAt") <= ${to}
     `);
 
     const rawCOGS = new Decimal(cogsResult[0]?.total_cogs?.toString() ?? "0");
@@ -119,9 +134,10 @@ export async function GET(request: NextRequest) {
     const returnedCogsResult = await prisma.$queryRaw<
       { total_cogs: Decimal | null }[]
     >(Prisma.sql`
-      SELECT COALESCE(SUM(pv."costPrice" * rl."quantity"), 0) AS total_cogs
+      SELECT COALESCE(SUM(COALESCE(sl."costPriceSnapshot", pv."costPrice") * rl."quantity"), 0) AS total_cogs
       FROM return_lines rl
       JOIN returns r ON rl."returnId" = r."id"
+      JOIN sale_lines sl ON sl."id" = rl."originalSaleLineId"
       JOIN product_variants pv ON rl."variantId" = pv."id"
       WHERE r."tenantId" = ${tenantId}
         AND r."status" = 'COMPLETED'
@@ -161,32 +177,70 @@ export async function GET(request: NextRequest) {
     );
 
     // ── 7. Monthly data (last 12 months) ─────────────────────────
+    // Same accounting basis as the period totals above: product revenue
+    // (subtotal − cart discount), product COGS, and returns netted in the month
+    // they were processed.
     const monthlyRevenue = await prisma.$queryRaw<
       { month: Date; revenue: Decimal; sale_count: bigint }[]
     >(Prisma.sql`
-      SELECT DATE_TRUNC('month', "createdAt") AS month,
-             COALESCE(SUM("totalAmount"), 0) AS revenue,
+      SELECT DATE_TRUNC('month', COALESCE("saleDate", "createdAt")) AS month,
+             COALESCE(SUM("subtotal" - "discountAmount"), 0) AS revenue,
              COUNT(*)::bigint AS sale_count
       FROM sales
       WHERE "tenantId" = ${tenantId}
         AND "status" = 'COMPLETED'
-        AND "createdAt" >= NOW() - INTERVAL '12 months'
-      GROUP BY DATE_TRUNC('month', "createdAt")
+        AND COALESCE("saleDate", "createdAt") >= NOW() - INTERVAL '12 months'
+      GROUP BY DATE_TRUNC('month', COALESCE("saleDate", "createdAt"))
       ORDER BY month
     `);
 
     const monthlyCogs = await prisma.$queryRaw<
       { month: Date; cogs: Decimal }[]
     >(Prisma.sql`
-      SELECT DATE_TRUNC('month', s."createdAt") AS month,
-             COALESCE(SUM(pv."costPrice" * sl."quantity"), 0) AS cogs
+      SELECT DATE_TRUNC('month', COALESCE(s."saleDate", s."createdAt")) AS month,
+             COALESCE(SUM(COALESCE(sl."costPriceSnapshot", pv."costPrice") * sl."quantity"), 0) AS cogs
       FROM sale_lines sl
       JOIN sales s ON sl."saleId" = s."id"
       JOIN product_variants pv ON sl."variantId" = pv."id"
       WHERE s."tenantId" = ${tenantId}
         AND s."status" = 'COMPLETED'
-        AND s."createdAt" >= NOW() - INTERVAL '12 months'
-      GROUP BY DATE_TRUNC('month', s."createdAt")
+        AND COALESCE(s."saleDate", s."createdAt") >= NOW() - INTERVAL '12 months'
+      GROUP BY DATE_TRUNC('month', COALESCE(s."saleDate", s."createdAt"))
+      ORDER BY month
+    `);
+
+    const monthlyReturns = await prisma.$queryRaw<
+      { month: Date; returns: Decimal }[]
+    >(Prisma.sql`
+      SELECT DATE_TRUNC('month', r."createdAt") AS month,
+             COALESCE(SUM(
+               r."refundAmount" * CASE
+                 WHEN s."subtotal" = 0 THEN 1
+                 ELSE GREATEST(s."subtotal" - s."discountAmount", 0) / s."subtotal"
+               END
+             ), 0) AS returns
+      FROM returns r
+      JOIN sales s ON s."id" = r."originalSaleId"
+      WHERE r."tenantId" = ${tenantId}
+        AND r."status" = 'COMPLETED'
+        AND r."createdAt" >= NOW() - INTERVAL '12 months'
+      GROUP BY DATE_TRUNC('month', r."createdAt")
+      ORDER BY month
+    `);
+
+    const monthlyReturnedCogs = await prisma.$queryRaw<
+      { month: Date; returned_cogs: Decimal }[]
+    >(Prisma.sql`
+      SELECT DATE_TRUNC('month', r."createdAt") AS month,
+             COALESCE(SUM(COALESCE(sl."costPriceSnapshot", pv."costPrice") * rl."quantity"), 0) AS returned_cogs
+      FROM return_lines rl
+      JOIN returns r ON rl."returnId" = r."id"
+      JOIN sale_lines sl ON sl."id" = rl."originalSaleLineId"
+      JOIN product_variants pv ON rl."variantId" = pv."id"
+      WHERE r."tenantId" = ${tenantId}
+        AND r."status" = 'COMPLETED'
+        AND r."createdAt" >= NOW() - INTERVAL '12 months'
+      GROUP BY DATE_TRUNC('month', r."createdAt")
       ORDER BY month
     `);
 
@@ -205,17 +259,28 @@ export async function GET(request: NextRequest) {
     // Merge monthly data
     const monthMap = new Map<
       string,
-      { revenue: Decimal; cogs: Decimal; expenses: Decimal; saleCount: number }
+      {
+        revenue: Decimal;
+        cogs: Decimal;
+        returns: Decimal;
+        returnedCogs: Decimal;
+        expenses: Decimal;
+        saleCount: number;
+      }
     >();
+
+    const emptyMonth = () => ({
+      revenue: new Decimal(0),
+      cogs: new Decimal(0),
+      returns: new Decimal(0),
+      returnedCogs: new Decimal(0),
+      expenses: new Decimal(0),
+      saleCount: 0,
+    });
 
     for (const row of monthlyRevenue) {
       const key = new Date(row.month).toISOString().slice(0, 7);
-      const entry = monthMap.get(key) ?? {
-        revenue: new Decimal(0),
-        cogs: new Decimal(0),
-        expenses: new Decimal(0),
-        saleCount: 0,
-      };
+      const entry = monthMap.get(key) ?? emptyMonth();
       entry.revenue = new Decimal(row.revenue?.toString() ?? "0");
       entry.saleCount = Number(row.sale_count);
       monthMap.set(key, entry);
@@ -223,24 +288,28 @@ export async function GET(request: NextRequest) {
 
     for (const row of monthlyCogs) {
       const key = new Date(row.month).toISOString().slice(0, 7);
-      const entry = monthMap.get(key) ?? {
-        revenue: new Decimal(0),
-        cogs: new Decimal(0),
-        expenses: new Decimal(0),
-        saleCount: 0,
-      };
+      const entry = monthMap.get(key) ?? emptyMonth();
       entry.cogs = new Decimal(row.cogs?.toString() ?? "0");
+      monthMap.set(key, entry);
+    }
+
+    for (const row of monthlyReturns) {
+      const key = new Date(row.month).toISOString().slice(0, 7);
+      const entry = monthMap.get(key) ?? emptyMonth();
+      entry.returns = new Decimal(row.returns?.toString() ?? "0");
+      monthMap.set(key, entry);
+    }
+
+    for (const row of monthlyReturnedCogs) {
+      const key = new Date(row.month).toISOString().slice(0, 7);
+      const entry = monthMap.get(key) ?? emptyMonth();
+      entry.returnedCogs = new Decimal(row.returned_cogs?.toString() ?? "0");
       monthMap.set(key, entry);
     }
 
     for (const row of monthlyExpenses) {
       const key = new Date(row.month).toISOString().slice(0, 7);
-      const entry = monthMap.get(key) ?? {
-        revenue: new Decimal(0),
-        cogs: new Decimal(0),
-        expenses: new Decimal(0),
-        saleCount: 0,
-      };
+      const entry = monthMap.get(key) ?? emptyMonth();
       entry.expenses = new Decimal(row.expenses?.toString() ?? "0");
       monthMap.set(key, entry);
     }
@@ -248,12 +317,14 @@ export async function GET(request: NextRequest) {
     const monthlyData = Array.from(monthMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([month, d]) => {
-        const grossProfit = d.revenue.minus(d.cogs);
+        const netRevenue = d.revenue.minus(d.returns);
+        const netCogs = d.cogs.minus(d.returnedCogs);
+        const grossProfit = netRevenue.minus(netCogs);
         const netProfit = grossProfit.minus(d.expenses);
         return {
           month,
-          revenue: d.revenue.toFixed(2),
-          cogs: d.cogs.toFixed(2),
+          revenue: netRevenue.toFixed(2),
+          cogs: netCogs.toFixed(2),
           grossProfit: grossProfit.toFixed(2),
           expenses: d.expenses.toFixed(2),
           netProfit: netProfit.toFixed(2),

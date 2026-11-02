@@ -20,6 +20,7 @@ import { mergeSearchParams } from '@/lib/urlUtils';
 import { useGlobalStockMovements } from '@/hooks/useGlobalStockMovements';
 import { useStockActors } from '@/hooks/useStockActors';
 import { stockActorLabel } from '@/lib/stock/actor-label';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -272,6 +273,7 @@ function StockMovementHistoryInner() {
   // ── Pagination helpers ─────────────────────────────────────────────────────
   const startItem = meta ? (meta.page - 1) * meta.limit + 1 : 0;
   const endItem = meta ? Math.min(meta.page * meta.limit, meta.total) : 0;
+  const selectedActor = actors.find((actor) => actor.id === actorId);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -309,7 +311,7 @@ function StockMovementHistoryInner() {
               </div>
               {actorId && (
                 <Badge variant="secondary" className="w-fit">
-                  Filtered to {actors.find((actor) => actor.id === actorId)?.email ?? actorId}
+                  Filtered to {selectedActor ? staffDisplayName(selectedActor.email) : actorId}
                 </Badge>
               )}
             </div>
@@ -326,7 +328,7 @@ function StockMovementHistoryInner() {
                         : 'border-mist/50 bg-linen/50 text-mist hover:text-espresso'
                     }`}
                   >
-                    {actor.email}
+                    {staffDisplayName(actor.email)}
                   </button>
                 );
               })}
@@ -416,7 +418,7 @@ function StockMovementHistoryInner() {
                 <SelectContent>
                   <SelectItem value="__all__">All Staff</SelectItem>
                   {actors.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.email}</SelectItem>
+                    <SelectItem key={a.id} value={a.id}>{staffDisplayName(a.email)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -488,7 +490,7 @@ function StockMovementHistoryInner() {
           )}
           {actorId && (
             <Badge variant="secondary" className="gap-1">
-              Staff: {actors.find((a) => a.id === actorId)?.email ?? actorId}
+              Staff: {selectedActor ? staffDisplayName(selectedActor.email) : actorId}
               <button onClick={() => updateParams({ actorId: null, page: '1' })} aria-label="Remove actor filter">
                 <X className="h-3 w-3" />
               </button>

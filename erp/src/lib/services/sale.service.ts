@@ -110,6 +110,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       variantDescriptionSnapshot: string;
       sku: string;
       unitPrice: Decimal;
+      costPriceSnapshot: Decimal;
       quantity: number;
       discountPercent: Decimal;
       discountAmount: Decimal;
@@ -155,6 +156,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
         variantDescriptionSnapshot: buildVariantDescription(variant.form, variant.packSize),
         sku: variant.sku,
         unitPrice,
+        costPriceSnapshot: new Decimal(variant.costPrice.toString()),
         quantity: line.quantity,
         discountPercent,
         discountAmount,
@@ -319,6 +321,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
             variantDescriptionSnapshot: l.variantDescriptionSnapshot,
             sku: l.sku,
             unitPrice: l.unitPrice.toNumber(),
+            costPriceSnapshot: l.costPriceSnapshot.toNumber(),
             quantity: l.quantity,
             discountPercent: l.discountPercent.toNumber(),
             discountAmount: l.discountAmount.toNumber(),

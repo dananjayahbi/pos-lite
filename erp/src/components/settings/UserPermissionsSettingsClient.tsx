@@ -34,6 +34,7 @@ import {
   type AssignableRole,
   type PermissionKey,
 } from '@/lib/constants/permissions';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 // M03-01 (BUG-3): AssignableRole + ASSIGNABLE_ROLES now come from the shared
 // constant — the same list the API validator builds its enum from.
@@ -211,7 +212,7 @@ export default function UserPermissionsSettingsClient() {
                   <TableRow key={member.id}>
                     <TableCell>
                       <div>
-                        <p className="font-medium text-espresso">{member.email}</p>
+                        <p className="font-medium text-espresso" title={member.email}>{staffDisplayName(member.email)}</p>
                         <p className="text-xs text-sand">{ROLE_PERMISSIONS[member.role].length} inherited defaults</p>
                       </div>
                     </TableCell>
@@ -243,7 +244,7 @@ export default function UserPermissionsSettingsClient() {
         <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle className="font-display text-espresso">
-              {editingMember ? `Manage ${editingMember.email}` : 'Manage user'}
+              {editingMember ? `Manage ${staffDisplayName(editingMember.email)}` : 'Manage user'}
             </DialogTitle>
           </DialogHeader>
 

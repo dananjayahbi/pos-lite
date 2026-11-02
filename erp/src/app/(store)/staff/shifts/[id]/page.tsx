@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import PettyCashSection from '@/components/shift/PettyCashSection';
 import { formatRupee } from '@/lib/format';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 import type { ZReportData } from '@/lib/services/shift.service';
 
 interface ShiftDetail {
@@ -117,7 +118,7 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
             </Badge>
           </div>
           <p className="text-sm text-sand">
-            Cashier {shift.cashier.email} · {shift.cashier.role.replace(/_/g, ' ')} · Opened {formatDateTime(shift.openedAt)}
+            Cashier {staffDisplayName(shift.cashier.email)} · {shift.cashier.role.replace(/_/g, ' ')} · Opened {formatDateTime(shift.openedAt)}
           </p>
         </div>
 

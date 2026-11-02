@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { SignOutButton } from '@/components/auth/SignOutButton';
 import SuperAdminNav from '@/components/superadmin/SuperAdminNav';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 export default async function SuperAdminLayout({
   children,
@@ -47,7 +48,7 @@ export default async function SuperAdminLayout({
         {/* Footer */}
         <div className="border-t border-mist/30 px-4 py-4">
           <p className="truncate text-xs text-pearl/50">
-            {session.user?.email}
+            {staffDisplayName(session.user?.email)}
           </p>
           <SignOutButton variant="button" />
         </div>

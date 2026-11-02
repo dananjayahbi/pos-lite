@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { formatRupee } from '@/lib/format';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -70,8 +71,8 @@ interface ReturnRecord {
   createdAt: string;
   lines: ReturnLine[];
   originalSale: SaleData;
-  initiatedBy: { id: string; name: string };
-  authorizedBy: { id: string; name: string };
+  initiatedBy: { id: string; email: string };
+  authorizedBy: { id: string; email: string };
 }
 
 interface Filters {
@@ -308,7 +309,7 @@ export function ReturnsHistoryTable() {
                       )}
                     </TableCell>
                     <TableCell className="font-body text-xs text-espresso">
-                      {returnRecord.authorizedBy.name}
+                      {staffDisplayName(returnRecord.authorizedBy.email)}
                     </TableCell>
                     <TableCell className="text-center">
                       <Button

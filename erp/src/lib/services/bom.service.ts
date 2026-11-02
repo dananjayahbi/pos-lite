@@ -24,6 +24,7 @@ import {
 } from '@/lib/services/bom.core';
 import { adjustStockInTx } from '@/lib/services/inventory.service';
 import { createBatchInTx } from '@/lib/services/batchTracking.service';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 // ── Public list item shape ──────────────────────────────────────────────────
 
@@ -537,7 +538,7 @@ export async function listProductionLogs(
     quantity: row.quantity,
     note: row.note,
     createdAt: row.createdAt,
-    actorName: row.actor.email,
+    actorName: staffDisplayName(row.actor.email),
     variantSku: row.variant.sku,
     variantName: row.variant.product.name,
   }));

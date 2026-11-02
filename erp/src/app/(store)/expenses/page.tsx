@@ -4,7 +4,6 @@ import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -39,15 +38,18 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Pencil, Eye, ArrowRight } from 'lucide-react';
+import { Plus, Pencil, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { CreateExpenseSchema, EXPENSE_CATEGORIES } from '@/lib/validators/expense.validators';
 import type { CreateExpenseInput } from '@/lib/validators/expense.validators';
 import { formatRupee } from '@/lib/format';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 import Decimal from 'decimal.js';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ReceiptUploader } from '@/components/expenses/ReceiptUploader';
 import { PettyCashFundPicker } from '@/components/expenses/PettyCashFundPicker';
+import { AccountSelect } from '@/components/payment-accounts/AccountSelect';
+import type { PaymentAccount } from '@/components/payment-accounts/paymentAccountTypes';
 import { PettyCashExportButton } from '@/components/petty-cash/PettyCashExportButton';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -59,6 +61,7 @@ interface Expense {
   description: string;
   receiptImageUrl: string | null;
   pettyCashFundId: string | null;
+  paymentAccountId: string | null;
   expenseDate: string;
   recordedBy: { email: string };
   createdAt: string;
@@ -172,6 +175,23 @@ export default function ExpensesPage() {
     ? { ...pettyCash.data, currentBalance: pettyCash.balance?.currentBalance }
     : null;
 
+  // Active payment accounts power the optional expense-account link. Linking an
+  // expense posts a ledger entry, which is what the Cash Flow page reconciles.
+  const { data: paymentAccounts = [] } = useQuery<PaymentAccount[]>({
+    queryKey: ['payment-accounts', 'expense-picker'],
+    queryFn: async () => {
+      const res = await fetch('/api/store/payment-accounts?status=ACTIVE');
+      const json = await res.json();
+      if (!json.success) return [];
+      return (json.data?.accounts ?? []) as PaymentAccount[];
+    },
+    retry: false,
+  });
+
+  const accountNameById = new Map(
+    paymentAccounts.map((account) => [account.id, account.name]),
+  );
+
   // ── Create Form ──
   const createForm = useForm<CreateExpenseInput>({
     resolver: standardSchemaResolver(CreateExpenseSchema),
@@ -181,6 +201,7 @@ export default function ExpensesPage() {
       description: '',
       expenseDate: new Date().toISOString().slice(0, 10),
       pettyCashFundId: undefined,
+      paymentAccountId: undefined,
     },
   });
 
@@ -199,6 +220,8 @@ export default function ExpensesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       queryClient.invalidateQueries({ queryKey: ['petty-cash-fund'] });
+      queryClient.invalidateQueries({ queryKey: ['payment-accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['cash-flow'] });
       toast.success('Expense created');
       setCreateOpen(false);
       setCreateOverdraw(false);
@@ -226,6 +249,8 @@ export default function ExpensesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       queryClient.invalidateQueries({ queryKey: ['petty-cash-fund'] });
+      queryClient.invalidateQueries({ queryKey: ['payment-accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['cash-flow'] });
       toast.success('Expense updated');
       setEditExpense(null);
       setEditOverdraw(false);
@@ -242,6 +267,7 @@ export default function ExpensesPage() {
       expenseDate: expense.expenseDate.slice(0, 10),
       receiptImageUrl: expense.receiptImageUrl ?? undefined,
       pettyCashFundId: expense.pettyCashFundId ?? undefined,
+      paymentAccountId: expense.paymentAccountId ?? null,
     });
   }
 
@@ -259,11 +285,6 @@ export default function ExpensesPage() {
             dateTo={dateTo}
             category={categoryFilter}
           />
-          <Link href="/expenses/cash-flow">
-            <Button variant="outline" className="border-mist text-espresso">
-              Cash Flow <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </Link>
         </div>
       </div>
 
@@ -357,6 +378,19 @@ export default function ExpensesPage() {
                 <Label>Date</Label>
                 <Input type="date" {...createForm.register('expenseDate')} className="border-mist" />
               </div>
+              <div>
+                <Label>Payment Account</Label>
+                <AccountSelect
+                  accounts={paymentAccounts}
+                  value={createForm.watch('paymentAccountId') ?? null}
+                  onValueChange={(accountId) => createForm.setValue('paymentAccountId', accountId)}
+                  placeholder="Select account"
+                  noneLabel="No account (unlinked)"
+                />
+                <p className="mt-1 text-xs text-sand">
+                  Linked expenses post to the account ledger and the Cash Flow page.
+                </p>
+              </div>
               {fund && (
                 <PettyCashFundPicker
                   fund={fund}
@@ -399,6 +433,7 @@ export default function ExpensesPage() {
                   <TableHead className="text-espresso">Date</TableHead>
                   <TableHead className="text-espresso">Category</TableHead>
                   <TableHead className="text-espresso">Description</TableHead>
+                  <TableHead className="text-espresso">Account</TableHead>
                   <TableHead className="text-right text-espresso">Amount</TableHead>
                   <TableHead className="text-espresso">Recorded By</TableHead>
                   <TableHead className="text-right text-espresso">Actions</TableHead>
@@ -407,7 +442,7 @@ export default function ExpensesPage() {
               <TableBody>
                 {(data?.expenses ?? []).length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-sand">
+                    <TableCell colSpan={7} className="py-8 text-center text-sand">
                       No expenses found for the selected filters.
                     </TableCell>
                   </TableRow>
@@ -421,8 +456,13 @@ export default function ExpensesPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate">{expense.description}</TableCell>
+                      <TableCell className="text-sm text-sand">
+                        {expense.paymentAccountId
+                          ? accountNameById.get(expense.paymentAccountId) ?? 'Linked account'
+                          : '—'}
+                      </TableCell>
                       <TableCell className="text-right font-mono">{formatRupee(expense.amount)}</TableCell>
-                      <TableCell className="text-sm text-sand">{expense.recordedBy.email}</TableCell>
+                      <TableCell className="text-sm text-sand">{staffDisplayName(expense.recordedBy.email)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
                           <Button
@@ -520,7 +560,15 @@ export default function ExpensesPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-sand">Recorded By</span>
-                <span className="text-sm">{viewExpense.recordedBy.email}</span>
+                <span className="text-sm">{staffDisplayName(viewExpense.recordedBy.email)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sand">Payment Account</span>
+                <span className="text-sm">
+                  {viewExpense.paymentAccountId
+                    ? accountNameById.get(viewExpense.paymentAccountId) ?? 'Linked account'
+                    : '—'}
+                </span>
               </div>
               {viewExpense.receiptImageUrl && (
                 <div>
@@ -584,6 +632,19 @@ export default function ExpensesPage() {
               <div>
                 <Label>Date</Label>
                 <Input type="date" {...editForm.register('expenseDate')} className="border-mist" />
+              </div>
+              <div>
+                <Label>Payment Account</Label>
+                <AccountSelect
+                  accounts={paymentAccounts}
+                  value={editForm.watch('paymentAccountId') ?? null}
+                  onValueChange={(accountId) => editForm.setValue('paymentAccountId', accountId)}
+                  placeholder="Select account"
+                  noneLabel="No account (unlinked)"
+                />
+                <p className="mt-1 text-xs text-sand">
+                  Changing the account or amount reverses the old ledger entry and posts the new one.
+                </p>
               </div>
               {fund && (
                 <PettyCashFundPicker

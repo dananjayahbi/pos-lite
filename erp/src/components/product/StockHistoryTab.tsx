@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/table';
 import { ChevronLeft, ChevronRight, History } from 'lucide-react';
 import { useStockMovements } from '@/hooks/useStockMovements';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 // ── Reason badge ─────────────────────────────────────────────────────────────
 
@@ -223,7 +224,7 @@ export function StockHistoryTab({ productId }: StockHistoryTabProps) {
                       {m.quantityBefore} → {m.quantityAfter}
                     </TableCell>
                     <TableCell className="font-body text-sm text-espresso truncate max-w-[160px]">
-                      {m.actor?.email ?? '—'}
+                      {m.actor ? staffDisplayName(m.actor.email) : '—'}
                     </TableCell>
                     <TableCell className="font-body text-sm text-espresso max-w-[200px] truncate">
                       {m.note || '—'}

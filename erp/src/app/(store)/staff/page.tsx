@@ -39,6 +39,7 @@ import { CreateStaffSchema } from '@/lib/validators/staff.validators';
 import type { CreateStaffInput } from '@/lib/validators/staff.validators';
 import { ASSIGNABLE_ROLES, type AssignableRole } from '@/lib/constants/permissions';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -310,7 +311,7 @@ export default function StaffPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Email</TableHead>
+              <TableHead>Name</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Commission Rate</TableHead>
@@ -337,7 +338,7 @@ export default function StaffPage() {
             ) : (
               staff.map((member) => (
                 <TableRow key={member.id}>
-                  <TableCell className="font-medium">{member.email}</TableCell>
+                  <TableCell className="font-medium">{staffDisplayName(member.email)}</TableCell>
                   <TableCell>
                     <RoleBadge role={member.role} />
                   </TableCell>
