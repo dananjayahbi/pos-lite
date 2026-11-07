@@ -12,6 +12,7 @@ import type { PermissionKey } from '@/lib/constants/permissions';
 // file re-exports them so the delivery route family keeps compiling
 // unchanged (back-compat per the INF-02 design).
 import { unauthorized, forbidden, badRequest, conflict, notFound, upstreamError } from './error-envelope';
+import { Prisma } from '@/generated/prisma/client';
 export { unauthorized, forbidden, validationError, notFound, conflict, badRequest, internalError } from './error-envelope';
 
 /**
@@ -51,8 +52,14 @@ export async function requireDeliveryAuth(permission?: PermissionKey): Promise<
  * other routes lives in `map-service-error.ts`.
  */
 export function mapDeliveryError(error: unknown): NextResponse | null {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    return conflict('A record with this unique value already exists');
+  }
   const message = error instanceof Error ? error.message : '';
   if (message === 'DELIVERY_NOT_FOUND') return notFound('Delivery not found');
+  if (message === 'CUSTOMER_NOT_FOUND') return badRequest('Customer not found');
+  if (message === 'SALE_NOT_FOUND') return badRequest('Sale not found');
+  if (message === 'DELIVERY_NOT_CANCELABLE') return conflict('Delivery cannot be cancelled in its current state');
   if (message === 'SHIPMENT_NOT_FOUND') return notFound('Shipment not found');
   if (message === 'PACKAGING_ITEM_NOT_FOUND') return notFound('Packaging item not found');
   if (message === 'INSUFFICIENT_PACKAGING_STOCK') return conflict('Adjustment would take packaging stock below zero');

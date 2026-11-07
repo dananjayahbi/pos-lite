@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { mapInvoiceLines, toNumber, type InvoiceLineSource } from '../order-invoice.service';
+import {
+  mapDeliveryInvoiceLines,
+  mapInvoiceLines,
+  toNumber,
+  type DeliveryLineSource,
+  type InvoiceLineSource,
+} from '../order-invoice.service';
 
 const dec = (value: number) => ({ toNumber: () => value });
 
@@ -39,6 +45,36 @@ describe('mapInvoiceLines', () => {
   it('falls back to product name when variant description is empty', () => {
     const result = mapInvoiceLines([makeLine({ variantDescriptionSnapshot: '' })]);
     expect(result[0]?.description).toBe('Product');
+  });
+});
+
+describe('mapDeliveryInvoiceLines', () => {
+  const makeDeliveryLine = (
+    overrides: Partial<DeliveryLineSource> = {},
+  ): DeliveryLineSource => ({
+    skuSnapshot: 'WEB-1',
+    productNameSnapshot: 'Website product',
+    quantity: 3,
+    unitPrice: dec(250),
+    lineTotal: dec(750),
+    ...overrides,
+  });
+
+  it('maps website DeliveryLine snapshots', () => {
+    expect(mapDeliveryInvoiceLines([makeDeliveryLine()])).toEqual([
+      {
+        sku: 'WEB-1',
+        description: 'Website product',
+        quantity: 3,
+        unitPrice: 250,
+        discountAmount: 0,
+        lineTotal: 750,
+      },
+    ]);
+  });
+
+  it('uses an empty SKU when the snapshot has none', () => {
+    expect(mapDeliveryInvoiceLines([makeDeliveryLine({ skuSnapshot: null })])[0]?.sku).toBe('');
   });
 });
 

@@ -44,7 +44,7 @@ export function DeliveryPageClient() {
   const { hasPermission } = usePermissions();
   const canCreate = hasPermission(PERMISSIONS.DELIVERY.createDelivery);
 
-  const { data, isLoading } = useDeliveries({
+  const { data, isLoading, isError, error } = useDeliveries({
     status: statusFilter as DeliveryStatus | null | undefined,
     search,
   });
@@ -62,8 +62,8 @@ export function DeliveryPageClient() {
             className="w-72"
           />
           <Select
-            value={statusFilter ?? ''}
-            onValueChange={(v) => setStatusFilter(v || null)}
+            value={statusFilter ?? '__all'}
+            onValueChange={(v) => setStatusFilter(v === '__all' ? null : v)}
           >
             <SelectTrigger className="w-48">
               <SelectValue placeholder="All statuses" />
@@ -92,7 +92,13 @@ export function DeliveryPageClient() {
       )}
 
       {/* Empty */}
-      {!isLoading && deliveries.length === 0 && (
+      {!isLoading && isError && (
+        <div className="rounded-lg border border-terracotta/30 bg-terracotta/5 py-10 text-center text-sm text-terracotta">
+          Could not load deliveries: {error instanceof Error ? error.message : 'unknown error'}
+        </div>
+      )}
+
+      {!isLoading && !isError && deliveries.length === 0 && (
         <div className="rounded-lg border border-espresso/10 py-16 text-center">
           <p className="text-espresso/60">No deliveries found.</p>
           {canCreate && (

@@ -22,6 +22,8 @@ import { ZeroValuePaymentModal } from '@/components/pos/ZeroValuePaymentModal';
 import { AddCustomerDialog } from '@/components/pos/AddCustomerDialog';
 import { ReceiptPreviewDialog } from '@/components/pos/ReceiptPreviewDialog';
 import type { CreateSalePayload, CompletedSale } from '@/types/pos.types';
+import type { LankaQrSettings } from '@/lib/payments/lanka-qr-config';
+import { DEFAULT_LANKA_QR_SETTINGS } from '@/lib/payments/lanka-qr-config';
 import { CustomerSearchDropdown } from '@/components/customers/CustomerSearchDropdown';
 import { Switch } from '@/components/ui/switch';
 import { usePersistCartEffect } from '@/hooks/usePersistCartEffect';
@@ -29,9 +31,11 @@ import { clearCartSnapshot } from '@/lib/idb-store';
 
 interface CartPanelProps {
   shiftId: string;
+  /** Tenant LankaQR configuration; defaults keep the tender available. */
+  lankaQr?: LankaQrSettings | undefined;
 }
 
-export function CartPanel({ shiftId }: CartPanelProps) {
+export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: CartPanelProps) {
   const items = useCartStore((s) => s.items);
   const cartDiscountPercent = useCartStore((s) => s.cartDiscountPercent);
   const cartDiscountAmount = useCartStore((s) => s.cartDiscountAmount);
@@ -481,17 +485,19 @@ export function CartPanel({ shiftId }: CartPanelProps) {
                     <CreditCard className="h-4 w-4 text-terracotta" />
                     Card
                   </button>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 font-body text-sm text-espresso hover:bg-linen transition-colors"
-                    onClick={() => {
-                      setPaymentPopoverOpen(false);
-                      setPaymentMode('lankaqr');
-                    }}
-                  >
-                    <QrCode className="h-4 w-4 text-terracotta" />
-                    LankaQR
-                  </button>
+                  {lankaQr.enabled && (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 font-body text-sm text-espresso hover:bg-linen transition-colors"
+                      onClick={() => {
+                        setPaymentPopoverOpen(false);
+                        setPaymentMode('lankaqr');
+                      }}
+                    >
+                      <QrCode className="h-4 w-4 text-terracotta" />
+                      LankaQR
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 rounded-md px-3 py-2 font-body text-sm text-espresso hover:bg-linen transition-colors"
@@ -535,6 +541,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
         onSaleComplete={handleSaleComplete}
         totalAmount={amountDue}
         salePayload={salePayload}
+        allowLankaQr={lankaQr.enabled && lankaQr.allowSplit}
       />
       <LankaQRPaymentModal
         open={paymentMode === 'lankaqr'}
@@ -542,6 +549,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
         onSaleComplete={handleSaleComplete}
         totalAmount={amountDue}
         salePayload={salePayload}
+        settings={lankaQr}
       />
       <ZeroValuePaymentModal
         open={zeroValueOpen}

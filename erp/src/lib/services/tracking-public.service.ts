@@ -94,7 +94,10 @@ export async function getPublicTracking(
   setSentryTenantContext({ tenantId });
 
   const hasRef = input.orderRef && input.orderRef.trim().length > 0;
-  const hasPhone = input.phone && input.phone.trim().length > 0;
+  // Require most of a phone number; a 1–2 digit `contains` query could
+  // enumerate other customers' recent orders.
+  const phoneDigits = input.phone?.replace(/\D/g, '') ?? '';
+  const hasPhone = phoneDigits.length >= 9;
   const hasWaybill = input.waybill && input.waybill.trim().length > 0;
 
   if (!hasRef && !hasPhone && !hasWaybill) return [];
@@ -118,7 +121,7 @@ export async function getPublicTracking(
       OR: [
         ...(hasRef ? [{ orderRef: { equals: input.orderRef!.trim() } }] : []),
         ...(hasPhone
-          ? [{ address: { phone: { contains: input.phone!.trim() } } }]
+          ? [{ address: { phone: { contains: phoneDigits } } }]
           : []),
         ...(waybillDeliveryIds.length > 0
           ? [{ id: { in: waybillDeliveryIds } }]
@@ -155,7 +158,9 @@ export async function getPublicTracking(
         id: ev.id,
         stage: statusLabel ? mapCustomerDeliveryStatus(ev.status).stage.key : currentStageKey,
         label: statusLabel ?? 'Update',
-        remarks: ev.remarks && ev.remarks.length <= 140 ? ev.remarks : null,
+        remarks: ev.source === 'CARRIER' && ev.remarks && ev.remarks.length <= 140
+          ? ev.remarks
+          : null,
         isCurrent: ev.eventAt === order.events.at(-1)?.eventAt,
         timestamp: ev.eventAt.toISOString(),
       };

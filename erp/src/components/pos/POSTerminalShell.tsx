@@ -8,6 +8,7 @@ import { ShiftCloseModal } from '@/components/pos/ShiftCloseModal';
 import { CartPanel } from '@/components/pos/CartPanel';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
+import type { LankaQrSettings } from '@/lib/payments/lanka-qr-config';
 
 function formatElapsed(ms: number): string {
   const totalMinutes = Math.floor(ms / 60_000);
@@ -54,6 +55,8 @@ interface POSTerminalShellProps {
   showOwnerDashboardShortcut?: boolean;
   businessName: string;
   businessLogoUrl: string | null;
+  /** Tenant LankaQR configuration (server-resolved). */
+  lankaQr?: LankaQrSettings | undefined;
   /**
    * History surfaces (Sale History, Return History) are read-only reviews of
    * past sales — they have nothing to sell, so the cart column and its
@@ -70,6 +73,7 @@ export function POSTerminalShell({
   showOwnerDashboardShortcut = false,
   businessName,
   businessLogoUrl,
+  lankaQr,
   showCart = true,
   children,
 }: POSTerminalShellProps) {
@@ -169,7 +173,7 @@ export function POSTerminalShell({
         {showCart && (
           <div className="w-full md:w-[37%] bg-pearl overflow-hidden">
             <ErrorBoundary>
-              <CartPanel shiftId={shiftId} />
+              <CartPanel shiftId={shiftId} lankaQr={lankaQr} />
             </ErrorBoundary>
           </div>
         )}

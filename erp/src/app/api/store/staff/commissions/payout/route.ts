@@ -15,8 +15,13 @@ const PayoutSchema = z
     periodStart: z.string().datetime({ message: 'periodStart must be an ISO date' }),
     periodEnd: z.string().datetime({ message: 'periodEnd must be an ISO date' }),
     notes: z.string().max(500).optional(),
+    // Kept for older clients; new payouts derive the label from the account.
     paymentMethod: z.string().max(50).optional(),
     proofReference: z.string().max(100).optional(),
+    paymentAccountId: z.string().cuid('paymentAccountId must be a valid id'),
+    // Omit for a full settlement; otherwise pay this much now and leave the
+    // remainder open for a later payout.
+    amount: z.number().positive().max(100_000_000).optional(),
   })
   .refine((d) => new Date(d.periodEnd).getTime() >= new Date(d.periodStart).getTime(), {
     path: ['periodEnd'],
@@ -70,6 +75,8 @@ export async function POST(request: Request) {
       periodEnd: new Date(parsed.data.periodEnd),
       authorizedById: session.user.id,
       authorizedByRole: session.user.role,
+      paymentAccountId: parsed.data.paymentAccountId,
+      ...(parsed.data.amount !== undefined && { amount: parsed.data.amount }),
       ...(parsed.data.notes !== undefined && { notes: parsed.data.notes }),
       ...(parsed.data.paymentMethod !== undefined && { paymentMethod: parsed.data.paymentMethod }),
       ...(parsed.data.proofReference !== undefined && { proofReference: parsed.data.proofReference }),

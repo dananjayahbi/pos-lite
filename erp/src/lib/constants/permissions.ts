@@ -92,6 +92,11 @@ export const PERMISSIONS = {
     // Adjust clock times and record Leave/Absent/Half Day for staff.
     manageAttendance: 'staff:attendance:manage',
   },
+  PAYROLL: {
+    viewPayroll: 'payroll:view',
+    runPayroll: 'payroll:run',
+    managePayrollSettings: 'payroll:settings:manage',
+  },
   REPORT: {
     viewSalesReport: 'report:view_sales',
     viewProfitReport: 'report:view_profit',
@@ -112,6 +117,9 @@ export const PERMISSIONS = {
     manageUsers: 'settings:users',
     manageReceiptTemplate: 'settings:receipt_template',
     manageStoreProfile: 'settings:store_profile',
+    // LankaQR / payment-terminal configuration (merchant identity, static QR
+    // image, cashier instructions). Owned by management, not cashiers.
+    managePayments: 'settings:payments',
     viewAuditLog: 'settings:view_audit_log',
     // M29-03 (OBS-41): the customer-facing website CMS is owner/manager work.
     // Key follows the two-segment `settings:<noun>` convention of every

@@ -23,7 +23,7 @@ import { PackagingAdjustDialog } from '@/components/delivery/packaging/Packaging
 import { PackagingCategoryManagerDialog } from '@/components/delivery/packaging/PackagingCategoryManagerDialog';
 
 export function PackagingPageClient() {
-  const { hasPermission } = usePermissions();
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const canManage = hasPermission(PERMISSIONS.DELIVERY.managePackaging);
   const { data, isLoading, create, update, remove, adjust } = usePackaging();
 
@@ -32,6 +32,16 @@ export function PackagingPageClient() {
   const [adjustItem, setAdjustItem] = useState<PackagingItemRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PackagingItemRow | null>(null);
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
+
+  if (permissionsLoading) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <Skeleton key={index} className="h-12 w-full" />
+        ))}
+      </div>
+    );
+  }
 
   if (!canManage) {
     return (

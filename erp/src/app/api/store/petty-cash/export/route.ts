@@ -17,6 +17,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   TEA_SUGAR: 'Tea & Sugar',
   OFFICE_STATIONERY: 'Office Stationery',
   TRAVEL: 'Travel',
+  STAFF_COMMISSIONS: 'Staff Commissions',
 };
 
 export async function GET(request: Request) {

@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { ShiftOpenModal } from '@/components/pos/ShiftOpenModal';
 import { POSTerminalShell } from '@/components/pos/POSTerminalShell';
+import type { LankaQrSettings } from '@/lib/payments/lanka-qr-config';
 
 interface ShiftGateProps {
   /** Whether the signed-in cashier currently has an OPEN shift. */
@@ -15,6 +16,8 @@ interface ShiftGateProps {
   showOwnerDashboardShortcut?: boolean | undefined;
   businessName: string;
   businessLogoUrl: string | null;
+  /** Tenant LankaQR configuration, resolved server-side. */
+  lankaQr?: LankaQrSettings | undefined;
   children: React.ReactNode;
 }
 
@@ -40,6 +43,7 @@ export function ShiftGate({
   showOwnerDashboardShortcut = false,
   businessName,
   businessLogoUrl,
+  lankaQr,
   children,
 }: ShiftGateProps) {
   const pathname = usePathname();
@@ -73,6 +77,7 @@ export function ShiftGate({
       showOwnerDashboardShortcut={showOwnerDashboardShortcut}
       businessName={businessName}
       businessLogoUrl={businessLogoUrl}
+      lankaQr={lankaQr}
       showCart={!isHistorySurface}
     >
       {children}

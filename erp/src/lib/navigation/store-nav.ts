@@ -275,6 +275,19 @@ export const storeNavGroups: NavGroup[] = [
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.STAFF.viewStaff,
       },
+      {
+        name: 'Run Payroll',
+        href: '/payroll',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.PAYROLL.viewPayroll,
+        match: 'exact',
+      },
+      {
+        name: 'Payroll Reports & Bank Sheets',
+        href: '/payroll/reports',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.PAYROLL.viewPayroll,
+      },
     ],
   },
   {
@@ -358,6 +371,12 @@ export const storeNavGroups: NavGroup[] = [
         href: '/settings/taxes',
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.SETTINGS.manageTax,
+      },
+      {
+        name: 'Payments & LankaQR',
+        href: '/settings/payments',
+        roles: ['OWNER', 'MANAGER'],
+        permission: PERMISSIONS.SETTINGS.managePayments,
       },
       {
         name: 'Store Profile',

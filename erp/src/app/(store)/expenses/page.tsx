@@ -90,6 +90,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   TEA_SUGAR: 'Tea & Sugar',
   OFFICE_STATIONERY: 'Office Stationery',
   TRAVEL: 'Travel',
+  STAFF_COMMISSIONS: 'Staff Commissions',
 };
 
 const CATEGORY_BADGE_COLORS: Record<string, string> = {
@@ -104,6 +105,7 @@ const CATEGORY_BADGE_COLORS: Record<string, string> = {
   TEA_SUGAR: 'bg-linen text-espresso',
   OFFICE_STATIONERY: 'bg-mist text-espresso',
   TRAVEL: 'bg-pearl text-espresso border border-mist',
+  STAFF_COMMISSIONS: 'bg-terracotta/15 text-terracotta border border-terracotta/30',
 };
 
 function formatShortDate(dateStr: string) {

@@ -43,7 +43,7 @@ function toNumber(value: number | string | null | undefined): number | undefined
 }
 
 export function RateCardPageClient() {
-  const { hasPermission } = usePermissions();
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const canManage = hasPermission(PERMISSIONS.DELIVERY.manageRateCard);
   const { data, isLoading, save, saveEntries } = useRateCard();
 
@@ -58,6 +58,7 @@ export function RateCardPageClient() {
     if (hydrated.current) return;
     if (!data) return;
     hydrated.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEntries((card as RateCardData)?.entries ?? []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
@@ -101,6 +102,16 @@ export function RateCardPageClient() {
   // click of a double-click before the mutation's isPending state can react.
   const submittingRef = useRef(false);
 
+  if (permissionsLoading) {
+    return (
+      <div className="grid gap-4 sm:grid-cols-2">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <Skeleton key={index} className="h-16 w-full" />
+        ))}
+      </div>
+    );
+  }
+
   if (!canManage) {
     return (
       <Card className="border-mist">
@@ -114,10 +125,10 @@ export function RateCardPageClient() {
   const onSave = (formData: z.output<typeof UpsertRateCardSchema>) => {
     // M25-02: ignore a second submit that lands while the latch is held.
     if (submittingRef.current) return;
-    // Refuse to submit before the card has loaded — an empty form would wipe it.
-    if (!card) return;
     submittingRef.current = true;
     const body: Record<string, unknown> = { ...formData };
+    // The API creates the first card when none exists, so a null `card` is a
+    // valid starting state (the form is only rendered after the GET resolves).
     save.mutate(body, { onSettled: () => { submittingRef.current = false; } });
   };
 
@@ -151,6 +162,7 @@ export function RateCardPageClient() {
               ))}
             </div>
           ) : (
+            /* eslint-disable-next-line react-hooks/refs */
             <form onSubmit={handleSubmit(onSave)} className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">

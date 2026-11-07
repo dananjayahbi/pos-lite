@@ -33,6 +33,13 @@ export async function openDispute(input: OpenDisputeInput) {
   });
   if (!entry) throw new Error('LEDGER_ENTRY_NOT_FOUND');
   if (entry.status === 'DISPUTED') throw new Error('ALREADY_DISPUTED');
+  // `ReconciliationDispute.ledgerEntryId` is unique, so a settled/closed
+  // dispute still blocks a second one. Report the conflict instead of P2002.
+  const existingDispute = await prisma.reconciliationDispute.findUnique({
+    where: { ledgerEntryId: input.ledgerEntryId },
+    select: { id: true },
+  });
+  if (existingDispute) throw new Error('ALREADY_DISPUTED');
 
   const dispute = await prisma.$transaction(async (tx) => {
     const created = await tx.reconciliationDispute.create({

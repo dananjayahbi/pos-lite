@@ -36,7 +36,7 @@ export const WebsiteCheckoutSchema = z.object({
   codAmount: z.number().min(0).optional(),
   totalWeightKg: z.number().min(0).optional(),
   notes: z.string().max(500).optional(),
-  lines: z.array(CheckoutLineSchema).max(200).optional(),
+  lines: z.array(CheckoutLineSchema).min(1, 'At least one line item is required').max(200),
   // Payment selection: COD (default) or CARD via PayHere.
   paymentMethod: z.enum(['COD', 'CARD']).default('COD'),
 })

@@ -21,7 +21,9 @@ import type {
  */
 export function transExpressMapStatus(raw: string | undefined): CourierStatusMapping {
   if (!raw) return { shipment: "PROCESSING", delivery: "IN_TRANSIT" };
-  const normalized = raw.trim().toLowerCase();
+  // Carriers mix cases and separators ("Out for Delivery", "in_transit",
+  // "Returned-to-Branch"); normalize them all to a compact key.
+  const normalized = raw.trim().toLowerCase().replace(/[\s_-]+/g, "");
   return (
     TRANSEXPRESS_STATUS_MAP[normalized] ?? {
       shipment: "PROCESSING" as ShipmentStatus,

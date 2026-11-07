@@ -23,7 +23,8 @@ export function SplitPaymentModal({
   onSaleComplete,
   totalAmount,
   salePayload,
-}: PaymentModalProps) {
+  allowLankaQr = true,
+}: PaymentModalProps & { allowLankaQr?: boolean }) {
   type DigitalLegMethod = 'CARD' | 'LANKAQR';
   const [digitalMethod, setDigitalMethod] = useState<DigitalLegMethod>('CARD');
   const [cardAmountStr, setCardAmountStr] = useState('');
@@ -42,7 +43,8 @@ export function SplitPaymentModal({
     }
   }, [open]);
 
-  const isQrLeg = digitalMethod === 'LANKAQR';
+  const effectiveDigitalMethod: DigitalLegMethod = allowLankaQr ? digitalMethod : 'CARD';
+  const isQrLeg = effectiveDigitalMethod === 'LANKAQR';
 
   // ── Derived values ────────────────────────────────────────────────────
 
@@ -150,7 +152,7 @@ export function SplitPaymentModal({
         body: JSON.stringify({
           ...salePayload,
           paymentMethod: 'SPLIT',
-          splitLegMethod: digitalMethod,
+          splitLegMethod: effectiveDigitalMethod,
           cardAmount: parsedCardAmount.toNumber(),
           cardReferenceNumber,
           cashReceived: parsedCashReceived.toNumber(),
@@ -214,29 +216,31 @@ export function SplitPaymentModal({
             <label className="mb-1 block text-sm font-body text-espresso">
               Digital payment method
             </label>
-            <div className="grid grid-cols-2 gap-1 rounded-lg border border-mist bg-sand/20 p-1">
+            <div className={`grid gap-1 rounded-lg border border-mist bg-sand/20 p-1 ${allowLankaQr ? 'grid-cols-2' : 'grid-cols-1'}`}>
               <button
                 type="button"
                 onClick={() => setDigitalMethod('CARD')}
                 className={`rounded-md px-3 py-2 text-sm font-body transition-colors ${
-                  digitalMethod === 'CARD'
+                  effectiveDigitalMethod === 'CARD'
                     ? 'bg-espresso text-pearl'
                     : 'text-espresso hover:bg-linen'
                 }`}
               >
                 Card
               </button>
-              <button
-                type="button"
-                onClick={() => setDigitalMethod('LANKAQR')}
-                className={`rounded-md px-3 py-2 text-sm font-body transition-colors ${
-                  digitalMethod === 'LANKAQR'
-                    ? 'bg-espresso text-pearl'
-                    : 'text-espresso hover:bg-linen'
-                }`}
-              >
-                LankaQR
-              </button>
+              {allowLankaQr && (
+                <button
+                  type="button"
+                  onClick={() => setDigitalMethod('LANKAQR')}
+                  className={`rounded-md px-3 py-2 text-sm font-body transition-colors ${
+                    effectiveDigitalMethod === 'LANKAQR'
+                      ? 'bg-espresso text-pearl'
+                      : 'text-espresso hover:bg-linen'
+                  }`}
+                >
+                  LankaQR
+                </button>
+              )}
             </div>
           </div>
 

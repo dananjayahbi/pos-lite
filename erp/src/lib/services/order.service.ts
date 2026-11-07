@@ -5,7 +5,9 @@ import type { StockMovementReason } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { cancelDelivery } from '@/lib/services/delivery.service';
 import { estimateWebsiteShippingFee } from '@/lib/services/shipping-fee.service';
+import { isDeliveryStatusAdvance } from '@/lib/constants/courier';
 import type {
   BulkStatusChangeInput,
   BulkCreateDeliveryInput,
@@ -266,8 +268,18 @@ export async function bulkChangeOrderStatus(
 
   const deliveries = await prisma.delivery.findMany({
     where: { id: { in: input.deliveryIds }, tenantId, deletedAt: null },
-    select: { id: true, orderRef: true, status: true },
+    select: {
+      id: true,
+      orderRef: true,
+      status: true,
+      codAmount: true,
+      paymentMethod: true,
+      paymentStatus: true,
+    },
   });
+
+  const terminal = ['DELIVERED', 'CANCELED', 'RETURNED'];
+  const carrierDriven = ['DISPATCHED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'PENDING_PICKUP'];
 
   const results: BulkResultItem[] = [];
   for (const delivery of deliveries) {
@@ -275,9 +287,51 @@ export async function bulkChangeOrderStatus(
       results.push({ id: delivery.id, ok: false, message: 'Already in this status' });
       continue;
     }
+    if (terminal.includes(delivery.status)) {
+      results.push({ id: delivery.id, ok: false, message: 'Delivery is already in a final state' });
+      continue;
+    }
+    if (!isDeliveryStatusAdvance(delivery.status as DeliveryStatus, input.status as DeliveryStatus)) {
+      results.push({ id: delivery.id, ok: false, message: 'Invalid status transition' });
+      continue;
+    }
+
     try {
+      if (input.status === 'CANCELED') {
+        // Cancellation has inventory, packaging and ledger side effects; reuse
+        // the single source of truth instead of writing the status directly.
+        if (!['PLACED', 'PENDING_DISPATCH', 'HOLD'].includes(delivery.status)) {
+          results.push({
+            id: delivery.id,
+            ok: false,
+            message: 'Use Failed Deliveries & Recovery to cancel a dispatched parcel',
+          });
+          continue;
+        }
+        await cancelDelivery(tenantId, delivery.id, userId, {});
+        results.push({ id: delivery.id, ok: true });
+        continue;
+      }
+
+      const shipment = await prisma.courierShipment.findFirst({
+        where: { tenantId, deliveryId: delivery.id },
+        orderBy: { createdAt: 'desc' },
+        select: { waybillId: true },
+      });
+
+      if (carrierDriven.includes(input.status) && delivery.status !== 'DISPATCHED' && !shipment) {
+        results.push({ id: delivery.id, ok: false, message: 'Dispatch the delivery first' });
+        continue;
+      }
+
       await prisma.$transaction(async (tx) => {
-        await tx.delivery.update({ where: { id: delivery.id }, data: { status: input.status } });
+        await tx.delivery.update({
+          where: { id: delivery.id },
+          data: {
+            status: input.status as DeliveryStatus,
+            ...(input.status === 'DELIVERED' ? { deliveredAt: new Date() } : {}),
+          },
+        });
         await tx.deliveryEvent.create({
           data: {
             tenantId,
@@ -288,6 +342,44 @@ export async function bulkChangeOrderStatus(
             eventAt: new Date(),
           },
         });
+
+        if (input.status === 'DELIVERED') {
+          if (
+            delivery.paymentMethod === 'COD' &&
+            delivery.paymentStatus !== 'PAID' &&
+            delivery.codAmount.gt(0)
+          ) {
+            await tx.reconciliationLedgerEntry.upsert({
+              where: { deliveryId: delivery.id },
+              create: {
+                tenantId,
+                deliveryId: delivery.id,
+                waybillId: shipment?.waybillId ?? null,
+                expectedCod: delivery.codAmount,
+                status: 'PENDING_SETTLEMENT',
+              },
+              update: {},
+            });
+          }
+        }
+
+        if (input.status === 'RETURNED') {
+          await tx.reconciliationLedgerEntry.updateMany({
+            where: {
+              tenantId,
+              deliveryId: delivery.id,
+              status: { in: ['PENDING_SETTLEMENT', 'MATCHED', 'PARTIAL_MATCH', 'DISCREPANCY'] },
+            },
+            data: {
+              status: 'CLEARED',
+              expectedCod: 0,
+              expectedNetPayout: 0,
+              settledAmount: 0,
+              settledAt: new Date(),
+              discrepancyNote: 'Delivery returned',
+            },
+          });
+        }
       });
       results.push({ id: delivery.id, ok: true });
     } catch (error) {

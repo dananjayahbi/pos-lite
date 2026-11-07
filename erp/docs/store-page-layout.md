@@ -22,6 +22,14 @@ monitors. It now uses the standard full-width wrapper. Regression coverage lives
 in `tests/15_promotions_pricing.spec.ts` (F10), which compares the page wrapper
 width with the `main` column.
 
+## Payroll
+
+`/payroll` (Run Payroll) and `/payroll/reports` (Payroll Reports & Bank
+Sheets) previously used `PageContainer maxWidth="7xl"`, which centered a
+1280px column and left wide empty gutters on large monitors. Both now use the
+default full-width `PageContainer` with `space-y-6`, matching the rest of the
+store pages.
+
 ## Factory pages
 
 `/factory/bom` previously rendered its wrapper without any padding, so the

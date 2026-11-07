@@ -12,6 +12,7 @@ export const EXPENSE_CATEGORIES = [
   'TEA_SUGAR',
   'OFFICE_STATIONERY',
   'TRAVEL',
+  'STAFF_COMMISSIONS',
 ] as const;
 
 export const CreateExpenseSchema = z.object({

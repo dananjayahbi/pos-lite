@@ -85,6 +85,7 @@ export async function POST(
           shippingFee: true,
           orderRef: true,
           tenantId: true,
+          status: true,
           itemCount: true,
           address: {
             select: {
@@ -124,13 +125,27 @@ export async function POST(
           },
         );
 
-        // A null payload means the gateway is not configured. Fall back to COD
-        // rather than sending the customer to a page that cannot complete.
+        // A null payload means the gateway is not configured. Switch the order
+        // to COD rather than leaving a CARD/PENDING order that dispatch will
+        // always reject ("payment not settled").
         if (built) {
           payment = built;
         } else {
+          await prisma.delivery.update({
+            where: { id: order.id },
+            data: { paymentMethod: 'COD', paymentStatus: 'PENDING' },
+          });
+          await prisma.deliveryEvent.create({
+            data: {
+              tenantId: tenant.id,
+              deliveryId: order.id,
+              status: order.status,
+              source: 'INTERNAL',
+              remarks: 'Card payment unavailable — order switched to cash on delivery',
+            },
+          });
           console.warn(
-            '[POST /api/public/site/[tenantSlug]/orders] CARD requested but PayHere is not configured — order left unpaid',
+            '[POST /api/public/site/[tenantSlug]/orders] CARD requested but PayHere is not configured — order switched to COD',
           );
         }
       }

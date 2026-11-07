@@ -13,6 +13,10 @@ import { toYMD } from '@/lib/date-range';
 import { CustomerPicker, type PickedCustomer } from '@/components/sales/CustomerPicker';
 import { ProductThumbnail, resolveProductImage } from '@/components/sales/ProductThumbnail';
 import { saleQueryKey } from '@/components/sales/saleQueryKey';
+import {
+  DEFAULT_LANKA_QR_SETTINGS,
+  type LankaQrSettings,
+} from '@/lib/payments/lanka-qr-config';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -44,7 +48,7 @@ interface CartItem {
   imageUrl: string | null;
 }
 
-type PaymentMethod = 'CASH' | 'CARD' | 'SPLIT';
+type PaymentMethod = 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT';
 
 interface NewSaleSheetProps {
   open: boolean;
@@ -71,6 +75,19 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
   const [deliveryCharge, setDeliveryCharge] = useState('');
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const { data: lankaQr = DEFAULT_LANKA_QR_SETTINGS } = useQuery<LankaQrSettings>({
+    queryKey: ['payment-settings', 'lanka-qr'],
+    queryFn: async () => {
+      const res = await fetch('/api/settings/payments');
+      if (!res.ok) return DEFAULT_LANKA_QR_SETTINGS;
+      const json = (await res.json()) as { success: boolean; data?: LankaQrSettings };
+      return json.data ?? DEFAULT_LANKA_QR_SETTINGS;
+    },
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const lankaQrEnabled = lankaQr.enabled;
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 350);
@@ -171,6 +188,9 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
       if (paymentMethod === 'CARD' && cardRef.trim()) {
         body.cardReferenceNumber = cardRef.trim();
       }
+      if (paymentMethod === 'LANKAQR' && cardRef.trim()) {
+        body.cardReferenceNumber = cardRef.trim();
+      }
       if (paymentMethod === 'SPLIT') {
         body.cashReceived = parseFloat(cashReceived);
         body.cardAmount = parseFloat(cardAmount);
@@ -222,7 +242,13 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
       ? cashNum >= total
       : paymentMethod === 'CARD'
         ? true
-        : cashNum > 0 && cardNum > 0 && cashNum + cardNum >= total);
+        : paymentMethod === 'LANKAQR'
+          ? !lankaQr.referenceRequired || cardRef.trim().length > 0
+          : cashNum > 0 && cardNum > 0 && cashNum + cardNum >= total);
+
+  const paymentMethods: PaymentMethod[] = lankaQrEnabled
+    ? ['CASH', 'CARD', 'LANKAQR', 'SPLIT']
+    : ['CASH', 'CARD', 'SPLIT'];
 
   const canSubmit = isPaymentValid && !isPending;
 
@@ -466,8 +492,8 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                 <Label className="text-espresso mb-2 block text-xs font-semibold">
                   Payment Method
                 </Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['CASH', 'CARD', 'SPLIT'] as const).map((m) => (
+                <div className={`grid gap-2 ${lankaQrEnabled ? 'grid-cols-4' : 'grid-cols-3'}`}>
+                  {paymentMethods.map((m) => (
                     <button
                       key={m}
                       type="button"
@@ -533,20 +559,32 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                 </div>
               )}
 
-              {/* Card reference */}
-              {(paymentMethod === 'CARD' || paymentMethod === 'SPLIT') && (
+              {/* Card / QR reference */}
+              {(paymentMethod === 'CARD' ||
+                paymentMethod === 'LANKAQR' ||
+                paymentMethod === 'SPLIT') && (
                 <div>
                   <Label
                     htmlFor="card-ref"
                     className="text-espresso mb-1.5 block text-xs font-semibold"
                   >
-                    Card Reference{paymentMethod === 'CARD' ? ' (optional)' : ''}
+                    {paymentMethod === 'LANKAQR' ? 'QR Reference' : 'Card Reference'}
+                    {paymentMethod === 'SPLIT' ||
+                    (paymentMethod === 'LANKAQR' && !lankaQr.referenceRequired)
+                      ? ' (optional)'
+                      : paymentMethod === 'CARD'
+                        ? ' (optional)'
+                        : ''}
                   </Label>
                   <Input
                     id="card-ref"
                     value={cardRef}
                     onChange={(e) => setCardRef(e.target.value)}
-                    placeholder="Approval / reference number"
+                    placeholder={
+                      paymentMethod === 'LANKAQR'
+                        ? 'Bank QR transaction reference'
+                        : 'Approval / reference number'
+                    }
                     maxLength={20}
                   />
                 </div>

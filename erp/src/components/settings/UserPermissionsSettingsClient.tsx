@@ -27,7 +27,6 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  ALL_PERMISSIONS,
   ASSIGNABLE_ROLES,
   PERMISSIONS,
   ROLE_PERMISSIONS,
@@ -67,6 +66,7 @@ const GROUP_LABELS: Record<keyof typeof PERMISSIONS, string> = {
   STOCK: 'Stock',
   SUPPLIER: 'Suppliers',
   STAFF: 'Staff',
+  PAYROLL: 'Payroll',
   REPORT: 'Reports',
   SETTINGS: 'Settings',
   PROMOTION: 'Promotions',

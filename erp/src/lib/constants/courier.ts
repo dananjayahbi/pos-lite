@@ -42,16 +42,18 @@ export const TRANSEXPRESS_STATUS_MAP: Record<
   placed: { shipment: "SUBMITTED", delivery: "PENDING_DISPATCH" },
   processing: { shipment: "PROCESSING", delivery: "IN_TRANSIT" },
   pendingpickup: { shipment: "PROCESSING", delivery: "PENDING_PICKUP" },
-  "in transit": { shipment: "IN_TRANSIT", delivery: "IN_TRANSIT" },
+  pickup: { shipment: "PROCESSING", delivery: "PENDING_PICKUP" },
+  intransit: { shipment: "IN_TRANSIT", delivery: "IN_TRANSIT" },
   transit: { shipment: "IN_TRANSIT", delivery: "IN_TRANSIT" },
   pickedup: { shipment: "PICKED_UP", delivery: "IN_TRANSIT" },
-  "out for delivery": { shipment: "OUT_FOR_DELIVERY", delivery: "OUT_FOR_DELIVERY" },
-  "outfordelivery": { shipment: "OUT_FOR_DELIVERY", delivery: "OUT_FOR_DELIVERY" },
+  outfordelivery: { shipment: "OUT_FOR_DELIVERY", delivery: "OUT_FOR_DELIVERY" },
   delivered: { shipment: "DELIVERED", delivery: "DELIVERED" },
   failed: { shipment: "FAILED", delivery: "FAILED" },
+  deliveryfailed: { shipment: "FAILED", delivery: "FAILED" },
   cancelled: { shipment: "CANCELED", delivery: "CANCELED" },
   canceled: { shipment: "CANCELED", delivery: "CANCELED" },
   returned: { shipment: "RETURNED", delivery: "RETURNED" },
+  returnedtobranch: { shipment: "RETURNED", delivery: "RETURNED" },
 };
 
 /** Terminal shipment statuses — poller skips these. */
@@ -59,6 +61,8 @@ export const TERMINAL_SHIPMENT_STATUSES: ShipmentStatus[] = [
   "DELIVERED",
   "CANCELED",
   "RETURNED",
+  // A failed attempt is final for this shipment; recovery creates a new one.
+  "FAILED",
 ];
 
 /** Terminal delivery statuses. */
@@ -67,6 +71,36 @@ export const TERMINAL_DELIVERY_STATUSES: DeliveryStatus[] = [
   "CANCELED",
   "RETURNED",
 ];
+
+/**
+ * Forward progress order for courier-driven delivery statuses. Used so a late
+ * or out-of-order carrier poll cannot move a dispatched parcel back to
+ * "pending dispatch" (the first poll of a new shipment reports `submitted`).
+ */
+export const DELIVERY_STATUS_RANK: Record<DeliveryStatus, number> = {
+  PLACED: 0,
+  PENDING_DISPATCH: 1,
+  HOLD: 1,
+  PENDING_PICKUP: 2,
+  DISPATCHED: 2,
+  IN_TRANSIT: 3,
+  OUT_FOR_DELIVERY: 4,
+  DELIVERED: 5,
+  FAILED: 5,
+  RETURNED: 5,
+  CANCELED: 5,
+};
+
+/** True when a carrier-mapped status should replace the delivery's status. */
+export function isDeliveryStatusAdvance(
+  current: DeliveryStatus,
+  next: DeliveryStatus,
+): boolean {
+  if (current === next) return false;
+  if (TERMINAL_DELIVERY_STATUSES.includes(current)) return false;
+  if (next === "FAILED" || next === "RETURNED" || next === "CANCELED") return true;
+  return DELIVERY_STATUS_RANK[next] > DELIVERY_STATUS_RANK[current];
+}
 
 /** Hold-buffer window before auto-dispatch/expiry (ms). */
 export const HOLD_BUFFER_DURATION_MS = 45 * 60 * 1000; // 45 minutes

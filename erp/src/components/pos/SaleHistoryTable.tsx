@@ -66,7 +66,7 @@ interface Sale {
   taxAmount: number;
   deliveryCharge: number;
   totalAmount: number;
-  paymentMethod: 'CASH' | 'CARD' | 'SPLIT' | null;
+  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | null;
   status: 'OPEN' | 'COMPLETED' | 'VOIDED';
   authorizingManagerId: string | null;
   saleDate: string | null;
@@ -118,6 +118,7 @@ function PaymentBadge({ method }: { method: string | null }) {
   const colors: Record<string, string> = {
     CASH: 'bg-[#2D6A4F] text-white',
     CARD: 'bg-[#1D4E89] text-white',
+    LANKAQR: 'bg-[#5B3E96] text-white',
     SPLIT: 'bg-terracotta text-white',
   };
   return (
@@ -273,6 +274,7 @@ export function SaleHistoryTable() {
           <option value="">All Payments</option>
           <option value="CASH">Cash</option>
           <option value="CARD">Card</option>
+          <option value="LANKAQR">LankaQR</option>
           <option value="SPLIT">Split</option>
         </select>
         <DateRangeFilter

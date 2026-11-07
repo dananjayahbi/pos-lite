@@ -260,6 +260,7 @@ enum ExpenseCategory {
   TEA_SUGAR
   OFFICE_STATIONERY
   TRAVEL
+  STAFF_COMMISSIONS
 }
 
 enum CashMovementType {
@@ -488,6 +489,8 @@ model User {
   commissionRecords             CommissionRecord[]
   commissionPayoutsAsUser       CommissionPayout[]   @relation("PayoutUser")
   commissionPayoutsAsAuthorizer CommissionPayout[]   @relation("PayoutAuthorizer")
+  payrollRunsGenerated          PayrollRun[]         @relation("PayrollRunGenerator")
+  payrollItems                  PayrollItem[]        @relation("PayrollItemUser")
   timeClocks                    TimeClock[]
   attendanceDays                AttendanceDay[]      @relation("AttendanceDayUser")
   attendanceRecordedBy          AttendanceDay[]      @relation("AttendanceDayRecorder")
@@ -626,6 +629,8 @@ model Tenant {
   birthdayGreetingLogs        BirthdayGreetingLog[]
   commissionRecords           CommissionRecord[]
   commissionPayouts           CommissionPayout[]
+  payrollRuns                 PayrollRun[]
+  payrollItems                PayrollItem[]
   timeClocks                  TimeClock[]
   attendanceDays              AttendanceDay[]
   promotions                  Promotion[]
@@ -1510,6 +1515,10 @@ model CommissionRecord {
   baseAmount     Decimal           @db.Decimal(12, 2)
   commissionRate Decimal           @db.Decimal(5, 2)
   earnedAmount   Decimal           @db.Decimal(12, 2)
+  /// Amount of this record already settled. Partial commission payouts leave
+  /// the remainder open; `isPaid` flips true only when paidAmount reaches
+  /// earnedAmount (negative return adjustments settle when they reach it too).
+  paidAmount     Decimal           @default(0) @db.Decimal(12, 2)
   payoutId       String?
   payout         CommissionPayout? @relation(fields: [payoutId], references: [id])
   isPaid         Boolean           @default(false)
@@ -1533,12 +1542,110 @@ model CommissionPayout {
   authorizedById String
   authorizedBy   User     @relation("PayoutAuthorizer", fields: [authorizedById], references: [id])
   notes          String?
+  /// Account the payout was paid from. Optional so historical payouts remain
+  /// valid; new payouts always name the account the owner selected.
+  paymentAccountId   String?
+  paymentAccount     PaymentAccount? @relation(fields: [paymentAccountId], references: [id])
+  /// Human-readable snapshot so a later rename/re-close does not rewrite history.
+  paymentAccountName String?
+  /// Expense ledger row created automatically for this payout.
+  expenseId      String?  @unique
+  expense        Expense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
   createdAt      DateTime @default(now())
 
   records CommissionRecord[]
 
   @@index([tenantId, userId])
   @@map("commission_payouts")
+}
+
+// ── Payroll ──────────────────────────────────────────────────────────────────
+
+enum PayrollRunStatus {
+  DRAFT
+  GENERATED
+  PAID
+}
+
+/**
+ * One monthly payroll run. Item rows snapshot the calculated amounts so a
+ * later change to a staff salary, commission or attendance record cannot
+ * rewrite a payslip that has already been issued.
+ */
+model PayrollRun {
+  id                 String           @id @default(cuid())
+  tenantId           String
+  tenant             Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Canonical YYYY-MM period key.
+  periodMonth        String
+  periodStart        DateTime         @db.Date
+  periodEnd          DateTime         @db.Date
+  status             PayrollRunStatus @default(GENERATED)
+  workingDays        Int
+  overtimeMultiplier Decimal          @db.Decimal(5, 2)
+  employeeEpfRate    Decimal          @db.Decimal(5, 2)
+  employerEpfRate    Decimal          @db.Decimal(5, 2)
+  employerEtfRate    Decimal          @db.Decimal(5, 2)
+  totalBasic         Decimal          @db.Decimal(14, 2)
+  totalAllowances    Decimal          @db.Decimal(14, 2)
+  totalOvertime      Decimal          @db.Decimal(14, 2)
+  totalCommission    Decimal          @db.Decimal(14, 2)
+  totalGross         Decimal          @db.Decimal(14, 2)
+  totalDeductions    Decimal          @db.Decimal(14, 2)
+  totalEmployeeEpf   Decimal          @db.Decimal(14, 2)
+  totalEmployerEpf   Decimal          @db.Decimal(14, 2)
+  totalEmployerEtf   Decimal          @db.Decimal(14, 2)
+  totalNet           Decimal          @db.Decimal(14, 2)
+  totalCompanyCost   Decimal          @db.Decimal(14, 2)
+  generatedById      String
+  generatedBy        User             @relation("PayrollRunGenerator", fields: [generatedById], references: [id])
+  generatedAt        DateTime         @default(now())
+  notes              String?
+  items              PayrollItem[]
+
+  @@unique([tenantId, periodMonth])
+  @@index([tenantId, periodMonth])
+  @@map("payroll_runs")
+}
+
+model PayrollItem {
+  id                String     @id @default(cuid())
+  payrollRunId      String
+  payrollRun        PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  tenantId          String
+  tenant            Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User       @relation("PayrollItemUser", fields: [userId], references: [id])
+  staffName         String
+  staffEmail        String
+  role              String
+  nic               String?
+  bankName          String?
+  bankBranch        String?
+  bankAccountNumber String?
+  epfNumber         String?
+  etfNumber         String?
+  basicSalary       Decimal    @db.Decimal(12, 2)
+  allowances        Decimal    @db.Decimal(12, 2)
+  overtimeMinutes   Int
+  overtimeAmount    Decimal    @db.Decimal(12, 2)
+  commissionAmount  Decimal    @db.Decimal(12, 2)
+  grossSalary       Decimal    @db.Decimal(14, 2)
+  noPayDays         Decimal    @db.Decimal(5, 1)
+  noPayDeduction    Decimal    @db.Decimal(12, 2)
+  advanceDeduction  Decimal    @db.Decimal(12, 2)
+  totalDeductions   Decimal    @db.Decimal(14, 2)
+  employeeEpf       Decimal    @db.Decimal(12, 2)
+  employerEpf       Decimal    @db.Decimal(12, 2)
+  employerEtf       Decimal    @db.Decimal(12, 2)
+  netSalary         Decimal    @db.Decimal(14, 2)
+  emailedAt         DateTime?
+  emailStatus       String?
+  createdAt         DateTime   @default(now())
+
+  @@unique([payrollRunId, userId])
+  @@index([tenantId, userId])
+  @@map("payroll_items")
 }
 
 model TimeClock {
@@ -1649,6 +1756,7 @@ model Expense {
   recordedBy      User            @relation(fields: [recordedById], references: [id])
   expenseDate     DateTime
   createdAt       DateTime        @default(now())
+  commissionPayout CommissionPayout?
 
   @@index([tenantId, expenseDate])
   @@index([pettyCashFundId])
@@ -2260,7 +2368,7 @@ model CourierShipment {
   id                  String          @id @default(cuid())
   tenantId            String
   tenant              Tenant          @relation(fields: [tenantId], references: [id])
-  deliveryId          String          @unique
+  deliveryId          String
   delivery            Delivery        @relation(fields: [deliveryId], references: [id])
   provider            CarrierProvider @default(TRANSEXPRESS)
   env                 CourierEnv      @default(STAGING)
@@ -2279,6 +2387,7 @@ model CourierShipment {
 
   @@unique([tenantId, waybillId])
   @@index([tenantId, status])
+  @@index([deliveryId, createdAt])
   @@index([provider])
   @@map("courier_shipments")
 }
@@ -2616,6 +2725,7 @@ model PaymentAccount {
   entries PaymentAccountEntry[]
   // Back-relation for the petty-cash float this account backs (if any).
   pettyCashFund PettyCashFund?
+  commissionPayouts CommissionPayout[]
 
   @@unique([tenantId, name])
   @@index([tenantId, status])
