@@ -96,7 +96,7 @@ export default function PlansClient({ initialPlans }: PlansClientProps) {
           <TableBody>
             {plans.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-mist">
+                <TableCell colSpan={8} className="py-8 text-center text-mist-ink">
                   No subscription plans found.
                 </TableCell>
               </TableRow>

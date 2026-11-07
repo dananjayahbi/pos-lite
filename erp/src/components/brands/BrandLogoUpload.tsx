@@ -105,11 +105,11 @@ export function BrandLogoUpload({ logoUrl, onChange, disabled }: BrandLogoUpload
             />
           ) : logoUrl && broken ? (
             <div className="flex h-full w-full flex-col items-center justify-center bg-sand/30">
-              <ImageOff className="h-4 w-4 text-mist" />
-              <span className="text-[9px] text-mist mt-0.5">Error</span>
+              <ImageOff className="h-4 w-4 text-mist-ink" />
+              <span className="text-[9px] text-mist-ink mt-0.5">Error</span>
             </div>
           ) : (
-            <div className="flex h-full w-full items-center justify-center text-xs text-mist">
+            <div className="flex h-full w-full items-center justify-center text-xs text-mist-ink">
               —
             </div>
           )}
@@ -152,7 +152,7 @@ export function BrandLogoUpload({ logoUrl, onChange, disabled }: BrandLogoUpload
           )}
         </div>
 
-        <p className="ml-auto text-xs text-mist">
+        <p className="ml-auto text-xs text-mist-ink">
           JPEG / PNG / WebP / SVG
           <br />
           Max 2 MB

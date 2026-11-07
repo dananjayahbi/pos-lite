@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -48,9 +49,17 @@ interface StaffMember {
   email: string;
   role: string;
   isActive: boolean;
+  fullName: string | null;
+  contactNumber: string | null;
   commissionRate: string | null;
   clockedInAt: string | null;
   createdAt: string;
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sand-ink">{children}</p>
+  );
 }
 
 // ── Role Badge ───────────────────────────────────────────────────────────────
@@ -85,6 +94,7 @@ export default function StaffPage() {
 
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('ALL');
   const [dialogOpen, setDialogOpen] = useState(false);
   // M03-08 (GAP-2): optional initial password for the create dialog.
   const [initialPassword, setInitialPassword] = useState('');
@@ -96,9 +106,10 @@ export default function StaffPage() {
 
   const queryParams = new URLSearchParams();
   if (debouncedSearch) queryParams.set('search', debouncedSearch);
+  if (roleFilter !== 'ALL') queryParams.set('role', roleFilter);
 
   const { data, isLoading } = useQuery<{ success: boolean; data: StaffMember[] }>({
-    queryKey: ['staff', debouncedSearch],
+    queryKey: ['staff', debouncedSearch, roleFilter],
     queryFn: async () => {
       const res = await fetch(`/api/store/staff?${queryParams.toString()}`);
       if (!res.ok) throw new Error('Failed to fetch staff');
@@ -202,7 +213,7 @@ export default function StaffPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold text-espresso">Staff</h1>
-          <p className="text-sm text-sand mt-1">
+          <p className="text-sm text-sand-ink mt-1">
             {isLoading ? '...' : `${staff.length} team member${staff.length !== 1 ? 's' : ''}`}
           </p>
         </div>
@@ -214,79 +225,216 @@ export default function StaffPage() {
               New Staff Member
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle className="font-display">Create Staff Member</DialogTitle>
             </DialogHeader>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="staff@example.com"
-                  {...form.register('email')}
-                />
-                {form.formState.errors.email && (
-                  <p className="text-sm text-terracotta">{form.formState.errors.email.message}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="role">Role</Label>
-                <Select
-                  value={form.watch('role')}
-                  onValueChange={(val) => form.setValue('role', val as AssignableRole)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ASSIGNABLE_ROLES.map((r) => (
-                      <SelectItem key={r} value={r}>
-                        {r.replace('_', ' ')}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {form.formState.errors.role && (
-                  <p className="text-sm text-terracotta">{form.formState.errors.role.message}</p>
-                )}
-              </div>
-
-              {selectedRole === 'CASHIER' && (
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+              {/* Personal & access */}
+              <div className="space-y-3">
+                <SectionLabel>Personal &amp; access</SectionLabel>
                 <div className="space-y-2">
-                  <Label htmlFor="commissionRate">Commission Rate (%)</Label>
+                  <Label htmlFor="fullName">Full Name</Label>
                   <Input
-                    id="commissionRate"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    placeholder="e.g. 5.00"
-                    {...form.register('commissionRate')}
+                    id="fullName"
+                    placeholder="e.g. Nimal Perera"
+                    {...form.register('fullName')}
                   />
-                  {form.formState.errors.commissionRate && (
+                  {form.formState.errors.fullName && (
                     <p className="text-sm text-terracotta">
-                      {form.formState.errors.commissionRate.message}
+                      {form.formState.errors.fullName.message}
                     </p>
                   )}
                 </div>
-              )}
 
-              <div className="space-y-2">
-                <Label htmlFor="initialPassword">Initial Password (optional)</Label>
-                <Input
-                  id="initialPassword"
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder="At least 8 characters"
-                  value={initialPassword}
-                  onChange={(e) => setInitialPassword(e.target.value)}
-                />
-                <p className="text-xs text-sand">
-                  A new account cannot sign in until a password is set. Leave empty to set one later.
-                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email *</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="staff@example.com"
+                      {...form.register('email')}
+                    />
+                    {form.formState.errors.email && (
+                      <p className="text-sm text-terracotta">
+                        {form.formState.errors.email.message}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="role">Role *</Label>
+                    <Select
+                      value={form.watch('role')}
+                      onValueChange={(val) => form.setValue('role', val as AssignableRole)}
+                    >
+                      <SelectTrigger id="role">
+                        <SelectValue placeholder="Select role" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ASSIGNABLE_ROLES.map((r) => (
+                          <SelectItem key={r} value={r}>
+                            {r.replace('_', ' ')}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {form.formState.errors.role && (
+                      <p className="text-sm text-terracotta">
+                        {form.formState.errors.role.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="nic">NIC</Label>
+                    <Input
+                      id="nic"
+                      placeholder="e.g. 912345678V / 199912345678"
+                      {...form.register('nic')}
+                    />
+                    {form.formState.errors.nic && (
+                      <p className="text-sm text-terracotta">{form.formState.errors.nic.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="contactNumber">Contact Number</Label>
+                    <Input
+                      id="contactNumber"
+                      placeholder="+94XXXXXXXXX"
+                      {...form.register('contactNumber')}
+                    />
+                    {form.formState.errors.contactNumber && (
+                      <p className="text-sm text-terracotta">
+                        {form.formState.errors.contactNumber.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="address">Address</Label>
+                  <Textarea
+                    id="address"
+                    placeholder="Street, city, postal code"
+                    rows={2}
+                    {...form.register('address')}
+                  />
+                  {form.formState.errors.address && (
+                    <p className="text-sm text-terracotta">
+                      {form.formState.errors.address.message}
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="initialPassword">System Access Password</Label>
+                    <Input
+                      id="initialPassword"
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="At least 8 characters"
+                      value={initialPassword}
+                      onChange={(e) => setInitialPassword(e.target.value)}
+                    />
+                    <p className="text-xs text-sand-ink">
+                      Optional now; the account cannot sign in until a password is set.
+                    </p>
+                  </div>
+                  {selectedRole === 'CASHIER' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="commissionRate">Commission Rate (%)</Label>
+                      <Input
+                        id="commissionRate"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        placeholder="e.g. 5.00"
+                        {...form.register('commissionRate')}
+                      />
+                      {form.formState.errors.commissionRate && (
+                        <p className="text-sm text-terracotta">
+                          {form.formState.errors.commissionRate.message}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Salary & allowances */}
+              <div className="space-y-3 border-t border-mist pt-4">
+                <SectionLabel>Salary &amp; allowances</SectionLabel>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="basicSalary">Basic Salary (LKR)</Label>
+                    <Input
+                      id="basicSalary"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="e.g. 45000.00"
+                      {...form.register('basicSalary')}
+                    />
+                    <p className="text-xs text-sand-ink">Used for ETF/EPF calculations.</p>
+                    {form.formState.errors.basicSalary && (
+                      <p className="text-sm text-terracotta">
+                        {form.formState.errors.basicSalary.message}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="allowances">Allowances (LKR)</Label>
+                    <Input
+                      id="allowances"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="e.g. 5000.00"
+                      {...form.register('allowances')}
+                    />
+                    {form.formState.errors.allowances && (
+                      <p className="text-sm text-terracotta">
+                        {form.formState.errors.allowances.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Banking & statutory */}
+              <div className="space-y-3 border-t border-mist pt-4">
+                <SectionLabel>Banking &amp; statutory</SectionLabel>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="bankName">Bank Name</Label>
+                    <Input id="bankName" placeholder="e.g. Commercial Bank" {...form.register('bankName')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bankBranch">Branch</Label>
+                    <Input id="bankBranch" placeholder="e.g. Colombo 03" {...form.register('bankBranch')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bankAccountNumber">Account Number</Label>
+                    <Input
+                      id="bankAccountNumber"
+                      placeholder="Bank account number"
+                      {...form.register('bankAccountNumber')}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="etfNumber">ETF Number</Label>
+                    <Input id="etfNumber" placeholder="ETF number" {...form.register('etfNumber')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="epfNumber">EPF Number</Label>
+                    <Input id="epfNumber" placeholder="EPF number" {...form.register('epfNumber')} />
+                  </div>
+                </div>
               </div>
 
               <Button type="submit" className="w-full" disabled={createMutation.isPending}>
@@ -297,13 +445,41 @@ export default function StaffPage() {
         </Dialog>
       </div>
 
-      {/* Search */}
-      <Input
-        placeholder="Search by email..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="max-w-sm"
-      />
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Input
+          placeholder="Search by name or email..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="max-w-sm"
+        />
+        <Select value={roleFilter} onValueChange={setRoleFilter}>
+          <SelectTrigger className="w-52">
+            <SelectValue placeholder="All roles" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All Roles</SelectItem>
+            {ASSIGNABLE_ROLES.map((role) => (
+              <SelectItem key={role} value={role}>
+                {role.replace(/_/g, ' ')}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {(search || roleFilter !== 'ALL') && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-sand-ink hover:text-espresso"
+            onClick={() => {
+              setSearch('');
+              setRoleFilter('ALL');
+            }}
+          >
+            Clear filters
+          </Button>
+        )}
+      </div>
 
       {/* Table */}
       <ErrorBoundary>
@@ -312,6 +488,7 @@ export default function StaffPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Contact Number</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Commission Rate</TableHead>
@@ -323,6 +500,7 @@ export default function StaffPage() {
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
                   <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-28" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-20" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-10" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-16" /></TableCell>
@@ -331,14 +509,19 @@ export default function StaffPage() {
               ))
             ) : staff.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-sand">
+                <TableCell colSpan={6} className="text-center py-8 text-sand-ink">
                   No staff members found
                 </TableCell>
               </TableRow>
             ) : (
               staff.map((member) => (
                 <TableRow key={member.id}>
-                  <TableCell className="font-medium">{staffDisplayName(member.email)}</TableCell>
+                  <TableCell className="font-medium">
+                    {member.fullName ?? staffDisplayName(member.email)}
+                  </TableCell>
+                  <TableCell className="font-mono text-sm">
+                    {member.contactNumber ?? '—'}
+                  </TableCell>
                   <TableCell>
                     <RoleBadge role={member.role} />
                   </TableCell>

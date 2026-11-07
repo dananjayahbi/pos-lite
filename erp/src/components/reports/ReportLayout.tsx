@@ -573,7 +573,7 @@ function ReportLayoutInner({
                               className={`flex flex-col items-center justify-center gap-1 rounded-md border px-2 py-3 font-body text-sm transition-colors ${
                                 saveFormat === value
                                   ? "border-terracotta bg-terracotta/5 text-terracotta"
-                                  : "border-mist text-sand hover:bg-linen"
+                                  : "border-mist text-sand-ink hover:bg-linen"
                               }`}
                             >
                               <Icon className="h-4 w-4" />
@@ -611,7 +611,7 @@ function ReportLayoutInner({
                   </DialogHeader>
 
                   <div className="space-y-3">
-                    <p className="text-sm text-mist">
+                    <p className="text-sm text-mist-ink">
                       Open or remove previously saved report filters.
                     </p>
                     <div className="flex justify-end">
@@ -632,7 +632,7 @@ function ReportLayoutInner({
                         ))}
                       </div>
                     ) : savedReports.length === 0 ? (
-                      <div className="rounded-md border border-dashed border-mist bg-linen px-4 py-6 text-center text-sm text-mist">
+                      <div className="rounded-md border border-dashed border-mist bg-linen px-4 py-6 text-center text-sm text-mist-ink">
                         No saved reports yet for {currentReportTitle}.
                       </div>
                     ) : (
@@ -650,10 +650,10 @@ function ReportLayoutInner({
                                   {savedReport.name}
                                 </p>
                                 <p className="mt-1 inline-flex items-center gap-1.5">
-                                  <span className="rounded bg-mist/50 px-1.5 py-0.5 font-mono text-[10px] uppercase text-sand">
+                                  <span className="rounded bg-mist/50 px-1.5 py-0.5 font-mono text-[10px] uppercase text-sand-ink">
                                     {savedReport.format ?? "pdf"}
                                   </span>
-                                  <span className="text-xs text-mist">
+                                  <span className="text-xs text-mist-ink">
                                     {new Date(savedReport.createdAt).toLocaleString("en-GB", {
                                       day: "2-digit",
                                       month: "short",

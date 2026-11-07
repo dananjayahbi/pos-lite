@@ -39,7 +39,7 @@ export function POLinesTable({ lines }: { lines: POLine[] }) {
                 <TableRow key={line.id}>
                   <TableCell>
                     <p className="font-medium text-espresso">{line.productNameSnapshot}</p>
-                    <p className="text-xs text-mist">{line.variantDescriptionSnapshot}</p>
+                    <p className="text-xs text-mist-ink">{line.variantDescriptionSnapshot}</p>
                   </TableCell>
                   <TableCell className="font-mono text-sm">{line.variant.sku}</TableCell>
                   <TableCell className="text-center">{line.orderedQty}</TableCell>

@@ -49,7 +49,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
           <Label htmlFor="aboutPageTitle" className="text-sm font-semibold text-espresso">
             Page Title
           </Label>
-          <p className="text-xs text-sand mb-1.5">The heading displayed at the top of the About page.</p>
+          <p className="text-xs text-sand-ink mb-1.5">The heading displayed at the top of the About page.</p>
           <Input
             id="aboutPageTitle"
             value={config.aboutPageTitle ?? ''}
@@ -62,7 +62,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
           <Label htmlFor="aboutPageSubtitle" className="text-sm font-semibold text-espresso">
             Page Subtitle
           </Label>
-          <p className="text-xs text-sand mb-1.5">A short subtitle beneath the page title.</p>
+          <p className="text-xs text-sand-ink mb-1.5">A short subtitle beneath the page title.</p>
           <Input
             id="aboutPageSubtitle"
             value={config.aboutPageSubtitle ?? ''}
@@ -73,7 +73,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
 
         <div>
           <Label className="text-sm font-semibold text-espresso">Hero Image</Label>
-          <p className="text-xs text-sand mb-1.5">The banner image at the top of the About page.</p>
+          <p className="text-xs text-sand-ink mb-1.5">The banner image at the top of the About page.</p>
           <DeferredMediaUploader
             value={config.aboutHeroImageUrl ?? ''}
             onChange={(url: string) => onChange({ aboutHeroImageUrl: url })}
@@ -93,7 +93,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
       <div className="space-y-4">
         <div className="rounded-lg border border-cream/40 bg-cream/20 px-3 py-2">
           <h3 className="text-sm font-semibold text-espresso">Our Story</h3>
-          <p className="mt-0.5 text-xs text-sand">
+          <p className="mt-0.5 text-xs text-sand-ink">
             Split editorial section. A 4:5 rounded image frame beside a titled
             paragraph block with a dropcap on the first sentence.
           </p>
@@ -102,7 +102,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
           <Label htmlFor="aboutStoryTitle" className="text-sm font-semibold text-espresso">
             Story Title
           </Label>
-          <p className="text-xs text-sand mb-1.5">Title for the &quot;Our Story&quot; section.</p>
+          <p className="text-xs text-sand-ink mb-1.5">Title for the &quot;Our Story&quot; section.</p>
           <Input
             id="aboutStoryTitle"
             value={config.aboutStoryTitle ?? ''}
@@ -115,7 +115,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
           <Label htmlFor="aboutStoryContent" className="text-sm font-semibold text-espresso">
             Story Content
           </Label>
-          <p className="text-xs text-sand mb-1.5">Tell your brand&apos;s story. Each line becomes a paragraph.</p>
+          <p className="text-xs text-sand-ink mb-1.5">Tell your brand&apos;s story. Each line becomes a paragraph.</p>
           <Textarea
             id="aboutStoryContent"
             value={config.aboutStoryContent ?? ''}
@@ -127,7 +127,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
 
         <div>
           <Label className="text-sm font-semibold text-espresso">Story Image</Label>
-          <p className="text-xs text-sand mb-1.5">An image to accompany the story section.</p>
+          <p className="text-xs text-sand-ink mb-1.5">An image to accompany the story section.</p>
           <DeferredMediaUploader
             value={config.aboutStoryImageUrl ?? ''}
             onChange={(url: string) => onChange({ aboutStoryImageUrl: url })}
@@ -147,7 +147,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
       <div className="space-y-4">
         <div className="rounded-lg border border-cream/40 bg-cream/20 px-3 py-2">
           <h3 className="text-sm font-semibold text-espresso">Our Mission</h3>
-          <p className="mt-0.5 text-xs text-sand">
+          <p className="mt-0.5 text-xs text-sand-ink">
             Centered italic pull-quote. Large serif heading with a green hairline
             divider above the quote.
           </p>
@@ -156,7 +156,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
           <Label htmlFor="aboutMissionTitle" className="text-sm font-semibold text-espresso">
             Mission Title
           </Label>
-          <p className="text-xs text-sand mb-1.5">Title for the &quot;Our Mission&quot; section.</p>
+          <p className="text-xs text-sand-ink mb-1.5">Title for the &quot;Our Mission&quot; section.</p>
           <Input
             id="aboutMissionTitle"
             value={config.aboutMissionTitle ?? ''}
@@ -169,7 +169,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
           <Label htmlFor="aboutMissionContent" className="text-sm font-semibold text-espresso">
             Mission Content
           </Label>
-          <p className="text-xs text-sand mb-1.5">Describe your brand&apos;s mission.</p>
+          <p className="text-xs text-sand-ink mb-1.5">Describe your brand&apos;s mission.</p>
           <Textarea
             id="aboutMissionContent"
             value={config.aboutMissionContent ?? ''}
@@ -186,7 +186,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
       <div className="space-y-4">
         <div className="rounded-lg border border-cream/40 bg-cream/20 px-3 py-2">
           <h3 className="text-sm font-semibold text-espresso">Our Values</h3>
-          <p className="mt-0.5 text-xs text-sand">
+          <p className="mt-0.5 text-xs text-sand-ink">
             Numbered 4-column card grid. Each card shows a big green index, a
             serif title and a muted description.
           </p>
@@ -195,7 +195,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
           <Label htmlFor="aboutValuesTitle" className="text-sm font-semibold text-espresso">
             Values Section Title
           </Label>
-          <p className="text-xs text-sand mb-1.5">Title for the values section.</p>
+          <p className="text-xs text-sand-ink mb-1.5">Title for the values section.</p>
           <Input
             id="aboutValuesTitle"
             value={config.aboutValuesSectionTitle ?? ''}
@@ -214,12 +214,12 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
           </div>
 
           {values.length === 0 && (
-            <p className="text-xs text-sand italic">No values added yet. Click &quot;Add Value&quot; to get started.</p>
+            <p className="text-xs text-sand-ink italic">No values added yet. Click &quot;Add Value&quot; to get started.</p>
           )}
 
           {values.map((item, index) => (
             <div key={index} className="flex gap-3 items-start border border-sand/20 rounded-lg p-3">
-              <GripVertical className="h-5 w-5 text-sand mt-2 shrink-0" />
+              <GripVertical className="h-5 w-5 text-sand-ink mt-2 shrink-0" />
               <div className="flex-1 space-y-2">
                 <Input
                   value={item.title}
@@ -253,7 +253,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
       <div className="space-y-4">
         <div className="rounded-lg border border-cream/40 bg-cream/20 px-3 py-2">
           <h3 className="text-sm font-semibold text-espresso">Call To Action (Phone)</h3>
-          <p className="mt-0.5 text-xs text-sand">
+          <p className="mt-0.5 text-xs text-sand-ink">
             The phone button shown in the &quot;Connect With Us&quot; section at the
             bottom of the About page. Leave the number empty to hide the button.
           </p>
@@ -262,7 +262,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
           <Label htmlFor="aboutPhoneLabel" className="text-sm font-semibold text-espresso">
             Button Label
           </Label>
-          <p className="text-xs text-sand mb-1.5">Text shown on the phone button.</p>
+          <p className="text-xs text-sand-ink mb-1.5">Text shown on the phone button.</p>
           <Input
             id="aboutPhoneLabel"
             value={config.aboutPhoneLabel ?? ''}
@@ -275,7 +275,7 @@ export function AboutPageTab({ config, onChange }: AboutPageTabProps) {
           <Label htmlFor="aboutPhoneNumber" className="text-sm font-semibold text-espresso">
             Phone Number
           </Label>
-          <p className="text-xs text-sand mb-1.5">
+          <p className="text-xs text-sand-ink mb-1.5">
             The number dialled when the button is tapped (e.g. +94 11 234 5678).
           </p>
           <Input

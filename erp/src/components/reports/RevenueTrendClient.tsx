@@ -128,7 +128,7 @@ function StatCard({
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-mist">{title}</CardTitle>
+        <CardTitle className="text-sm font-medium text-mist-ink">{title}</CardTitle>
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -152,7 +152,7 @@ function LineChart({
 }) {
   if (data.length === 0) {
     return (
-      <div className="flex h-48 items-center justify-center text-sm text-mist">
+      <div className="flex h-48 items-center justify-center text-sm text-mist-ink">
         No data for selected range
       </div>
     );
@@ -272,7 +272,7 @@ function LineChart({
           </circle>
         ))}
       </svg>
-      <div className="mt-1 flex items-center gap-4 text-xs text-mist">
+      <div className="mt-1 flex items-center gap-4 text-xs text-mist-ink">
         <span className="flex items-center gap-1">
           <span className="inline-block h-0.5 w-4 bg-terracotta" /> Revenue
         </span>
@@ -282,7 +282,7 @@ function LineChart({
         </span>
       </div>
       {/* x-axis labels */}
-      <div className="mt-1 flex justify-between text-[10px] text-mist">
+      <div className="mt-1 flex justify-between text-[10px] text-mist-ink">
         {data.length <= 12
           ? data.map((d) => (
               <span key={d.date}>{fmtDate(d.date, granularity)}</span>
@@ -333,7 +333,7 @@ function PeakHoursChart({ data }: { data: PeakHourPoint[] }) {
                 title={`${fmtHour(d.hour)}: ${fmtCurrency(d.revenue)} (${d.count} sales)`}
               />
             </div>
-            <span className="mt-1 text-[8px] text-mist">
+            <span className="mt-1 text-[8px] text-mist-ink">
               {d.hour % 3 === 0 ? fmtHour(d.hour) : ""}
             </span>
           </div>
@@ -429,7 +429,7 @@ export default function RevenueTrendClient() {
       {/* Revenue trend chart */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium text-mist">
+          <CardTitle className="text-sm font-medium text-mist-ink">
             Revenue &amp; Returns Over Time
           </CardTitle>
         </CardHeader>
@@ -448,7 +448,7 @@ export default function RevenueTrendClient() {
       {/* Peak hours */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium text-mist">
+          <CardTitle className="text-sm font-medium text-mist-ink">
             Peak Sales Hours
           </CardTitle>
         </CardHeader>

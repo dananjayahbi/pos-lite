@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { UpdatePettyCashFundSchema } from '@/lib/validators/petty-cash.validators';
+import {
+  TopUpPettyCashSchema,
+  UpdatePettyCashFundSchema,
+} from '@/lib/validators/petty-cash.validators';
 
 const validFundId = 'cmfund000000000000000000';
 
@@ -63,6 +66,54 @@ describe('UpdatePettyCashFundSchema — standalone fund (doc 36)', () => {
 
   it('requires fundId', () => {
     const parsed = UpdatePettyCashFundSchema.safeParse({ name: 'Float' });
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe('TopUpPettyCashSchema — Add Cash In', () => {
+  it('accepts a numeric amount and optional source / date / note', () => {
+    const parsed = TopUpPettyCashSchema.safeParse({
+      amount: 10000,
+      sourceAccountId: 'cmaccount0000000000000000',
+      description: 'Monthly float top-up',
+      entryDate: '2026-11-06',
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.amount).toBe(10000);
+      expect(parsed.data.entryDate).toBeInstanceOf(Date);
+    }
+  });
+
+  it('coerces numeric strings and allows an external (no source) top-up', () => {
+    const parsed = TopUpPettyCashSchema.safeParse({ amount: '2500.50' });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.amount).toBe(2500.5);
+      expect(parsed.data.sourceAccountId).toBeUndefined();
+    }
+  });
+
+  it('rejects zero, negative, and non-numeric amounts', () => {
+    for (const amount of [0, -1, 'abc', '']) {
+      const parsed = TopUpPettyCashSchema.safeParse({ amount });
+      expect(parsed.success, `amount=${String(amount)}`).toBe(false);
+    }
+  });
+
+  it('rejects an invalid entry date', () => {
+    const parsed = TopUpPettyCashSchema.safeParse({
+      amount: 100,
+      entryDate: 'not-a-date',
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('caps the description at 200 characters', () => {
+    const parsed = TopUpPettyCashSchema.safeParse({
+      amount: 100,
+      description: 'x'.repeat(201),
+    });
     expect(parsed.success).toBe(false);
   });
 });

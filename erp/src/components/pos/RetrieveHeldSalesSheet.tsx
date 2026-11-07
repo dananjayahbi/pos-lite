@@ -209,7 +209,7 @@ export function RetrieveHeldSalesSheet({
                 <Skeleton key={i} className="h-20 w-full rounded-lg" />
               ))
             ) : sales.length === 0 ? (
-              <p className="text-center text-mist font-body text-sm py-8">
+              <p className="text-center text-mist-ink font-body text-sm py-8">
                 No held sales for this shift
               </p>
             ) : (
@@ -230,7 +230,7 @@ export function RetrieveHeldSalesSheet({
                           <span className="font-mono text-sm text-espresso font-semibold">
                             {shortId}
                           </span>
-                          <span className="font-body text-xs text-mist">
+                          <span className="font-body text-xs text-mist-ink">
                             {relativeTime(sale.createdAt)}
                           </span>
                         </div>
@@ -262,7 +262,7 @@ export function RetrieveHeldSalesSheet({
                         <button
                           type="button"
                           onClick={() => setConfirmDeleteId(sale.id)}
-                          className="shrink-0 p-1 rounded text-mist hover:text-red-500 hover:bg-red-50 transition-colors"
+                          className="shrink-0 p-1 rounded text-mist-ink hover:text-red-500 hover:bg-red-50 transition-colors"
                           title="Delete held sale"
                         >
                           <Trash2 className="h-4 w-4" />

@@ -48,7 +48,7 @@ export function TagInput({ value, onChange, maxTags = 20 }: TagInputProps) {
             <button
               type="button"
               onClick={() => removeTag(i)}
-              className="hover:text-sand transition-colors"
+              className="hover:text-sand-ink transition-colors"
             >
               <X className="h-3 w-3" />
             </button>

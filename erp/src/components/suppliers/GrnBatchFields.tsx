@@ -53,7 +53,7 @@ export function GrnBatchFields({
     <div className="space-y-1.5 min-w-52">
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
-          <Label htmlFor={batchInputId} className="text-[11px] font-body text-mist">
+          <Label htmlFor={batchInputId} className="text-[11px] font-body text-mist-ink">
             Batch no.
           </Label>
           <Input
@@ -68,7 +68,7 @@ export function GrnBatchFields({
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor={expiryInputId} className="text-[11px] font-body text-mist">
+          <Label htmlFor={expiryInputId} className="text-[11px] font-body text-mist-ink">
             Expiry
           </Label>
           <Input
@@ -81,7 +81,7 @@ export function GrnBatchFields({
           />
         </div>
       </div>
-      <p className="text-[10px] leading-tight text-mist">
+      <p className="text-[10px] leading-tight text-mist-ink">
         Leave blank for goods without batch tracking.
       </p>
     </div>

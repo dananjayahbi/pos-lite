@@ -105,7 +105,7 @@ export function AppointmentsTab({ config, onChange }: AppointmentsTabProps) {
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <h3 className="text-sm font-semibold text-espresso">Appointments (Channelling)</h3>
-            <p className="mt-0.5 text-xs text-sand">
+            <p className="mt-0.5 text-xs text-sand-ink">
               Reference layout: a parallax hero above a glassmorphic booking
               terminal (patient details, service, physician, time slots, notes)
               with a success confirmation modal.
@@ -123,7 +123,7 @@ export function AppointmentsTab({ config, onChange }: AppointmentsTabProps) {
             </a>
           )}
         </div>
-        <div className="mt-3 flex items-center gap-2 text-xs text-sand">
+        <div className="mt-3 flex items-center gap-2 text-xs text-sand-ink">
           <span
             className={cn(
               'inline-flex h-2 w-2 rounded-full',
@@ -143,7 +143,7 @@ export function AppointmentsTab({ config, onChange }: AppointmentsTabProps) {
         <div className="flex items-center justify-between rounded-lg border border-mist bg-white p-4">
           <div>
             <p className="text-sm font-medium text-espresso">Show booking page</p>
-            <p className="text-xs text-sand mt-0.5">
+            <p className="text-xs text-sand-ink mt-0.5">
               When enabled, an Appointments link appears in the website menu and the booking
               page becomes publicly accessible.
             </p>
@@ -227,19 +227,19 @@ export function AppointmentsTab({ config, onChange }: AppointmentsTabProps) {
       {/* Service picker */}
       <div>
         <h3 className="text-sm font-semibold text-espresso mb-3">Available Services</h3>
-        <p className="text-xs text-sand mb-3">
+        <p className="text-xs text-sand-ink mb-3">
           Choose which appointment services customers can book. Leave empty to offer all
           active services.
         </p>
 
         {loadingServices ? (
-          <div className="flex items-center gap-2 text-sm text-sand py-4">
+          <div className="flex items-center gap-2 text-sm text-sand-ink py-4">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading services…
           </div>
         ) : serviceError ? (
           <p className="text-sm text-red-600 py-4">{serviceError}</p>
         ) : services.length === 0 ? (
-          <p className="text-sm text-sand py-4">
+          <p className="text-sm text-sand-ink py-4">
             No appointment services yet. Add them in the Appointments → Services page.
           </p>
         ) : (
@@ -260,7 +260,7 @@ export function AppointmentsTab({ config, onChange }: AppointmentsTabProps) {
                 >
                   <div>
                     <p className="text-sm font-medium text-espresso">{service.name}</p>
-                    <p className="text-xs text-sand mt-0.5">
+                    <p className="text-xs text-sand-ink mt-0.5">
                       {service.durationMins} min
                       {service.description ? ` · ${service.description}` : ''}
                     </p>

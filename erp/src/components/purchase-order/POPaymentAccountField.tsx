@@ -71,12 +71,12 @@ export function POPaymentAccountField({
         </SelectContent>
       </Select>
       {showBalance && selected ? (
-        <p className="flex items-center gap-1 text-xs text-mist">
+        <p className="flex items-center gap-1 text-xs text-mist-ink">
           <Wallet className="h-3 w-3" />
           Balance: <span className="font-mono">{formatRupee(selected.balance)}</span>
         </p>
       ) : (
-        <p className="text-xs text-mist">
+        <p className="text-xs text-mist-ink">
           {accounts.length === 0 && !isLoading
             ? 'No active payment accounts — create one under Payment Accounts.'
             : 'Which account the payable will be settled from.'}

@@ -258,12 +258,12 @@ export function CartPanel({ shiftId }: CartPanelProps) {
             <button
               type="button"
               onClick={() => setAddCustomerOpen(true)}
-              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-sand px-3 py-1.5 font-body text-xs text-sand hover:text-espresso hover:border-terracotta transition-colors"
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-sand px-3 py-1.5 font-body text-xs text-sand-ink hover:text-espresso hover:border-terracotta transition-colors"
             >
               <UserPlus className="h-3.5 w-3.5" />
               Add Customer
             </button>
-            <p className="text-center font-body text-[11px] text-mist">
+            <p className="text-center font-body text-[11px] text-mist-ink">
               No customer selected — this will be billed as a guest sale.
             </p>
           </div>
@@ -278,7 +278,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
                   </p>
                 )}
               </div>
-              <button type="button" onClick={() => { unlinkCustomer(); }} className="text-mist hover:text-espresso transition-colors" aria-label="Unlink customer">
+              <button type="button" onClick={() => { unlinkCustomer(); }} className="text-mist-ink hover:text-espresso transition-colors" aria-label="Unlink customer">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -286,7 +286,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <span className="font-body text-xs text-espresso">Use Store Credit</span>
-                  <span className="font-body text-[10px] text-mist ml-1">
+                  <span className="font-body text-[10px] text-mist-ink ml-1">
                     ({formatRupee(linkedCustomerCreditBalance)} available)
                   </span>
                 </div>
@@ -312,7 +312,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
       {/* Line items (scrollable) */}
       <div className="flex-1 overflow-y-auto">
         {!hasItems ? (
-          <div className="flex flex-col items-center justify-center h-full text-mist">
+          <div className="flex flex-col items-center justify-center h-full text-mist-ink">
             <ShoppingBag className="h-10 w-10 mb-2" />
             <p className="font-body text-sm">Cart is empty — add a product to start</p>
           </div>
@@ -346,7 +346,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
                   setPromoCode(null);
                   evaluatePromotionsAction();
                 }}
-                className="text-mist hover:text-[#9B2226] transition-colors"
+                className="text-mist-ink hover:text-[#9B2226] transition-colors"
                 aria-label="Remove promo code"
               >
                 <X className="h-3.5 w-3.5" />
@@ -362,7 +362,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
                 value={promoCodeInput}
                 onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
                 placeholder="Promo code"
-                className="flex-1 px-2 py-1.5 border border-mist/50 rounded text-xs font-mono bg-pearl text-espresso placeholder:text-mist/50 focus:outline-none focus:border-terracotta"
+                className="flex-1 px-2 py-1.5 border border-mist/50 rounded text-xs font-mono bg-pearl text-espresso placeholder:text-mist-ink/50 focus:outline-none focus:border-terracotta"
               />
               <button
                 type="button"

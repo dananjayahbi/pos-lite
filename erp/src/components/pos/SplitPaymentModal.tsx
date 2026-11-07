@@ -192,7 +192,7 @@ export function SplitPaymentModal({
       >
         <DialogHeader>
           <DialogTitle className="font-display">Split Payment</DialogTitle>
-          <DialogDescription className="font-body text-sm text-mist">
+          <DialogDescription className="font-body text-sm text-mist-ink">
             Part digital (card / LankaQR), part cash — both amounts must add up
             to the total.
           </DialogDescription>
@@ -201,7 +201,7 @@ export function SplitPaymentModal({
         <div className="space-y-4">
           {/* Total Due */}
           <div>
-            <p className="text-xs font-body uppercase tracking-wide text-mist">
+            <p className="text-xs font-body uppercase tracking-wide text-mist-ink">
               Total Due
             </p>
             <p className="font-mono text-3xl font-bold text-espresso">
@@ -246,7 +246,7 @@ export function SplitPaymentModal({
               Amount to charge to {isQrLeg ? 'LankaQR' : 'card'}
             </label>
             <div className="flex items-center gap-2">
-              <span className="shrink-0 font-body text-sm text-mist">Rs.</span>
+              <span className="shrink-0 font-body text-sm text-mist-ink">Rs.</span>
               <Input
                 type="text"
                 inputMode="decimal"
@@ -270,13 +270,13 @@ export function SplitPaymentModal({
             </label>
             <div className="rounded-lg border border-sand/30 bg-sand/20 px-3 py-2">
               {cashAmount === null ? (
-                <span className="font-mono text-lg text-mist">—</span>
+                <span className="font-mono text-lg text-mist-ink">—</span>
               ) : cashAmount.eq(0) ? (
                 <div>
                   <span className="font-mono text-lg text-espresso">
                     Rs. 0.00
                   </span>
-                  <p className="mt-0.5 text-xs font-body text-mist">
+                  <p className="mt-0.5 text-xs font-body text-mist-ink">
                     Entire amount on card — no cash needed
                   </p>
                 </div>
@@ -296,7 +296,7 @@ export function SplitPaymentModal({
           {parsedCardAmount !== null && cashAmount !== null && (
             <div
               className={`flex items-center gap-1.5 font-mono text-sm ${
-                allocationMatches ? 'text-[#2D6A4F]' : 'text-mist'
+                allocationMatches ? 'text-[#2D6A4F]' : 'text-mist-ink'
               }`}
             >
               {allocationMatches && (
@@ -320,7 +320,7 @@ export function SplitPaymentModal({
                 Cash Received
               </label>
               <div className="flex items-center gap-2">
-                <span className="shrink-0 font-body text-sm text-mist">
+                <span className="shrink-0 font-body text-sm text-mist-ink">
                   Rs.
                 </span>
                 <Input
@@ -334,11 +334,11 @@ export function SplitPaymentModal({
               </div>
               {/* Change display */}
               <div className="mt-1.5">
-                <p className="mb-0.5 text-xs font-body uppercase tracking-wide text-mist">
+                <p className="mb-0.5 text-xs font-body uppercase tracking-wide text-mist-ink">
                   Change
                 </p>
                 {changeResult.type === 'empty' && (
-                  <p className="font-mono text-base text-mist">—</p>
+                  <p className="font-mono text-base text-mist-ink">—</p>
                 )}
                 {changeResult.type === 'sufficient' && (
                   <p className="font-mono text-base text-[#2D6A4F]">
@@ -367,7 +367,7 @@ export function SplitPaymentModal({
                     : 'Used for reconciliation with your card terminal'
                 }
               >
-                <Info className="h-3.5 w-3.5 text-mist cursor-help" />
+                <Info className="h-3.5 w-3.5 text-mist-ink cursor-help" />
               </span>
             </div>
             <Input
@@ -406,7 +406,7 @@ export function SplitPaymentModal({
             <button
               type="button"
               onClick={onClose}
-              className="w-full text-center font-body text-sm text-mist hover:text-espresso transition-colors"
+              className="w-full text-center font-body text-sm text-mist-ink hover:text-espresso transition-colors"
             >
               Cancel
             </button>

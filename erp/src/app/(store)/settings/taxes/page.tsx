@@ -31,7 +31,7 @@ export default async function TaxSettingsPage() {
     <div className="mx-auto w-full max-w-3xl space-y-6 p-6">
       <div>
         <h1 className="font-display text-2xl font-bold text-espresso">Tax settings</h1>
-        <p className="mt-1 text-sm text-sand">
+        <p className="mt-1 text-sm text-sand-ink">
           Configure the store-wide rates that sales use when products are tagged with VAT or SSCL tax rules.
         </p>
       </div>

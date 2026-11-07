@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import Papa from 'papaparse';
 import { Gender } from '@/generated/prisma/client';
 import {
+  CUSTOMER_IMPORT_COLUMNS,
   CustomerCsvRowSchema,
   normalizeSriLankaPhone,
 } from '@/lib/validators/customer-import.validators';
@@ -82,11 +83,27 @@ export async function POST(request: Request) {
       );
     }
 
-    const csvText = await file.text();
+    const csvText = (await file.text()).replace(/^\uFEFF/, '');
     const parsed = Papa.parse<Record<string, string>>(csvText, {
       header: true,
       skipEmptyLines: true,
+      transformHeader: (header) => header.trim(),
     });
+
+    const fields = (parsed.meta.fields ?? []).map((field) => field.trim());
+    const missingHeaders = ['Name', 'Phone'].filter((header) => !fields.includes(header));
+    if (missingHeaders.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_HEADERS',
+            message: `CSV is missing required column(s): ${missingHeaders.join(', ')}. Expected columns: ${CUSTOMER_IMPORT_COLUMNS.join(', ')}.`,
+          },
+        },
+        { status: 400 },
+      );
+    }
 
     if (parsed.data.length > MAX_ROWS) {
       return NextResponse.json(
@@ -111,7 +128,10 @@ export async function POST(request: Request) {
       tenantId: string;
       name: string;
       phone: string;
+      phone2: string | null;
       email: string | null;
+      address: string | null;
+      city: string | null;
       gender: Gender | null;
       birthday: Date | null;
       tags: string[];
@@ -142,13 +162,19 @@ export async function POST(request: Request) {
       const birthday = parseBirthday(row.Birthday);
       const tags = parseTags(row.Tags);
       const email = row.Email && row.Email.trim() !== '' ? row.Email.trim() : null;
+      const phone2 = row.Phone2 && row.Phone2.trim() !== '' ? row.Phone2.trim() : null;
+      const address = row.Address && row.Address.trim() !== '' ? row.Address.trim() : null;
+      const city = row.City && row.City.trim() !== '' ? row.City.trim() : null;
       const notes = row.Notes && row.Notes.trim() !== '' ? row.Notes.trim() : null;
 
       toCreate.push({
         tenantId,
         name,
         phone,
+        phone2,
         email,
+        address,
+        city,
         gender: gender ?? null,
         birthday: birthday ?? null,
         tags,

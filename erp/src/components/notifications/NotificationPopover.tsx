@@ -114,8 +114,8 @@ export function NotificationPopover() {
         <div className="max-h-[360px] overflow-y-auto">
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10">
-              <Bell className="h-8 w-8 text-mist" />
-              <p className="font-body text-sm text-mist">
+              <Bell className="h-8 w-8 text-mist-ink" />
+              <p className="font-body text-sm text-mist-ink">
                 You&apos;re all caught up!
               </p>
             </div>
@@ -139,10 +139,10 @@ export function NotificationPopover() {
                     <p className="truncate font-body text-sm font-medium text-espresso">
                       {n.title}
                     </p>
-                    <p className="mt-0.5 line-clamp-2 font-body text-xs text-mist">
+                    <p className="mt-0.5 line-clamp-2 font-body text-xs text-mist-ink">
                       {n.body}
                     </p>
-                    <p className="mt-1 font-mono text-[10px] text-mist/70">
+                    <p className="mt-1 font-mono text-[10px] text-mist-ink/70">
                       {formatRelativeTime(n.createdAt)}
                     </p>
                   </div>

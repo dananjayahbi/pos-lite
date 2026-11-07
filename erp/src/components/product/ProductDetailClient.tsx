@@ -162,7 +162,7 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
   if (isLoading) {
     return (
       <div className="space-y-6 p-6 md:p-8">
-        <div className="flex items-center gap-2 text-sm text-mist">
+        <div className="flex items-center gap-2 text-sm text-mist-ink">
           <Skeleton className="h-4 w-16" />
           <Skeleton className="h-4 w-32" />
         </div>
@@ -201,10 +201,10 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
     <div className="space-y-6 p-6 md:p-8">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1 text-sm font-body">
-        <Link href="/inventory" className="text-mist hover:text-espresso transition-colors">
+        <Link href="/inventory" className="text-mist-ink hover:text-espresso transition-colors">
           Inventory
         </Link>
-        <ChevronRight className="h-4 w-4 text-mist" />
+        <ChevronRight className="h-4 w-4 text-mist-ink" />
         <span className="text-espresso font-medium truncate max-w-[200px]">{product.name}</span>
       </nav>
 
@@ -292,7 +292,7 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
             className={`px-4 py-2.5 text-sm font-body font-medium transition-colors relative ${
               activeTab === tab.key
                 ? 'text-espresso'
-                : 'text-mist hover:text-espresso'
+                : 'text-mist-ink hover:text-espresso'
             }`}
             onClick={() => setActiveTab(tab.key)}
           >
@@ -334,7 +334,7 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="font-display text-espresso">Delete Product</DialogTitle>
-            <DialogDescription className="font-body text-mist">
+            <DialogDescription className="font-body text-mist-ink">
               This action cannot be undone. Type <strong className="text-espresso">{product.name}</strong> to confirm.
             </DialogDescription>
           </DialogHeader>
@@ -433,7 +433,7 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
       <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
         <SheetHeader>
           <SheetTitle className="font-display text-espresso">Edit Product</SheetTitle>
-          <SheetDescription className="font-body text-mist">
+          <SheetDescription className="font-body text-mist-ink">
             Update product information
           </SheetDescription>
         </SheetHeader>
@@ -573,7 +573,7 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
                 <SelectItem value="TRADED">Traded</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-mist">
+            <p className="text-xs text-mist-ink">
               Manufactured goods are eligible for Bill of Materials &amp;
               production; traded goods are resold as-is.
             </p>

@@ -87,7 +87,7 @@ export function FooterTab({ config, onChange }: FooterTabProps) {
         </Button>
       </div>
 
-      <p className="text-xs text-sand">
+      <p className="text-xs text-sand-ink">
         The footer has 3 columns. Column 3 is always &quot;About Us&quot;. Add up to 2 custom columns here.
       </p>
 
@@ -99,7 +99,7 @@ export function FooterTab({ config, onChange }: FooterTabProps) {
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <GripVertical className="h-4 w-4 text-sand cursor-grab" />
+                <GripVertical className="h-4 w-4 text-sand-ink cursor-grab" />
                 <Input
                   value={col.title}
                   onChange={(e) => updateColumn(colIndex, { title: e.target.value })}

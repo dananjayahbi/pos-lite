@@ -162,7 +162,7 @@ export function CategoryPicker({
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 py-4 text-xs text-sand">
+      <div className="flex items-center gap-2 py-4 text-xs text-sand-ink">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         Loading categories&hellip;
       </div>
@@ -194,7 +194,7 @@ export function CategoryPicker({
                 <span className="max-w-35 truncate">{cat?.name ?? id}</span>
                 <button
                   type="button"
-                  className="ml-0.5 rounded-full p-0.5 text-sand hover:bg-mist hover:text-red-500 transition-colors"
+                  className="ml-0.5 rounded-full p-0.5 text-sand-ink hover:bg-mist hover:text-red-500 transition-colors"
                   onClick={() => removeCategory(id)}
                   aria-label={`Remove ${cat?.name ?? id}`}
                 >
@@ -208,7 +208,7 @@ export function CategoryPicker({
 
       {/* Count + max hint */}
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-xs text-sand">
+        <span className="text-xs text-sand-ink">
           {selectedIds.length} / {max} selected
         </span>
         {isMaxReached && (
@@ -218,7 +218,7 @@ export function CategoryPicker({
 
       {/* Trigger input */}
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-sand" />
+        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-sand-ink" />
         <Input
           value={search}
           onChange={(e) => {
@@ -232,7 +232,7 @@ export function CategoryPicker({
         />
         <ChevronDown
           className={cn(
-            'absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-sand transition-transform',
+            'absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-sand-ink transition-transform',
             isOpen && 'rotate-180',
           )}
         />
@@ -250,7 +250,7 @@ export function CategoryPicker({
             <div className="max-h-64 overflow-y-auto">
               {filteredResults.length === 0 ? (
                 <div className="flex items-center justify-center px-4 py-6">
-                  <span className="text-xs text-sand">No categories match</span>
+                  <span className="text-xs text-sand-ink">No categories match</span>
                 </div>
               ) : (
                 <>
@@ -275,7 +275,7 @@ export function CategoryPicker({
                           {cat.name}
                         </span>
                         {cat.description && (
-                          <span className="block truncate text-xs text-sand">
+                          <span className="block truncate text-xs text-sand-ink">
                             {cat.description}
                           </span>
                         )}
@@ -313,7 +313,7 @@ export function CategoryPicker({
                           {cat.name}
                         </span>
                         {cat.description && (
-                          <span className="block truncate text-xs text-sand">
+                          <span className="block truncate text-xs text-sand-ink">
                             {cat.description}
                           </span>
                         )}
@@ -326,7 +326,7 @@ export function CategoryPicker({
 
             {isMaxReached && (
               <div className="border-t border-mist px-3 py-1.5">
-                <p className="text-xs text-sand">Max {max} categories selected</p>
+                <p className="text-xs text-sand-ink">Max {max} categories selected</p>
               </div>
             )}
           </div>,

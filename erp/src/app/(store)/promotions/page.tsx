@@ -326,7 +326,7 @@ function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmit
 
       {preview && (
         <div className="rounded-lg border border-mist/50 bg-linen p-3">
-          <p className="font-body text-xs text-mist mb-1">Preview</p>
+          <p className="font-body text-xs text-mist-ink mb-1">Preview</p>
           <p className="font-body text-sm text-espresso">{preview}</p>
         </div>
       )}
@@ -467,7 +467,7 @@ export default function PromotionsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-2xl text-espresso">Promotions</h1>
-          <p className="font-body text-sm text-mist">
+          <p className="font-body text-sm text-mist-ink">
             {activeCount} active promotion{activeCount !== 1 ? 's' : ''}
           </p>
         </div>
@@ -508,19 +508,19 @@ export default function PromotionsPage() {
         <TabsContent value="promotions" className="space-y-6">
           <div className="grid gap-4 md:grid-cols-3">
             <div className="rounded-xl border border-mist/30 bg-pearl p-4">
-              <p className="font-body text-xs uppercase tracking-wide text-mist">Active now</p>
+              <p className="font-body text-xs uppercase tracking-wide text-mist-ink">Active now</p>
               <p className="mt-2 font-display text-2xl text-espresso">{activeCount}</p>
-              <p className="mt-1 text-sm text-sand">Inline create/edit still covers the common workflows cleanly.</p>
+              <p className="mt-1 text-sm text-sand-ink">Inline create/edit still covers the common workflows cleanly.</p>
             </div>
             <div className="rounded-xl border border-mist/30 bg-pearl p-4">
-              <p className="font-body text-xs uppercase tracking-wide text-mist">Scheduled windows</p>
+              <p className="font-body text-xs uppercase tracking-wide text-mist-ink">Scheduled windows</p>
               <p className="mt-2 font-display text-2xl text-espresso">{timedCount}</p>
-              <p className="mt-1 text-sm text-sand">Timed promotions stay easy to scan without adding route sprawl.</p>
+              <p className="mt-1 text-sm text-sand-ink">Timed promotions stay easy to scan without adding route sprawl.</p>
             </div>
             <div className="rounded-xl border border-mist/30 bg-pearl p-4">
-              <p className="font-body text-xs uppercase tracking-wide text-mist">Promo codes</p>
+              <p className="font-body text-xs uppercase tracking-wide text-mist-ink">Promo codes</p>
               <p className="mt-2 font-display text-2xl text-espresso">{promoCodeCount}</p>
-              <p className="mt-1 text-sm text-sand">If this grows into a monster, we can graduate it to a dedicated page later.</p>
+              <p className="mt-1 text-sm text-sand-ink">If this grows into a monster, we can graduate it to a dedicated page later.</p>
             </div>
           </div>
 
@@ -533,20 +533,20 @@ export default function PromotionsPage() {
             </div>
           ) : promotions.length === 0 ? (
             <div className="text-center py-16">
-              <p className="font-body text-mist">No promotions yet. Create one to get started.</p>
+              <p className="font-body text-mist-ink">No promotions yet. Create one to get started.</p>
             </div>
           ) : (
             <div className="border border-mist/30 rounded-lg overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-linen/50">
-                    <TableHead className="font-body text-xs text-mist font-medium">Name</TableHead>
-                    <TableHead className="font-body text-xs text-mist font-medium">Type</TableHead>
-                    <TableHead className="font-body text-xs text-mist font-medium">Value</TableHead>
-                    <TableHead className="font-body text-xs text-mist font-medium">Promo Code</TableHead>
-                    <TableHead className="font-body text-xs text-mist font-medium">Status</TableHead>
-                    <TableHead className="font-body text-xs text-mist font-medium">Valid Window</TableHead>
-                    <TableHead className="font-body text-xs text-mist font-medium">Actions</TableHead>
+                    <TableHead className="font-body text-xs text-mist-ink font-medium">Name</TableHead>
+                    <TableHead className="font-body text-xs text-mist-ink font-medium">Type</TableHead>
+                    <TableHead className="font-body text-xs text-mist-ink font-medium">Value</TableHead>
+                    <TableHead className="font-body text-xs text-mist-ink font-medium">Promo Code</TableHead>
+                    <TableHead className="font-body text-xs text-mist-ink font-medium">Status</TableHead>
+                    <TableHead className="font-body text-xs text-mist-ink font-medium">Valid Window</TableHead>
+                    <TableHead className="font-body text-xs text-mist-ink font-medium">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -555,10 +555,10 @@ export default function PromotionsPage() {
                       <TableCell className="font-body text-sm text-espresso font-medium">
                         <div>{promo.name}</div>
                         {promo.type === 'PRODUCT_PERCENTAGE' && promo.targetProduct && (
-                          <div className="mt-0.5 text-xs font-normal text-mist">Product: {promo.targetProduct.name}</div>
+                          <div className="mt-0.5 text-xs font-normal text-mist-ink">Product: {promo.targetProduct.name}</div>
                         )}
                         {promo.type === 'CATEGORY_PERCENTAGE' && promo.targetCategory && (
-                          <div className="mt-0.5 text-xs font-normal text-mist">Category: {promo.targetCategory.name}</div>
+                          <div className="mt-0.5 text-xs font-normal text-mist-ink">Category: {promo.targetCategory.name}</div>
                         )}
                       </TableCell>
                       <TableCell>
@@ -569,7 +569,7 @@ export default function PromotionsPage() {
                       <TableCell className="font-mono text-sm text-espresso">
                         {formatValue(promo.type, promo.value)}
                       </TableCell>
-                      <TableCell className="font-mono text-sm text-mist">
+                      <TableCell className="font-mono text-sm text-mist-ink">
                         {promo.type === 'PROMO_CODE' && promo.promoCode ? promo.promoCode : '—'}
                       </TableCell>
                       <TableCell>
@@ -580,7 +580,7 @@ export default function PromotionsPage() {
                           }
                         />
                       </TableCell>
-                      <TableCell className="font-body text-xs text-mist">
+                      <TableCell className="font-body text-xs text-mist-ink">
                         {formatDateRange(promo.startsAt, promo.endsAt)}
                       </TableCell>
                       <TableCell>

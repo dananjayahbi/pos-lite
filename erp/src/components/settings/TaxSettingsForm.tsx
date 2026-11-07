@@ -110,7 +110,7 @@ export default function TaxSettingsForm({ initialValues }: Props) {
 
           <div className="md:col-span-2 rounded-lg border border-mist bg-pearl/50 p-4">
             <p className="text-sm font-medium text-espresso">How product tax rules resolve</p>
-            <div className="mt-3 space-y-2 text-sm text-sand">
+            <div className="mt-3 space-y-2 text-sm text-sand-ink">
               {previewRules.map((rule) => (
                 <div key={rule.name} className="flex items-center justify-between rounded-md bg-white px-3 py-2">
                   <span className="font-mono text-xs text-espresso">{rule.name}</span>

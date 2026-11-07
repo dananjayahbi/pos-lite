@@ -92,7 +92,7 @@ export function ExportPopover({ permissions, totalCount, activeFilters }: Export
             </button>
           ) : (
             <div
-              className="w-full rounded-md px-3 py-2 text-left font-body text-sm text-mist cursor-not-allowed"
+              className="w-full rounded-md px-3 py-2 text-left font-body text-sm text-mist-ink cursor-not-allowed"
               title="Select products first"
             >
               Export selected products (0 selected)

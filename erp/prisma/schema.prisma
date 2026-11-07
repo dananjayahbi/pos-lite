@@ -456,6 +456,20 @@ model User {
   deletedAt      DateTime?
   commissionRate Decimal?  @db.Decimal(5, 2)
   clockedInAt    DateTime?
+  // HR profile collected by the staff onboarding form.
+  fullName           String?
+  nic                String?
+  contactNumber      String?
+  address            String?
+  // Salary components used for payslips / ETF / EPF calculations.
+  basicSalary        Decimal? @db.Decimal(12, 2)
+  allowances         Decimal? @db.Decimal(12, 2)
+  // Banking and statutory identifiers.
+  bankName           String?
+  bankBranch         String?
+  bankAccountNumber  String?
+  etfNumber          String?
+  epfNumber          String?
 
   sessions                      Session[]
   stockMovements                StockMovement[]
@@ -475,6 +489,8 @@ model User {
   commissionPayoutsAsUser       CommissionPayout[]   @relation("PayoutUser")
   commissionPayoutsAsAuthorizer CommissionPayout[]   @relation("PayoutAuthorizer")
   timeClocks                    TimeClock[]
+  attendanceDays                AttendanceDay[]      @relation("AttendanceDayUser")
+  attendanceRecordedBy          AttendanceDay[]      @relation("AttendanceDayRecorder")
   expenses                      Expense[]
   authorizedCashMovements       CashMovement[]
   savedReports                  SavedReport[]
@@ -611,6 +627,7 @@ model Tenant {
   commissionRecords           CommissionRecord[]
   commissionPayouts           CommissionPayout[]
   timeClocks                  TimeClock[]
+  attendanceDays              AttendanceDay[]
   promotions                  Promotion[]
   customerPricingRules        CustomerPricingRule[]
   expenses                    Expense[]
@@ -1285,7 +1302,13 @@ model Customer {
   tenant                      Tenant    @relation(fields: [tenantId], references: [id])
   name                        String
   phone                       String
+  // Optional secondary contact number (e.g. a family member or office line).
+  phone2                      String?
   email                       String?
+  // Postal / billing address captured on the customer card. `city` stores the
+  // Trans Express city name so the value can be reused for courier dispatch.
+  address                     String?
+  city                        String?
   gender                      Gender?
   birthday                    DateTime?
   lastBirthdayMessageSentYear Int?
@@ -1429,15 +1452,30 @@ model PurchaseOrderLine {
   @@map("purchase_order_lines")
 }
 
+enum BroadcastChannel {
+  EMAIL
+  SMS
+  // Legacy channel retained so historical rows keep a valid value.
+  WHATSAPP
+}
+
 model CustomerBroadcast {
-  id             String   @id @default(cuid())
+  id             String           @id @default(cuid())
   tenantId       String
-  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  tenant         Tenant           @relation(fields: [tenantId], references: [id])
+  channel        BroadcastChannel @default(EMAIL)
+  // Email subject. Null for SMS.
+  subject        String?
+  // Delivery body: the SMS text, or the plain-text fallback for email.
   message        String
-  sentAt         DateTime @default(now())
+  // Email HTML template (already personalised at send time). Null for SMS.
+  htmlBody       String?
+  // Public image URLs attached to an email broadcast.
+  imageUrls      String[]         @default([])
+  sentAt         DateTime         @default(now())
   recipientCount Int
   sentById       String
-  sentBy         User     @relation(fields: [sentById], references: [id])
+  sentBy         User             @relation(fields: [sentById], references: [id])
   filters        Json
 
   @@index([tenantId])
@@ -1521,6 +1559,37 @@ model TimeClock {
   @@map("time_clocks")
 }
 
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LEAVE
+  HALF_DAY
+  HOLIDAY
+}
+
+// Per-staff, per-day attendance override. TimeClock still records the actual
+// punches; this row carries the human status (Leave/Absent/Half Day) and notes
+// set from the all-staff attendance view.
+model AttendanceDay {
+  id           String           @id @default(cuid())
+  tenantId     String
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User             @relation("AttendanceDayUser", fields: [userId], references: [id], onDelete: Cascade)
+  // Date-only (no time component) in the tenant's local calendar.
+  date         DateTime         @db.Date
+  status       AttendanceStatus @default(PRESENT)
+  notes        String?
+  recordedById String
+  recordedBy   User             @relation("AttendanceDayRecorder", fields: [recordedById], references: [id])
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([tenantId, userId, date])
+  @@index([tenantId, date])
+  @@map("attendance_days")
+}
+
 model Promotion {
   id               String        @id @default(cuid())
   tenantId         String
@@ -1598,6 +1667,10 @@ model PettyCashFund {
   id                 String           @id @default(cuid())
   tenantId           String
   tenant             Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // The default CASH account this float is backed by. Every top-up and linked
+  // expense posts to this account's ledger so /payment-accounts stays in sync.
+  paymentAccountId   String?          @unique
+  paymentAccount     PaymentAccount?  @relation(fields: [paymentAccountId], references: [id], onDelete: SetNull)
   name               String           @default("Main Petty Cash")
   currency           String           @default("LKR")
   openingBalance     Decimal          @db.Decimal(12, 2)
@@ -2541,6 +2614,8 @@ model PaymentAccount {
   updatedAt     DateTime             @updatedAt
 
   entries PaymentAccountEntry[]
+  // Back-relation for the petty-cash float this account backs (if any).
+  pettyCashFund PettyCashFund?
 
   @@unique([tenantId, name])
   @@index([tenantId, status])

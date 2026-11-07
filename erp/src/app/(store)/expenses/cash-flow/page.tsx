@@ -108,7 +108,7 @@ export default function CashFlowPage() {
       {/* Date Range + Generate */}
       <div className="flex flex-wrap items-end gap-4">
         <div>
-          <Label className="text-sm text-sand">From</Label>
+          <Label className="text-sm text-sand-ink">From</Label>
           <Input
             type="date"
             value={dateFrom}
@@ -117,7 +117,7 @@ export default function CashFlowPage() {
           />
         </div>
         <div>
-          <Label className="text-sm text-sand">To</Label>
+          <Label className="text-sm text-sand-ink">To</Label>
           <Input
             type="date"
             value={dateTo}
@@ -141,14 +141,14 @@ export default function CashFlowPage() {
 
       {/* No query yet */}
       {!queryDates && !isLoading && (
-        <div className="py-16 text-center text-sand">
+        <div className="py-16 text-center text-sand-ink">
           Select a date range and click &quot;Generate Report&quot; to view the cash flow statement.
         </div>
       )}
 
       {/* Empty state */}
       {queryDates && !isLoading && data && !hasActivity && (
-        <div className="py-16 text-center text-sand">
+        <div className="py-16 text-center text-sand-ink">
           No financial activity recorded for this period.
         </div>
       )}
@@ -209,11 +209,11 @@ export default function CashFlowPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex justify-between">
-                <span className="text-sand">Gross Sales</span>
+                <span className="text-sand-ink">Gross Sales</span>
                 <span className="font-mono text-espresso">{formatRupee(data.grossIncome)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sand">Refunds</span>
+                <span className="text-sand-ink">Refunds</span>
                 <span className="font-mono text-terracotta">-{formatRupee(data.refunds)}</span>
               </div>
               <div className="my-2 border-t border-mist" />
@@ -222,7 +222,7 @@ export default function CashFlowPage() {
                 <span className="font-mono text-espresso">{formatRupee(data.totalIncome)}</span>
               </div>
               {data.incomeByMethod.length > 0 && (
-                <p className="mt-2 text-sm text-sand">
+                <p className="mt-2 text-sm text-sand-ink">
                   {data.incomeByMethod
                     .map((m) => `${METHOD_LABELS[m.method] ?? m.method}: ${formatRupee(m.total)}`)
                     .join(' · ')}
@@ -307,7 +307,7 @@ export default function CashFlowPage() {
                     {data.paymentAccountActivity.map((account) => (
                       <TableRow key={account.accountId}>
                         <TableCell className="font-medium">{account.accountName}</TableCell>
-                        <TableCell className="text-sand">{account.accountType.replace(/_/g, ' ')}</TableCell>
+                        <TableCell className="text-sand-ink">{account.accountType.replace(/_/g, ' ')}</TableCell>
                         <TableCell className="text-right font-mono text-green-700">
                           {formatRupee(account.debit)}
                         </TableCell>
@@ -343,7 +343,7 @@ export default function CashFlowPage() {
                     </TableRow>
                   </TableBody>
                 </Table>
-                <p className="mt-2 text-xs text-sand">
+                <p className="mt-2 text-xs text-sand-ink">
                   Ledger totals include sales, refunds, expenses, deposits, withdrawals and internal
                   transfers for the selected window. Internal transfers net to zero.
                 </p>

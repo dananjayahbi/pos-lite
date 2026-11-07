@@ -7,6 +7,7 @@ import { postLogoutAudit } from '@/lib/auth/logout-audit';
 import type { UserRole } from '@/generated/prisma/client';
 import StoreSidebar from '@/components/layout/StoreSidebar';
 import { NotificationPopover } from '@/components/notifications/NotificationPopover';
+import { TimeClockWidget } from '@/components/shared/TimeClockWidget';
 import NavSearchTrigger from '@/components/navigation/NavSearchTrigger';
 import NavSearchModal from '@/components/navigation/NavSearchModal';
 import { useCommandK } from '@/hooks/useCommandK';
@@ -64,6 +65,7 @@ export default function StoreLayoutClient({
             <header className="sticky top-0 z-40 hidden items-center justify-between border-b border-mist bg-pearl/95 px-6 py-3 backdrop-blur-sm md:flex">
               <NavSearchTrigger onOpen={() => setGlobalSearchOpen(true)} />
               <div className="flex items-center gap-3">
+                <TimeClockWidget variant="compact" />
                 <NotificationPopover />
                 <span className="max-w-[180px] truncate rounded-full bg-linen px-3 py-1 text-xs text-espresso/70">
                   {userName}
@@ -110,7 +112,7 @@ export default function StoreLayoutClient({
                 ) : null}
                 <div>
                   <p className="font-display text-lg font-bold text-espresso">{businessName}</p>
-                  <p className="text-xs uppercase tracking-[0.2em] text-sand">{userRole.replace(/_/g, ' ')}</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">{userRole.replace(/_/g, ' ')}</p>
                 </div>
               </div>
             </header>

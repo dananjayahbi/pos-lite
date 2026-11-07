@@ -112,7 +112,7 @@ export function CustomerPricingTab() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-display text-lg text-espresso">Customer Pricing</h2>
-          <p className="font-body text-sm text-mist">
+          <p className="font-body text-sm text-mist-ink">
             {activeCount} active rule{activeCount === 1 ? '' : 's'} — tagged customers get the
             rule price when it is below the normal selling price.
           </p>
@@ -133,11 +133,11 @@ export function CustomerPricingTab() {
           ))}
         </div>
       ) : isError ? (
-        <div className="rounded-lg border border-mist/40 bg-linen p-6 text-sm text-mist">
+        <div className="rounded-lg border border-mist/40 bg-linen p-6 text-sm text-mist-ink">
           Customer pricing rules could not be loaded. Reload the page to try again.
         </div>
       ) : rules.length === 0 ? (
-        <div className="rounded-lg border border-mist/40 bg-linen p-6 text-center text-sm text-mist">
+        <div className="rounded-lg border border-mist/40 bg-linen p-6 text-center text-sm text-mist-ink">
           No customer pricing rules yet. Add one to give a tagged customer a special price.
         </div>
       ) : (
@@ -145,12 +145,12 @@ export function CustomerPricingTab() {
           <Table>
             <TableHeader>
               <TableRow className="bg-linen/50">
-                <TableHead className="font-body text-xs text-mist font-medium">Customer tag</TableHead>
-                <TableHead className="font-body text-xs text-mist font-medium">Variant</TableHead>
-                <TableHead className="font-body text-xs text-mist font-medium">Rule price</TableHead>
-                <TableHead className="font-body text-xs text-mist font-medium">Valid window</TableHead>
-                <TableHead className="font-body text-xs text-mist font-medium">Status</TableHead>
-                <TableHead className="font-body text-xs text-mist font-medium">Actions</TableHead>
+                <TableHead className="font-body text-xs text-mist-ink font-medium">Customer tag</TableHead>
+                <TableHead className="font-body text-xs text-mist-ink font-medium">Variant</TableHead>
+                <TableHead className="font-body text-xs text-mist-ink font-medium">Rule price</TableHead>
+                <TableHead className="font-body text-xs text-mist-ink font-medium">Valid window</TableHead>
+                <TableHead className="font-body text-xs text-mist-ink font-medium">Status</TableHead>
+                <TableHead className="font-body text-xs text-mist-ink font-medium">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -167,7 +167,7 @@ export function CustomerPricingTab() {
         </div>
       )}
 
-      <p className="font-body text-xs text-mist">
+      <p className="font-body text-xs text-mist-ink">
         Deactivating a rule stops it applying to carts immediately; the row is kept for audit
         history rather than deleted.
       </p>

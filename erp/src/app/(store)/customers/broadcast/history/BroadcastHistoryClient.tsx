@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { ArrowLeft, PieChart, Send } from 'lucide-react';
+import { ArrowLeft, PieChart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -12,6 +12,8 @@ import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface BroadcastHistoryItem {
   id: string;
+  channel: 'EMAIL' | 'SMS' | 'WHATSAPP';
+  subject: string | null;
   message: string;
   sentAt: string;
   recipientCount: number;
@@ -20,6 +22,18 @@ interface BroadcastHistoryItem {
   analytics: Record<string, unknown>;
   status?: string;
 }
+
+const CHANNEL_LABEL: Record<BroadcastHistoryItem['channel'], string> = {
+  EMAIL: 'Email',
+  SMS: 'SMS',
+  WHATSAPP: 'WhatsApp',
+};
+
+const CHANNEL_CLASS: Record<BroadcastHistoryItem['channel'], string> = {
+  EMAIL: 'border border-blue-200 bg-blue-50 text-blue-700',
+  SMS: 'border border-green-200 bg-green-50 text-green-700',
+  WHATSAPP: 'border border-emerald-200 bg-emerald-50 text-emerald-700',
+};
 
 function n(value: unknown, fallback = 0) {
   return typeof value === 'number' ? value : fallback;
@@ -54,7 +68,7 @@ export function BroadcastHistoryClient() {
         </Button>
         <div>
           <h1 className="font-display text-2xl font-bold text-espresso">Broadcast History</h1>
-          <p className="mt-1 text-sm text-sand">Review recent WhatsApp sends, success rates, and failure reasons after submission.</p>
+          <p className="mt-1 text-sm text-sand-ink">Review recent Email and SMS sends, success rates, and failure reasons after submission.</p>
         </div>
       </div>
 
@@ -64,7 +78,7 @@ export function BroadcastHistoryClient() {
         </div>
       ) : broadcasts.length === 0 ? (
         <Card className="border-mist">
-          <CardContent className="py-16 text-center text-sand">No broadcasts sent yet.</CardContent>
+          <CardContent className="py-16 text-center text-sand-ink">No broadcasts sent yet.</CardContent>
         </Card>
       ) : (
         <div className="space-y-4">
@@ -79,9 +93,17 @@ export function BroadcastHistoryClient() {
               <Card key={broadcast.id} className="border-mist">
                 <CardContent className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CHANNEL_CLASS[broadcast.channel] ?? 'border border-mist bg-linen text-sand-ink'}`}>
+                        {CHANNEL_LABEL[broadcast.channel] ?? broadcast.channel}
+                      </span>
+                      {broadcast.subject && (
+                        <p className="font-medium text-espresso">{broadcast.subject}</p>
+                      )}
+                    </div>
                     <p className="line-clamp-2 font-medium text-espresso">{broadcast.message}</p>
-                    <p className="text-xs text-sand">Sent {new Date(broadcast.sentAt).toLocaleString()} by {staffDisplayName(broadcast.sentByEmail)}</p>
-                    <div className="flex flex-wrap gap-2 text-xs text-sand">
+                    <p className="text-xs text-sand-ink">Sent {new Date(broadcast.sentAt).toLocaleString()} by {staffDisplayName(broadcast.sentByEmail)}</p>
+                    <div className="flex flex-wrap gap-2 text-xs text-sand-ink">
                       <span className="rounded-full bg-pearl px-2 py-1">Recipients {broadcast.recipientCount}</span>
                       <span className="rounded-full bg-pearl px-2 py-1">Sent {sent}</span>
                       <span className="rounded-full bg-pearl px-2 py-1">Failed {failed}</span>
@@ -117,7 +139,15 @@ export function BroadcastHistoryClient() {
             const errorList = Array.isArray(selected.analytics.errors) ? selected.analytics.errors.filter((value): value is string => typeof value === 'string') : [];
             return (
               <div className="space-y-5">
-                <p className="text-sm text-sand">{selected.message}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CHANNEL_CLASS[selected.channel] ?? 'border border-mist bg-linen text-sand-ink'}`}>
+                    {CHANNEL_LABEL[selected.channel] ?? selected.channel}
+                  </span>
+                  {selected.subject && (
+                    <p className="font-medium text-espresso">{selected.subject}</p>
+                  )}
+                </div>
+                <p className="text-sm text-sand-ink">{selected.message}</p>
                 <div className="grid gap-4 md:grid-cols-[160px_minmax(0,1fr)]">
                   <div className="flex flex-col items-center justify-center rounded-lg border border-mist bg-pearl/40 p-4">
                     <div className="flex h-24 w-24 items-center justify-center rounded-full" style={{ background: chart }}>
@@ -125,21 +155,21 @@ export function BroadcastHistoryClient() {
                         {successRate}%
                       </div>
                     </div>
-                    <div className="mt-3 flex items-center gap-2 text-xs text-sand">
+                    <div className="mt-3 flex items-center gap-2 text-xs text-sand-ink">
                       <PieChart className="h-4 w-4" /> success rate
                     </div>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-lg border border-mist p-4"><p className="text-xs uppercase tracking-[0.2em] text-sand">Recipients</p><p className="mt-2 font-display text-3xl text-espresso">{selected.recipientCount}</p></div>
-                    <div className="rounded-lg border border-mist p-4"><p className="text-xs uppercase tracking-[0.2em] text-sand">Sent</p><p className="mt-2 font-display text-3xl text-espresso">{sent}</p></div>
-                    <div className="rounded-lg border border-mist p-4"><p className="text-xs uppercase tracking-[0.2em] text-sand">Failed</p><p className="mt-2 font-display text-3xl text-espresso">{failed}</p></div>
-                    <div className="rounded-lg border border-mist p-4"><p className="text-xs uppercase tracking-[0.2em] text-sand">Operator</p><p className="mt-2 text-sm text-espresso">{staffDisplayName(selected.sentByEmail)}</p></div>
+                    <div className="rounded-lg border border-mist p-4"><p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Recipients</p><p className="mt-2 font-display text-3xl text-espresso">{selected.recipientCount}</p></div>
+                    <div className="rounded-lg border border-mist p-4"><p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Sent</p><p className="mt-2 font-display text-3xl text-espresso">{sent}</p></div>
+                    <div className="rounded-lg border border-mist p-4"><p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Failed</p><p className="mt-2 font-display text-3xl text-espresso">{failed}</p></div>
+                    <div className="rounded-lg border border-mist p-4"><p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Operator</p><p className="mt-2 text-sm text-espresso">{staffDisplayName(selected.sentByEmail)}</p></div>
                   </div>
                 </div>
 
                 <Card className="border-mist">
                   <CardHeader><CardTitle className="text-base text-espresso">Targeting snapshot</CardTitle></CardHeader>
-                  <CardContent className="font-mono text-xs text-sand break-all">
+                  <CardContent className="font-mono text-xs text-sand-ink break-all">
                     {JSON.stringify(selected.criteria ?? {}, null, 2)}
                   </CardContent>
                 </Card>
@@ -148,10 +178,10 @@ export function BroadcastHistoryClient() {
                   <CardHeader><CardTitle className="text-base text-espresso">Failure sample</CardTitle></CardHeader>
                   <CardContent className="space-y-2">
                     {errorList.length === 0 ? (
-                      <p className="text-sm text-sand">No failures recorded in the stored analytics payload.</p>
+                      <p className="text-sm text-sand-ink">No failures recorded in the stored analytics payload.</p>
                     ) : (
                       errorList.map((error, index) => (
-                        <div key={index} className="rounded-md border border-mist bg-pearl/30 px-3 py-2 text-sm text-sand">{error}</div>
+                        <div key={index} className="rounded-md border border-mist bg-pearl/30 px-3 py-2 text-sm text-sand-ink">{error}</div>
                       ))
                     )}
                   </CardContent>

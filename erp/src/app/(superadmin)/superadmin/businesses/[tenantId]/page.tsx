@@ -49,7 +49,7 @@ async function BusinessStatsContent({ tenantId }: { tenantId: string }) {
         )}
         <div>
           <h1 className="font-display text-espresso text-2xl font-bold">{tenant.name}</h1>
-          <p className="text-mist text-sm">
+          <p className="text-mist-ink text-sm">
             {tenant.slug} · Since {new Date(tenant.createdAt).toLocaleDateString()}
           </p>
         </div>
@@ -63,23 +63,23 @@ async function BusinessStatsContent({ tenantId }: { tenantId: string }) {
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <div>
-            <p className="text-mist text-xs">Currency</p>
+            <p className="text-mist-ink text-xs">Currency</p>
             <p className="text-espresso font-medium">{stats.settings.currency}</p>
           </div>
           <div>
-            <p className="text-mist text-xs">Timezone</p>
+            <p className="text-mist-ink text-xs">Timezone</p>
             <p className="text-espresso font-medium">{stats.settings.timezone}</p>
           </div>
           <div>
-            <p className="text-mist text-xs">VAT Rate</p>
+            <p className="text-mist-ink text-xs">VAT Rate</p>
             <p className="text-espresso font-medium">{stats.settings.vatRate}%</p>
           </div>
           <div>
-            <p className="text-mist text-xs">SSCL Rate</p>
+            <p className="text-mist-ink text-xs">SSCL Rate</p>
             <p className="text-espresso font-medium">{stats.settings.ssclRate}%</p>
           </div>
           <div>
-            <p className="text-mist text-xs">Avg Sale (Month)</p>
+            <p className="text-mist-ink text-xs">Avg Sale (Month)</p>
             <p className="text-espresso font-medium">
               {stats.metrics.monthSales > 0
                 ? formatLKR(stats.metrics.monthRevenue / stats.metrics.monthSales)
@@ -87,7 +87,7 @@ async function BusinessStatsContent({ tenantId }: { tenantId: string }) {
             </p>
           </div>
           <div>
-            <p className="text-mist text-xs">Subscription</p>
+            <p className="text-mist-ink text-xs">Subscription</p>
             <p className="text-espresso font-medium">{tenant.subscriptionStatus}</p>
           </div>
         </CardContent>

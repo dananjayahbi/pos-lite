@@ -38,11 +38,11 @@ export function RevenueTrendChart({ data }: RevenueTrendChartProps) {
         <CardTitle className="text-base font-semibold text-espresso">
           Revenue Trend
         </CardTitle>
-        <p className="text-xs text-sand">Last 7 days</p>
+        <p className="text-xs text-sand-ink">Last 7 days</p>
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <p className="py-8 text-center text-sm text-sand">
+          <p className="py-8 text-center text-sm text-sand-ink">
             No sales data yet.
           </p>
         ) : (

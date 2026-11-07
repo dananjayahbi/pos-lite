@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Plus, Upload, Download } from 'lucide-react';
+import { Plus, Upload } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,6 +21,7 @@ import { InventoryFilterBar } from '@/components/inventory/InventoryFilterBar';
 import { ActiveFilterChips } from '@/components/inventory/ActiveFilterChips';
 import { useProducts } from '@/hooks/useProducts';
 import { LowStockAlertBadge } from '@/components/stock/LowStockAlertBadge';
+import { useInventorySelectionStore } from '@/stores/inventorySelectionStore';
 
 interface InventoryListClientProps {
   initialCount: number;
@@ -33,6 +34,7 @@ export function InventoryListClient({ initialCount, permissions }: InventoryList
   const queryClient = useQueryClient();
 
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const selectedCount = useInventorySelectionStore((s) => s.selectedProductIds.size);
 
   const page = Number(searchParams.get('page') ?? '1');
   const limit = Number(searchParams.get('limit') ?? '25');
@@ -122,12 +124,12 @@ export function InventoryListClient({ initialCount, permissions }: InventoryList
   const showTo = Math.min(page * limit, displayCount);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className={`space-y-6 p-6 ${selectedCount > 0 ? 'pb-24' : ''}`}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-3xl text-espresso">Inventory</h1>
-          <p className="font-body text-sm text-mist">
+          <p className="font-body text-sm text-mist-ink">
             {displayCount} {displayCount === 1 ? 'product' : 'products'}
           </p>
         </div>
@@ -178,7 +180,7 @@ export function InventoryListClient({ initialCount, permissions }: InventoryList
       {/* Pagination */}
       {displayCount > limit && (
         <div className="flex items-center justify-between border-t border-sand/20 pt-4">
-          <p className="font-body text-sm text-mist">
+          <p className="font-body text-sm text-mist-ink">
             Showing {showFrom}–{showTo} of {displayCount} results
           </p>
           <div className="flex items-center gap-2">
@@ -205,7 +207,7 @@ export function InventoryListClient({ initialCount, permissions }: InventoryList
               }, [])
               .map((item, i) =>
                 item === 'ellipsis' ? (
-                  <span key={`e-${i}`} className="px-1 text-mist">
+                  <span key={`e-${i}`} className="px-1 text-mist-ink">
                     …
                   </span>
                 ) : (
@@ -245,7 +247,7 @@ export function InventoryListClient({ initialCount, permissions }: InventoryList
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="font-display text-espresso">Delete Product</DialogTitle>
-            <DialogDescription className="font-body text-mist">
+            <DialogDescription className="font-body text-mist-ink">
               Are you sure you want to delete this product? It will be hidden from the catalog
               and can be restored later from the Deleted filter in Inventory.
             </DialogDescription>

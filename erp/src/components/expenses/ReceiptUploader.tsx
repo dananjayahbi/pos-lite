@@ -115,7 +115,7 @@ export function ReceiptUploader({ value, onChange }: ReceiptUploaderProps) {
       />
 
       <div className="flex items-center gap-2">
-        <Label className="shrink-0 text-xs text-sand">Or paste URL</Label>
+        <Label className="shrink-0 text-xs text-sand-ink">Or paste URL</Label>
         <Input
           value={value ?? ''}
           onChange={(e) => onChange(e.target.value || undefined)}

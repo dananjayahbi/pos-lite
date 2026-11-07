@@ -19,7 +19,7 @@ interface HealthContentFieldsProps {
 export function HealthContentFields({ register }: HealthContentFieldsProps) {
   return (
     <div className="space-y-4 rounded-lg border border-sand/30 bg-linen/40 p-4">
-      <p className="font-body text-xs font-semibold uppercase tracking-wider text-mist">
+      <p className="font-body text-xs font-semibold uppercase tracking-wider text-mist-ink">
         Health Information (shown on storefront)
       </p>
 

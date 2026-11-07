@@ -145,8 +145,8 @@ export function VariantsTab({ productId, variants, permissions, productName, bra
   if (variants.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-lg border border-sand/30 bg-pearl py-16">
-        <Package className="mb-4 h-12 w-12 text-mist" />
-        <p className="font-body text-sm text-mist">No variants found</p>
+        <Package className="mb-4 h-12 w-12 text-mist-ink" />
+        <p className="font-body text-sm text-mist-ink">No variants found</p>
       </div>
     );
   }
@@ -206,7 +206,7 @@ export function VariantsTab({ productId, variants, permissions, productName, bra
 
         <Button
           variant="outline"
-          className="border-sand text-sand"
+          className="border-sand text-sand-ink"
           disabled={selectedVariantIds.size === 0}
           onClick={handlePrintLabels}
         >
@@ -313,7 +313,7 @@ export function VariantsTab({ productId, variants, permissions, productName, bra
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="font-display text-espresso">Delete Variant</DialogTitle>
-            <DialogDescription className="font-body text-mist">
+            <DialogDescription className="font-body text-mist-ink">
               Are you sure you want to delete variant{' '}
               <strong className="text-espresso font-mono">{deleteTarget?.sku}</strong>?
               This action cannot be undone.
@@ -422,7 +422,7 @@ function VariantRows({
             )}
           </div>
         ) : (
-          <span className="text-xs text-mist italic">—</span>
+          <span className="text-xs text-mist-ink italic">—</span>
         )}
       </TableCell>
       <TableCell className="font-mono text-sm text-espresso">{variant.sku}</TableCell>
@@ -469,7 +469,7 @@ function VariantRows({
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-mist hover:text-espresso"
+                className="text-mist-ink hover:text-espresso"
                 onClick={onEdit}
               >
                 <Pencil className="h-3.5 w-3.5" />
@@ -479,7 +479,7 @@ function VariantRows({
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-mist hover:text-red-600"
+                className="text-mist-ink hover:text-red-600"
                 onClick={onDelete}
                 aria-label={`Delete variant ${variant.sku}`}
               >

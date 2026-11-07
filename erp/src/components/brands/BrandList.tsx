@@ -26,7 +26,7 @@ export function BrandList({
 }: BrandListProps) {
   if (brands.length === 0) {
     return (
-      <div className="rounded-lg border border-sand bg-pearl p-8 text-center text-sm text-mist">
+      <div className="rounded-lg border border-sand bg-pearl p-8 text-center text-sm text-mist-ink">
         No brands yet. Create your first brand above.
       </div>
     );
@@ -62,7 +62,7 @@ export function BrandList({
                 className="h-8 w-8 shrink-0 rounded object-cover"
               />
             ) : (
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-mist/20 text-xs text-mist">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-mist/20 text-xs text-mist-ink">
                 —
               </div>
             )}

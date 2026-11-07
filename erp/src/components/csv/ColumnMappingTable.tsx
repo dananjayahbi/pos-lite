@@ -140,11 +140,11 @@ export function ColumnMappingTable({
                 </td>
                 <td className="px-4 py-2">
                   {(previewValues[field.key]?.length ?? 0) > 0 ? (
-                    <span className="font-body text-xs text-mist italic">
+                    <span className="font-body text-xs text-mist-ink italic">
                       {previewValues[field.key]!.join(', ')}
                     </span>
                   ) : (
-                    <span className="font-body text-xs text-mist">—</span>
+                    <span className="font-body text-xs text-mist-ink">—</span>
                   )}
                 </td>
               </tr>

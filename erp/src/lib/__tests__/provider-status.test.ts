@@ -6,6 +6,8 @@ import {
   PROVIDER_WARNING_THROTTLE_MS,
   providerErrorCode,
   resetProviderWarningThrottle,
+  SMS_FAILED,
+  SMS_NOT_CONFIGURED,
   warnProviderNotConfigured,
   WHATSAPP_FAILED,
   WHATSAPP_NOT_CONFIGURED,
@@ -20,21 +22,34 @@ describe('getProviderConfigStatus', () => {
 
   afterEach(() => {
     process.env.RESEND_API_KEY = original.RESEND_API_KEY;
+    process.env.SMS_API_URL = original.SMS_API_URL;
+    process.env.SMS_API_KEY = original.SMS_API_KEY;
     process.env.WHATSAPP_PHONE_NUMBER_ID = original.WHATSAPP_PHONE_NUMBER_ID;
     process.env.WHATSAPP_ACCESS_TOKEN = original.WHATSAPP_ACCESS_TOKEN;
   });
 
-  it('reports both providers unconfigured when keys are absent', () => {
+  it('reports every provider unconfigured when keys are absent', () => {
     delete process.env.RESEND_API_KEY;
+    delete process.env.SMS_API_URL;
+    delete process.env.SMS_API_KEY;
     delete process.env.WHATSAPP_PHONE_NUMBER_ID;
     delete process.env.WHATSAPP_ACCESS_TOKEN;
 
-    expect(getProviderConfigStatus()).toEqual({ email: false, whatsapp: false });
+    expect(getProviderConfigStatus()).toEqual({ email: false, sms: false, whatsapp: false });
   });
 
   it('reports email configured when RESEND_API_KEY is present', () => {
     process.env.RESEND_API_KEY = 're_test_key';
     expect(getProviderConfigStatus().email).toBe(true);
+  });
+
+  it('requires BOTH SMS keys for sms to count as configured', () => {
+    process.env.SMS_API_URL = 'https://sms.example.com/send';
+    delete process.env.SMS_API_KEY;
+    expect(getProviderConfigStatus().sms).toBe(false);
+
+    process.env.SMS_API_KEY = 'sms_key';
+    expect(getProviderConfigStatus().sms).toBe(true);
   });
 
   it('requires BOTH whatsapp keys for whatsapp to count as configured', () => {
@@ -57,6 +72,13 @@ describe('providerErrorCode', () => {
 
   it('maps a real provider rejection to the failed code', () => {
     expect(providerErrorCode('whatsapp', 'Meta API returned HTTP status 400.')).toBe(WHATSAPP_FAILED);
+    expect(providerErrorCode('sms', 'Gateway returned HTTP status 400.')).toBe(SMS_FAILED);
+  });
+
+  it('maps a missing SMS configuration to its own code', () => {
+    expect(providerErrorCode('sms', 'SMS is not configured. Missing SMS_API_URL / SMS_API_KEY.')).toBe(
+      SMS_NOT_CONFIGURED,
+    );
   });
 
   it('treats an undefined error as a plain provider failure', () => {

@@ -148,6 +148,42 @@ export async function getUnpaidTotal(tenantId: string, userId: string) {
   return result._sum.earnedAmount ?? new Decimal(0);
 }
 
+/** Commission totals for one staff member over a date range (payslip). */
+export async function getCommissionSummaryForUser(
+  tenantId: string,
+  userId: string,
+  periodStart: Date,
+  periodEnd: Date,
+) {
+  const [earnedAgg, paidAgg] = await Promise.all([
+    prisma.commissionRecord.aggregate({
+      where: {
+        tenantId,
+        userId,
+        createdAt: { gte: periodStart, lte: periodEnd },
+      },
+      _sum: { earnedAmount: true },
+    }),
+    prisma.commissionRecord.aggregate({
+      where: {
+        tenantId,
+        userId,
+        isPaid: true,
+        createdAt: { gte: periodStart, lte: periodEnd },
+      },
+      _sum: { earnedAmount: true },
+    }),
+  ]);
+
+  const earned = earnedAgg._sum.earnedAmount ?? new Decimal(0);
+  const paid = paidAgg._sum.earnedAmount ?? new Decimal(0);
+  return {
+    earned: earned.toString(),
+    paid: paid.toString(),
+    unpaid: earned.minus(paid).toString(),
+  };
+}
+
 export async function createCommissionPayout(input: {
   tenantId: string;
   userId: string;

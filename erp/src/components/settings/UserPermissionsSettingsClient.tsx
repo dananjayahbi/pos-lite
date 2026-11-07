@@ -174,7 +174,7 @@ export default function UserPermissionsSettingsClient() {
     <div className="mx-auto w-full max-w-6xl space-y-6 p-6">
       <div>
         <h1 className="font-display text-2xl font-bold text-espresso">Team &amp; permissions</h1>
-        <p className="mt-1 text-sm text-sand">
+        <p className="mt-1 text-sm text-sand-ink">
           Adjust roles, keep accounts active, and grant extra permissions on top of each role’s defaults.
         </p>
       </div>
@@ -213,7 +213,7 @@ export default function UserPermissionsSettingsClient() {
                     <TableCell>
                       <div>
                         <p className="font-medium text-espresso" title={member.email}>{staffDisplayName(member.email)}</p>
-                        <p className="text-xs text-sand">{ROLE_PERMISSIONS[member.role].length} inherited defaults</p>
+                        <p className="text-xs text-sand-ink">{ROLE_PERMISSIONS[member.role].length} inherited defaults</p>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -269,12 +269,12 @@ export default function UserPermissionsSettingsClient() {
               <div className="flex items-center justify-between rounded-md border border-mist bg-white px-3 py-3">
                 <div>
                   <p className="text-sm font-medium text-espresso">Active account</p>
-                  <p className="text-xs text-sand">Inactive users cannot operate the store.</p>
+                  <p className="text-xs text-sand-ink">Inactive users cannot operate the store.</p>
                 </div>
                 <Switch checked={draftIsActive} onCheckedChange={setDraftIsActive} />
               </div>
 
-              <div className="rounded-md border border-mist bg-white p-3 text-xs text-sand">
+              <div className="rounded-md border border-mist bg-white p-3 text-xs text-sand-ink">
                 <p className="font-semibold text-espresso">Inherited permissions</p>
                 <p className="mt-1">{ROLE_PERMISSIONS[draftRole].length} permissions come from the selected role automatically.</p>
                 <p className="mt-2">Explicit overrides are stored separately so you can keep the role clean and only sprinkle extras where necessary.</p>
@@ -312,7 +312,7 @@ export default function UserPermissionsSettingsClient() {
                                   <Badge variant="secondary">Explicit</Badge>
                                 ) : null}
                               </div>
-                              <p className="mt-1 font-mono text-[11px] text-sand">{permission}</p>
+                              <p className="mt-1 font-mono text-[11px] text-sand-ink">{permission}</p>
                             </div>
                           </label>
                         );

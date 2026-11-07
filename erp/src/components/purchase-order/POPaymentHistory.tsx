@@ -51,15 +51,15 @@ export function POPaymentHistory({
       <CardContent className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-sand/30 bg-linen/50 px-3 py-2">
-            <p className="text-xs text-mist">Payable</p>
+            <p className="text-xs text-mist-ink">Payable</p>
             <p className="font-mono text-sm text-espresso">{formatRupee(payable)}</p>
           </div>
           <div className="rounded-lg border border-sand/30 bg-linen/50 px-3 py-2">
-            <p className="text-xs text-mist">Paid</p>
+            <p className="text-xs text-mist-ink">Paid</p>
             <p className="font-mono text-sm text-green-700">{formatRupee(paidTotal)}</p>
           </div>
           <div className="rounded-lg border border-sand/30 bg-linen/50 px-3 py-2">
-            <p className="text-xs text-mist">Outstanding</p>
+            <p className="text-xs text-mist-ink">Outstanding</p>
             <p
               className={`font-mono text-sm ${outstanding > 0 ? 'text-amber-700' : 'text-espresso'}`}
             >
@@ -78,7 +78,7 @@ export function POPaymentHistory({
         {isLoading ? (
           <Skeleton className="h-16 w-full" />
         ) : payments.length === 0 ? (
-          <p className="py-3 text-sm text-mist">
+          <p className="py-3 text-sm text-mist-ink">
             No payments recorded yet. Use “Record Payment” to settle from a payment account.
           </p>
         ) : (

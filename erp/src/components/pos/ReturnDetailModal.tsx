@@ -122,7 +122,7 @@ export function ReturnDetailModal({
             <DialogTitle className="font-display text-lg text-espresso">
               Return {shortRef}
             </DialogTitle>
-            <p className="font-body text-xs text-mist">
+            <p className="font-body text-xs text-mist-ink">
               {formatDateTime(returnData.createdAt)}
             </p>
           </DialogHeader>
@@ -130,21 +130,21 @@ export function ReturnDetailModal({
           {/* Summary grid */}
           <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm font-body">
             <div>
-              <span className="text-mist text-xs">Original Sale</span>
+              <span className="text-mist-ink text-xs">Original Sale</span>
               <p className="text-espresso font-mono text-xs">
                 {returnData.originalSale.id.slice(0, 8).toUpperCase()}
               </p>
             </div>
             <div>
-              <span className="text-mist text-xs">Cashier</span>
+              <span className="text-mist-ink text-xs">Cashier</span>
               <p className="text-espresso">{staffDisplayName(returnData.initiatedBy.email)}</p>
             </div>
             <div>
-              <span className="text-mist text-xs">Manager</span>
+              <span className="text-mist-ink text-xs">Manager</span>
               <p className="text-espresso">{staffDisplayName(returnData.authorizedBy.email)}</p>
             </div>
             <div>
-              <span className="text-mist text-xs">Refund Method</span>
+              <span className="text-mist-ink text-xs">Refund Method</span>
               <div className="mt-0.5">
                 <Badge
                   variant="outline"
@@ -155,19 +155,19 @@ export function ReturnDetailModal({
               </div>
             </div>
             <div>
-              <span className="text-mist text-xs">Refund Amount</span>
+              <span className="text-mist-ink text-xs">Refund Amount</span>
               <p className="text-espresso font-mono font-medium">
                 {formatRupee(returnData.refundAmount)}
               </p>
             </div>
             <div>
-              <span className="text-mist text-xs">Restock Status</span>
+              <span className="text-mist-ink text-xs">Restock Status</span>
               <p className="text-espresso">
                 {allRestocked ? 'All Restocked' : someRestocked ? 'Partial' : 'Not Restocked'}
               </p>
             </div>
             <div className="col-span-2">
-              <span className="text-mist text-xs">Return Reason</span>
+              <span className="text-mist-ink text-xs">Return Reason</span>
               <p className="text-espresso">{returnData.reason || '—'}</p>
             </div>
           </div>
@@ -177,11 +177,11 @@ export function ReturnDetailModal({
             <Table>
               <TableHeader>
                 <TableRow className="bg-linen">
-                  <TableHead className="font-body text-xs text-mist">Product</TableHead>
-                  <TableHead className="font-body text-xs text-mist">Variant</TableHead>
-                  <TableHead className="font-body text-xs text-mist text-center">Qty</TableHead>
-                  <TableHead className="font-body text-xs text-mist text-right">Refund</TableHead>
-                  <TableHead className="font-body text-xs text-mist text-center">Restocked</TableHead>
+                  <TableHead className="font-body text-xs text-mist-ink">Product</TableHead>
+                  <TableHead className="font-body text-xs text-mist-ink">Variant</TableHead>
+                  <TableHead className="font-body text-xs text-mist-ink text-center">Qty</TableHead>
+                  <TableHead className="font-body text-xs text-mist-ink text-right">Refund</TableHead>
+                  <TableHead className="font-body text-xs text-mist-ink text-center">Restocked</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -190,7 +190,7 @@ export function ReturnDetailModal({
                     <TableCell className="font-body text-xs text-espresso">
                       {line.productNameSnapshot}
                     </TableCell>
-                    <TableCell className="font-body text-xs text-mist">
+                    <TableCell className="font-body text-xs text-mist-ink">
                       {line.variantDescriptionSnapshot || '—'}
                     </TableCell>
                     <TableCell className="font-body text-xs text-espresso text-center">
@@ -203,7 +203,7 @@ export function ReturnDetailModal({
                       {line.isRestocked ? (
                         <Check className="h-4 w-4 text-green-600 mx-auto" />
                       ) : (
-                        <Minus className="h-4 w-4 text-mist mx-auto" />
+                        <Minus className="h-4 w-4 text-mist-ink mx-auto" />
                       )}
                     </TableCell>
                   </TableRow>

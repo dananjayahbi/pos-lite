@@ -68,19 +68,19 @@ export function ProductGrid() {
       {/* Search input */}
       <div className="px-4 pt-4 pb-2">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mist" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mist-ink" />
           <input
             type="text"
             placeholder="Search products, SKU, barcode…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-lg border border-mist bg-white py-2 pl-9 pr-9 font-body text-sm text-espresso placeholder:text-mist focus:border-sand focus:outline-none"
+            className="w-full rounded-lg border border-mist bg-white py-2 pl-9 pr-9 font-body text-sm text-espresso placeholder:text-mist-ink focus:border-sand focus:outline-none"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-mist hover:text-espresso"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-mist-ink hover:text-espresso"
             >
               <X className="h-4 w-4" />
             </button>
@@ -115,12 +115,12 @@ export function ProductGrid() {
             ))}
           </div>
         ) : isError ? (
-          <div className="flex flex-col items-center justify-center h-full text-mist">
+          <div className="flex flex-col items-center justify-center h-full text-mist-ink">
             <ShoppingBag className="h-12 w-12 mb-2" />
             <p className="font-body text-sm">Failed to load products. Please refresh.</p>
           </div>
         ) : products.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-mist">
+          <div className="flex flex-col items-center justify-center h-full text-mist-ink">
             <ShoppingBag className="h-12 w-12 mb-2" />
             <p className="font-body text-sm">No products found</p>
           </div>

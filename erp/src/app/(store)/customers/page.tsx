@@ -35,7 +35,13 @@ interface Customer {
   id: string;
   name: string;
   phone: string;
+  phone2?: string | null;
   email?: string | null;
+  address?: string | null;
+  city?: string | null;
+  gender?: string | null;
+  birthday?: string | null;
+  notes?: string | null;
   tags: string[];
   creditBalance: string | number;
   totalSpend: string | number;
@@ -152,7 +158,7 @@ export default function CustomersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold text-espresso">Customers</h1>
-          <p className="text-sm text-sand mt-1">
+          <p className="text-sm text-sand-ink mt-1">
             Manage your customer directory
           </p>
         </div>
@@ -238,7 +244,7 @@ export default function CustomersPage() {
               ))
             ) : result?.customers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-12 text-sand">
+                <TableCell colSpan={7} className="text-center py-12 text-sand-ink">
                   No customers found
                 </TableCell>
               </TableRow>
@@ -266,7 +272,7 @@ export default function CustomersPage() {
                       ))}
                     </div>
                   </TableCell>
-                  <TableCell className="text-sm text-sand">
+                  <TableCell className="text-sm text-sand-ink">
                     {formatRelativeDate(c.lastPurchaseAt)}
                   </TableCell>
                   <TableCell className={`text-right font-mono ${getCreditColor(c.creditBalance)}`}>
@@ -298,7 +304,7 @@ export default function CustomersPage() {
       {/* Pagination */}
       {result && result.totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-sand">
+          <p className="text-sm text-sand-ink">
             Page {result.page} of {result.totalPages} · {result.total} customer{result.total !== 1 ? 's' : ''}
           </p>
           <div className="flex gap-2">

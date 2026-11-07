@@ -82,7 +82,7 @@ export function BrandsPageClient({ permissions }: BrandsPageClientProps) {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="font-display text-2xl font-semibold text-espresso">Brands</h1>
-            <p className="text-sm text-mist">
+            <p className="text-sm text-mist-ink">
               {brands.length} {brands.length === 1 ? 'brand' : 'brands'}
             </p>
           </div>
@@ -119,7 +119,7 @@ export function BrandsPageClient({ permissions }: BrandsPageClientProps) {
           />
         ) : (
           <div className="flex h-full min-h-75 items-center justify-center rounded-lg border border-sand bg-linen p-8">
-            <p className="text-sm text-mist">Select a brand to see details</p>
+            <p className="text-sm text-mist-ink">Select a brand to see details</p>
           </div>
         )}
       </div>

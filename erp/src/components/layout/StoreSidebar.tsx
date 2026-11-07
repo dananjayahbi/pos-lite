@@ -62,7 +62,7 @@ export default function StoreSidebar({
             ) : null}
             <p className="font-display text-espresso text-xl font-bold">{businessName}</p>
           </div>
-          <p className="text-sand mt-1 text-xs font-semibold tracking-[0.2em] uppercase">
+          <p className="text-sand-ink mt-1 text-xs font-semibold tracking-[0.2em] uppercase">
             {formatRole(userRole)}
           </p>
         </div>
@@ -81,7 +81,7 @@ export default function StoreSidebar({
 
           return (
             <div key={group.label} className="mb-6 last:mb-0">
-              <p className="text-sand/80 mb-1.5 px-3 text-xs font-semibold tracking-wider uppercase">
+              <p className="text-sand-ink/80 mb-1.5 px-3 text-xs font-semibold tracking-wider uppercase">
                 {group.label}
               </p>
               <ul className="flex flex-col">

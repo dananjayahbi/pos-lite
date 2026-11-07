@@ -77,7 +77,7 @@ function ShiftReportPageContent() {
       <div className="flex flex-col items-center justify-center gap-4 py-20 text-espresso">
         <AlertCircle className="h-10 w-10 text-terracotta" />
         <p className="font-body text-lg">No shift ID provided.</p>
-        <Link href="/pos/history" className="text-sm text-sand underline font-body">
+        <Link href="/pos/history" className="text-sm text-sand-ink underline font-body">
           Go to Shift History
         </Link>
       </div>
@@ -100,7 +100,7 @@ function ShiftReportPageContent() {
       <div className="flex flex-col items-center justify-center gap-4 py-20 text-espresso">
         <AlertCircle className="h-10 w-10 text-terracotta" />
         <p className="font-body text-lg">{(error as Error)?.message ?? 'Failed to load report'}</p>
-        <Link href="/pos/history" className="text-sm text-sand underline font-body">
+        <Link href="/pos/history" className="text-sm text-sand-ink underline font-body">
           Go to Shift History
         </Link>
       </div>
@@ -116,7 +116,7 @@ function ShiftReportPageContent() {
       <div className="flex items-center justify-between print:hidden">
         <Link
           href="/pos/history"
-          className="inline-flex items-center gap-1.5 text-sm text-sand hover:text-espresso font-body transition-colors"
+          className="inline-flex items-center gap-1.5 text-sm text-sand-ink hover:text-espresso font-body transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Shift History

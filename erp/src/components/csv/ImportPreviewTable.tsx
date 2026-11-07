@@ -201,14 +201,14 @@ export function ImportPreviewTable({ data, mapping, onBack }: ImportPreviewTable
                     setExpandedRow(expandedRow === row.rowNumber ? null : row.rowNumber)
                   }
                 >
-                  <td className="px-3 py-2 text-mist">
+                  <td className="px-3 py-2 text-mist-ink">
                     {expandedRow === row.rowNumber ? (
                       <ChevronDown className="h-4 w-4" />
                     ) : (
                       <ChevronRight className="h-4 w-4" />
                     )}
                   </td>
-                  <td className="px-4 py-2 font-mono text-xs text-mist">{row.rowNumber}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-mist-ink">{row.rowNumber}</td>
                   <td className="px-4 py-2 font-body text-espresso">{row.mappedData.productName || '—'}</td>
                   <td className="px-4 py-2 font-mono text-xs text-espresso">{row.mappedData.sku || '—'}</td>
                   <td className="px-4 py-2 text-right font-mono text-xs text-espresso">

@@ -57,7 +57,7 @@ function ProductThumbnail({
 
   return (
     <div className="flex h-10 w-10 items-center justify-center rounded-md bg-mist/30">
-      <Leaf className="h-5 w-5 text-mist" />
+      <Leaf className="h-5 w-5 text-mist-ink" />
     </div>
   );
 }
@@ -99,7 +99,7 @@ function EmptyState({
     return (
       <div className="flex flex-col items-center justify-center py-16">
         <svg
-          className="mb-4 h-16 w-16 text-mist"
+          className="mb-4 h-16 w-16 text-mist-ink"
           viewBox="0 0 64 64"
           fill="none"
           stroke="currentColor"
@@ -110,7 +110,7 @@ function EmptyState({
           <line x1="22" y1="34" x2="42" y2="34" />
         </svg>
         <h3 className="font-display text-lg text-espresso">No products match your filters</h3>
-        <p className="mt-1 font-body text-sm text-mist">Try adjusting your search or filter criteria</p>
+        <p className="mt-1 font-body text-sm text-mist-ink">Try adjusting your search or filter criteria</p>
         <Button
           variant="outline"
           className="mt-4 border-sand text-espresso"
@@ -125,7 +125,7 @@ function EmptyState({
   return (
     <div className="flex flex-col items-center justify-center py-16">
       <svg
-        className="mb-4 h-16 w-16 text-mist"
+        className="mb-4 h-16 w-16 text-mist-ink"
         viewBox="0 0 64 64"
         fill="none"
         stroke="currentColor"
@@ -135,7 +135,7 @@ function EmptyState({
         <path d="M24 24 L24 22 C24 17.6 27.6 14 32 14 C36.4 14 40 17.6 40 22 L40 24" />
       </svg>
       <h3 className="font-display text-lg text-espresso">No products yet</h3>
-      <p className="mt-1 font-body text-sm text-mist">Start building your catalog</p>
+      <p className="mt-1 font-body text-sm text-mist-ink">Start building your catalog</p>
       {canCreate && (
         <Button asChild className="mt-4 bg-espresso text-pearl hover:bg-espresso/90">
           <Link href="/inventory/new">

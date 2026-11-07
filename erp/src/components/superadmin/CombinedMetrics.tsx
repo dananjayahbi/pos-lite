@@ -17,7 +17,7 @@ export default function CombinedMetricsView({
           <h2 className="font-display text-espresso text-xl font-semibold">
             Combined Business Statistics
           </h2>
-          <p className="text-mist mt-1 text-sm">
+          <p className="text-mist-ink mt-1 text-sm">
             Rolled up across all {tenantCount} live businesses.
           </p>
         </div>

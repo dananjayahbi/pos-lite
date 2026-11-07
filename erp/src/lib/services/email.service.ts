@@ -12,6 +12,20 @@ export interface EmailSendResult {
   reason?: string;
 }
 
+export interface EmailAttachment {
+  filename: string;
+  /** Public URL the provider can fetch, or raw bytes. */
+  path?: string;
+  content?: Buffer;
+  contentType?: string;
+}
+
+export interface EmailSendOptions {
+  /** Plain-text fallback shown by clients that block HTML. */
+  text?: string;
+  attachments?: EmailAttachment[];
+}
+
 function getResendClient(): Resend | null {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -28,6 +42,7 @@ export async function sendEmail(
   to: string,
   subject: string,
   html: string,
+  options: EmailSendOptions = {},
 ): Promise<EmailSendResult> {
   try {
     const resend = getResendClient();
@@ -42,6 +57,17 @@ export async function sendEmail(
       to,
       subject,
       html,
+      ...(options.text ? { text: options.text } : {}),
+      ...(options.attachments && options.attachments.length > 0
+        ? {
+            attachments: options.attachments.map((attachment) => ({
+              filename: attachment.filename,
+              ...(attachment.path ? { path: attachment.path } : {}),
+              ...(attachment.content ? { content: attachment.content } : {}),
+              ...(attachment.contentType ? { content_type: attachment.contentType } : {}),
+            })),
+          }
+        : {}),
     });
 
     return { delivered: true };

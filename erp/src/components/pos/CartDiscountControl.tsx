@@ -62,7 +62,7 @@ export function CartDiscountControl() {
   return (
     <div className="px-4 py-2 border-t border-mist/30">
       <div className="flex items-center justify-between mb-1.5">
-        <span className="font-body text-[13px] text-mist">Cart Discount</span>
+        <span className="font-body text-[13px] text-mist-ink">Cart Discount</span>
         {hasActiveDiscount && (
           <button
             type="button"
@@ -94,7 +94,7 @@ export function CartDiscountControl() {
             className={`px-2.5 py-1 text-xs font-body rounded-l-md transition-colors ${
               mode === 'percent'
                 ? 'bg-sand text-espresso'
-                : 'bg-transparent border border-mist text-mist'
+                : 'bg-transparent border border-mist text-mist-ink'
             }`}
           >
             %
@@ -105,7 +105,7 @@ export function CartDiscountControl() {
             className={`px-2.5 py-1 text-xs font-body rounded-r-md transition-colors ${
               mode === 'fixed'
                 ? 'bg-sand text-espresso'
-                : 'bg-transparent border border-mist text-mist'
+                : 'bg-transparent border border-mist text-mist-ink'
             }`}
           >
             Rs.
@@ -142,7 +142,7 @@ export function CartDiscountControl() {
 
       {/* Live preview */}
       {parsedInput > 0 && (
-        <p className={`font-body text-xs mt-1 ${exceedsTotal ? 'text-[#9B2226]' : 'text-mist'}`}>
+        <p className={`font-body text-xs mt-1 ${exceedsTotal ? 'text-[#9B2226]' : 'text-mist-ink'}`}>
           {exceedsTotal
             ? 'Discount exceeds cart total'
             : `New total: ${formatRupee(Math.max(0, newTotal))}`}

@@ -147,7 +147,7 @@ export default function StaffShiftsPage() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold text-espresso">Shifts</h1>
-          <p className="mt-1 text-sm text-sand">
+          <p className="mt-1 text-sm text-sand-ink">
             Surface open and closed shifts, reconcile current tills, and jump into shift reports from one owner-facing hub.
           </p>
         </div>
@@ -174,7 +174,7 @@ export default function StaffShiftsPage() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-sand">Visible open shifts</CardTitle>
+            <CardTitle className="text-sm font-medium text-sand-ink">Visible open shifts</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="font-display text-3xl text-espresso">{openCount}</p>
@@ -182,7 +182,7 @@ export default function StaffShiftsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-sand">Visible closed shifts</CardTitle>
+            <CardTitle className="text-sm font-medium text-sand-ink">Visible closed shifts</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="font-display text-3xl text-espresso">{closedCount}</p>
@@ -190,7 +190,7 @@ export default function StaffShiftsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-sand">My current shift</CardTitle>
+            <CardTitle className="text-sm font-medium text-sand-ink">My current shift</CardTitle>
           </CardHeader>
           <CardContent>
             {currentShiftLoading ? (
@@ -198,12 +198,12 @@ export default function StaffShiftsPage() {
             ) : currentShift ? (
               <div className="space-y-1">
                 <p className="font-semibold text-espresso">Opened {formatDateTime(currentShift.openedAt)}</p>
-                <p className="text-sm text-sand">
+                <p className="text-sm text-sand-ink">
                   Opening float {formatRupee(currentShift.openingFloat)}
                 </p>
               </div>
             ) : (
-              <p className="text-sm text-sand">No active shift for your account.</p>
+              <p className="text-sm text-sand-ink">No active shift for your account.</p>
             )}
           </CardContent>
         </Card>
@@ -212,7 +212,7 @@ export default function StaffShiftsPage() {
       <section className="rounded-2xl border border-mist/60 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1">
-            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-sand">Status</label>
+            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-sand-ink">Status</label>
             <Select
               value={status}
               onValueChange={(value) => {
@@ -232,7 +232,7 @@ export default function StaffShiftsPage() {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-sand">Cashier</label>
+            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-sand-ink">Cashier</label>
             <Select
               value={cashierId}
               onValueChange={(value) => {
@@ -255,7 +255,7 @@ export default function StaffShiftsPage() {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-sand">From</label>
+            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-sand-ink">From</label>
             <input
               type="date"
               value={from}
@@ -268,7 +268,7 @@ export default function StaffShiftsPage() {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-sand">To</label>
+            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-sand-ink">To</label>
             <input
               type="date"
               value={to}
@@ -305,7 +305,7 @@ export default function StaffShiftsPage() {
               ))}
             </div>
           ) : shifts.length === 0 ? (
-            <div className="p-10 text-center text-sm text-sand">No shifts found for the current filters.</div>
+            <div className="p-10 text-center text-sm text-sand-ink">No shifts found for the current filters.</div>
           ) : (
             <Table>
               <TableHeader>
@@ -326,7 +326,7 @@ export default function StaffShiftsPage() {
                     <TableCell>
                       <div>
                         <p className="font-medium text-espresso">{shift.cashier ? staffDisplayName(shift.cashier.email) : '—'}</p>
-                        <p className="text-xs uppercase tracking-[0.2em] text-sand">{shift.cashier?.role.replace(/_/g, ' ') ?? ''}</p>
+                        <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">{shift.cashier?.role.replace(/_/g, ' ') ?? ''}</p>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -376,7 +376,7 @@ export default function StaffShiftsPage() {
 
       {meta.totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-sand">
+          <p className="text-sm text-sand-ink">
             Page {meta.page} of {meta.totalPages} · {meta.total} shifts
           </p>
           <div className="flex gap-2">

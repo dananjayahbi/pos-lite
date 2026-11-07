@@ -42,17 +42,17 @@ export function POTotalsCard({
       <CardContent>
         <dl className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-sand/30 bg-linen/50 px-3 py-2">
-            <dt className="text-xs text-mist">Subtotal</dt>
+            <dt className="text-xs text-mist-ink">Subtotal</dt>
             <dd className="font-mono text-sm text-espresso">{formatRupee(subtotal)}</dd>
           </div>
           <div className="rounded-lg border border-sand/30 bg-linen/50 px-3 py-2">
-            <dt className="text-xs text-mist">{discountLabel}</dt>
+            <dt className="text-xs text-mist-ink">{discountLabel}</dt>
             <dd className="font-mono text-sm text-espresso">
               {Number(discountAmount) > 0 ? `− ${formatRupee(discountAmount)}` : '—'}
             </dd>
           </div>
           <div className="rounded-lg border border-sand/30 bg-pearl px-3 py-2">
-            <dt className="text-xs text-mist">Total payable</dt>
+            <dt className="text-xs text-mist-ink">Total payable</dt>
             <dd className="font-mono text-sm font-semibold text-espresso">{formatRupee(total)}</dd>
           </div>
         </dl>

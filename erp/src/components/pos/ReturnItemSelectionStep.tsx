@@ -108,7 +108,7 @@ export function ReturnItemSelectionStep({
                     <p className="font-body text-sm text-espresso">
                       {line.productNameSnapshot}
                     </p>
-                    <p className="font-body text-xs text-mist">
+                    <p className="font-body text-xs text-mist-ink">
                       {line.variantDescriptionSnapshot}
                     </p>
                   </div>
@@ -119,14 +119,14 @@ export function ReturnItemSelectionStep({
                 <TableCell className="text-center font-body text-xs text-espresso">
                   {line.quantity}
                 </TableCell>
-                <TableCell className="text-center font-body text-xs text-mist">
+                <TableCell className="text-center font-body text-xs text-mist-ink">
                   {line.returnedQuantity > 0 ? line.returnedQuantity : '—'}
                 </TableCell>
                 <TableCell className="text-center font-body text-xs">
                   {returnable > 0 ? (
                     <span className="text-espresso">{returnable}</span>
                   ) : (
-                    <span className="text-mist">None remaining</span>
+                    <span className="text-mist-ink">None remaining</span>
                   )}
                 </TableCell>
                 <TableCell>
@@ -179,14 +179,14 @@ export function ReturnItemSelectionStep({
             </div>
           ))}
           <div className="border-t border-mist/30 pt-2 flex items-center justify-between">
-            <span className="font-body text-xs text-mist uppercase tracking-wide">
+            <span className="font-body text-xs text-mist-ink uppercase tracking-wide">
               Estimated Refund Total
             </span>
             <span className="font-mono text-lg font-bold text-espresso">
               {formatRupee(grandTotal.toNumber())}
             </span>
           </div>
-          <p className="font-body text-[11px] text-mist">
+          <p className="font-body text-[11px] text-mist-ink">
             Final refund amount may differ if line discounts were applied.
           </p>
         </div>

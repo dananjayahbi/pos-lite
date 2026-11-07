@@ -61,14 +61,14 @@ export function POPaymentTermsField({
               disabled={disabled}
             >
               <span className="text-sm font-medium">{option.label}</span>
-              <span className={active ? 'text-[11px] opacity-80' : 'text-[11px] text-mist'}>
+              <span className={active ? 'text-[11px] opacity-80' : 'text-[11px] text-mist-ink'}>
                 {option.hint}
               </span>
             </Button>
           );
         })}
       </div>
-      <p className="text-xs text-mist">
+      <p className="text-xs text-mist-ink">
         {value === null
           ? 'Due immediately on receipt of goods.'
           : dueDay

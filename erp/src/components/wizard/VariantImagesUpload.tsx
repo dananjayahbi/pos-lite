@@ -203,24 +203,24 @@ export function VariantImagesUpload({
             aria-label="Add images"
           >
             <Plus className="h-4 w-4 text-terracotta" />
-            <span className="text-[10px] text-mist">Upload</span>
+            <span className="text-[10px] text-mist-ink">Upload</span>
           </button>
         )}
 
         {showMax && (
           <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded border border-sand/40 bg-sand/10">
-            <span className="text-[10px] font-medium text-mist">Max</span>
-            <span className="text-[10px] text-mist">{maxImages}</span>
+            <span className="text-[10px] font-medium text-mist-ink">Max</span>
+            <span className="text-[10px] text-mist-ink">{maxImages}</span>
           </div>
         )}
       </div>
 
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-mist font-body">
+        <p className="text-xs text-mist-ink font-body">
           {pendingState.pending.length} / {maxImages} images · first image is
           the primary
         </p>
-        <p className="text-[10px] text-mist">
+        <p className="text-[10px] text-mist-ink">
           JPEG / PNG / WebP · max 5 MB · multi-select
         </p>
       </div>

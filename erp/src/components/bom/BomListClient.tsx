@@ -37,7 +37,7 @@ export function BomListClient({ permissions }: BomListClientProps) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold text-espresso">Bill of Materials</h1>
-          <p className="mt-1 font-body text-sm text-mist">
+          <p className="mt-1 font-body text-sm text-mist-ink">
             Define the raw materials consumed to produce each finished good.
           </p>
         </div>

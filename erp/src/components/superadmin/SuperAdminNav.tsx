@@ -43,7 +43,7 @@ export default function SuperAdminNav({ tenants = [] }: SuperAdminNavProps) {
     <nav className="flex-1 overflow-y-auto px-3 py-4">
       {navGroups.map((group) => (
         <div key={group.label} className="mb-6">
-          <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sand/70">
+          <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sand-ink/70">
             {group.label}
           </p>
           <ul className="space-y-1">

@@ -62,6 +62,7 @@ export async function GET(request: Request) {
     ];
     const statementRows = [
       { label: 'Opening Balance', value: data.balance.openingBalance.toFixed(2) },
+      { label: 'Cash In (Top-ups)', value: data.balance.totalTopUps.toFixed(2) },
       { label: 'Total Expenses', value: data.balance.totalExpenses.toFixed(2) },
       { label: 'Current Balance', value: data.balance.currentBalance.toFixed(2) },
     ];

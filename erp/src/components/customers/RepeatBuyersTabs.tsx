@@ -31,7 +31,7 @@ export function RepeatBuyersTabs({ value, onChange, repeatCount }: RepeatBuyersT
             className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
               active
                 ? 'bg-terracotta text-white'
-                : 'text-sand hover:text-espresso'
+                : 'text-sand-ink hover:text-espresso'
             }`}
           >
             {option.label}

@@ -27,7 +27,7 @@ export function CategoryList({
 }: CategoryListProps) {
   if (categories.length === 0) {
     return (
-      <div className="rounded-lg border border-sand bg-pearl p-8 text-center text-sm text-mist">
+      <div className="rounded-lg border border-sand bg-pearl p-8 text-center text-sm text-mist-ink">
         No categories yet. Create your first category above.
       </div>
     );

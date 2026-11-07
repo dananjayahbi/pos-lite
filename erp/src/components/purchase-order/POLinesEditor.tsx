@@ -84,7 +84,7 @@ export function POLinesEditor({ lines, onChange, errors, disabled }: POLinesEdit
       </CardHeader>
       <CardContent className="space-y-4">
         {lines.length === 0 && (
-          <p className="py-4 text-center text-sm text-mist">
+          <p className="py-4 text-center text-sm text-mist-ink">
             No lines added yet. Click &quot;Add Line&quot; to start.
           </p>
         )}
@@ -101,11 +101,11 @@ export function POLinesEditor({ lines, onChange, errors, disabled }: POLinesEdit
                 <span className="min-w-0 text-sm font-medium text-espresso">
                   Line {index + 1}
                   {line.label ? (
-                    <span className="ml-2 font-normal text-mist">— {line.label}</span>
+                    <span className="ml-2 font-normal text-mist-ink">— {line.label}</span>
                   ) : null}
                 </span>
                 <div className="flex shrink-0 items-center gap-2">
-                  <span className="font-mono text-xs text-mist">{formatRupee(lineTotal)}</span>
+                  <span className="font-mono text-xs text-mist-ink">{formatRupee(lineTotal)}</span>
                   <Button
                     type="button"
                     variant="ghost"

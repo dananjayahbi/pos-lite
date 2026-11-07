@@ -20,7 +20,7 @@ export default function NavSearchTrigger({ onOpen }: NavSearchTriggerProps) {
         type="button"
         variant="outline"
         size="sm"
-        className="hidden gap-1.5 text-sand hover:text-espresso md:inline-flex"
+        className="hidden gap-1.5 text-sand-ink hover:text-espresso md:inline-flex"
         onClick={onOpen}
       >
         <SearchIcon className="h-3.5 w-3.5" />

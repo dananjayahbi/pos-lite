@@ -160,8 +160,8 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
   if (entries.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-lg border border-mist bg-pearl/50 py-16">
-        <p className="text-sand">No audit log entries found.</p>
-        <p className="mt-1 text-sm text-sand/70">Try adjusting your filters.</p>
+        <p className="text-sand-ink">No audit log entries found.</p>
+        <p className="mt-1 text-sm text-sand-ink/70">Try adjusting your filters.</p>
       </div>
     );
   }
@@ -204,7 +204,7 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
                 <TableCell className="text-sm text-espresso">
                   {entry.actorName}
                 </TableCell>
-                <TableCell className="text-sm text-sand">
+                <TableCell className="text-sm text-sand-ink">
                   {formatDate(entry.createdAt)}
                 </TableCell>
               </TableRow>
@@ -216,7 +216,7 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
       {/* Pagination */}
       {data && data.total > 0 && (
         <div className="flex items-center justify-between pt-4">
-          <p className="text-sm text-sand">
+          <p className="text-sm text-sand-ink">
             Showing {rangeStart} – {rangeEnd} of {data.total}
           </p>
           <div className="flex gap-2">

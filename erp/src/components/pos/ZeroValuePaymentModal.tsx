@@ -170,7 +170,7 @@ export function ZeroValuePaymentModal({
 
         <div className="space-y-4">
           <div className="rounded-md bg-linen px-3 py-2">
-            <p className="font-body text-xs text-mist">
+            <p className="font-body text-xs text-mist-ink">
               The cart total is <span className="font-mono font-semibold text-espresso">Rs. 0.00</span>.
               Select a reason to complete this sale without a payment.
             </p>
@@ -204,7 +204,7 @@ export function ZeroValuePaymentModal({
                     <span className="block font-body text-sm text-espresso">
                       {opt.label}
                     </span>
-                    <span className="block font-body text-xs text-mist">
+                    <span className="block font-body text-xs text-mist-ink">
                       {opt.hint}
                     </span>
                   </span>

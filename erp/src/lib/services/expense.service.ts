@@ -3,7 +3,11 @@ import Decimal from 'decimal.js';
 import type { ExpenseCategory, Prisma } from '@/generated/prisma/client';
 import type { CreateExpenseInput, UpdateExpenseInput } from '@/lib/validators/expense.validators';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
-import { adjustFundBalance, assertFundCanSpend } from '@/lib/services/petty-cash.service';
+import {
+  adjustFundBalance,
+  assertFundCanSpend,
+  ensureFundPaymentAccount,
+} from '@/lib/services/petty-cash.service';
 import { PaymentEntrySource } from '@/generated/prisma/client';
 import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/paymentAccount.service';
 
@@ -96,7 +100,9 @@ async function reverseExpenseLedger(
     .filter((line): line is NonNullable<typeof line> => line !== null);
 
   if (lines.length > 0) {
-    await postLedgerEntries(tx, tenantId, actorId, lines);
+    await postLedgerEntries(tx, tenantId, actorId, lines, {
+      allowPettyCashAccount: true,
+    });
   }
 }
 
@@ -104,13 +110,38 @@ export async function createExpense(
   tenantId: string,
   data: CreateExpenseInput & { recordedById: string; overdrawApproved?: boolean | undefined },
 ) {
+  // Resolve the payment account and petty-cash fund as a pair. A fund always
+  // settles through its own account; an account linked to a fund implies the
+  // fund link. This keeps the fund, the account book, and the Cash Flow report
+  // on the same numbers.
+  let effectiveFundId = data.pettyCashFundId ?? null;
+  let effectiveAccountId = data.paymentAccountId ?? null;
+
+  if (effectiveFundId) {
+    const fund = await prisma.pettyCashFund.findFirst({
+      where: { id: effectiveFundId, tenantId },
+      select: { paymentAccountId: true },
+    });
+    if (!fund) throw new Error('Petty cash fund not found');
+    effectiveAccountId = fund.paymentAccountId
+      ? fund.paymentAccountId
+      : (await ensureFundPaymentAccount(tenantId, effectiveFundId, data.recordedById)).id;
+  } else if (effectiveAccountId) {
+    const account = await prisma.paymentAccount.findFirst({
+      where: { id: effectiveAccountId, tenantId },
+      include: { pettyCashFund: { select: { id: true } } },
+    });
+    if (!account) throw new Error('Payment account not found');
+    if (account.pettyCashFund) effectiveFundId = account.pettyCashFund.id;
+  }
+
   // M19-01 (BUG-53, D2): block a linked expense that would overdraw the fund
   // unless an explicit (permission-checked) manager approval rode along. Runs
   // BEFORE the row is created so a blocked overdraw writes nothing.
-  if (data.pettyCashFundId) {
+  if (effectiveFundId) {
     await assertFundCanSpend(
       tenantId,
-      data.pettyCashFundId,
+      effectiveFundId,
       data.amount,
       data.overdrawApproved === true,
     );
@@ -125,8 +156,8 @@ export async function createExpense(
         description: data.description,
         expenseDate: new Date(data.expenseDate),
         ...(data.receiptImageUrl !== undefined && { receiptImageUrl: data.receiptImageUrl }),
-        ...(data.pettyCashFundId !== undefined && { pettyCashFundId: data.pettyCashFundId }),
-        ...(data.paymentAccountId !== undefined && { paymentAccountId: data.paymentAccountId }),
+        ...(effectiveFundId !== null && { pettyCashFundId: effectiveFundId }),
+        ...(effectiveAccountId !== null && { paymentAccountId: effectiveAccountId }),
         recordedById: data.recordedById,
       },
       include: { recordedBy: { select: { email: true } } },
@@ -135,32 +166,38 @@ export async function createExpense(
     // Settle the expense out of its payment account in the SAME transaction as
     // the expense row. If the account is closed or short of funds, nothing is
     // written — previously the expense could exist without its ledger entry.
-    if (data.paymentAccountId) {
+    if (effectiveAccountId) {
       await assertSufficientFunds(
         tx,
         tenantId,
-        data.paymentAccountId,
+        effectiveAccountId,
         data.amount,
         data.overdrawApproved === true,
       );
-      await postLedgerEntries(tx, tenantId, data.recordedById, [
-        {
-          accountId: data.paymentAccountId,
-          source: PaymentEntrySource.EXPENSE,
-          sourceId: created.id,
-          description: `${data.category} — ${data.description}`.slice(0, 200),
-          credit: data.amount,
-          entryDate: new Date(data.expenseDate),
-        },
-      ]);
+      await postLedgerEntries(
+        tx,
+        tenantId,
+        data.recordedById,
+        [
+          {
+            accountId: effectiveAccountId,
+            source: PaymentEntrySource.EXPENSE,
+            sourceId: created.id,
+            description: `${data.category} — ${data.description}`.slice(0, 200),
+            credit: data.amount,
+            entryDate: new Date(data.expenseDate),
+          },
+        ],
+        { allowPettyCashAccount: true },
+      );
     }
 
     return created;
   });
 
   // A linked petty-cash expense reduces the fund's running balance.
-  if (data.pettyCashFundId) {
-    await adjustFundBalance(tenantId, data.pettyCashFundId, -data.amount);
+  if (effectiveFundId) {
+    await adjustFundBalance(tenantId, effectiveFundId, -data.amount);
     // M19-01: an approved overdraft is a privileged exception — audit it with
     // the actor so the audit trail answers "who allowed the negative balance?".
     if (data.overdrawApproved === true) {
@@ -169,7 +206,7 @@ export async function createExpense(
         actorId: data.recordedById,
         actorRole: 'USER',
         entityType: 'PettyCashFund',
-        entityId: data.pettyCashFundId,
+        entityId: effectiveFundId,
         action: 'PETTY_CASH_OVERDRAW_APPROVED',
         after: { expenseId: expense.id, amount: expense.amount },
       }).catch(() => {});
@@ -199,16 +236,50 @@ export async function updateExpense(
     throw new Error('Expense not found');
   }
 
+  // Resolve the fund/account pair exactly like createExpense: a fund forces
+  // its own account, and choosing a linked account implies its fund.
+  const oldFundId = existing.pettyCashFundId;
+  const oldAccountId = existing.paymentAccountId;
+  const oldAmount = existing.amount.toNumber();
+
+  let effectiveFundId =
+    data.pettyCashFundId !== undefined ? data.pettyCashFundId : oldFundId;
+  let effectiveAccountId =
+    data.paymentAccountId !== undefined ? data.paymentAccountId : oldAccountId;
+
+  if (effectiveFundId) {
+    const fund = await prisma.pettyCashFund.findFirst({
+      where: { id: effectiveFundId, tenantId },
+      select: { paymentAccountId: true },
+    });
+    if (!fund) throw new Error('Petty cash fund not found');
+    effectiveAccountId = fund.paymentAccountId
+      ? fund.paymentAccountId
+      : (
+          await ensureFundPaymentAccount(
+            tenantId,
+            effectiveFundId,
+            data.actorId ?? existing.recordedById,
+          )
+        ).id;
+  } else if (effectiveAccountId) {
+    const account = await prisma.paymentAccount.findFirst({
+      where: { id: effectiveAccountId, tenantId },
+      include: { pettyCashFund: { select: { id: true } } },
+    });
+    if (!account) throw new Error('Payment account not found');
+    if (account.pettyCashFund) effectiveFundId = account.pettyCashFund.id;
+  }
+
+  const newFundId = effectiveFundId;
+  const newAccountId = effectiveAccountId;
+  const newAmount = data.amount !== undefined ? data.amount : oldAmount;
+  const sameFund = oldFundId !== null && newFundId === oldFundId;
+
   // M19-01 (D2): an edit that increases or re-links a fund-backed spend is
   // guarded exactly like a create. When the fund is unchanged the old amount is
   // credited back for the check (`credit`), because the net deduction is what
   // the fund must be able to absorb.
-  const oldFundId = existing.pettyCashFundId;
-  const oldAmount = existing.amount.toNumber();
-  const newFundId = data.pettyCashFundId !== undefined ? data.pettyCashFundId : oldFundId;
-  const newAmount = data.amount !== undefined ? data.amount : oldAmount;
-  const sameFund = oldFundId !== null && newFundId === oldFundId;
-
   if (newFundId && (newFundId !== oldFundId || newAmount !== oldAmount)) {
     await assertFundCanSpend(
       tenantId,
@@ -230,9 +301,6 @@ export async function updateExpense(
     }
   }
 
-  const oldAccountId = existing.paymentAccountId;
-  const newAccountId =
-    data.paymentAccountId !== undefined ? data.paymentAccountId : oldAccountId;
   const newExpenseDate =
     data.expenseDate !== undefined ? new Date(data.expenseDate) : existing.expenseDate;
   const accountChanged = newAccountId !== oldAccountId;
@@ -250,8 +318,8 @@ export async function updateExpense(
         ...(data.description !== undefined && { description: data.description }),
         ...(data.expenseDate !== undefined && { expenseDate: new Date(data.expenseDate) }),
         ...(data.receiptImageUrl !== undefined && { receiptImageUrl: data.receiptImageUrl }),
-        ...(data.pettyCashFundId !== undefined && { pettyCashFundId: data.pettyCashFundId }),
-        ...(data.paymentAccountId !== undefined && { paymentAccountId: data.paymentAccountId }),
+        ...(newFundId !== oldFundId && { pettyCashFundId: newFundId }),
+        ...(newAccountId !== oldAccountId && { paymentAccountId: newAccountId }),
       },
       include: { recordedBy: { select: { email: true } } },
     });
@@ -271,16 +339,22 @@ export async function updateExpense(
           newAmount,
           data.overdrawApproved === true,
         );
-        await postLedgerEntries(tx, tenantId, actorId, [
-          {
-            accountId: newAccountId,
-            source: PaymentEntrySource.EXPENSE,
-            sourceId: id,
-            description: `${updated.category} — ${updated.description}`.slice(0, 200),
-            credit: newAmount,
-            entryDate: newExpenseDate,
-          },
-        ]);
+        await postLedgerEntries(
+          tx,
+          tenantId,
+          actorId,
+          [
+            {
+              accountId: newAccountId,
+              source: PaymentEntrySource.EXPENSE,
+              sourceId: id,
+              description: `${updated.category} — ${updated.description}`.slice(0, 200),
+              credit: newAmount,
+              entryDate: newExpenseDate,
+            },
+          ],
+          { allowPettyCashAccount: true },
+        );
       }
     }
 

@@ -106,17 +106,17 @@ function BookBody({ account }: { account: PaymentAccount }) {
           <SheetTitle className="font-display text-lg text-espresso">{header.name}</SheetTitle>
           <AccountTypeBadge type={header.type} />
           {header.status === 'CLOSED' && (
-            <Badge className="border border-mist bg-pearl font-body text-sand">Closed</Badge>
+            <Badge className="border border-mist bg-pearl font-body text-sand-ink">Closed</Badge>
           )}
         </div>
-        <SheetDescription className="font-body text-xs text-sand">
+        <SheetDescription className="font-body text-xs text-sand-ink">
           {header.accountNumber ? (
             <span className="font-mono">{header.accountNumber}</span>
           ) : (
             'Account book — every ledger entry for this account.'
           )}
         </SheetDescription>
-        <p className="font-body text-sm text-sand">
+        <p className="font-body text-sm text-sand-ink">
           Balance:{' '}
           <span className="font-mono text-base font-semibold text-espresso">
             {formatRupee(header.balance)}
@@ -126,7 +126,7 @@ function BookBody({ account }: { account: PaymentAccount }) {
 
       <div className="flex flex-wrap items-end gap-3 border-b border-mist p-4">
         <div>
-          <Label htmlFor="book-date-from" className="font-body text-xs text-sand">
+          <Label htmlFor="book-date-from" className="font-body text-xs text-sand-ink">
             From
           </Label>
           <Input
@@ -141,7 +141,7 @@ function BookBody({ account }: { account: PaymentAccount }) {
           />
         </div>
         <div>
-          <Label htmlFor="book-date-to" className="font-body text-xs text-sand">
+          <Label htmlFor="book-date-to" className="font-body text-xs text-sand-ink">
             To
           </Label>
           <Input
@@ -156,7 +156,7 @@ function BookBody({ account }: { account: PaymentAccount }) {
           />
         </div>
         <div>
-          <Label htmlFor="book-source" className="font-body text-xs text-sand">
+          <Label htmlFor="book-source" className="font-body text-xs text-sand-ink">
             Source
           </Label>
           <Select
@@ -208,7 +208,7 @@ function BookBody({ account }: { account: PaymentAccount }) {
               <TableBody>
                 {entries.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center font-body text-sand">
+                    <TableCell colSpan={6} className="py-8 text-center font-body text-sand-ink">
                       No entries for the selected filters.
                     </TableCell>
                   </TableRow>
@@ -221,7 +221,7 @@ function BookBody({ account }: { account: PaymentAccount }) {
                       <TableCell className="max-w-xs truncate font-body">
                         {entry.description}
                       </TableCell>
-                      <TableCell className="font-body text-xs text-sand">
+                      <TableCell className="font-body text-xs text-sand-ink">
                         {ENTRY_SOURCE_LABELS[entry.source]}
                       </TableCell>
                       <TableCell className="text-right font-mono text-xs">
@@ -244,15 +244,15 @@ function BookBody({ account }: { account: PaymentAccount }) {
         {!isLoading && !isError && (
           <div className="mt-3 rounded-lg border border-mist bg-linen/30 px-4 py-2">
             <div className="flex flex-wrap items-center justify-end gap-6 font-body text-sm">
-              <span className="text-sand">
+              <span className="text-sand-ink">
                 Total debit:{' '}
                 <span className="font-mono text-espresso">{formatRupee(sums.debit)}</span>
               </span>
-              <span className="text-sand">
+              <span className="text-sand-ink">
                 Total credit:{' '}
                 <span className="font-mono text-espresso">{formatRupee(sums.credit)}</span>
               </span>
-              <span className="text-sand">
+              <span className="text-sand-ink">
                 Net:{' '}
                 <span className="font-mono font-semibold text-espresso">
                   {formatRupee(sums.debit - sums.credit)}

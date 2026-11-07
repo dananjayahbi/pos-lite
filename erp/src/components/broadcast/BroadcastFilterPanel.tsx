@@ -73,7 +73,7 @@ export function BroadcastFilterPanel({ filters, onChange }: BroadcastFilterPanel
       {/* Tags */}
       <div className="space-y-1.5">
         <Label htmlFor="filter-tags" className="text-sm text-espresso">
-          Tags <span className="text-sand text-xs">(comma-separated)</span>
+          Tags <span className="text-sand-ink text-xs">(comma-separated)</span>
         </Label>
         <Input
           id="filter-tags"
@@ -115,7 +115,7 @@ export function BroadcastFilterPanel({ filters, onChange }: BroadcastFilterPanel
             onChange={(e) => handleInputChange('minSpend', e.target.value)}
             className="border-mist"
           />
-          <span className="text-sand text-sm">–</span>
+          <span className="text-sand-ink text-sm">–</span>
           <Input
             type="number"
             min={0}

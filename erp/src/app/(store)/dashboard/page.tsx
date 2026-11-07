@@ -42,9 +42,9 @@ function StatCard({
     <Card>
       <CardContent className="flex items-start justify-between pt-6">
         <div>
-          <p className="text-sand text-sm">{label}</p>
+          <p className="text-sand-ink text-sm">{label}</p>
           <p className="text-espresso mt-1 text-2xl font-bold">{value}</p>
-          {sub && <p className="text-mist mt-1 text-xs">{sub}</p>}
+          {sub && <p className="text-mist-ink mt-1 text-xs">{sub}</p>}
         </div>
         <div className="bg-linen text-terracotta rounded-lg p-2">{icon}</div>
       </CardContent>
@@ -165,7 +165,7 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
   });
 
   if (sales.length === 0) {
-    return <p className="text-sand py-8 text-center text-sm">No sales recorded yet.</p>;
+    return <p className="text-sand-ink py-8 text-center text-sm">No sales recorded yet.</p>;
   }
 
   return (
@@ -200,7 +200,7 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
             <TableCell className="text-espresso font-medium">
               {lkr.format(Number(sale.totalAmount))}
             </TableCell>
-            <TableCell className="text-sand text-sm">
+            <TableCell className="text-sand-ink text-sm">
               {sale.completedAt
                 ? new Date(sale.completedAt).toLocaleTimeString('en-LK', {
                     hour: '2-digit',
@@ -249,7 +249,7 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
   `;
 
   if (rows.length === 0) {
-    return <p className="text-sand py-8 text-center text-sm">All stock levels are healthy.</p>;
+    return <p className="text-sand-ink py-8 text-center text-sm">All stock levels are healthy.</p>;
   }
 
   return (
@@ -269,7 +269,7 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
             <TableCell className="text-espresso font-medium">
               {v.productName}
               {(v.form ?? v.packSize) && (
-                <span className="text-sand ml-1 text-xs">
+                <span className="text-sand-ink ml-1 text-xs">
                   {[v.form, v.packSize].filter(Boolean).join(' / ')}
                 </span>
               )}
@@ -286,7 +286,7 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
                 {v.stockQuantity}
               </span>
             </TableCell>
-            <TableCell className="text-sand">{v.lowStockThreshold}</TableCell>
+            <TableCell className="text-sand-ink">{v.lowStockThreshold}</TableCell>
             <TableCell>
               <Link
                 href={`/inventory/${v.productId}`}
@@ -329,7 +329,7 @@ export default async function StoreDashboardPage() {
       {/* Header */}
       <div>
         <h1 className="font-display text-espresso text-2xl font-bold">Dashboard</h1>
-        {tenant && <p className="text-sand mt-1 text-sm">{tenant.name}</p>}
+        {tenant && <p className="text-sand-ink mt-1 text-sm">{tenant.name}</p>}
       </div>
 
       {/* KPI Cards */}
@@ -341,7 +341,7 @@ export default async function StoreDashboardPage() {
         <div className="space-y-4">
           <div>
             <h2 className="text-espresso text-lg font-semibold">Inventory Snapshot</h2>
-            <p className="text-sand mt-1 text-sm">
+            <p className="text-sand-ink mt-1 text-sm">
               Stock KPIs and the freshest movement trail, pulled into the owner dashboard.
             </p>
           </div>
@@ -357,7 +357,7 @@ export default async function StoreDashboardPage() {
       <div className="space-y-4">
         <div>
           <h2 className="text-espresso text-lg font-semibold">Business Analytics</h2>
-          <p className="text-sand mt-1 text-sm">Key metrics and trends from the last 7 days.</p>
+          <p className="text-sand-ink mt-1 text-sm">Key metrics and trends from the last 7 days.</p>
         </div>
 
         <Suspense

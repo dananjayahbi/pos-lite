@@ -63,7 +63,10 @@ interface CustomerDetail {
   id: string;
   name: string;
   phone: string;
+  phone2?: string | null;
   email?: string | null;
+  address?: string | null;
+  city?: string | null;
   gender?: string | null;
   birthday?: string | null;
   tags: string[];
@@ -185,7 +188,7 @@ export default function CustomerDetailPage({
 
   if (!customer) {
     return (
-      <div className="text-center py-20 text-sand">
+      <div className="text-center py-20 text-sand-ink">
         <p>Customer not found</p>
         <Button variant="outline" asChild className="mt-4">
           <Link href="/customers">Back to Customers</Link>
@@ -241,9 +244,21 @@ export default function CustomerDetailPage({
               </Button>
             )}
           </div>
-          <p className="text-sm text-sand font-mono mt-0.5">{customer.phone}</p>
+          <div className="mt-0.5 space-y-0.5">
+            <p className="text-sm text-sand-ink font-mono">{customer.phone}</p>
+            {customer.phone2 && (
+              <p className="text-sm text-sand-ink font-mono">
+                Alt: {customer.phone2}
+              </p>
+            )}
+          </div>
           {customer.email && (
-            <p className="text-sm text-sand mt-0.5">{customer.email}</p>
+            <p className="text-sm text-sand-ink mt-0.5">{customer.email}</p>
+          )}
+          {(customer.address || customer.city) && (
+            <p className="text-sm text-sand-ink mt-0.5">
+              {[customer.address, customer.city].filter(Boolean).join(', ')}
+            </p>
           )}
           {customer.tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
@@ -261,7 +276,7 @@ export default function CustomerDetailPage({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-body text-sand uppercase tracking-wide">
+            <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide">
               Total Spend
             </CardTitle>
           </CardHeader>
@@ -273,7 +288,7 @@ export default function CustomerDetailPage({
         </Card>
         <Card>
           <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-body text-sand uppercase tracking-wide">
+            <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide">
               Avg Order Value
             </CardTitle>
           </CardHeader>
@@ -285,7 +300,7 @@ export default function CustomerDetailPage({
         </Card>
         <Card>
           <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-body text-sand uppercase tracking-wide">
+            <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide">
               Visits
             </CardTitle>
           </CardHeader>
@@ -297,7 +312,7 @@ export default function CustomerDetailPage({
         </Card>
         <Card>
           <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-body text-sand uppercase tracking-wide">
+            <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide">
               Credit Balance
             </CardTitle>
           </CardHeader>
@@ -325,7 +340,7 @@ export default function CustomerDetailPage({
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
               activeTab === t.key
                 ? 'border-terracotta text-terracotta'
-                : 'border-transparent text-sand hover:text-espresso'
+                : 'border-transparent text-sand-ink hover:text-espresso'
             }`}
           >
             {t.label}
@@ -349,7 +364,7 @@ export default function CustomerDetailPage({
             <TableBody>
               {completedSales.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-sand">
+                  <TableCell colSpan={5} className="text-center py-8 text-sand-ink">
                     No purchase history
                   </TableCell>
                 </TableRow>
@@ -393,7 +408,7 @@ export default function CustomerDetailPage({
             </TableHeader>
             <TableBody>
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-sand">
+                <TableCell colSpan={5} className="text-center py-8 text-sand-ink">
                   No returns on record
                 </TableCell>
               </TableRow>
@@ -406,7 +421,7 @@ export default function CustomerDetailPage({
         <div className="rounded-lg border border-sand/30 bg-white p-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-xs uppercase text-sand tracking-wide mb-1">Gender</p>
+              <p className="text-xs uppercase text-sand-ink tracking-wide mb-1">Gender</p>
               <p className="text-sm text-espresso">
                 {customer.gender
                   ? customer.gender.charAt(0) + customer.gender.slice(1).toLowerCase()
@@ -414,23 +429,39 @@ export default function CustomerDetailPage({
               </p>
             </div>
             <div>
-              <p className="text-xs uppercase text-sand tracking-wide mb-1">Birthday</p>
+              <p className="text-xs uppercase text-sand-ink tracking-wide mb-1">Birthday</p>
               <p className="text-sm text-espresso">
                 {customer.birthday ? formatDate(customer.birthday) : '—'}
               </p>
             </div>
             <div>
-              <p className="text-xs uppercase text-sand tracking-wide mb-1">Customer Since</p>
+              <p className="text-xs uppercase text-sand-ink tracking-wide mb-1">Contact No 2</p>
+              <p className="text-sm text-espresso font-mono">
+                {customer.phone2 ?? '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-sand-ink tracking-wide mb-1">City</p>
+              <p className="text-sm text-espresso">{customer.city ?? '—'}</p>
+            </div>
+            <div className="col-span-2">
+              <p className="text-xs uppercase text-sand-ink tracking-wide mb-1">Address</p>
+              <p className="text-sm text-espresso whitespace-pre-wrap">
+                {customer.address ?? '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-sand-ink tracking-wide mb-1">Customer Since</p>
               <p className="text-sm text-espresso">{formatDate(customer.createdAt)}</p>
             </div>
             <div>
-              <p className="text-xs uppercase text-sand tracking-wide mb-1">Last Updated</p>
+              <p className="text-xs uppercase text-sand-ink tracking-wide mb-1">Last Updated</p>
               <p className="text-sm text-espresso">{formatDate(customer.updatedAt)}</p>
             </div>
           </div>
           {customer.notes && (
             <div>
-              <p className="text-xs uppercase text-sand tracking-wide mb-1">Notes</p>
+              <p className="text-xs uppercase text-sand-ink tracking-wide mb-1">Notes</p>
               <p className="text-sm text-espresso whitespace-pre-wrap">{customer.notes}</p>
             </div>
           )}

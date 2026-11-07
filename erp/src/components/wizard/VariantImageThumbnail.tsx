@@ -54,7 +54,7 @@ export function VariantImageThumbnail({
         </div>
       ) : isBroken ? (
         <div className="flex h-full w-full flex-col items-center justify-center">
-          <ImageOff className="h-3.5 w-3.5 text-mist" />
+          <ImageOff className="h-3.5 w-3.5 text-mist-ink" />
         </div>
       ) : (
         <Image
@@ -79,7 +79,7 @@ export function VariantImageThumbnail({
             className={`h-3 w-3 ${
               isPrimary
                 ? 'fill-amber-400 text-amber-400'
-                : 'fill-transparent text-mist'
+                : 'fill-transparent text-mist-ink'
             }`}
           />
         </button>

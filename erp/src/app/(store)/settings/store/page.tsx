@@ -49,7 +49,7 @@ export default async function StoreProfileSettingsPage() {
     <div className="mx-auto w-full max-w-2xl space-y-6 p-6">
       <div>
         <h1 className="font-display text-2xl font-bold text-espresso">Store profile</h1>
-        <p className="mt-1 text-sm text-sand">
+        <p className="mt-1 text-sm text-sand-ink">
           Manage the store name, logo, address and receipt footer used across POS and customer touchpoints.
         </p>
       </div>

@@ -186,7 +186,7 @@ export function PurchaseOrdersListClient() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-2xl font-semibold text-espresso">Purchase Orders</h1>
-          <p className="mt-1 text-sm text-sand">
+          <p className="mt-1 text-sm text-sand-ink">
             Track what was ordered, what it costs, and what is still owed.
           </p>
         </div>
@@ -270,7 +270,7 @@ export function PurchaseOrdersListClient() {
               ))
             ) : pos.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-mist">
+                <TableCell colSpan={9} className="py-8 text-center text-mist-ink">
                   No purchase orders found
                 </TableCell>
               </TableRow>
@@ -295,20 +295,20 @@ export function PurchaseOrdersListClient() {
                         Paid
                       </Badge>
                     ) : (
-                      <span className="text-xs text-mist">Unpaid</span>
+                      <span className="text-xs text-mist-ink">Unpaid</span>
                     )}
                   </TableCell>
                   <TableCell className="text-center">{po._count.lines}</TableCell>
                   <TableCell className="text-right font-mono">
                     {formatRupee(po.totalAmount)}
                     {Number(po.discountAmount) > 0 ? (
-                      <span className="ml-1 block text-[10px] font-normal text-mist line-through">
+                      <span className="ml-1 block text-[10px] font-normal text-mist-ink line-through">
                         {formatRupee(po.subtotalAmount)}
                       </span>
                     ) : null}
                   </TableCell>
-                  <TableCell className="text-mist">{formatPoDate(po.orderDate)}</TableCell>
-                  <TableCell className="text-mist">
+                  <TableCell className="text-mist-ink">{formatPoDate(po.orderDate)}</TableCell>
+                  <TableCell className="text-mist-ink">
                     {po.expectedDeliveryDate ? formatPoDate(po.expectedDeliveryDate) : '—'}
                   </TableCell>
                   <TableCell className="text-right">
@@ -385,7 +385,7 @@ export function PurchaseOrdersListClient() {
 
       {totalPages > 1 ? (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-mist">
+          <p className="text-sm text-mist-ink">
             Page {page} of {totalPages}
           </p>
           <div className="flex gap-2">

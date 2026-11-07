@@ -132,7 +132,7 @@ function ComponentCard({
           </p>
         )}
         {subtitle && (
-          <p className="text-mist text-xs">{subtitle}</p>
+          <p className="text-mist-ink text-xs">{subtitle}</p>
         )}
       </CardContent>
     </Card>
@@ -169,7 +169,7 @@ export default function StatusPage() {
           </span>
           <span className="text-espresso text-[32px] font-light">POS</span>
         </h1>
-        <p className="text-mist mt-1 text-sm">System Status</p>
+        <p className="text-mist-ink mt-1 text-sm">System Status</p>
       </header>
 
       {/* Overall status banner */}
@@ -210,7 +210,7 @@ export default function StatusPage() {
 
       {/* Footer */}
       <footer className="bg-linen mt-12 py-6 text-center">
-        <p className="text-mist text-xs">
+        <p className="text-mist-ink text-xs">
           Status checks refresh automatically every 30 seconds.
         </p>
       </footer>

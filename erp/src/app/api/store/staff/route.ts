@@ -3,7 +3,10 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getStaffMembers, createStaffMember } from '@/lib/services/staff.service';
-import { CreateStaffSchema } from '@/lib/validators/staff.validators';
+import {
+  CreateStaffSchema,
+  StaffListQuerySchema,
+} from '@/lib/validators/staff.validators';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function GET(request: Request) {
@@ -33,10 +36,25 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
-
-    const staff = await getStaffMembers(tenantId, {
+    const roleParam = searchParams.get('role');
+    const parsed = StaffListQuerySchema.safeParse({
       search: searchParams.get('search') ?? undefined,
+      role: roleParam && roleParam !== 'ALL' ? roleParam : undefined,
     });
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: parsed.error.issues[0]?.message ?? 'Invalid filters',
+          },
+        },
+        { status: 400 },
+      );
+    }
+
+    const staff = await getStaffMembers(tenantId, parsed.data);
 
     return NextResponse.json({ success: true, data: staff });
   } catch (error) {

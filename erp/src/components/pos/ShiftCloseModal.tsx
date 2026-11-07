@@ -194,7 +194,7 @@ export function ShiftCloseModal({
 
           {/* Live preview */}
           {summaryLoading && (
-            <p className="text-xs text-mist font-body">
+            <p className="text-xs text-mist-ink font-body">
               Loading shift summary…
             </p>
           )}
@@ -244,7 +244,7 @@ export function ShiftCloseModal({
           <div>
             <Label htmlFor="shift-notes" className="font-body">
               Notes{' '}
-              <span className="text-mist text-xs font-normal">(optional)</span>
+              <span className="text-mist-ink text-xs font-normal">(optional)</span>
             </Label>
             <textarea
               id="shift-notes"
@@ -252,11 +252,11 @@ export function ShiftCloseModal({
               onChange={(e) => setNotes(e.target.value.slice(0, 500))}
               rows={3}
               maxLength={500}
-              className="mt-1.5 w-full rounded-lg border border-mist px-3 py-2 text-sm font-body bg-white text-espresso placeholder:text-mist focus:border-sand focus:outline-none focus:ring-1 focus:ring-sand transition-colors resize-none"
+              className="mt-1.5 w-full rounded-lg border border-mist px-3 py-2 text-sm font-body bg-white text-espresso placeholder:text-mist-ink focus:border-sand focus:outline-none focus:ring-1 focus:ring-sand transition-colors resize-none"
               placeholder="Any notes about this shift…"
               disabled={loading}
             />
-            <p className="text-xs text-mist font-body mt-1 text-right">
+            <p className="text-xs text-mist-ink font-body mt-1 text-right">
               {notes.length}/500
             </p>
           </div>

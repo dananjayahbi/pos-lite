@@ -85,7 +85,7 @@ export function POSTerminalShell({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={businessLogoUrl} alt="" className="h-5 w-5 rounded object-contain" />
           ) : null}
-          <span className="font-display text-sand text-sm">{businessName}</span>
+          <span className="font-display text-sand-ink text-sm">{businessName}</span>
         </div>
 
         <ShiftIndicator

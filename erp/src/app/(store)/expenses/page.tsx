@@ -158,7 +158,12 @@ export default function ExpensesPage() {
 
   // Petty cash fund for optional linkage of standalone expenses (doc 36).
   const { data: pettyCash } = useQuery<{
-    data: { id: string; name: string; activeCategories: string[] };
+    data: {
+      id: string;
+      name: string;
+      activeCategories: string[];
+      paymentAccount?: { id: string; name: string } | null;
+    };
     balance: { currentBalance: number };
   } | null>({
     queryKey: ['petty-cash-fund'],
@@ -204,6 +209,7 @@ export default function ExpensesPage() {
       paymentAccountId: undefined,
     },
   });
+  const createFundId = createForm.watch('pettyCashFundId');
 
   const createMutation = useMutation({
     mutationFn: async (data: CreateExpenseInput) => {
@@ -219,6 +225,7 @@ export default function ExpensesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['petty-cash'] });
       queryClient.invalidateQueries({ queryKey: ['petty-cash-fund'] });
       queryClient.invalidateQueries({ queryKey: ['payment-accounts'] });
       queryClient.invalidateQueries({ queryKey: ['cash-flow'] });
@@ -234,6 +241,7 @@ export default function ExpensesPage() {
   const editForm = useForm<CreateExpenseInput>({
     resolver: standardSchemaResolver(CreateExpenseSchema),
   });
+  const editFundId = editForm.watch('pettyCashFundId');
 
   const editMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<CreateExpenseInput> }) => {
@@ -248,6 +256,7 @@ export default function ExpensesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['petty-cash'] });
       queryClient.invalidateQueries({ queryKey: ['petty-cash-fund'] });
       queryClient.invalidateQueries({ queryKey: ['payment-accounts'] });
       queryClient.invalidateQueries({ queryKey: ['cash-flow'] });
@@ -291,7 +300,7 @@ export default function ExpensesPage() {
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-4">
         <div className="w-48">
-          <Label className="text-sm text-sand">Category</Label>
+          <Label className="text-sm text-sand-ink">Category</Label>
           <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setPage(1); }}>
             <SelectTrigger className="border-mist">
               <SelectValue />
@@ -305,7 +314,7 @@ export default function ExpensesPage() {
           </Select>
         </div>
         <div>
-          <Label className="text-sm text-sand">From</Label>
+          <Label className="text-sm text-sand-ink">From</Label>
           <Input
             type="date"
             value={dateFrom}
@@ -314,7 +323,7 @@ export default function ExpensesPage() {
           />
         </div>
         <div>
-          <Label className="text-sm text-sand">To</Label>
+          <Label className="text-sm text-sand-ink">To</Label>
           <Input
             type="date"
             value={dateTo}
@@ -386,9 +395,12 @@ export default function ExpensesPage() {
                   onValueChange={(accountId) => createForm.setValue('paymentAccountId', accountId)}
                   placeholder="Select account"
                   noneLabel="No account (unlinked)"
+                  disabled={Boolean(createFundId)}
                 />
-                <p className="mt-1 text-xs text-sand">
-                  Linked expenses post to the account ledger and the Cash Flow page.
+                <p className="mt-1 text-xs text-sand-ink">
+                  {createFundId
+                    ? "Linked petty-cash expenses post to the fund's payment account automatically."
+                    : 'Linked expenses post to the account ledger and the Cash Flow page.'}
                 </p>
               </div>
               {fund && (
@@ -397,7 +409,13 @@ export default function ExpensesPage() {
                   fundId={createForm.watch('pettyCashFundId')}
                   amount={createForm.watch('amount')}
                   overdrawApproved={createOverdraw}
-                  onFundChange={(v) => createForm.setValue('pettyCashFundId', v)}
+                  onFundChange={(v) => {
+                    createForm.setValue('pettyCashFundId', v);
+                    createForm.setValue(
+                      'paymentAccountId',
+                      v ? (fund?.paymentAccount?.id ?? null) : null,
+                    );
+                  }}
                   onOverdrawChange={setCreateOverdraw}
                 />
               )}
@@ -442,7 +460,7 @@ export default function ExpensesPage() {
               <TableBody>
                 {(data?.expenses ?? []).length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-sand">
+                    <TableCell colSpan={7} className="py-8 text-center text-sand-ink">
                       No expenses found for the selected filters.
                     </TableCell>
                   </TableRow>
@@ -456,13 +474,13 @@ export default function ExpensesPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate">{expense.description}</TableCell>
-                      <TableCell className="text-sm text-sand">
+                      <TableCell className="text-sm text-sand-ink">
                         {expense.paymentAccountId
                           ? accountNameById.get(expense.paymentAccountId) ?? 'Linked account'
                           : '—'}
                       </TableCell>
                       <TableCell className="text-right font-mono">{formatRupee(expense.amount)}</TableCell>
-                      <TableCell className="text-sm text-sand">{staffDisplayName(expense.recordedBy.email)}</TableCell>
+                      <TableCell className="text-sm text-sand-ink">{staffDisplayName(expense.recordedBy.email)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
                           <Button
@@ -494,7 +512,7 @@ export default function ExpensesPage() {
           {(data?.expenses ?? []).length > 0 && (
             <div className="flex justify-end">
               <div className="rounded-lg border border-mist bg-linen/30 px-6 py-3">
-                <span className="text-sm text-sand">Total (this page): </span>
+                <span className="text-sm text-sand-ink">Total (this page): </span>
                 <span className="font-display text-lg font-bold text-espresso">
                   {formatRupee(totalAmount.toFixed(2))}
                 </span>
@@ -514,7 +532,7 @@ export default function ExpensesPage() {
               >
                 Previous
               </Button>
-              <span className="text-sm text-sand">
+              <span className="text-sm text-sand-ink">
                 Page {data.page} of {Math.ceil(data.total / data.pageSize)}
               </span>
               <Button
@@ -541,29 +559,29 @@ export default function ExpensesPage() {
           {viewExpense && (
             <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-sand">Category</span>
+                <span className="text-sand-ink">Category</span>
                 <Badge className={CATEGORY_BADGE_COLORS[viewExpense.category] ?? ''}>
                   {CATEGORY_LABEL[viewExpense.category] ?? viewExpense.category}
                 </Badge>
               </div>
               <div className="flex justify-between">
-                <span className="text-sand">Amount</span>
+                <span className="text-sand-ink">Amount</span>
                 <span className="font-mono font-semibold text-espresso">{formatRupee(viewExpense.amount)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sand">Date</span>
+                <span className="text-sand-ink">Date</span>
                 <span>{formatShortDate(viewExpense.expenseDate)}</span>
               </div>
               <div>
-                <span className="text-sand">Description</span>
+                <span className="text-sand-ink">Description</span>
                 <p className="mt-1 text-sm text-espresso">{viewExpense.description}</p>
               </div>
               <div className="flex justify-between">
-                <span className="text-sand">Recorded By</span>
+                <span className="text-sand-ink">Recorded By</span>
                 <span className="text-sm">{staffDisplayName(viewExpense.recordedBy.email)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sand">Payment Account</span>
+                <span className="text-sand-ink">Payment Account</span>
                 <span className="text-sm">
                   {viewExpense.paymentAccountId
                     ? accountNameById.get(viewExpense.paymentAccountId) ?? 'Linked account'
@@ -572,7 +590,7 @@ export default function ExpensesPage() {
               </div>
               {viewExpense.receiptImageUrl && (
                 <div>
-                  <span className="text-sand">Receipt</span>
+                  <span className="text-sand-ink">Receipt</span>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={viewExpense.receiptImageUrl}
@@ -641,9 +659,12 @@ export default function ExpensesPage() {
                   onValueChange={(accountId) => editForm.setValue('paymentAccountId', accountId)}
                   placeholder="Select account"
                   noneLabel="No account (unlinked)"
+                  disabled={Boolean(editFundId)}
                 />
-                <p className="mt-1 text-xs text-sand">
-                  Changing the account or amount reverses the old ledger entry and posts the new one.
+                <p className="mt-1 text-xs text-sand-ink">
+                  {editFundId
+                    ? "Linked petty-cash expenses post to the fund's payment account automatically."
+                    : 'Changing the account or amount reverses the old ledger entry and posts the new one.'}
                 </p>
               </div>
               {fund && (
@@ -652,7 +673,13 @@ export default function ExpensesPage() {
                   fundId={editForm.watch('pettyCashFundId')}
                   amount={editForm.watch('amount')}
                   overdrawApproved={editOverdraw}
-                  onFundChange={(v) => editForm.setValue('pettyCashFundId', v)}
+                  onFundChange={(v) => {
+                    editForm.setValue('pettyCashFundId', v);
+                    editForm.setValue(
+                      'paymentAccountId',
+                      v ? (fund?.paymentAccount?.id ?? null) : null,
+                    );
+                  }}
                   onOverdrawChange={setEditOverdraw}
                 />
               )}

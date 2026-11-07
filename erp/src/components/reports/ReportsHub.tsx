@@ -19,7 +19,7 @@ export function ReportsHub({ permissions }: { permissions: readonly string[] }) 
     <PageContainer maxWidth="7xl" className="space-y-8">
       <header>
         <h1 className="text-espresso font-display text-2xl font-bold">Reports</h1>
-        <p className="text-sand mt-1 text-sm">
+        <p className="text-sand-ink mt-1 text-sm">
           Analytics and audit reporting for this store. Pick a report to set its date range, then export
           or save it.
         </p>
@@ -39,7 +39,7 @@ export function ReportsHub({ permissions }: { permissions: readonly string[] }) 
           <section key={group.label} className="space-y-3">
             <div>
               <h2 className="text-espresso font-display text-lg font-semibold">{group.label}</h2>
-              <p className="text-sand text-sm">{group.description}</p>
+              <p className="text-sand-ink text-sm">{group.description}</p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {group.entries.map((entry) => (

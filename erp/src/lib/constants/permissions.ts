@@ -89,6 +89,8 @@ export const PERMISSIONS = {
     viewShift: 'shift:view',
     assignPermissions: 'staff:permissions:assign',
     viewAttendance: 'staff:attendance:view',
+    // Adjust clock times and record Leave/Absent/Half Day for staff.
+    manageAttendance: 'staff:attendance:manage',
   },
   REPORT: {
     viewSalesReport: 'report:view_sales',
@@ -142,6 +144,8 @@ export const PERMISSIONS = {
   PETTY_CASH: {
     viewPettyCash: 'petty_cash:view',
     managePettyCash: 'petty_cash:manage',
+    // Owner-only fund identity/threshold controls (name, low-balance limit).
+    manageFundSettings: 'petty_cash:settings:manage',
   },
   // Ledger-backed money containers (cash drawer, banks, gateways, couriers).
   // `view` is broad so a cashier can pick a destination account; `transfer`,
@@ -243,6 +247,7 @@ const managerExcluded = new Set<PermissionKey>([
   PERMISSIONS.DELIVERY.importRemittance,
   PERMISSIONS.DELIVERY.manageRateCard,
   PERMISSIONS.REPORT.viewZeroValueReport,
+  PERMISSIONS.PETTY_CASH.manageFundSettings,
 ]);
 
 export type AssignableRole = Exclude<UserRole, 'SUPER_ADMIN'>;

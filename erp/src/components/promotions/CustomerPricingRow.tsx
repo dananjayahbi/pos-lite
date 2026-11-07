@@ -52,25 +52,25 @@ export function CustomerPricingRow({ rule, onDeactivate, isDeactivating }: Custo
         {rule.variant ? (
           <>
             <p className="font-medium">{rule.variant.product.name}</p>
-            <p className="text-xs text-mist font-mono">{rule.variant.sku}</p>
+            <p className="text-xs text-mist-ink font-mono">{rule.variant.sku}</p>
           </>
         ) : (
-          <span className="text-mist">All variants</span>
+          <span className="text-mist-ink">All variants</span>
         )}
       </TableCell>
       <TableCell className="font-mono text-sm text-espresso">
         <p>{formatRupee(rule.price)}</p>
         {rule.variant ? (
-          <p className="text-xs text-mist line-through">{formatRupee(rule.variant.retailPrice)}</p>
+          <p className="text-xs text-mist-ink line-through">{formatRupee(rule.variant.retailPrice)}</p>
         ) : null}
       </TableCell>
-      <TableCell className="font-body text-xs text-mist">
+      <TableCell className="font-body text-xs text-mist-ink">
         {formatWindow(rule.startsAt, rule.endsAt)}
       </TableCell>
       <TableCell>
         <Badge
           variant="secondary"
-          className={`font-body text-xs ${rule.isActive ? 'bg-green-50 text-green-700' : 'bg-mist/20 text-mist'}`}
+          className={`font-body text-xs ${rule.isActive ? 'bg-green-50 text-green-700' : 'bg-mist/20 text-mist-ink'}`}
         >
           {rule.isActive ? 'Active' : 'Inactive'}
         </Badge>

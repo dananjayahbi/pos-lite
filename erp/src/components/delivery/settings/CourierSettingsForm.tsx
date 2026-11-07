@@ -140,7 +140,7 @@ export function CourierSettingsForm() {
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-2xl font-bold text-espresso">Courier settings</h1>
-        <p className="mt-1 text-sm text-sand">
+        <p className="mt-1 text-sm text-sand-ink">
           Configure the Trans Express account used to dispatch deliveries. In production, paste the
           API key from the Trans Express portal (or use email/password on staging).
         </p>
@@ -157,7 +157,7 @@ export function CourierSettingsForm() {
           <div className="flex items-center justify-between gap-4 rounded-lg border border-mist p-4">
             <div>
               <Label htmlFor="courier-active">Account active</Label>
-              <p className="text-sm text-sand">Enable live dispatch against this courier account.</p>
+              <p className="text-sm text-sand-ink">Enable live dispatch against this courier account.</p>
             </div>
             <Switch
               id="courier-active"

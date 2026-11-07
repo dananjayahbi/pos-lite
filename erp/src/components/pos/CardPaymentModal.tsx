@@ -95,7 +95,7 @@ export function CardPaymentModal({
         <div className="space-y-4">
           {/* Total Due */}
           <div>
-            <p className="text-xs font-body uppercase tracking-wide text-mist">
+            <p className="text-xs font-body uppercase tracking-wide text-mist-ink">
               Total Due
             </p>
             <p className="font-mono text-3xl font-bold text-espresso">
@@ -118,7 +118,7 @@ export function CardPaymentModal({
                 Terminal Reference / Approval Code
               </label>
               <span title="Used for reconciliation with your card terminal's transaction records">
-                <Info className="h-3.5 w-3.5 text-mist cursor-help" />
+                <Info className="h-3.5 w-3.5 text-mist-ink cursor-help" />
               </span>
             </div>
             <Input
@@ -153,7 +153,7 @@ export function CardPaymentModal({
           <button
             type="button"
             onClick={handleClose}
-            className="w-full text-center font-body text-sm text-mist hover:text-espresso transition-colors"
+            className="w-full text-center font-body text-sm text-mist-ink hover:text-espresso transition-colors"
           >
             Cancel
           </button>

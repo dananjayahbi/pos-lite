@@ -40,7 +40,7 @@ export function CategoryIcon({
       className={`flex shrink-0 items-center justify-center rounded-md bg-mist/30 ${className ?? ''}`}
       style={{ width: size, height: size }}
     >
-      <Leaf className="h-3.5 w-3.5 text-mist" />
+      <Leaf className="h-3.5 w-3.5 text-mist-ink" />
     </div>
   );
 }

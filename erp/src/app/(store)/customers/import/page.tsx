@@ -12,7 +12,7 @@ export default function CustomerImportPage() {
       <div className="mx-auto max-w-4xl space-y-6">
         <div>
           <h1 className="font-display text-2xl font-bold text-espresso">Import Customers</h1>
-          <p className="mt-1 text-sm text-sand">
+          <p className="mt-1 text-sm text-sand-ink">
             Bulk upload customer records with the same CSV endpoint used by the sheet workflow,
             now with a full-page view that is easier to revisit and explain to staff.
           </p>

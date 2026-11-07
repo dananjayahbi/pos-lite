@@ -92,7 +92,7 @@ function CloseForm({ account, accounts, onSubmit, onCancel }: CloseFormProps) {
     <>
       <DialogHeader>
         <DialogTitle className="font-display">Close Account</DialogTitle>
-        <DialogDescription className="font-body text-sm text-mist">
+        <DialogDescription className="font-body text-sm text-mist-ink">
           Closing retires the account for future movements. Its ledger history is
           kept for reporting.
         </DialogDescription>
@@ -100,11 +100,11 @@ function CloseForm({ account, accounts, onSubmit, onCancel }: CloseFormProps) {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="rounded-lg border border-mist bg-linen/40 p-3">
-          <p className="font-body text-[11px] uppercase tracking-wide text-mist">Account</p>
+          <p className="font-body text-[11px] uppercase tracking-wide text-mist-ink">Account</p>
           <p className="mt-1 truncate font-display text-sm font-semibold text-espresso">
             {account.name}
           </p>
-          <p className="mt-2 font-body text-xs text-sand">
+          <p className="mt-2 font-body text-xs text-sand-ink">
             Remaining balance:{' '}
             <span className="font-mono text-espresso">{formatRupee(account.balance)}</span>
           </p>
@@ -115,7 +115,7 @@ function CloseForm({ account, accounts, onSubmit, onCancel }: CloseFormProps) {
             <Label htmlFor="close-transfer-to" className="font-body">
               Transfer remaining balance to
             </Label>
-            <p className="mt-1 font-body text-[11px] text-sand">
+            <p className="mt-1 font-body text-[11px] text-sand-ink">
               The full {formatRupee(account.balance)} will be swept into the account you pick,
               as a closing-transfer ledger entry. The money does not disappear.
             </p>
@@ -138,14 +138,14 @@ function CloseForm({ account, accounts, onSubmit, onCancel }: CloseFormProps) {
             )}
           </div>
         ) : (
-          <p className="font-body text-sm text-sand">
+          <p className="font-body text-sm text-sand-ink">
             This account holds no money, so nothing needs to be swept before it is closed.
           </p>
         )}
 
         <div>
           <Label htmlFor="close-note" className="font-body">
-            Note <span className="font-normal text-mist">(optional)</span>
+            Note <span className="font-normal text-mist-ink">(optional)</span>
           </Label>
           <Input
             id="close-note"

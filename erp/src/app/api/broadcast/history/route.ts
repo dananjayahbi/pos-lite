@@ -51,6 +51,8 @@ export async function GET() {
       const parsed = parseBroadcastFilters(broadcast.filters);
       return {
         id: broadcast.id,
+        channel: broadcast.channel,
+        subject: broadcast.subject,
         message: broadcast.message,
         sentAt: broadcast.sentAt,
         recipientCount: broadcast.recipientCount,

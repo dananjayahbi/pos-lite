@@ -206,7 +206,7 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
 
   if (!canManage) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-20 text-mist">
+      <div className="flex flex-col items-center justify-center gap-4 py-20 text-mist-ink">
         <AlertTriangle className="h-12 w-12" />
         <p className="font-body text-lg">You do not have permission to manage stock takes.</p>
       </div>
@@ -216,7 +216,7 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
   return (
     <div className="space-y-6 p-6 md:p-8">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-mist font-body">
+      <nav className="flex items-center gap-1.5 text-sm text-mist-ink font-body">
         <Link href="/" className="hover:text-espresso transition-colors">
           Dashboard
         </Link>
@@ -251,7 +251,7 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle className="font-display text-espresso">New Stock Take Session</DialogTitle>
-                <DialogDescription className="font-body text-mist">
+                <DialogDescription className="font-body text-mist-ink">
                   Choose the scope for this stock take count.
                 </DialogDescription>
               </DialogHeader>
@@ -269,11 +269,11 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
                     }`}
                   >
                     <Package
-                      className={`h-8 w-8 ${scopeType === 'all' ? 'text-espresso' : 'text-mist'}`}
+                      className={`h-8 w-8 ${scopeType === 'all' ? 'text-espresso' : 'text-mist-ink'}`}
                     />
                     <span
                       className={`font-body text-sm font-medium ${
-                        scopeType === 'all' ? 'text-espresso' : 'text-mist'
+                        scopeType === 'all' ? 'text-espresso' : 'text-mist-ink'
                       }`}
                     >
                       All Products
@@ -290,11 +290,11 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
                     }`}
                   >
                     <FolderOpen
-                      className={`h-8 w-8 ${scopeType === 'category' ? 'text-espresso' : 'text-mist'}`}
+                      className={`h-8 w-8 ${scopeType === 'category' ? 'text-espresso' : 'text-mist-ink'}`}
                     />
                     <span
                       className={`font-body text-sm font-medium ${
-                        scopeType === 'category' ? 'text-espresso' : 'text-mist'
+                        scopeType === 'category' ? 'text-espresso' : 'text-mist-ink'
                       }`}
                     >
                       Specific Category
@@ -357,9 +357,9 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
         </div>
       ) : sessions.length === 0 ? (
         <div className="flex flex-col items-center gap-4 py-20 text-center">
-          <ClipboardList className="h-16 w-16 text-mist/50" />
-          <p className="font-body text-lg text-mist">No stock take sessions yet</p>
-          <p className="font-body text-sm text-mist/70">
+          <ClipboardList className="h-16 w-16 text-mist-ink/50" />
+          <p className="font-body text-lg text-mist-ink">No stock take sessions yet</p>
+          <p className="font-body text-sm text-mist-ink/70">
             Start your first stock take to verify inventory accuracy.
           </p>
         </div>
@@ -368,28 +368,28 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
           <Table>
             <TableHeader>
               <TableRow className="bg-linen/50 hover:bg-linen/50">
-                <TableHead className="font-body text-xs text-mist uppercase tracking-wider">
+                <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider">
                   Session ID
                 </TableHead>
-                <TableHead className="font-body text-xs text-mist uppercase tracking-wider">
+                <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider">
                   Scope
                 </TableHead>
-                <TableHead className="font-body text-xs text-mist uppercase tracking-wider">
+                <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider">
                   Status
                 </TableHead>
-                <TableHead className="font-body text-xs text-mist uppercase tracking-wider">
+                <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider">
                   Started By
                 </TableHead>
-                <TableHead className="font-body text-xs text-mist uppercase tracking-wider">
+                <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider">
                   Started At
                 </TableHead>
-                <TableHead className="font-body text-xs text-mist uppercase tracking-wider">
+                <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider">
                   Completed At
                 </TableHead>
-                <TableHead className="font-body text-xs text-mist uppercase tracking-wider text-right">
+                <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider text-right">
                   Discrepancies
                 </TableHead>
-                <TableHead className="font-body text-xs text-mist uppercase tracking-wider">
+                <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider">
                   Actions
                 </TableHead>
               </TableRow>
@@ -416,18 +416,18 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
                         {badge.label}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-body text-sm text-mist">{staffDisplayName(s.initiatedBy)}</TableCell>
-                    <TableCell className="font-body text-sm text-mist">
+                    <TableCell className="font-body text-sm text-mist-ink">{staffDisplayName(s.initiatedBy)}</TableCell>
+                    <TableCell className="font-body text-sm text-mist-ink">
                       {formatDateTime(s.startedAt)}
                     </TableCell>
-                    <TableCell className="font-body text-sm text-mist">
+                    <TableCell className="font-body text-sm text-mist-ink">
                       {s.completedAt ? formatDateTime(s.completedAt) : '—'}
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm">
                       {s.discrepancyCount > 0 ? (
                         <span className="text-terracotta font-medium">{s.discrepancyCount}</span>
                       ) : (
-                        <span className="text-mist">0</span>
+                        <span className="text-mist-ink">0</span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -471,7 +471,7 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
               <XCircle className="h-5 w-5 text-red-600" />
               Cancel Stock Take Session
             </DialogTitle>
-            <DialogDescription className="font-body text-mist">
+            <DialogDescription className="font-body text-mist-ink">
               {cancelTarget?.countedItemCount === 0
                 ? 'This session has no counted items. It will be cancelled immediately with no changes to stock.'
                 : `This session has ${cancelTarget?.countedItemCount} counted item${cancelTarget?.countedItemCount === 1 ? '' : 's'}${cancelTarget?.discrepancyCount ? ` with ${cancelTarget.discrepancyCount} discrepanc${cancelTarget.discrepancyCount === 1 ? 'y' : 'ies'}` : ''}. Choose how to handle the counted data before cancelling.`}
@@ -499,7 +499,7 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
                 />
                 <div>
                   <p className="font-body text-sm font-semibold text-espresso">Discard all progress</p>
-                  <p className="mt-0.5 font-body text-xs text-mist">
+                  <p className="mt-0.5 font-body text-xs text-mist-ink">
                     All counted quantities are ignored. Stock levels remain unchanged.
                   </p>
                 </div>
@@ -522,7 +522,7 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
                 />
                 <div>
                   <p className="font-body text-sm font-semibold text-espresso">Apply current changes</p>
-                  <p className="mt-0.5 font-body text-xs text-mist">
+                  <p className="mt-0.5 font-body text-xs text-mist-ink">
                     {cancelTarget.discrepancyCount > 0
                       ? `${cancelTarget.discrepancyCount} stock adjustment${cancelTarget.discrepancyCount === 1 ? '' : 's'} will be applied before cancelling.`
                       : 'All counted items match system quantities — no adjustments needed.'}

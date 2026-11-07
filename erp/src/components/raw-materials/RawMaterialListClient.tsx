@@ -124,7 +124,7 @@ export function RawMaterialListClient({ permissions }: RawMaterialListClientProp
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold text-espresso">Raw Materials</h1>
-          <p className="mt-1 font-body text-sm text-mist">
+          <p className="mt-1 font-body text-sm text-mist-ink">
             Track bulk ingredients and packaging items (oils, powders, bottles, caps) by
             liter, kilogram, or unit.
           </p>
@@ -204,7 +204,7 @@ export function RawMaterialListClient({ permissions }: RawMaterialListClientProp
         />
 
         {total > 0 && (
-          <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-mist">
+          <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-mist-ink">
             <span>
               Showing {showFrom}–{showTo} of {total}
             </span>

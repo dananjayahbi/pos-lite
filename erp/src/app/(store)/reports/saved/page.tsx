@@ -122,7 +122,7 @@ export default function SavedReportsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-2xl font-bold text-espresso">Saved Reports</h1>
-        <p className="mt-1 text-sm text-sand">Open, rename, or remove the report presets you’ve collected across the reporting suite.</p>
+        <p className="mt-1 text-sm text-sand-ink">Open, rename, or remove the report presets you’ve collected across the reporting suite.</p>
       </div>
 
       {isLoading ? (
@@ -133,7 +133,7 @@ export default function SavedReportsPage() {
         </div>
       ) : reports.length === 0 ? (
         <Card className="border-mist">
-          <CardContent className="py-16 text-center text-sand">
+          <CardContent className="py-16 text-center text-sand-ink">
             No saved reports yet. Save a preset from any report screen to manage it here.
           </CardContent>
         </Card>
@@ -150,12 +150,12 @@ export default function SavedReportsPage() {
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <p className="font-medium text-espresso">{report.name}</p>
-                        <span className="rounded bg-mist/50 px-1.5 py-0.5 font-mono text-[10px] uppercase text-sand">
+                        <span className="rounded bg-mist/50 px-1.5 py-0.5 font-mono text-[10px] uppercase text-sand-ink">
                           {report.format ?? "pdf"}
                         </span>
                       </div>
-                      <p className="text-xs text-sand">Created {new Date(report.createdAt).toLocaleString()} · Updated {new Date(report.updatedAt).toLocaleString()}</p>
-                      <p className="font-mono text-[11px] text-sand break-all">
+                      <p className="text-xs text-sand-ink">Created {new Date(report.createdAt).toLocaleString()} · Updated {new Date(report.updatedAt).toLocaleString()}</p>
+                      <p className="font-mono text-[11px] text-sand-ink break-all">
                         {Object.keys(report.filters ?? {}).length === 0 ? 'No filters saved' : JSON.stringify(report.filters)}
                       </p>
                     </div>

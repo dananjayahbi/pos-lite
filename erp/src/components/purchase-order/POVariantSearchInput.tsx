@@ -147,11 +147,11 @@ export function POVariantSearchInput({
               >
                 <div>
                   <p className="font-medium text-espresso">{variantLabel(variant)}</p>
-                  <p className="text-xs text-mist">
+                  <p className="text-xs text-mist-ink">
                     SKU: {variant.sku} · Stock: {variant.stockQuantity}
                   </p>
                 </div>
-                <span className="font-mono text-xs text-mist">{formatRupee(variant.costPrice)}</span>
+                <span className="font-mono text-xs text-mist-ink">{formatRupee(variant.costPrice)}</span>
               </button>
             ))}
           </div>,

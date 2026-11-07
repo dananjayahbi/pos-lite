@@ -78,7 +78,7 @@ export default function AuditLogFilters({ value, onFilterChange }: AuditLogFilte
     <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
       {/* Entity Type */}
       <div className="w-full sm:w-48">
-        <Label className="text-sm text-sand">Entity Type</Label>
+        <Label className="text-sm text-sand-ink">Entity Type</Label>
         <Select
           value={local.entityType}
           onValueChange={(v) => setLocal((s) => ({ ...s, entityType: v }))}
@@ -98,7 +98,7 @@ export default function AuditLogFilters({ value, onFilterChange }: AuditLogFilte
       </div>
 
       <div className="w-full sm:w-56">
-        <Label className="text-sm text-sand">Action</Label>
+        <Label className="text-sm text-sand-ink">Action</Label>
         <Select
           value={local.action}
           onValueChange={(v) => setLocal((s) => ({ ...s, action: v }))}
@@ -119,7 +119,7 @@ export default function AuditLogFilters({ value, onFilterChange }: AuditLogFilte
 
       {/* Date From */}
       <div className="w-full sm:w-40">
-        <Label className="text-sm text-sand">From</Label>
+        <Label className="text-sm text-sand-ink">From</Label>
         <Input
           type="date"
           value={local.startDate}
@@ -130,7 +130,7 @@ export default function AuditLogFilters({ value, onFilterChange }: AuditLogFilte
 
       {/* Date To */}
       <div className="w-full sm:w-40">
-        <Label className="text-sm text-sand">To</Label>
+        <Label className="text-sm text-sand-ink">To</Label>
         <Input
           type="date"
           value={local.endDate}
@@ -141,7 +141,7 @@ export default function AuditLogFilters({ value, onFilterChange }: AuditLogFilte
 
       {/* Actor (userId) */}
       <div className="w-full sm:w-52">
-        <Label className="text-sm text-sand">Actor ID</Label>
+        <Label className="text-sm text-sand-ink">Actor ID</Label>
         <Input
           type="text"
           placeholder="All Users"

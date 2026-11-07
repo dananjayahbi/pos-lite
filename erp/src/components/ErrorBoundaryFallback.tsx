@@ -49,12 +49,12 @@ export function ErrorBoundaryFallback({
           Something went wrong
         </h2>
 
-        <p className="text-sm text-mist">
+        <p className="text-sm text-mist-ink">
           An unexpected error occurred in this section. The error has been
           automatically reported.
         </p>
 
-        <p className="text-xs text-mist">
+        <p className="text-xs text-mist-ink">
           Reference:{" "}
           <span className="font-mono text-espresso">{errorId}</span>
         </p>

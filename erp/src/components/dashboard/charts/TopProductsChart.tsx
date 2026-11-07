@@ -34,11 +34,11 @@ export function TopProductsChart({ data }: TopProductsChartProps) {
         <CardTitle className="text-base font-semibold text-espresso">
           Top Products
         </CardTitle>
-        <p className="text-xs text-sand">By revenue · Last 7 days</p>
+        <p className="text-xs text-sand-ink">By revenue · Last 7 days</p>
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <p className="py-8 text-center text-sm text-sand">
+          <p className="py-8 text-center text-sm text-sand-ink">
             No product sales yet.
           </p>
         ) : (

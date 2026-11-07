@@ -18,7 +18,7 @@ export function ShopTab({ config, onChange }: ShopTabProps) {
     <div className="space-y-6">
       <div className="rounded-lg border border-cream/40 bg-cream/20 px-3 py-2">
         <h3 className="text-sm font-semibold text-espresso">Shop Page</h3>
-        <p className="mt-0.5 text-xs text-sand">
+        <p className="mt-0.5 text-xs text-sand-ink">
           Reference layout: a glassmorphic filter chamber (keyword search, price
           slider, sort) with category pills, above a responsive product mesh grid.
         </p>
@@ -87,7 +87,7 @@ export function ShopTab({ config, onChange }: ShopTabProps) {
           }
           placeholder="24"
         />
-        <p className="text-xs text-sand">
+        <p className="text-xs text-sand-ink">
           Number of products to display per page (default: 24).
         </p>
       </div>

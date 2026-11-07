@@ -113,7 +113,7 @@ function TransferForm({
     <>
       <DialogHeader>
         <DialogTitle className="font-display">Fund Transfer</DialogTitle>
-        <DialogDescription className="font-body text-sm text-mist">
+        <DialogDescription className="font-body text-sm text-mist-ink">
           Move money between two accounts. Both legs post to the ledger in one
           transaction.
         </DialogDescription>
@@ -139,7 +139,7 @@ function TransferForm({
             />
           </div>
           {source && sourceBalance !== null && (
-            <p className="mt-1 font-body text-[11px] text-sand">
+            <p className="mt-1 font-body text-[11px] text-sand-ink">
               Available: {formatRupee(sourceBalance)}
             </p>
           )}

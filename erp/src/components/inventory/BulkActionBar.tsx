@@ -80,17 +80,21 @@ export function BulkActionBar({ permissions }: BulkActionBarProps) {
 
   return (
     <>
-      <div className="fixed bottom-0 left-0 right-0 z-50 shadow-[0_-4px_12px_rgba(0,0,0,0.1)]">
+      <div
+        role="region"
+        aria-label="Bulk product actions"
+        className="fixed bottom-0 left-0 right-0 z-50 shadow-[0_-4px_12px_rgba(0,0,0,0.1)] md:left-64"
+      >
         <div className="bg-espresso border-l border-r border-sand">
-          <div className="mx-auto max-w-[1200px] flex items-center justify-between px-6 py-3">
+          <div className="mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-3 px-6 py-3">
             <span className="text-pearl font-body font-medium">
               {count} product{count !== 1 ? 's' : ''} selected
             </span>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {canEdit && (
                 <Button
                   variant="outline"
-                  className="border-pearl text-pearl hover:bg-pearl/10"
+                  className="border-pearl/70 bg-transparent text-pearl hover:bg-pearl/10 hover:text-pearl"
                   onClick={() => setIsDialogOpen(true)}
                 >
                   Bulk Price Update
@@ -98,7 +102,7 @@ export function BulkActionBar({ permissions }: BulkActionBarProps) {
               )}
               <Button
                 variant="outline"
-                className="border-pearl text-pearl hover:bg-pearl/10"
+                className="border-pearl/70 bg-transparent text-pearl hover:bg-pearl/10 hover:text-pearl"
                 disabled={loadingLabels}
                 onClick={handlePrintLabels}
               >
@@ -107,7 +111,7 @@ export function BulkActionBar({ permissions }: BulkActionBarProps) {
               </Button>
               <Button
                 variant="outline"
-                className="border-sand text-espresso bg-sand/20 hover:bg-sand/40"
+                className="border-sand/60 bg-sand/20 text-pearl hover:bg-sand/30 hover:text-pearl"
                 onClick={() => {
                   const ids = Array.from(selectedIds).join(',');
                   const url = `/api/store/products/export?productIds=${encodeURIComponent(ids)}`;
@@ -124,7 +128,7 @@ export function BulkActionBar({ permissions }: BulkActionBarProps) {
               </Button>
               <Button
                 variant="ghost"
-                className="text-red-400 hover:text-red-300"
+                className="text-red-300 hover:bg-red-400/10 hover:text-red-200"
                 onClick={clearSelection}
               >
                 Clear Selection

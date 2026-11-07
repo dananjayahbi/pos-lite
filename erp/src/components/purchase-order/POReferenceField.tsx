@@ -46,7 +46,7 @@ export function POReferenceField({
         disabled={disabled}
         aria-describedby="po-reference-hint"
       />
-      <p id="po-reference-hint" className="flex items-center gap-1 text-xs text-mist">
+      <p id="po-reference-hint" className="flex items-center gap-1 text-xs text-mist-ink">
         <Wand2 className="h-3 w-3" />
         {isCustom
           ? 'Your own reference — must be unique in this store.'

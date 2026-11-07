@@ -120,7 +120,7 @@ export function TimeClockHistoryPanel({
             ))}
           </div>
         ) : !records?.records.length ? (
-          <p className="py-4 text-center text-sm text-sand">No time clock records found.</p>
+          <p className="py-4 text-center text-sm text-sand-ink">No time clock records found.</p>
         ) : (
           <>
             <Table>
@@ -161,7 +161,7 @@ export function TimeClockHistoryPanel({
                     <TableCell className="font-mono text-xs">
                       {record.shift ? `${record.shift.id.slice(0, 8)}…` : '—'}
                     </TableCell>
-                    <TableCell className="max-w-[180px] truncate text-sm text-sand">
+                    <TableCell className="max-w-[180px] truncate text-sm text-sand-ink">
                       {record.notes ?? '—'}
                     </TableCell>
                     <TableCell>
@@ -190,7 +190,7 @@ export function TimeClockHistoryPanel({
                 >
                   Previous
                 </Button>
-                <span className="self-center text-sm text-sand">
+                <span className="self-center text-sm text-sand-ink">
                   Page {page} of {records.totalPages}
                 </span>
                 <Button

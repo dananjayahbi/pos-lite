@@ -33,7 +33,7 @@ export function POOrderDateField({
         disabled={disabled}
         aria-describedby="po-order-date-hint"
       />
-      <p id="po-order-date-hint" className="text-xs text-mist">
+      <p id="po-order-date-hint" className="text-xs text-mist-ink">
         {value
           ? `${formatPoDate(value)}${isToday ? ' · today' : ' · backdated'}`
           : 'Defaults to today.'}

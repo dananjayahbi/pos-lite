@@ -55,7 +55,7 @@ export default function EmptySearchResults({
         <h2 className="font-display text-[22px] font-semibold text-espresso">
           No results found
         </h2>
-        <p className="max-w-md text-sm text-mist">
+        <p className="max-w-md text-sm text-mist-ink">
           No matches for{" "}
           <span className="font-mono text-espresso">
             &ldquo;{searchQuery}&rdquo;

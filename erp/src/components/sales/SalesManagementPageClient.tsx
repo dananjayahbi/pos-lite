@@ -15,7 +15,7 @@ export default function SalesManagementPageClient() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-espresso text-2xl font-bold">Sales</h1>
-          <p className="text-sand mt-1 text-sm">
+          <p className="text-sand-ink mt-1 text-sm">
             Review completed, held, and voided sales outside the POS terminal.
           </p>
         </div>

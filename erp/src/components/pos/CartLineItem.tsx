@@ -32,7 +32,7 @@ export function CartLineItem({ item }: CartLineItemProps) {
       {/* Product info */}
       <div className="flex-1 min-w-0">
         <p className="font-body text-sm text-espresso truncate">{item.productName}</p>
-        <p className="font-body text-xs text-mist truncate">{item.variantDescription}</p>
+        <p className="font-body text-xs text-mist-ink truncate">{item.variantDescription}</p>
         {item.discountPercent > 0 && (
           <span className="inline-flex items-center gap-1 font-body text-xs text-[#2D6A4F]">
             -{item.discountPercent}%
@@ -57,7 +57,7 @@ export function CartLineItem({ item }: CartLineItemProps) {
             {p.label}
           </span>
         ))}
-        <p className="font-mono text-[11px] text-mist/70">{item.sku}</p>
+        <p className="font-mono text-[11px] text-mist-ink/70">{item.sku}</p>
       </div>
 
       {/* Quantity stepper */}
@@ -91,7 +91,7 @@ export function CartLineItem({ item }: CartLineItemProps) {
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); removeItem(item.variantId); }}
-        className="p-1 text-mist hover:text-[#9B2226] transition-colors"
+        className="p-1 text-mist-ink hover:text-[#9B2226] transition-colors"
         aria-label={`Remove ${item.productName} from cart`}
       >
         <X className="h-3.5 w-3.5" />

@@ -49,7 +49,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       success: true,
       data: {
         id: broadcast.id,
+        channel: broadcast.channel,
+        subject: broadcast.subject,
         message: broadcast.message,
+        htmlBody: broadcast.htmlBody,
+        imageUrls: broadcast.imageUrls,
         sentAt: broadcast.sentAt,
         recipientCount: broadcast.recipientCount,
         sentByEmail: broadcast.sentBy.email,

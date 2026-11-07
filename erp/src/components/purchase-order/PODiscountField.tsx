@@ -76,11 +76,11 @@ export function PODiscountField({
           className="w-28 font-mono"
           disabled={disabled || type === null}
         />
-        <span className="self-center text-sm text-mist">
+        <span className="self-center text-sm text-mist-ink">
           {type === 'PERCENTAGE' ? '%' : type === 'FIXED' ? 'Rs.' : ''}
         </span>
       </div>
-      <p className="text-xs text-mist">
+      <p className="text-xs text-mist-ink">
         {type === null
           ? 'No discount — click a type to apply one.'
           : type === 'PERCENTAGE'

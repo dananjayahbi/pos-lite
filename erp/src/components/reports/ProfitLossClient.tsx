@@ -95,9 +95,18 @@ async function fetchPL(from: string, to: string): Promise<PLData> {
   const res = await fetch(
     `/api/reports/profit-loss?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
   );
-  if (!res.ok) throw new Error("Failed to fetch report");
-  const json: PLResponse = await res.json();
-  if (!json.success) throw new Error(json.error?.message ?? "Unknown error");
+  // Read the envelope even on a non-2xx response so a typed server error
+  // (VALIDATION_ERROR, INTERNAL_ERROR, ...) is shown instead of a generic
+  // "Failed to fetch report".
+  const json = (await res.json().catch(() => null)) as PLResponse | null;
+  if (!res.ok) {
+    throw new Error(
+      json?.error?.message ?? `Failed to fetch report (HTTP ${res.status})`,
+    );
+  }
+  if (!json?.success) {
+    throw new Error(json?.error?.message ?? "Unknown error");
+  }
   return json.data;
 }
 

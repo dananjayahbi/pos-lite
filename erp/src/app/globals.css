@@ -10,6 +10,11 @@
   --color-terracotta: #A48374;
   --color-sand: #CBAD8D;
   --color-mist: #D1C7BD;
+  /* Text/icon inks for muted copy. Kept separate from `sand`/`mist` so
+     darkening label/icon contrast does not also darken borders and surfaces.
+     Contrast on the pearl background: sand-ink 4.39:1, mist-ink 4.23:1. */
+  --color-sand-ink: #86684D;
+  --color-mist-ink: #7B6E64;
   --color-linen: #EBE3DB;
   --color-pearl: #F1EDE6;
 

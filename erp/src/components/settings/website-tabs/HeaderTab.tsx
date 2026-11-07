@@ -55,14 +55,14 @@ export function HeaderTab({ config, onChange }: HeaderTabProps) {
       {/* Section A: Navigation Menu */}
       <div>
         <h3 className="text-sm font-semibold text-espresso">Navigation Menu</h3>
-        <p className="mt-1 text-xs text-sand">
+        <p className="mt-1 text-xs text-sand-ink">
           These links appear in the centered navigation bar below the logo. Default: SHOP,
           ABOUT, CONTACT.
         </p>
 
         <div className="mt-4 space-y-3">
           {navItems.length === 0 ? (
-            <p className="text-xs text-sand italic">
+            <p className="text-xs text-sand-ink italic">
               No navigation items. Default menu (SHOP / ABOUT / CONTACT) will be shown.
             </p>
           ) : (
@@ -72,12 +72,12 @@ export function HeaderTab({ config, onChange }: HeaderTabProps) {
                 className="border border-mist rounded-lg bg-white p-4"
               >
                 <div className="flex items-start gap-3">
-                  <div className="mt-2.5 cursor-grab text-sand shrink-0">
+                  <div className="mt-2.5 cursor-grab text-sand-ink shrink-0">
                     <GripVertical className="h-4 w-4" />
                   </div>
                   <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-sand">Label</Label>
+                      <Label className="text-xs text-sand-ink">Label</Label>
                       <Input
                         value={item.label}
                         onChange={(e) =>
@@ -88,7 +88,7 @@ export function HeaderTab({ config, onChange }: HeaderTabProps) {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-sand">URL</Label>
+                      <Label className="text-xs text-sand-ink">URL</Label>
                       <Input
                         value={item.href}
                         onChange={(e) =>
@@ -102,7 +102,7 @@ export function HeaderTab({ config, onChange }: HeaderTabProps) {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="mt-2.5 h-8 w-8 shrink-0 text-sand hover:text-red-500"
+                    className="mt-2.5 h-8 w-8 shrink-0 text-sand-ink hover:text-red-500"
                     onClick={() => handleDeleteNavItem(index)}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -116,7 +116,7 @@ export function HeaderTab({ config, onChange }: HeaderTabProps) {
         <Button
           variant="outline"
           size="sm"
-          className="mt-3 border-dashed border-mist text-sand hover:text-espresso"
+          className="mt-3 border-dashed border-mist text-sand-ink hover:text-espresso"
           onClick={handleAddNavItem}
         >
           <Plus className="mr-1.5 h-3.5 w-3.5" />
@@ -129,7 +129,7 @@ export function HeaderTab({ config, onChange }: HeaderTabProps) {
       {/* Section B: Logo */}
       <div>
         <h3 className="text-sm font-semibold text-espresso">Logo</h3>
-        <p className="mt-1 text-xs text-sand">
+        <p className="mt-1 text-xs text-sand-ink">
           Upload your site logo. PNG or WebP format recommended for best quality.
         </p>
 

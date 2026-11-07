@@ -110,7 +110,7 @@ export default function TenantMetricsTable({ tenants }: TenantMetricsTableProps)
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-mist">
+                  <TableCell colSpan={6} className="py-8 text-center text-mist-ink">
                     No tenants found
                   </TableCell>
                 </TableRow>
@@ -118,7 +118,7 @@ export default function TenantMetricsTable({ tenants }: TenantMetricsTableProps)
                 filtered.map((tenant) => (
                   <TableRow key={tenant.id}>
                     <TableCell className="font-medium text-espresso">{tenant.name}</TableCell>
-                    <TableCell className="font-mono text-xs text-mist">{tenant.slug}</TableCell>
+                    <TableCell className="font-mono text-xs text-mist-ink">{tenant.slug}</TableCell>
                     <TableCell>
                       <Badge variant={STATUS_VARIANT[tenant.subscriptionStatus] ?? 'outline'}>
                         {tenant.subscriptionStatus.replace('_', ' ')}
@@ -134,7 +134,7 @@ export default function TenantMetricsTable({ tenants }: TenantMetricsTableProps)
           </Table>
         </div>
 
-        <p className="mt-2 text-xs text-mist">
+        <p className="mt-2 text-xs text-mist-ink">
           Showing {filtered.length} of {tenants.length} tenants
         </p>
       </CardContent>

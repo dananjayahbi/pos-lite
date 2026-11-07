@@ -2,8 +2,14 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { getOrCreateFund, updateFund, getBalanceEquation } from '@/lib/services/petty-cash.service';
+import {
+  getOrCreateFund,
+  updateFund,
+  getBalanceEquation,
+  getPettyCashTopUps,
+} from '@/lib/services/petty-cash.service';
 import { UpdatePettyCashFundSchema } from '@/lib/validators/petty-cash.validators';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function GET() {
   try {
@@ -29,14 +35,11 @@ export async function GET() {
     }
 
     const fund = await getOrCreateFund(tenantId, session.user.id);
-    const balance = await getBalanceEquation(tenantId, fund.id);
-    return NextResponse.json({ success: true, data: fund, balance });
+    const balance = fund ? await getBalanceEquation(tenantId, fund.id) : null;
+    const topUps = fund ? await getPettyCashTopUps(tenantId, fund) : [];
+    return NextResponse.json({ success: true, data: fund, balance, topUps });
   } catch (error) {
-    console.error('GET /api/store/petty-cash error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to load petty cash fund' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'GET /api/store/petty-cash');
   }
 }
 
@@ -67,7 +70,13 @@ export async function PATCH(request: Request) {
     const parsed = UpdatePettyCashFundSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: parsed.error?.issues?.[0]?.message ?? 'Validation failed' } },
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: parsed.error?.issues?.[0]?.message ?? 'Validation failed',
+          },
+        },
         { status: 400 },
       );
     }
@@ -79,14 +88,32 @@ export async function PATCH(request: Request) {
       );
     }
 
+    // Fund identity and thresholds are owner-controlled. Managers may still
+    // manage the expense-category switches through the same endpoint.
+    const touchesOwnerSettings =
+      parsed.data.name !== undefined ||
+      parsed.data.lowBalanceThreshold !== undefined ||
+      parsed.data.openingBalance !== undefined;
+    if (
+      touchesOwnerSettings &&
+      !hasPermission(session.user, PERMISSIONS.PETTY_CASH.manageFundSettings)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Only the owner can change petty-cash fund settings',
+          },
+        },
+        { status: 403 },
+      );
+    }
+
     const { fundId, ...updates } = parsed.data;
     const fund = await updateFund(tenantId, fundId, updates, session.user.id);
     return NextResponse.json({ success: true, data: fund });
   } catch (error) {
-    console.error('PATCH /api/store/petty-cash error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Failed to update petty cash fund' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'PATCH /api/store/petty-cash');
   }
 }

@@ -107,7 +107,7 @@ function BrandEditForm({
         <DialogTitle className="font-display text-espresso">
           {isEdit ? 'Edit Brand' : 'New Brand'}
         </DialogTitle>
-        <DialogDescription className="text-mist">
+        <DialogDescription className="text-mist-ink">
           {isEdit
             ? 'Update the brand name and description.'
             : 'Create a new brand to group related products.'}
@@ -116,7 +116,7 @@ function BrandEditForm({
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="brand-name" className="text-xs text-mist">
+          <Label htmlFor="brand-name" className="text-xs text-mist-ink">
             Brand Name <span className="text-red-700">*</span>
           </Label>
           <Input
@@ -131,7 +131,7 @@ function BrandEditForm({
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="brand-description" className="text-xs text-mist">
+          <Label htmlFor="brand-description" className="text-xs text-mist-ink">
             Description
           </Label>
           <Textarea
@@ -145,7 +145,7 @@ function BrandEditForm({
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-xs text-mist">Logo</Label>
+          <Label className="text-xs text-mist-ink">Logo</Label>
           <BrandLogoUpload
             logoUrl={logoUrl}
             onChange={setLogoUrl}

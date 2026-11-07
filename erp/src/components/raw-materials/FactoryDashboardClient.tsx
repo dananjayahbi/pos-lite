@@ -25,7 +25,7 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
     <div className="space-y-6 p-6">
       <div>
         <h1 className="font-display text-2xl font-bold text-espresso">Factory Dashboard</h1>
-        <p className="mt-1 font-body text-sm text-mist">
+        <p className="mt-1 font-body text-sm text-mist-ink">
           Monitor bulk raw-material stock for production planning.
         </p>
       </div>
@@ -33,8 +33,8 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-mist">Total materials</CardTitle>
-            <Boxes className="h-4 w-4 text-mist" />
+            <CardTitle className="text-sm font-medium text-mist-ink">Total materials</CardTitle>
+            <Boxes className="h-4 w-4 text-mist-ink" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-espresso">{stats?.totalMaterials ?? '—'}</div>
@@ -43,7 +43,7 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-mist">Low stock</CardTitle>
+            <CardTitle className="text-sm font-medium text-mist-ink">Low stock</CardTitle>
             <AlertTriangle className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
@@ -53,7 +53,7 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-mist">Out of stock</CardTitle>
+            <CardTitle className="text-sm font-medium text-mist-ink">Out of stock</CardTitle>
             <PackageX className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
@@ -68,7 +68,7 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
           <div className="rounded-lg border bg-white shadow-sm">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-espresso">
-                <FlaskConical className="h-4 w-4 text-mist" />
+                <FlaskConical className="h-4 w-4 text-mist-ink" />
                 Production
               </h2>
               <Button variant="ghost" size="sm" asChild>
@@ -92,7 +92,7 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
           )}
         </div>
         {lowStock.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-mist">
+          <p className="px-4 py-8 text-center text-sm text-mist-ink">
             No materials are currently low on stock.
           </p>
         ) : (
@@ -101,7 +101,7 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
               <li key={material.id} className="flex items-center justify-between px-4 py-3">
                 <div>
                   <p className="font-medium text-espresso">{material.name}</p>
-                  <p className="text-xs text-mist">
+                  <p className="text-xs text-mist-ink">
                     {material.quantity} {getUnitShortLabel(material.unit)} on hand
                   </p>
                 </div>

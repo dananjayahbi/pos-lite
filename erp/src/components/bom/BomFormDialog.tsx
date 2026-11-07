@@ -201,7 +201,7 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
               </Button>
             </div>
             <div className="space-y-2">
-              <div className="grid grid-cols-[minmax(0,1fr)_90px_70px_120px_32px] gap-2 px-1 text-xs font-medium uppercase tracking-wide text-mist">
+              <div className="grid grid-cols-[minmax(0,1fr)_90px_70px_120px_32px] gap-2 px-1 text-xs font-medium uppercase tracking-wide text-mist-ink">
                 <span>Raw material</span>
                 <span className="text-right">Available</span>
                 <span>Unit</span>
@@ -235,7 +235,7 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
                     <div className="text-right text-sm text-espresso">
                       {selected ? selected.quantity : '—'}
                     </div>
-                    <div className="text-sm text-mist">
+                    <div className="text-sm text-mist-ink">
                       {selected ? getUnitLabel(selected.unit) : '—'}
                     </div>
                     <div className="relative">
@@ -248,7 +248,7 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
                           updateIngredient(index, { quantityPerUnit: e.target.value })
                         }
                       />
-                      <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-mist">
+                      <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-mist-ink">
                         {selected ? getUnitShortLabel(selected.unit) : ''}
                       </span>
                     </div>

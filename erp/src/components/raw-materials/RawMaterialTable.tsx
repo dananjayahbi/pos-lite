@@ -47,7 +47,7 @@ function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <h3 className="font-display text-lg text-espresso">No raw materials</h3>
-      <p className="mt-1 font-body text-sm text-mist">
+      <p className="mt-1 font-body text-sm text-mist-ink">
         Add a raw material to start tracking bulk stock.
       </p>
     </div>
@@ -107,14 +107,14 @@ export function RawMaterialTable({
             <TableCell>
               <Badge variant="secondary">{material.categoryName}</Badge>
             </TableCell>
-            <TableCell className="text-mist">{getUnitShortLabel(material.unit)}</TableCell>
+            <TableCell className="text-mist-ink">{getUnitShortLabel(material.unit)}</TableCell>
             <TableCell className="text-right font-semibold text-espresso">
               {material.quantity} {getUnitShortLabel(material.unit)}
             </TableCell>
             <TableCell>
               <RawMaterialStatusBadge status={material.stockStatus} />
             </TableCell>
-            <TableCell className="text-right text-mist">{material.lowStockThreshold}</TableCell>
+            <TableCell className="text-right text-mist-ink">{material.lowStockThreshold}</TableCell>
             <TableCell className="text-right">
               <RawMaterialRowActions
                 canEdit={canEdit}

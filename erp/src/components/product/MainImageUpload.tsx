@@ -102,14 +102,14 @@ export function MainImageUpload({
 
   return (
     <div className="space-y-1.5">
-      {label && <p className="text-xs font-medium text-sand">{label}</p>}
+      {label && <p className="text-xs font-medium text-sand-ink">{label}</p>}
 
       {value ? (
         <div className="relative h-32 w-32 overflow-hidden rounded-lg border border-sand/30">
           {broken ? (
             <div className="flex h-full w-full flex-col items-center justify-center bg-sand/20">
-              <ImageOff className="h-5 w-5 text-mist" />
-              <span className="mt-1 text-[10px] text-mist">Error</span>
+              <ImageOff className="h-5 w-5 text-mist-ink" />
+              <span className="mt-1 text-[10px] text-mist-ink">Error</span>
             </div>
           ) : (
             <Image
@@ -134,7 +134,7 @@ export function MainImageUpload({
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="flex h-32 w-32 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-sand/50 text-sand hover:border-espresso hover:text-espresso disabled:opacity-50"
+          className="flex h-32 w-32 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-sand/50 text-sand-ink hover:border-espresso hover:text-espresso disabled:opacity-50"
         >
           {uploading ? (
             <Loader2 className="h-5 w-5 animate-spin" />

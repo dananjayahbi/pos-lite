@@ -22,10 +22,18 @@ async function assertCustomerBelongsToTenant(tenantId: string, customerId: strin
  * garbage at the boundary; this guard keeps '' or Invalid Date out of Prisma
  * for every caller (POST, PATCH, and direct service use).
  */
-function toValidDate(value: string | Date | undefined): Date | undefined {
-  if (value === undefined || value === '') return undefined;
+function toValidDate(value: string | Date | null | undefined): Date | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
   const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : date;
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** Trim an optional text field and collapse blank input to `undefined`. */
+function optionalText(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
 }
 
 // ── Create ───────────────────────────────────────────────────────────────────
@@ -33,10 +41,13 @@ function toValidDate(value: string | Date | undefined): Date | undefined {
 interface CreateCustomerData {
   name: string;
   phone: string;
-  email?: string | undefined;
+  phone2?: string | undefined;
+  email?: string | null | undefined;
+  address?: string | undefined;
+  city?: string | undefined;
   gender?: 'MALE' | 'FEMALE' | 'OTHER' | undefined;
-  /** Raw string or validator-parsed Date; guarded via `toValidDate`. */
-  birthday?: string | Date | undefined;
+  /** Raw string or validator-parsed Date; null clears it. */
+  birthday?: string | Date | null | undefined;
   tags?: string[] | undefined;
   notes?: string | undefined;
 }
@@ -62,17 +73,23 @@ export async function createCustomer(tenantId: string, data: CreateCustomerData)
 
   // M05-02: only pass birthday when it resolves to a valid Date.
   const birthday = toValidDate(data.birthday);
+  const phone2 = optionalText(data.phone2);
+  const address = optionalText(data.address);
+  const city = optionalText(data.city);
 
   return prisma.customer.create({
     data: {
       tenantId,
       name: data.name,
       phone: data.phone,
-      ...(data.email !== undefined && data.email !== '' && { email: data.email }),
+      ...(phone2 !== undefined && { phone2 }),
+      ...(data.email !== undefined && { email: data.email }),
+      ...(address !== undefined && { address }),
+      ...(city !== undefined && { city }),
       ...(data.gender !== undefined && { gender: data.gender }),
-      ...(birthday !== undefined && { birthday }),
+      ...(birthday !== undefined && birthday !== null && { birthday }),
       ...(data.tags !== undefined && { tags: data.tags }),
-      ...(data.notes !== undefined && { notes: data.notes }),
+      ...(data.notes !== undefined && { notes: optionalText(data.notes) ?? null }),
     },
   });
 }
@@ -82,10 +99,13 @@ export async function createCustomer(tenantId: string, data: CreateCustomerData)
 interface UpdateCustomerData {
   name?: string | undefined;
   phone?: string | undefined;
-  email?: string | undefined;
+  phone2?: string | undefined;
+  email?: string | null | undefined;
+  address?: string | undefined;
+  city?: string | undefined;
   gender?: 'MALE' | 'FEMALE' | 'OTHER' | undefined;
-  /** Raw string or validator-parsed Date; guarded via `toValidDate`. */
-  birthday?: string | Date | undefined;
+  /** Raw string or validator-parsed Date; null clears it. */
+  birthday?: string | Date | null | undefined;
   tags?: string[] | undefined;
   notes?: string | undefined;
 }
@@ -119,11 +139,16 @@ export async function updateCustomer(
     data: {
       ...(data.name !== undefined && { name: data.name }),
       ...(data.phone !== undefined && { phone: data.phone }),
-      ...(data.email !== undefined && data.email !== '' && { email: data.email }),
+      // Explicit empty strings (or null) clear these optional fields on PATCH;
+      // omitted keys leave the stored value untouched.
+      ...(data.phone2 !== undefined && { phone2: optionalText(data.phone2) ?? null }),
+      ...(data.email !== undefined && { email: data.email }),
+      ...(data.address !== undefined && { address: optionalText(data.address) ?? null }),
+      ...(data.city !== undefined && { city: optionalText(data.city) ?? null }),
       ...(data.gender !== undefined && { gender: data.gender }),
-      ...(birthday !== undefined && { birthday }),
+      ...(data.birthday !== undefined && { birthday: birthday ?? null }),
       ...(data.tags !== undefined && { tags: data.tags }),
-      ...(data.notes !== undefined && { notes: data.notes }),
+      ...(data.notes !== undefined && { notes: optionalText(data.notes) ?? null }),
     },
   });
 }

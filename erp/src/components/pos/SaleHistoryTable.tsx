@@ -299,7 +299,7 @@ export function SaleHistoryTable() {
           ))}
         </div>
       ) : filteredSales.length === 0 ? (
-        <p className="text-center text-mist font-body text-sm py-8">
+        <p className="text-center text-mist-ink font-body text-sm py-8">
           No sales found
         </p>
       ) : (
@@ -338,7 +338,7 @@ export function SaleHistoryTable() {
                     <button
                       type="button"
                       onClick={() => copyToClipboard(sale.id)}
-                      className="shrink-0 p-0.5 text-mist hover:text-espresso transition-colors"
+                      className="shrink-0 p-0.5 text-mist-ink hover:text-espresso transition-colors"
                       aria-label="Copy sale ID"
                       title="Copy full sale ID"
                     >
@@ -357,14 +357,14 @@ export function SaleHistoryTable() {
                       {/* A backdated sale carries a synthetic 12:00 anchor (the
                           date input is day-granular), so the real clock time only
                           exists for same-day entries — show createdAt's time. */}
-                      <p className="font-mono text-[10px] text-mist">
+                      <p className="font-mono text-[10px] text-mist-ink">
                         {formatTime(sale.createdAt)}
                       </p>
                     </div>
                   ) : (
                     <div>
                       <p>{formatDate(sale.createdAt)}</p>
-                      <p className="font-mono text-[10px] text-mist">
+                      <p className="font-mono text-[10px] text-mist-ink">
                         {formatTime(sale.createdAt)}
                       </p>
                     </div>
@@ -374,10 +374,10 @@ export function SaleHistoryTable() {
                   {sale.customer?.name ? (
                     <div className="min-w-0">
                       <p className="truncate font-medium">{customerLabel(sale)}</p>
-                      <p className="font-mono text-[10px] text-mist">{sale.customer.phone}</p>
+                      <p className="font-mono text-[10px] text-mist-ink">{sale.customer.phone}</p>
                     </div>
                   ) : (
-                    <span className="text-sand italic">{customerLabel(sale)}</span>
+                    <span className="text-sand-ink italic">{customerLabel(sale)}</span>
                   )}
                 </TableCell>
                 <TableCell className="text-center">
@@ -388,7 +388,7 @@ export function SaleHistoryTable() {
                 <TableCell className="text-right font-mono text-sm font-bold text-espresso">
                   {formatRupee(sale.totalAmount)}
                   {Number(sale.deliveryCharge ?? 0) > 0 && (
-                    <span className="block font-body text-[10px] font-normal text-mist">
+                    <span className="block font-body text-[10px] font-normal text-mist-ink">
                       incl. {formatRupee(sale.deliveryCharge)} delivery
                     </span>
                   )}
@@ -404,7 +404,7 @@ export function SaleHistoryTable() {
                     <button
                       type="button"
                       onClick={() => setSelectedSaleId(sale.id)}
-                      className="p-1 text-mist hover:text-espresso transition-colors"
+                      className="p-1 text-mist-ink hover:text-espresso transition-colors"
                       aria-label="View sale"
                     >
                       <Eye className="h-4 w-4" />
@@ -442,7 +442,7 @@ export function SaleHistoryTable() {
                         return (
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <button type="button" disabled className="p-1 text-mist/50 cursor-not-allowed" aria-label="Return window expired">
+                              <button type="button" disabled className="p-1 text-mist-ink/50 cursor-not-allowed" aria-label="Return window expired">
                                 <RotateCcw className="h-4 w-4" />
                               </button>
                             </TooltipTrigger>
@@ -454,7 +454,7 @@ export function SaleHistoryTable() {
                       }
                       if (fullyReturned) {
                         return (
-                          <button type="button" disabled className="p-1 text-mist/50 cursor-not-allowed" aria-label="Fully returned">
+                          <button type="button" disabled className="p-1 text-mist-ink/50 cursor-not-allowed" aria-label="Fully returned">
                             <RotateCcw className="h-4 w-4" />
                           </button>
                         );
@@ -476,7 +476,7 @@ export function SaleHistoryTable() {
       {/* Pagination */}
       {meta.totalPages > 1 && (
         <div className="flex items-center justify-between pt-2">
-          <p className="font-body text-xs text-mist">
+          <p className="font-body text-xs text-mist-ink">
             Page {meta.page} of {meta.totalPages} ({meta.total} sales)
           </p>
           <div className="flex items-center gap-1">

@@ -187,11 +187,11 @@ export default function CommissionReportsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold text-espresso">Commission Reports</h1>
-          <p className="mt-1 text-sm text-sand">Track unpaid balances, record proof of payout, and revisit payout receipts without leaving the commissions workflow.</p>
+          <p className="mt-1 text-sm text-sand-ink">Track unpaid balances, record proof of payout, and revisit payout receipts without leaving the commissions workflow.</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="rounded-lg border border-mist bg-pearl/40 px-4 py-3 text-right">
-            <p className="text-xs uppercase tracking-[0.2em] text-sand">Open liability</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Open liability</p>
             <p className="font-display text-2xl text-espresso">{formatRupee(totalUnpaid.toFixed(2))}</p>
           </div>
           <Button
@@ -212,7 +212,7 @@ export default function CommissionReportsPage() {
         <CardContent className="pt-4">
           <div className="flex flex-wrap items-end gap-4">
             <div className="space-y-1">
-              <Label htmlFor="period-start" className="text-xs text-sand">
+              <Label htmlFor="period-start" className="text-xs text-sand-ink">
                 Period Start
               </Label>
               <Input
@@ -224,7 +224,7 @@ export default function CommissionReportsPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="period-end" className="text-xs text-sand">
+              <Label htmlFor="period-end" className="text-xs text-sand-ink">
                 Period End
               </Label>
               <Input
@@ -248,7 +248,7 @@ export default function CommissionReportsPage() {
         </div>
       ) : summaries.length === 0 ? (
         <Card>
-          <CardContent className="py-8 text-center text-sand text-sm">
+          <CardContent className="py-8 text-center text-sand-ink text-sm">
             No commission data for this period.
           </CardContent>
         </Card>
@@ -321,7 +321,7 @@ export default function CommissionReportsPage() {
               ))}
             </div>
           ) : payoutHistory.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-mist bg-pearl/50 px-4 py-8 text-center text-sm text-sand">
+            <div className="rounded-lg border border-dashed border-mist bg-pearl/50 px-4 py-8 text-center text-sm text-sand-ink">
               No payouts recorded for the selected window yet.
             </div>
           ) : (
@@ -342,13 +342,13 @@ export default function CommissionReportsPage() {
                     <TableCell>
                       <div>
                         <p className="font-medium text-espresso">{staffDisplayName(payout.userEmail)}</p>
-                        <p className="text-xs text-sand">Approved by {staffDisplayName(payout.authorizedByEmail)}</p>
+                        <p className="text-xs text-sand-ink">Approved by {staffDisplayName(payout.authorizedByEmail)}</p>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-sand">{new Date(payout.paidAt).toLocaleString()}</TableCell>
+                    <TableCell className="text-sm text-sand-ink">{new Date(payout.paidAt).toLocaleString()}</TableCell>
                     <TableCell className="text-sm text-espresso">{payout.paymentMethod ?? 'Manual'}</TableCell>
                     <TableCell className="text-right font-mono">{formatRupee(payout.totalEarned)}</TableCell>
-                    <TableCell className="text-sm text-sand">{payout.proofReference ?? '—'}</TableCell>
+                    <TableCell className="text-sm text-sand-ink">{payout.proofReference ?? '—'}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="outline" size="sm" onClick={() => setSelectedHistory(payout)}>
                         View Receipt
@@ -415,28 +415,28 @@ export default function CommissionReportsPage() {
             <div className="max-h-[70vh] overflow-y-auto pr-4">
               <div className="space-y-4 text-sm">
                 <div className="rounded-lg border border-mist bg-pearl/40 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-sand">Staff Member</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Staff Member</p>
                   <p className="mt-1 font-medium text-espresso">{staffDisplayName(selectedHistory.userEmail)}</p>
-                  <p className="text-xs text-sand">Role: {selectedHistory.userRole.replace('_', ' ')}</p>
+                  <p className="text-xs text-sand-ink">Role: {selectedHistory.userRole.replace('_', ' ')}</p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-lg border border-mist p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-sand">Amount</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Amount</p>
                     <p className="mt-2 font-display text-3xl text-espresso">{formatRupee(selectedHistory.totalEarned)}</p>
                   </div>
                   <div className="rounded-lg border border-mist p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-sand">Paid At</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Paid At</p>
                     <p className="mt-2 text-espresso">{new Date(selectedHistory.paidAt).toLocaleString()}</p>
                   </div>
                 </div>
-                <div className="rounded-lg border border-mist p-4 text-sand">
+                <div className="rounded-lg border border-mist p-4 text-sand-ink">
                   <p><span className="font-medium text-espresso">Commission window:</span> {new Date(selectedHistory.periodStart).toLocaleDateString()} → {new Date(selectedHistory.periodEnd).toLocaleDateString()}</p>
                   <p><span className="font-medium text-espresso">Payment method:</span> {selectedHistory.paymentMethod ?? 'Manual / not specified'}</p>
                   <p><span className="font-medium text-espresso">Proof reference:</span> {selectedHistory.proofReference ?? 'Not recorded'}</p>
                   <p><span className="font-medium text-espresso">Authorised by:</span> {staffDisplayName(selectedHistory.authorizedByEmail)}</p>
                 </div>
                 <div className="rounded-lg border border-dashed border-mist bg-pearl/30 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-sand">Notes</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Notes</p>
                   <p className="mt-2 whitespace-pre-wrap text-espresso">{selectedHistory.note ?? 'No notes recorded for this payout.'}</p>
                 </div>
               </div>

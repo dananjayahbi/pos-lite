@@ -30,7 +30,7 @@ export function StoreReferencePreview({ config }: StoreReferencePreviewProps) {
             className="h-56 w-full rounded-lg object-cover"
           />
         ) : (
-          <div className="flex h-56 items-center justify-center rounded-lg bg-mist/40 text-xs text-sand">
+          <div className="flex h-56 items-center justify-center rounded-lg bg-mist/40 text-xs text-sand-ink">
             No image
           </div>
         )}
@@ -39,13 +39,13 @@ export function StoreReferencePreview({ config }: StoreReferencePreviewProps) {
             <h3 className="text-lg font-semibold text-espresso">{sectionConfig.title}</h3>
           )}
           {sectionConfig.subtitle && (
-            <p className="text-sm text-sand">{sectionConfig.subtitle}</p>
+            <p className="text-sm text-sand-ink">{sectionConfig.subtitle}</p>
           )}
           {sectionConfig.addressLine1 && (
-            <p className="text-xs text-sand">{sectionConfig.addressLine1}</p>
+            <p className="text-xs text-sand-ink">{sectionConfig.addressLine1}</p>
           )}
           {sectionConfig.addressLine2 && (
-            <p className="text-xs text-sand">{sectionConfig.addressLine2}</p>
+            <p className="text-xs text-sand-ink">{sectionConfig.addressLine2}</p>
           )}
         </div>
       </div>

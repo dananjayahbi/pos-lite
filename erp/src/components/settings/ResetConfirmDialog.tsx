@@ -76,7 +76,7 @@ export function ResetConfirmDialog({
             </div>
             <div>
               <DialogTitle className="text-espresso">{title}</DialogTitle>
-              <DialogDescription className="text-sand mt-1">
+              <DialogDescription className="text-sand-ink mt-1">
                 {description}
               </DialogDescription>
             </div>
@@ -84,7 +84,7 @@ export function ResetConfirmDialog({
         </DialogHeader>
 
         <div className="mt-4 space-y-3">
-          <p className="text-sm text-sand">
+          <p className="text-sm text-sand-ink">
             Type <span className="font-semibold text-espresso">{confirmPhrase}</span> to proceed:
           </p>
           <Input

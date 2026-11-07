@@ -5,6 +5,7 @@ import { toErrorResponse } from '@/lib/api/error-envelope';
 import { requirePaymentAccountAuth } from '@/lib/api/payment-account-guard';
 import { CreatePaymentAccountSchema, PaymentAccountListQuerySchema } from '@/lib/validators/paymentAccount.validators';
 import { createPaymentAccount, listPaymentAccounts } from '@/lib/services/paymentAccount.service';
+import { ensureDefaultPettyCashPaymentAccount } from '@/lib/services/petty-cash.service';
 
 export async function GET(request: Request) {
   const guard = await requirePaymentAccountAuth(PERMISSIONS.PAYMENT_ACCOUNT.viewPaymentAccount);
@@ -27,6 +28,10 @@ export async function GET(request: Request) {
         { status: 400 },
       );
     }
+
+    // Make sure the default petty-cash account is visible here even before the
+    // user opens /petty-cash. No fund is created if the tenant has none.
+    await ensureDefaultPettyCashPaymentAccount(guard.tenantId, guard.userId);
 
     const result = await listPaymentAccounts(guard.tenantId, parsed.data);
     return NextResponse.json({ success: true, data: result });

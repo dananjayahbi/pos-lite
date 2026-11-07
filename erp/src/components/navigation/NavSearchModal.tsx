@@ -175,7 +175,7 @@ export default function NavSearchModal({
           className="flex items-center gap-2 border-b border-mist px-4"
           onKeyDown={handleKeyDown}
         >
-          <SearchIcon className="h-4 w-4 shrink-0 text-sand" />
+          <SearchIcon className="h-4 w-4 shrink-0 text-sand-ink" />
           <Input
             ref={inputRef}
             value={query}
@@ -184,7 +184,7 @@ export default function NavSearchModal({
               setActiveIndex(0);
             }}
             placeholder="Search pages and actions…"
-            className="h-12 border-0 bg-transparent px-0 shadow-none text-base placeholder:text-sand/70 focus-visible:ring-0"
+            className="h-12 border-0 bg-transparent px-0 shadow-none text-base placeholder:text-sand-ink/70 focus-visible:ring-0"
           />
           {query ? (
             <button
@@ -194,12 +194,12 @@ export default function NavSearchModal({
                 setQuery('');
                 setActiveIndex(0);
               }}
-              className="text-sand hover:text-espresso"
+              className="text-sand-ink hover:text-espresso"
             >
               <XIcon className="h-4 w-4" />
             </button>
           ) : (
-            <kbd className="hidden rounded border border-mist bg-linen px-1.5 py-0.5 text-[10px] text-sand sm:inline">
+            <kbd className="hidden rounded border border-mist bg-linen px-1.5 py-0.5 text-[10px] text-sand-ink sm:inline">
               ESC
             </kbd>
           )}
@@ -212,15 +212,15 @@ export default function NavSearchModal({
         >
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-1 py-12 text-center">
-              <SearchIcon className="h-6 w-6 text-sand/60" />
+              <SearchIcon className="h-6 w-6 text-sand-ink/60" />
               <p className="text-sm text-espresso/70">No results found</p>
-              <p className="text-xs text-sand">Try a different keyword.</p>
+              <p className="text-xs text-sand-ink">Try a different keyword.</p>
             </div>
           ) : (
             grouped.map(({ group, entries }) => {
               return (
                 <div key={group} className="mb-2 last:mb-0">
-                  <p className="text-sand/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider">
+                  <p className="text-sand-ink/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider">
                     {group}
                   </p>
                   {entries.map((entry) => {
@@ -239,7 +239,7 @@ export default function NavSearchModal({
                       >
                         <span
                           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border ${
-                            isActive ? 'border-terracotta bg-pearl text-terracotta' : 'border-mist bg-pearl text-sand'
+                            isActive ? 'border-terracotta bg-pearl text-terracotta' : 'border-mist bg-pearl text-sand-ink'
                           }`}
                         >
                           {entry.kind === 'action' ? (
@@ -251,7 +251,7 @@ export default function NavSearchModal({
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium">{entry.title}</span>
                           {entry.description ? (
-                            <span className="block truncate text-xs text-sand">
+                            <span className="block truncate text-xs text-sand-ink">
                               {entry.description}
                             </span>
                           ) : null}
@@ -269,7 +269,7 @@ export default function NavSearchModal({
         </div>
 
         {/* ── Footer / shortcut hints ── */}
-        <div className="flex items-center gap-3 border-t border-mist bg-linen/40 px-4 py-2 text-[11px] text-sand">
+        <div className="flex items-center gap-3 border-t border-mist bg-linen/40 px-4 py-2 text-[11px] text-sand-ink">
           <span className="flex items-center gap-1">
             <kbd className="rounded border border-mist bg-pearl px-1 py-0.5">↑↓</kbd>
             navigate

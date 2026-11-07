@@ -52,7 +52,7 @@ function ToggleRow({
     <div className="flex items-center justify-between gap-4 rounded-lg border border-mist p-3">
       <div>
         <p className="text-sm font-medium text-espresso">{label}</p>
-        {hint && <p className="text-xs text-sand">{hint}</p>}
+        {hint && <p className="text-xs text-sand-ink">{hint}</p>}
       </div>
       <Switch checked={checked} onCheckedChange={onCheckedChange} />
     </div>

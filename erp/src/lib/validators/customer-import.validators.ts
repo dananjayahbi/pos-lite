@@ -10,12 +10,37 @@ import { zSriLankaPhone } from '@/lib/validators/shared';
  * normalizes stored values to `+94XXXXXXXXX`, matching the CRM/POS create
  * paths so duplicates and reporting are consistent.
  */
+/**
+ * Canonical CSV columns. The download template, the page copy and the row
+ * schema all consume this list so they cannot drift apart.
+ */
+export const CUSTOMER_IMPORT_COLUMNS = [
+  'Name',
+  'Phone',
+  'Phone2',
+  'Email',
+  'Address',
+  'City',
+  'Gender',
+  'Birthday',
+  'Tags',
+  'Notes',
+] as const;
+
+/** Header line written by "Download Template" (trailing newline included). */
+export const CUSTOMER_IMPORT_TEMPLATE_CSV = `${CUSTOMER_IMPORT_COLUMNS.join(',')}\n`;
+
 export const CustomerCsvRowSchema = z.object({
   Name: z.string().trim().min(1, 'Name is required').max(100),
   Phone: zSriLankaPhone({
     message: 'Phone must be a 10-digit Sri Lankan number (07XXXXXXXX)',
   }),
+  // Secondary contact mirrors the New/Edit Customer drawer: optional, and a
+  // non-empty value must be a valid Sri Lankan number.
+  Phone2: z.union([z.literal(''), zSriLankaPhone()]).optional(),
   Email: z.string().trim().email('Invalid email').optional().or(z.literal('')),
+  Address: z.string().trim().max(250, 'Address must be 250 characters or fewer').optional().or(z.literal('')),
+  City: z.string().trim().max(100, 'City must be 100 characters or fewer').optional().or(z.literal('')),
   Gender: z
     .string()
     .trim()

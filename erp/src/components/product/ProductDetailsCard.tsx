@@ -102,12 +102,12 @@ export function ProductDetailsCard({ product, variants = [] }: ProductDetailsCar
 
         {/* Description */}
         <div className="sm:col-span-2">
-          <dt className="font-body text-xs font-semibold uppercase tracking-wider text-mist">
+          <dt className="font-body text-xs font-semibold uppercase tracking-wider text-mist-ink">
             Description
           </dt>
           <dd className="mt-1 font-body text-sm text-espresso whitespace-pre-wrap">
             {!product.description ? (
-              <span className="text-mist italic">No description</span>
+              <span className="text-mist-ink italic">No description</span>
             ) : descTruncated && !descExpanded ? (
               <>
                 {product.description.slice(0, 200)}…{' '}
@@ -153,7 +153,7 @@ export function ProductDetailsCard({ product, variants = [] }: ProductDetailsCar
 
         {/* Category */}
         <div>
-          <dt className="font-body text-xs font-semibold uppercase tracking-wider text-mist">
+          <dt className="font-body text-xs font-semibold uppercase tracking-wider text-mist-ink">
             Category
           </dt>
           <dd className="mt-1 font-body text-sm text-espresso">
@@ -165,14 +165,14 @@ export function ProductDetailsCard({ product, variants = [] }: ProductDetailsCar
                 {product.category.name}
               </Link>
             ) : (
-              <span className="text-mist italic">Uncategorized</span>
+              <span className="text-mist-ink italic">Uncategorized</span>
             )}
           </dd>
         </div>
 
         {/* Brand */}
         <div>
-          <dt className="font-body text-xs font-semibold uppercase tracking-wider text-mist">
+          <dt className="font-body text-xs font-semibold uppercase tracking-wider text-mist-ink">
             Brand
           </dt>
           <dd className="mt-1 font-body text-sm text-espresso">
@@ -184,19 +184,19 @@ export function ProductDetailsCard({ product, variants = [] }: ProductDetailsCar
                 {product.brand.name}
               </Link>
             ) : (
-              <span className="text-mist italic">No brand</span>
+              <span className="text-mist-ink italic">No brand</span>
             )}
           </dd>
         </div>
 
         {/* Tags */}
         <div className="sm:col-span-2">
-          <dt className="font-body text-xs font-semibold uppercase tracking-wider text-mist">
+          <dt className="font-body text-xs font-semibold uppercase tracking-wider text-mist-ink">
             Tags
           </dt>
           <dd className="mt-1.5 flex flex-wrap gap-2">
             {product.tags.length === 0 ? (
-              <span className="font-body text-sm text-mist italic">No tags</span>
+              <span className="font-body text-sm text-mist-ink italic">No tags</span>
             ) : (
               product.tags.map((tag) => (
                 <span
@@ -241,7 +241,7 @@ export function ProductDetailsCard({ product, variants = [] }: ProductDetailsCar
 function FieldRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="font-body text-xs font-semibold uppercase tracking-wider text-mist">
+      <dt className="font-body text-xs font-semibold uppercase tracking-wider text-mist-ink">
         {label}
       </dt>
       <dd className="mt-1 font-body text-sm text-espresso">{value}</dd>
@@ -254,7 +254,7 @@ function HealthFieldRow({ label, value }: { label: string; value: string | null 
   if (!value) return null;
   return (
     <div className="sm:col-span-2">
-      <dt className="font-body text-xs font-semibold uppercase tracking-wider text-mist">
+      <dt className="font-body text-xs font-semibold uppercase tracking-wider text-mist-ink">
         {label}
       </dt>
       <dd className="mt-1 font-body text-sm text-espresso whitespace-pre-wrap">

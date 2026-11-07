@@ -31,24 +31,24 @@ export function POHeaderCards({
     <div className="grid gap-4 md:grid-cols-4">
       <Card>
         <CardContent className="pt-6">
-          <p className="text-xs text-mist">Supplier</p>
+          <p className="text-xs text-mist-ink">Supplier</p>
           <p className="font-medium text-espresso">{supplierName}</p>
-          {supplierContact ? <p className="text-sm text-mist">{supplierContact}</p> : null}
+          {supplierContact ? <p className="text-sm text-mist-ink">{supplierContact}</p> : null}
         </CardContent>
       </Card>
       <Card>
         <CardContent className="pt-6">
-          <p className="text-xs text-mist">Expected Delivery</p>
+          <p className="text-xs text-mist-ink">Expected Delivery</p>
           <p className="font-medium text-espresso">{formatPoDate(expectedDeliveryDate)}</p>
         </CardContent>
       </Card>
       <Card>
         <CardContent className="pt-6">
-          <p className="text-xs text-mist">Payment Terms</p>
+          <p className="text-xs text-mist-ink">Payment Terms</p>
           <p className="font-medium text-espresso">
             {paymentTermDays === null ? 'Immediate' : `${paymentTermDays} days`}
           </p>
-          <p className="text-xs text-mist">
+          <p className="text-xs text-mist-ink">
             {paymentTermDays === null
               ? 'Due on receipt'
               : `Order date ${formatPoDate(orderDate)}`}
@@ -57,9 +57,9 @@ export function POHeaderCards({
       </Card>
       <Card>
         <CardContent className="pt-6">
-          <p className="text-xs text-mist">Created</p>
+          <p className="text-xs text-mist-ink">Created</p>
           <p className="font-medium text-espresso">{formatPoDate(createdAt)}</p>
-          <p className="text-xs text-mist">by {createdByName}</p>
+          <p className="text-xs text-mist-ink">by {createdByName}</p>
         </CardContent>
       </Card>
     </div>

@@ -116,9 +116,9 @@ export function RawMaterialCategoryManagerDialog({
 
           <div className="max-h-72 divide-y overflow-y-auto rounded-lg border">
             {isLoading ? (
-              <p className="px-3 py-4 text-sm text-mist">Loading categories…</p>
+              <p className="px-3 py-4 text-sm text-mist-ink">Loading categories…</p>
             ) : categories.length === 0 ? (
-              <p className="px-3 py-4 text-sm text-mist">No categories yet.</p>
+              <p className="px-3 py-4 text-sm text-mist-ink">No categories yet.</p>
             ) : (
               categories.map((category) => (
                 <div key={category.id} className="flex items-center gap-2 px-3 py-2">
@@ -151,7 +151,7 @@ export function RawMaterialCategoryManagerDialog({
                     <>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm text-espresso">{category.name}</p>
-                        <p className="text-xs text-mist">
+                        <p className="text-xs text-mist-ink">
                           {category.usageCount} material{category.usageCount === 1 ? '' : 's'}
                         </p>
                       </div>

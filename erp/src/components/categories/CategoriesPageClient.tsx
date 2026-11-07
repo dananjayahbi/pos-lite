@@ -73,7 +73,7 @@ export function CategoriesPageClient({ permissions }: CategoriesPageClientProps)
         <div className="flex items-center justify-between">
           <div>
             <h1 className="font-display text-2xl font-semibold text-espresso">Categories</h1>
-            <p className="text-sm text-mist">
+            <p className="text-sm text-mist-ink">
               {categories.length} {categories.length === 1 ? 'category' : 'categories'}
             </p>
           </div>
@@ -112,7 +112,7 @@ export function CategoriesPageClient({ permissions }: CategoriesPageClientProps)
           />
         ) : (
           <div className="flex h-full min-h-75 items-center justify-center rounded-lg border border-sand bg-linen p-8">
-            <p className="text-sm text-mist">Select a category to see details</p>
+            <p className="text-sm text-mist-ink">Select a category to see details</p>
           </div>
         )}
       </div>
