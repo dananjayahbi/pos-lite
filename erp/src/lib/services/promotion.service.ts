@@ -39,6 +39,7 @@ interface GroupedPromotions {
   CART_FIXED: PromotionRow[];
   CATEGORY_PERCENTAGE: PromotionRow[];
   PRODUCT_PERCENTAGE: PromotionRow[];
+  PRODUCT_FIXED: PromotionRow[];
   BOGO: PromotionRow[];
   MIX_AND_MATCH: PromotionRow[];
   PROMO_CODE: PromotionRow[];
@@ -57,6 +58,7 @@ interface PromotionRow {
   endsAt: Date | null;
   isActive: boolean;
   description: string | null;
+  createdAt: Date;
 }
 
 // ── Fetch Active Promotions ──────────────────────────────────────────────────
@@ -87,6 +89,7 @@ export async function fetchActivePromotions(tenantId: string): Promise<GroupedPr
     CART_FIXED: [],
     CATEGORY_PERCENTAGE: [],
     PRODUCT_PERCENTAGE: [],
+    PRODUCT_FIXED: [],
     BOGO: [],
     MIX_AND_MATCH: [],
     PROMO_CODE: [],
@@ -253,6 +256,7 @@ export function evaluateProductDiscounts(
     }
 
     const value = new Decimal(promo.value.toString());
+    const isFixed = promo.type === 'PRODUCT_FIXED';
     let totalDiscount = new Decimal(0);
     const affectedLines: string[] = [];
 
@@ -260,7 +264,11 @@ export function evaluateProductDiscounts(
       const lineTotal = new Decimal(line.unitPrice).times(line.quantity);
       const manualDisc = line.manualDiscountAmount ? new Decimal(line.manualDiscountAmount) : new Decimal(0);
       const afterManual = lineTotal.minus(manualDisc);
-      const disc = afterManual.times(value).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      // Percentage: a share of the line. Fixed: a flat LKR amount off the line,
+      // capped so one promotion can never discount more than the line is worth.
+      const disc = isFixed
+        ? Decimal.min(value, afterManual).toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+        : afterManual.times(value).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
       totalDiscount = totalDiscount.plus(disc);
       affectedLines.push(line.variantId);
       alreadyDiscounted.add(line.variantId);
@@ -268,9 +276,11 @@ export function evaluateProductDiscounts(
 
     applied.push({
       promotionId: promo.id,
-      label: `${promo.name} — ${value.toString()}% off product`,
+      label: isFixed
+        ? `${promo.name} — Rs. ${value.toFixed(2)} off product`
+        : `${promo.name} — ${value.toString()}% off product`,
       discountAmount: totalDiscount.toString(),
-      promotionType: 'PRODUCT_PERCENTAGE',
+      promotionType: promo.type,
       affectedLines,
     });
   }
@@ -452,8 +462,15 @@ export async function evaluatePromotions(
   // 2. Fetch automatic promotions
   const grouped = await fetchActivePromotions(tenantId);
 
-  // 3. Product discounts (most specific first: product beats category/cart)
-  if (grouped.PRODUCT_PERCENTAGE.length > 0) {
+  // 3. Product discounts (most specific first: product beats category/cart).
+  // Percentage and fixed product promotions share the same target-product
+  // contract and precedence; the newer fixed type wins its target first because
+  // promotions are evaluated newest-first within this step.
+  const productPromotions = [
+    ...grouped.PRODUCT_PERCENTAGE,
+    ...grouped.PRODUCT_FIXED,
+  ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  if (productPromotions.length > 0) {
     const variantIds = [...new Set(cartLines.map((line) => line.variantId))];
     const variants = await prisma.productVariant.findMany({
       where: { id: { in: variantIds }, product: { tenantId } },
@@ -463,7 +480,7 @@ export async function evaluatePromotions(
 
     const productResult = evaluateProductDiscounts(
       cartLines,
-      grouped.PRODUCT_PERCENTAGE,
+      productPromotions,
       alreadyDiscounted,
       productByVariantId,
     );

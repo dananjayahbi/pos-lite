@@ -373,6 +373,12 @@ export const storeNavGroups: NavGroup[] = [
         permission: PERMISSIONS.SETTINGS.manageTax,
       },
       {
+        name: 'Units',
+        href: '/settings/units',
+        roles: ['OWNER', 'MANAGER', 'FACTORY_MANAGER'],
+        permission: PERMISSIONS.RAW_MATERIAL.viewRawMaterial,
+      },
+      {
         name: 'Payments & LankaQR',
         href: '/settings/payments',
         roles: ['OWNER', 'MANAGER'],

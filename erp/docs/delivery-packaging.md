@@ -56,7 +56,10 @@ auto-deduction and keeps consumption history. Every create/update/delete and
 stock adjustment writes an audit row (`PACKAGING_*`).
 
 The Add/Edit dialog labels stock fields with the selected unit (e.g. "Low
-Stock At (m)" for `METER`). The Adjust dialog shows the **current stock** and
+Stock At (m)" for `METER`). The three stock fields are bottom-aligned
+(`items-end`) so a unit suffix that wraps one label onto a second line no
+longer pushes its input out of line with the others. The Adjust dialog shows
+the **current stock** and
 accepts the **new level**; the API still receives the derived integer `delta`
 (`{ delta, note? }`), which stays the audited contract.
 

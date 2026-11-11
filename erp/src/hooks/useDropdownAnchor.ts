@@ -14,6 +14,14 @@ export interface DropdownAnchorRect {
 const GAP = 4;
 const MIN_HEIGHT = 120;
 const MAX_HEIGHT = 320;
+/**
+ * Flip upwards whenever the panel cannot reach its preferred height below the
+ * anchor (and there is more room above). Using MIN_HEIGHT here let a panel that
+ * had just over the minimum (e.g. 125px near the bottom of the viewport) stay
+ * below and get cut off; comparing against MAX_HEIGHT makes the dropdown open
+ * at the top whenever that gives the user more usable rows.
+ */
+const PREFERRED_HEIGHT = MAX_HEIGHT;
 
 export interface DropdownAnchorBox {
   top: number;
@@ -32,7 +40,7 @@ export function computeDropdownRect(
 ): DropdownAnchorRect {
   const spaceBelow = viewportHeight - box.bottom - GAP;
   const spaceAbove = box.top - GAP;
-  const flipped = spaceBelow < MIN_HEIGHT && spaceAbove > spaceBelow;
+  const flipped = spaceBelow < PREFERRED_HEIGHT && spaceAbove > spaceBelow;
   const available = flipped ? spaceAbove : spaceBelow;
   return {
     top: flipped ? box.top - GAP : box.bottom + GAP,

@@ -33,6 +33,32 @@ operating cash-flow figure. Internal transfers, deposits, withdrawals and
 opening balances appear in the payment-account section separately; internal
 transfers net to zero and must not change operating cash flow.
 
+## Account book
+
+The card action **Account Book** opens a full-viewport dialog (not a drawer).
+The ledger table needs the width for Date / Description / Source / Debit /
+Credit / Balance; the dialog keeps a fixed header with the account name,
+balance and filters, and scrolls the entries and totals separately.
+
+## Petty cash as a destination
+
+Petty-cash payment accounts are special: their balance is owned by the fund, so
+the ledger guard still blocks incidental movements. Two explicit flows are
+allowed and keep both sides in sync inside the same transaction:
+
+- **Fund transfer into petty cash** — the destination fund's `currentBalance`
+  is incremented and the `FUND_TRANSFER` leg counts toward the fund's top-up
+  total. The transfer dialog shows a notice when the destination is a petty-cash
+  account.
+- **Closing transfer into petty cash** — the closed account's remaining balance
+  is swept into the fund, its `currentBalance` is incremented, and
+  `CLOSING_TRANSFER` is counted as cash in by the balance equation.
+
+Petty cash cannot be a transfer *source*; spending from it must go through
+Petty Cash → Expense. Sales never route into petty cash automatically: the sale
+account resolver skips fund-managed accounts, so POS cash settles into a normal
+account (or is left unposted when none exists) instead of failing the sale.
+
 ## Verification
 
 - `npx tsc --noEmit`

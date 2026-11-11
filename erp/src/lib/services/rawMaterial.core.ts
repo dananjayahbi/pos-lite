@@ -5,7 +5,7 @@
  * the service layer, API routes, and UI for consistent labels and stock-status
  * logic.
  */
-import type { RawMaterialCategory, Unit } from '@/generated/prisma/client';
+import type { RawMaterialCategory } from '@/generated/prisma/client';
 
 export const RAW_MATERIAL_CATEGORY_LABELS: Record<RawMaterialCategory, string> = {
   OILS_LIQUIDS: 'Oils & Liquids',
@@ -13,13 +13,18 @@ export const RAW_MATERIAL_CATEGORY_LABELS: Record<RawMaterialCategory, string> =
   CHEMICALS: 'Chemicals',
 };
 
-export const UNIT_LABELS: Record<Unit, string> = {
+/**
+ * Units of measure are tenant-managed rows (`RawMaterialUnit`). These built-in
+ * defaults are seeded for every tenant; the maps below are only label fallbacks
+ * for code that has not loaded the tenant's catalog yet.
+ */
+export const UNIT_LABELS: Record<string, string> = {
   LITERS: 'Liters',
   KILOGRAMS: 'Kilograms',
   UNITS: 'Units',
 };
 
-export const UNIT_SHORT_LABELS: Record<Unit, string> = {
+export const UNIT_SHORT_LABELS: Record<string, string> = {
   LITERS: 'L',
   KILOGRAMS: 'kg',
   UNITS: 'unit',
@@ -29,7 +34,18 @@ export const RAW_MATERIAL_CATEGORIES = Object.keys(
   RAW_MATERIAL_CATEGORY_LABELS,
 ) as RawMaterialCategory[];
 
-export const UNITS = Object.keys(UNIT_LABELS) as Unit[];
+export const UNITS = Object.keys(UNIT_LABELS);
+
+/** Built-in units seeded for every tenant, mirroring the category defaults. */
+export const DEFAULT_RAW_MATERIAL_UNITS: ReadonlyArray<{
+  key: string;
+  name: string;
+  shortLabel: string;
+}> = UNITS.map((key) => ({
+  key,
+  name: UNIT_LABELS[key]!,
+  shortLabel: UNIT_SHORT_LABELS[key]!,
+}));
 
 /**
  * Built-in categories seeded for every tenant. Tenants can create additional
@@ -75,11 +91,16 @@ export function getRawMaterialCategoryLabel(category: string): string {
   );
 }
 
-export function getUnitLabel(unit: Unit): string {
-  return UNIT_LABELS[unit] ?? unit;
+/** Turn an arbitrary unit key into a readable fallback label. */
+export function humanizeUnitKey(key: string): string {
+  return humanizeRawMaterialCategoryKey(key);
 }
 
-export function getUnitShortLabel(unit: Unit): string {
+export function getUnitLabel(unit: string): string {
+  return UNIT_LABELS[unit] ?? humanizeUnitKey(unit);
+}
+
+export function getUnitShortLabel(unit: string): string {
   return UNIT_SHORT_LABELS[unit] ?? unit;
 }
 

@@ -5,7 +5,7 @@
  */
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
-import type { RawMaterial, Unit } from '@/generated/prisma/client';
+import type { RawMaterial } from '@/generated/prisma/client';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
   applyQuantityDelta,
@@ -17,6 +17,11 @@ import {
   assertRawMaterialCategoryExists,
   getRawMaterialCategoryNameMap,
 } from '@/lib/services/rawMaterialCategory.service';
+import {
+  assertRawMaterialUnitExists,
+  getRawMaterialUnitMap,
+  type RawMaterialUnitOption,
+} from '@/lib/services/rawMaterialUnit.service';
 
 // ── Public list item shape (Decimal → number for the client) ────────────────
 
@@ -25,7 +30,9 @@ export interface RawMaterialItem {
   name: string;
   category: string;
   categoryName: string;
-  unit: Unit;
+  unit: string;
+  unitName: string;
+  unitShortLabel: string;
   quantity: number;
   lowStockThreshold: number;
   description: string | null;
@@ -38,6 +45,7 @@ export interface RawMaterialItem {
 export function toRawMaterialItem(
   m: RawMaterial,
   categoryName?: string | undefined,
+  unit?: RawMaterialUnitOption | undefined,
 ): RawMaterialItem {
   const quantity = m.quantity.toNumber();
   const lowStockThreshold = m.lowStockThreshold.toNumber();
@@ -47,6 +55,8 @@ export function toRawMaterialItem(
     category: m.category,
     categoryName: categoryName ?? getRawMaterialCategoryLabel(m.category),
     unit: m.unit,
+    unitName: unit?.name ?? m.unit,
+    unitShortLabel: unit?.shortLabel ?? m.unit,
     quantity,
     lowStockThreshold,
     description: m.description,
@@ -87,7 +97,7 @@ export async function listRawMaterials(
 
   const skip = (page - 1) * limit;
 
-  const [rows, total, categoryNames] = await Promise.all([
+  const [rows, total, categoryNames, unitMap] = await Promise.all([
     prisma.rawMaterial.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -96,9 +106,12 @@ export async function listRawMaterials(
     }),
     prisma.rawMaterial.count({ where }),
     getRawMaterialCategoryNameMap(tenantId),
+    getRawMaterialUnitMap(tenantId),
   ]);
 
-  let items = rows.map((row) => toRawMaterialItem(row, categoryNames.get(row.category)));
+  let items = rows.map((row) =>
+    toRawMaterialItem(row, categoryNames.get(row.category), unitMap.get(row.unit)),
+  );
 
   if (stockStatus) {
     items = items.filter((item) => item.stockStatus === stockStatus);
@@ -125,7 +138,7 @@ async function findOwnedMaterial(tx: TxClient, tenantId: string, id: string) {
 export interface CreateRawMaterialInput {
   name: string;
   category: string;
-  unit: Unit;
+  unit: string;
   quantity?: string | undefined;
   lowStockThreshold?: string | undefined;
   description?: string | undefined;
@@ -137,6 +150,7 @@ export async function createRawMaterial(
   input: CreateRawMaterialInput,
 ) {
   await assertRawMaterialCategoryExists(tenantId, input.category);
+  await assertRawMaterialUnitExists(tenantId, input.unit);
 
   const material = await prisma.rawMaterial.create({
     data: {
@@ -160,8 +174,15 @@ export async function createRawMaterial(
     after: { name: material.name, category: material.category, unit: material.unit },
   }).catch(() => {});
 
-  const categoryNames = await getRawMaterialCategoryNameMap(tenantId);
-  return toRawMaterialItem(material, categoryNames.get(material.category));
+  const [categoryNames, unitMap] = await Promise.all([
+    getRawMaterialCategoryNameMap(tenantId),
+    getRawMaterialUnitMap(tenantId),
+  ]);
+  return toRawMaterialItem(
+    material,
+    categoryNames.get(material.category),
+    unitMap.get(material.unit),
+  );
 }
 
 // ── Update ───────────────────────────────────────────────────────────────────
@@ -169,7 +190,7 @@ export async function createRawMaterial(
 export interface UpdateRawMaterialInput {
   name?: string | undefined;
   category?: string | undefined;
-  unit?: Unit | undefined;
+  unit?: string | undefined;
   quantity?: string | undefined;
   lowStockThreshold?: string | undefined;
   description?: string | undefined;
@@ -184,6 +205,9 @@ export async function updateRawMaterial(
 ) {
   if (input.category !== undefined) {
     await assertRawMaterialCategoryExists(tenantId, input.category);
+  }
+  if (input.unit !== undefined) {
+    await assertRawMaterialUnitExists(tenantId, input.unit);
   }
 
   return prisma.$transaction(async (tx) => {
@@ -218,14 +242,24 @@ export async function updateRawMaterial(
       after: { ...input },
     }).catch(() => {});
 
-    const categoryName = (
-      await tx.rawMaterialCategoryOption.findFirst({
+    const [categoryRow, unitRow] = await Promise.all([
+      tx.rawMaterialCategoryOption.findFirst({
         where: { tenantId, key: updated.category },
         select: { name: true },
-      })
-    )?.name;
+      }),
+      tx.rawMaterialUnit.findFirst({
+        where: { tenantId, key: updated.unit },
+        select: { key: true, name: true, shortLabel: true },
+      }),
+    ]);
 
-    return toRawMaterialItem(updated, categoryName);
+    return toRawMaterialItem(
+      updated,
+      categoryRow?.name,
+      unitRow
+        ? { key: unitRow.key, name: unitRow.name, shortLabel: unitRow.shortLabel }
+        : undefined,
+    );
   });
 }
 

@@ -394,12 +394,28 @@ export async function transferFunds(
 
   return prisma.$transaction(async (tx) => {
     const [from, to] = await Promise.all([
-      tx.paymentAccount.findFirst({ where: { id: input.fromAccountId, tenantId } }),
-      tx.paymentAccount.findFirst({ where: { id: input.toAccountId, tenantId } }),
+      tx.paymentAccount.findFirst({
+        where: { id: input.fromAccountId, tenantId },
+        include: { pettyCashFund: { select: { id: true } } },
+      }),
+      tx.paymentAccount.findFirst({
+        where: { id: input.toAccountId, tenantId },
+        include: { pettyCashFund: { select: { id: true } } },
+      }),
     ]);
 
     if (!from) throw new ApiError(404, 'NOT_FOUND', 'Source account not found');
     if (!to) throw new ApiError(404, 'NOT_FOUND', 'Destination account not found');
+
+    // Draining petty cash is an expense, not a transfer; everything else about
+    // a petty-cash account is managed by the fund service.
+    if (from.pettyCashFund) {
+      throw new ApiError(
+        409,
+        'CONFLICT',
+        'This account is managed by Petty Cash. Record the spend as a Petty Cash expense instead.',
+      );
+    }
 
     await assertSufficientFunds(tx, tenantId, from.id, amount);
 
@@ -407,26 +423,45 @@ export async function transferFunds(
     const description = note ? `Transfer to ${to.name} — ${note}` : `Transfer to ${to.name}`;
     const inbound = note ? `Transfer from ${from.name} — ${note}` : `Transfer from ${from.name}`;
 
-    await postLedgerEntries(tx, tenantId, actorId, [
-      {
-        accountId: from.id,
-        source: PaymentEntrySource.FUND_TRANSFER,
-        sourceId: groupId,
-        transferGroupId: groupId,
-        description,
-        credit: amount,
-        ...(input.entryDate !== undefined ? { entryDate: input.entryDate } : {}),
-      },
-      {
-        accountId: to.id,
-        source: PaymentEntrySource.FUND_TRANSFER,
-        sourceId: groupId,
-        transferGroupId: groupId,
-        description: inbound,
-        debit: amount,
-        ...(input.entryDate !== undefined ? { entryDate: input.entryDate } : {}),
-      },
-    ]);
+    // A transfer INTO petty cash is a top-up by another name, so it is allowed
+    // and must move the fund's running balance in the same transaction. The
+    // `FUND_TRANSFER` source already counts toward the fund balance equation,
+    // so the account book and the Petty Cash page stay reconciled.
+    const destinationFundId = to.pettyCashFund?.id ?? null;
+
+    await postLedgerEntries(
+      tx,
+      tenantId,
+      actorId,
+      [
+        {
+          accountId: from.id,
+          source: PaymentEntrySource.FUND_TRANSFER,
+          sourceId: groupId,
+          transferGroupId: groupId,
+          description,
+          credit: amount,
+          ...(input.entryDate !== undefined ? { entryDate: input.entryDate } : {}),
+        },
+        {
+          accountId: to.id,
+          source: PaymentEntrySource.FUND_TRANSFER,
+          sourceId: groupId,
+          transferGroupId: groupId,
+          description: inbound,
+          debit: amount,
+          ...(input.entryDate !== undefined ? { entryDate: input.entryDate } : {}),
+        },
+      ],
+      { allowPettyCashAccount: destinationFundId !== null },
+    );
+
+    if (destinationFundId) {
+      await tx.pettyCashFund.update({
+        where: { id: destinationFundId },
+        data: { currentBalance: { increment: toMoney(amount) } },
+      });
+    }
 
     await createAuditLog({
       tenantId,
@@ -629,30 +664,48 @@ export async function closePaymentAccount(
 
       const target = await tx.paymentAccount.findFirst({
         where: { id: input.transferToAccountId, tenantId },
+        include: { pettyCashFund: { select: { id: true } } },
       });
       if (!target) throw new ApiError(404, 'NOT_FOUND', 'Destination account not found');
       if (target.id === account.id) {
         throw new ApiError(422, 'VALIDATION_ERROR', 'Choose a different destination account');
       }
 
-      await postLedgerEntries(tx, tenantId, actorId, [
-        {
-          accountId: account.id,
-          source: PaymentEntrySource.CLOSING_TRANSFER,
-          sourceId: groupId,
-          transferGroupId: groupId,
-          description: `Closing transfer to ${target.name}`,
-          credit: balance,
-        },
-        {
-          accountId: target.id,
-          source: PaymentEntrySource.CLOSING_TRANSFER,
-          sourceId: groupId,
-          transferGroupId: groupId,
-          description: `Closing transfer from ${account.name}`,
-          debit: balance,
-        },
-      ]);
+      // Closing an account into petty cash is a legitimate sweep: it retires
+      // the account and tops up the fund, so both balances are updated here.
+      const destinationFundId = target.pettyCashFund?.id ?? null;
+
+      await postLedgerEntries(
+        tx,
+        tenantId,
+        actorId,
+        [
+          {
+            accountId: account.id,
+            source: PaymentEntrySource.CLOSING_TRANSFER,
+            sourceId: groupId,
+            transferGroupId: groupId,
+            description: `Closing transfer to ${target.name}`,
+            credit: balance,
+          },
+          {
+            accountId: target.id,
+            source: PaymentEntrySource.CLOSING_TRANSFER,
+            sourceId: groupId,
+            transferGroupId: groupId,
+            description: `Closing transfer from ${account.name}`,
+            debit: balance,
+          },
+        ],
+        { allowPettyCashAccount: destinationFundId !== null },
+      );
+
+      if (destinationFundId) {
+        await tx.pettyCashFund.update({
+          where: { id: destinationFundId },
+          data: { currentBalance: { increment: toMoney(balance) } },
+        });
+      }
     }
 
     const closed = await tx.paymentAccount.update({

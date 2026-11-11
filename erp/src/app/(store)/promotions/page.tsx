@@ -62,6 +62,7 @@ const PROMOTION_TYPE_LABELS: Record<string, string> = {
   CART_FIXED: 'Cart Fixed',
   CATEGORY_PERCENTAGE: 'Category Percentage',
   PRODUCT_PERCENTAGE: 'Product Percentage',
+  PRODUCT_FIXED: 'Product Fixed',
   BOGO: 'Buy One Get One',
   MIX_AND_MATCH: 'Mix & Match',
   PROMO_CODE: 'Promo Code',
@@ -72,6 +73,7 @@ const PROMOTION_TYPES = [
   'CART_FIXED',
   'CATEGORY_PERCENTAGE',
   'PRODUCT_PERCENTAGE',
+  'PRODUCT_FIXED',
   'BOGO',
   'MIX_AND_MATCH',
   'PROMO_CODE',
@@ -117,6 +119,7 @@ function getTypeBadgeClasses(type: string): string {
       return 'bg-sand text-espresso';
     case 'CATEGORY_PERCENTAGE':
     case 'PRODUCT_PERCENTAGE':
+    case 'PRODUCT_FIXED':
       return 'bg-mist text-espresso';
     case 'BOGO':
     case 'MIX_AND_MATCH':
@@ -146,7 +149,7 @@ function formatDateRange(startsAt: string | null, endsAt: string | null): string
 
 function getValueLabel(type: PromotionTypeValue): string {
   if (type === 'CART_PERCENTAGE' || type === 'CATEGORY_PERCENTAGE' || type === 'PRODUCT_PERCENTAGE' || type === 'PROMO_CODE') return 'Discount %';
-  if (type === 'CART_FIXED') return 'Discount Amount';
+  if (type === 'CART_FIXED' || type === 'PRODUCT_FIXED') return 'Discount Amount';
   return 'Item Value Cap';
 }
 
@@ -164,6 +167,7 @@ function getPreviewText(name: string, type: PromotionTypeValue, value: number): 
     }`;
   }
   if (type === 'CART_FIXED') return `${name} — ${formatRupee(value)} off your cart`;
+  if (type === 'PRODUCT_FIXED') return `${name} — ${formatRupee(value)} off the selected product`;
   return `${name} — Buy ${value}+ get one free`;
 }
 
@@ -210,7 +214,9 @@ function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmit
           onValueChange={(v) => {
             const next = v as PromotionTypeValue;
             setValue('type', next);
-            if (next !== 'PRODUCT_PERCENTAGE') setValue('targetProductId', undefined);
+            if (next !== 'PRODUCT_PERCENTAGE' && next !== 'PRODUCT_FIXED') {
+              setValue('targetProductId', undefined);
+            }
             if (next !== 'CATEGORY_PERCENTAGE') setValue('targetCategoryId', undefined);
           }}
         >
@@ -268,7 +274,7 @@ function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmit
         </div>
       )}
 
-      {watchedType === 'PRODUCT_PERCENTAGE' && (
+      {(watchedType === 'PRODUCT_PERCENTAGE' || watchedType === 'PRODUCT_FIXED') && (
         <div className="space-y-1.5">
           <Label htmlFor="targetProductId" className="font-body text-sm text-espresso">Product</Label>
           <Select
@@ -554,7 +560,7 @@ export default function PromotionsPage() {
                     <TableRow key={promo.id} className="hover:bg-linen/30">
                       <TableCell className="font-body text-sm text-espresso font-medium">
                         <div>{promo.name}</div>
-                        {promo.type === 'PRODUCT_PERCENTAGE' && promo.targetProduct && (
+                        {(promo.type === 'PRODUCT_PERCENTAGE' || promo.type === 'PRODUCT_FIXED') && promo.targetProduct && (
                           <div className="mt-0.5 text-xs font-normal text-mist-ink">Product: {promo.targetProduct.name}</div>
                         )}
                         {promo.type === 'CATEGORY_PERCENTAGE' && promo.targetCategory && (

@@ -14,12 +14,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Table,
   TableBody,
@@ -57,11 +57,14 @@ interface AccountBookSheetProps {
 
 export function AccountBookSheet({ open, onOpenChange, account }: AccountBookSheetProps) {
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full gap-0 border-l border-mist bg-pearl sm:max-w-4xl">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {/* Full-viewport dialog: the ledger has a wide table, so a drawer used to
+          squeeze columns and hide horizontal context. The dialog is inset by
+          1rem on every edge and keeps its own scroll area. */}
+      <DialogContent className="top-4 left-4 flex h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-xl border border-mist bg-pearl p-0 sm:max-w-none">
         {account && <BookBody account={account} />}
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -101,28 +104,28 @@ function BookBody({ account }: { account: PaymentAccount }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <SheetHeader className="gap-1 border-b border-mist bg-linen/40 p-4">
+      <DialogHeader className="gap-1 border-b border-mist bg-linen/40 p-4">
         <div className="flex flex-wrap items-center gap-2 pr-8">
-          <SheetTitle className="font-display text-lg text-espresso">{header.name}</SheetTitle>
+          <DialogTitle className="font-display text-lg text-espresso">{header.name}</DialogTitle>
           <AccountTypeBadge type={header.type} />
           {header.status === 'CLOSED' && (
             <Badge className="border border-mist bg-pearl font-body text-sand-ink">Closed</Badge>
           )}
         </div>
-        <SheetDescription className="font-body text-xs text-sand-ink">
+        <DialogDescription className="font-body text-xs text-sand-ink">
           {header.accountNumber ? (
             <span className="font-mono">{header.accountNumber}</span>
           ) : (
             'Account book — every ledger entry for this account.'
           )}
-        </SheetDescription>
+        </DialogDescription>
         <p className="font-body text-sm text-sand-ink">
           Balance:{' '}
           <span className="font-mono text-base font-semibold text-espresso">
             {formatRupee(header.balance)}
           </span>
         </p>
-      </SheetHeader>
+      </DialogHeader>
 
       <div className="flex flex-wrap items-end gap-3 border-b border-mist p-4">
         <div>

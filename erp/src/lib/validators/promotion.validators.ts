@@ -15,8 +15,9 @@ import { z } from 'zod';
  *    `PRODUCT_PERCENTAGE`, `PROMO_CODE`) are consumed as `subtotal * value /
  *    100` → cap at 100 so a "discount" can never credit the customer more than
  *    the cart is worth.
- *  - `CART_FIXED` is an LKR amount stored in `Promotion.value Decimal(12,2)`
- *    → cap at the column ceiling and require ≤ 2 decimal places.
+ *  - `CART_FIXED` / `PRODUCT_FIXED` are LKR amounts stored in
+ *    `Promotion.value Decimal(12,2)` → cap at the column ceiling and require
+ *    ≤ 2 decimal places.
  *  - `BOGO` / `MIX_AND_MATCH` carry a whole free-item quantity (the "item value
  *    cap" the promotions form labels it) → require a safe integer in 0..100000.
  */
@@ -97,7 +98,7 @@ function assertValueBounds(
     return;
   }
 
-  // CART_FIXED — LKR amount.
+  // CART_FIXED / PRODUCT_FIXED — LKR amount.
   if (value > MAX_PROMOTION_MONEY) {
     ctx.addIssue({
       code: 'custom',
@@ -117,7 +118,7 @@ function assertValueBounds(
 
 const PromotionBaseSchema = z.object({
   name: z.string().min(1).max(100),
-  type: z.enum(['CART_PERCENTAGE', 'CART_FIXED', 'CATEGORY_PERCENTAGE', 'PRODUCT_PERCENTAGE', 'BOGO', 'MIX_AND_MATCH', 'PROMO_CODE']),
+  type: z.enum(['CART_PERCENTAGE', 'CART_FIXED', 'CATEGORY_PERCENTAGE', 'PRODUCT_PERCENTAGE', 'PRODUCT_FIXED', 'BOGO', 'MIX_AND_MATCH', 'PROMO_CODE']),
   value: z.number().min(0),
   promoCode: z.string().max(50).optional(),
   targetCategoryId: z.string().optional(),

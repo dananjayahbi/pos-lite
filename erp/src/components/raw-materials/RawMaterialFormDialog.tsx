@@ -23,16 +23,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  UNITS,
-  getUnitLabel,
-} from '@/lib/services/rawMaterial.core';
 import type { RawMaterialItem } from '@/hooks/useRawMaterials';
 import { RawMaterialCategoryManagerDialog } from '@/components/raw-materials/RawMaterialCategoryManagerDialog';
 import {
   useCreateRawMaterialCategory,
   useRawMaterialCategories,
 } from '@/hooks/useRawMaterialCategories';
+import {
+  useCreateRawMaterialUnit,
+  useRawMaterialUnits,
+} from '@/hooks/useRawMaterialUnits';
 
 interface RawMaterialFormDialogProps {
   open: boolean;
@@ -54,7 +54,7 @@ const DEFAULT_CATEGORY = 'OILS_LIQUIDS';
 const EMPTY: FormState = {
   name: '',
   category: DEFAULT_CATEGORY,
-  unit: UNITS[0] ?? 'LITERS',
+  unit: 'LITERS',
   quantity: '0',
   lowStockThreshold: '0',
   description: '',
@@ -82,11 +82,18 @@ export function RawMaterialFormDialog({
   const createCategoryMutation = useCreateRawMaterialCategory();
   const categories = (categoriesData?.data ?? []).filter((category) => category.isActive);
 
+  const { data: unitsData } = useRawMaterialUnits();
+  const createUnitMutation = useCreateRawMaterialUnit();
+  const units = (unitsData?.data ?? []).filter((unit) => unit.isActive);
+
   const [form, setForm] = useState<FormState>(EMPTY);
   const [error, setError] = useState<string | null>(null);
   const [managerOpen, setManagerOpen] = useState(false);
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [addingUnit, setAddingUnit] = useState(false);
+  const [newUnitName, setNewUnitName] = useState('');
+  const [newUnitShortLabel, setNewUnitShortLabel] = useState('');
   const isEdit = material !== null;
 
   // Keep the select valid when the tenant removed the material's category, and
@@ -107,12 +114,39 @@ export function RawMaterialFormDialog({
         ? form.category
         : (categories[0]?.key ?? form.category);
 
+  // Same fallback contract as categories: keep an edit form valid even if the
+  // tenant removed the material's unit, and default new materials to the first
+  // active unit from the tenant's catalog.
+  const currentUnitMissing =
+    Boolean(form.unit) && !units.some((unit) => unit.key === form.unit);
+  const unitOptions =
+    isEdit && currentUnitMissing
+      ? [
+          {
+            id: 'current',
+            key: form.unit,
+            name: material?.unitName ?? form.unit,
+            shortLabel: material?.unitShortLabel ?? form.unit,
+          },
+          ...units,
+        ]
+      : units;
+  const selectedUnit =
+    isEdit && currentUnitMissing
+      ? form.unit
+      : units.some((unit) => unit.key === form.unit)
+        ? form.unit
+        : (units[0]?.key ?? form.unit);
+
   useEffect(() => {
     if (open) {
       setForm(toFormState(material));
       setError(null);
       setAddingCategory(false);
       setNewCategoryName('');
+      setAddingUnit(false);
+      setNewUnitName('');
+      setNewUnitShortLabel('');
     }
   }, [open, material]);
 
@@ -134,12 +168,34 @@ export function RawMaterialFormDialog({
       .catch((err: Error) => setError(err.message));
   };
 
+  const handleCreateUnit = () => {
+    const name = newUnitName.trim();
+    if (!name) return;
+    setError(null);
+    createUnitMutation
+      .mutateAsync({
+        name,
+        ...(newUnitShortLabel.trim() ? { shortLabel: newUnitShortLabel.trim() } : {}),
+      })
+      .then((json: { data?: { key?: string } } | null) => {
+        const key = json?.data?.key;
+        if (key) {
+          setForm((prev) => ({ ...prev, unit: key }));
+        }
+        setNewUnitName('');
+        setNewUnitShortLabel('');
+        setAddingUnit(false);
+        toast.success('Unit added');
+      })
+      .catch((err: Error) => setError(err.message));
+  };
+
   const mutation = useMutation({
     mutationFn: async () => {
       const payload = {
         name: form.name,
         category: selectedCategory,
-        unit: form.unit,
+        unit: selectedUnit,
         quantity: form.quantity || '0',
         lowStockThreshold: form.lowStockThreshold || '0',
         description: form.description || undefined,
@@ -263,22 +319,74 @@ export function RawMaterialFormDialog({
               ) : null}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="rm-unit">Unit</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="rm-unit">Unit</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-1 text-xs"
+                  onClick={() => setAddingUnit((prev) => !prev)}
+                >
+                  <Plus className="mr-1 h-3 w-3" /> New
+                </Button>
+              </div>
               <Select
-                value={form.unit}
+                value={selectedUnit}
                 onValueChange={(value) => setForm({ ...form, unit: value })}
               >
                 <SelectTrigger id="rm-unit">
                   <SelectValue placeholder="Select unit" />
                 </SelectTrigger>
                 <SelectContent>
-                  {UNITS.map((unit) => (
-                    <SelectItem key={unit} value={unit}>
-                      {getUnitLabel(unit)}
+                  {unitOptions.map((unit) => (
+                    <SelectItem key={unit.id} value={unit.key}>
+                      {unit.name}
+                      {unit.shortLabel && unit.shortLabel !== unit.name
+                        ? ` (${unit.shortLabel})`
+                        : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {addingUnit ? (
+                <div className="space-y-2">
+                  <Input
+                    value={newUnitName}
+                    onChange={(e) => setNewUnitName(e.target.value)}
+                    placeholder="New unit name"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleCreateUnit();
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={newUnitShortLabel}
+                      onChange={(e) => setNewUnitShortLabel(e.target.value)}
+                      placeholder="Short label (kg)"
+                      maxLength={20}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleCreateUnit();
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleCreateUnit}
+                      disabled={createUnitMutation.isPending || !newUnitName.trim()}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
 

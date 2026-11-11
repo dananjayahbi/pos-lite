@@ -236,7 +236,7 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
                       {selected ? selected.quantity : '—'}
                     </div>
                     <div className="text-sm text-mist-ink">
-                      {selected ? getUnitLabel(selected.unit) : '—'}
+                      {selected ? (selected.unitName ?? getUnitLabel(selected.unit)) : '—'}
                     </div>
                     <div className="relative">
                       <Input
@@ -249,7 +249,9 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
                         }
                       />
                       <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-mist-ink">
-                        {selected ? getUnitShortLabel(selected.unit) : ''}
+                        {selected
+                          ? (selected.unitShortLabel ?? getUnitShortLabel(selected.unit))
+                          : ''}
                       </span>
                     </div>
                     <Button

@@ -86,8 +86,17 @@ export const DEFAULT_LOW_BALANCE_THRESHOLD = 5000;
 /** Note shown on the auto-created payment account card. */
 const PETTY_CASH_ACCOUNT_NOTE = 'Default petty cash account — managed from Petty Cash.';
 
-/** Ledger sources that represent money entering the petty-cash account. */
-const TOP_UP_SOURCES = [PaymentEntrySource.DEPOSIT, PaymentEntrySource.FUND_TRANSFER] as const;
+/**
+ * Ledger sources that represent money entering the petty-cash account.
+ * `CLOSING_TRANSFER` is included so a closed account swept into petty cash is
+ * counted by the balance equation (it is real cash in), and `FUND_TRANSFER`
+ * covers both the Add Cash In dialog and a payment-account transfer.
+ */
+const TOP_UP_SOURCES = [
+  PaymentEntrySource.DEPOSIT,
+  PaymentEntrySource.FUND_TRANSFER,
+  PaymentEntrySource.CLOSING_TRANSFER,
+] as const;
 
 /**
  * Description shown in the Linked Expenses table and the account book.

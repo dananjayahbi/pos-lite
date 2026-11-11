@@ -232,7 +232,9 @@ export function PackagingItemFormDialog({
             ) : null}
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          {/* `items-end` keeps the three inputs on one baseline when a long
+              unit suffix wraps one of the labels onto a second line. */}
+          <div className="grid grid-cols-3 items-end gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="pkg-qty">On Hand{suffix ? ` (${suffix})` : ''}</Label>
               <Input

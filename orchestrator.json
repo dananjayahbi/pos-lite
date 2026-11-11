@@ -1,0 +1,90 @@
+{
+  "$schema": "https://raw.githubusercontent.com/devorchestrator/schema/v1/schema.json",
+  "_documentation": "POS Lite / AyurPOS: Next.js ERP on 3003 and the customer storefront on 3002. The ERP owns Prisma/PostgreSQL access; the storefront reads its public API. Use the Dev/Prod selector on each UI card to run dev or rebuild and serve production.",
+  "project_name": "POS Lite (AyurPOS)",
+  "version": "1.0.0",
+  "root_directory": "E:/work_git_repos/pos-lite",
+  "editor": {
+    "type": "vscode"
+  },
+  "profiles": {
+    "default": {
+      "SERVICES": [
+        "erp",
+        "website"
+      ]
+    },
+    "erp_only": {
+      "SERVICES": [
+        "erp"
+      ]
+    },
+    "website_only": {
+      "SERVICES": [
+        "website"
+      ]
+    }
+  },
+  "services": [
+    {
+      "id": "erp",
+      "name": "AyurPOS ERP",
+      "working_directory": "./erp",
+      "command": "npm run dev",
+      "ports": [
+        3003
+      ],
+      "health_check": {
+        "type": "http",
+        "url": "http://127.0.0.1:3003",
+        "expected_status": [
+          200,
+          304
+        ],
+        "timeout_seconds": 120,
+        "interval_seconds": 2
+      },
+      "env_file": "erp/.env",
+      "nextjs": {
+        "dev_command": "npm run dev",
+        "build_command": "npm run build",
+        "start_command": "npm run start",
+        "default_mode": "development",
+        "build_timeout_seconds": 1200
+      },
+      "auto_restart": false,
+      "depends_on": []
+    },
+    {
+      "id": "website",
+      "name": "Customer Website",
+      "working_directory": "./website",
+      "command": "npm run dev",
+      "ports": [
+        3002
+      ],
+      "health_check": {
+        "type": "http",
+        "url": "http://127.0.0.1:3002",
+        "expected_status": [
+          200,
+          304
+        ],
+        "timeout_seconds": 120,
+        "interval_seconds": 2
+      },
+      "env_file": "website/.env",
+      "nextjs": {
+        "dev_command": "npm run dev",
+        "build_command": "npm run build",
+        "start_command": "npm run start",
+        "default_mode": "development",
+        "build_timeout_seconds": 1200
+      },
+      "auto_restart": false,
+      "depends_on": [
+        "erp"
+      ]
+    }
+  ]
+}

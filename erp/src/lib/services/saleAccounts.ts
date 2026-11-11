@@ -59,16 +59,23 @@ export async function resolveSaleAccountId({
   method,
   preferredAccountId,
 }: ResolveOptions): Promise<string | null> {
+  // Petty-cash accounts are intentionally excluded from sale routing. Their
+  // balance is owned by the petty-cash fund, so a sale landing there would
+  // either be rejected by the ledger guard (the bug this fixes) or desync the
+  // fund. Sales must settle into a normal account; if the tenant has none the
+  // ledger entry is skipped, and the sale still completes.
+  const saleable = { tenantId, status: 'ACTIVE', pettyCashFund: null } as const;
+
   if (preferredAccountId) {
     const preferred = await prisma.paymentAccount.findFirst({
-      where: { id: preferredAccountId, tenantId, status: 'ACTIVE' },
+      where: { ...saleable, id: preferredAccountId },
       select: { id: true },
     });
     if (preferred) return preferred.id;
   }
 
   const byType = await prisma.paymentAccount.findFirst({
-    where: { tenantId, status: 'ACTIVE', type: METHOD_ACCOUNT_TYPE[method] },
+    where: { ...saleable, type: METHOD_ACCOUNT_TYPE[method] },
     orderBy: { createdAt: 'asc' },
     select: { id: true },
   });
@@ -78,7 +85,7 @@ export async function resolveSaleAccountId({
   // Fall back to the first active account so money is still tracked rather
   // than silently unaccounted for.
   const anyActive = await prisma.paymentAccount.findFirst({
-    where: { tenantId, status: 'ACTIVE' },
+    where: saleable,
     orderBy: { createdAt: 'asc' },
     select: { id: true },
   });

@@ -1,7 +1,6 @@
 'use client';
 
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import type { Unit } from '@/generated/prisma/client';
 import type { RawMaterialStockStatus } from '@/lib/services/rawMaterial.core';
 
 export interface RawMaterialFilters {
@@ -17,7 +16,11 @@ export interface RawMaterialItem {
   name: string;
   category: string;
   categoryName: string;
-  unit: Unit;
+  /** Tenant-defined unit key. */
+  unit: string;
+  /** Display name and compact suffix resolved from the unit catalog. */
+  unitName: string;
+  unitShortLabel: string;
   quantity: number;
   lowStockThreshold: number;
   description: string | null;

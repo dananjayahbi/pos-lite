@@ -69,6 +69,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         { status: 400 },
       );
     }
+    if (error instanceof Error && error.message === 'UNIT_NOT_FOUND') {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Unknown raw material unit' } },
+        { status: 400 },
+      );
+    }
     console.error('PATCH /api/store/raw-materials/[id] error:', error);
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },

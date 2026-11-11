@@ -18,6 +18,7 @@ function promo(overrides: Record<string, unknown> = {}) {
     endsAt: null,
     isActive: true,
     description: null,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
     ...overrides,
   } as unknown as PromoRows[number];
 }
@@ -64,6 +65,37 @@ describe('evaluateProductDiscounts', () => {
 
     expect(result.applied).toHaveLength(0);
     expect(result.skipped[0]?.reason).toBe('No matching items in cart');
+  });
+
+  it('applies a fixed amount off the targeted product line, capped at its total', () => {
+    const productByVariantId = new Map([['variant-2', 'product-1']]);
+    const result = evaluateProductDiscounts(
+      cartLines,
+      [promo({ type: 'PRODUCT_FIXED', value: { toString: () => '30' } })],
+      new Set(),
+      productByVariantId,
+    );
+
+    // variant-2 line total is 50, so the Rs. 30 fixed discount applies in full.
+    expect(result.applied).toHaveLength(1);
+    expect(result.applied[0]).toMatchObject({
+      promotionType: 'PRODUCT_FIXED',
+      discountAmount: '30',
+      affectedLines: ['variant-2'],
+    });
+  });
+
+  it('never discounts a product line below zero with a fixed amount', () => {
+    const productByVariantId = new Map([['variant-2', 'product-1']]);
+    const result = evaluateProductDiscounts(
+      cartLines,
+      [promo({ type: 'PRODUCT_FIXED', value: { toString: () => '1000' } })],
+      new Set(),
+      productByVariantId,
+    );
+
+    // variant-2 line total is 50; the discount is capped there.
+    expect(result.applied[0]?.discountAmount).toBe('50');
   });
 
   it('skips a product promotion without a target product', () => {

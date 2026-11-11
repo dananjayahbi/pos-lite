@@ -110,6 +110,12 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    if (error instanceof Error && error.message === 'UNIT_NOT_FOUND') {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Unknown raw material unit' } },
+        { status: 400 },
+      );
+    }
     // XC-01/INF-02: parser ApiErrors surface as their 400; unknown
     // errors are logged and returned as a generic, leak-free 500.
     return toErrorResponse(error, 'POST /api/store/raw-materials');

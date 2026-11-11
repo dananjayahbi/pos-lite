@@ -81,6 +81,10 @@ const PUBLIC_PATH_PREFIXES = [
   '/fonts',
   '/icons',
   '/images',
+  // Tenant-aware favicon routes (src/app/icon.tsx). These are fetched by the
+  // browser without a guaranteed session, so they must stay reachable.
+  '/icon',
+  '/apple-icon',
 ];
 
 // API namespaces that must stay reachable regardless of tenant suspension or

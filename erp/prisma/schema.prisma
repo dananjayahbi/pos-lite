@@ -121,12 +121,6 @@ enum RawMaterialCategory {
   CHEMICALS
 }
 
-enum Unit {
-  LITERS
-  KILOGRAMS
-  UNITS
-}
-
 enum StockTakeStatus {
   IN_PROGRESS
   PENDING_APPROVAL
@@ -243,6 +237,7 @@ enum PromotionType {
   CART_FIXED
   CATEGORY_PERCENTAGE
   PRODUCT_PERCENTAGE
+  PRODUCT_FIXED
   BOGO
   MIX_AND_MATCH
   PROMO_CODE
@@ -667,6 +662,7 @@ model Tenant {
   statementImports            StatementImport[]
   rawMaterials                RawMaterial[]
   rawMaterialCategories       RawMaterialCategoryOption[]
+  rawMaterialUnits            RawMaterialUnit[]
   billOfMaterials             BillOfMaterials[]
   productionLogs              ProductionLog[]
   batchTrackings              BatchTracking[]
@@ -938,7 +934,9 @@ model RawMaterial {
   // Stable category key. Default keys live in RAW_MATERIAL_CATEGORIES; tenants
   // can add their own keys through RawMaterialCategoryOption.
   category           String
-  unit               Unit
+  // Tenant-managed unit key. Built-in keys live in DEFAULT_RAW_MATERIAL_UNITS;
+  // tenants can add their own through RawMaterialUnit.
+  unit               String
   quantity           Decimal            @default(0)
   lowStockThreshold  Decimal            @default(0)
   description        String?
@@ -970,6 +968,27 @@ model RawMaterialCategoryOption {
   @@unique([tenantId, key])
   @@index([tenantId])
   @@map("raw_material_categories")
+}
+
+// Tenant-managed units of measure. The built-in units (Liters, Kilograms,
+// Units) are seeded per tenant; custom units can be added from Settings →
+// Units or inline from the raw-material form.
+model RawMaterialUnit {
+  id         String    @id @default(cuid())
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key        String
+  name       String
+  // Compact form shown next to quantities (e.g. "kg", "L", "bottle").
+  shortLabel String
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("raw_material_units")
 }
 
 model BillOfMaterials {

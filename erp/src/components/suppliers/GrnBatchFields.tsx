@@ -50,36 +50,37 @@ export function GrnBatchFields({
   const expiryInputId = `grn-expiry-${lineId}`;
 
   return (
-    <div className="space-y-1.5 min-w-52">
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1">
-          <Label htmlFor={batchInputId} className="text-[11px] font-body text-mist-ink">
-            Batch no.
-          </Label>
-          <Input
-            id={batchInputId}
-            type="text"
-            className="h-8 font-mono text-xs"
-            maxLength={MAX_BATCH_NUMBER_LENGTH}
-            placeholder="Optional"
-            value={batchNumber}
-            disabled={disabled}
-            onChange={(event) => onBatchNumberChange(event.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor={expiryInputId} className="text-[11px] font-body text-mist-ink">
-            Expiry
-          </Label>
-          <Input
-            id={expiryInputId}
-            type="date"
-            className="h-8 text-xs"
-            value={expiryDate}
-            disabled={disabled}
-            onChange={(event) => onExpiryDateChange(event.target.value)}
-          />
-        </div>
+    // Stacked rather than side-by-side: the worksheet column is narrow, and a
+    // native `date` input has an intrinsic minimum width that used to spill
+    // over the adjacent column and collide with its label.
+    <div className="w-56 space-y-2">
+      <div className="space-y-1">
+        <Label htmlFor={batchInputId} className="text-[11px] font-body text-mist-ink">
+          Batch no.
+        </Label>
+        <Input
+          id={batchInputId}
+          type="text"
+          className="h-8 w-full min-w-0 font-mono text-xs"
+          maxLength={MAX_BATCH_NUMBER_LENGTH}
+          placeholder="Optional"
+          value={batchNumber}
+          disabled={disabled}
+          onChange={(event) => onBatchNumberChange(event.target.value)}
+        />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor={expiryInputId} className="text-[11px] font-body text-mist-ink">
+          Expiry
+        </Label>
+        <Input
+          id={expiryInputId}
+          type="date"
+          className="h-8 w-full min-w-0 text-xs"
+          value={expiryDate}
+          disabled={disabled}
+          onChange={(event) => onExpiryDateChange(event.target.value)}
+        />
       </div>
       <p className="text-[10px] leading-tight text-mist-ink">
         Leave blank for goods without batch tracking.

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   applyQuantityDelta,
+  DEFAULT_RAW_MATERIAL_UNITS,
   getRawMaterialCategoryLabel,
   getRawMaterialStockStatus,
   getUnitLabel,
@@ -25,6 +26,11 @@ describe('rawMaterial.core — categories & units', () => {
 
   it('exposes liters, kilograms and unit-count units', () => {
     expect(UNITS).toEqual(['LITERS', 'KILOGRAMS', 'UNITS']);
+    expect(DEFAULT_RAW_MATERIAL_UNITS).toEqual([
+      { key: 'LITERS', name: 'Liters', shortLabel: 'L' },
+      { key: 'KILOGRAMS', name: 'Kilograms', shortLabel: 'kg' },
+      { key: 'UNITS', name: 'Units', shortLabel: 'unit' },
+    ]);
   });
 
   it('returns human-readable category labels', () => {
@@ -46,6 +52,12 @@ describe('rawMaterial.core — categories & units', () => {
     expect(getUnitShortLabel('KILOGRAMS')).toBe('kg');
     expect(getUnitShortLabel('UNITS')).toBe('unit');
     expect(Object.keys(UNIT_LABELS).length).toBe(3);
+  });
+
+  it('falls back to a humanized label for tenant-defined unit keys', () => {
+    expect(getUnitLabel('BOTTLES')).toBe('Bottles');
+    expect(getUnitLabel('SACHETS_10G')).toBe('Sachets 10g');
+    expect(getUnitShortLabel('BOTTLES')).toBe('BOTTLES');
   });
 });
 

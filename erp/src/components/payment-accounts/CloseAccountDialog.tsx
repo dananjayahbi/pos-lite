@@ -65,6 +65,8 @@ function CloseForm({ account, accounts, onSubmit, onCancel }: CloseFormProps) {
 
   const balance = parseMoney(account.balance) ?? 0;
   const hasBalance = balance > 0;
+  const transferTarget = accounts.find((candidate) => candidate.id === transferToAccountId) ?? null;
+  const targetIsPettyCash = Boolean(transferTarget?.pettyCashFundId);
   // The API refuses to close an account that still holds money, so the sweep
   // destination is mandatory while a balance remains.
   const canSubmit = (!hasBalance || transferToAccountId !== null) && !isSubmitting;
@@ -134,6 +136,12 @@ function CloseForm({ account, accounts, onSubmit, onCancel }: CloseFormProps) {
             {transferToAccountId === null && (
               <p className="mt-1 font-body text-xs text-[#9B2226]">
                 Pick a receiving account — closing is blocked while a balance remains.
+              </p>
+            )}
+            {targetIsPettyCash && (
+              <p className="mt-1 font-body text-[11px] text-sand-ink">
+                This sweeps the balance into petty cash, so the fund&apos;s running balance is
+                increased by the same amount.
               </p>
             )}
           </div>
