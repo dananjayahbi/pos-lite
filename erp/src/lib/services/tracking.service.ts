@@ -6,7 +6,8 @@ import { updateShipmentStatus } from '@/lib/services/shipment.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
 import {
-  TERMINAL_DELIVERY_STATUSES,
+  TERMINAL_SHIPMENT_STATUSES,
+  isDeliveryStatusAdvance,
   MIN_TRACKING_INTERVAL_MS,
   TRACKING_BATCH_SIZE,
 } from '@/lib/constants/courier';
@@ -72,34 +73,44 @@ export async function applyTrackingUpdate(
 
     if (newEvents.length > 0) {
       await tx.deliveryEvent.createMany({
-        data: newEvents.map((h) => ({
-          tenantId,
-          deliveryId,
-          shipmentId,
-          status: mapped.delivery,
-          carrierStatus: mapped.shipment,
-          rawStatusName: h.name,
-          remarks: h.remarks ?? null,
-          eventAt: h.addedDate ? new Date(h.addedDate) : new Date(),
-          source: 'CARRIER',
-        })),
+        data: newEvents.map((h) => {
+          // Map each history row on its own; using the current status for every
+          // row made an entire timeline read "delivered" after the last poll.
+          const eventStatus = adapter.mapStatus(h.name);
+          return {
+            tenantId,
+            deliveryId,
+            shipmentId,
+            status: eventStatus.delivery,
+            carrierStatus: eventStatus.shipment,
+            rawStatusName: h.name,
+            remarks: h.remarks ?? null,
+            eventAt: h.addedDate ? new Date(h.addedDate) : new Date(),
+            source: 'CARRIER' as const,
+          };
+        }),
       });
     }
 
-    // Advance the delivery business status (never regress from a terminal state).
+    // Advance the delivery business status. Terminal states never regress, and
+    // out-of-order carrier polls cannot move the delivery backwards.
     const delivery = await tx.delivery.findUnique({ where: { id: deliveryId } });
-    if (delivery && !TERMINAL_DELIVERY_STATUSES.includes(delivery.status as DeliveryStatus)) {
-      if (mapped.delivery !== delivery.status) {
-        await tx.delivery.update({
-          where: { id: deliveryId },
-          data: {
-            status: mapped.delivery,
-            ...(mapped.delivery === 'DELIVERED' ? { deliveredAt: new Date() } : {}),
-          },
-        });
+    if (
+      delivery &&
+      isDeliveryStatusAdvance(delivery.status as DeliveryStatus, mapped.delivery)
+    ) {
+      await tx.delivery.update({
+        where: { id: deliveryId },
+        data: {
+          status: mapped.delivery,
+          ...(mapped.delivery === 'DELIVERED' ? { deliveredAt: new Date() } : {}),
+        },
+      });
 
-        if (mapped.delivery === 'DELIVERED') {
-          // Create the expected-receivables ledger entry (PENDING_SETTLEMENT).
+      if (mapped.delivery === 'DELIVERED') {
+        // Only an unpaid COD parcel is a receivable. A CARD order that was
+        // already PAID must never inflate the COD aging report.
+        if (delivery.paymentMethod === 'COD' && delivery.paymentStatus !== 'PAID' && delivery.codAmount.gt(0)) {
           await tx.reconciliationLedgerEntry.upsert({
             where: { deliveryId },
             create: {
@@ -112,6 +123,25 @@ export async function applyTrackingUpdate(
             update: {},
           });
         }
+      }
+
+      if (mapped.delivery === 'RETURNED') {
+        // A returned parcel is no longer receivable.
+        await tx.reconciliationLedgerEntry.updateMany({
+          where: {
+            tenantId,
+            deliveryId,
+            status: { in: ['PENDING_SETTLEMENT', 'MATCHED', 'PARTIAL_MATCH', 'DISCREPANCY'] },
+          },
+          data: {
+            status: 'CLEARED',
+            expectedCod: 0,
+            expectedNetPayout: 0,
+            settledAmount: 0,
+            settledAt: new Date(),
+            discrepancyNote: 'Delivery returned',
+          },
+        });
       }
     }
   });
@@ -138,7 +168,7 @@ export async function processDueTrackingChecks(): Promise<{ processed: number; f
 
   const due = await prisma.courierShipment.findMany({
     where: {
-      status: { notIn: ['DELIVERED', 'CANCELED', 'RETURNED'] },
+      status: { notIn: TERMINAL_SHIPMENT_STATUSES },
       OR: [{ carrierLastSyncedAt: null }, { carrierLastSyncedAt: { lt: cutoff } }],
     },
     include: { delivery: { select: { id: true, tenantId: true } } },

@@ -134,7 +134,7 @@ function Chip({
 }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-sand bg-pearl px-2.5 py-0.5 text-xs text-espresso font-body">
-      <span className="text-mist">{group}:</span>
+      <span className="text-mist-ink">{group}:</span>
       {label}
       <button
         type="button"

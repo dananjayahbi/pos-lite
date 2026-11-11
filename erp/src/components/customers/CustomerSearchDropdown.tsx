@@ -41,7 +41,7 @@ export function CustomerSearchDropdown({ onSelect, onClear }: CustomerSearchDrop
   return (
     <div ref={containerRef} className="relative">
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-mist" />
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-mist-ink" />
         <Input
           ref={inputRef}
           placeholder="Link customer..."
@@ -73,7 +73,7 @@ export function CustomerSearchDropdown({ onSelect, onClear }: CustomerSearchDrop
                 {c.name}
                 <LoyaltyBadge orderCount={c.orderCount} size="sm" />
               </p>
-              <p className="font-mono text-xs text-mist">{c.phone}</p>
+              <p className="font-mono text-xs text-mist-ink">{c.phone}</p>
             </button>
           ))}
         </div>

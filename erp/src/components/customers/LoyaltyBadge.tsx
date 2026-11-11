@@ -28,7 +28,7 @@ const SIZE_CLASSES = {
 const TIER_STYLES = {
   FIRST_TIME: {
     icon: Sparkles,
-    className: 'bg-mist/30 text-sand',
+    className: 'bg-mist/30 text-sand-ink',
   },
   REPEAT: {
     icon: Repeat,

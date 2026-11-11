@@ -25,6 +25,7 @@ import {
 import { useBom, useCreateBom, useUpdateBom, type BomIngredientView } from '@/hooks/useBom';
 import { useRawMaterials } from '@/hooks/useRawMaterials';
 import { useProducts } from '@/hooks/useProducts';
+import { getUnitLabel, getUnitShortLabel } from '@/lib/services/rawMaterial.core';
 
 interface BomFormDialogProps {
   open: boolean;
@@ -200,9 +201,20 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
               </Button>
             </div>
             <div className="space-y-2">
-              {form.ingredients.map((row, index) => (
-                <div key={index} className="flex items-end gap-2">
-                  <div className="flex-1 space-y-1">
+              <div className="grid grid-cols-[minmax(0,1fr)_90px_70px_120px_32px] gap-2 px-1 text-xs font-medium uppercase tracking-wide text-mist-ink">
+                <span>Raw material</span>
+                <span className="text-right">Available</span>
+                <span>Unit</span>
+                <span>Qty / unit</span>
+                <span />
+              </div>
+              {form.ingredients.map((row, index) => {
+                const selected = materials.find((m) => m.id === row.rawMaterialId);
+                return (
+                  <div
+                    key={index}
+                    className="grid grid-cols-[minmax(0,1fr)_90px_70px_120px_32px] items-center gap-2"
+                  >
                     <Select
                       value={row.rawMaterialId}
                       onValueChange={(value) =>
@@ -214,39 +226,47 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
                       </SelectTrigger>
                       <SelectContent>
                         {materials.map((material) => (
-                          <SelectItem
-                            key={material.id}
-                            value={material.id}
-                            textValue={`${material.name} (${material.quantity} ${material.unit})`}
-                          >
-                            {material.name} — {material.quantity} {material.unit}
+                          <SelectItem key={material.id} value={material.id}>
+                            {material.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    <div className="text-right text-sm text-espresso">
+                      {selected ? selected.quantity : '—'}
+                    </div>
+                    <div className="text-sm text-mist-ink">
+                      {selected ? (selected.unitName ?? getUnitLabel(selected.unit)) : '—'}
+                    </div>
+                    <div className="relative">
+                      <Input
+                        inputMode="decimal"
+                        className="pr-10"
+                        placeholder="0"
+                        value={row.quantityPerUnit}
+                        onChange={(e) =>
+                          updateIngredient(index, { quantityPerUnit: e.target.value })
+                        }
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-mist-ink">
+                        {selected
+                          ? (selected.unitShortLabel ?? getUnitShortLabel(selected.unit))
+                          : ''}
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="text-red-600"
+                      disabled={form.ingredients.length === 1}
+                      onClick={() => removeIngredient(index)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <div className="w-28 space-y-1">
-                    <Input
-                      inputMode="decimal"
-                      placeholder="Qty/unit"
-                      value={row.quantityPerUnit}
-                      onChange={(e) =>
-                        updateIngredient(index, { quantityPerUnit: e.target.value })
-                      }
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="text-red-600"
-                    disabled={form.ingredients.length === 1}
-                    onClick={() => removeIngredient(index)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/table';
 import { ChevronLeft, ChevronRight, History } from 'lucide-react';
 import { useStockMovements } from '@/hooks/useStockMovements';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 // ── Reason badge ─────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ export function StockHistoryTab({ productId }: StockHistoryTabProps) {
       {/* Date range filters */}
       <div className="flex flex-wrap items-end gap-4 rounded-lg border border-sand/30 bg-pearl p-4">
         <div className="space-y-1.5">
-          <Label htmlFor="stock-from" className="font-body text-xs text-mist uppercase tracking-wider">
+          <Label htmlFor="stock-from" className="font-body text-xs text-mist-ink uppercase tracking-wider">
             From
           </Label>
           <Input
@@ -102,7 +103,7 @@ export function StockHistoryTab({ productId }: StockHistoryTabProps) {
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="stock-to" className="font-body text-xs text-mist uppercase tracking-wider">
+          <Label htmlFor="stock-to" className="font-body text-xs text-mist-ink uppercase tracking-wider">
             To
           </Label>
           <Input
@@ -177,8 +178,8 @@ export function StockHistoryTab({ productId }: StockHistoryTabProps) {
               <TableRow>
                 <TableCell colSpan={7} className="py-12 text-center">
                   <div className="flex flex-col items-center">
-                    <History className="mb-3 h-10 w-10 text-mist" />
-                    <p className="font-body text-sm text-mist">No stock movements found</p>
+                    <History className="mb-3 h-10 w-10 text-mist-ink" />
+                    <p className="font-body text-sm text-mist-ink">No stock movements found</p>
                   </div>
                 </TableCell>
               </TableRow>
@@ -223,7 +224,7 @@ export function StockHistoryTab({ productId }: StockHistoryTabProps) {
                       {m.quantityBefore} → {m.quantityAfter}
                     </TableCell>
                     <TableCell className="font-body text-sm text-espresso truncate max-w-[160px]">
-                      {m.actor?.email ?? '—'}
+                      {m.actor ? staffDisplayName(m.actor.email) : '—'}
                     </TableCell>
                     <TableCell className="font-body text-sm text-espresso max-w-[200px] truncate">
                       {m.note || '—'}
@@ -239,7 +240,7 @@ export function StockHistoryTab({ productId }: StockHistoryTabProps) {
       {/* Pagination */}
       {meta.totalPages > 1 && (
         <div className="flex items-center justify-between px-1">
-          <p className="font-body text-sm text-mist">
+          <p className="font-body text-sm text-mist-ink">
             Page {meta.page} of {meta.totalPages} · {meta.total} movements
           </p>
           <div className="flex gap-1">

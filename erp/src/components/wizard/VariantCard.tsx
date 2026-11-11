@@ -104,12 +104,12 @@ export function VariantCard({
           <h3 className="truncate font-body text-sm font-semibold text-espresso">
             {form ? getFormLabel(form) : 'Variant'}
             {packSize ? (
-              <span className="ml-1 text-mist">· {packSize}</span>
+              <span className="ml-1 text-mist-ink">· {packSize}</span>
             ) : null}
           </h3>
         </div>
 
-        <span className="hidden text-xs text-mist sm:inline">
+        <span className="hidden text-xs text-mist-ink sm:inline">
           {selected ? 'Included' : 'Skipped'}
         </span>
       </header>
@@ -156,7 +156,7 @@ export function VariantCard({
                   { shouldDirty: true },
                 )
               }
-              className="shrink-0 rounded border border-sand p-1.5 text-mist transition-colors hover:border-espresso hover:text-espresso"
+              className="shrink-0 rounded border border-sand p-1.5 text-mist-ink transition-colors hover:border-espresso hover:text-espresso"
               aria-label="Auto-generate barcode"
             >
               <Wand2 className="h-3.5 w-3.5" />
@@ -193,7 +193,7 @@ export function VariantCard({
               Cost Price
             </label>
             <div className="flex items-center gap-1">
-              <span className="text-xs text-mist">Rs.</span>
+              <span className="text-xs text-mist-ink">Rs.</span>
               <Input
                 id={`cost-${index}`}
                 type="number"
@@ -215,7 +215,7 @@ export function VariantCard({
             Retail Price
           </label>
           <div className="flex items-center gap-1">
-            <span className="text-xs text-mist">Rs.</span>
+            <span className="text-xs text-mist-ink">Rs.</span>
             <Input
               id={`retail-${index}`}
               type="number"
@@ -244,7 +244,7 @@ export function VariantCard({
             Wholesale Price
           </label>
           <div className="flex items-center gap-1">
-            <span className="text-xs text-mist">Rs.</span>
+            <span className="text-xs text-mist-ink">Rs.</span>
             <Input
               id={`wholesale-${index}`}
               type="number"
@@ -280,7 +280,7 @@ export function VariantCard({
       {/* Images */}
       <div className="border-t border-sand/40 bg-linen px-4 py-3">
         <div className="mb-2 flex items-center gap-2">
-          <ImageIcon className="h-3.5 w-3.5 text-mist" />
+          <ImageIcon className="h-3.5 w-3.5 text-mist-ink" />
           <span className="font-body text-xs font-medium text-espresso">
             Images
           </span>

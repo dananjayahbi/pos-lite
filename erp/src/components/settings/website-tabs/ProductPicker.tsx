@@ -221,8 +221,8 @@ export function ProductPicker({ selectedIds, onChange, max = 7 }: ProductPickerP
     <div ref={containerRef} className="relative">
       {/* Label + count */}
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-xs text-sand">Select Products</span>
-        <span className="text-xs text-sand">
+        <span className="text-xs text-sand-ink">Select Products</span>
+        <span className="text-xs text-sand-ink">
           {selectedIds.length} / {max} selected
         </span>
       </div>
@@ -238,7 +238,7 @@ export function ProductPicker({ selectedIds, onChange, max = 7 }: ProductPickerP
               <span className="max-w-35 truncate">{product.name}</span>
               <button
                 type="button"
-                className="ml-0.5 rounded-full p-0.5 text-sand hover:bg-mist hover:text-red-500 transition-colors"
+                className="ml-0.5 rounded-full p-0.5 text-sand-ink hover:bg-mist hover:text-red-500 transition-colors"
                 onClick={() => removeProduct(product.id)}
                 aria-label={`Remove ${product.name}`}
               >
@@ -251,7 +251,7 @@ export function ProductPicker({ selectedIds, onChange, max = 7 }: ProductPickerP
 
       {/* Search input */}
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-sand" />
+        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-sand-ink" />
         <Input
           value={search}
           onChange={(e) => {
@@ -275,11 +275,11 @@ export function ProductPicker({ selectedIds, onChange, max = 7 }: ProductPickerP
             <div className="max-h-64 overflow-y-auto">
               {isLoading ? (
                 <div className="flex items-center justify-center px-4 py-8">
-                  <span className="text-xs text-sand animate-pulse">Searching products...</span>
+                  <span className="text-xs text-sand-ink animate-pulse">Searching products...</span>
                 </div>
               ) : results.length === 0 ? (
                 <div className="flex items-center justify-center px-4 py-8">
-                  <span className="text-xs text-sand">
+                  <span className="text-xs text-sand-ink">
                     {debouncedSearch ? 'No products found' : 'Type to search products'}
                   </span>
                 </div>
@@ -309,7 +309,7 @@ export function ProductPicker({ selectedIds, onChange, max = 7 }: ProductPickerP
                           </span>
                         </div>
                         {product.primaryVariant && (
-                          <span className="shrink-0 text-xs text-sand">
+                          <span className="shrink-0 text-xs text-sand-ink">
                             {formatLKR(product.primaryVariant.retailPrice)}
                           </span>
                         )}
@@ -353,7 +353,7 @@ export function ProductPicker({ selectedIds, onChange, max = 7 }: ProductPickerP
                         </span>
                       </div>
                       {product.primaryVariant && (
-                        <span className="shrink-0 text-xs text-sand">
+                        <span className="shrink-0 text-xs text-sand-ink">
                           {formatLKR(product.primaryVariant.retailPrice)}
                         </span>
                       )}
@@ -366,7 +366,7 @@ export function ProductPicker({ selectedIds, onChange, max = 7 }: ProductPickerP
             {/* Max hint */}
             {atMax && (
               <div className="border-t border-mist px-3 py-1.5">
-                <p className="text-xs text-sand">Max {max} products selected</p>
+                <p className="text-xs text-sand-ink">Max {max} products selected</p>
               </div>
             )}
           </div>,

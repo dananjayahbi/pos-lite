@@ -379,6 +379,29 @@ export function getCartTaxAmount(subtotalAfterDiscount: Decimal, taxRate: number
   return subtotalAfterDiscount.times(taxRate).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 }
 
+/**
+ * The discount amount the sales API must receive.
+ *
+ * `discountAmount` is the only discount channel the API understands, while the
+ * POS shows two rows (manual cart discount + promotions). Folding the
+ * promotion total into the payload keeps the persisted sale total equal to the
+ * amount due the cashier sees — without it, a promotion-discounted cart is
+ * stored at full price and a promotion-zeroed cart is rejected as a non-zero
+ * `NONE` tender.
+ */
+export function getSaleDiscountAmount(
+  subtotal: Decimal | number | string,
+  cartDiscountEffective: Decimal | number | string,
+  totalPromotionDiscount: Decimal | number | string,
+): Decimal {
+  const subtotalDecimal = new Decimal(subtotal);
+  const combined = new Decimal(cartDiscountEffective).plus(new Decimal(totalPromotionDiscount));
+  return Decimal.min(combined, Decimal.max(subtotalDecimal, 0)).toDecimalPlaces(
+    2,
+    Decimal.ROUND_HALF_UP,
+  );
+}
+
 export function getCartTotal(
   items: CartItem[],
   cartDiscountPercent: number,

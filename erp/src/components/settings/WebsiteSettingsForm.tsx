@@ -390,7 +390,7 @@ export default function WebsiteSettingsForm() {
           {/* ── Vertical Sidebar Navigation ─────────────────────────────────── */}
           <nav className="w-56 shrink-0 border-r border-mist bg-cream/20 flex flex-col">
             <div className="p-4 border-b border-mist/50">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-sand">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-sand-ink">
                 Settings
               </p>
             </div>
@@ -406,10 +406,10 @@ export default function WebsiteSettingsForm() {
                     className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-150 text-left ${
                       isActive
                         ? 'bg-white text-espresso font-medium border-r-2 border-terracotta shadow-sm'
-                        : 'text-sand hover:text-espresso hover:bg-white/60'
+                        : 'text-sand-ink hover:text-espresso hover:bg-white/60'
                     }`}
                   >
-                    <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-terracotta' : 'text-sand/60'}`} />
+                    <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-terracotta' : 'text-sand-ink/60'}`} />
                     <span className="truncate">{tab.label}</span>
                   </button>
                 );
@@ -464,7 +464,7 @@ export default function WebsiteSettingsForm() {
                 </div>
                 <h3 className="text-lg font-semibold text-espresso">Unsaved Changes</h3>
               </div>
-              <p className="text-sm text-sand mb-6">
+              <p className="text-sm text-sand-ink mb-6">
                 You have unsaved changes. Do you want to save before leaving?
               </p>
               <div className="flex justify-end gap-3">

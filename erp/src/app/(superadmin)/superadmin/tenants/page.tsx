@@ -42,7 +42,7 @@ export default async function BusinessesPage({
         <h1 className="font-display text-2xl font-bold text-espresso">
           Businesses
         </h1>
-        <span className="text-sm text-sand">
+        <span className="text-sm text-sand-ink">
           {businesses.length} of 2 businesses configured
         </span>
       </div>
@@ -91,7 +91,7 @@ export default async function BusinessesPage({
           ))}
           {businesses.length === 0 && (
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-sand">
+              <TableCell colSpan={5} className="text-center text-sand-ink">
                 No businesses found.
               </TableCell>
             </TableRow>

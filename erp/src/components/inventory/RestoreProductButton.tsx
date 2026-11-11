@@ -71,7 +71,7 @@ export function RestoreProductButton({ productId, productName }: RestoreProductB
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="font-display text-espresso">Restore Product</DialogTitle>
-            <DialogDescription className="font-body text-mist">
+            <DialogDescription className="font-body text-mist-ink">
               Restore &ldquo;{productName}&rdquo; and its variants to the active catalog? Stock
               levels and prices are kept as they were when the product was deleted.
             </DialogDescription>

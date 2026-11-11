@@ -12,6 +12,7 @@ import type { PrinterConfig } from '@/lib/hardware/printer';
 import type { CreateSaleInput, HoldSaleInput, UpdateSaleInput } from '@/lib/validators/sale.validators';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
+import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -109,6 +110,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       variantDescriptionSnapshot: string;
       sku: string;
       unitPrice: Decimal;
+      costPriceSnapshot: Decimal;
       quantity: number;
       discountPercent: Decimal;
       discountAmount: Decimal;
@@ -148,21 +150,21 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
         .minus(discountAmount)
         .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
-      const taxRate = getTaxRate(variant.product.taxRule, vatRate, ssclRate);
-      const lineTax = lineTotalAfterDiscount.mul(taxRate).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-
       lineData.push({
         variantId: variant.id,
         productNameSnapshot: variant.product.name,
         variantDescriptionSnapshot: buildVariantDescription(variant.form, variant.packSize),
         sku: variant.sku,
         unitPrice,
+        costPriceSnapshot: new Decimal(variant.costPrice.toString()),
         quantity: line.quantity,
         discountPercent,
         discountAmount,
         lineTotalBeforeDiscount,
         lineTotalAfterDiscount,
-        lineTax,
+        // Placeholder — the cart-level discount is allocated across lines below,
+        // then each line is taxed on what the customer actually pays for it.
+        lineTax: new Decimal(0),
         taxRule: variant.product.taxRule,
       });
     }
@@ -176,6 +178,21 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     if (cartDiscount.greaterThan(subtotal)) {
       throw new Error('Cart discount cannot exceed subtotal');
     }
+
+    // Allocate the cart-level discount across the lines so each line is taxed
+    // on the amount actually charged for it. Previously each line was taxed at
+    // full price and the cart discount was applied only after tax, so a fully
+    // discounted VAT sale still owed tax — which made a cart the cashier sees
+    // as Rs. 0.00 impossible to complete as a zero-value sale (ISSUE 7).
+    const discountShares = allocateCartDiscountShares(
+      lineData.map((line) => line.lineTotalAfterDiscount),
+      cartDiscount,
+    );
+    lineData.forEach((line, index) => {
+      const taxableLine = Decimal.max(line.lineTotalAfterDiscount.minus(discountShares[index]!), 0);
+      const taxRate = getTaxRate(line.taxRule, vatRate, ssclRate);
+      line.lineTax = taxableLine.mul(taxRate).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    });
 
     const totalTax = lineData
       .reduce((sum, l) => sum.plus(l.lineTax), new Decimal(0))
@@ -304,6 +321,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
             variantDescriptionSnapshot: l.variantDescriptionSnapshot,
             sku: l.sku,
             unitPrice: l.unitPrice.toNumber(),
+            costPriceSnapshot: l.costPriceSnapshot.toNumber(),
             quantity: l.quantity,
             discountPercent: l.discountPercent.toNumber(),
             discountAmount: l.discountAmount.toNumber(),

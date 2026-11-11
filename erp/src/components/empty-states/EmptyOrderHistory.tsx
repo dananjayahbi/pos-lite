@@ -59,7 +59,7 @@ export default function EmptyOrderHistory() {
         <h2 className="font-display text-[22px] font-semibold text-espresso">
           No sales recorded yet
         </h2>
-        <p className="max-w-md text-sm text-mist">
+        <p className="max-w-md text-sm text-mist-ink">
           Once the first sale is completed on the POS terminal, it will appear
           here.
         </p>

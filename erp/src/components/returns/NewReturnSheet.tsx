@@ -218,7 +218,7 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
 
           {/* Sale lines */}
           {sale && returnLines.length === 0 && (
-            <p className="rounded-lg border border-mist bg-linen px-3 py-2 text-sm text-sand">
+            <p className="rounded-lg border border-mist bg-linen px-3 py-2 text-sm text-sand-ink">
               All items on this sale have already been returned.
             </p>
           )}
@@ -228,7 +228,7 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
               <p className="mb-2 text-xs font-semibold text-espresso">
                 Select items to return
                 {sale && (
-                  <span className="ml-1.5 font-normal text-sand">
+                  <span className="ml-1.5 font-normal text-sand-ink">
                     — Sale {sale.id.slice(-8).toUpperCase()} · {formatRupee(parseFloat(sale.totalAmount))}
                   </span>
                 )}
@@ -249,7 +249,7 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
                     />
                     <label htmlFor={`return-line-${idx}`} className="min-w-0 flex-1 cursor-pointer">
                       <p className="truncate text-sm font-medium text-espresso">{line.productName}</p>
-                      <p className="text-xs text-sand">
+                      <p className="text-xs text-sand-ink">
                         {line.variantDesc} · {line.sku}
                       </p>
                     </label>
@@ -271,7 +271,7 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
                         }
                         className="h-8 w-16 text-center"
                       />
-                      <span className="text-xs text-sand">/ {line.maxQty}</span>
+                      <span className="text-xs text-sand-ink">/ {line.maxQty}</span>
                     </div>
                   </div>
                 ))}
@@ -293,7 +293,7 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
                       className={`rounded-md border py-2 text-xs font-medium transition-colors ${
                         refundMethod === m
                           ? 'border-terracotta bg-terracotta/10 text-terracotta'
-                          : 'border-mist text-sand hover:border-terracotta/50 hover:text-espresso'
+                          : 'border-mist text-sand-ink hover:border-terracotta/50 hover:text-espresso'
                       }`}
                     >
                       {m === 'CARD_REVERSAL' ? 'Card Reversal' : m === 'STORE_CREDIT' ? 'Store Credit' : 'Cash'}
@@ -335,7 +335,7 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
               {/* Reason */}
               <div>
                 <Label htmlFor="return-reason" className="mb-1.5 block text-xs font-semibold text-espresso">
-                  Reason <span className="font-normal text-sand">(optional)</span>
+                  Reason <span className="font-normal text-sand-ink">(optional)</span>
                 </Label>
                 <Input
                   id="return-reason"

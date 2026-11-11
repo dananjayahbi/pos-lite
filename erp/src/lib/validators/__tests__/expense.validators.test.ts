@@ -10,6 +10,18 @@ describe('CreateExpenseSchema — petty-cash categories & receipt (docs 37, 38)'
     expect(EXPENSE_CATEGORIES).toContain('TEA_SUGAR');
     expect(EXPENSE_CATEGORIES).toContain('OFFICE_STATIONERY');
     expect(EXPENSE_CATEGORIES).toContain('TRAVEL');
+    expect(EXPENSE_CATEGORIES).toContain('STAFF_COMMISSIONS');
+  });
+
+  it('accepts a STAFF_COMMISSIONS expense created by the payout flow', () => {
+    const parsed = CreateExpenseSchema.safeParse({
+      category: 'STAFF_COMMISSIONS',
+      amount: 144.39,
+      description: 'Staff commission payout',
+      expenseDate: '2026-08-07',
+      paymentAccountId: 'cmaccount000000000000000',
+    });
+    expect(parsed.success).toBe(true);
   });
 
   it('accepts a STAFF_MEALS expense with a receipt URL', () => {
@@ -72,5 +84,25 @@ describe('CreateExpenseSchema — petty-cash categories & receipt (docs 37, 38)'
       expenseDate: '2026-08-07',
     });
     expect(parsed.success).toBe(false);
+  });
+
+  it('accepts a payment account link and an explicit unlink', () => {
+    const linked = CreateExpenseSchema.safeParse({
+      category: 'MISCELLANEOUS',
+      amount: 100,
+      description: 'Linked expense',
+      expenseDate: '2026-08-07',
+      paymentAccountId: 'cmaccount000000000000000',
+    });
+    expect(linked.success).toBe(true);
+
+    const unlinked = CreateExpenseSchema.safeParse({
+      category: 'MISCELLANEOUS',
+      amount: 100,
+      description: 'Unlinked expense',
+      expenseDate: '2026-08-07',
+      paymentAccountId: null,
+    });
+    expect(unlinked.success).toBe(true);
   });
 });

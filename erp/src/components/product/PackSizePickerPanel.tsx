@@ -54,7 +54,7 @@ export function PackSizePickerPanel({
       {/* Preset groups */}
       {PACK_SIZE_GROUPS.map((group) => (
         <div key={group.label}>
-          <p className="mb-1.5 font-body text-[10px] font-semibold uppercase tracking-wider text-mist">
+          <p className="mb-1.5 font-body text-[10px] font-semibold uppercase tracking-wider text-mist-ink">
             {group.label}
           </p>
           <div className="flex flex-wrap gap-1.5">
@@ -81,7 +81,7 @@ export function PackSizePickerPanel({
 
       {/* Custom pack size */}
       <div>
-        <p className="mb-1.5 font-body text-[10px] font-semibold uppercase tracking-wider text-mist">
+        <p className="mb-1.5 font-body text-[10px] font-semibold uppercase tracking-wider text-mist-ink">
           Custom Pack Size
         </p>
         <div className="flex gap-2">

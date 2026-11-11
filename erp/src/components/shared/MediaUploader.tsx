@@ -218,18 +218,18 @@ export function MediaUploader({
                   style={{ width: `${progress}%` }}
                 />
               </div>
-              <span className="text-xs text-sand">{progress}%</span>
+              <span className="text-xs text-sand-ink">{progress}%</span>
             </>
           ) : (
             <>
               {accept === 'video/*' ? (
-                <FileVideo className="h-8 w-8 text-sand" />
+                <FileVideo className="h-8 w-8 text-sand-ink" />
               ) : accept === 'image/*' ? (
-                <ImageIcon className="h-8 w-8 text-sand" />
+                <ImageIcon className="h-8 w-8 text-sand-ink" />
               ) : (
-                <Upload className="h-8 w-8 text-sand" />
+                <Upload className="h-8 w-8 text-sand-ink" />
               )}
-              <span className="text-sm text-sand text-center">{placeholder}</span>
+              <span className="text-sm text-sand-ink text-center">{placeholder}</span>
               <button
                 type="button"
                 disabled={disabled}

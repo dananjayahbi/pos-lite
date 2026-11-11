@@ -129,7 +129,7 @@ export function CashPaymentModal({
         <div className="space-y-4">
           {/* Total Due */}
           <div>
-            <p className="text-xs font-body uppercase tracking-wide text-mist">
+            <p className="text-xs font-body uppercase tracking-wide text-mist-ink">
               Total Due
             </p>
             <p className="font-mono text-3xl font-bold text-espresso">
@@ -143,7 +143,7 @@ export function CashPaymentModal({
               Cash Received
             </label>
             <div className="flex items-center gap-2">
-              <span className="shrink-0 font-body text-sm text-mist">Rs.</span>
+              <span className="shrink-0 font-body text-sm text-mist-ink">Rs.</span>
               <Input
                 ref={inputRef}
                 type="text"
@@ -164,7 +164,7 @@ export function CashPaymentModal({
                 key={amt}
                 type="button"
                 variant="outline"
-                className={`border-sand text-sand font-mono text-sm${
+                className={`border-sand text-sand-ink font-mono text-sm${
                   new Decimal(amt).lessThan(totalAmount) ? ' opacity-50' : ''
                 }`}
                 onClick={() => setCashReceived(String(amt))}
@@ -176,11 +176,11 @@ export function CashPaymentModal({
 
           {/* Change display */}
           <div>
-            <p className="mb-0.5 text-xs font-body uppercase tracking-wide text-mist">
+            <p className="mb-0.5 text-xs font-body uppercase tracking-wide text-mist-ink">
               Change
             </p>
             {changeResult.type === 'empty' && (
-              <p className="font-mono text-lg text-mist">—</p>
+              <p className="font-mono text-lg text-mist-ink">—</p>
             )}
             {changeResult.type === 'sufficient' && (
               <p className="font-mono text-lg text-[#2D6A4F]">
@@ -213,7 +213,7 @@ export function CashPaymentModal({
             <button
               type="button"
               onClick={onClose}
-              className="w-full text-center font-body text-sm text-mist hover:text-espresso transition-colors"
+              className="w-full text-center font-body text-sm text-mist-ink hover:text-espresso transition-colors"
             >
               Cancel
             </button>

@@ -100,7 +100,7 @@ function AddCustomerForm({ onCancel, onLinked }: AddCustomerFormProps) {
     <>
       <DialogHeader>
         <DialogTitle className="font-display">Add Customer</DialogTitle>
-        <DialogDescription className="font-body text-sm text-mist">
+        <DialogDescription className="font-body text-sm text-mist-ink">
           Enter a name and mobile number to save this customer and link them to
           the current sale.
         </DialogDescription>
@@ -122,7 +122,7 @@ function AddCustomerForm({ onCancel, onLinked }: AddCustomerFormProps) {
               disabled={isSubmitting}
               autoFocus
             />
-            <p className="mt-1 text-right font-body text-[11px] text-mist">
+            <p className="mt-1 text-right font-body text-[11px] text-mist-ink">
               {name.length}/{NAME_MAX_LENGTH}
             </p>
           </div>
@@ -147,7 +147,7 @@ function AddCustomerForm({ onCancel, onLinked }: AddCustomerFormProps) {
                 Use +94XXXXXXXXX or 0XXXXXXXXX
               </p>
             ) : (
-              <p className="mt-1 text-right font-body text-[11px] text-mist">
+              <p className="mt-1 text-right font-body text-[11px] text-mist-ink">
                 {phone.length}/{PHONE_MAX_LENGTH}
               </p>
             )}
@@ -174,7 +174,7 @@ function AddCustomerForm({ onCancel, onLinked }: AddCustomerFormProps) {
             type="button"
             onClick={onCancel}
             disabled={isSubmitting}
-            className="w-full text-center font-body text-sm text-mist hover:text-espresso transition-colors"
+            className="w-full text-center font-body text-sm text-mist-ink hover:text-espresso transition-colors"
           >
             Cancel
           </button>

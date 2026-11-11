@@ -100,7 +100,7 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
               onChange={(event) => update('logoUrl', event.target.value)}
               placeholder="https://cdn.example.com/logo.png"
             />
-            <p className="text-xs text-sand">Optional. This can be used later in printed or digital brand surfaces.</p>
+            <p className="text-xs text-sand-ink">Optional. This can be used later in printed or digital brand surfaces.</p>
           </div>
 
           <div className="space-y-2">
@@ -133,7 +133,7 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
               rows={4}
               placeholder="Thank you for shopping with us!"
             />
-            <p className="text-xs text-sand">Printed at the bottom of sale and return receipts.</p>
+            <p className="text-xs text-sand-ink">Printed at the bottom of sale and return receipts.</p>
           </div>
 
           <Button

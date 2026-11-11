@@ -31,7 +31,7 @@ export default async function BillingPaymentMethodsPage() {
     <div className="space-y-6 p-6">
       <div>
         <h1 className="text-2xl font-bold text-espresso">Payment Methods</h1>
-        <p className="mt-1 text-sm text-sand">
+        <p className="mt-1 text-sm text-sand-ink">
           Manage the hosted billing method workflow currently supported for your subscription.
         </p>
       </div>
@@ -47,7 +47,7 @@ export default async function BillingPaymentMethodsPage() {
         <CardHeader>
           <CardTitle className="text-espresso">What’s supported today</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm text-sand">
+        <CardContent className="space-y-2 text-sm text-sand-ink">
           <p>• Card details stay inside PayHere’s hosted checkout flow.</p>
           <p>• AyurPOS can show whether a recurring billing token exists, but not raw card numbers or brand details.</p>
           <p>• To replace a billing card, run a fresh hosted checkout from this page or the main billing dashboard.</p>

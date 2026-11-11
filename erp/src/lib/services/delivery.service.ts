@@ -13,7 +13,7 @@ import { createShipment } from '@/lib/services/shipment.service';
 import { autoDeductPackaging, notifyLowStock } from '@/lib/services/packaging.service';
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
 import { toCourierOrderPayload } from '@/lib/courier/mappers';
-import { HOLD_BUFFER_DURATION_MS } from '@/lib/constants/courier';
+import { HOLD_BUFFER_DURATION_MS, TERMINAL_SHIPMENT_STATUSES } from '@/lib/constants/courier';
 import type {
   CancelDeliveryInput,
   CreateDeliveryInput,
@@ -34,7 +34,7 @@ const deliveryInclude = {
   // (and the cancel-restock path) needs them, so they ride the standard include.
   lines: { orderBy: { createdAt: 'asc' as const } },
   shipments: { orderBy: { createdAt: 'desc' as const } },
-  events: { orderBy: { eventAt: 'asc' as const }, take: 50 },
+  events: { orderBy: { eventAt: 'desc' as const }, take: 50 },
   sale: { select: { id: true, totalAmount: true, status: true } },
   attempts: {
     orderBy: { createdAt: 'asc' as const },
@@ -42,9 +42,22 @@ const deliveryInclude = {
   },
 } as const;
 
-async function generateOrderRef(tenantId: string): Promise<string> {
-  const count = await prisma.delivery.count({ where: { tenantId } });
-  return `DEL-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
+/**
+ * Allocate the next manual delivery reference for a tenant+year.
+ *
+ * M28-02/BUG-98 parity: the website checkout path already serializes refs via
+ * `OrderRefCounter`; manual deliveries used `count() + 1`, which races and hits
+ * the `Delivery(tenantId, orderRef)` unique constraint. Runs inside the create
+ * transaction so concurrent creates serialize.
+ */
+async function generateOrderRef(tx: TxClient, tenantId: string): Promise<string> {
+  const year = new Date().getFullYear();
+  const counter = await tx.orderRefCounter.upsert({
+    where: { tenantId_year: { tenantId, year } },
+    create: { tenantId, year, lastSeq: 1 },
+    update: { lastSeq: { increment: 1 } },
+  });
+  return `DEL-${year}-${String(counter.lastSeq).padStart(6, '0')}`;
 }
 
 export async function getDeliveries(tenantId: string, filters: DeliveryFilters) {
@@ -104,6 +117,23 @@ export async function createDelivery(
   const codAmount = new Decimal(input.codAmount?.toString() ?? '0');
   const totalWeightKg = input.totalWeightKg !== undefined ? new Decimal(input.totalWeightKg.toString()) : undefined;
 
+  // Never trust caller-supplied foreign keys: a delivery must not be able to
+  // link (and then expose) another tenant's customer or sale.
+  if (input.customerId) {
+    const customer = await prisma.customer.findFirst({
+      where: { id: input.customerId, tenantId },
+      select: { id: true },
+    });
+    if (!customer) throw new Error('CUSTOMER_NOT_FOUND');
+  }
+  if (input.saleId) {
+    const sale = await prisma.sale.findFirst({
+      where: { id: input.saleId, tenantId },
+      select: { id: true },
+    });
+    if (!sale) throw new Error('SALE_NOT_FOUND');
+  }
+
   // Compute the shipping fee from the active rate card (server-side only).
   const fee = await calculateShippingFee({
     tenantId,
@@ -112,10 +142,10 @@ export async function createDelivery(
     destinationCityId: input.address.cityId,
   });
 
-  const orderRef = await generateOrderRef(tenantId);
   const holdExpiresAt = new Date(Date.now() + HOLD_BUFFER_DURATION_MS);
 
   const delivery = await prisma.$transaction(async (tx: TxClient) => {
+    const orderRef = await generateOrderRef(tx, tenantId);
     const created = await tx.delivery.create({
       data: {
         tenantId,
@@ -193,7 +223,10 @@ export async function updateDelivery(
 ): Promise<unknown> {
   setSentryTenantContext({ tenantId });
 
-  const existing = await prisma.delivery.findFirst({ where: { id, tenantId, deletedAt: null } });
+  const existing = await prisma.delivery.findFirst({
+    where: { id, tenantId, deletedAt: null },
+    include: { address: true },
+  });
   if (!existing) throw new Error('DELIVERY_NOT_FOUND');
   if (!['PLACED', 'PENDING_DISPATCH'].includes(existing.status)) {
     throw new Error('DELIVERY_NOT_EDITABLE');
@@ -208,13 +241,19 @@ export async function updateDelivery(
     if (input.notes !== undefined) data.notes = input.notes;
     if (input.assignedStaffId !== undefined) data.assignedStaffId = input.assignedStaffId;
 
-    // Recompute fee when weight or destination changes.
+    // Recompute fee when weight or destination changes, using the stored value
+    // for whichever input was not supplied (an address-only or weight-only edit
+    // must keep the other dimension and its zone override).
     if (input.totalWeightKg !== undefined || input.address) {
       const fee = await calculateShippingFee({
         tenantId,
-        weightKg: data.totalWeightKg as string | undefined,
-        destinationCityId: input.address?.cityId,
-        destinationDistrictId: input.address?.districtId,
+        weightKg: input.totalWeightKg !== undefined
+          ? (data.totalWeightKg as string | undefined)
+          : existing.totalWeightKg?.toString(),
+        destinationCityId: input.address ? input.address.cityId : existing.address?.cityId,
+        destinationDistrictId: input.address
+          ? input.address.districtId
+          : existing.address?.districtId,
       });
       data.shippingFee = fee.shippingFee.toFixed(2);
     }
@@ -265,20 +304,40 @@ export async function cancelDelivery(
 
   const existing = await prisma.delivery.findFirst({
     where: { id, tenantId, deletedAt: null },
-    include: { shipments: { where: { status: { notIn: ['DELIVERED', 'CANCELED', 'RETURNED'] } } } },
+    include: { shipments: { where: { status: { notIn: TERMINAL_SHIPMENT_STATUSES } } } },
   });
   if (!existing) throw new Error('DELIVERY_NOT_FOUND');
 
-  // Only cancel before dispatch (or after a failed/returned terminal state for cleanup).
+  // Idempotent + terminal-safe: a repeated cancel must not restock twice, and
+  // a delivered/returned delivery can never be cancelled/restocked.
+  if (existing.status === 'CANCELED') {
+    return getDeliveryById(tenantId, id);
+  }
+  if (
+    existing.status === 'DELIVERED' ||
+    existing.status === 'RETURNED' ||
+    existing.status === 'DISPATCHED' ||
+    existing.status === 'IN_TRANSIT' ||
+    existing.status === 'OUT_FOR_DELIVERY' ||
+    existing.status === 'PENDING_PICKUP'
+  ) {
+    throw new Error('DELIVERY_NOT_CANCELABLE');
+  }
+
+  // Standard cancel is only for pre-dispatch deliveries. Failed/returned
+  // parcels go through the recovery "permanent cancel" path instead.
   if (existing.shipments.length > 0) {
     throw new Error('DELIVERY_ALREADY_DISPATCHED');
   }
 
   const delivery = await prisma.$transaction(async (tx: TxClient) => {
-    const updated = await tx.delivery.update({
-      where: { id },
+    // Claim the state transition atomically; a concurrent second cancel sees
+    // zero rows and must not restock the same lines again.
+    const claimed = await tx.delivery.updateMany({
+      where: { id, tenantId, status: { in: ['PLACED', 'PENDING_DISPATCH', 'HOLD'] } },
       data: { status: 'CANCELED', canceledAt: new Date(), canceledById: userId },
     });
+    if (claimed.count === 0) throw new Error('DELIVERY_NOT_CANCELABLE');
 
     // M28-01: website orders reserved stock at placement — canceling returns it
     // to the ledger (reversal movement, mirroring the WEBSITE_ORDER reason).
@@ -320,6 +379,23 @@ export async function cancelDelivery(
         remarks: input.reason ?? 'Canceled',
       },
     });
+
+    // A cancelled delivery must not remain a COD receivable.
+    await tx.reconciliationLedgerEntry.updateMany({
+      where: {
+        tenantId,
+        deliveryId: id,
+        status: { in: ['PENDING_SETTLEMENT', 'MATCHED', 'PARTIAL_MATCH', 'DISCREPANCY'] },
+      },
+      data: {
+        status: 'CLEARED',
+        expectedCod: 0,
+        expectedNetPayout: 0,
+        settledAmount: 0,
+        settledAt: new Date(),
+        discrepancyNote: 'Delivery cancelled',
+      },
+    });
     void createAuditLog({
       tenantId,
       actorId: userId,
@@ -329,7 +405,7 @@ export async function cancelDelivery(
       action: AUDIT_ACTIONS.DELIVERY_CANCELED,
       after: { reason: input.reason ?? null },
     });
-    return updated;
+    return { id };
   });
 
   return getDeliveryById(tenantId, delivery.id);
@@ -406,7 +482,7 @@ export async function dispatchDelivery(
   });
   if (!upload.ok) throw new Error(`COURIER_UPLOAD_FAILED:${upload.error.message}`);
 
-  const dispatched = await prisma.$transaction(async (tx: TxClient) => {
+  const { dispatched, deductions } = await prisma.$transaction(async (tx: TxClient) => {
     const updated = await tx.delivery.update({
       where: { id },
       data: {
@@ -449,11 +525,16 @@ export async function dispatchDelivery(
       after: { waybillId: upload.data.waybillId, waybillMode: input.waybillMode },
     });
 
-    return updated;
+    // M23: packaging auto-deduction runs inside the same transaction as the
+    // status flip, so a parcel can never be marked DISPATCHED with its
+    // packaging stock left un-deducted. The low-stock notification stays
+    // outside the transaction (notifications must not roll stock back).
+    const deductions = await autoDeductPackaging(tenantId, id, { tx });
+
+    return { dispatched: updated, deductions };
   });
 
-  // Non-blocking packaging auto-deduction.
-  const deductions = await autoDeductPackaging(tenantId, id);
+  // Non-blocking low-stock notification for anything that fell short.
   if (deductions.length > 0) {
     await notifyLowStock(tenantId, id, deductions);
   }
@@ -546,6 +627,17 @@ export async function processExpiringHolds(): Promise<{ notified: number }> {
   let notified = 0;
   for (const delivery of expiring) {
     try {
+      const alreadyNotified = await prisma.notificationRecord.findFirst({
+        where: {
+          tenantId: delivery.tenantId,
+          type: 'DELIVERY_HELD_EXPIRING',
+          relatedEntityType: 'Delivery',
+          relatedEntityId: delivery.id,
+        },
+        select: { id: true },
+      });
+      if (alreadyNotified) continue;
+
       const recipients = await prisma.user.findMany({
         where: { tenantId: delivery.tenantId, role: { in: ['OWNER', 'MANAGER', 'DISPATCH_STAFF'] }, isActive: true, deletedAt: null },
         select: { id: true },

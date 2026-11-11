@@ -53,7 +53,7 @@ export default function EmptyReportData({
         <h2 className="font-display text-[22px] font-semibold text-espresso">
           No data for this period
         </h2>
-        <p className="max-w-md text-sm text-mist">
+        <p className="max-w-md text-sm text-mist-ink">
           Try adjusting the date range or check back after more sales have been
           recorded.
         </p>

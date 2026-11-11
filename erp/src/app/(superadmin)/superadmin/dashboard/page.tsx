@@ -61,13 +61,13 @@ async function BusinessOverview() {
       <Card>
         <CardHeader>
           <CardTitle>Business Overview</CardTitle>
-          <p className="text-mist text-sm">
+          <p className="text-mist-ink text-sm">
             Quick per-business snapshot. Click a business to manage it.
           </p>
         </CardHeader>
         <CardContent>
           {businesses.length === 0 ? (
-            <p className="text-mist text-sm">No businesses configured.</p>
+            <p className="text-mist-ink text-sm">No businesses configured.</p>
           ) : (
             <Table>
               <TableHeader>

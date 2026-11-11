@@ -16,6 +16,7 @@ interface AuditLogEntry {
   entityId: string;
   action: string;
   actorId: string | null;
+  actorName: string;
   actorRole: string;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
@@ -76,23 +77,23 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
           <DialogTitle className="font-display text-espresso">
             {formatActionName(entry.action)}
           </DialogTitle>
-          <p className="text-sm text-sand">{formatDate(entry.createdAt)}</p>
+          <p className="text-sm text-sand-ink">{formatDate(entry.createdAt)}</p>
         </DialogHeader>
 
         {/* Summary */}
         <div className="space-y-1 text-sm">
           <div className="flex gap-2">
-            <span className="text-sand">Entity Type:</span>
+            <span className="text-sand-ink">Entity Type:</span>
             <span className="text-espresso">{entry.entityType}</span>
           </div>
           <div className="flex gap-2">
-            <span className="text-sand">Entity ID:</span>
+            <span className="text-sand-ink">Entity ID:</span>
             <span className="font-mono text-espresso">{entry.entityId}</span>
           </div>
           <div className="flex gap-2">
-            <span className="text-sand">Performed By:</span>
+            <span className="text-sand-ink">User:</span>
             <span className="text-espresso">
-              {entry.actorId ?? 'System'}
+              {entry.actorName}
               {entry.actorRole && (
                 <Badge variant="outline" className="ml-2 text-xs border-mist">
                   {entry.actorRole.replace('_', ' ')}
@@ -102,7 +103,7 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
           </div>
           {entry.ipAddress && (
             <div className="flex gap-2">
-              <span className="text-sand">IP:</span>
+              <span className="text-sand-ink">IP:</span>
               <span className="font-mono text-espresso text-xs">{entry.ipAddress}</span>
             </div>
           )}
@@ -129,11 +130,11 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
                     return (
                       <tr key={key} className="border-t border-mist/50">
                         <td className="px-3 py-1.5 font-mono text-xs text-espresso">{key}</td>
-                        <td className={`px-3 py-1.5 text-xs ${changed ? 'bg-terracotta/10 text-terracotta' : 'text-sand'}`}>
+                        <td className={`px-3 py-1.5 text-xs ${changed ? 'bg-terracotta/10 text-terracotta' : 'text-sand-ink'}`}>
                           {changed && <span className="mr-1">−</span>}
                           {displayValue(bVal)}
                         </td>
-                        <td className={`px-3 py-1.5 text-xs ${changed ? 'bg-espresso/5 text-espresso' : 'text-sand'}`}>
+                        <td className={`px-3 py-1.5 text-xs ${changed ? 'bg-espresso/5 text-espresso' : 'text-sand-ink'}`}>
                           {changed && <span className="mr-1">+</span>}
                           {displayValue(aVal)}
                         </td>
@@ -161,7 +162,7 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
               </table>
             </div>
           ) : (
-            <p className="text-sm italic text-sand">No detail data recorded.</p>
+            <p className="text-sm italic text-sand-ink">No detail data recorded.</p>
           )}
         </div>
       </DialogContent>

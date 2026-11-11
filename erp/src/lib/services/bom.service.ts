@@ -14,6 +14,7 @@ import type {
 } from '@/generated/prisma/client';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
+  buildProductionBatchNumber,
   computeConsumptionPlan,
   getInsufficientIngredients,
   hasInsufficientIngredients,
@@ -22,6 +23,8 @@ import {
   type ConsumptionLine,
 } from '@/lib/services/bom.core';
 import { adjustStockInTx } from '@/lib/services/inventory.service';
+import { createBatchInTx } from '@/lib/services/batchTracking.service';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 // ── Public list item shape ──────────────────────────────────────────────────
 
@@ -427,14 +430,9 @@ export async function produceGoods(
       });
     }
 
-    // 2) Add finished-good stock + record a MANUFACTURED stock movement.
-    await adjustStockInTx(tx, tenantId, bom.variantId, actorId, {
-      quantityDelta: quantity,
-      reason: 'MANUFACTURED',
-      note: note?.trim() || `Produced ${quantity} unit(s) via BOM ${bom.name}`,
-    });
-
-    // 3) Record the production log for reconciliation.
+    // 2) Record the production log for reconciliation. The log id seeds the
+    //    manufactured batch number so repeat runs of the same variant never
+    //    collide.
     const log = await tx.productionLog.create({
       data: {
         tenantId,
@@ -444,6 +442,27 @@ export async function produceGoods(
         actorId,
         note: note?.trim() || null,
       },
+    });
+
+    // 3) Create a MANUFACTURED batch so the produced units are visible to
+    //    batch-aware inventory, expiry reporting and traceability.
+    const batchNumber = buildProductionBatchNumber(log.id);
+    const batch = await createBatchInTx(tx, {
+      tenantId,
+      variantId: bom.variantId,
+      batchNumber,
+      quantity,
+      source: 'MANUFACTURED',
+    });
+
+    // 4) Add the finished-good stock + record a MANUFACTURED stock movement
+    //    linked to the new batch. This is what makes production land in the
+    //    main inventory (stockQuantity + stock movement + batch together).
+    await adjustStockInTx(tx, tenantId, bom.variantId, actorId, {
+      quantityDelta: quantity,
+      reason: 'MANUFACTURED',
+      note: note?.trim() || `Produced ${quantity} unit(s) via BOM ${bom.name}`,
+      batchId: batch.id,
     });
 
     void createAuditLog({
@@ -457,6 +476,8 @@ export async function produceGoods(
         bomId,
         variantId: bom.variantId,
         quantity,
+        batchId: batch.id,
+        batchNumber,
         consumption: consumption.map((c) => ({
           rawMaterialId: c.rawMaterialId,
           required: c.required,
@@ -466,6 +487,8 @@ export async function produceGoods(
 
     return {
       productionLogId: log.id,
+      batchId: batch.id,
+      batchNumber,
       quantity,
       consumption,
     };
@@ -515,7 +538,7 @@ export async function listProductionLogs(
     quantity: row.quantity,
     note: row.note,
     createdAt: row.createdAt,
-    actorName: row.actor.email,
+    actorName: staffDisplayName(row.actor.email),
     variantSku: row.variant.sku,
     variantName: row.variant.product.name,
   }));

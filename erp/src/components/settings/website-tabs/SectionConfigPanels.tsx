@@ -19,7 +19,7 @@ interface SectionConfigPanelProps {
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
-      <Label className="text-xs text-sand">{label}</Label>
+      <Label className="text-xs text-sand-ink">{label}</Label>
       {children}
     </div>
   );
@@ -38,7 +38,7 @@ function CategoriesConfig({ sectionData, onChange }: Omit<SectionConfigPanelProp
           className="h-8 text-xs"
         />
       </FieldRow>
-      <p className="text-[11px] text-sand/70">
+      <p className="text-[11px] text-sand-ink/70">
         Categories are auto-selected from your store. Configure them in the Categories settings.
       </p>
     </div>
@@ -97,7 +97,7 @@ function ShopByConcernConfig({ sectionData, onChange }: Omit<SectionConfigPanelP
           className="h-8 text-xs"
         />
       </FieldRow>
-      <p className="text-[11px] text-sand/70">
+      <p className="text-[11px] text-sand-ink/70">
         Shop-by-concern items are managed in the dedicated tab. Use the title field above for the section heading.
       </p>
     </div>
@@ -296,7 +296,7 @@ function StoresBannerConfig({ sectionData, onChange }: Omit<SectionConfigPanelPr
 function HeroConfig({ sectionData, onChange }: Omit<SectionConfigPanelProps, 'sectionKey'>) {
   return (
     <div className="space-y-3">
-      <p className="text-[11px] text-sand/70">
+      <p className="text-[11px] text-sand-ink/70">
         Hero media (image/video) and text overlays are configured in the <strong>Hero Banner</strong> tab.
       </p>
     </div>
@@ -322,7 +322,7 @@ function TestimonialsConfig({ sectionData, onChange }: Omit<SectionConfigPanelPr
           className="h-8 text-xs"
         />
       </FieldRow>
-      <p className="text-[11px] text-sand/70">
+      <p className="text-[11px] text-sand-ink/70">
         Individual testimonials are managed in the <strong>Testimonials</strong> tab.
       </p>
     </div>
@@ -332,7 +332,7 @@ function TestimonialsConfig({ sectionData, onChange }: Omit<SectionConfigPanelPr
 function FooterConfig({ sectionData, onChange }: Omit<SectionConfigPanelProps, 'sectionKey'>) {
   return (
     <div className="space-y-3">
-      <p className="text-[11px] text-sand/70">
+      <p className="text-[11px] text-sand-ink/70">
         Footer content (columns, links, about text) is configured in the <strong>Footer</strong> tab.
       </p>
     </div>

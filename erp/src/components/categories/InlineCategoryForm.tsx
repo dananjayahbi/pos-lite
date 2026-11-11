@@ -42,7 +42,7 @@ export function InlineCategoryForm({ onClose }: InlineCategoryFormProps) {
   return (
     <div className="rounded-lg border border-sand bg-linen p-4 space-y-3">
       <div className="space-y-1.5">
-        <Label className="text-xs text-mist">Category Name</Label>
+        <Label className="text-xs text-mist-ink">Category Name</Label>
         <Input
           autoFocus
           value={name}

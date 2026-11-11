@@ -65,7 +65,7 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
       {/* Page Header */}
       <div>
         <h1 className="font-display text-2xl font-bold text-espresso">Stock Control</h1>
-        <p className="mt-1 font-body text-sm text-mist">
+        <p className="mt-1 font-body text-sm text-mist-ink">
           Monitor inventory levels, manage stock adjustments, and track movements.
         </p>
       </div>
@@ -75,7 +75,7 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
         {/* Total Products */}
         <Card className="border-sand/40">
           <CardHeader className="pb-2">
-            <CardTitle className="font-body text-sm font-medium text-mist">
+            <CardTitle className="font-body text-sm font-medium text-mist-ink">
               Total Products
             </CardTitle>
           </CardHeader>
@@ -87,14 +87,14 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
                 {summary?.totalProducts ?? 0}
               </p>
             )}
-            <p className="mt-1 font-body text-xs text-mist">Active products in catalog</p>
+            <p className="mt-1 font-body text-xs text-mist-ink">Active products in catalog</p>
           </CardContent>
         </Card>
 
         {/* Low Stock Variants */}
         <Card className="border-sand/40">
           <CardHeader className="pb-2">
-            <CardTitle className="font-body text-sm font-medium text-mist">
+            <CardTitle className="font-body text-sm font-medium text-mist-ink">
               Low Stock Variants
             </CardTitle>
           </CardHeader>
@@ -112,7 +112,7 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
                 {summary?.lowStockVariants ?? 0}
               </p>
             )}
-            <p className="mt-1 font-body text-xs text-mist">
+            <p className="mt-1 font-body text-xs text-mist-ink">
               Variants at or below threshold
             </p>
           </CardContent>
@@ -121,7 +121,7 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
         {/* Pending Stock Takes */}
         <Card className="border-sand/40">
           <CardHeader className="pb-2">
-            <CardTitle className="font-body text-sm font-medium text-mist">
+            <CardTitle className="font-body text-sm font-medium text-mist-ink">
               Pending Stock Takes
             </CardTitle>
           </CardHeader>
@@ -133,20 +133,20 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
                 className={`font-display text-3xl font-bold ${
                   (summary?.pendingStockTakes ?? 0) > 0
                     ? 'text-[#1D4E89]'
-                    : 'text-mist'
+                    : 'text-mist-ink'
                 }`}
               >
                 {summary?.pendingStockTakes ?? 0}
               </p>
             )}
-            <p className="mt-1 font-body text-xs text-mist">Awaiting approval</p>
+            <p className="mt-1 font-body text-xs text-mist-ink">Awaiting approval</p>
           </CardContent>
         </Card>
 
         {/* Total Stock Value */}
         <Card className="border-sand/40">
           <CardHeader className="pb-2">
-            <CardTitle className="font-body text-sm font-medium text-mist">
+            <CardTitle className="font-body text-sm font-medium text-mist-ink">
               Total Stock Value (Retail)
             </CardTitle>
           </CardHeader>
@@ -158,12 +158,12 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
                 {formatRupee(summary.totalStockValue)}
               </p>
             ) : (
-              <div className="flex items-center gap-2 text-mist">
+              <div className="flex items-center gap-2 text-mist-ink">
                 <Lock className="h-5 w-5" />
                 <span className="font-body text-sm">Restricted</span>
               </div>
             )}
-            <p className="mt-1 font-body text-xs text-mist">
+            <p className="mt-1 font-body text-xs text-mist-ink">
               {canViewStockValue ? 'Based on retail prices' : 'Insufficient permissions'}
             </p>
           </CardContent>
@@ -245,7 +245,7 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
                 ))
               ) : !movements || movements.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center font-body text-sm text-mist">
+                  <TableCell colSpan={5} className="py-8 text-center font-body text-sm text-mist-ink">
                     No recent stock movements
                   </TableCell>
                 </TableRow>
@@ -309,12 +309,12 @@ function QuickActionCard({ href, icon, title, description, allowed }: QuickActio
     return (
       <Card className="relative border-sand/40 opacity-50 cursor-not-allowed">
         <CardContent className="flex items-start gap-4 p-5">
-          <div className="text-mist">{icon}</div>
+          <div className="text-mist-ink">{icon}</div>
           <div className="flex-1">
             <p className="font-body text-sm font-semibold text-espresso">{title}</p>
-            <p className="mt-0.5 font-body text-xs text-mist">{description}</p>
+            <p className="mt-0.5 font-body text-xs text-mist-ink">{description}</p>
           </div>
-          <Lock className="h-4 w-4 text-mist" />
+          <Lock className="h-4 w-4 text-mist-ink" />
         </CardContent>
       </Card>
     );
@@ -327,7 +327,7 @@ function QuickActionCard({ href, icon, title, description, allowed }: QuickActio
           <div className="text-espresso">{icon}</div>
           <div className="flex-1">
             <p className="font-body text-sm font-semibold text-espresso">{title}</p>
-            <p className="mt-0.5 font-body text-xs text-mist">{description}</p>
+            <p className="mt-0.5 font-body text-xs text-mist-ink">{description}</p>
           </div>
         </CardContent>
       </Card>

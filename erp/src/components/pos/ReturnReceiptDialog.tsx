@@ -72,19 +72,19 @@ export function ReturnReceiptDialog({
         {/* Summary block */}
         <div className="bg-linen rounded-lg border-2 border-sand p-4 space-y-3">
           <div className="flex justify-between items-center">
-            <span className="font-body text-sm text-mist">Return Ref</span>
+            <span className="font-body text-sm text-mist-ink">Return Ref</span>
             <span className="font-mono text-sm text-espresso">
               {returnId.slice(0, 8).toUpperCase()}
             </span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="font-body text-sm text-mist">Refund Amount</span>
+            <span className="font-body text-sm text-mist-ink">Refund Amount</span>
             <span className="font-mono text-xl font-bold text-espresso">
               {formatRupee(Number(refundAmount))}
             </span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="font-body text-sm text-mist">Method</span>
+            <span className="font-body text-sm text-mist-ink">Method</span>
             <Badge variant="outline" className="font-body text-xs">
               {REFUND_METHOD_LABELS[refundMethod] ?? refundMethod}
             </Badge>
@@ -110,7 +110,7 @@ export function ReturnReceiptDialog({
           <button
             type="button"
             onClick={onDone}
-            className="text-xs font-body text-mist hover:text-espresso underline self-center"
+            className="text-xs font-body text-mist-ink hover:text-espresso underline self-center"
           >
             Skip receipt
           </button>

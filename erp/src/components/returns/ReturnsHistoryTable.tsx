@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { formatRupee } from '@/lib/format';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -42,7 +43,7 @@ interface SaleData {
   discountAmount: number;
   taxAmount: number;
   totalAmount: number;
-  paymentMethod: 'CASH' | 'CARD' | 'SPLIT' | null;
+  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | null;
   status: 'OPEN' | 'COMPLETED' | 'VOIDED';
   authorizingManagerId: string | null;
   createdAt: string;
@@ -70,8 +71,8 @@ interface ReturnRecord {
   createdAt: string;
   lines: ReturnLine[];
   originalSale: SaleData;
-  initiatedBy: { id: string; name: string };
-  authorizedBy: { id: string; name: string };
+  initiatedBy: { id: string; email: string };
+  authorizedBy: { id: string; email: string };
 }
 
 interface Filters {
@@ -173,7 +174,7 @@ export function ReturnsHistoryTable() {
     <div className="space-y-4 p-4">
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
-          <label className="font-body text-xs text-mist">From</label>
+          <label className="font-body text-xs text-mist-ink">From</label>
           <input
             type="date"
             value={filters.from}
@@ -182,7 +183,7 @@ export function ReturnsHistoryTable() {
           />
         </div>
         <div className="space-y-1">
-          <label className="font-body text-xs text-mist">To</label>
+          <label className="font-body text-xs text-mist-ink">To</label>
           <input
             type="date"
             value={filters.to}
@@ -191,7 +192,7 @@ export function ReturnsHistoryTable() {
           />
         </div>
         <div className="space-y-1">
-          <label className="font-body text-xs text-mist">Refund Method</label>
+          <label className="font-body text-xs text-mist-ink">Refund Method</label>
           <Select
             value={filters.refundMethod}
             onValueChange={(value) =>
@@ -211,7 +212,7 @@ export function ReturnsHistoryTable() {
           </Select>
         </div>
         <div className="space-y-1">
-          <label className="font-body text-xs text-mist">Sale ID</label>
+          <label className="font-body text-xs text-mist-ink">Sale ID</label>
           <Input
             placeholder="Search by sale ID…"
             value={filters.originalSaleId}
@@ -235,7 +236,7 @@ export function ReturnsHistoryTable() {
         </div>
       ) : returns.length === 0 ? (
         <div className="flex flex-col items-center justify-center space-y-2 py-16">
-          <p className="font-body text-sm text-mist">No returns found</p>
+          <p className="font-body text-sm text-mist-ink">No returns found</p>
           {hasFilters && (
             <Button variant="outline" size="sm" onClick={clearFilters}>
               Clear Filters
@@ -247,15 +248,15 @@ export function ReturnsHistoryTable() {
           <Table>
             <TableHeader>
               <TableRow className="bg-linen">
-                <TableHead className="font-body text-xs text-mist">Return Ref</TableHead>
-                <TableHead className="font-body text-xs text-mist">Original Sale</TableHead>
-                <TableHead className="font-body text-xs text-mist">Date</TableHead>
-                <TableHead className="text-center font-body text-xs text-mist">Items</TableHead>
-                <TableHead className="text-right font-body text-xs text-mist">Refund</TableHead>
-                <TableHead className="font-body text-xs text-mist">Method</TableHead>
-                <TableHead className="text-center font-body text-xs text-mist">Restocked</TableHead>
-                <TableHead className="font-body text-xs text-mist">Authorized By</TableHead>
-                <TableHead className="text-center font-body text-xs text-mist">Actions</TableHead>
+                <TableHead className="font-body text-xs text-mist-ink">Return Ref</TableHead>
+                <TableHead className="font-body text-xs text-mist-ink">Original Sale</TableHead>
+                <TableHead className="font-body text-xs text-mist-ink">Date</TableHead>
+                <TableHead className="text-center font-body text-xs text-mist-ink">Items</TableHead>
+                <TableHead className="text-right font-body text-xs text-mist-ink">Refund</TableHead>
+                <TableHead className="font-body text-xs text-mist-ink">Method</TableHead>
+                <TableHead className="text-center font-body text-xs text-mist-ink">Restocked</TableHead>
+                <TableHead className="font-body text-xs text-mist-ink">Authorized By</TableHead>
+                <TableHead className="text-center font-body text-xs text-mist-ink">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -304,11 +305,11 @@ export function ReturnsHistoryTable() {
                       ) : someRestocked ? (
                         <AlertTriangle className="mx-auto h-4 w-4 text-yellow-500" />
                       ) : (
-                        <Minus className="mx-auto h-4 w-4 text-mist" />
+                        <Minus className="mx-auto h-4 w-4 text-mist-ink" />
                       )}
                     </TableCell>
                     <TableCell className="font-body text-xs text-espresso">
-                      {returnRecord.authorizedBy.name}
+                      {staffDisplayName(returnRecord.authorizedBy.email)}
                     </TableCell>
                     <TableCell className="text-center">
                       <Button
@@ -333,7 +334,7 @@ export function ReturnsHistoryTable() {
 
       {pagination && pagination.totalPages > 1 && (
         <div className="flex items-center justify-between pt-2">
-          <p className="font-body text-xs text-mist">
+          <p className="font-body text-xs text-mist-ink">
             Page {pagination.page} of {pagination.totalPages} ({pagination.total} total)
           </p>
           <div className="flex items-center gap-2">

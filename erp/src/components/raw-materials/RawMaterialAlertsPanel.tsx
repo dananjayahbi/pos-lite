@@ -23,12 +23,12 @@ export function RawMaterialAlertsPanel({ permissions }: RawMaterialAlertsPanelPr
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-mist">Raw material alerts</CardTitle>
+        <CardTitle className="text-sm font-medium text-mist-ink">Raw material alerts</CardTitle>
         <AlertTriangle className="h-4 w-4 text-amber-500" />
       </CardHeader>
       <CardContent>
         {alerts.length === 0 ? (
-          <p className="py-2 text-sm text-mist">
+          <p className="py-2 text-sm text-mist-ink">
             All raw materials are above their low-stock thresholds.
           </p>
         ) : (
@@ -48,7 +48,7 @@ export function RawMaterialAlertsPanel({ permissions }: RawMaterialAlertsPanelPr
                 <li key={alert.rawMaterialId} className="flex items-center justify-between py-2">
                   <div>
                     <p className="text-sm font-medium text-espresso">{alert.name}</p>
-                    <p className="text-xs text-mist">
+                    <p className="text-xs text-mist-ink">
                       {alert.quantity} {getUnitShortLabel(alert.unit as 'LITERS' | 'KILOGRAMS')} on
                       hand · threshold {alert.lowStockThreshold}
                     </p>

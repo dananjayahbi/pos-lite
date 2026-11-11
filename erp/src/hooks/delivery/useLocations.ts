@@ -3,10 +3,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+export interface DeliveryLocationCity {
+  /** Trans Express city id; null when the curated fallback list is used. */
+  id: number | null;
+  name: string;
+}
+
+export interface DeliveryLocations {
+  provinces: Array<{ id: number; text: string }>;
+  districts: Array<{ id: number; text: string }>;
+  cities: DeliveryLocationCity[];
+  syncedAt: string | null;
+  source: 'TRANSEXPRESS' | 'FALLBACK';
+}
+
 export function useLocations() {
   const queryClient = useQueryClient();
 
-  const query = useQuery({
+  const query = useQuery<DeliveryLocations>({
     queryKey: ['locations'],
     queryFn: async () => {
       const res = await fetch('/api/store/delivery/locations');

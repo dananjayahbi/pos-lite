@@ -167,7 +167,7 @@ export function VariantEditSheet({
           <SheetTitle className="font-display text-lg text-espresso">
             Edit Variant
           </SheetTitle>
-          <SheetDescription className="font-mono text-xs text-mist">
+          <SheetDescription className="font-mono text-xs text-mist-ink">
             {variant.sku}
           </SheetDescription>
         </SheetHeader>
@@ -208,7 +208,7 @@ export function VariantEditSheet({
                 type="button"
                 variant="outline"
                 size="icon"
-                className="border-sand text-mist hover:text-espresso shrink-0"
+                className="border-sand text-mist-ink hover:text-espresso shrink-0"
                 onClick={() => setValue('barcode', generateBarcode(), { shouldDirty: true })}
                 title="Auto-generate barcode"
                 aria-label="Auto-generate barcode"
@@ -267,7 +267,7 @@ export function VariantEditSheet({
                 Cost Price
               </Label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mist">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mist-ink">
                   Rs.
                 </span>
                 <Input
@@ -290,7 +290,7 @@ export function VariantEditSheet({
               Retail Price
             </Label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mist">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mist-ink">
                 Rs.
               </span>
               <Input
@@ -317,7 +317,7 @@ export function VariantEditSheet({
               Wholesale Price
             </Label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mist">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mist-ink">
                 Rs.
               </span>
               <Input
@@ -392,7 +392,7 @@ export function VariantEditSheet({
               <Button
                 type="button"
                 variant="outline"
-                className="border-mist text-mist hover:text-espresso"
+                className="border-mist text-mist-ink hover:text-espresso"
                 onClick={handleClose}
               >
                 Cancel

@@ -3,6 +3,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { useQuery } from '@tanstack/react-query';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface StaffSelectorProps {
   value: string | null;
@@ -31,7 +32,7 @@ export function StaffSelector({ value, onChange }: StaffSelectorProps) {
         <SelectContent>
           <SelectItem value="">Any available staff</SelectItem>
           {staff.map((s: { id: string; email: string }) => (
-            <SelectItem key={s.id} value={s.id}>{s.email}</SelectItem>
+            <SelectItem key={s.id} value={s.id}>{staffDisplayName(s.email)}</SelectItem>
           ))}
         </SelectContent>
       </Select>

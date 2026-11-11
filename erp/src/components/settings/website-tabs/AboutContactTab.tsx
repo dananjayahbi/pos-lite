@@ -42,7 +42,7 @@ export function AboutContactTab({ config, onChange }: AboutContactTabProps) {
       {/* ── About Page ─────────────────────────────────────────────────────── */}
       <div>
         <h3 className="text-base font-semibold text-espresso mb-1">About Page</h3>
-        <p className="text-xs text-sand mb-4">
+        <p className="text-xs text-sand-ink mb-4">
           Configure the content shown on the /about page of your storefront.
         </p>
 
@@ -213,7 +213,7 @@ export function AboutContactTab({ config, onChange }: AboutContactTabProps) {
               </div>
             )}
             {aboutValues.length === 0 && (
-              <p className="text-xs text-sand py-2">
+              <p className="text-xs text-sand-ink py-2">
                 No values defined. Click &quot;Add Value&quot; to create one.
               </p>
             )}
@@ -226,7 +226,7 @@ export function AboutContactTab({ config, onChange }: AboutContactTabProps) {
       {/* ── Contact Page ───────────────────────────────────────────────────── */}
       <div>
         <h3 className="text-base font-semibold text-espresso mb-1">Contact Page</h3>
-        <p className="text-xs text-sand mb-4">
+        <p className="text-xs text-sand-ink mb-4">
           Configure the content shown on the /contact page of your storefront.
         </p>
 
@@ -327,7 +327,7 @@ export function AboutContactTab({ config, onChange }: AboutContactTabProps) {
                   onChange={(e) => onChange({ contactMapEmbedUrl: e.target.value })}
                   placeholder="https://maps.google.com/maps?q=..."
                 />
-                <p className="text-xs text-sand">
+                <p className="text-xs text-sand-ink">
                   Paste a Google Maps embed iframe src URL to show a map on your contact page.
                 </p>
               </div>

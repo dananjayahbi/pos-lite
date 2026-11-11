@@ -23,7 +23,7 @@ function StatCard({ label, value, isMono }: StatCardProps) {
   return (
     <Card className="border-t-[3px] border-t-espresso">
       <CardContent className="p-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-mist">{label}</p>
+        <p className="text-xs font-medium uppercase tracking-wide text-mist-ink">{label}</p>
         <p className={`mt-1 text-2xl font-bold text-espresso ${isMono ? 'font-mono' : ''}`}>
           {value}
         </p>
@@ -52,7 +52,7 @@ export default function MetricsStatCards({
       <StatCard label="Net Churn Rate" value={`${netChurnRate}%`} />
       <Card className="border-t-[3px] border-t-espresso">
         <CardContent className="p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-mist">MRR Growth</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-mist-ink">MRR Growth</p>
           <p className="mt-1 text-sm text-terracotta">Coming Soon</p>
         </CardContent>
       </Card>

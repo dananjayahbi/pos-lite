@@ -93,7 +93,7 @@ const definitions: Record<string, ReportDefinition> = {
   "/reports/staff-performance": {
     title: "Staff Performance",
     columns: [
-      { key: "Email", header: "Email" },
+      { key: "Staff", header: "Staff" },
       { key: "Role", header: "Role" },
       { key: "Hours Worked", header: "Hours Worked" },
       { key: "Sales Count", header: "Sales Count" },

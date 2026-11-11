@@ -139,10 +139,10 @@ export function CategoryDetailPanel({
             />
 
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-mist">Description</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-mist-ink">Description</p>
               <p className="mt-1 text-sm text-espresso">
                 {detail.description?.trim() ? detail.description : (
-                  <span className="italic text-mist">No description provided</span>
+                  <span className="italic text-mist-ink">No description provided</span>
                 )}
               </p>
             </div>
@@ -164,9 +164,9 @@ function DetailRow({
 }) {
   return (
     <div className="flex items-start gap-2">
-      <span className="mt-0.5 text-mist">{icon}</span>
+      <span className="mt-0.5 text-mist-ink">{icon}</span>
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium uppercase tracking-wide text-mist">{label}</p>
+        <p className="text-xs font-medium uppercase tracking-wide text-mist-ink">{label}</p>
         <p className="text-sm text-espresso">{value}</p>
       </div>
     </div>

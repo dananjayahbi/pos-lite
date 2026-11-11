@@ -7,6 +7,7 @@ import { ApiError } from '@/lib/api/errors';
 import { parseQueryInt, parseQueryNumber } from '@/lib/api/query-params';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { Gender, type Prisma } from '@/generated/prisma/client';
+import { buildBroadcastWhere } from '@/lib/services/broadcast.service';
 
 // M05-05 (BUG-74 + OBS-51): this endpoint exists to serve the broadcast
 // composer, so it now requires the composer's own permission (`broadcast:send`,
@@ -14,6 +15,7 @@ import { Gender, type Prisma } from '@/generated/prisma/client';
 // authenticated role, and its filters go through the shared XC-01 parsers so a
 // malformed param is a typed 400 rather than a Prisma-driven 500.
 const GENDER_VALUES = new Set<string>(Object.values(Gender));
+const CHANNEL_VALUES = new Set(['EMAIL', 'SMS', 'WHATSAPP']);
 
 export async function GET(request: Request) {
   try {
@@ -41,6 +43,7 @@ export async function GET(request: Request) {
 
     const tagsParam = searchParams.get('tags');
     const gender = searchParams.get('gender');
+    const channelParam = searchParams.get('channel');
     // XC-01: 'abc' / '1e999' → 400 naming the param (BUG-74). Numeric but
     // out-of-domain values keep their previous behavior (minSpend=1e20 → 200).
     const minSpend = parseQueryNumber(searchParams, 'minSpend', { min: 0 });
@@ -49,38 +52,52 @@ export async function GET(request: Request) {
     // month keeps its historical "ignore the filter" behavior (P2/X4/T2 pins).
     const birthdayMonth = parseQueryInt(searchParams, 'birthdayMonth');
 
-    const where: Prisma.CustomerWhereInput = {
-      tenantId,
-      deletedAt: null,
-      isActive: true,
-    };
+    if (channelParam && !CHANNEL_VALUES.has(channelParam)) {
+      throw ApiError.validation('Query parameter "channel" must be one of EMAIL, SMS, WHATSAPP');
+    }
+    if (gender && gender !== 'ALL' && !GENDER_VALUES.has(gender)) {
+      throw ApiError.validation('Query parameter "gender" must be one of MALE, FEMALE, OTHER');
+    }
 
-    if (tagsParam) {
-      const tags = tagsParam.split(',').map((t) => t.trim()).filter(Boolean);
-      if (tags.length > 0) {
-        where.tags = { hasSome: tags };
+    const where: Prisma.CustomerWhereInput = channelParam
+      ? buildBroadcastWhere(
+          tenantId,
+          channelParam as 'EMAIL' | 'SMS' | 'WHATSAPP',
+          {
+            tags: tagsParam ?? undefined,
+            gender: gender ?? undefined,
+            minSpend,
+            maxSpend,
+            birthdayMonth,
+          },
+        )
+      : { tenantId, deletedAt: null, isActive: true };
+
+    if (!channelParam) {
+      if (tagsParam) {
+        const tags = tagsParam.split(',').map((t) => t.trim()).filter(Boolean);
+        if (tags.length > 0) {
+          where.tags = { hasSome: tags };
+        }
       }
-    }
 
-    if (gender && gender !== 'ALL') {
-      if (!GENDER_VALUES.has(gender)) {
-        throw ApiError.validation('Query parameter "gender" must be one of MALE, FEMALE, OTHER');
+      if (gender && gender !== 'ALL') {
+        where.gender = gender as Gender;
       }
-      where.gender = gender as Gender;
-    }
 
-    if (minSpend !== undefined) {
-      where.totalSpend = {
-        ...(typeof where.totalSpend === 'object' ? where.totalSpend : {}),
-        gte: minSpend,
-      } as Prisma.DecimalFilter;
-    }
+      if (minSpend !== undefined) {
+        where.totalSpend = {
+          ...(typeof where.totalSpend === 'object' ? where.totalSpend : {}),
+          gte: minSpend,
+        } as Prisma.DecimalFilter;
+      }
 
-    if (maxSpend !== undefined) {
-      where.totalSpend = {
-        ...(typeof where.totalSpend === 'object' ? where.totalSpend : {}),
-        lte: maxSpend,
-      } as Prisma.DecimalFilter;
+      if (maxSpend !== undefined) {
+        where.totalSpend = {
+          ...(typeof where.totalSpend === 'object' ? where.totalSpend : {}),
+          lte: maxSpend,
+        } as Prisma.DecimalFilter;
+      }
     }
 
     const customers = await prisma.customer.findMany({
@@ -89,6 +106,7 @@ export async function GET(request: Request) {
         id: true,
         name: true,
         phone: true,
+        email: true,
         tags: true,
         totalSpend: true,
         birthday: true,
@@ -110,6 +128,7 @@ export async function GET(request: Request) {
         id: c.id,
         name: c.name,
         phone: c.phone,
+        email: c.email,
         tags: c.tags,
         totalSpend: c.totalSpend.toString(),
         gender: c.gender,

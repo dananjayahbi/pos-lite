@@ -242,7 +242,7 @@ export function BarcodeLabelDialog({
                   </button>
                 </div>
                 {paperSize === 'a4' && (
-                  <p className="font-body text-xs text-mist mt-1.5">
+                  <p className="font-body text-xs text-mist-ink mt-1.5">
                     A4 mode prints 4 labels per row, 8 rows per page — 32
                     labels per sheet.
                   </p>
@@ -265,7 +265,7 @@ export function BarcodeLabelDialog({
                           {v.sku}
                         </div>
                         {(v.form || v.packSize) && (
-                          <div className="font-body text-xs text-mist truncate">
+                          <div className="font-body text-xs text-mist-ink truncate">
                             {[v.form, v.packSize].filter(Boolean).join(' · ')}
                           </div>
                         )}
@@ -315,7 +315,7 @@ export function BarcodeLabelDialog({
           <DialogFooter>
             <Button
               variant="ghost"
-              className="text-mist"
+              className="text-mist-ink"
               onClick={onClose}
             >
               Cancel

@@ -106,8 +106,8 @@ export function CategoryImageUpload({
         {imageUrl ? (
           broken ? (
             <div className="flex h-full w-full flex-col items-center justify-center bg-sand/20">
-              <ImageOff className="h-5 w-5 text-mist" />
-              <span className="mt-1 text-[10px] text-mist">Error</span>
+              <ImageOff className="h-5 w-5 text-mist-ink" />
+              <span className="mt-1 text-[10px] text-mist-ink">Error</span>
             </div>
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
@@ -119,7 +119,7 @@ export function CategoryImageUpload({
             />
           )
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-sand/10 text-[10px] text-mist">
+          <div className="flex h-full w-full items-center justify-center bg-sand/10 text-[10px] text-mist-ink">
             No image
           </div>
         )}
@@ -162,7 +162,7 @@ export function CategoryImageUpload({
         )}
       </div>
 
-      <p className="ml-auto text-xs text-mist">
+      <p className="ml-auto text-xs text-mist-ink">
         JPEG / PNG / WebP / SVG
         <br />
         Max 2 MB

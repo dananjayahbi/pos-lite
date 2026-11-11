@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -110,7 +111,7 @@ export function StaffAvailabilityManager() {
             </SelectTrigger>
             <SelectContent>
               {staff.map((s: { id: string; email: string }) => (
-                <SelectItem key={s.id} value={s.id}>{s.email}</SelectItem>
+                <SelectItem key={s.id} value={s.id}>{staffDisplayName(s.email)}</SelectItem>
               ))}
             </SelectContent>
           </Select>

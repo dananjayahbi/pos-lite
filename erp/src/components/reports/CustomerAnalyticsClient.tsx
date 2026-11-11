@@ -15,6 +15,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReportContext } from "@/lib/reports/ReportContext";
+import {
+  REPEAT_BADGE_META,
+  type RepeatBadgeTier,
+} from "@/lib/services/customer-loyalty";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -69,6 +73,8 @@ interface TopCustomer {
   name: string;
   phone: string;
   totalOrders: number;
+  lifetimeOrders: number;
+  repeatBadge: "GOLD" | "SILVER" | "BRONZE" | null;
   totalSpend: string;
   aov: string;
   lastVisit: string | null;
@@ -248,7 +254,14 @@ function TopCustomersTable({
           {customers.map((c) => (
             <TableRow key={c.customerId}>
               <TableCell className="font-medium">{c.rank}</TableCell>
-              <TableCell>{c.name}</TableCell>
+              <TableCell>
+                <span className="inline-flex items-center gap-2">
+                  {c.name}
+                  {c.repeatBadge ? (
+                    <RepeatBadge tier={c.repeatBadge} orderCount={c.lifetimeOrders} />
+                  ) : null}
+                </span>
+              </TableCell>
               <TableCell className="font-mono text-sm">
                 {maskPhone(c.phone, userRole)}
               </TableCell>
@@ -270,6 +283,32 @@ function TopCustomersTable({
   );
 }
 
+// ── Repeat-buyer metal badge (ISSUE 8) ───────────────────────────
+
+const REPEAT_BADGE_STYLES: Record<RepeatBadgeTier, string> = {
+  GOLD: "border-yellow-300 bg-yellow-100 text-yellow-800",
+  SILVER: "border-slate-300 bg-slate-100 text-slate-700",
+  BRONZE: "border-amber-300 bg-amber-100 text-amber-800",
+};
+
+function RepeatBadge({
+  tier,
+  orderCount,
+}: {
+  tier: RepeatBadgeTier;
+  orderCount: number;
+}) {
+  const meta = REPEAT_BADGE_META[tier];
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${REPEAT_BADGE_STYLES[tier]}`}
+      title={`${meta.label} repeat customer · ${orderCount} lifetime orders`}
+    >
+      {meta.label}
+    </span>
+  );
+}
+
 // ── New vs Returning CSS Stacked Bar Chart ───────────────────────
 
 function NewVsReturningChart({ weeks }: { weeks: WeekBucket[] }) {
@@ -283,39 +322,54 @@ function NewVsReturningChart({ weeks }: { weeks: WeekBucket[] }) {
 
   const maxTotal = Math.max(
     ...weeks.map((w) => w.newCount + w.returningCount),
+    1,
   );
+  // Fixed pixel scale instead of percentage heights: the bar's parent is an
+  // auto-height flex item, so `height: %` resolved to 0 and the chart rendered
+  // blank even when the API returned data (ISSUE 8).
+  const BAR_AREA_PX = 160;
 
   return (
     <div>
-      <div className="flex items-end gap-2 h-48">
-        {weeks.map((w) => {
-          const total = w.newCount + w.returningCount;
-          const height = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
-          const newPct = total > 0 ? (w.newCount / total) * 100 : 0;
-          return (
-            <div
-              key={w.week}
-              className="flex-1 flex flex-col items-center gap-1"
-            >
+      <div className="overflow-x-auto">
+        <div className="flex items-end gap-3">
+          {weeks.map((w) => {
+            const total = w.newCount + w.returningCount;
+            const newHeight = (w.newCount / maxTotal) * BAR_AREA_PX;
+            const returningHeight = (w.returningCount / maxTotal) * BAR_AREA_PX;
+            return (
               <div
-                className="w-full rounded-t"
-                style={{ height: `${height}%` }}
+                key={w.week}
+                className="flex w-14 shrink-0 flex-col items-center gap-1"
               >
                 <div
-                  style={{
-                    height: `${100 - newPct}%`,
-                    backgroundColor: "#A48374",
-                  }}
-                  className="rounded-t"
-                />
-                <div
-                  style={{ height: `${newPct}%`, backgroundColor: "#CBAD8D" }}
-                />
+                  className="flex w-full flex-col justify-end"
+                  style={{ height: `${BAR_AREA_PX}px` }}
+                  title={`${w.label}: ${w.newCount} new · ${w.returningCount} returning`}
+                >
+                  {total > 0 ? (
+                    <>
+                      <div
+                        className="w-full rounded-t bg-[#CBAD8D]"
+                        style={{ height: `${newHeight}px` }}
+                      />
+                      <div
+                        className="w-full bg-[#A48374]"
+                        style={{ height: `${returningHeight}px` }}
+                      />
+                    </>
+                  ) : (
+                    <div className="h-px w-full bg-mist" />
+                  )}
+                </div>
+                <span className="truncate text-xs">{w.label}</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {total > 0 ? `${w.newCount} / ${w.returningCount}` : '0'}
+                </span>
               </div>
-              <span className="text-xs">{w.label}</span>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
       <div className="mt-4 flex items-center gap-4 text-sm">
         <span className="flex items-center gap-1.5">

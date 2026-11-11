@@ -58,7 +58,7 @@ export function AmountDateNoteFields({
           <p className="mt-1 font-body text-xs text-[#9B2226]">{amountError}</p>
         ) : (
           amountHint !== undefined && (
-            <p className="mt-1 font-body text-xs text-sand">{amountHint}</p>
+            <p className="mt-1 font-body text-xs text-sand-ink">{amountHint}</p>
           )
         )}
       </div>
@@ -79,7 +79,7 @@ export function AmountDateNoteFields({
 
       <div>
         <Label htmlFor={`${idPrefix}-note`} className="font-body">
-          Note <span className="font-normal text-mist">(optional)</span>
+          Note <span className="font-normal text-mist-ink">(optional)</span>
         </Label>
         <Input
           id={`${idPrefix}-note`}

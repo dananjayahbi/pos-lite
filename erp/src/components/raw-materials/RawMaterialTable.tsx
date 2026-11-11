@@ -12,10 +12,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { RawMaterialStatusBadge } from '@/components/raw-materials/RawMaterialStatusBadge';
 import { RawMaterialRowActions } from '@/components/raw-materials/RawMaterialRowActions';
-import {
-  getRawMaterialCategoryLabel,
-  getUnitShortLabel,
-} from '@/lib/services/rawMaterial.core';
 import type { RawMaterialItem } from '@/hooks/useRawMaterials';
 
 interface RawMaterialTableProps {
@@ -50,7 +46,7 @@ function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <h3 className="font-display text-lg text-espresso">No raw materials</h3>
-      <p className="mt-1 font-body text-sm text-mist">
+      <p className="mt-1 font-body text-sm text-mist-ink">
         Add a raw material to start tracking bulk stock.
       </p>
     </div>
@@ -108,16 +104,18 @@ export function RawMaterialTable({
           <TableRow key={material.id}>
             <TableCell className="font-medium text-espresso">{material.name}</TableCell>
             <TableCell>
-              <Badge variant="secondary">{getRawMaterialCategoryLabel(material.category)}</Badge>
+              <Badge variant="secondary">{material.categoryName}</Badge>
             </TableCell>
-            <TableCell className="text-mist">{getUnitShortLabel(material.unit)}</TableCell>
+            <TableCell className="text-mist-ink" title={material.unitName}>
+              {material.unitShortLabel}
+            </TableCell>
             <TableCell className="text-right font-semibold text-espresso">
-              {material.quantity} {getUnitShortLabel(material.unit)}
+              {material.quantity} {material.unitShortLabel}
             </TableCell>
             <TableCell>
               <RawMaterialStatusBadge status={material.stockStatus} />
             </TableCell>
-            <TableCell className="text-right text-mist">{material.lowStockThreshold}</TableCell>
+            <TableCell className="text-right text-mist-ink">{material.lowStockThreshold}</TableCell>
             <TableCell className="text-right">
               <RawMaterialRowActions
                 canEdit={canEdit}

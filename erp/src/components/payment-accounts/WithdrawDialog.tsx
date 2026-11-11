@@ -94,7 +94,7 @@ function WithdrawForm({ account, accounts, onSubmit, onCancel }: WithdrawFormPro
     <>
       <DialogHeader>
         <DialogTitle className="font-display">Withdraw</DialogTitle>
-        <DialogDescription className="font-body text-sm text-mist">
+        <DialogDescription className="font-body text-sm text-mist-ink">
           Money leaving this account. Leave the destination empty for cash taken
           out of the business.
         </DialogDescription>
@@ -102,7 +102,7 @@ function WithdrawForm({ account, accounts, onSubmit, onCancel }: WithdrawFormPro
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="rounded-lg border border-mist bg-linen/40 p-3">
-          <p className="font-body text-[11px] uppercase tracking-wide text-mist">
+          <p className="font-body text-[11px] uppercase tracking-wide text-mist-ink">
             Source account
           </p>
           <div className="mt-1 flex items-center justify-between gap-2">
@@ -111,12 +111,12 @@ function WithdrawForm({ account, accounts, onSubmit, onCancel }: WithdrawFormPro
                 {account.name}
               </p>
               {account.accountNumber && (
-                <p className="font-mono text-[11px] text-sand">{account.accountNumber}</p>
+                <p className="font-mono text-[11px] text-sand-ink">{account.accountNumber}</p>
               )}
             </div>
             <AccountTypeBadge type={account.type} />
           </div>
-          <p className="mt-2 font-body text-xs text-sand">
+          <p className="mt-2 font-body text-xs text-sand-ink">
             Available balance:{' '}
             <span className="font-mono text-espresso">{formatRupee(account.balance)}</span>
           </p>
@@ -124,7 +124,7 @@ function WithdrawForm({ account, accounts, onSubmit, onCancel }: WithdrawFormPro
 
         <div>
           <Label htmlFor="withdraw-to" className="font-body">
-            Withdraw to <span className="font-normal text-mist">(optional)</span>
+            Withdraw to <span className="font-normal text-mist-ink">(optional)</span>
           </Label>
           <div className="mt-1.5">
             <AccountSelect

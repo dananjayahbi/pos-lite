@@ -119,7 +119,7 @@ function RecordPaymentForm({
     <>
       <DialogHeader>
         <DialogTitle className="font-display">Record Payment</DialogTitle>
-        <DialogDescription className="font-body text-sm text-mist">
+        <DialogDescription className="font-body text-sm text-mist-ink">
           Settle {referenceNo} from a payment account. Outstanding:{' '}
           <span className="font-mono text-espresso">{formatRupee(outstanding)}</span>
         </DialogDescription>
@@ -154,7 +154,7 @@ function RecordPaymentForm({
               Only {formatRupee(outstanding)} is outstanding.
             </p>
           ) : (
-            <p className="mt-1 font-body text-xs text-mist">
+            <p className="mt-1 font-body text-xs text-mist-ink">
               Up to {formatRupee(outstanding)} can be paid.
             </p>
           )}
@@ -176,7 +176,7 @@ function RecordPaymentForm({
 
         <div>
           <Label htmlFor="po-payment-reference" className="font-body">
-            Reference <span className="font-normal text-mist">(optional)</span>
+            Reference <span className="font-normal text-mist-ink">(optional)</span>
           </Label>
           <Input
             id="po-payment-reference"
@@ -191,7 +191,7 @@ function RecordPaymentForm({
 
         <div>
           <Label htmlFor="po-payment-note" className="font-body">
-            Note <span className="font-normal text-mist">(optional)</span>
+            Note <span className="font-normal text-mist-ink">(optional)</span>
           </Label>
           <Input
             id="po-payment-note"
@@ -222,7 +222,7 @@ function RecordPaymentForm({
             variant="ghost"
             onClick={onCancel}
             disabled={isSubmitting}
-            className="text-sand hover:text-espresso"
+            className="text-sand-ink hover:text-espresso"
           >
             Cancel
           </Button>

@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 
-import { requireDeliveryAuth, validationError, internalError, mapDeliveryError } from '@/lib/api/delivery-route';
+import {
+  requireDeliveryAuth,
+  validationError,
+  internalError,
+  mapDeliveryError,
+} from '@/lib/api/delivery-route';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getPackagingItems, createPackagingItem } from '@/lib/services/packaging.service';
 import { CreatePackagingItemSchema } from '@/lib/validators/packaging.validators';
@@ -10,8 +15,13 @@ export async function GET() {
   const guard = await requireDeliveryAuth(PERMISSIONS.DELIVERY.managePackaging);
   if (!guard.ok) return guard.response;
 
-  const items = await getPackagingItems(guard.tenantId);
-  return NextResponse.json({ success: true, data: items });
+  try {
+    const items = await getPackagingItems(guard.tenantId);
+    return NextResponse.json({ success: true, data: items });
+  } catch (error) {
+    console.error('GET /api/store/packaging error:', error);
+    return internalError('An unexpected error occurred');
+  }
 }
 
 export async function POST(request: Request) {
@@ -32,7 +42,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const item = await createPackagingItem(guard.tenantId, parsed.data as CreatePackagingItemInput);
+    const item = await createPackagingItem(
+      guard.tenantId,
+      guard.userId,
+      parsed.data as CreatePackagingItemInput,
+    );
     return NextResponse.json({ success: true, data: item }, { status: 201 });
   } catch (error) {
     console.error('POST /api/store/packaging error:', error);

@@ -211,14 +211,14 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
                           ? 'bg-terracotta text-white'
                           : isCompleted
                             ? 'bg-terracotta/20 text-terracotta'
-                            : 'bg-mist/30 text-mist'
+                            : 'bg-mist/30 text-mist-ink'
                       }`}
                     >
                       {stepNum}
                     </div>
                     <span
                       className={`text-xs font-body ${
-                        isActive ? 'text-espresso font-medium' : 'text-mist'
+                        isActive ? 'text-espresso font-medium' : 'text-mist-ink'
                       }`}
                     >
                       {label}

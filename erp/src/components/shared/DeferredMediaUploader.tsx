@@ -178,8 +178,8 @@ export function DeferredMediaUploader({
             dragOver ? 'border-terracotta bg-terracotta/5' : 'border-mist hover:border-sand'
           } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
-          <Upload className="h-5 w-5 text-sand mb-2" />
-          <span className="text-xs text-sand">{placeholder}</span>
+          <Upload className="h-5 w-5 text-sand-ink mb-2" />
+          <span className="text-xs text-sand-ink">{placeholder}</span>
         </div>
       )}
 

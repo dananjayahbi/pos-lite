@@ -73,13 +73,13 @@ export function CustomerPicker({
         <div className="border-mist bg-linen/40 flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
           <div className="min-w-0">
             <p className="text-espresso truncate text-sm font-medium">{value.name}</p>
-            <p className="text-sand font-mono text-xs">{value.phone}</p>
+            <p className="text-sand-ink font-mono text-xs">{value.phone}</p>
           </div>
           <button
             type="button"
             onClick={() => onChange(null)}
             disabled={disabled}
-            className="text-sand hover:text-terracotta shrink-0 transition-colors disabled:opacity-50"
+            className="text-sand-ink hover:text-terracotta shrink-0 transition-colors disabled:opacity-50"
             aria-label="Clear customer (record as guest)"
             title="Clear customer — record as guest"
           >
@@ -89,7 +89,7 @@ export function CustomerPicker({
       ) : (
         <>
           <div className="relative">
-            <Search className="text-sand pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+            <Search className="text-sand-ink pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
             <Input
               id="sale-customer-search"
               value={search}
@@ -104,10 +104,10 @@ export function CustomerPicker({
               disabled={disabled}
             />
             {isFetching && (
-              <Loader2 className="text-sand absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 animate-spin" />
+              <Loader2 className="text-sand-ink absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 animate-spin" />
             )}
           </div>
-          <p className="text-sand mt-1.5 flex items-start gap-1 text-xs leading-snug">
+          <p className="text-sand-ink mt-1.5 flex items-start gap-1 text-xs leading-snug">
             <UserRound className="mt-0.5 h-3 w-3 shrink-0" />
             <span>{guestHint}</span>
           </p>
@@ -115,7 +115,7 @@ export function CustomerPicker({
           {showDropdown && debouncedSearch.trim().length >= CUSTOMER_SEARCH_MIN_LENGTH && (
             <div className="border-mist absolute top-full left-0 z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border bg-white shadow-lg">
               {options.length === 0 && !isFetching && (
-                <p className="text-sand px-3 py-2 text-xs">No customers found</p>
+                <p className="text-sand-ink px-3 py-2 text-xs">No customers found</p>
               )}
               {options.map((customer) => (
                 <button
@@ -132,7 +132,7 @@ export function CustomerPicker({
                   <span className="text-espresso min-w-0 truncate font-medium">
                     {customer.name}
                   </span>
-                  <span className="text-sand shrink-0 font-mono text-xs">{customer.phone}</span>
+                  <span className="text-sand-ink shrink-0 font-mono text-xs">{customer.phone}</span>
                 </button>
               ))}
             </div>

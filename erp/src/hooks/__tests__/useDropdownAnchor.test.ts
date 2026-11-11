@@ -38,6 +38,17 @@ describe('computeDropdownRect', () => {
     expect(rect.top).toBe(696); // anchored by its own bottom edge (box.top - 4)
   });
 
+  it('flips above when below space is usable but cannot show the preferred height', () => {
+    // 800 - 536 - 4 = 260px below: more than MIN_HEIGHT (the old cut-off case),
+    // but above has 500px, so the dropdown must open at the top.
+    const rect = computeDropdownRect(
+      { top: 500, bottom: 536, left: 0, width: 300 },
+      VIEWPORT_H,
+    );
+    expect(rect.flipped).toBe(true);
+    expect(rect.maxHeight).toBe(320);
+  });
+
   it('flips above the anchor when the space below is too small', () => {
     const rect = computeDropdownRect(
       { top: 740, bottom: 776, left: 10, width: 250 },

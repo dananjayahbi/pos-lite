@@ -13,6 +13,10 @@ import { toYMD } from '@/lib/date-range';
 import { CustomerPicker, type PickedCustomer } from '@/components/sales/CustomerPicker';
 import { ProductThumbnail, resolveProductImage } from '@/components/sales/ProductThumbnail';
 import { saleQueryKey } from '@/components/sales/saleQueryKey';
+import {
+  DEFAULT_LANKA_QR_SETTINGS,
+  type LankaQrSettings,
+} from '@/lib/payments/lanka-qr-config';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -44,7 +48,7 @@ interface CartItem {
   imageUrl: string | null;
 }
 
-type PaymentMethod = 'CASH' | 'CARD' | 'SPLIT';
+type PaymentMethod = 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT';
 
 interface NewSaleSheetProps {
   open: boolean;
@@ -71,6 +75,19 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
   const [deliveryCharge, setDeliveryCharge] = useState('');
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const { data: lankaQr = DEFAULT_LANKA_QR_SETTINGS } = useQuery<LankaQrSettings>({
+    queryKey: ['payment-settings', 'lanka-qr'],
+    queryFn: async () => {
+      const res = await fetch('/api/settings/payments');
+      if (!res.ok) return DEFAULT_LANKA_QR_SETTINGS;
+      const json = (await res.json()) as { success: boolean; data?: LankaQrSettings };
+      return json.data ?? DEFAULT_LANKA_QR_SETTINGS;
+    },
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const lankaQrEnabled = lankaQr.enabled;
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 350);
@@ -171,6 +188,9 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
       if (paymentMethod === 'CARD' && cardRef.trim()) {
         body.cardReferenceNumber = cardRef.trim();
       }
+      if (paymentMethod === 'LANKAQR' && cardRef.trim()) {
+        body.cardReferenceNumber = cardRef.trim();
+      }
       if (paymentMethod === 'SPLIT') {
         body.cashReceived = parseFloat(cashReceived);
         body.cardAmount = parseFloat(cardAmount);
@@ -222,7 +242,13 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
       ? cashNum >= total
       : paymentMethod === 'CARD'
         ? true
-        : cashNum > 0 && cardNum > 0 && cashNum + cardNum >= total);
+        : paymentMethod === 'LANKAQR'
+          ? !lankaQr.referenceRequired || cardRef.trim().length > 0
+          : cashNum > 0 && cardNum > 0 && cashNum + cardNum >= total);
+
+  const paymentMethods: PaymentMethod[] = lankaQrEnabled
+    ? ['CASH', 'CARD', 'LANKAQR', 'SPLIT']
+    : ['CASH', 'CARD', 'SPLIT'];
 
   const canSubmit = isPaymentValid && !isPending;
 
@@ -295,7 +321,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
               Add Products
             </Label>
             <div className="relative">
-              <Search className="text-sand pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+              <Search className="text-sand-ink pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
               <Input
                 id="product-search"
                 value={search}
@@ -309,7 +335,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                 autoComplete="off"
               />
               {searchLoading && (
-                <Loader2 className="text-sand absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 animate-spin" />
+                <Loader2 className="text-sand-ink absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 animate-spin" />
               )}
             </div>
 
@@ -331,11 +357,11 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                       <div className="min-w-0 flex-1">
                         <span className="text-espresso font-medium">{product.name}</span>
                         {(variant.form ?? variant.packSize) && (
-                          <span className="text-sand ml-1.5 text-xs">
+                          <span className="text-sand-ink ml-1.5 text-xs">
                             {[variant.form, variant.packSize].filter(Boolean).join(' / ')}
                           </span>
                         )}
-                        <span className="text-sand/60 ml-1.5 text-xs">{variant.sku}</span>
+                        <span className="text-sand-ink/60 ml-1.5 text-xs">{variant.sku}</span>
                       </div>
                       <span className="text-espresso ml-3 shrink-0 text-sm font-semibold">
                         {formatRupee(parseFloat(variant.retailPrice))}
@@ -355,7 +381,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                   <ProductThumbnail src={item.imageUrl} alt={item.productName} size={32} />
                   <div className="min-w-0 flex-1">
                     <p className="text-espresso truncate text-sm font-medium">{item.productName}</p>
-                    <p className="text-sand text-xs">
+                    <p className="text-sand-ink text-xs">
                       {item.variantDesc} · {item.sku}
                     </p>
                   </div>
@@ -375,7 +401,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                             .filter((i) => i.quantity > 0),
                         )
                       }
-                      className="border-mist text-sand hover:border-terracotta hover:text-terracotta flex h-6 w-6 items-center justify-center rounded border transition-colors"
+                      className="border-mist text-sand-ink hover:border-terracotta hover:text-terracotta flex h-6 w-6 items-center justify-center rounded border transition-colors"
                     >
                       <Minus className="h-3 w-3" />
                     </button>
@@ -391,7 +417,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                           ),
                         )
                       }
-                      className="border-mist text-sand hover:border-terracotta hover:text-terracotta flex h-6 w-6 items-center justify-center rounded border transition-colors"
+                      className="border-mist text-sand-ink hover:border-terracotta hover:text-terracotta flex h-6 w-6 items-center justify-center rounded border transition-colors"
                     >
                       <Plus className="h-3 w-3" />
                     </button>
@@ -406,7 +432,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                     onClick={() =>
                       setCart((prev) => prev.filter((i) => i.variantId !== item.variantId))
                     }
-                    className="text-sand hover:text-terracotta shrink-0 transition-colors"
+                    className="text-sand-ink hover:text-terracotta shrink-0 transition-colors"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -440,12 +466,12 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
               {/* Totals */}
               <dl className="divide-mist/40 border-mist divide-y rounded-lg border text-sm">
                 <div className="flex justify-between px-3 py-1.5">
-                  <dt className="text-sand">Subtotal</dt>
+                  <dt className="text-sand-ink">Subtotal</dt>
                   <dd className="text-espresso font-medium">{formatRupee(cartSubtotal)}</dd>
                 </div>
                 {deliveryAmt > 0 && (
                   <div className="flex justify-between px-3 py-1.5">
-                    <dt className="text-sand">Delivery</dt>
+                    <dt className="text-sand-ink">Delivery</dt>
                     <dd className="text-espresso font-medium">{formatRupee(deliveryAmt)}</dd>
                   </div>
                 )}
@@ -466,8 +492,8 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                 <Label className="text-espresso mb-2 block text-xs font-semibold">
                   Payment Method
                 </Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['CASH', 'CARD', 'SPLIT'] as const).map((m) => (
+                <div className={`grid gap-2 ${lankaQrEnabled ? 'grid-cols-4' : 'grid-cols-3'}`}>
+                  {paymentMethods.map((m) => (
                     <button
                       key={m}
                       type="button"
@@ -475,7 +501,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                       className={`rounded-md border py-2 text-sm font-medium transition-colors ${
                         paymentMethod === m
                           ? 'border-terracotta bg-terracotta/10 text-terracotta'
-                          : 'border-mist text-sand hover:border-terracotta/50 hover:text-espresso'
+                          : 'border-mist text-sand-ink hover:border-terracotta/50 hover:text-espresso'
                       }`}
                     >
                       {m}
@@ -503,7 +529,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                     placeholder={`e.g. ${Math.ceil(total)}`}
                   />
                   {paymentMethod === 'CASH' && cashNum >= total && cashNum > 0 && (
-                    <p className="text-sand mt-1 text-xs">
+                    <p className="text-sand-ink mt-1 text-xs">
                       Change:{' '}
                       <span className="text-espresso font-medium">
                         {formatRupee(cashNum - total)}
@@ -533,20 +559,32 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                 </div>
               )}
 
-              {/* Card reference */}
-              {(paymentMethod === 'CARD' || paymentMethod === 'SPLIT') && (
+              {/* Card / QR reference */}
+              {(paymentMethod === 'CARD' ||
+                paymentMethod === 'LANKAQR' ||
+                paymentMethod === 'SPLIT') && (
                 <div>
                   <Label
                     htmlFor="card-ref"
                     className="text-espresso mb-1.5 block text-xs font-semibold"
                   >
-                    Card Reference{paymentMethod === 'CARD' ? ' (optional)' : ''}
+                    {paymentMethod === 'LANKAQR' ? 'QR Reference' : 'Card Reference'}
+                    {paymentMethod === 'SPLIT' ||
+                    (paymentMethod === 'LANKAQR' && !lankaQr.referenceRequired)
+                      ? ' (optional)'
+                      : paymentMethod === 'CARD'
+                        ? ' (optional)'
+                        : ''}
                   </Label>
                   <Input
                     id="card-ref"
                     value={cardRef}
                     onChange={(e) => setCardRef(e.target.value)}
-                    placeholder="Approval / reference number"
+                    placeholder={
+                      paymentMethod === 'LANKAQR'
+                        ? 'Bank QR transaction reference'
+                        : 'Approval / reference number'
+                    }
                     maxLength={20}
                   />
                 </div>

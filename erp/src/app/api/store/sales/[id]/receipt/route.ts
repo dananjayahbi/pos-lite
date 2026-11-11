@@ -2,6 +2,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getSaleById } from '@/lib/services/sale.service';
 import { buildThermalReceiptHtml } from '@/lib/receipt-renderer';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 function htmlPage(title: string, message: string): string {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title></head><body style="font-family:sans-serif;text-align:center;padding:40px;"><h1>${title}</h1><p>${message}</p></body></html>`;
@@ -42,7 +43,7 @@ export async function GET(_request: Request, props: { params: Promise<{ id: stri
       });
     }
 
-    const cashierName = sale.cashier?.email ?? 'Unknown';
+    const cashierName = staffDisplayName(sale.cashier?.email);
     const html = buildThermalReceiptHtml(sale, tenant, cashierName);
 
     return new Response(html, {

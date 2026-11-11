@@ -15,20 +15,34 @@
  *      single message leaves, so an interrupted send still has its record.
  *   2. SEND AFTER THE RESPONSE — the loop is handed to Next's `after()` so the
  *      handler can answer `202` immediately while dispatch continues.
- *   3. NO ARTIFICIAL SLEEP — the old fixed 1s pacing is gone; provider throttling
- *      (HTTP 429) is handled by an exponential backoff on the send result.
+ *   3. NO ARTIFICIAL SLEEP — provider throttling (HTTP 429) is handled by an
+ *      exponential backoff on the send result.
  *   4. ANALYTICS FLUSHED INCREMENTALLY — counters are persisted as the loop
  *      progresses, not only at the end.
  *
+ * Channels
+ * --------
+ * EMAIL and SMS are the supported marketing channels. WHATSAPP stays available
+ * for the legacy route/history rows but is no longer offered in the composer.
+ *
  * Storage note: status + counters live inside the existing `CustomerBroadcast.filters`
  * JSON (`{ criteria, status, analytics }`) rather than in new columns, so this
- * change needs no Prisma migration. The JSON bag was already the analytics home.
+ * change needs no extra migration. The JSON bag was already the analytics home.
  */
 
 import { after } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sendWhatsAppTextMessage } from '@/lib/whatsapp';
+import { sendEmail } from '@/lib/services/email.service';
+import { sendSmsMessage } from '@/lib/sms';
+import {
+  buildEmailHtml,
+  buildSmsText,
+  personalizeBroadcastContent,
+} from '@/lib/broadcast/templates';
 import type { Prisma } from '@/generated/prisma/client';
+
+export type BroadcastChannelName = 'EMAIL' | 'SMS' | 'WHATSAPP';
 
 export type BroadcastStatus = 'SENDING' | 'COMPLETED';
 
@@ -36,6 +50,7 @@ export interface BroadcastRecipient {
   id: string;
   name: string;
   phone: string;
+  email?: string | null;
 }
 
 export interface BroadcastAnalytics {
@@ -46,8 +61,20 @@ export interface BroadcastAnalytics {
 }
 
 export interface BroadcastFailureRecord {
-  phone: string;
+  recipient: string;
   error: string;
+}
+
+export interface BroadcastContent {
+  channel: BroadcastChannelName;
+  /** Email subject; ignored for SMS/WhatsApp. */
+  subject?: string | null;
+  /** SMS/WhatsApp body or the email plain-text fallback. */
+  message: string;
+  /** Email HTML template; ignored for SMS/WhatsApp. */
+  html?: string | null;
+  /** Public image URLs attached to an email broadcast. */
+  imageUrls?: string[];
 }
 
 /** How many recipients are attempted before the counters are persisted again. */
@@ -63,18 +90,28 @@ export function personalizeBroadcastMessage(
   customerName: string,
   storeName: string,
 ): string {
-  const firstName = customerName.split(' ')[0] ?? '';
-  return message.replaceAll('{{name}}', firstName).replaceAll('{{storeName}}', storeName);
+  return personalizeBroadcastContent(message, customerName, storeName);
 }
 
 /**
- * True when the send failed because the WhatsApp/Meta provider throttled us.
- * Meta's rate limiting is the only pacing that matters now that the artificial
- * per-message sleep has been removed.
+ * True when the send failed because the provider throttled us. Meta's rate
+ * limiting is the only pacing that matters now that the artificial per-message
+ * sleep has been removed.
  */
 function isRateLimitFailure(error: string | undefined): boolean {
   if (!error) return false;
   return /\b429\b/.test(error) || /rate ?limit/i.test(error);
+}
+
+function attachmentFilename(url: string, index: number): string {
+  try {
+    const pathname = new URL(url).pathname;
+    const last = pathname.split('/').filter(Boolean).pop();
+    if (last && /\.(png|jpe?g|webp|gif|svg)$/i.test(last)) return last;
+  } catch {
+    // Not a URL — fall through to the generic name.
+  }
+  return `broadcast-image-${index + 1}.jpg`;
 }
 
 /**
@@ -83,7 +120,11 @@ function isRateLimitFailure(error: string | undefined): boolean {
  */
 export async function createBroadcastRecord(params: {
   tenantId: string;
+  channel: BroadcastChannelName;
+  subject?: string | null;
   message: string;
+  htmlBody?: string | null;
+  imageUrls?: string[];
   sentById: string;
   recipientCount: number;
   criteria: Record<string, unknown>;
@@ -91,7 +132,11 @@ export async function createBroadcastRecord(params: {
   return prisma.customerBroadcast.create({
     data: {
       tenantId: params.tenantId,
+      channel: params.channel,
+      subject: params.subject ?? null,
       message: params.message,
+      htmlBody: params.htmlBody ?? null,
+      imageUrls: params.imageUrls ?? [],
       recipientCount: params.recipientCount,
       sentById: params.sentById,
       filters: {
@@ -140,6 +185,89 @@ export async function flushBroadcastAnalytics(
   });
 }
 
+interface DeliveryResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Deliver one message on the selected channel. Exported so the send loop can be
+ * unit-tested with mocked providers.
+ */
+export async function deliverBroadcastMessage(params: {
+  channel: BroadcastChannelName;
+  recipient: BroadcastRecipient;
+  content: BroadcastContent;
+  storeName: string;
+}): Promise<DeliveryResult> {
+  const { channel, recipient, content, storeName } = params;
+
+  if (channel === 'EMAIL') {
+    const email = recipient.email?.trim();
+    if (!email) {
+      return { success: false, error: 'No email address on the customer record.' };
+    }
+
+    const subject = personalizeBroadcastContent(
+      content.subject?.trim() || `A message from ${storeName}`,
+      recipient.name,
+      storeName,
+    );
+    const html = buildEmailHtml({
+      html: content.html,
+      text: content.message,
+      customerName: recipient.name,
+      storeName,
+      images: content.imageUrls ?? [],
+    });
+    const text = personalizeBroadcastContent(content.message, recipient.name, storeName);
+    const images = content.imageUrls ?? [];
+
+    const result = await sendEmail(email, subject, html, {
+      text,
+      ...(images.length > 0
+        ? {
+            attachments: images.map((url, index) => ({
+              filename: attachmentFilename(url, index),
+              path: url,
+            })),
+          }
+        : {}),
+    });
+
+    if (result.delivered) return { success: true };
+    return {
+      success: false,
+      error:
+        result.reason === 'provider-not-configured'
+          ? 'Email is not configured (RESEND_API_KEY missing).'
+          : 'Email provider rejected the send.',
+    };
+  }
+
+  if (channel === 'SMS') {
+    if (!recipient.phone) {
+      return { success: false, error: 'No phone number on the customer record.' };
+    }
+    const body = buildSmsText({
+      message: content.message,
+      customerName: recipient.name,
+      storeName,
+    });
+    const result = await sendSmsMessage(recipient.phone, body);
+    return result.success
+      ? { success: true }
+      : { success: false, error: result.error ?? 'SMS dispatch failed.' };
+  }
+
+  // Legacy WhatsApp channel.
+  const personalized = personalizeBroadcastContent(content.message, recipient.name, storeName);
+  const result = await sendWhatsAppTextMessage(recipient.phone, personalized);
+  return result.success
+    ? { success: true }
+    : { success: false, error: result.error ?? 'WhatsApp dispatch failed.' };
+}
+
 /**
  * The send loop. Runs OUTSIDE the request once `after()` fires it.
  *
@@ -147,11 +275,12 @@ export async function flushBroadcastAnalytics(
  */
 export async function dispatchBroadcast(params: {
   broadcastId: string;
+  channel: BroadcastChannelName;
   recipients: BroadcastRecipient[];
-  message: string;
+  content: BroadcastContent;
   storeName: string;
 }): Promise<BroadcastAnalytics> {
-  const { broadcastId, recipients, message, storeName } = params;
+  const { broadcastId, channel, recipients, content, storeName } = params;
 
   const analytics: BroadcastAnalytics = {
     sent: 0,
@@ -163,21 +292,26 @@ export async function dispatchBroadcast(params: {
   try {
     for (let index = 0; index < recipients.length; index++) {
       const recipient = recipients[index]!;
-      const personalized = personalizeBroadcastMessage(message, recipient.name, storeName);
 
-      let result = await sendWhatsAppTextMessage(recipient.phone, personalized);
+      let result = await deliverBroadcastMessage({
+        channel,
+        recipient,
+        content,
+        storeName,
+      });
 
       // Provider throttling is the only pacing now — back off and retry once.
       if (!result.success && isRateLimitFailure(result.error)) {
         await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_BACKOFF_BASE_MS));
-        result = await sendWhatsAppTextMessage(recipient.phone, personalized);
+        result = await deliverBroadcastMessage({ channel, recipient, content, storeName });
       }
 
       if (result.success) {
         analytics.sent++;
       } else {
         analytics.failed++;
-        analytics.errors.push(`${recipient.phone}: ${result.error ?? 'Unknown error'}`);
+        const identifier = channel === 'EMAIL' ? recipient.email : recipient.phone;
+        analytics.errors.push(`${identifier ?? recipient.id}: ${result.error ?? 'Unknown error'}`);
       }
 
       if ((index + 1) % ANALYTICS_FLUSH_EVERY === 0) {
@@ -205,8 +339,9 @@ export async function dispatchBroadcast(params: {
  */
 export function scheduleBroadcastDispatch(params: {
   broadcastId: string;
+  channel: BroadcastChannelName;
   recipients: BroadcastRecipient[];
-  message: string;
+  content: BroadcastContent;
   storeName: string;
 }): void {
   const run = () => dispatchBroadcast(params).catch(() => {});

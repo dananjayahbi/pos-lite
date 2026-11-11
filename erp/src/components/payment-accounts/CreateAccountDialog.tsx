@@ -88,17 +88,17 @@ function DetailsEditor({ rows, onChange, disabled }: DetailsEditorProps) {
     <div className="rounded-lg border border-mist bg-linen/30 p-3">
       <div className="flex items-center justify-between">
         <Label className="font-body text-espresso">Account details</Label>
-        <span className="font-body text-[11px] text-mist">
+        <span className="font-body text-[11px] text-mist-ink">
           {rows.length}/{DETAILS_MAX_ROWS}
         </span>
       </div>
-      <p className="mt-1 font-body text-[11px] text-sand">
+      <p className="mt-1 font-body text-[11px] text-sand-ink">
         Branch, SWIFT code, merchant id — whatever helps identify this account.
       </p>
 
       <div className="mt-2 space-y-2">
         {rows.length === 0 && (
-          <p className="font-body text-xs text-mist">No details added yet.</p>
+          <p className="font-body text-xs text-mist-ink">No details added yet.</p>
         )}
         {rows.map((row, index) => (
           <div key={index} className="flex items-center gap-2">
@@ -126,7 +126,7 @@ function DetailsEditor({ rows, onChange, disabled }: DetailsEditorProps) {
               size="icon-sm"
               onClick={() => onChange(rows.filter((_, i) => i !== index))}
               disabled={disabled}
-              className="text-sand hover:text-[#9B2226]"
+              className="text-sand-ink hover:text-[#9B2226]"
               aria-label={`Remove detail ${index + 1}`}
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -223,7 +223,7 @@ function AccountForm({ account, onCreate, onUpdate, onCancel }: AccountFormProps
         <DialogTitle className="font-display">
           {isEditing ? 'Edit Account' : 'Add Payment Account'}
         </DialogTitle>
-        <DialogDescription className="font-body text-sm text-mist">
+        <DialogDescription className="font-body text-sm text-mist-ink">
           {isEditing
             ? 'Update how this account is identified. Balances only change through ledger movements.'
             : 'Money movements are recorded against payment accounts, so this is where cash, bank and gateway balances live.'}
@@ -245,7 +245,7 @@ function AccountForm({ account, onCreate, onUpdate, onCancel }: AccountFormProps
             disabled={isSubmitting}
             autoFocus
           />
-          <p className="mt-1 text-right font-body text-[11px] text-mist">
+          <p className="mt-1 text-right font-body text-[11px] text-mist-ink">
             {name.length}/{NAME_MAX_LENGTH}
           </p>
         </div>
@@ -274,7 +274,7 @@ function AccountForm({ account, onCreate, onUpdate, onCancel }: AccountFormProps
 
         <div>
           <Label htmlFor="payment-account-number" className="font-body">
-            Account number <span className="font-normal text-mist">(optional)</span>
+            Account number <span className="font-normal text-mist-ink">(optional)</span>
           </Label>
           <Input
             id="payment-account-number"
@@ -303,7 +303,7 @@ function AccountForm({ account, onCreate, onUpdate, onCancel }: AccountFormProps
               className="mt-1.5 border-mist font-mono"
               disabled={isSubmitting}
             />
-            <p className="mt-1 font-body text-[11px] text-sand">
+            <p className="mt-1 font-body text-[11px] text-sand-ink">
               Posted as an opening-balance ledger entry so the book always reconciles.
             </p>
             {!openingBalanceValid && (
@@ -318,7 +318,7 @@ function AccountForm({ account, onCreate, onUpdate, onCancel }: AccountFormProps
 
         <div>
           <Label htmlFor="payment-account-note" className="font-body">
-            Note <span className="font-normal text-mist">(optional)</span>
+            Note <span className="font-normal text-mist-ink">(optional)</span>
           </Label>
           <Input
             id="payment-account-note"

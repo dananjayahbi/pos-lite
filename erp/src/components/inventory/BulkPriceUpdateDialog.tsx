@@ -124,7 +124,7 @@ export function BulkPriceUpdateDialog({ isOpen, onClose, selectedProductIds }: P
           <DialogTitle className="font-display text-espresso">
             Bulk Price Update
           </DialogTitle>
-          <p className="font-body text-sm text-mist">
+          <p className="font-body text-sm text-mist-ink">
             Update prices for {count} selected product{count !== 1 ? 's' : ''}
           </p>
         </DialogHeader>
@@ -136,7 +136,7 @@ export function BulkPriceUpdateDialog({ isOpen, onClose, selectedProductIds }: P
             className={`flex-1 rounded-md px-3 py-2 font-body text-sm font-medium transition-colors ${
               mode === 'fixed'
                 ? 'bg-espresso text-pearl shadow-sm'
-                : 'text-mist hover:text-espresso'
+                : 'text-mist-ink hover:text-espresso'
             }`}
             onClick={() => setMode('fixed')}
           >
@@ -147,7 +147,7 @@ export function BulkPriceUpdateDialog({ isOpen, onClose, selectedProductIds }: P
             className={`flex-1 rounded-md px-3 py-2 font-body text-sm font-medium transition-colors ${
               mode === 'percent'
                 ? 'bg-espresso text-pearl shadow-sm'
-                : 'text-mist hover:text-espresso'
+                : 'text-mist-ink hover:text-espresso'
             }`}
             onClick={() => setMode('percent')}
           >
@@ -171,7 +171,7 @@ export function BulkPriceUpdateDialog({ isOpen, onClose, selectedProductIds }: P
                   Cost Price
                 </Label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-body text-sm text-mist">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-body text-sm text-mist-ink">
                     Rs.
                   </span>
                   <Input
@@ -196,7 +196,7 @@ export function BulkPriceUpdateDialog({ isOpen, onClose, selectedProductIds }: P
                   Retail Price
                 </Label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-body text-sm text-mist">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-body text-sm text-mist-ink">
                     Rs.
                   </span>
                   <Input
@@ -258,7 +258,7 @@ export function BulkPriceUpdateDialog({ isOpen, onClose, selectedProductIds }: P
                     className="pr-8 border-sand"
                     {...percentForm.register('percentage')}
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 font-body text-sm text-mist">
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 font-body text-sm text-mist-ink">
                     %
                   </span>
                 </div>
@@ -278,7 +278,7 @@ export function BulkPriceUpdateDialog({ isOpen, onClose, selectedProductIds }: P
                     className={`flex-1 rounded-md px-3 py-1.5 font-body text-sm font-medium transition-colors ${
                       direction === 'INCREASE'
                         ? 'bg-espresso text-pearl shadow-sm'
-                        : 'text-mist hover:text-espresso'
+                        : 'text-mist-ink hover:text-espresso'
                     }`}
                     onClick={() => setDirection('INCREASE')}
                   >
@@ -289,7 +289,7 @@ export function BulkPriceUpdateDialog({ isOpen, onClose, selectedProductIds }: P
                     className={`flex-1 rounded-md px-3 py-1.5 font-body text-sm font-medium transition-colors ${
                       direction === 'DECREASE'
                         ? 'bg-espresso text-pearl shadow-sm'
-                        : 'text-mist hover:text-espresso'
+                        : 'text-mist-ink hover:text-espresso'
                     }`}
                     onClick={() => setDirection('DECREASE')}
                   >
@@ -309,7 +309,7 @@ export function BulkPriceUpdateDialog({ isOpen, onClose, selectedProductIds }: P
                       className={`flex-1 rounded-md px-3 py-1.5 font-body text-sm font-medium transition-colors ${
                         target === t
                           ? 'bg-espresso text-pearl shadow-sm'
-                          : 'text-mist hover:text-espresso'
+                          : 'text-mist-ink hover:text-espresso'
                       }`}
                       onClick={() => setTarget(t)}
                     >

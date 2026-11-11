@@ -135,13 +135,13 @@ function LabelContent({
 
       {/* SKU */}
       <div className="font-mono text-[9px] mt-0.5">
-        <span className="text-mist">SKU:</span>{' '}
+        <span className="text-mist-ink">SKU:</span>{' '}
         <span className="text-espresso">{sku}</span>
       </div>
 
       {/* Form & Pack */}
       {formPackText && (
-        <span className="font-body text-[8px] text-mist leading-tight">
+        <span className="font-body text-[8px] text-mist-ink leading-tight">
           {formPackText}
         </span>
       )}
@@ -159,7 +159,7 @@ function LabelContent({
             renderer="svg"
           />
         ) : (
-          <span className="font-body text-[8px] text-mist italic">
+          <span className="font-body text-[8px] text-mist-ink italic">
             No barcode available
           </span>
         )}

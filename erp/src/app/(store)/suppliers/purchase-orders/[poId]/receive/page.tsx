@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, PackageCheck } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 import { GoodsReceivingForm, type PurchaseOrderDetail } from '@/components/suppliers/GoodsReceivingForm';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -88,7 +89,7 @@ export default function PurchaseOrderReceivePage({
   if (!po) {
     return (
       <div className="space-y-4 p-6 md:p-8">
-        <p className="text-mist">Purchase order not found.</p>
+        <p className="text-mist-ink">Purchase order not found.</p>
         <Button variant="outline" asChild>
           <Link href="/suppliers/purchase-orders">
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -105,7 +106,7 @@ export default function PurchaseOrderReceivePage({
         <div>
           <Link
             href={`/suppliers/purchase-orders/${poId}`}
-            className="inline-flex items-center gap-1 text-sm text-mist hover:text-terracotta"
+            className="inline-flex items-center gap-1 text-sm text-mist-ink hover:text-terracotta"
           >
             <ArrowLeft className="h-3 w-3" />
             Back to {formatPORef(po.id)}
@@ -116,7 +117,7 @@ export default function PurchaseOrderReceivePage({
               {po.status.replace(/_/g, ' ')}
             </Badge>
           </div>
-          <p className="mt-2 max-w-3xl text-sm text-sand">
+          <p className="mt-2 max-w-3xl text-sm text-sand-ink">
             Review quantities against the supplier delivery, capture any invoice cost differences,
             and post the receipt without squeezing a warehouse workflow into a modal coffin.
           </p>
@@ -133,16 +134,16 @@ export default function PurchaseOrderReceivePage({
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardContent className="pt-6">
-            <p className="text-xs text-mist">Supplier</p>
+            <p className="text-xs text-mist-ink">Supplier</p>
             <p className="font-medium text-espresso">{po.supplier.name}</p>
             {po.supplier.contactName ? (
-              <p className="text-sm text-mist">{po.supplier.contactName}</p>
+              <p className="text-sm text-mist-ink">{po.supplier.contactName}</p>
             ) : null}
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-xs text-mist">Expected Delivery</p>
+            <p className="text-xs text-mist-ink">Expected Delivery</p>
             <p className="font-medium text-espresso">
               {po.expectedDeliveryDate ? formatDate(po.expectedDeliveryDate) : 'Not specified'}
             </p>
@@ -150,15 +151,15 @@ export default function PurchaseOrderReceivePage({
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-xs text-mist">Order Value</p>
+            <p className="text-xs text-mist-ink">Order Value</p>
             <p className="font-mono font-medium text-espresso">{formatRupee(po.totalAmount)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-xs text-mist">Created</p>
+            <p className="text-xs text-mist-ink">Created</p>
             <p className="font-medium text-espresso">{formatDate(po.createdAt)}</p>
-            <p className="text-xs text-mist">by {po.createdBy.email}</p>
+            <p className="text-xs text-mist-ink">by {staffDisplayName(po.createdBy.email)}</p>
           </CardContent>
         </Card>
       </div>
@@ -206,7 +207,7 @@ export default function PurchaseOrderReceivePage({
               onSuccess={handleSuccess}
             />
           ) : (
-            <div className="rounded-lg border border-mist/40 bg-linen p-6 text-sm text-mist">
+            <div className="rounded-lg border border-mist/40 bg-linen p-6 text-sm text-mist-ink">
               This purchase order is currently <strong>{po.status.replace(/_/g, ' ').toLowerCase()}</strong>, so no receiving action is available.
             </div>
           )}

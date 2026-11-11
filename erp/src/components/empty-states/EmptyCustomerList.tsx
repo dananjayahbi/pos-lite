@@ -40,7 +40,7 @@ export default function EmptyCustomerList({
         <h2 className="font-display text-[22px] font-semibold text-espresso">
           No customers yet
         </h2>
-        <p className="max-w-md text-sm text-mist">
+        <p className="max-w-md text-sm text-mist-ink">
           Customer profiles are created automatically when a sale is completed,
           or you can add them manually.
         </p>

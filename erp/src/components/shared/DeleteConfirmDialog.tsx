@@ -38,11 +38,11 @@ export function DeleteConfirmDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="font-display text-espresso">{title}</DialogTitle>
-          <DialogDescription className="font-body text-mist">
+          <DialogDescription className="font-body text-mist-ink">
             {description}
           </DialogDescription>
           {detail ? (
-            <p className="mt-1 text-xs text-mist/80">{detail}</p>
+            <p className="mt-1 text-xs text-mist-ink/80">{detail}</p>
           ) : null}
         </DialogHeader>
         <DialogFooter>

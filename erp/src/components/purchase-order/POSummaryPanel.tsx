@@ -66,7 +66,7 @@ export function POSummaryPanel({
       </CardHeader>
       <CardContent className="space-y-3">
         {lines.length === 0 ? (
-          <p className="text-sm text-mist">No lines added</p>
+          <p className="text-sm text-mist-ink">No lines added</p>
         ) : (
           <div className="space-y-2">
             {lines.map((line, index) => (
@@ -75,7 +75,7 @@ export function POSummaryPanel({
                 className="flex items-center justify-between gap-3 text-sm"
               >
                 <span className="min-w-0 flex-1 truncate text-espresso">{line.label}</span>
-                <span className="shrink-0 font-mono text-xs text-mist">
+                <span className="shrink-0 font-mono text-xs text-mist-ink">
                   {line.qty} × {formatRupee(line.unitCost)}
                 </span>
               </div>
@@ -85,11 +85,11 @@ export function POSummaryPanel({
 
         <div className="space-y-1.5 border-t border-sand/30 pt-3 text-sm">
           <div className="flex items-center justify-between">
-            <span className="text-mist">Subtotal</span>
+            <span className="text-mist-ink">Subtotal</span>
             <span className="font-mono text-espresso">{formatRupee(totals.subtotal)}</span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-mist">
+            <span className="text-mist-ink">
               Discount
               {discountType === 'PERCENTAGE' && totals.discountAmount > 0
                 ? ` (${discountValue || 0}%)`
@@ -105,7 +105,7 @@ export function POSummaryPanel({
           </div>
         </div>
 
-        <div className="rounded-lg bg-linen/60 px-3 py-2 text-xs text-mist">
+        <div className="rounded-lg bg-linen/60 px-3 py-2 text-xs text-mist-ink">
           {paymentTermDays === null || paymentTermDays === undefined ? (
             <span>Payment: immediate</span>
           ) : (

@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -36,11 +37,12 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, LogOut, Pencil } from 'lucide-react';
+import { ArrowLeft, Download, FileText, LogOut, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { UpdateStaffSchema } from '@/lib/validators/staff.validators';
 import { formatRupee } from '@/lib/format';
 import { TimeClockHistoryPanel } from '@/components/staff/TimeClockHistoryPanel';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 import type { UpdateStaffInput } from '@/lib/validators/staff.validators';
 
 
@@ -51,9 +53,59 @@ interface StaffDetail {
   email: string;
   role: string;
   isActive: boolean;
+  permissions: string[];
   commissionRate: string | null;
   clockedInAt: string | null;
+  lastLoginAt: string | null;
   createdAt: string;
+  fullName: string | null;
+  nic: string | null;
+  contactNumber: string | null;
+  address: string | null;
+  basicSalary: string | null;
+  allowances: string | null;
+  bankName: string | null;
+  bankBranch: string | null;
+  bankAccountNumber: string | null;
+  etfNumber: string | null;
+  epfNumber: string | null;
+}
+
+function displayName(staff: Pick<StaffDetail, 'email' | 'fullName'>): string {
+  return staff.fullName?.trim() || staffDisplayName(staff.email);
+}
+
+function DetailItem({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <p className="text-xs uppercase tracking-wide text-sand-ink mb-1">{label}</p>
+      <p className="text-sm text-espresso whitespace-pre-wrap">{value}</p>
+    </div>
+  );
+}
+
+function currentMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-LK', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 type Tab = 'profile' | 'commission' | 'timeclock';
@@ -92,6 +144,7 @@ export default function StaffDetailPage({
 
   const [activeTab, setActiveTab] = useState<Tab>('profile');
   const [editOpen, setEditOpen] = useState(false);
+  const [month, setMonth] = useState(currentMonth);
 
   const { data, isLoading } = useQuery<{ success: boolean; data: StaffDetail }>({
     queryKey: ['staff-detail', staffId],
@@ -126,7 +179,7 @@ export default function StaffDetailPage({
 
   if (!staffMember) {
     return (
-      <div className="text-center py-20 text-sand">
+      <div className="text-center py-20 text-sand-ink">
         <p>Staff member not found</p>
         <Button variant="outline" asChild className="mt-4">
           <Link href="/staff">Back to Staff</Link>
@@ -149,14 +202,41 @@ export default function StaffDetailPage({
       </Button>
 
       {/* Header */}
-      <div className="flex items-start gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-display font-bold text-espresso truncate">
-              {staffMember.email}
+              {displayName(staffMember)}
             </h1>
             <RoleBadge role={staffMember.role} />
           </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            type="month"
+            value={month}
+            onChange={(event) => setMonth(event.target.value)}
+            className="w-40 border-mist"
+            aria-label="Payslip and attendance month"
+          />
+          <Button variant="outline" size="sm" asChild>
+            <a
+              href={`/api/store/staff/${staffMember.id}/attendance/export?month=${encodeURIComponent(month)}`}
+              download
+            >
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              Attendance CSV
+            </a>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <a
+              href={`/api/store/staff/${staffMember.id}/payslip?month=${encodeURIComponent(month)}`}
+              download
+            >
+              <FileText className="mr-1.5 h-3.5 w-3.5" />
+              Payslip PDF
+            </a>
+          </Button>
         </div>
       </div>
 
@@ -170,7 +250,7 @@ export default function StaffDetailPage({
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
               activeTab === t.key
                 ? 'border-terracotta text-terracotta'
-                : 'border-transparent text-sand hover:text-espresso'
+                : 'border-transparent text-sand-ink hover:text-espresso'
             }`}
           >
             {t.label}
@@ -264,7 +344,7 @@ function ProfileTab({
               Edit Profile
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle className="font-display">Edit Staff Member</DialogTitle>
             </DialogHeader>
@@ -282,7 +362,7 @@ function ProfileTab({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-body text-sand uppercase tracking-wide">
+            <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide">
               Email
             </CardTitle>
           </CardHeader>
@@ -293,7 +373,7 @@ function ProfileTab({
 
         <Card>
           <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-body text-sand uppercase tracking-wide">
+            <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide">
               Role
             </CardTitle>
           </CardHeader>
@@ -304,7 +384,7 @@ function ProfileTab({
 
         <Card>
           <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-body text-sand uppercase tracking-wide">
+            <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide">
               Status
             </CardTitle>
           </CardHeader>
@@ -317,7 +397,7 @@ function ProfileTab({
 
         <Card>
           <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-body text-sand uppercase tracking-wide">
+            <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide">
               Commission Rate
             </CardTitle>
           </CardHeader>
@@ -332,7 +412,7 @@ function ProfileTab({
 
         <Card>
           <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-body text-sand uppercase tracking-wide">
+            <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide">
               Clocked In
             </CardTitle>
           </CardHeader>
@@ -346,8 +426,114 @@ function ProfileTab({
                 })}
               </Badge>
             ) : (
-              <span className="text-sand text-sm">Not clocked in</span>
+              <span className="text-sand-ink text-sm">Not clocked in</span>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide">
+              Joined
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-espresso text-sm">{formatDateTime(staffMember.createdAt)}</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide">
+              Last Login
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-espresso text-sm">
+              {staffMember.lastLoginAt ? formatDateTime(staffMember.lastLoginAt) : 'Never'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="md:col-span-2">
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide">
+              Explicit Permissions
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {staffMember.permissions.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {staffMember.permissions.map((permission) => (
+                  <Badge
+                    key={permission}
+                    variant="secondary"
+                    className="font-mono text-xs"
+                  >
+                    {permission}
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sand-ink text-sm">
+                Role defaults only — no extra permissions assigned.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="md:col-span-2">
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide">
+              HR &amp; Statutory Details
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <DetailItem label="Full Name" value={staffMember.fullName ?? '—'} />
+              <DetailItem label="NIC" value={staffMember.nic ?? '—'} />
+              <DetailItem
+                label="Contact Number"
+                value={staffMember.contactNumber ?? '—'}
+              />
+              <DetailItem
+                label="Address"
+                value={staffMember.address ?? '—'}
+                className="sm:col-span-2 lg:col-span-3"
+              />
+              <DetailItem
+                label="Basic Salary"
+                value={
+                  staffMember.basicSalary !== null
+                    ? formatRupee(staffMember.basicSalary)
+                    : '—'
+                }
+              />
+              <DetailItem
+                label="Allowances"
+                value={
+                  staffMember.allowances !== null
+                    ? formatRupee(staffMember.allowances)
+                    : '—'
+                }
+              />
+              <DetailItem
+                label="Bank"
+                value={
+                  staffMember.bankName || staffMember.bankBranch
+                    ? [staffMember.bankName, staffMember.bankBranch]
+                        .filter(Boolean)
+                        .join(' · ')
+                    : '—'
+                }
+              />
+              <DetailItem
+                label="Account Number"
+                value={staffMember.bankAccountNumber ?? '—'}
+              />
+              <DetailItem label="ETF Number" value={staffMember.etfNumber ?? '—'} />
+              <DetailItem label="EPF Number" value={staffMember.epfNumber ?? '—'} />
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -357,7 +543,7 @@ function ProfileTab({
           <DialogHeader>
             <DialogTitle className="font-display">Force Logout User</DialogTitle>
             <DialogDescription>
-              This will immediately invalidate all active sessions for {staffMember.email}.
+              This will immediately invalidate all active sessions for {displayName(staffMember)}.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -400,6 +586,17 @@ function EditStaffForm({
       role: staffMember.role as AssignableRole,
       isActive: staffMember.isActive,
       commissionRate: staffMember.commissionRate ?? undefined,
+      fullName: staffMember.fullName ?? undefined,
+      nic: staffMember.nic ?? undefined,
+      contactNumber: staffMember.contactNumber ?? undefined,
+      address: staffMember.address ?? undefined,
+      basicSalary: staffMember.basicSalary ?? undefined,
+      allowances: staffMember.allowances ?? undefined,
+      bankName: staffMember.bankName ?? undefined,
+      bankBranch: staffMember.bankBranch ?? undefined,
+      bankAccountNumber: staffMember.bankAccountNumber ?? undefined,
+      etfNumber: staffMember.etfNumber ?? undefined,
+      epfNumber: staffMember.epfNumber ?? undefined,
     },
   });
 
@@ -426,45 +623,151 @@ function EditStaffForm({
   });
 
   return (
-    <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="edit-email">Email</Label>
-        <Input id="edit-email" type="email" {...form.register('email')} />
-        {form.formState.errors.email && (
-          <p className="text-sm text-terracotta">{form.formState.errors.email.message}</p>
-        )}
+    <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="space-y-5">
+      <div className="space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sand-ink">
+          Personal &amp; access
+        </p>
+        <div className="space-y-2">
+          <Label htmlFor="edit-fullName">Full Name</Label>
+          <Input id="edit-fullName" placeholder="e.g. Nimal Perera" {...form.register('fullName')} />
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="edit-email">Email</Label>
+            <Input id="edit-email" type="email" {...form.register('email')} />
+            {form.formState.errors.email && (
+              <p className="text-sm text-terracotta">{form.formState.errors.email.message}</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-role">Role</Label>
+            <Select
+              value={form.watch('role') ?? ''}
+              onValueChange={(val) => form.setValue('role', val as AssignableRole)}
+            >
+              <SelectTrigger id="edit-role">
+                <SelectValue placeholder="Select role" />
+              </SelectTrigger>
+              <SelectContent>
+                {ASSIGNABLE_ROLES.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r.replace('_', ' ')}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="edit-nic">NIC</Label>
+            <Input id="edit-nic" placeholder="e.g. 912345678V / 199912345678" {...form.register('nic')} />
+            {form.formState.errors.nic && (
+              <p className="text-sm text-terracotta">{form.formState.errors.nic.message}</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-contactNumber">Contact Number</Label>
+            <Input
+              id="edit-contactNumber"
+              placeholder="+94XXXXXXXXX"
+              {...form.register('contactNumber')}
+            />
+            {form.formState.errors.contactNumber && (
+              <p className="text-sm text-terracotta">
+                {form.formState.errors.contactNumber.message}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="edit-address">Address</Label>
+          <Textarea id="edit-address" rows={2} {...form.register('address')} />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="edit-commission">Commission Rate (%)</Label>
+          <Input
+            id="edit-commission"
+            type="number"
+            step="0.01"
+            min="0"
+            max="100"
+            placeholder="e.g. 5.00"
+            {...form.register('commissionRate')}
+          />
+        </div>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="edit-role">Role</Label>
-        <Select
-          value={form.watch('role') ?? ''}
-          onValueChange={(val) => form.setValue('role', val as AssignableRole)}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select role" />
-          </SelectTrigger>
-          <SelectContent>
-            {ASSIGNABLE_ROLES.map((r) => (
-              <SelectItem key={r} value={r}>
-                {r.replace('_', ' ')}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="space-y-3 border-t border-mist pt-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sand-ink">
+          Salary &amp; allowances
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="edit-basicSalary">Basic Salary (LKR)</Label>
+            <Input
+              id="edit-basicSalary"
+              type="number"
+              step="0.01"
+              min="0"
+              {...form.register('basicSalary')}
+            />
+            <p className="text-xs text-sand-ink">Used for ETF/EPF calculations.</p>
+            {form.formState.errors.basicSalary && (
+              <p className="text-sm text-terracotta">
+                {form.formState.errors.basicSalary.message}
+              </p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-allowances">Allowances (LKR)</Label>
+            <Input
+              id="edit-allowances"
+              type="number"
+              step="0.01"
+              min="0"
+              {...form.register('allowances')}
+            />
+            {form.formState.errors.allowances && (
+              <p className="text-sm text-terracotta">
+                {form.formState.errors.allowances.message}
+              </p>
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="edit-commission">Commission Rate (%)</Label>
-        <Input
-          id="edit-commission"
-          type="number"
-          step="0.01"
-          min="0"
-          max="100"
-          placeholder="e.g. 5.00"
-          {...form.register('commissionRate')}
-        />
+      <div className="space-y-3 border-t border-mist pt-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sand-ink">
+          Banking &amp; statutory
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="edit-bankName">Bank Name</Label>
+            <Input id="edit-bankName" {...form.register('bankName')} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-bankBranch">Branch</Label>
+            <Input id="edit-bankBranch" {...form.register('bankBranch')} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-bankAccountNumber">Account Number</Label>
+            <Input id="edit-bankAccountNumber" {...form.register('bankAccountNumber')} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-etfNumber">ETF Number</Label>
+            <Input id="edit-etfNumber" {...form.register('etfNumber')} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-epfNumber">EPF Number</Label>
+            <Input id="edit-epfNumber" {...form.register('epfNumber')} />
+          </div>
+        </div>
       </div>
 
       <Button type="submit" className="w-full" disabled={mutation.isPending}>
@@ -552,7 +855,7 @@ function CommissionHistory({ staffId }: { staffId: string }) {
               ))}
             </div>
           ) : !commissions?.records.length ? (
-            <p className="text-sand text-sm py-4 text-center">No commission records found.</p>
+            <p className="text-sand-ink text-sm py-4 text-center">No commission records found.</p>
           ) : (
             <>
               <Table>
@@ -625,7 +928,7 @@ function CommissionHistory({ staffId }: { staffId: string }) {
                   >
                     Previous
                   </Button>
-                  <span className="text-sm text-sand self-center">
+                  <span className="text-sm text-sand-ink self-center">
                     Page {page} of {commissions.totalPages}
                   </span>
                   <Button

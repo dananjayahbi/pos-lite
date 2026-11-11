@@ -83,12 +83,12 @@ function SectionHeader({
     >
       <div>
         <h3 className="text-sm font-semibold text-espresso">{title}</h3>
-        <p className="mt-0.5 text-xs text-sand">{description}</p>
+        <p className="mt-0.5 text-xs text-sand-ink">{description}</p>
       </div>
       {isExpanded ? (
-        <ChevronDown className="h-4 w-4 shrink-0 text-sand" />
+        <ChevronDown className="h-4 w-4 shrink-0 text-sand-ink" />
       ) : (
-        <ChevronRight className="h-4 w-4 shrink-0 text-sand" />
+        <ChevronRight className="h-4 w-4 shrink-0 text-sand-ink" />
       )}
     </div>
   );
@@ -328,7 +328,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
         <SectionBody sectionKey="hero" expandedSections={expandedSections}>
           {heroSlides.length === 0 ? (
-            <p className="text-xs text-sand italic">No hero slides configured.</p>
+            <p className="text-xs text-sand-ink italic">No hero slides configured.</p>
           ) : (
             <div className="space-y-4">
               {heroSlides.map((slide, index) => (
@@ -343,7 +343,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 text-sand hover:text-red-500"
+                      className="h-7 w-7 text-sand-ink hover:text-red-500"
                       onClick={() => handleDeleteHeroSlide(index)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -352,7 +352,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
                   {/* Media Type */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-sand">Media Type</Label>
+                    <Label className="text-xs text-sand-ink">Media Type</Label>
                     <Select
                       value={slide.mediaType ?? 'image'}
                       onValueChange={(val) =>
@@ -409,7 +409,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
                   {/* Title */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-sand">Title</Label>
+                    <Label className="text-xs text-sand-ink">Title</Label>
                     <Input
                       value={slide.title ?? ''}
                       onChange={(e) =>
@@ -422,7 +422,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
                   {/* Subtitle */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-sand">Subtitle</Label>
+                    <Label className="text-xs text-sand-ink">Subtitle</Label>
                     <Input
                       value={slide.subtitle ?? ''}
                       onChange={(e) =>
@@ -435,7 +435,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
                   {/* Description */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-sand">Description</Label>
+                    <Label className="text-xs text-sand-ink">Description</Label>
                     <Textarea
                       value={slide.description ?? ''}
                       onChange={(e) =>
@@ -450,7 +450,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
                   {/* CTA */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-sand">CTA Text</Label>
+                      <Label className="text-xs text-sand-ink">CTA Text</Label>
                       <Input
                         value={slide.ctaText ?? ''}
                         onChange={(e) =>
@@ -461,7 +461,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-sand">CTA Link</Label>
+                      <Label className="text-xs text-sand-ink">CTA Link</Label>
                       <Input
                         value={slide.ctaLink ?? ''}
                         onChange={(e) =>
@@ -481,7 +481,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
                         handleHeroSlideChange(index, 'isActive', checked)
                       }
                     />
-                    <Label className="text-xs text-sand cursor-pointer">Active</Label>
+                    <Label className="text-xs text-sand-ink cursor-pointer">Active</Label>
                   </div>
                 </div>
               ))}
@@ -491,7 +491,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           <Button
             variant="outline"
             size="sm"
-            className="border-dashed border-mist text-sand hover:text-espresso"
+            className="border-dashed border-mist text-sand-ink hover:text-espresso"
             onClick={handleAddHeroSlide}
           >
             <Plus className="mr-1.5 h-3.5 w-3.5" />
@@ -500,13 +500,13 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
           {/* ── Hero common settings (shared across all slides) ─────────────── */}
           <div className="border border-mist/70 rounded-lg bg-cream/20 p-4 mt-2 space-y-3">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-sand">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-sand-ink">
               Hero Settings
             </p>
 
             {/* Consult Doctor button */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-sand">Consult Doctor Button</Label>
+              <Label className="text-xs text-sand-ink">Consult Doctor Button</Label>
               <div className="flex items-center gap-3">
                 <Switch
                   checked={heroSection.showConsultDoctor ?? true}
@@ -514,7 +514,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
                     handleHeroSectionChange('showConsultDoctor', checked)
                   }
                 />
-                <span className="text-xs text-sand">Show button</span>
+                <span className="text-xs text-sand-ink">Show button</span>
               </div>
               <Input
                 value={heroSection.consultDoctorLabel ?? ''}
@@ -536,7 +536,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
             {/* Crafted By line */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-sand">Crafted By Text</Label>
+              <Label className="text-xs text-sand-ink">Crafted By Text</Label>
               <div className="flex items-center gap-3">
                 <Switch
                   checked={heroSection.showCraftedBy ?? true}
@@ -544,7 +544,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
                     handleHeroSectionChange('showCraftedBy', checked)
                   }
                 />
-                <span className="text-xs text-sand">Show text</span>
+                <span className="text-xs text-sand-ink">Show text</span>
               </div>
               <Input
                 value={heroSection.craftedByText ?? ''}
@@ -558,7 +558,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
             {/* Social links (right vertical dock) */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-sand">Social Links (Hero Sidebar)</Label>
+              <Label className="text-xs text-sand-ink">Social Links (Hero Sidebar)</Label>
               <div className="flex items-center gap-3">
                 <Switch
                   checked={heroSection.showSocialLinks ?? true}
@@ -566,9 +566,9 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
                     handleHeroSectionChange('showSocialLinks', checked)
                   }
                 />
-                <span className="text-xs text-sand">Show sidebar icons</span>
+                <span className="text-xs text-sand-ink">Show sidebar icons</span>
               </div>
-              <p className="text-[11px] text-sand/80">
+              <p className="text-[11px] text-sand-ink/80">
                 Only the links below appear in the hero sidebar. Leave empty to hide an icon.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -633,7 +633,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
         <SectionBody sectionKey="imageSlider" expandedSections={expandedSections}>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label className="text-xs text-sand">Eyebrow Label</Label>
+              <Label className="text-xs text-sand-ink">Eyebrow Label</Label>
               <Input
                 value={imageSliderSection?.label ?? 'AUTHENTIC AYURVEDIC CARE'}
                 onChange={(e) => handleImageSliderChange('label', e.target.value)}
@@ -643,7 +643,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-sand">Section Title</Label>
+              <Label className="text-xs text-sand-ink">Section Title</Label>
               <Input
                 value={imageSliderSection?.title ?? 'CURATED BOTANICAL COLLECTIONS'}
                 onChange={(e) => handleImageSliderChange('title', e.target.value)}
@@ -653,7 +653,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-sand">Subtitle</Label>
+              <Label className="text-xs text-sand-ink">Subtitle</Label>
               <Textarea
                 value={imageSliderSection?.subtitle ?? ''}
                 onChange={(e) => handleImageSliderChange('subtitle', e.target.value)}
@@ -664,7 +664,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-sand">Product Count (max 7)</Label>
+              <Label className="text-xs text-sand-ink">Product Count (max 7)</Label>
               <Input
                 type="number"
                 min={1}
@@ -700,7 +700,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
         <SectionBody sectionKey="bestSelling" expandedSections={expandedSections}>
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Eyebrow Label</Label>
+            <Label className="text-xs text-sand-ink">Eyebrow Label</Label>
             <Input
               value={bestSellingSection?.label ?? 'MOST LOVED BOTANICAL REMEDIES'}
               onChange={(e) => handleBestSellingChange('label', e.target.value)}
@@ -710,7 +710,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Section Title</Label>
+            <Label className="text-xs text-sand-ink">Section Title</Label>
             <Input
               value={bestSellingSection?.title ?? 'Top Selling Items This Week'}
               onChange={(e) => handleBestSellingChange('title', e.target.value)}
@@ -720,7 +720,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Product Count (max 7)</Label>
+            <Label className="text-xs text-sand-ink">Product Count (max 7)</Label>
             <Input
               type="number"
               min={1}
@@ -790,7 +790,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Title</Label>
+            <Label className="text-xs text-sand-ink">Title</Label>
             <Input
               value={infoAdSection?.title ?? ''}
               onChange={(e) => handleInfoAdChange('title', e.target.value)}
@@ -800,7 +800,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Subtitle</Label>
+            <Label className="text-xs text-sand-ink">Subtitle</Label>
             <Textarea
               value={infoAdSection?.subtitle ?? ''}
               onChange={(e) => handleInfoAdChange('subtitle', e.target.value)}
@@ -812,7 +812,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs text-sand">Button Text</Label>
+              <Label className="text-xs text-sand-ink">Button Text</Label>
               <Input
                 value={infoAdSection?.buttonText ?? ''}
                 onChange={(e) => handleInfoAdChange('buttonText', e.target.value)}
@@ -821,7 +821,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-sand">Button Link</Label>
+              <Label className="text-xs text-sand-ink">Button Link</Label>
               <Input
                 value={infoAdSection?.buttonLink ?? ''}
                 onChange={(e) => handleInfoAdChange('buttonLink', e.target.value)}
@@ -847,7 +847,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
         <SectionBody sectionKey="categories" expandedSections={expandedSections}>
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Eyebrow Label</Label>
+            <Label className="text-xs text-sand-ink">Eyebrow Label</Label>
             <Input
               value={categoriesSection?.label ?? 'CURATED AYURVEDIC LINEUP'}
               onChange={(e) => handleCategoriesChange('label', e.target.value)}
@@ -857,7 +857,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Section Title</Label>
+            <Label className="text-xs text-sand-ink">Section Title</Label>
             <Input
               value={categoriesSection?.title ?? 'Top Categories'}
               onChange={(e) => handleCategoriesChange('title', e.target.value)}
@@ -867,7 +867,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Select Categories</Label>
+            <Label className="text-xs text-sand-ink">Select Categories</Label>
             <CategoryPicker
               selectedIds={categoriesSection?.categoryIds ?? []}
               onChange={(ids) =>
@@ -893,7 +893,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
         <SectionBody sectionKey="latestProducts" expandedSections={expandedSections}>
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Eyebrow Label</Label>
+            <Label className="text-xs text-sand-ink">Eyebrow Label</Label>
             <Input
               value={latestProductsSection?.label ?? 'NEW HERBAL ARRIVALS'}
               onChange={(e) => handleLatestProductsChange('label', e.target.value)}
@@ -903,7 +903,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Section Title</Label>
+            <Label className="text-xs text-sand-ink">Section Title</Label>
             <Input
               value={latestProductsSection?.title ?? 'Latest Products'}
               onChange={(e) =>
@@ -915,7 +915,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Product Count (max 7)</Label>
+            <Label className="text-xs text-sand-ink">Product Count (max 7)</Label>
             <Input
               type="number"
               min={1}
@@ -957,7 +957,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
         <SectionBody sectionKey="testimonials" expandedSections={expandedSections}>
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Eyebrow Label</Label>
+            <Label className="text-xs text-sand-ink">Eyebrow Label</Label>
             <Input
               value={testimonialsSection?.label ?? 'VOICES OF HEALING'}
               onChange={(e) =>
@@ -974,7 +974,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Section Title</Label>
+            <Label className="text-xs text-sand-ink">Section Title</Label>
             <Input
               value={testimonialsSection?.title ?? ''}
               onChange={(e) =>
@@ -991,7 +991,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Section Subtitle</Label>
+            <Label className="text-xs text-sand-ink">Section Subtitle</Label>
             <Input
               value={testimonialsSection?.subtitle ?? ''}
               onChange={(e) =>
@@ -1008,7 +1008,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           </div>
 
           {testimonialItems.length === 0 ? (
-            <p className="text-xs text-sand italic">No testimonials configured.</p>
+            <p className="text-xs text-sand-ink italic">No testimonials configured.</p>
           ) : (
             <div className="space-y-4">
               {testimonialItems.map((item, index) => (
@@ -1023,7 +1023,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 text-sand hover:text-red-500"
+                      className="h-7 w-7 text-sand-ink hover:text-red-500"
                       onClick={() => handleDeleteTestimonial(index)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -1032,7 +1032,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-sand">Customer Name</Label>
+                      <Label className="text-xs text-sand-ink">Customer Name</Label>
                       <Input
                         value={item.customerName ?? ''}
                         onChange={(e) =>
@@ -1043,7 +1043,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-sand">Customer Title</Label>
+                      <Label className="text-xs text-sand-ink">Customer Title</Label>
                       <Input
                         value={item.customerTitle ?? ''}
                         onChange={(e) =>
@@ -1060,7 +1060,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-sand">Quote</Label>
+                    <Label className="text-xs text-sand-ink">Quote</Label>
                     <Textarea
                       value={item.quote ?? ''}
                       onChange={(e) =>
@@ -1074,7 +1074,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
                   <div className="flex items-center gap-4">
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-sand">Rating (1-5)</Label>
+                      <Label className="text-xs text-sand-ink">Rating (1-5)</Label>
                       <Input
                         type="number"
                         min={1}
@@ -1098,7 +1098,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
                           handleTestimonialChange(index, 'isActive', checked)
                         }
                       />
-                      <Label className="text-xs text-sand cursor-pointer">Active</Label>
+                      <Label className="text-xs text-sand-ink cursor-pointer">Active</Label>
                     </div>
                   </div>
                 </div>
@@ -1109,7 +1109,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           <Button
             variant="outline"
             size="sm"
-            className="border-dashed border-mist text-sand hover:text-espresso"
+            className="border-dashed border-mist text-sand-ink hover:text-espresso"
             onClick={handleAddTestimonial}
             disabled={testimonialItems.length >= MAX_TESTIMONIALS}
           >
@@ -1161,7 +1161,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Title</Label>
+            <Label className="text-xs text-sand-ink">Title</Label>
             <Input
               value={storeRefSection?.title ?? ''}
               onChange={(e) => handleStoreRefChange('title', e.target.value)}
@@ -1171,7 +1171,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Subtitle</Label>
+            <Label className="text-xs text-sand-ink">Subtitle</Label>
             <Input
               value={storeRefSection?.subtitle ?? ''}
               onChange={(e) => handleStoreRefChange('subtitle', e.target.value)}
@@ -1182,7 +1182,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs text-sand">Address Line 1</Label>
+              <Label className="text-xs text-sand-ink">Address Line 1</Label>
               <Input
                 value={storeRefSection?.addressLine1 ?? ''}
                 onChange={(e) => handleStoreRefChange('addressLine1', e.target.value)}
@@ -1191,7 +1191,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-sand">Address Line 2</Label>
+              <Label className="text-xs text-sand-ink">Address Line 2</Label>
               <Input
                 value={storeRefSection?.addressLine2 ?? ''}
                 onChange={(e) => handleStoreRefChange('addressLine2', e.target.value)}
@@ -1202,7 +1202,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-sand">Map Embed URL</Label>
+            <Label className="text-xs text-sand-ink">Map Embed URL</Label>
             <Input
               value={storeRefSection?.mapEmbedUrl ?? ''}
               onChange={(e) => handleStoreRefChange('mapEmbedUrl', e.target.value)}

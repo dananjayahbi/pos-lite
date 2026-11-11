@@ -129,7 +129,7 @@ export function ShiftOpenModal({
               min="0"
               value={openingFloat}
               onChange={(e) => setOpeningFloat(e.target.value)}
-              className="flex-1 rounded-lg border border-mist px-3 py-2 text-sm font-body bg-white text-espresso placeholder:text-mist focus:border-sand focus:outline-none focus:ring-1 focus:ring-sand transition-colors"
+              className="flex-1 rounded-lg border border-mist px-3 py-2 text-sm font-body bg-white text-espresso placeholder:text-mist-ink focus:border-sand focus:outline-none focus:ring-1 focus:ring-sand transition-colors"
               placeholder="0.00"
               disabled={loading}
               autoFocus

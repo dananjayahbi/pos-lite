@@ -129,6 +129,7 @@ export async function POST(request: Request) {
     // an interrupted dispatch can no longer destroy the broadcast record.
     const broadcast = await createBroadcastRecord({
       tenantId,
+      channel: 'WHATSAPP',
       message,
       sentById: session.user.id,
       recipientCount: customers.length,
@@ -144,8 +145,9 @@ export async function POST(request: Request) {
     // SEND AFTER THE RESPONSE — answer immediately, dispatch in the background.
     scheduleBroadcastDispatch({
       broadcastId: broadcast.id,
+      channel: 'WHATSAPP',
       recipients,
-      message,
+      content: { channel: 'WHATSAPP', message },
       storeName,
     });
 

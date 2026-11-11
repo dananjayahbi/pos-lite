@@ -41,6 +41,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { buildBridgeAuthHeaders } from '@/lib/internal-bridge-headers';
+import { resolveInternalBridgeUrl } from '@/lib/internal-bridge-url';
 import { clearSessionCookies } from '@/lib/session-cookies';
 
 // ── In-memory caches ───────────────────────────────────────────────────────
@@ -80,6 +81,10 @@ const PUBLIC_PATH_PREFIXES = [
   '/fonts',
   '/icons',
   '/images',
+  // Tenant-aware favicon routes (src/app/icon.tsx). These are fetched by the
+  // browser without a guaranteed session, so they must stay reachable.
+  '/icon',
+  '/apple-icon',
 ];
 
 // API namespaces that must stay reachable regardless of tenant suspension or
@@ -143,7 +148,12 @@ async function middlewareApi(
   request: NextRequest,
   body: Record<string, unknown>,
 ): Promise<Response> {
-  const apiUrl = new URL('/api/internal/middleware', request.url);
+  // Self-call target, NOT `request.url`: behind a dev tunnel the incoming URL
+  // is https://localhost:3003 while the dev server speaks plain HTTP, and a TLS
+  // handshake against it fails with ERR_SSL_PACKET_LENGTH_TOO_LONG — which the
+  // fail-closed session gate turns into a bounce to /login. See
+  // `internal-bridge-url.ts` for the full resolution order.
+  const apiUrl = resolveInternalBridgeUrl(request.url);
   return fetch(apiUrl, {
     method: 'POST',
     headers: {
@@ -238,14 +248,14 @@ function denySession(
       'SESSION_INVALIDATED',
       'Your session has expired. Please sign in again.',
     );
-    clearSessionCookies(response);
+    clearSessionCookies(response, request.cookies);
     return response;
   }
 
   const loginUrl = new URL('/login', request.url);
   loginUrl.searchParams.set('sessionExpired', 'true');
   const response = NextResponse.redirect(loginUrl);
-  clearSessionCookies(response);
+  clearSessionCookies(response, request.cookies);
   return response;
 }
 
@@ -259,13 +269,13 @@ function denyTenantless(request: NextRequest): NextResponse {
       'SESSION_INVALIDATED',
       'This account is not attached to a business. Sign in from a business account.',
     );
-    clearSessionCookies(response);
+    clearSessionCookies(response, request.cookies);
     return response;
   }
   const loginUrl = new URL('/login', request.url);
   loginUrl.searchParams.set('sessionExpired', 'true');
   const response = NextResponse.redirect(loginUrl);
-  clearSessionCookies(response);
+  clearSessionCookies(response, request.cookies);
   return response;
 }
 

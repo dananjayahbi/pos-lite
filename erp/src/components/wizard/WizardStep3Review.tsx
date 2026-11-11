@@ -141,7 +141,7 @@ export function WizardStep3Review() {
 
   if (!step1Data || !step2Data) {
     return (
-      <div className="py-12 text-center text-sand">
+      <div className="py-12 text-center text-sand-ink">
         <p>Wizard data is missing. Please start over.</p>
         <Button variant="outline" className="mt-4" onClick={() => goToStep(1)}>
           Start Over
@@ -156,7 +156,7 @@ export function WizardStep3Review() {
         <h2 className="font-display text-xl font-bold text-espresso">
           Review &amp; Create
         </h2>
-        <p className="mt-1 text-sm text-sand">
+        <p className="mt-1 text-sm text-sand-ink">
           Check the details below before saving the product.
         </p>
       </div>
@@ -201,27 +201,27 @@ export function WizardStep3Review() {
         </div>
         <dl className="divide-y divide-mist/50 text-sm">
           <div className="grid grid-cols-3 gap-2 px-4 py-2.5">
-            <dt className="text-sand">Name</dt>
+            <dt className="text-sand-ink">Name</dt>
             <dd className="col-span-2 font-medium text-espresso">
               {step1Data.name}
             </dd>
           </div>
           <div className="grid grid-cols-3 gap-2 px-4 py-2.5">
-            <dt className="text-sand">Category</dt>
+            <dt className="text-sand-ink">Category</dt>
             <dd className="col-span-2 text-espresso">{categoryName}</dd>
           </div>
           <div className="grid grid-cols-3 gap-2 px-4 py-2.5">
-            <dt className="text-sand">Brand</dt>
+            <dt className="text-sand-ink">Brand</dt>
             <dd className="col-span-2 text-espresso">{brandName}</dd>
           </div>
           <div className="grid grid-cols-3 gap-2 px-4 py-2.5">
-            <dt className="text-sand">Tax Rule</dt>
+            <dt className="text-sand-ink">Tax Rule</dt>
             <dd className="col-span-2 text-espresso">
               {step1Data.taxRule.replace(/_/g, ' ')}
             </dd>
           </div>
           <div className="grid grid-cols-3 gap-2 px-4 py-2.5">
-            <dt className="text-sand">Source</dt>
+            <dt className="text-sand-ink">Source</dt>
             <dd className="col-span-2 text-espresso">
               {step1Data.productSource === 'MANUFACTURED'
                 ? 'Manufactured'
@@ -230,7 +230,7 @@ export function WizardStep3Review() {
           </div>
           {step1Data.tags.length > 0 && (
             <div className="grid grid-cols-3 gap-2 px-4 py-2.5">
-              <dt className="text-sand">Tags</dt>
+              <dt className="text-sand-ink">Tags</dt>
               <dd className="col-span-2 flex flex-wrap gap-1">
                 {step1Data.tags.map((tag) => (
                   <span
@@ -245,7 +245,7 @@ export function WizardStep3Review() {
           )}
           {step1Data.description && (
             <div className="grid grid-cols-3 gap-2 px-4 py-2.5">
-              <dt className="text-sand">Description</dt>
+              <dt className="text-sand-ink">Description</dt>
               <dd className="col-span-2 text-sm text-espresso/80">
                 {step1Data.description}
               </dd>
@@ -257,7 +257,7 @@ export function WizardStep3Review() {
       {/* Variants */}
       <section className="rounded-xl border border-mist bg-white">
         <div className="border-b border-mist px-4 py-2.5 flex items-center gap-2">
-          <Package className="h-4 w-4 text-sand" />
+          <Package className="h-4 w-4 text-sand-ink" />
           <h3 className="text-sm font-semibold text-espresso">
             {step2Data.variants.length} Variant
             {step2Data.variants.length !== 1 ? 's' : ''}
@@ -267,14 +267,14 @@ export function WizardStep3Review() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-mist/50 text-left">
-                <th className="px-4 py-2 font-medium text-sand">Form</th>
-                <th className="px-4 py-2 font-medium text-sand">Pack Size</th>
-                <th className="px-4 py-2 font-medium text-sand">SKU</th>
-                <th className="px-4 py-2 font-medium text-sand">Barcode</th>
-                <th className="px-4 py-2 text-right font-medium text-sand">Stock</th>
-                <th className="px-4 py-2 text-right font-medium text-sand">Cost</th>
-                <th className="px-4 py-2 text-right font-medium text-sand">Retail</th>
-                <th className="px-4 py-2 text-right font-medium text-sand">
+                <th className="px-4 py-2 font-medium text-sand-ink">Form</th>
+                <th className="px-4 py-2 font-medium text-sand-ink">Pack Size</th>
+                <th className="px-4 py-2 font-medium text-sand-ink">SKU</th>
+                <th className="px-4 py-2 font-medium text-sand-ink">Barcode</th>
+                <th className="px-4 py-2 text-right font-medium text-sand-ink">Stock</th>
+                <th className="px-4 py-2 text-right font-medium text-sand-ink">Cost</th>
+                <th className="px-4 py-2 text-right font-medium text-sand-ink">Retail</th>
+                <th className="px-4 py-2 text-right font-medium text-sand-ink">
                   Low Stock
                 </th>
               </tr>
@@ -302,10 +302,10 @@ export function WizardStep3Review() {
                   <td className="px-4 py-2 text-espresso">
                     {v.packSize ?? '—'}
                   </td>
-                  <td className="px-4 py-2 font-mono text-xs text-sand">
+                  <td className="px-4 py-2 font-mono text-xs text-sand-ink">
                     {v.sku ?? '—'}
                   </td>
-                  <td className="px-4 py-2 font-mono text-xs text-sand">
+                  <td className="px-4 py-2 font-mono text-xs text-sand-ink">
                     {v.barcode ?? '—'}
                   </td>
                   <td className="px-4 py-2 text-right text-espresso">

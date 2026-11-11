@@ -93,12 +93,12 @@ export function InventoryFilterBar({ totalCount }: InventoryFilterBarProps) {
     <div className="space-y-3">
       {/* Search bar */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mist" />
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mist-ink" />
         <Input
           value={localSearch}
           onChange={(e) => setLocalSearch(e.target.value)}
           placeholder="Search by name, SKU, or barcode…"
-          className={`border-sand bg-linen pl-10 pr-10 text-espresso placeholder:text-mist focus:bg-pearl ${
+          className={`border-sand bg-linen pl-10 pr-10 text-espresso placeholder:text-mist-ink focus:bg-pearl ${
             isSkuLike ? 'font-mono' : 'font-body'
           }`}
         />
@@ -268,7 +268,7 @@ function CategoryFilterPopover({ activeIds, onChange }: FilterPopoverProps) {
         </div>
         <div className="max-h-60 overflow-y-auto px-1 pb-2">
           {filtered.length === 0 && (
-            <p className="px-2 py-3 text-center text-xs text-mist font-body">
+            <p className="px-2 py-3 text-center text-xs text-mist-ink font-body">
               No categories found
             </p>
           )}
@@ -329,7 +329,7 @@ function BrandFilterPopover({ activeIds, onChange }: FilterPopoverProps) {
         </div>
         <div className="max-h-60 overflow-y-auto px-1 pb-2">
           {filtered.length === 0 && (
-            <p className="px-2 py-3 text-center text-xs text-mist font-body">
+            <p className="px-2 py-3 text-center text-xs text-mist-ink font-body">
               No brands found
             </p>
           )}

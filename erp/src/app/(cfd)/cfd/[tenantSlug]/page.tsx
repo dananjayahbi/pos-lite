@@ -53,7 +53,7 @@ function IdleView({ storeName }: { storeName: string }) {
       <div className="flex flex-1 flex-col items-center justify-center gap-4">
         <h1 className="font-heading text-5xl text-espresso">{storeName}</h1>
         <p className="text-xl text-terracotta">Welcome</p>
-        <p className="font-mono text-3xl text-sand">{timeStr}</p>
+        <p className="font-mono text-3xl text-sand-ink">{timeStr}</p>
       </div>
       <div className="h-1.5 w-full bg-espresso" />
     </div>
@@ -79,7 +79,7 @@ function ActiveView({ cart }: { cart: CartState }) {
               className="flex items-center justify-between border-b border-mist pb-3"
             >
               <div className="flex items-center gap-4">
-                <span className="font-mono text-lg text-sand">×{item.quantity}</span>
+                <span className="font-mono text-lg text-sand-ink">×{item.quantity}</span>
                 <span className="text-base text-espresso">{item.productName}</span>
               </div>
               <span className="font-mono text-base text-espresso">{fmt(item.lineTotal)}</span>
@@ -122,7 +122,7 @@ function ActiveView({ cart }: { cart: CartState }) {
             )}
 
             {cart.customerName != null && (
-              <p className="pt-2 text-sm text-sand">Customer: {cart.customerName}</p>
+              <p className="pt-2 text-sm text-sand-ink">Customer: {cart.customerName}</p>
             )}
           </CardContent>
         </Card>
@@ -160,7 +160,7 @@ function CompleteView({
       {cart.changeDue > 0 && (
         <p className="text-xl text-terracotta">Change: {fmt(cart.changeDue)}</p>
       )}
-      <p className="text-lg text-sand">Have a wonderful day!</p>
+      <p className="text-lg text-sand-ink">Have a wonderful day!</p>
     </div>
   );
 }

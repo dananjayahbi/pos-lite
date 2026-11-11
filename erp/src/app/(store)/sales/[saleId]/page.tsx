@@ -15,6 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { formatRupee } from '@/lib/format';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -72,7 +73,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
       {/* Back link */}
       <Link
         href="/sales"
-        className="text-sand hover:text-espresso inline-flex items-center gap-1.5 text-sm transition-colors"
+        className="text-sand-ink hover:text-espresso inline-flex items-center gap-1.5 text-sm transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to Sales
@@ -82,7 +83,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-espresso text-2xl font-bold">Sale Detail</h1>
-          <p className="text-sand mt-1 font-mono text-xs">{sale.id}</p>
+          <p className="text-sand-ink mt-1 font-mono text-xs">{sale.id}</p>
         </div>
         <SaleStatusBadge status={sale.status} />
       </div>
@@ -90,34 +91,34 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
       {/* Meta */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="border-mist rounded-xl border bg-white px-4 py-3">
-          <p className="text-sand text-xs">Cashier</p>
-          <p className="text-espresso mt-1 truncate text-sm font-medium">{sale.cashier.email}</p>
+          <p className="text-sand-ink text-xs">Cashier</p>
+          <p className="text-espresso mt-1 truncate text-sm font-medium">{staffDisplayName(sale.cashier.email)}</p>
         </div>
         <div className="border-mist rounded-xl border bg-white px-4 py-3">
-          <p className="text-sand text-xs">Customer</p>
+          <p className="text-sand-ink text-xs">Customer</p>
           {sale.customer ? (
             <>
               <p className="text-espresso mt-1 truncate text-sm font-medium">{sale.customer.name}</p>
-              <p className="text-sand font-mono text-xs">{sale.customer.phone}</p>
+              <p className="text-sand-ink font-mono text-xs">{sale.customer.phone}</p>
             </>
           ) : (
-            <p className="text-sand mt-1 text-sm font-medium italic">Walk-in / Guest</p>
+            <p className="text-sand-ink mt-1 text-sm font-medium italic">Walk-in / Guest</p>
           )}
         </div>
         <div className="border-mist rounded-xl border bg-white px-4 py-3">
-          <p className="text-sand text-xs">Date</p>
+          <p className="text-sand-ink text-xs">Date</p>
           <p className="text-espresso mt-1 text-sm font-medium">
             {formatDateTime(sale.saleDate ?? sale.createdAt)}
           </p>
         </div>
         <div className="border-mist rounded-xl border bg-white px-4 py-3">
-          <p className="text-sand text-xs">Shift</p>
+          <p className="text-sand-ink text-xs">Shift</p>
           {sale.shift ? (
             <>
               <p className="text-espresso mt-1 font-mono text-xs">
                 {sale.shift.id.slice(-8).toUpperCase()}
               </p>
-              <p className="text-sand text-xs capitalize">{sale.shift.status.toLowerCase()}</p>
+              <p className="text-sand-ink text-xs capitalize">{sale.shift.status.toLowerCase()}</p>
             </>
           ) : (
             <p className="text-espresso mt-1 text-sm font-medium">Management sale</p>
@@ -125,9 +126,9 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
         </div>
         {sale.authorizingManager && (
           <div className="border-mist rounded-xl border bg-white px-4 py-3">
-            <p className="text-sand text-xs">Authorized by</p>
+            <p className="text-sand-ink text-xs">Authorized by</p>
             <p className="text-espresso mt-1 truncate text-sm font-medium">
-              {sale.authorizingManager.email}
+              {staffDisplayName(sale.authorizingManager.email)}
             </p>
           </div>
         )}
@@ -155,9 +156,9 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
               <TableRow key={line.id}>
                 <TableCell>
                   <p className="text-espresso font-medium">{line.productNameSnapshot}</p>
-                  <p className="text-sand text-xs">{line.variantDescriptionSnapshot}</p>
+                  <p className="text-sand-ink text-xs">{line.variantDescriptionSnapshot}</p>
                 </TableCell>
-                <TableCell className="text-sand font-mono text-xs">{line.sku}</TableCell>
+                <TableCell className="text-sand-ink font-mono text-xs">{line.sku}</TableCell>
                 <TableCell className="text-right font-mono text-sm">
                   {formatRupee(Number(line.unitPrice))}
                 </TableCell>
@@ -168,7 +169,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
                 <TableCell className="text-espresso text-right font-mono text-sm font-medium">
                   {formatRupee(Number(line.lineTotalAfterDiscount))}
                 </TableCell>
-                <TableCell className="text-sand text-right text-sm">
+                <TableCell className="text-sand-ink text-right text-sm">
                   {line.returnedQuantity > 0 ? (
                     <span className="text-terracotta">{line.returnedQuantity}</span>
                   ) : (
@@ -204,7 +205,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
                   <TableCell className="text-espresso text-right font-mono text-sm font-medium">
                     {formatRupee(Number(payment.amount))}
                   </TableCell>
-                  <TableCell className="text-sand font-mono text-xs">
+                  <TableCell className="text-sand-ink font-mono text-xs">
                     {payment.cardReferenceNumber ?? '—'}
                   </TableCell>
                 </TableRow>
@@ -218,7 +219,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
       <div className="flex justify-end">
         <dl className="divide-mist/40 border-mist w-full max-w-xs divide-y rounded-2xl border bg-white text-sm shadow-sm">
           <div className="flex justify-between px-5 py-2.5">
-            <dt className="text-sand">Subtotal</dt>
+            <dt className="text-sand-ink">Subtotal</dt>
             <dd className="text-espresso font-medium">{formatRupee(subtotal)}</dd>
           </div>
           {discountAmount > 0 && (
@@ -229,13 +230,13 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
           )}
           {taxAmount > 0 && (
             <div className="flex justify-between px-5 py-2.5">
-              <dt className="text-sand">Tax</dt>
+              <dt className="text-sand-ink">Tax</dt>
               <dd className="text-espresso font-medium">{formatRupee(taxAmount)}</dd>
             </div>
           )}
           {Number(sale.deliveryCharge) > 0 && (
             <div className="flex justify-between px-5 py-2.5">
-              <dt className="text-sand">Delivery</dt>
+              <dt className="text-sand-ink">Delivery</dt>
               <dd className="text-espresso font-medium">
                 {formatRupee(Number(sale.deliveryCharge))}
               </dd>
@@ -247,7 +248,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
           </div>
           {changeGiven != null && changeGiven > 0 && (
             <div className="flex justify-between px-5 py-2.5">
-              <dt className="text-sand">Change Given</dt>
+              <dt className="text-sand-ink">Change Given</dt>
               <dd className="text-espresso font-medium">{formatRupee(changeGiven)}</dd>
             </div>
           )}

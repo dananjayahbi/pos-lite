@@ -8,7 +8,6 @@ import {
   type ListRawMaterialsFilters,
 } from '@/lib/services/rawMaterial.service';
 import { CreateRawMaterialSchema } from '@/lib/validators/rawMaterial.validators';
-import { RAW_MATERIAL_CATEGORIES } from '@/lib/services/rawMaterial.core';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { parseQueryInt } from '@/lib/api/query-params';
 
@@ -44,11 +43,8 @@ export async function GET(request: NextRequest) {
     const limit = parseQueryInt(searchParams, 'limit', { default: 25, min: 1, max: 100 }) ?? 25;
 
     const filters: ListRawMaterialsFilters = { search, page, limit };
-    if (
-      categoryRaw &&
-      (RAW_MATERIAL_CATEGORIES as string[]).includes(categoryRaw)
-    ) {
-      filters.category = categoryRaw as ListRawMaterialsFilters['category'];
+    if (categoryRaw && categoryRaw.trim().length > 0) {
+      filters.category = categoryRaw.trim();
     }
     if (stockStatus === 'OK' || stockStatus === 'LOW' || stockStatus === 'OUT') {
       filters.stockStatus = stockStatus;
@@ -108,6 +104,18 @@ export async function POST(request: Request) {
     const material = await createRawMaterial(tenantId, session.user.id, parsed.data);
     return NextResponse.json({ success: true, data: material }, { status: 201 });
   } catch (error) {
+    if (error instanceof Error && error.message === 'CATEGORY_NOT_FOUND') {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Unknown raw material category' } },
+        { status: 400 },
+      );
+    }
+    if (error instanceof Error && error.message === 'UNIT_NOT_FOUND') {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Unknown raw material unit' } },
+        { status: 400 },
+      );
+    }
     // XC-01/INF-02: parser ApiErrors surface as their 400; unknown
     // errors are logged and returned as a generic, leak-free 500.
     return toErrorResponse(error, 'POST /api/store/raw-materials');

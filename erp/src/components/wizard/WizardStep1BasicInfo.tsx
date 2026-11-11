@@ -219,7 +219,7 @@ export function WizardStep1BasicInfo() {
           className="font-body min-h-[100px]"
           {...register('description')}
         />
-        <p className="text-xs text-mist text-right">
+        <p className="text-xs text-mist-ink text-right">
           {watchedDescription.length}/1000
         </p>
         {errors.description && (
@@ -251,7 +251,7 @@ export function WizardStep1BasicInfo() {
             </Select>
           )}
         />
-        <p className="text-xs text-mist">
+        <p className="text-xs text-mist-ink">
           Manufactured goods can be assigned a Bill of Materials and produced
           in-house; traded goods are resold as-is through purchase/receipt.
         </p>
@@ -446,9 +446,9 @@ export function WizardStep1BasicInfo() {
       <div className="space-y-2">
         <p className="text-sm font-medium text-espresso">
           Main Image{' '}
-          <span className="text-xs font-normal text-mist">(optional)</span>
+          <span className="text-xs font-normal text-mist-ink">(optional)</span>
         </p>
-        <p className="text-xs text-mist">
+        <p className="text-xs text-mist-ink">
           A single representative image shown on storefront product cards. You
           can still add separate images to each variant.
         </p>

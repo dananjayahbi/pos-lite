@@ -40,7 +40,7 @@ export function ReturnRefundOptionsStep({
       {/* Refund total header - hidden during exchange */}
       {refundMethod !== 'EXCHANGE' ? (
         <div className="rounded-lg border border-sand bg-linen p-4 text-center">
-          <p className="font-body text-xs text-mist uppercase tracking-wide mb-1">
+          <p className="font-body text-xs text-mist-ink uppercase tracking-wide mb-1">
             Refund Amount
           </p>
           <p className="font-mono text-2xl font-bold text-espresso">
@@ -74,7 +74,7 @@ export function ReturnRefundOptionsStep({
               >
                 <div
                   className={`flex items-center justify-center w-8 h-8 rounded-full mt-0.5 ${
-                    isSelected ? 'bg-terracotta text-white' : 'bg-mist/20 text-mist'
+                    isSelected ? 'bg-terracotta text-white' : 'bg-mist/20 text-mist-ink'
                   }`}
                 >
                   <Icon className="h-4 w-4" />
@@ -83,7 +83,7 @@ export function ReturnRefundOptionsStep({
                   <p className={`font-body text-sm font-medium ${isSelected ? 'text-espresso' : 'text-espresso/80'}`}>
                     {method.label}
                   </p>
-                  <p className="font-body text-xs text-mist mt-0.5">
+                  <p className="font-body text-xs text-mist-ink mt-0.5">
                     {method.description}
                   </p>
                 </div>
@@ -115,7 +115,7 @@ export function ReturnRefundOptionsStep({
 
               {/* Store credit note */}
               {method.value === 'STORE_CREDIT' && isSelected && (
-                <p className="ml-11 mt-2 mb-1 font-body text-xs text-mist">
+                <p className="ml-11 mt-2 mb-1 font-body text-xs text-mist-ink">
                   A store credit record will be created. The credit can be redeemed at checkout once Phase 04 CRM is complete.
                 </p>
               )}
@@ -138,7 +138,7 @@ export function ReturnRefundOptionsStep({
           rows={3}
           className="font-body text-sm resize-none"
         />
-        <p className="font-body text-[11px] text-mist text-right">
+        <p className="font-body text-[11px] text-mist-ink text-right">
           {reason.length} / 200
         </p>
       </div>

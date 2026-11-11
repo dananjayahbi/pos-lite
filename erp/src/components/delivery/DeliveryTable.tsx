@@ -3,6 +3,14 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { formatRupee } from '@/lib/format';
 import { StatusBadge } from './StatusBadge';
 import { FailureReasonTag } from './FailureReasonTag';
@@ -10,7 +18,7 @@ import { DispatchSheet } from './DispatchSheet';
 import { printShippingLabel } from './labels/ShippingLabel';
 import { printOrderInvoice } from './invoices/printOrderInvoice';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useLabelTemplate } from '@/hooks/delivery';
+import { useCancelDelivery, useLabelTemplate } from '@/hooks/delivery';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
 import type { DeliveryListItem } from '@/types/delivery';
@@ -39,6 +47,8 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
   const canCancel = hasPermission(PERMISSIONS.DELIVERY.cancelDelivery);
 
   const [dispatchTarget, setDispatchTarget] = useState<DeliveryListItem | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<DeliveryListItem | null>(null);
+  const cancelDelivery = useCancelDelivery();
 
   return (
     <>
@@ -124,7 +134,12 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                         </Button>
                       )}
                       {canCancel && isPending && (
-                        <Button size="sm" variant="ghost" className="text-terracotta">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-terracotta"
+                          onClick={() => setCancelTarget(d)}
+                        >
                           Cancel
                         </Button>
                       )}
@@ -142,6 +157,36 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
         open={!!dispatchTarget}
         onClose={() => setDispatchTarget(null)}
       />
+
+      <Dialog open={cancelTarget !== null} onOpenChange={(open) => !open && setCancelTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-display">Cancel delivery</DialogTitle>
+            <DialogDescription>
+              Cancel {cancelTarget?.orderRef}? Reserved stock will be returned to inventory. This
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelTarget(null)}>
+              Keep delivery
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={cancelDelivery.isPending}
+              onClick={() => {
+                if (!cancelTarget) return;
+                cancelDelivery.mutate(
+                  { id: cancelTarget.id },
+                  { onSuccess: () => setCancelTarget(null) },
+                );
+              }}
+            >
+              {cancelDelivery.isPending ? 'Cancelling...' : 'Cancel delivery'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -3,6 +3,7 @@
 import net from 'node:net';
 import { prisma } from '@/lib/prisma';
 import { sumPaymentBreakdown } from '@/lib/services/paymentBreakdown';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -160,7 +161,7 @@ export async function printSaleReceipt(saleId: string): Promise<void> {
   // Sale info
   parts.push(...line(padLine('Receipt:', sale.id.slice(-8).toUpperCase(), w)));
   parts.push(...line(padLine('Date:', formatDate(sale.completedAt ?? sale.createdAt), w)));
-  parts.push(...line(padLine('Cashier:', sale.cashier.email.split('@')[0]!, w)));
+  parts.push(...line(padLine('Cashier:', staffDisplayName(sale.cashier.email), w)));
 
   if (sale.customer) {
     parts.push(...line(padLine('Customer:', sale.customer.name, w)));
@@ -306,7 +307,7 @@ export async function printZReport(shiftId: string): Promise<void> {
 
   // Shift info
   parts.push(...line(padLine('Shift:', shift.id.slice(-8).toUpperCase(), w)));
-  parts.push(...line(padLine('Cashier:', shift.cashier.email.split('@')[0]!, w)));
+  parts.push(...line(padLine('Cashier:', staffDisplayName(shift.cashier.email), w)));
   parts.push(...line(padLine('Opened:', formatDate(shift.openedAt), w)));
 
   if (shift.closedAt) {

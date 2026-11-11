@@ -38,6 +38,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useStockTakeSession, type StockTakeItemDetail } from '@/hooks/useStockTakeSession';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface StockTakeReviewProps {
   sessionId: string;
@@ -70,7 +71,7 @@ function DiscrepancyBadge({ value }: { value: number }) {
   if (value < 0) {
     return <span className="font-semibold text-red-600">{value}</span>;
   }
-  return <span className="text-mist">0</span>;
+  return <span className="text-mist-ink">0</span>;
 }
 
 export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps) {
@@ -96,7 +97,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
           <h2 className="font-display text-xl font-semibold text-espresso">
             Access Denied
           </h2>
-          <p className="max-w-md text-mist">
+          <p className="max-w-md text-mist-ink">
             You do not have permission to view stock take reviews. Contact your
             manager to request access.
           </p>
@@ -120,7 +121,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
           <h2 className="font-display text-xl font-semibold text-espresso">
             Stock Take Submitted for Approval
           </h2>
-          <p className="max-w-md text-mist">
+          <p className="max-w-md text-mist-ink">
             Your stock take session has been submitted for approval. A manager
             will review the results and approve or reject the adjustments.
           </p>
@@ -155,7 +156,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
           <h2 className="font-display text-xl font-semibold text-espresso">
             Session Not Found
           </h2>
-          <p className="text-mist">
+          <p className="text-mist-ink">
             The stock take session could not be found.
           </p>
           <Button asChild variant="outline">
@@ -180,7 +181,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
           <h2 className="font-display text-xl font-semibold text-espresso">
             Stock Take In Progress
           </h2>
-          <p className="text-mist">
+          <p className="text-mist-ink">
             This session is still being counted. Complete counting before reviewing.
           </p>
           <Button asChild variant="outline">
@@ -306,7 +307,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
           <h1 className="font-display text-2xl font-bold text-espresso">
             Review Stock Take
           </h1>
-          <p className="text-sm text-mist">
+          <p className="text-sm text-mist-ink">
             Review and approve or reject the stock take results
           </p>
         </div>
@@ -323,7 +324,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
               </p>
               <p className="text-sm text-emerald-700">
                 {sessionData.approvedBy
-                  ? `Approved by ${sessionData.approvedBy.email}`
+                  ? `Approved by ${staffDisplayName(sessionData.approvedBy.email)}`
                   : 'Approved'}
                 {sessionData.approvedAt && ` on ${formatDateTime(sessionData.approvedAt)}`}
               </p>
@@ -342,7 +343,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
               </p>
               <p className="text-sm text-red-700">
                 {sessionData.approvedBy
-                  ? `Rejected by ${sessionData.approvedBy.email}`
+                  ? `Rejected by ${staffDisplayName(sessionData.approvedBy.email)}`
                   : 'Rejected'}
               </p>
               {sessionData.notes && (
@@ -365,7 +366,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
         <CardContent>
           <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wider text-mist">
+              <dt className="text-xs font-medium uppercase tracking-wider text-mist-ink">
                 Session ID
               </dt>
               <dd className="font-mono text-sm text-espresso">
@@ -373,7 +374,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wider text-mist">
+              <dt className="text-xs font-medium uppercase tracking-wider text-mist-ink">
                 Scope
               </dt>
               <dd className="text-sm text-espresso">
@@ -381,15 +382,15 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wider text-mist">
+              <dt className="text-xs font-medium uppercase tracking-wider text-mist-ink">
                 Started By
               </dt>
               <dd className="text-sm text-espresso">
-                {sessionData.initiatedBy.email}
+                {staffDisplayName(sessionData.initiatedBy.email)}
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wider text-mist">
+              <dt className="text-xs font-medium uppercase tracking-wider text-mist-ink">
                 Started At
               </dt>
               <dd className="text-sm text-espresso">
@@ -397,7 +398,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wider text-mist">
+              <dt className="text-xs font-medium uppercase tracking-wider text-mist-ink">
                 Completed At
               </dt>
               <dd className="text-sm text-espresso">
@@ -407,13 +408,13 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wider text-mist">
+              <dt className="text-xs font-medium uppercase tracking-wider text-mist-ink">
                 Total Items
               </dt>
               <dd className="text-sm text-espresso">{allItems.length}</dd>
             </div>
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wider text-mist">
+              <dt className="text-xs font-medium uppercase tracking-wider text-mist-ink">
                 Items with Discrepancies
               </dt>
               <dd className="text-sm">
@@ -480,7 +481,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
             className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
               resolvedTab === tab.key
                 ? 'bg-white text-espresso shadow-sm'
-                : 'text-mist hover:text-espresso'
+                : 'text-mist-ink hover:text-espresso'
             }`}
           >
             {tab.label}
@@ -524,7 +525,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
                   <TableRow>
                     <TableCell
                       colSpan={resolvedTab === 'discrepancies' ? 8 : 7}
-                      className="py-8 text-center text-mist"
+                      className="py-8 text-center text-mist-ink"
                     >
                       No items in this view
                     </TableCell>
@@ -544,7 +545,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
                             <p className="text-sm font-medium text-espresso">
                               {item.variant.product.name}
                             </p>
-                            <p className="text-xs text-mist">
+                            <p className="text-xs text-mist-ink">
                               {item.variant.product.category.name}
                             </p>
                           </div>
@@ -552,7 +553,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
                         <TableCell className="text-sm text-espresso">
                           {variantParts || '—'}
                         </TableCell>
-                        <TableCell className="text-right text-sm text-mist">
+                        <TableCell className="text-right text-sm text-mist-ink">
                           {item.systemQuantity}
                         </TableCell>
                         <TableCell className="text-right text-sm font-semibold text-espresso">
@@ -562,14 +563,14 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
                           {item.discrepancy !== null ? (
                             <DiscrepancyBadge value={item.discrepancy} />
                           ) : (
-                            <span className="text-mist">—</span>
+                            <span className="text-mist-ink">—</span>
                           )}
                         </TableCell>
                         <TableCell className="text-center">
                           {item.isRecounted ? (
                             <RefreshCw className="mx-auto h-4 w-4 text-terracotta" />
                           ) : (
-                            <span className="text-mist">—</span>
+                            <span className="text-mist-ink">—</span>
                           )}
                         </TableCell>
                         {resolvedTab === 'discrepancies' && (
@@ -581,7 +582,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
                                 {item.systemQuantity + item.discrepancy}
                               </span>
                             ) : (
-                              <span className="text-mist">—</span>
+                              <span className="text-mist-ink">—</span>
                             )}
                           </TableCell>
                         )}
@@ -599,7 +600,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
       {isPending && (
         <div className="sticky bottom-0 z-10 -mx-4 border-t border-sand bg-white/95 px-4 py-4 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] backdrop-blur-sm sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
           <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
-            <p className="text-sm text-mist">
+            <p className="text-sm text-mist-ink">
               {discrepancyItems.length === 0
                 ? `${allItems.length} items verified with no discrepancies`
                 : `${discrepancyItems.length} discrepanc${discrepancyItems.length !== 1 ? 'ies' : 'y'} found across ${allItems.length} items (net: ${netVariance > 0 ? '+' : ''}${netVariance})`}
@@ -637,7 +638,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
               Confirm Approval
             </DialogTitle>
             <DialogDescription asChild>
-              <div className="space-y-3 text-sm text-mist">
+              <div className="space-y-3 text-sm text-mist-ink">
                 <p>Approving this stock take will:</p>
                 <ol className="list-inside list-decimal space-y-1">
                   <li>
@@ -699,7 +700,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
               rows={4}
               className="resize-none"
             />
-            <p className="text-right text-xs text-mist">
+            <p className="text-right text-xs text-mist-ink">
               {rejectReason.length}/500
               {rejectReason.length > 0 && rejectReason.length < 20 && (
                 <span className="ml-2 text-red-500">

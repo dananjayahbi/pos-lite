@@ -95,7 +95,7 @@ export function FormPickerModal({
         </DialogHeader>
 
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mist" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mist-ink" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -128,12 +128,12 @@ export function FormPickerModal({
             })}
           </div>
           {filtered.length === 0 && (
-            <p className="py-8 text-center text-sm text-mist">No matching forms</p>
+            <p className="py-8 text-center text-sm text-mist-ink">No matching forms</p>
           )}
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-mist pt-3">
-          <span className="text-xs text-mist">
+          <span className="text-xs text-mist-ink">
             {selected.size > 0 ? `${selected.size} selected` : 'Pick one or more'}
           </span>
           <div className="flex gap-2">

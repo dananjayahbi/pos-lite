@@ -9,6 +9,7 @@ import {
   MAX_STOCK_ADJUSTMENT_DELTA,
   MAX_STOCK_QUANTITY,
 } from '@/lib/validators/product.validators';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 const BulkAdjustSchema = z.object({
   adjustments: z
@@ -181,7 +182,7 @@ export async function POST(request: NextRequest) {
           const productName = variant.product.name;
           const sku = variant.sku;
           const title = `${productName} — ${sku} is low on stock`;
-          const notifBody = `Current stock: ${newQty} units. Threshold: ${variant.lowStockThreshold} units. Adjusted by: ${session.user.name ?? 'Staff'}.`;
+          const notifBody = `Current stock: ${newQty} units. Threshold: ${variant.lowStockThreshold} units. Adjusted by: ${staffDisplayName(session.user.email)}.`;
 
           notificationsToCreate.push({
             tenantId,

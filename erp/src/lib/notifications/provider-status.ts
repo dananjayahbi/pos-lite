@@ -19,10 +19,15 @@ export const PROVIDER_ERROR = 'PROVIDER_ERROR';
 export const WHATSAPP_NOT_CONFIGURED = 'WHATSAPP_NOT_CONFIGURED';
 export const WHATSAPP_FAILED = 'WHATSAPP_FAILED';
 
-export type OutboundProvider = 'email' | 'whatsapp';
+/** Codes for the SMS broadcast surface. */
+export const SMS_NOT_CONFIGURED = 'SMS_NOT_CONFIGURED';
+export const SMS_FAILED = 'SMS_FAILED';
+
+export type OutboundProvider = 'email' | 'sms' | 'whatsapp';
 
 export interface ProviderConfigStatus {
   email: boolean;
+  sms: boolean;
   whatsapp: boolean;
 }
 
@@ -33,6 +38,7 @@ export interface ProviderConfigStatus {
 export function getProviderConfigStatus(): ProviderConfigStatus {
   return {
     email: Boolean(process.env.RESEND_API_KEY),
+    sms: Boolean(process.env.SMS_API_URL && process.env.SMS_API_KEY),
     whatsapp: Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID && process.env.WHATSAPP_ACCESS_TOKEN),
   };
 }
@@ -49,9 +55,13 @@ export function isNotConfiguredError(error: string | undefined): boolean {
  */
 export function providerErrorCode(provider: OutboundProvider, error: string | undefined): string {
   if (isNotConfiguredError(error)) {
-    return provider === 'whatsapp' ? WHATSAPP_NOT_CONFIGURED : PROVIDER_NOT_CONFIGURED;
+    if (provider === 'whatsapp') return WHATSAPP_NOT_CONFIGURED;
+    if (provider === 'sms') return SMS_NOT_CONFIGURED;
+    return PROVIDER_NOT_CONFIGURED;
   }
-  return provider === 'whatsapp' ? WHATSAPP_FAILED : PROVIDER_ERROR;
+  if (provider === 'whatsapp') return WHATSAPP_FAILED;
+  if (provider === 'sms') return SMS_FAILED;
+  return PROVIDER_ERROR;
 }
 
 // ── Rate-limited outage logging ──────────────────────────────────────────────
@@ -72,9 +82,15 @@ export function warnProviderNotConfigured(provider: OutboundProvider): boolean {
   if (last !== undefined && now - last < WARNING_THROTTLE_MS) return false;
 
   lastWarnedAt.set(provider, now);
+  const credentialHint =
+    provider === 'whatsapp'
+      ? 'WHATSAPP_PHONE_NUMBER_ID + WHATSAPP_ACCESS_TOKEN'
+      : provider === 'sms'
+        ? 'SMS_API_URL + SMS_API_KEY'
+        : 'RESEND_API_KEY';
   console.warn(
     `[integrations] ${provider} provider is NOT configured — outbound sends will fail. ` +
-      `Supply ${provider === 'whatsapp' ? 'WHATSAPP_PHONE_NUMBER_ID + WHATSAPP_ACCESS_TOKEN' : 'RESEND_API_KEY'} (INF-03).`,
+      `Supply ${credentialHint} (INF-03).`,
   );
   return true;
 }

@@ -103,8 +103,8 @@ export function ProductImageUpload({
           >
             {brokenUrls.has(url) ? (
               <div className="flex h-full w-full flex-col items-center justify-center bg-sand/20">
-                <ImageOff className="h-4 w-4 text-mist" />
-                <span className="text-[9px] text-mist mt-0.5">Error</span>
+                <ImageOff className="h-4 w-4 text-mist-ink" />
+                <span className="text-[9px] text-mist-ink mt-0.5">Error</span>
               </div>
             ) : (
               <Image
@@ -136,7 +136,7 @@ export function ProductImageUpload({
                 style={{ width: `${uploadProgress}%` }}
               />
             </div>
-            <span className="text-xs text-mist font-mono mt-1">
+            <span className="text-xs text-mist-ink font-mono mt-1">
               {uploadProgress}%
             </span>
           </div>
@@ -150,20 +150,20 @@ export function ProductImageUpload({
             className="flex h-20 w-20 flex-col items-center justify-center rounded border-2 border-dashed border-sand bg-linen hover:border-terracotta hover:bg-terracotta/5 transition-colors"
           >
             <Plus className="h-4 w-4 text-terracotta" />
-            <span className="text-[10px] text-mist mt-0.5">Upload</span>
+            <span className="text-[10px] text-mist-ink mt-0.5">Upload</span>
           </button>
         )}
 
         {/* Max reached tile */}
         {imageUrls.length >= max && uploadProgress === null && (
           <div className="flex h-20 w-20 flex-col items-center justify-center rounded border border-sand/30 bg-sand/20">
-            <Lock className="h-4 w-4 text-mist" />
-            <span className="text-[10px] text-mist mt-0.5">Max {max}</span>
+            <Lock className="h-4 w-4 text-mist-ink" />
+            <span className="text-[10px] text-mist-ink mt-0.5">Max {max}</span>
           </div>
         )}
       </div>
 
-      <p className="text-xs text-mist font-body">
+      <p className="text-xs text-mist-ink font-body">
         {imageUrls.length} / {max} images
       </p>
 

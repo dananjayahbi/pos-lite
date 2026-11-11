@@ -22,15 +22,30 @@ export interface AuditActor {
 
 interface GetStaffOptions {
   search?: string | undefined;
+  role?: UserRole | undefined;
 }
 
-interface CreateStaffInput {
+interface StaffProfileFields {
+  fullName?: string | undefined;
+  nic?: string | undefined;
+  contactNumber?: string | undefined;
+  address?: string | undefined;
+  basicSalary?: string | undefined;
+  allowances?: string | undefined;
+  bankName?: string | undefined;
+  bankBranch?: string | undefined;
+  bankAccountNumber?: string | undefined;
+  etfNumber?: string | undefined;
+  epfNumber?: string | undefined;
+}
+
+interface CreateStaffInput extends StaffProfileFields {
   email: string;
   role: UserRole;
   commissionRate?: string | undefined;
 }
 
-interface UpdateStaffInput {
+interface UpdateStaffInput extends StaffProfileFields {
   email?: string | undefined;
   role?: UserRole | undefined;
   isActive?: boolean | undefined;
@@ -46,8 +61,33 @@ const STAFF_SELECT = {
   permissions: true,
   commissionRate: true,
   clockedInAt: true,
+  lastLoginAt: true,
   createdAt: true,
+  fullName: true,
+  nic: true,
+  contactNumber: true,
+  address: true,
+  basicSalary: true,
+  allowances: true,
+  bankName: true,
+  bankBranch: true,
+  bankAccountNumber: true,
+  etfNumber: true,
+  epfNumber: true,
 } as const;
+
+function cleanOptional(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+}
+
+function parseOptionalDecimal(value: string | undefined): number | undefined {
+  const clean = cleanOptional(value);
+  if (clean === undefined) return undefined;
+  const parsed = Number(clean);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
 
 // ── Private Helpers ──────────────────────────────────────────────────────────
 
@@ -72,7 +112,14 @@ export async function getStaffMembers(tenantId: string, options?: GetStaffOption
   };
 
   if (options?.search) {
-    where.email = { contains: options.search, mode: 'insensitive' };
+    where.OR = [
+      { email: { contains: options.search, mode: 'insensitive' } },
+      { fullName: { contains: options.search, mode: 'insensitive' } },
+    ];
+  }
+
+  if (options?.role) {
+    where.role = options.role;
   }
 
   return prisma.user.findMany({
@@ -104,7 +151,19 @@ export async function getStaffById(tenantId: string, id: string) {
       : [],
     commissionRate: user.commissionRate,
     clockedInAt: user.clockedInAt,
+    lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt,
+    fullName: user.fullName,
+    nic: user.nic,
+    contactNumber: user.contactNumber,
+    address: user.address,
+    basicSalary: user.basicSalary,
+    allowances: user.allowances,
+    bankName: user.bankName,
+    bankBranch: user.bankBranch,
+    bankAccountNumber: user.bankAccountNumber,
+    etfNumber: user.etfNumber,
+    epfNumber: user.epfNumber,
   };
 }
 
@@ -147,6 +206,32 @@ export async function updateStaff(
   if (data.commissionRate !== undefined) {
     updateData.commissionRate = parseFloat(data.commissionRate);
   }
+
+  // HR profile: an explicit empty string clears the nullable column.
+  const assignText = (key: keyof StaffProfileFields) => {
+    const value = data[key];
+    if (value === undefined) return;
+    const trimmed = value.trim();
+    updateData[key] = trimmed === '' ? null : trimmed;
+  };
+  const assignMoney = (key: 'basicSalary' | 'allowances') => {
+    const value = data[key];
+    if (value === undefined) return;
+    const trimmed = value.trim();
+    updateData[key] = trimmed === '' ? null : Number(trimmed);
+  };
+  assignText('fullName');
+  assignText('nic');
+  assignText('contactNumber');
+  assignText('address');
+  assignText('bankName');
+  assignText('bankBranch');
+  assignText('bankAccountNumber');
+  assignText('etfNumber');
+  assignText('epfNumber');
+  assignMoney('basicSalary');
+  assignMoney('allowances');
+
   if (data.permissions !== undefined) {
     updateData.permissions = Array.from(
       new Set(data.permissions.filter((permission): permission is string => typeof permission === 'string')),
@@ -229,6 +314,18 @@ export async function createStaffMember(tenantId: string, data: CreateStaffInput
   const tempPassword = randomUUID();
   const passwordHash = await bcrypt.hash(tempPassword, 12);
 
+  const fullName = cleanOptional(data.fullName);
+  const nic = cleanOptional(data.nic);
+  const contactNumber = cleanOptional(data.contactNumber);
+  const address = cleanOptional(data.address);
+  const basicSalary = parseOptionalDecimal(data.basicSalary);
+  const allowances = parseOptionalDecimal(data.allowances);
+  const bankName = cleanOptional(data.bankName);
+  const bankBranch = cleanOptional(data.bankBranch);
+  const bankAccountNumber = cleanOptional(data.bankAccountNumber);
+  const etfNumber = cleanOptional(data.etfNumber);
+  const epfNumber = cleanOptional(data.epfNumber);
+
   return withUniqueGuard(
     () =>
       prisma.user.create({
@@ -240,6 +337,17 @@ export async function createStaffMember(tenantId: string, data: CreateStaffInput
           ...(data.commissionRate !== undefined && {
             commissionRate: parseFloat(data.commissionRate),
           }),
+          ...(fullName !== undefined && { fullName }),
+          ...(nic !== undefined && { nic }),
+          ...(contactNumber !== undefined && { contactNumber }),
+          ...(address !== undefined && { address }),
+          ...(basicSalary !== undefined && { basicSalary }),
+          ...(allowances !== undefined && { allowances }),
+          ...(bankName !== undefined && { bankName }),
+          ...(bankBranch !== undefined && { bankBranch }),
+          ...(bankAccountNumber !== undefined && { bankAccountNumber }),
+          ...(etfNumber !== undefined && { etfNumber }),
+          ...(epfNumber !== undefined && { epfNumber }),
         },
         select: STAFF_SELECT,
       }),

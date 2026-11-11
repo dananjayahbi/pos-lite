@@ -37,6 +37,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useStockTakeSession, type StockTakeItemDetail } from '@/hooks/useStockTakeSession';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface StockTakeSessionProps {
   sessionId: string;
@@ -271,7 +272,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
 
   if (!stockSession) {
     return (
-      <div className="flex flex-col items-center gap-4 py-20 text-mist">
+      <div className="flex flex-col items-center gap-4 py-20 text-mist-ink">
         <AlertTriangle className="h-12 w-12" />
         <p className="font-body text-lg">Stock take session not found.</p>
         <Link href="/stock-control/stock-takes">
@@ -287,7 +288,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
   return (
     <div className="space-y-6">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-mist font-body">
+      <nav className="flex items-center gap-1.5 text-sm text-mist-ink font-body">
         <Link href="/" className="hover:text-espresso transition-colors">
           Dashboard
         </Link>
@@ -330,25 +331,25 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div>
-              <p className="font-body text-xs text-mist uppercase tracking-wider">Scope</p>
+              <p className="font-body text-xs text-mist-ink uppercase tracking-wider">Scope</p>
               <p className="font-body text-sm text-espresso mt-1">
                 {stockSession.categoryId ? 'Category Filter' : 'All Products'}
               </p>
             </div>
             <div>
-              <p className="font-body text-xs text-mist uppercase tracking-wider">Started</p>
+              <p className="font-body text-xs text-mist-ink uppercase tracking-wider">Started</p>
               <p className="font-body text-sm text-espresso mt-1">
                 {formatDateTime(stockSession.startedAt)}
               </p>
             </div>
             <div>
-              <p className="font-body text-xs text-mist uppercase tracking-wider">Started By</p>
+              <p className="font-body text-xs text-mist-ink uppercase tracking-wider">Started By</p>
               <p className="font-body text-sm text-espresso mt-1">
-                {stockSession.initiatedBy.email}
+                {staffDisplayName(stockSession.initiatedBy.email)}
               </p>
             </div>
             <div>
-              <p className="font-body text-xs text-mist uppercase tracking-wider">Progress</p>
+              <p className="font-body text-xs text-mist-ink uppercase tracking-wider">Progress</p>
               <p className="font-body text-sm text-espresso mt-1">
                 {countedCount} / {totalCount} counted
               </p>
@@ -363,7 +364,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
                 style={{ width: `${progressPct}%` }}
               />
             </div>
-            <p className="font-body text-xs text-mist text-right">{progressPct}%</p>
+            <p className="font-body text-xs text-mist-ink text-right">{progressPct}%</p>
           </div>
         </CardContent>
       </Card>
@@ -373,7 +374,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
         <div className="relative">
           <div className="flex items-center gap-3">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-mist" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-mist-ink" />
               <Input
                 ref={scanInputRef}
                 type="text"
@@ -403,26 +404,26 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
         <Table>
           <TableHeader>
             <TableRow className="bg-linen/50 hover:bg-linen/50">
-              <TableHead className="font-body text-xs text-mist uppercase tracking-wider">
+              <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider">
                 SKU
               </TableHead>
-              <TableHead className="font-body text-xs text-mist uppercase tracking-wider">
+              <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider">
                 Product
               </TableHead>
-              <TableHead className="font-body text-xs text-mist uppercase tracking-wider">
+              <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider">
                 Variant
               </TableHead>
-              <TableHead className="font-body text-xs text-mist uppercase tracking-wider text-center">
+              <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider text-center">
                 System Count
               </TableHead>
-              <TableHead className="font-body text-xs text-mist uppercase tracking-wider text-center">
+              <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider text-center">
                 Counted
               </TableHead>
-              <TableHead className="font-body text-xs text-mist uppercase tracking-wider text-center">
+              <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider text-center">
                 Discrepancy
               </TableHead>
               {isInProgress && (
-                <TableHead className="font-body text-xs text-mist uppercase tracking-wider text-center">
+                <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider text-center">
                   Recount
                 </TableHead>
               )}
@@ -456,12 +457,12 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
                   </TableCell>
                   <TableCell className="font-body text-sm text-espresso">
                     <div>{item.variant.product.name}</div>
-                    <div className="text-xs text-mist">{item.variant.product.category.name}</div>
+                    <div className="text-xs text-mist-ink">{item.variant.product.category.name}</div>
                   </TableCell>
-                  <TableCell className="font-body text-sm text-mist">
+                  <TableCell className="font-body text-sm text-mist-ink">
                     {variantInfo || '—'}
                   </TableCell>
-                  <TableCell className="text-center font-mono text-sm text-mist">
+                  <TableCell className="text-center font-mono text-sm text-mist-ink">
                     {item.systemQuantity}
                   </TableCell>
                   <TableCell className="text-center">
@@ -489,7 +490,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
                   </TableCell>
                   <TableCell className="text-center font-mono text-sm">
                     {item.discrepancy === null ? (
-                      <span className="text-mist">—</span>
+                      <span className="text-mist-ink">—</span>
                     ) : item.discrepancy === 0 ? (
                       <span className="text-green-600">0</span>
                     ) : item.discrepancy > 0 ? (
@@ -518,7 +519,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <p className="font-body text-sm text-mist">
+          <p className="font-body text-sm text-mist-ink">
             Showing {(currentPage - 1) * PAGE_SIZE + 1}–
             {Math.min(currentPage * PAGE_SIZE, totalCount)} of {totalCount} items
           </p>
@@ -532,7 +533,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
             >
               Previous
             </Button>
-            <span className="font-body text-sm text-mist">
+            <span className="font-body text-sm text-mist-ink">
               Page {currentPage} of {totalPages}
             </span>
             <Button
@@ -550,7 +551,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
 
       {/* Footer */}
       <div className="flex items-center justify-between">
-        <div className="font-body text-xs text-mist">
+        <div className="font-body text-xs text-mist-ink">
           {lastSaved && (
             <span>
               Last saved:{' '}
@@ -583,7 +584,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
             <DialogTitle className="font-display text-espresso">
               Complete Stock Take
             </DialogTitle>
-            <DialogDescription className="font-body text-mist">
+            <DialogDescription className="font-body text-mist-ink">
               Review the summary before submitting for approval.
             </DialogDescription>
           </DialogHeader>
@@ -591,15 +592,15 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-3 gap-4">
               <div className="rounded-lg border border-sand/30 p-3 text-center">
-                <p className="font-body text-xs text-mist">Items Counted</p>
+                <p className="font-body text-xs text-mist-ink">Items Counted</p>
                 <p className="font-display text-xl text-espresso mt-1">{countedCount}</p>
               </div>
               <div className="rounded-lg border border-sand/30 p-3 text-center">
-                <p className="font-body text-xs text-mist">Discrepancies</p>
+                <p className="font-body text-xs text-mist-ink">Discrepancies</p>
                 <p className="font-display text-xl text-terracotta mt-1">{discrepancyCount}</p>
               </div>
               <div className="rounded-lg border border-sand/30 p-3 text-center">
-                <p className="font-body text-xs text-mist">Net Variance</p>
+                <p className="font-body text-xs text-mist-ink">Net Variance</p>
                 <p
                   className={`font-display text-xl mt-1 ${
                     netVariance > 0

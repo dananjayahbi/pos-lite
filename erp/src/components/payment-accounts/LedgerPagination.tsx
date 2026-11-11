@@ -26,7 +26,7 @@ export function LedgerPagination({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <p className="font-body text-xs text-sand">
+      <p className="font-body text-xs text-sand-ink">
         {total === 0 ? 'No entries' : `Showing ${firstRow}–${lastRow} of ${total}`}
       </p>
       <div className="flex items-center gap-2">
@@ -39,7 +39,7 @@ export function LedgerPagination({
         >
           Previous
         </Button>
-        <span className="font-body text-sm text-sand">
+        <span className="font-body text-sm text-sand-ink">
           Page {page} of {lastPage}
         </span>
         <Button

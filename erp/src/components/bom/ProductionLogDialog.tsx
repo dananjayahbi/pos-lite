@@ -61,8 +61,13 @@ export function ProductionLogDialog({ bomId, onClose }: ProductionLogDialogProps
         quantity: qty,
         ...(note ? { note } : {}),
       })
-      .then(() => {
-        toast.success(`Production of ${qty} unit(s) logged`);
+      .then((json: { data?: { batchNumber?: string } } | null) => {
+        const batch = json?.data?.batchNumber;
+        toast.success(
+          batch
+            ? `Production of ${qty} unit(s) logged — batch ${batch}`
+            : `Production of ${qty} unit(s) logged`,
+        );
         onClose();
       })
       .catch((err: Error) => setError(err.message));
@@ -93,7 +98,7 @@ export function ProductionLogDialog({ bomId, onClose }: ProductionLogDialogProps
 
           {plan ? (
             <div className="space-y-2 rounded-lg border p-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-mist">
+              <p className="text-xs font-medium uppercase tracking-wide text-mist-ink">
                 Raw material consumption
               </p>
               <ul className="space-y-1">
@@ -105,7 +110,7 @@ export function ProductionLogDialog({ bomId, onClose }: ProductionLogDialogProps
                     <span className="text-espresso">{line.rawMaterialName}</span>
                     <span
                       className={
-                        line.insufficient ? 'font-semibold text-red-600' : 'text-mist'
+                        line.insufficient ? 'font-semibold text-red-600' : 'text-mist-ink'
                       }
                     >
                       {line.required} {getUnitShortLabel(line.unit as 'LITERS' | 'KILOGRAMS')}
@@ -129,7 +134,7 @@ export function ProductionLogDialog({ bomId, onClose }: ProductionLogDialogProps
               </div>
             </div>
           ) : (
-            <p className="text-sm text-mist">
+            <p className="text-sm text-mist-ink">
               {validQty ? 'Calculating consumption…' : 'Enter a quantity to preview consumption.'}
             </p>
           )}

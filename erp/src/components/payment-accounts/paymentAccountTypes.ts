@@ -51,6 +51,9 @@ export interface PaymentAccount {
   balance: string;
   closedAt: string | null;
   createdAt: string;
+  /** Set when this account is the default account of a petty-cash fund. */
+  pettyCashFundId?: string | null;
+  pettyCashFundName?: string | null;
 }
 
 export interface PaymentAccountEntryAccountRef {

@@ -9,7 +9,6 @@ import { autoDeductPackaging, notifyLowStock } from '@/lib/services/packaging.se
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
 import { toCourierOrderPayload } from '@/lib/courier/mappers';
 import { setSentryTenantContext } from '@/lib/sentry/context';
-import { TERMINAL_DELIVERY_STATUSES } from '@/lib/constants/courier';
 import type { RecoveryAction } from '@/generated/prisma/client';
 import type {
   LogRecoveryActionInput,
@@ -39,7 +38,7 @@ async function assertRecoverableDelivery(tenantId: string, deliveryId: string) {
     where: { id: deliveryId, tenantId, deletedAt: null },
   });
   if (!delivery) throw new Error('DELIVERY_NOT_FOUND');
-  if (TERMINAL_DELIVERY_STATUSES.includes(delivery.status as never)) {
+  if (!(RECOVERABLE_STATUSES as readonly string[]).includes(delivery.status)) {
     throw new Error('DELIVERY_NOT_RECOVERABLE');
   }
   return delivery;
@@ -76,9 +75,9 @@ export async function logRecoveryAction(
   input: LogRecoveryActionInput,
 ) {
   setSentryTenantContext({ tenantId });
-  await assertRecoverableDelivery(tenantId, deliveryId);
+  const delivery = await assertRecoverableDelivery(tenantId, deliveryId);
 
-  const attempt = await prisma.$transaction(async (tx: TxClient) => {
+  await prisma.$transaction(async (tx: TxClient) => {
     const created = await writeRecoveryRow(tx, {
       tenantId,
       deliveryId,
@@ -91,7 +90,7 @@ export async function logRecoveryAction(
       data: {
         tenantId,
         deliveryId,
-        status: 'FAILED',
+        status: delivery.status,
         source: 'INTERNAL',
         createdById: staffId,
         remarks:
@@ -135,7 +134,9 @@ export async function redeliverDelivery(
     include: { address: true },
   });
   if (!existing) throw new Error('DELIVERY_NOT_FOUND');
-  if (!(RECOVERABLE_STATUSES as readonly string[]).includes(existing.status)) {
+  // Redelivery only applies to a failed/returned parcel. An in-transit parcel
+  // is already with the courier and must not get a second active shipment.
+  if (existing.status !== 'FAILED' && existing.status !== 'RETURNED') {
     throw new Error('DELIVERY_NOT_RECOVERABLE');
   }
   if (!existing.address) throw new Error('DELIVERY_MISSING_ADDRESS');
@@ -178,7 +179,7 @@ export async function redeliverDelivery(
   });
   if (!upload.ok) throw new Error(`COURIER_UPLOAD_FAILED:${upload.error.message}`);
 
-  const dispatched = await prisma.$transaction(async (tx: TxClient) => {
+  const { dispatched, deductions } = await prisma.$transaction(async (tx: TxClient) => {
     const updated = await tx.delivery.update({
       where: { id: deliveryId },
       data: {
@@ -188,6 +189,14 @@ export async function redeliverDelivery(
         holdExpiresAt: null,
         failureReason: null,
       },
+    });
+
+    // Retire the previous shipment before creating the new one. The tracking
+    // poller skips CANCELED shipments, so a failed attempt cannot move the
+    // freshly redelivered parcel back to FAILED on its next poll.
+    await tx.courierShipment.updateMany({
+      where: { deliveryId, tenantId, status: { notIn: ['DELIVERED', 'CANCELED', 'RETURNED'] } },
+      data: { status: 'CANCELED', rawStatus: 'SUPERSEDED_BY_REDELIVERY' },
     });
 
     const shipment = await createShipment({
@@ -231,11 +240,13 @@ export async function redeliverDelivery(
       after: { waybillId: upload.data.waybillId, waybillMode: input.waybillMode },
     });
 
-    return updated;
+    // Deduct packaging for the new shipment atomically with the status flip.
+    const deductions = await autoDeductPackaging(tenantId, deliveryId, { tx });
+
+    return { dispatched: updated, deductions };
   });
 
-  // Non-blocking packaging deduction for the new shipment.
-  const deductions = await autoDeductPackaging(tenantId, deliveryId);
+  // Non-blocking low-stock notification for the redelivered parcel.
   if (deductions.length > 0) {
     await notifyLowStock(tenantId, deliveryId, deductions);
   }
@@ -262,6 +273,7 @@ export async function permanentlyCancelDelivery(
     where: { id: deliveryId, tenantId, deletedAt: null },
     include: {
       sale: { include: { lines: { select: { variantId: true, quantity: true } } } },
+      lines: { select: { variantId: true, quantity: true } },
       packagingConsumptions: { select: { packagingItemId: true, quantity: true } },
     },
   });
@@ -271,7 +283,8 @@ export async function permanentlyCancelDelivery(
   }
 
   const canceled = await prisma.$transaction(async (tx: TxClient) => {
-    // Restock inventory from the linked sale (reverse the original deduction).
+    // Restock inventory from the linked sale, or from the delivery's own
+    // reserved line items for website orders (which have no Sale row).
     if (existing.sale?.lines.length) {
       for (const line of existing.sale.lines) {
         await adjustStockInTx(tx, tenantId, line.variantId, staffId, {
@@ -279,6 +292,14 @@ export async function permanentlyCancelDelivery(
           reason: 'VOID_REVERSAL',
           note: `Restock from cancelled delivery ${existing.orderRef}`,
           saleId: existing.saleId ?? undefined,
+        });
+      }
+    } else if (existing.lines.length > 0) {
+      for (const line of existing.lines) {
+        await adjustStockInTx(tx, tenantId, line.variantId, staffId, {
+          quantityDelta: line.quantity,
+          reason: 'WEBSITE_ORDER',
+          note: `Restock from cancelled delivery ${existing.orderRef}`,
         });
       }
     }
@@ -291,10 +312,11 @@ export async function permanentlyCancelDelivery(
       });
     }
 
-    const updated = await tx.delivery.update({
-      where: { id: deliveryId },
+    const claim = await tx.delivery.updateMany({
+      where: { id: deliveryId, tenantId, status: { in: ['FAILED', 'RETURNED'] } },
       data: { status: 'CANCELED', canceledAt: new Date(), canceledById: staffId },
     });
+    if (claim.count === 0) throw new Error('DELIVERY_NOT_RECOVERABLE');
 
     await writeRecoveryRow(tx, {
       tenantId,
@@ -315,6 +337,22 @@ export async function permanentlyCancelDelivery(
       },
     });
 
+    await tx.reconciliationLedgerEntry.updateMany({
+      where: {
+        tenantId,
+        deliveryId,
+        status: { in: ['PENDING_SETTLEMENT', 'MATCHED', 'PARTIAL_MATCH', 'DISCREPANCY'] },
+      },
+      data: {
+        status: 'CLEARED',
+        expectedCod: 0,
+        expectedNetPayout: 0,
+        settledAmount: 0,
+        settledAt: new Date(),
+        discrepancyNote: 'Delivery permanently cancelled',
+      },
+    });
+
     void createAuditLog({
       tenantId,
       actorId: staffId,
@@ -325,7 +363,7 @@ export async function permanentlyCancelDelivery(
       after: { reason: input.reason ?? null },
     });
 
-    return updated;
+    return { id: deliveryId };
   });
 
   return getDeliveryWithAttempts(tenantId, canceled.id);
@@ -347,7 +385,7 @@ async function getDeliveryWithAttempts(tenantId: string, deliveryId: string) {
       address: true,
       customer: { select: { id: true, name: true, phone: true } },
       shipments: { orderBy: { createdAt: 'desc' as const } },
-      events: { orderBy: { eventAt: 'asc' as const }, take: 50 },
+      events: { orderBy: { eventAt: 'desc' as const }, take: 50 },
       sale: { select: { id: true, totalAmount: true, status: true } },
       attempts: {
         orderBy: { createdAt: 'asc' as const },

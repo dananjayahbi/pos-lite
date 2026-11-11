@@ -67,7 +67,7 @@ export function SaleEditSheet({ sale, open, onOpenChange, onSaved }: SaleEditShe
       <SheetContent className="flex w-full flex-col overflow-hidden sm:max-w-md">
         <SheetHeader className="shrink-0">
           <SheetTitle className="font-display text-espresso">Edit Sale</SheetTitle>
-          <SheetDescription className="text-sand text-xs">
+          <SheetDescription className="text-sand-ink text-xs">
             Customer, date and delivery charge only. Items, prices and payments are
             immutable — use a return or a void for those.
           </SheetDescription>
@@ -218,12 +218,12 @@ function SaleEditForm({
 
         <dl className="divide-mist/40 border-mist divide-y rounded-lg border text-sm">
           <div className="flex justify-between px-3 py-1.5">
-            <dt className="text-sand">Current total</dt>
+            <dt className="text-sand-ink">Current total</dt>
             <dd className="text-espresso font-medium">{formatRupee(asNumber(sale.totalAmount))}</dd>
           </div>
           {nextDelivery !== previousDelivery && (
             <div className="flex justify-between px-3 py-1.5">
-              <dt className="text-sand">New total</dt>
+              <dt className="text-sand-ink">New total</dt>
               <dd className="text-espresso font-medium">{formatRupee(projectedTotal)}</dd>
             </div>
           )}

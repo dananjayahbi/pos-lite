@@ -27,6 +27,7 @@ export async function GET() {
         timestamp: new Date().toISOString(),
         integrations: {
           email: { configured: providers.email },
+          sms: { configured: providers.sms },
           whatsapp: { configured: providers.whatsapp },
           payhere: {
             configured: payhere.checkoutReady,

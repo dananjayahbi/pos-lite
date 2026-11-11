@@ -47,8 +47,8 @@ export function BomTable({
   if (items.length === 0) {
     return (
       <div className="rounded-lg border bg-white p-8 text-center">
-        <FlaskConical className="mx-auto h-8 w-8 text-mist" />
-        <p className="mt-3 text-sm text-mist">
+        <FlaskConical className="mx-auto h-8 w-8 text-mist-ink" />
+        <p className="mt-3 text-sm text-mist-ink">
           No bills of materials yet. Create one to start tracking production.
         </p>
       </div>
@@ -73,10 +73,10 @@ export function BomTable({
               <TableCell className="font-medium text-espresso">{bom.name}</TableCell>
               <TableCell>
                 <div className="text-sm text-espresso">{bom.variantName}</div>
-                <div className="text-xs text-mist">{bom.variantSku}</div>
+                <div className="text-xs text-mist-ink">{bom.variantSku}</div>
               </TableCell>
               <TableCell>
-                <span className="text-sm text-mist">{bom.rawMaterialCount} materials</span>
+                <span className="text-sm text-mist-ink">{bom.rawMaterialCount} materials</span>
               </TableCell>
               <TableCell>
                 <Badge variant={bom.isActive ? 'default' : 'secondary'}>

@@ -115,7 +115,7 @@ function CategoryEditForm({
         <DialogTitle className="font-display text-espresso">
           {isEdit ? 'Edit Category' : 'New Category'}
         </DialogTitle>
-        <DialogDescription className="text-mist">
+        <DialogDescription className="text-mist-ink">
           {isEdit
             ? 'Update the category name, sort order, and description.'
             : 'Create a new category to organize your products.'}
@@ -124,7 +124,7 @@ function CategoryEditForm({
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="cat-name" className="text-xs text-mist">
+          <Label htmlFor="cat-name" className="text-xs text-mist-ink">
             Category Name <span className="text-red-700">*</span>
           </Label>
           <Input
@@ -139,12 +139,12 @@ function CategoryEditForm({
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-xs text-mist">Category Image</Label>
+          <Label className="text-xs text-mist-ink">Category Image</Label>
           <CategoryImageUpload imageUrl={imageUrl} onChange={setImageUrl} />
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="cat-sort" className="text-xs text-mist">
+          <Label htmlFor="cat-sort" className="text-xs text-mist-ink">
             Sort Order
           </Label>
           <Input
@@ -158,7 +158,7 @@ function CategoryEditForm({
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="cat-description" className="text-xs text-mist">
+          <Label htmlFor="cat-description" className="text-xs text-mist-ink">
             Description
           </Label>
           <Textarea

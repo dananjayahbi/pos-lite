@@ -210,7 +210,7 @@ export default function HardwareSettingsForm({ initialValues }: Props) {
         ? 'text-green-600'
         : feedback.status === 'error'
           ? 'text-red-600'
-          : 'text-sand';
+          : 'text-sand-ink';
 
     return (
       <div className="rounded-lg border border-mist bg-pearl/40 p-4">
@@ -218,10 +218,10 @@ export default function HardwareSettingsForm({ initialValues }: Props) {
           <Icon className={`mt-0.5 h-5 w-5 ${iconClassName}`} />
           <div className="space-y-1">
             <p className="font-medium text-espresso">{title}</p>
-            <p className="text-sm text-sand">{isBusy ? 'Running live test…' : feedback.message}</p>
-            {feedback.details ? <p className="text-xs text-sand">{feedback.details}</p> : null}
+            <p className="text-sm text-sand-ink">{isBusy ? 'Running live test…' : feedback.message}</p>
+            {feedback.details ? <p className="text-xs text-sand-ink">{feedback.details}</p> : null}
             {feedback.checkedAt ? (
-              <p className="text-xs text-sand/80">
+              <p className="text-xs text-sand-ink/80">
                 Last checked {feedback.checkedAt}
                 {feedback.durationMs ? ` · ${feedback.durationMs} ms` : ''}
               </p>

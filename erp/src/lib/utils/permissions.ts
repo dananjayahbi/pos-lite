@@ -1,24 +1,26 @@
-import type { PermissionKey } from '@/lib/constants/permissions';
+import {
+  getEffectivePermissions,
+  type PermissionKey,
+} from '@/lib/constants/permissions';
+import type { UserRole } from '@/generated/prisma/client';
 
 interface UserLike {
+  role?: UserRole;
   permissions?: unknown;
 }
 
-function normalizePermissions(permissions: unknown): string[] {
-  if (!Array.isArray(permissions)) {
-    return [];
-  }
-
-  return permissions.filter((value): value is string => typeof value === 'string');
-}
-
+/**
+ * Check a permission against the user's effective set (role defaults plus any
+ * explicit overrides). Sessions cache the effective set at login; evaluating
+ * the role here keeps newly added permissions working without forcing every
+ * signed-in user to log out and back in.
+ */
 export function hasPermission(user: UserLike | null | undefined, permission: PermissionKey): boolean {
   if (!user) {
     return false;
   }
 
-  const permissions = normalizePermissions(user.permissions);
-  return permissions.includes(permission);
+  return getEffectivePermissions(user.role, user.permissions).includes(permission);
 }
 
 export function requirePermission(user: UserLike | null | undefined, permission: PermissionKey): void {

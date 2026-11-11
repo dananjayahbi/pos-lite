@@ -69,7 +69,7 @@ export function LowStockList({ permissions }: LowStockListProps) {
   if (!canView) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <p className="font-body text-sm text-mist">You do not have permission to view stock data.</p>
+        <p className="font-body text-sm text-mist-ink">You do not have permission to view stock data.</p>
       </div>
     );
   }
@@ -77,7 +77,7 @@ export function LowStockList({ permissions }: LowStockListProps) {
   return (
     <div className="space-y-6 p-6">
       {/* Breadcrumb */}
-      <nav className="font-body text-sm text-mist">
+      <nav className="font-body text-sm text-mist-ink">
         <Link href="/" className="hover:text-espresso">
           Dashboard
         </Link>
@@ -103,7 +103,7 @@ export function LowStockList({ permissions }: LowStockListProps) {
               </Badge>
             )}
           </div>
-          <p className="mt-1 font-body text-sm text-mist">
+          <p className="mt-1 font-body text-sm text-mist-ink">
             Variants at or below their low stock threshold — sorted by urgency.
           </p>
         </div>
@@ -145,7 +145,7 @@ export function LowStockList({ permissions }: LowStockListProps) {
           />
         )}
         {!useOverride && (
-          <span className="font-body text-xs text-mist">
+          <span className="font-body text-xs text-mist-ink">
             Using individual per-variant thresholds
           </span>
         )}
@@ -193,13 +193,13 @@ export function LowStockList({ permissions }: LowStockListProps) {
                           <p className="font-body text-sm font-medium text-espresso">
                             {v.product_name}
                           </p>
-                          <p className="font-body text-xs text-mist">{v.category_name}</p>
+                          <p className="font-body text-xs text-mist-ink">{v.category_name}</p>
                         </div>
                       </TableCell>
                       <TableCell>
                         <p className="font-mono text-sm text-espresso">{v.sku}</p>
                         {(v.form || v.pack_size) && (
-                          <p className="font-body text-xs text-mist">
+                          <p className="font-body text-xs text-mist-ink">
                             {[v.form, v.pack_size].filter(Boolean).join(' / ')}
                           </p>
                         )}
@@ -244,7 +244,7 @@ export function LowStockList({ permissions }: LowStockListProps) {
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-between pt-2">
-              <p className="font-body text-sm text-mist">
+              <p className="font-body text-sm text-mist-ink">
                 Page {page} of {totalPages} ({total} {total === 1 ? 'variant' : 'variants'})
               </p>
               <div className="flex items-center gap-2">

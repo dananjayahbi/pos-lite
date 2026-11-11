@@ -48,24 +48,29 @@ export function PaymentAccountCard({
               {account.name}
             </h3>
             <AccountTypeBadge type={account.type} />
+            {account.pettyCashFundId && (
+              <Badge className="border border-green-200 bg-green-50 font-body text-green-700">
+                Petty Cash
+              </Badge>
+            )}
             {isClosed && (
-              <Badge className="border border-mist bg-linen font-body text-sand">Closed</Badge>
+              <Badge className="border border-mist bg-linen font-body text-sand-ink">Closed</Badge>
             )}
           </div>
           {account.accountNumber && (
-            <p className="mt-1 font-mono text-xs text-sand">{account.accountNumber}</p>
+            <p className="mt-1 font-mono text-xs text-sand-ink">{account.accountNumber}</p>
           )}
           {account.note && (
-            <p className="mt-1 max-w-xl truncate font-body text-xs text-mist">{account.note}</p>
+            <p className="mt-1 max-w-xl truncate font-body text-xs text-mist-ink">{account.note}</p>
           )}
         </div>
 
         <div className="text-right">
-          <p className="font-body text-[11px] uppercase tracking-wide text-mist">Balance</p>
+          <p className="font-body text-[11px] uppercase tracking-wide text-mist-ink">Balance</p>
           <p
             className={[
               'font-mono text-lg font-semibold',
-              isClosed ? 'text-sand' : 'text-espresso',
+              isClosed ? 'text-sand-ink' : 'text-espresso',
             ].join(' ')}
           >
             {formatRupee(account.balance)}
@@ -84,17 +89,19 @@ export function PaymentAccountCard({
           Account Book
         </Button>
 
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onEdit(account)}
-          className="font-body text-espresso"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-          Edit
-        </Button>
+        {!account.pettyCashFundId && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onEdit(account)}
+            className="font-body text-espresso"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </Button>
+        )}
 
-        {!isClosed && (
+        {!isClosed && !account.pettyCashFundId && (
           <>
             <Button
               variant="ghost"
@@ -136,7 +143,7 @@ export function PaymentAccountCard({
         )}
 
         {isClosed && account.closedAt && (
-          <span className="ml-auto font-body text-[11px] text-mist">
+          <span className="ml-auto font-body text-[11px] text-mist-ink">
             Closed {new Date(account.closedAt).toLocaleDateString('en-GB', {
               day: '2-digit',
               month: 'short',

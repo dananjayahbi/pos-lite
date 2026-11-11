@@ -127,11 +127,11 @@ export function CsvUploadZone({ onParsed }: CsvUploadZoneProps) {
             : 'border-2 border-dashed border-sand bg-linen'
         }`}
       >
-        <Upload className="mb-3 h-10 w-10 text-mist" />
+        <Upload className="mb-3 h-10 w-10 text-mist-ink" />
         <p className="font-body text-espresso">
           Drag your CSV file here, or click to browse
         </p>
-        <p className="font-body text-xs text-mist mt-1">
+        <p className="font-body text-xs text-mist-ink mt-1">
           Supports .csv files up to 5 MB
         </p>
       </div>

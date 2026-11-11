@@ -81,7 +81,7 @@ export function DateRangeFilter({ value, onChange }: DateRangeFilterProps) {
             onChange={(e) => handleCustomDate('from', e.target.value)}
             className="rounded-lg border border-mist bg-white px-3 py-1.5 font-body text-sm text-espresso"
           />
-          <span className="font-body text-xs text-mist">to</span>
+          <span className="font-body text-xs text-mist-ink">to</span>
           <input
             type="date"
             value={value.to}

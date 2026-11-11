@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { staffDisplayName } from '@/lib/utils/staff-name';
+import { saleAccountingDateWhere } from '@/lib/reports/accounting';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json({ success: false, error: { code, message } }, { status });
@@ -51,7 +53,7 @@ export async function GET(request: NextRequest) {
       tenantId,
       status: 'COMPLETED' as const,
       totalAmount: 0,
-      createdAt: { gte: from, lte: to },
+      ...saleAccountingDateWhere(from, to),
     };
 
     const [sales, reasonGroups] = await Promise.all([
@@ -72,7 +74,7 @@ export async function GET(request: NextRequest) {
 
     const rows = sales.map((sale) => ({
       saleId: sale.id,
-      staff: sale.cashier?.email ?? 'Unknown',
+      staff: staffDisplayName(sale.cashier?.email),
       reason: sale.zeroValueReason ?? null,
       reasonLabel: sale.zeroValueReason ? REASON_LABELS[sale.zeroValueReason] ?? sale.zeroValueReason : '—',
       linkedOrderRef: sale.zeroValueLinkedOrderRef ?? null,

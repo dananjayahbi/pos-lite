@@ -89,7 +89,7 @@ export function PackSizeChipInput({ value, onChange }: PackSizeChipInputProps) {
             <button
               type="button"
               onClick={() => removeSize(i)}
-              className="hover:text-sand transition-colors"
+              className="hover:text-sand-ink transition-colors"
             >
               <X className="h-3 w-3" />
             </button>
@@ -103,7 +103,7 @@ export function PackSizeChipInput({ value, onChange }: PackSizeChipInputProps) {
         placeholder="Type a pack size (e.g. 75g, 200ml) and press Enter"
         className="font-body"
       />
-      <p className="mt-1 text-xs text-mist">
+      <p className="mt-1 text-xs text-mist-ink">
         Common presets: {PACK_SIZE_PRESETS.slice(0, 6).join(', ')}, …
       </p>
     </div>

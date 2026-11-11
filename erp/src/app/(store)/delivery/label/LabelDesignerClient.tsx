@@ -39,7 +39,7 @@ export function LabelDesignerClient() {
     <div>
       <div className="mb-6">
         <h1 className="font-display text-2xl font-bold text-espresso">Label Design</h1>
-        <p className="mt-1 text-sm text-sand">
+        <p className="mt-1 text-sm text-sand-ink">
           Customize how shipping labels render when a delivery is printed.
         </p>
       </div>

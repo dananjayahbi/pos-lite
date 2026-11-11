@@ -115,7 +115,7 @@ export default async function SuperAdminMetricsPage() {
     <main className="mx-auto max-w-7xl p-6 md:p-8">
       <div className="mb-8">
         <h1 className="font-display text-2xl font-bold text-espresso">Business Metrics</h1>
-        <p className="mt-1 text-sm text-mist">Last updated: {timestamp}</p>
+        <p className="mt-1 text-sm text-mist-ink">Last updated: {timestamp}</p>
       </div>
 
       <MetricsStatCards

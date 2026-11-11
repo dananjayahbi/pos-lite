@@ -72,6 +72,9 @@ function TransferForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const source = accounts.find((account) => account.id === fromAccountId) ?? null;
+  const destination = accounts.find((account) => account.id === toAccountId) ?? null;
+  const destinationIsPettyCash = Boolean(destination?.pettyCashFundId);
+  const sourceIsPettyCash = Boolean(source?.pettyCashFundId);
   const sourceBalance = parseMoney(source?.balance ?? null);
   const amountNumber = parseMoney(amount);
   const amountValid = amountNumber !== null && amountNumber > 0;
@@ -85,6 +88,7 @@ function TransferForm({
     amountValid &&
     !exceedsBalance &&
     !sameAccount &&
+    !sourceIsPettyCash &&
     !isSubmitting;
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -113,7 +117,7 @@ function TransferForm({
     <>
       <DialogHeader>
         <DialogTitle className="font-display">Fund Transfer</DialogTitle>
-        <DialogDescription className="font-body text-sm text-mist">
+        <DialogDescription className="font-body text-sm text-mist-ink">
           Move money between two accounts. Both legs post to the ledger in one
           transaction.
         </DialogDescription>
@@ -139,7 +143,7 @@ function TransferForm({
             />
           </div>
           {source && sourceBalance !== null && (
-            <p className="mt-1 font-body text-[11px] text-sand">
+            <p className="mt-1 font-body text-[11px] text-sand-ink">
               Available: {formatRupee(sourceBalance)}
             </p>
           )}
@@ -161,7 +165,19 @@ function TransferForm({
               className="w-full border-mist"
             />
           </div>
+          {destinationIsPettyCash && (
+            <p className="mt-1 font-body text-[11px] text-sand-ink">
+              This is a petty-cash top-up. The transfer posts to the fund&apos;s ledger and
+              increases its running balance too.
+            </p>
+          )}
         </div>
+
+        {sourceIsPettyCash && (
+          <p className="rounded-lg border border-[#9B2226]/30 bg-[#9B2226]/5 p-2 font-body text-xs text-[#9B2226]">
+            Petty cash cannot be a transfer source — record the spend as a Petty Cash expense.
+          </p>
+        )}
 
         <AmountDateNoteFields
           idPrefix="transfer"

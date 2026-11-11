@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Decimal from 'decimal.js';
 import { formatRupee } from '@/lib/format';
-import { useCartStore, getCartTotal } from '@/stores/cartStore';
+import { useCartStore, getCartTotal, getSaleDiscountAmount } from '@/stores/cartStore';
 import { createCartPromotionSnapshot } from '@/stores/cartPromotions';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CartLineItem } from '@/components/pos/CartLineItem';
@@ -22,6 +22,8 @@ import { ZeroValuePaymentModal } from '@/components/pos/ZeroValuePaymentModal';
 import { AddCustomerDialog } from '@/components/pos/AddCustomerDialog';
 import { ReceiptPreviewDialog } from '@/components/pos/ReceiptPreviewDialog';
 import type { CreateSalePayload, CompletedSale } from '@/types/pos.types';
+import type { LankaQrSettings } from '@/lib/payments/lanka-qr-config';
+import { DEFAULT_LANKA_QR_SETTINGS } from '@/lib/payments/lanka-qr-config';
 import { CustomerSearchDropdown } from '@/components/customers/CustomerSearchDropdown';
 import { Switch } from '@/components/ui/switch';
 import { usePersistCartEffect } from '@/hooks/usePersistCartEffect';
@@ -29,9 +31,11 @@ import { clearCartSnapshot } from '@/lib/idb-store';
 
 interface CartPanelProps {
   shiftId: string;
+  /** Tenant LankaQR configuration; defaults keep the tender available. */
+  lankaQr?: LankaQrSettings | undefined;
 }
 
-export function CartPanel({ shiftId }: CartPanelProps) {
+export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: CartPanelProps) {
   const items = useCartStore((s) => s.items);
   const cartDiscountPercent = useCartStore((s) => s.cartDiscountPercent);
   const cartDiscountAmount = useCartStore((s) => s.cartDiscountAmount);
@@ -134,7 +138,15 @@ export function CartPanel({ shiftId }: CartPanelProps) {
       quantity: item.quantity,
       discountPercent: Number(item.discountPercent),
     })),
-    cartDiscountAmount: discountEffective.toNumber(),
+    // ISSUE 7: promotions are a real discount, and the API only knows one
+    // discount field. Sending the cart discount alone persisted a promotion-
+    // discounted sale at full price and made a promotion-zeroed cart fail as a
+    // non-zero NONE tender, so both are folded into `cartDiscountAmount`.
+    cartDiscountAmount: getSaleDiscountAmount(
+      subtotal,
+      discountEffective,
+      promoDiscountDec,
+    ).toNumber(),
     ...(authorizingManagerId ? { authorizingManagerId } : {}),
     ...(authorizingManagerId ? { authorizingManagerId } : {}),
     ...(linkedCustomerId ? { customerId: linkedCustomerId } : { isGuestSale: true }),
@@ -250,12 +262,12 @@ export function CartPanel({ shiftId }: CartPanelProps) {
             <button
               type="button"
               onClick={() => setAddCustomerOpen(true)}
-              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-sand px-3 py-1.5 font-body text-xs text-sand hover:text-espresso hover:border-terracotta transition-colors"
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-sand px-3 py-1.5 font-body text-xs text-sand-ink hover:text-espresso hover:border-terracotta transition-colors"
             >
               <UserPlus className="h-3.5 w-3.5" />
               Add Customer
             </button>
-            <p className="text-center font-body text-[11px] text-mist">
+            <p className="text-center font-body text-[11px] text-mist-ink">
               No customer selected — this will be billed as a guest sale.
             </p>
           </div>
@@ -270,7 +282,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
                   </p>
                 )}
               </div>
-              <button type="button" onClick={() => { unlinkCustomer(); }} className="text-mist hover:text-espresso transition-colors" aria-label="Unlink customer">
+              <button type="button" onClick={() => { unlinkCustomer(); }} className="text-mist-ink hover:text-espresso transition-colors" aria-label="Unlink customer">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -278,7 +290,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <span className="font-body text-xs text-espresso">Use Store Credit</span>
-                  <span className="font-body text-[10px] text-mist ml-1">
+                  <span className="font-body text-[10px] text-mist-ink ml-1">
                     ({formatRupee(linkedCustomerCreditBalance)} available)
                   </span>
                 </div>
@@ -304,7 +316,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
       {/* Line items (scrollable) */}
       <div className="flex-1 overflow-y-auto">
         {!hasItems ? (
-          <div className="flex flex-col items-center justify-center h-full text-mist">
+          <div className="flex flex-col items-center justify-center h-full text-mist-ink">
             <ShoppingBag className="h-10 w-10 mb-2" />
             <p className="font-body text-sm">Cart is empty — add a product to start</p>
           </div>
@@ -338,7 +350,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
                   setPromoCode(null);
                   evaluatePromotionsAction();
                 }}
-                className="text-mist hover:text-[#9B2226] transition-colors"
+                className="text-mist-ink hover:text-[#9B2226] transition-colors"
                 aria-label="Remove promo code"
               >
                 <X className="h-3.5 w-3.5" />
@@ -354,7 +366,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
                 value={promoCodeInput}
                 onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
                 placeholder="Promo code"
-                className="flex-1 px-2 py-1.5 border border-mist/50 rounded text-xs font-mono bg-pearl text-espresso placeholder:text-mist/50 focus:outline-none focus:border-terracotta"
+                className="flex-1 px-2 py-1.5 border border-mist/50 rounded text-xs font-mono bg-pearl text-espresso placeholder:text-mist-ink/50 focus:outline-none focus:border-terracotta"
               />
               <button
                 type="button"
@@ -473,17 +485,19 @@ export function CartPanel({ shiftId }: CartPanelProps) {
                     <CreditCard className="h-4 w-4 text-terracotta" />
                     Card
                   </button>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 font-body text-sm text-espresso hover:bg-linen transition-colors"
-                    onClick={() => {
-                      setPaymentPopoverOpen(false);
-                      setPaymentMode('lankaqr');
-                    }}
-                  >
-                    <QrCode className="h-4 w-4 text-terracotta" />
-                    LankaQR
-                  </button>
+                  {lankaQr.enabled && (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 font-body text-sm text-espresso hover:bg-linen transition-colors"
+                      onClick={() => {
+                        setPaymentPopoverOpen(false);
+                        setPaymentMode('lankaqr');
+                      }}
+                    >
+                      <QrCode className="h-4 w-4 text-terracotta" />
+                      LankaQR
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 rounded-md px-3 py-2 font-body text-sm text-espresso hover:bg-linen transition-colors"
@@ -527,6 +541,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
         onSaleComplete={handleSaleComplete}
         totalAmount={amountDue}
         salePayload={salePayload}
+        allowLankaQr={lankaQr.enabled && lankaQr.allowSplit}
       />
       <LankaQRPaymentModal
         open={paymentMode === 'lankaqr'}
@@ -534,6 +549,7 @@ export function CartPanel({ shiftId }: CartPanelProps) {
         onSaleComplete={handleSaleComplete}
         totalAmount={amountDue}
         salePayload={salePayload}
+        settings={lankaQr}
       />
       <ZeroValuePaymentModal
         open={zeroValueOpen}

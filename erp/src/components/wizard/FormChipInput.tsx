@@ -86,7 +86,7 @@ export function FormChipInput({ value, onChange }: FormChipInputProps) {
               <button
                 type="button"
                 onClick={() => removeForm(i)}
-                className="hover:text-sand transition-colors"
+                className="hover:text-sand-ink transition-colors"
               >
                 <X className="h-3 w-3" />
               </button>

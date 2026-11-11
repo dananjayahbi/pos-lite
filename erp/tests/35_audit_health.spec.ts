@@ -68,6 +68,26 @@ async function login(page: Page, email: string, password: string): Promise<void>
 }
 
 /**
+ * Count CSV columns while respecting RFC 4180 quoting. Audit entity ids can be
+ * comma-separated (e.g. multi-batch delivery updates), so a naive `split(',')`
+ * over-counts quoted cells.
+ */
+function csvColumnCount(line: string): number {
+  let columns = 1;
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') i += 1;
+      else inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      columns += 1;
+    }
+  }
+  return columns;
+}
+
+/**
  * API auth: Playwright's `page.request` shares the browser context cookies.
  * After a UI login, `page.request.get(...)` is authenticated. For pure-API
  * tests we create a throwaway page, log in via UI, then use `page.request`.
@@ -170,7 +190,7 @@ test.describe('§1 Functional & Business Logic', () => {
     // contain a separator/quote/newline. Previously every cell — header
     // included — was wrapped in quotes.
     expect(headerLine, 'BUG-79 fixed: bare header row').toBe(
-      'createdAt,entityType,entityId,action,actorId,actorRole,ipAddress',
+      'createdAt,entityType,entityId,action,actorName,actorId,actorRole,ipAddress',
     );
     expect(headerLine).not.toContain('"');
 
@@ -179,7 +199,7 @@ test.describe('§1 Functional & Business Logic', () => {
     const lines = text.split('\n').filter((l) => l.trim().length > 0);
     expect(lines.length).toBeGreaterThan(1);
     for (const line of lines) {
-      expect(line.replace(/\r$/, '').split(',').length).toBe(7);
+      expect(csvColumnCount(line.replace(/\r$/, ''))).toBe(8);
     }
   });
 
@@ -198,6 +218,28 @@ test.describe('§1 Functional & Business Logic', () => {
     const bodyText = await page.locator('body').innerText();
     // Either rows exist or an explicit empty state is shown — never a crash.
     expect(bodyText).not.toMatch(/application error|unhandled|500/i);
+  });
+
+  test('F9b — audit-log table shows a resolved User column instead of raw IDs', async ({ page }) => {
+    await login(page, OWNER.email, OWNER.password);
+
+    // API contract: actorId is preserved but a human-readable actorName is added.
+    const api = await page.request.get(`${AUDIT_API}?pageSize=10`);
+    expect(api.status()).toBe(200);
+    const payload = await api.json();
+    expect(Array.isArray(payload.data)).toBe(true);
+    for (const row of payload.data) {
+      expect(typeof row.actorName).toBe('string');
+      expect(row.actorName.length).toBeGreaterThan(0);
+      if (!row.actorId) expect(row.actorName).toBe('System');
+      else expect(row.actorName === 'Unknown user' || row.actorName.includes('@')).toBe(true);
+    }
+
+    await page.goto(AUDIT_PAGE);
+    await expect(page.getByRole('heading', { name: /audit log/i })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('columnheader', { name: 'User' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Entity ID' })).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: 'Performed By' })).toHaveCount(0);
   });
 
   test('F10 — health endpoint returns ok + latency + timestamp', async ({ page }) => {
@@ -336,10 +378,10 @@ test.describe('§2 Financial & Calculation Precision', () => {
       const quoteCount = (line.replace(/\r$/, '').match(/"/g) ?? []).length;
       expect(quoteCount % 2, 'balanced quotes per row').toBe(0);
     }
-    // The header is bare, and every line still has the same 7 columns.
+    // The header is bare, and every line still has the same 8 columns.
     expect(lines[0].replace(/\r$/, '')).not.toContain('"');
     for (const line of lines) {
-      expect(line.replace(/\r$/, '').split(',').length).toBe(7);
+      expect(csvColumnCount(line.replace(/\r$/, ''))).toBe(8);
     }
   });
 });

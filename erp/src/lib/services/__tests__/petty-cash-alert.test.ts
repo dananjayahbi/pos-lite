@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildTopUpDescription,
   evaluateLowBalance,
   DEFAULT_LOW_BALANCE_THRESHOLD,
 } from '@/lib/services/petty-cash.service';
@@ -39,5 +40,23 @@ describe('evaluateLowBalance (doc 40)', () => {
 
   it('exposes a sensible default threshold', () => {
     expect(DEFAULT_LOW_BALANCE_THRESHOLD).toBe(5000);
+  });
+});
+
+describe('buildTopUpDescription (Add Cash In)', () => {
+  it('names the source account when no note is given', () => {
+    expect(buildTopUpDescription('Bank')).toBe('Petty Cash Replenished from Bank');
+  });
+
+  it('uses a neutral description for external cash', () => {
+    expect(buildTopUpDescription(null)).toBe('Petty Cash Replenished');
+  });
+
+  it('prefers a trimmed user note', () => {
+    expect(buildTopUpDescription('Bank', '  Monthly float  ')).toBe('Monthly float');
+  });
+
+  it('caps the description at 200 characters', () => {
+    expect(buildTopUpDescription('Bank', 'x'.repeat(500))).toHaveLength(200);
   });
 });

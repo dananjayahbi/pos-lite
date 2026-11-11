@@ -12,7 +12,7 @@ export function MetricCard({ label, value, icon }: MetricCardProps) {
       <CardContent className="flex items-center gap-4">
         <div className="text-terracotta">{icon}</div>
         <div>
-          <p className="text-mist text-sm">{label}</p>
+          <p className="text-mist-ink text-sm">{label}</p>
           <p className="text-espresso text-2xl font-bold">{value}</p>
         </div>
       </CardContent>

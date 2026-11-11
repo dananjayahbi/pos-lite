@@ -69,7 +69,7 @@ export function CashFlowTable({ accounts }: CashFlowTableProps) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <Label htmlFor="cashflow-date-from" className="font-body text-xs text-sand">
+          <Label htmlFor="cashflow-date-from" className="font-body text-xs text-sand-ink">
             From
           </Label>
           <Input
@@ -84,7 +84,7 @@ export function CashFlowTable({ accounts }: CashFlowTableProps) {
           />
         </div>
         <div>
-          <Label htmlFor="cashflow-date-to" className="font-body text-xs text-sand">
+          <Label htmlFor="cashflow-date-to" className="font-body text-xs text-sand-ink">
             To
           </Label>
           <Input
@@ -99,7 +99,7 @@ export function CashFlowTable({ accounts }: CashFlowTableProps) {
           />
         </div>
         <div>
-          <Label htmlFor="cashflow-account" className="font-body text-xs text-sand">
+          <Label htmlFor="cashflow-account" className="font-body text-xs text-sand-ink">
             Account
           </Label>
           <Select
@@ -151,7 +151,7 @@ export function CashFlowTable({ accounts }: CashFlowTableProps) {
             <TableBody>
               {entries.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center font-body text-sand">
+                  <TableCell colSpan={7} className="py-8 text-center font-body text-sand-ink">
                     No ledger entries for the selected filters.
                   </TableCell>
                 </TableRow>
@@ -170,13 +170,13 @@ export function CashFlowTable({ accounts }: CashFlowTableProps) {
                           <AccountTypeBadge type={entry.account.type} />
                         </div>
                       ) : (
-                        <span className="font-body text-xs text-mist">—</span>
+                        <span className="font-body text-xs text-mist-ink">—</span>
                       )}
                     </TableCell>
                     <TableCell className="max-w-xs truncate font-body">
                       {entry.description}
                     </TableCell>
-                    <TableCell className="font-body text-xs text-sand">
+                    <TableCell className="font-body text-xs text-sand-ink">
                       {ENTRY_SOURCE_LABELS[entry.source]}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs">
@@ -201,15 +201,15 @@ export function CashFlowTable({ accounts }: CashFlowTableProps) {
           <div className="flex justify-end">
             <div className="rounded-lg border border-mist bg-linen/30 px-4 py-2">
               <div className="flex flex-wrap items-center gap-6 font-body text-sm">
-                <span className="text-sand">
+                <span className="text-sand-ink">
                   Total debit:{' '}
                   <span className="font-mono text-espresso">{formatRupee(sums.debit)}</span>
                 </span>
-                <span className="text-sand">
+                <span className="text-sand-ink">
                   Total credit:{' '}
                   <span className="font-mono text-espresso">{formatRupee(sums.credit)}</span>
                 </span>
-                <span className="text-sand">
+                <span className="text-sand-ink">
                   Net:{' '}
                   <span className="font-mono font-semibold text-espresso">
                     {formatRupee(sums.debit - sums.credit)}

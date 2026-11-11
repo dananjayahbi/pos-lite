@@ -129,7 +129,7 @@ export function PaymentAccountsPageClient() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl font-bold text-espresso">Payment Accounts</h1>
-          <p className="mt-1 font-body text-sm text-sand">
+          <p className="mt-1 font-body text-sm text-sand-ink">
             Every rupee that moves through the business passes through one of these accounts.
           </p>
         </div>
@@ -159,19 +159,19 @@ export function PaymentAccountsPageClient() {
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-mist/30 bg-pearl p-4">
-          <p className="font-body text-xs uppercase tracking-wide text-mist">Total balance</p>
+          <p className="font-body text-xs uppercase tracking-wide text-mist-ink">Total balance</p>
           <p className="mt-2 font-display text-2xl text-espresso">{formatRupee(totalBalance)}</p>
-          <p className="mt-1 font-body text-xs text-sand">Across active accounts</p>
+          <p className="mt-1 font-body text-xs text-sand-ink">Across active accounts</p>
         </div>
         <div className="rounded-xl border border-mist/30 bg-pearl p-4">
-          <p className="font-body text-xs uppercase tracking-wide text-mist">Active accounts</p>
+          <p className="font-body text-xs uppercase tracking-wide text-mist-ink">Active accounts</p>
           <p className="mt-2 font-display text-2xl text-espresso">{activeCount}</p>
-          <p className="mt-1 font-body text-xs text-sand">
+          <p className="mt-1 font-body text-xs text-sand-ink">
             {accounts.length - activeCount} closed
           </p>
         </div>
         <div className="rounded-xl border border-mist/30 bg-pearl p-4">
-          <p className="font-body text-xs uppercase tracking-wide text-mist">Highest balance</p>
+          <p className="font-body text-xs uppercase tracking-wide text-mist-ink">Highest balance</p>
           <p className="mt-2 font-display text-2xl text-espresso">
             {formatRupee(
               accounts.reduce(
@@ -180,7 +180,7 @@ export function PaymentAccountsPageClient() {
               ),
             )}
           </p>
-          <p className="mt-1 font-body text-xs text-sand">Single account</p>
+          <p className="mt-1 font-body text-xs text-sand-ink">Single account</p>
         </div>
       </div>
 
@@ -209,9 +209,9 @@ export function PaymentAccountsPageClient() {
             </p>
           ) : accounts.length === 0 ? (
             <div className="rounded-xl border border-dashed border-mist bg-pearl p-10 text-center">
-              <Wallet className="mx-auto h-8 w-8 text-mist" />
+              <Wallet className="mx-auto h-8 w-8 text-mist-ink" />
               <p className="mt-3 font-display text-base text-espresso">No accounts yet</p>
-              <p className="mt-1 font-body text-sm text-sand">
+              <p className="mt-1 font-body text-sm text-sand-ink">
                 Add your cash drawer, bank account or payment gateway to start tracking money.
               </p>
               <Button

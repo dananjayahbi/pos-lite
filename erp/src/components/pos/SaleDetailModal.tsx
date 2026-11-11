@@ -39,7 +39,7 @@ interface Sale {
   discountAmount: number;
   taxAmount: number;
   totalAmount: number;
-  paymentMethod: 'CASH' | 'CARD' | 'SPLIT' | null;
+  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | null;
   status: 'OPEN' | 'COMPLETED' | 'VOIDED';
   authorizingManagerId: string | null;
   createdAt: string;
@@ -89,7 +89,7 @@ export function SaleDetailModal({
           <DialogTitle className="font-display text-lg text-espresso">
             Sale {shortId}
           </DialogTitle>
-          <p className="font-body text-xs text-mist">
+          <p className="font-body text-xs text-mist-ink">
             {formatDateTime(sale.createdAt)}
           </p>
           <CopyableText value={sale.id} label="Sale ID" className="text-xs text-espresso" />
@@ -143,7 +143,7 @@ export function SaleDetailModal({
                     <p className="font-body text-xs text-espresso">
                       {line.productNameSnapshot}
                     </p>
-                    <p className="font-body text-[11px] text-mist">
+                    <p className="font-body text-[11px] text-mist-ink">
                       {line.variantDescriptionSnapshot}
                     </p>
                   </div>
@@ -205,7 +205,7 @@ export function SaleDetailModal({
         </div>
 
         {sale.authorizingManagerId && (
-          <p className="font-body text-xs text-mist mt-1">
+          <p className="font-body text-xs text-mist-ink mt-1">
             Cart discount authorised by a manager.
           </p>
         )}

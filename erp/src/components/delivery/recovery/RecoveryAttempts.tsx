@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { DeliveryRecoveryAttempt } from '@/types/delivery';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 const ACTION_LABELS: Record<string, string> = {
   FOLLOW_UP_CALL: 'Follow-up Call',
@@ -55,7 +56,7 @@ export function RecoveryAttempts({
               </Badge>
               {attempt.notes && <p className="text-sm text-espresso/70">{attempt.notes}</p>}
               <p className="text-xs text-espresso/40">
-                {attempt.staff?.email ?? 'Unknown staff'} ·{' '}
+                {attempt.staff ? staffDisplayName(attempt.staff.email) : 'Unknown staff'} ·{' '}
                 {new Date(attempt.createdAt).toLocaleString('en-US', {
                   month: 'short',
                   day: 'numeric',

@@ -48,7 +48,7 @@ export function PageSkeleton({ rows = 6, caption = 'Select an item to see detail
             <div className="h-5 w-1/2 animate-pulse rounded bg-sand" />
           </div>
           <div className="flex flex-1 items-center justify-center p-8">
-            <p className="text-sm text-mist">{caption}</p>
+            <p className="text-sm text-mist-ink">{caption}</p>
           </div>
         </div>
       </div>

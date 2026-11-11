@@ -98,11 +98,11 @@ export function StockAdjustmentForm({ permissions, prefillVariantId }: StockAdju
         <Breadcrumb />
         <Card className="border-sand/40">
           <CardContent className="flex flex-col items-center gap-4 py-12">
-            <Lock className="h-12 w-12 text-mist" />
+            <Lock className="h-12 w-12 text-mist-ink" />
             <h2 className="font-display text-xl font-semibold text-espresso">
               Permission Denied
             </h2>
-            <p className="font-body text-sm text-mist">
+            <p className="font-body text-sm text-mist-ink">
               You do not have permission to make stock adjustments.
             </p>
             <Link
@@ -126,7 +126,7 @@ export function StockAdjustmentForm({ permissions, prefillVariantId }: StockAdju
 
 function Breadcrumb() {
   return (
-    <nav className="flex items-center gap-1 font-body text-sm text-mist">
+    <nav className="flex items-center gap-1 font-body text-sm text-mist-ink">
       <Link href="/dashboard" className="hover:text-espresso">
         Dashboard
       </Link>
@@ -403,7 +403,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
         <h1 className="font-display text-2xl font-bold text-espresso">
           Manual Stock Adjustment
         </h1>
-        <p className="mt-1 font-body text-sm text-mist">
+        <p className="mt-1 font-body text-sm text-mist-ink">
           Add or remove inventory with a reason for audit tracking.
         </p>
       </div>
@@ -419,8 +419,8 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
             {/* Prefill loading / error states */}
             {isPrefilling && (
               <div className="flex items-center gap-2 py-2">
-                <Loader2 className="h-4 w-4 animate-spin text-mist" />
-                <span className="font-body text-sm text-mist">
+                <Loader2 className="h-4 w-4 animate-spin text-mist-ink" />
+                <span className="font-body text-sm text-mist-ink">
                   Loading product from record…
                 </span>
               </div>
@@ -453,13 +453,13 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                       {selectedProduct.name}
                     </p>
                     {selectedProduct.category && (
-                      <p className="font-body text-xs text-mist">
+                      <p className="font-body text-xs text-mist-ink">
                         {selectedProduct.category.name}
                       </p>
                     )}
                   </div>
                   {isLocked ? (
-                    <span className="flex items-center gap-1.5 font-body text-xs font-medium text-mist">
+                    <span className="flex items-center gap-1.5 font-body text-xs font-medium text-mist-ink">
                       <Lock className="h-3.5 w-3.5" />
                       Locked to record
                     </span>
@@ -484,7 +484,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                 <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
                   <PopoverTrigger asChild>
                     <div className="relative">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mist" />
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mist-ink" />
                       <Input
                         placeholder="Search products by name, SKU, or barcode…"
                         value={productSearch}
@@ -511,11 +511,11 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                   >
                     {isSearching ? (
                       <div className="flex items-center justify-center py-4">
-                        <Loader2 className="h-4 w-4 animate-spin text-mist" />
-                        <span className="ml-2 font-body text-sm text-mist">Searching…</span>
+                        <Loader2 className="h-4 w-4 animate-spin text-mist-ink" />
+                        <span className="ml-2 font-body text-sm text-mist-ink">Searching…</span>
                       </div>
                     ) : searchResults.length === 0 ? (
-                      <p className="px-3 py-4 text-center font-body text-sm text-mist">
+                      <p className="px-3 py-4 text-center font-body text-sm text-mist-ink">
                         {productSearch.trim().length > 0
                           ? 'No products found'
                           : 'Type to search products'}
@@ -537,7 +537,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                                 {p.name}
                               </span>
                               {p.category && (
-                                <span className="font-body text-xs text-mist">
+                                <span className="font-body text-xs text-mist-ink">
                                   {p.category.name}
                                   {p.brand ? ` · ${p.brand.name}` : ''}
                                 </span>
@@ -565,19 +565,19 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
 
               {isPrefilling ? (
                 <div className="flex items-center gap-2 py-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-mist" />
-                  <span className="font-body text-sm text-mist">Loading record…</span>
+                  <Loader2 className="h-4 w-4 animate-spin text-mist-ink" />
+                  <span className="font-body text-sm text-mist-ink">Loading record…</span>
                 </div>
               ) : isLoadingVariants ? (
                 <div className="flex items-center gap-2 py-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-mist" />
-                  <span className="font-body text-sm text-mist">Loading variants…</span>
+                  <Loader2 className="h-4 w-4 animate-spin text-mist-ink" />
+                  <span className="font-body text-sm text-mist-ink">Loading variants…</span>
                 </div>
               ) : isLocked && selectedVariant ? (
                 // Locked variant chip (arrived from a Low Stock record)
                 <div className="rounded-md border border-sand/40 bg-linen/50 px-3 py-2">
                   <p className="font-mono text-xs text-espresso">{selectedVariant.sku ?? '—'}</p>
-                  <p className="font-body text-xs text-mist">
+                  <p className="font-body text-xs text-mist-ink">
                     {selectedVariant.form ?? '—'} / {selectedVariant.packSize ?? '—'} · Stock:{' '}
                     {selectedVariant.stockQuantity}
                   </p>
@@ -598,7 +598,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                         <span className="ml-1">
                           — {v.form ?? '—'} / {v.packSize ?? '—'}
                         </span>
-                        <span className="ml-1 text-mist">
+                        <span className="ml-1 text-mist-ink">
                           (Stock: {v.stockQuantity})
                         </span>
                         {v.stockQuantity === 0 && (
@@ -619,7 +619,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
               {/* Current stock badge */}
               {selectedVariant && (
                 <div className="flex items-center gap-2 pt-1">
-                  <span className="font-body text-xs text-mist">Current stock:</span>
+                  <span className="font-body text-xs text-mist-ink">Current stock:</span>
                   <Badge
                     className={
                       selectedVariant.stockQuantity === 0
@@ -655,7 +655,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                   className={`flex flex-1 items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 font-body text-sm font-medium transition-colors ${
                     adjustmentType === 'add'
                       ? 'border-green-600 bg-green-50 text-green-700'
-                      : 'border-sand/40 text-mist hover:border-green-400 hover:bg-green-50/50'
+                      : 'border-sand/40 text-mist-ink hover:border-green-400 hover:bg-green-50/50'
                   }`}
                   onClick={() =>
                     form.setValue('adjustmentType', 'add', { shouldValidate: true })
@@ -669,7 +669,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                   className={`flex flex-1 items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 font-body text-sm font-medium transition-colors ${
                     adjustmentType === 'remove'
                       ? 'border-red-600 bg-red-50 text-red-700'
-                      : 'border-sand/40 text-mist hover:border-red-400 hover:bg-red-50/50'
+                      : 'border-sand/40 text-mist-ink hover:border-red-400 hover:bg-red-50/50'
                   }`}
                   onClick={() =>
                     form.setValue('adjustmentType', 'remove', { shouldValidate: true })
@@ -711,7 +711,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
               {/* Live preview */}
               {selectedVariant && adjustmentType && quantity > 0 && (
                 <div className="flex items-center gap-2 pt-1">
-                  <span className="font-body text-xs text-mist">Stock after adjustment:</span>
+                  <span className="font-body text-xs text-mist-ink">Stock after adjustment:</span>
                   <span
                     className={`font-body text-sm font-semibold ${
                       wouldGoNegative
@@ -753,7 +753,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                     <SelectItem key={r} value={r}>
                       {REASON_LABELS[r]}
                       {r === STOCK_MOVEMENT_REASON.STOCK_TAKE_ADJUSTMENT && (
-                        <span className="ml-1 text-xs text-mist">(used by stock takes)</span>
+                        <span className="ml-1 text-xs text-mist-ink">(used by stock takes)</span>
                       )}
                     </SelectItem>
                   ))}
@@ -769,14 +769,14 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
             {/* Note */}
             <div className="space-y-2">
               <Label className="font-body text-sm font-medium text-espresso">
-                Note <span className="font-normal text-mist">(optional)</span>
+                Note <span className="font-normal text-mist-ink">(optional)</span>
               </Label>
               <Textarea
                 placeholder="Add any additional details about this adjustment…"
                 maxLength={500}
                 {...form.register('note')}
               />
-              <p className="text-right font-body text-xs text-mist">
+              <p className="text-right font-body text-xs text-mist-ink">
                 {noteValue.length}/500
               </p>
             </div>
@@ -799,7 +799,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
               'Submit Adjustment'
             )}
           </Button>
-          <p className="text-center font-body text-xs text-mist">
+          <p className="text-center font-body text-xs text-mist-ink">
             Adjustments are permanent. Use a follow-up adjustment to correct mistakes.
           </p>
         </div>

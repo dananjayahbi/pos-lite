@@ -23,12 +23,14 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { BroadcastFilterPanel, type BroadcastFilters } from '@/components/broadcast/BroadcastFilterPanel';
-import { BroadcastComposer } from '@/components/broadcast/BroadcastComposer';
+import { BroadcastComposer, type ComposerChannel } from '@/components/broadcast/BroadcastComposer';
+import { buildEmailHtml } from '@/lib/broadcast/templates';
 
 interface MatchedCustomer {
   id: string;
   name: string;
   phone: string;
+  email: string | null;
   tags: string[];
   totalSpend: string;
   gender: string | null;
@@ -36,8 +38,9 @@ interface MatchedCustomer {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildCountParams(filters: BroadcastFilters): string {
+function buildAudienceParams(filters: BroadcastFilters, channel: ComposerChannel): string {
   const params = new URLSearchParams();
+  params.set('channel', channel);
   if (filters.tags.trim()) params.set('tags', filters.tags.trim());
   if (filters.gender && filters.gender !== 'ALL') params.set('gender', filters.gender);
   if (filters.minSpend) params.set('minSpend', filters.minSpend);
@@ -61,28 +64,34 @@ const DEFAULT_FILTERS: BroadcastFilters = {
 export function BroadcastPageClient() {
   const router = useRouter();
   const [filters, setFilters] = useState<BroadcastFilters>(DEFAULT_FILTERS);
+  const [channel, setChannel] = useState<ComposerChannel>('EMAIL');
+  const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
+  const [html, setHtml] = useState('');
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  // Auto-fetch count whenever filters change
+  const isEmail = channel === 'EMAIL';
+
+  // Auto-fetch count whenever the audience or channel changes.
   const countQuery = useQuery<{ success: boolean; data: { count: number } }>({
-    queryKey: ['broadcast-count', filters],
+    queryKey: ['broadcast-count', filters, channel],
     queryFn: async () => {
-      const qs = buildCountParams(filters);
-      const res = await fetch(`/api/customers/count${qs ? `?${qs}` : ''}`);
+      const qs = buildAudienceParams(filters, channel);
+      const res = await fetch(`/api/customers/count?${qs}`);
       if (!res.ok) throw new Error('Failed to fetch count');
       return res.json();
     },
     staleTime: 10_000,
   });
 
-  // Fetch matching customers list for preview table
+  // Fetch matching customers list for preview table.
   const previewQuery = useQuery<{ success: boolean; data: MatchedCustomer[] }>({
-    queryKey: ['broadcast-preview', filters],
+    queryKey: ['broadcast-preview', filters, channel],
     queryFn: async () => {
-      const qs = buildCountParams(filters);
-      const res = await fetch(`/api/customers/preview${qs ? `?${qs}` : ''}`);
+      const qs = buildAudienceParams(filters, channel);
+      const res = await fetch(`/api/customers/preview?${qs}`);
       if (!res.ok) throw new Error('Failed to fetch preview');
       return res.json();
     },
@@ -96,6 +105,11 @@ export function BroadcastPageClient() {
     setFilters(updated);
   }, []);
 
+  const handleChannelChange = (next: ComposerChannel) => {
+    setChannel(next);
+    setShowConfirm(false);
+  };
+
   const handleSendClick = () => {
     setShowConfirm(true);
   };
@@ -105,9 +119,9 @@ export function BroadcastPageClient() {
     setIsSending(true);
 
     try {
-      const body: Record<string, unknown> = { message };
-      const apiFilters: Record<string, unknown> = {};
+      const body: Record<string, unknown> = { channel };
 
+      const apiFilters: Record<string, unknown> = {};
       if (filters.tags.trim()) apiFilters.tags = filters.tags.trim();
       if (filters.gender && filters.gender !== 'ALL') apiFilters.gender = filters.gender;
       if (filters.minSpend) apiFilters.minSpend = parseFloat(filters.minSpend);
@@ -115,12 +129,18 @@ export function BroadcastPageClient() {
       if (filters.birthdayMonth && filters.birthdayMonth !== '0') {
         apiFilters.birthdayMonth = parseInt(filters.birthdayMonth, 10);
       }
+      if (Object.keys(apiFilters).length > 0) body.filters = apiFilters;
 
-      if (Object.keys(apiFilters).length > 0) {
-        body.filters = apiFilters;
+      if (isEmail) {
+        body.subject = subject.trim();
+        body.html = html;
+        if (message.trim()) body.message = message;
+        if (imageUrls.length > 0) body.imageUrls = imageUrls;
+      } else {
+        body.message = message;
       }
 
-      const res = await fetch('/api/broadcast/whatsapp', {
+      const res = await fetch('/api/broadcast/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -133,19 +153,20 @@ export function BroadcastPageClient() {
         return;
       }
 
-      // M31-03: the send now continues after the response, so this call returns
-      // a queued acknowledgement rather than final delivery counts.
-      const { total, status } = json.data as {
+      const { total, status, providerConfigured } = json.data as {
         total: number;
         status?: string;
         broadcastId?: string;
+        providerConfigured?: boolean;
       };
 
-      if (total === 0) {
-        toast.warning('No customers matched these filters — nothing was sent.');
+      if (providerConfigured === false) {
+        toast.warning(
+          `${isEmail ? 'Email' : 'SMS'} is not configured, so deliveries will fail. Queued for ${total} customer${total !== 1 ? 's' : ''}; configure the provider and resend.`,
+        );
       } else if (status === 'SENDING') {
         toast.success(
-          `Broadcast queued for ${total} customer${total !== 1 ? 's' : ''}. Delivery continues in the background — check Broadcast History for the result.`,
+          `${isEmail ? 'Email' : 'SMS'} broadcast queued for ${total} customer${total !== 1 ? 's' : ''}. Delivery continues in the background — check Broadcast History for the result.`,
         );
       } else {
         toast.success(`Broadcast started for ${total} customer${total !== 1 ? 's' : ''}.`);
@@ -158,6 +179,14 @@ export function BroadcastPageClient() {
       setIsSending(false);
     }
   };
+
+  const confirmPreviewHtml = buildEmailHtml({
+    html,
+    text: message,
+    customerName: 'Nimal',
+    storeName: 'Your Store',
+    images: imageUrls,
+  });
 
   return (
     <div className="space-y-6 p-6 md:p-8">
@@ -172,8 +201,8 @@ export function BroadcastPageClient() {
           <h1 className="text-2xl font-display font-bold text-espresso">
             Marketing Broadcast
           </h1>
-          <p className="text-sm text-sand mt-0.5">
-            Send targeted WhatsApp messages to your customers
+          <p className="text-sm text-sand-ink mt-0.5">
+            Send targeted Email or SMS campaigns to your customers
           </p>
         </div>
         <div className="ml-auto">
@@ -202,8 +231,16 @@ export function BroadcastPageClient() {
           </CardHeader>
           <CardContent>
             <BroadcastComposer
+              channel={channel}
+              onChannelChange={handleChannelChange}
+              subject={subject}
+              onSubjectChange={setSubject}
               message={message}
               onMessageChange={setMessage}
+              html={html}
+              onHtmlChange={setHtml}
+              imageUrls={imageUrls}
+              onImageUrlsChange={setImageUrls}
               recipientCount={recipientCount}
               isSending={isSending}
               onSend={handleSendClick}
@@ -217,14 +254,15 @@ export function BroadcastPageClient() {
         <Users className="h-5 w-5 text-terracotta shrink-0" />
         <div>
           {countQuery.isLoading ? (
-            <p className="text-sm text-sand">Counting matching customers…</p>
+            <p className="text-sm text-sand-ink">Counting matching customers…</p>
           ) : recipientCount !== null ? (
             <p className="text-sm text-espresso">
               <span className="font-bold text-terracotta">{recipientCount}</span>{' '}
-              customer{recipientCount !== 1 ? 's' : ''} match your filters
+              customer{recipientCount !== 1 ? 's' : ''} match your filters and have a{' '}
+              {isEmail ? 'valid email address' : 'phone number'}
             </p>
           ) : (
-            <p className="text-sm text-sand">No count available</p>
+            <p className="text-sm text-sand-ink">No count available</p>
           )}
         </div>
       </div>
@@ -242,11 +280,13 @@ export function BroadcastPageClient() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-mist bg-pearl">
-                    <th className="px-4 py-3 text-left font-medium text-sand">Name</th>
-                    <th className="px-4 py-3 text-left font-medium text-sand">Phone</th>
-                    <th className="px-4 py-3 text-left font-medium text-sand">Tags</th>
-                    <th className="px-4 py-3 text-right font-medium text-sand">Total Spend</th>
-                    <th className="px-4 py-3 text-center font-medium text-sand">Action</th>
+                    <th className="px-4 py-3 text-left font-medium text-sand-ink">Name</th>
+                    <th className="px-4 py-3 text-left font-medium text-sand-ink">
+                      {isEmail ? 'Email' : 'Phone'}
+                    </th>
+                    <th className="px-4 py-3 text-left font-medium text-sand-ink">Tags</th>
+                    <th className="px-4 py-3 text-right font-medium text-sand-ink">Total Spend</th>
+                    <th className="px-4 py-3 text-center font-medium text-sand-ink">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -256,7 +296,9 @@ export function BroadcastPageClient() {
                       className={idx % 2 === 0 ? 'bg-white' : 'bg-pearl/50'}
                     >
                       <td className="px-4 py-3 font-medium text-espresso">{c.name}</td>
-                      <td className="px-4 py-3 text-sand font-mono text-xs">{c.phone}</td>
+                      <td className="px-4 py-3 text-sand-ink font-mono text-xs">
+                        {(isEmail ? c.email : c.phone) ?? '—'}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
                           {c.tags.length > 0 ? (
@@ -266,7 +308,7 @@ export function BroadcastPageClient() {
                               </Badge>
                             ))
                           ) : (
-                            <span className="text-mist text-xs">—</span>
+                            <span className="text-mist-ink text-xs">—</span>
                           )}
                         </div>
                       </td>
@@ -292,19 +334,34 @@ export function BroadcastPageClient() {
 
       {/* Confirmation Dialog */}
       <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Confirm Broadcast</DialogTitle>
+            <DialogTitle>Confirm {isEmail ? 'Email' : 'SMS'} Broadcast</DialogTitle>
             <DialogDescription>
-              You are about to send a WhatsApp message to{' '}
+              You are about to send an {isEmail ? 'email' : 'SMS'} to{' '}
               <span className="font-bold text-espresso">{recipientCount}</span>{' '}
-              customer{recipientCount !== 1 ? 's' : ''}. This action cannot be
-              undone.
+              customer{recipientCount !== 1 ? 's' : ''}. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <div className="rounded-lg bg-linen border border-mist p-3 text-sm font-mono text-espresso whitespace-pre-wrap max-h-40 overflow-y-auto">
-            {message}
-          </div>
+
+          {isEmail ? (
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-wide text-sand-ink">Subject</p>
+              <p className="text-sm font-medium text-espresso">{subject}</p>
+              <p className="text-xs uppercase tracking-wide text-sand-ink">Preview</p>
+              <iframe
+                title="Email broadcast preview"
+                srcDoc={confirmPreviewHtml}
+                sandbox=""
+                className="h-[300px] w-full rounded-lg border border-mist bg-white"
+              />
+            </div>
+          ) : (
+            <div className="max-h-52 overflow-y-auto whitespace-pre-wrap rounded-lg border border-mist bg-linen p-3 font-mono text-sm text-espresso">
+              {message}
+            </div>
+          )}
+
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setShowConfirm(false)}>
               Cancel

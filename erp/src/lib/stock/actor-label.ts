@@ -11,15 +11,18 @@
  * wrong, and every surface shows the same wording.
  */
 
+import { staffDisplayName } from '@/lib/utils/staff-name';
+
 /** Shown when no user performed the movement. */
 export const SYSTEM_ACTOR_LABEL = 'System';
 
 /**
- * The actor's email, or `SYSTEM_ACTOR_LABEL` when the movement was automated.
- * Accepts `null`/`undefined` because Prisma returns `null` for the relation.
+ * The actor's display name, or `SYSTEM_ACTOR_LABEL` when the movement was
+ * automated. Accepts `null`/`undefined` because Prisma returns `null` for the
+ * relation.
  */
 export function stockActorLabel(
   actor: { email: string } | null | undefined,
 ): string {
-  return actor?.email ?? SYSTEM_ACTOR_LABEL;
+  return actor ? staffDisplayName(actor.email) : SYSTEM_ACTOR_LABEL;
 }

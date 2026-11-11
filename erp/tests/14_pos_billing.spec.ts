@@ -476,4 +476,81 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
     expect(badPage.status(), 'page=abc → 400').toBe(400);
     expect(String(((await json(badPage))?.error?.message) ?? '')).toContain('page');
   });
+
+  test('C5 removes an applied cart discount from the POS cart', async ({ page }) => {
+    await login(page);
+    await ensureShift(page);
+    await page.goto(`${BASE_URL}/pos`, { waitUntil: 'domcontentloaded' });
+    const search = page.getByPlaceholder(/search products, sku, barcode/i);
+    await search.waitFor({ timeout: 30_000 });
+
+    await page.keyboard.type(`${state.variant.barcode ?? state.variant.sku}\n`, { delay: 5 });
+    await expect(page.getByText('Sub-total').first()).toBeVisible({ timeout: 30_000 });
+
+    const discountInput = page.locator('input[type="number"]').first();
+    await discountInput.fill('10');
+    await page.getByRole('button', { name: 'Apply', exact: true }).first().click();
+    await expect(page.getByText('Discount', { exact: true })).toBeVisible();
+
+    const remove = page.getByRole('button', { name: /remove cart discount/i });
+    await expect(remove).toBeVisible();
+    await remove.click();
+
+    // ISSUE 6: the applied discount must be removable, not just applicable.
+    await expect(page.getByText('Discount', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Sub-total').first()).toBeVisible();
+  });
+
+  test('C6 removes an applied line-item discount from the POS cart', async ({ page }) => {
+    await login(page);
+    await ensureShift(page);
+    await page.goto(`${BASE_URL}/pos`, { waitUntil: 'domcontentloaded' });
+    const search = page.getByPlaceholder(/search products, sku, barcode/i);
+    await search.waitFor({ timeout: 30_000 });
+
+    await page.keyboard.type(`${state.variant.barcode ?? state.variant.sku}\n`, { delay: 5 });
+    await expect(page.getByText('Sub-total').first()).toBeVisible({ timeout: 30_000 });
+
+    // Open the line-discount editor for the cart row.
+    await page.locator('[role="button"]').filter({ hasText: state.productName! }).first().click();
+    await expect(page.getByText(/line discount/i).first()).toBeVisible();
+
+    const lineDiscountInput = page.locator('input[type="number"]').first();
+    await lineDiscountInput.fill('5');
+    // The line control's Apply is the first Apply button in the DOM.
+    await page.getByRole('button', { name: 'Apply', exact: true }).first().click();
+    await expect(page.getByText('-5%', { exact: false }).first()).toBeVisible();
+
+    // The chip's own X removes the line discount without opening the editor.
+    // (`^Remove discount from` avoids matching the cart row's composed a11y name.)
+    await page.getByRole('button', { name: /^Remove discount from / }).first().click();
+    await expect(page.getByText('-5%', { exact: false })).toHaveCount(0);
+  });
+
+  test('C7 completes a fully discounted cart as a zero-value sale', async ({ page }) => {
+    await login(page);
+    await ensureShift(page);
+    await page.goto(`${BASE_URL}/pos`, { waitUntil: 'domcontentloaded' });
+    const search = page.getByPlaceholder(/search products, sku, barcode/i);
+    await search.waitFor({ timeout: 30_000 });
+
+    await page.keyboard.type(`${state.variant.barcode ?? state.variant.sku}\n`, { delay: 5 });
+    await expect(page.getByText('Sub-total').first()).toBeVisible({ timeout: 30_000 });
+
+    // A 100% cart discount makes the amount due zero even for VAT products.
+    await page.locator('input[type="number"]').first().fill('100');
+    await page.getByRole('button', { name: 'Apply', exact: true }).first().click();
+
+    // ISSUE 7: the terminal must offer (and the API must accept) the
+    // reason-selection zero-value flow instead of a payment modal.
+    const zeroValue = page.getByRole('button', { name: /Zero-Value Sale/i });
+    await expect(zeroValue).toBeVisible();
+    await zeroValue.click();
+    await page.getByText('Bank Payment', { exact: true }).click();
+    await page.getByRole('button', { name: /Complete Zero-Value Sale/i }).click();
+
+    // Receipt preview opens and the cart is cleared.
+    await expect(page.getByRole('button', { name: /New Sale/i })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/Cart is empty/i)).toBeVisible();
+  });
 });

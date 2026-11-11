@@ -99,7 +99,7 @@ export default function NotificationsPage() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold text-espresso">Notifications</h1>
-          <p className="mt-1 text-sm text-sand">
+          <p className="mt-1 text-sm text-sand-ink">
             Review store alerts, stock-take approvals, and operational nudges without playing notification hide-and-seek.
           </p>
         </div>
@@ -129,7 +129,7 @@ export default function NotificationsPage() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-sand">Unread right now</CardTitle>
+            <CardTitle className="text-sm text-sand-ink">Unread right now</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="font-display text-3xl text-espresso">{unreadCount}</p>
@@ -137,7 +137,7 @@ export default function NotificationsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-sand">Showing</CardTitle>
+            <CardTitle className="text-sm text-sand-ink">Showing</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="font-display text-3xl text-espresso">{notifications.length}</p>
@@ -145,7 +145,7 @@ export default function NotificationsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-sand">Filter</CardTitle>
+            <CardTitle className="text-sm text-sand-ink">Filter</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="font-display text-2xl text-espresso capitalize">{status}</p>
@@ -161,10 +161,10 @@ export default function NotificationsPage() {
             ))
           ) : notifications.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-16 text-center">
-              <Bell className="h-10 w-10 text-mist" />
+              <Bell className="h-10 w-10 text-mist-ink" />
               <div>
                 <p className="font-medium text-espresso">No notifications in this view</p>
-                <p className="mt-1 text-sm text-sand">Switch filters or wait for the next event to land.</p>
+                <p className="mt-1 text-sm text-sand-ink">Switch filters or wait for the next event to land.</p>
               </div>
             </div>
           ) : (
@@ -187,8 +187,8 @@ export default function NotificationsPage() {
                           <p className="font-medium text-espresso">{notification.title}</p>
                           {!notification.isRead && <Badge className="bg-terracotta text-pearl">Unread</Badge>}
                         </div>
-                        <p className="text-sm text-sand">{notification.body}</p>
-                        <p className="font-mono text-xs text-mist">{formatRelativeTime(notification.createdAt)}</p>
+                        <p className="text-sm text-sand-ink">{notification.body}</p>
+                        <p className="font-mono text-xs text-mist-ink">{formatRelativeTime(notification.createdAt)}</p>
                       </div>
                     </div>
 
@@ -215,7 +215,7 @@ export default function NotificationsPage() {
 
       {meta && meta.total > meta.limit && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-sand">
+          <p className="text-sm text-sand-ink">
             Page {meta.page} · {meta.total} total notifications
           </p>
           <div className="flex gap-2">

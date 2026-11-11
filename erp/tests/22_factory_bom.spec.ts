@@ -152,7 +152,7 @@ test.describe('Module 22 - Factory BOM & Production', () => {
   test('T2 produceGoods consumes raw materials and records a production log', async ({ page }) => {
     await login(page, OWNER);
 
-    const { variantId, productName } = await getOrCreateManufacturedVariant(page);
+    const { productId, variantId, productName } = await getOrCreateManufacturedVariant(page);
     const materialA = await createRawMaterial(page, { name: uniqueName('qa-bom-raw-c'), quantity: '50', lowStockThreshold: '5' });
     const materialB = await createRawMaterial(page, { name: uniqueName('qa-bom-raw-d'), quantity: '20', lowStockThreshold: '3' });
 
@@ -181,6 +181,8 @@ test.describe('Module 22 - Factory BOM & Production', () => {
     expect(produceBody?.success).toBe(true);
     expect(produceBody?.data?.quantity).toBe(3);
     expect(produceBody?.data?.productionLogId).toBeTruthy();
+    expect(produceBody?.data?.batchNumber).toMatch(/^MFG-\d{8}-/);
+    expect(produceBody?.data?.batchId).toBeTruthy();
 
     const listMaterials = await page.request.get('/api/store/raw-materials?page=1&limit=100');
     expect(listMaterials.status()).toBe(200);
@@ -190,6 +192,39 @@ test.describe('Module 22 - Factory BOM & Production', () => {
 
     expect(Number(materialAAfter?.quantity)).toBeLessThan(50);
     expect(Number(materialBAfter?.quantity)).toBeLessThan(20);
+
+    // Finished-good stock must land in the main inventory: 10 initial + 3 produced.
+    const productAfter = await page.request.get(`/api/store/products/${productId}`);
+    expect(productAfter.status()).toBe(200);
+    const productAfterBody = await json(productAfter);
+    const variantAfter = (productAfterBody?.data?.variants ?? []).find(
+      (row: any) => row.id === variantId,
+    );
+    expect(Number(variantAfter?.stockQuantity)).toBe(13);
+
+    // The produced quantity must also exist as a MANUFACTURED batch and the
+    // stock movement must link to it, otherwise batch-aware inventory views and
+    // traceability never see factory output.
+    const batchesRes = await page.request.get(
+      `/api/store/batches?variantId=${variantId}&source=MANUFACTURED&limit=20`,
+    );
+    expect(batchesRes.status()).toBe(200);
+    const batchesBody = await json(batchesRes);
+    const batch = (batchesBody?.data ?? []).find(
+      (row: any) => row.batchNumber === produceBody?.data?.batchNumber,
+    );
+    expect(batch, 'produced batch is visible in inventory').toBeTruthy();
+    expect(batch.source).toBe('MANUFACTURED');
+    expect(Number(batch.quantity)).toBe(3);
+
+    const movementsRes = await page.request.get(`/api/store/products/${productId}/movements?limit=20`);
+    expect(movementsRes.status()).toBe(200);
+    const movementsBody = await json(movementsRes);
+    const producedMovement = (movementsBody?.data ?? []).find(
+      (row: any) => row.reason === 'MANUFACTURED' && row.batchId === produceBody?.data?.batchId,
+    );
+    expect(producedMovement, 'production stock movement is batch-linked').toBeTruthy();
+    expect(Number(producedMovement.quantityDelta)).toBe(3);
 
     const logs = await page.request.get(`/api/store/bom/production?bomId=${bomId}&limit=10`);
     expect(logs.status()).toBe(200);
@@ -256,5 +291,59 @@ test.describe('Module 22 - Factory BOM & Production', () => {
     const body = await json(list);
     const items = Array.isArray(body?.data) ? body.data : [];
     expect(items.some((item: any) => /qa-bom/.test(item.name ?? ''))).toBe(false);
+  });
+
+  test('T6 BOM ingredient picker shows available stock, unit and per-unit quantity', async ({ page }) => {
+    await login(page, OWNER);
+
+    const material = await createRawMaterial(page, {
+      name: uniqueName('qa-bom-table'),
+      unit: 'UNITS',
+      quantity: '42',
+      lowStockThreshold: '5',
+    });
+
+    await page.goto(`${BASE_URL}/factory/bom`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: /Bill of Materials/i })).toBeVisible({ timeout: 20_000 });
+    await page.waitForLoadState('networkidle');
+    await page.getByRole('button', { name: 'New BOM' }).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText('Raw material', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Available', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Unit', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Qty / unit', { exact: true })).toBeVisible();
+
+    // First combobox is the finished-product variant; the ingredient picker follows.
+    await dialog.getByRole('combobox').nth(1).click();
+    await page.getByRole('option', { name: material.name, exact: true }).click();
+
+    await expect(dialog.getByText('42', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Units', { exact: true })).toBeVisible();
+
+    await page.request.delete(`/api/store/raw-materials/${material.id}`);
+  });
+
+  test('T7 BOM page content has padding instead of touching the main edges', async ({ page }) => {
+    await login(page, OWNER);
+    await page.goto(`${BASE_URL}/factory/bom`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: /Bill of Materials/i })).toBeVisible({ timeout: 20_000 });
+    await page.waitForLoadState('networkidle');
+
+    const main = page.locator('main#main-content');
+    const content = main.locator('> div').first();
+    const mainBox = await main.boundingBox();
+    const contentBox = await content.boundingBox();
+    expect(mainBox).not.toBeNull();
+    expect(contentBox).not.toBeNull();
+
+    const padding = await content.evaluate((el) => getComputedStyle(el).paddingLeft);
+    expect(parseFloat(padding)).toBeGreaterThanOrEqual(16);
+
+    const headingBox = await page
+      .getByRole('heading', { name: /Bill of Materials/i })
+      .boundingBox();
+    expect(headingBox).not.toBeNull();
+    expect(headingBox!.x - mainBox!.x).toBeGreaterThanOrEqual(16);
   });
 });

@@ -201,7 +201,7 @@ export function CreatePurchaseOrderClient() {
         <h1 className="font-display text-2xl font-semibold text-espresso">
           New Purchase Order
         </h1>
-        <p className="mt-1 text-sm text-sand">
+        <p className="mt-1 text-sm text-sand-ink">
           Record a supplier order, its terms, and the account it will be settled from.
         </p>
       </div>
@@ -347,7 +347,7 @@ export function CreatePurchaseOrderClient() {
                   <XCircle className="mr-2 h-4 w-4" />
                   Cancel PO
                 </Button>
-                <p className="pt-1 text-center text-xs text-mist">
+                <p className="pt-1 text-center text-xs text-mist-ink">
                   Drafts stay editable; created orders are marked Sent so goods can be received.
                   Cancel PO discards this unsaved order.
                 </p>

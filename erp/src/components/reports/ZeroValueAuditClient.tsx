@@ -149,7 +149,7 @@ export default function ZeroValueAuditClient() {
   if (!canView) {
     return (
       <Card>
-        <CardContent className="py-10 text-center font-body text-sm text-mist">
+        <CardContent className="py-10 text-center font-body text-sm text-mist-ink">
           You do not have permission to view the Zero-Value Audit dashboard.
         </CardContent>
       </Card>
@@ -165,14 +165,14 @@ export default function ZeroValueAuditClient() {
         {[
           { key: "BANK_PAYMENT", label: "Bank Payment", color: "text-[#2D6A4F]" },
           { key: "PRODUCT_REPLACEMENT", label: "Replacement", color: "text-terracotta" },
-          { key: "COMPLIMENTARY_GIFT", label: "Gift", color: "text-sand" },
+          { key: "COMPLIMENTARY_GIFT", label: "Gift", color: "text-sand-ink" },
         ].map((item) => (
           <Card key={item.key}>
             <CardContent className="p-4">
               <p className={`font-display text-2xl font-bold ${item.color}`}>
                 {summary[item.key] ?? 0}
               </p>
-              <p className="font-body text-xs text-mist">{item.label}</p>
+              <p className="font-body text-xs text-mist-ink">{item.label}</p>
             </CardContent>
           </Card>
         ))}
@@ -181,7 +181,7 @@ export default function ZeroValueAuditClient() {
             <p className="font-display text-2xl font-bold text-espresso">
               {data?.total ?? 0}
             </p>
-            <p className="font-body text-xs text-mist">Total</p>
+            <p className="font-body text-xs text-mist-ink">Total</p>
           </CardContent>
         </Card>
       </div>
@@ -216,7 +216,7 @@ export default function ZeroValueAuditClient() {
                 : "Failed to load report."}
             </p>
           ) : (data?.rows?.length ?? 0) === 0 ? (
-            <p className="py-6 text-center font-body text-sm text-mist">
+            <p className="py-6 text-center font-body text-sm text-mist-ink">
               No zero-value orders in the selected window.
             </p>
           ) : (
@@ -256,7 +256,7 @@ export default function ZeroValueAuditClient() {
                       <TableCell className="font-body text-sm">
                         {row.customerPhone}
                       </TableCell>
-                      <TableCell className="font-body text-xs text-mist">
+                      <TableCell className="font-body text-xs text-mist-ink">
                         {fmtTimestamp(row.completedAt)}
                       </TableCell>
                     </TableRow>

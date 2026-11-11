@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import PettyCashSection from '@/components/shift/PettyCashSection';
 import { formatRupee } from '@/lib/format';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 import type { ZReportData } from '@/lib/services/shift.service';
 
 interface ShiftDetail {
@@ -86,7 +87,7 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
           </Link>
         </Button>
         <Card className="border-mist">
-          <CardContent className="py-12 text-center text-sand">
+          <CardContent className="py-12 text-center text-sand-ink">
             {(shiftQuery.error as Error | undefined)?.message ?? (reportQuery.error as Error | undefined)?.message ?? 'Failed to load shift detail'}
           </CardContent>
         </Card>
@@ -116,8 +117,8 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
               {shift.status}
             </Badge>
           </div>
-          <p className="text-sm text-sand">
-            Cashier {shift.cashier.email} · {shift.cashier.role.replace(/_/g, ' ')} · Opened {formatDateTime(shift.openedAt)}
+          <p className="text-sm text-sand-ink">
+            Cashier {staffDisplayName(shift.cashier.email)} · {shift.cashier.role.replace(/_/g, ' ')} · Opened {formatDateTime(shift.openedAt)}
           </p>
         </div>
 
@@ -132,7 +133,7 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-sand">Opening float</CardTitle>
+            <CardTitle className="text-sm text-sand-ink">Opening float</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="font-display text-3xl text-espresso">{formatRupee(shift.openingFloat)}</p>
@@ -140,7 +141,7 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-sand">Expected cash</CardTitle>
+            <CardTitle className="text-sm text-sand-ink">Expected cash</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="font-display text-3xl text-espresso">{formatRupee(shift.expectedCash)}</p>
@@ -148,7 +149,7 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-sand">Sales total</CardTitle>
+            <CardTitle className="text-sm text-sand-ink">Sales total</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="font-display text-3xl text-espresso">{formatRupee(shift.totalSalesAmount)}</p>
@@ -156,7 +157,7 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-sand">Net revenue</CardTitle>
+            <CardTitle className="text-sm text-sand-ink">Net revenue</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="font-display text-3xl text-espresso">{formatRupee(report.netRevenue)}</p>
@@ -172,19 +173,19 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-sand">Opened</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Opened</p>
                 <p className="mt-1 text-sm text-espresso">{formatDateTime(shift.openedAt)}</p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-sand">Closed</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Closed</p>
                 <p className="mt-1 text-sm text-espresso">{formatDateTime(shift.closedAt)}</p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-sand">Duration</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Duration</p>
                 <p className="mt-1 text-sm text-espresso">{formatDuration(shift.openedAt, shift.closedAt)}</p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-sand">Cash difference</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Cash difference</p>
                 <p className="mt-1 text-sm text-espresso">
                   {shift.closure ? formatRupee(shift.closure.cashDifference) : 'Not closed yet'}
                 </p>
@@ -198,14 +199,14 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
               <div className="rounded-lg border border-mist p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-sand">Completed sales</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Completed sales</p>
                 <p className="mt-2 font-display text-3xl text-espresso">{report.sales.totalSalesCount}</p>
-                <p className="mt-2 text-sm text-sand">Cash {formatRupee(report.sales.cashSalesAmount)} · Card {formatRupee(report.sales.cardSalesAmount)} · LankaQR {formatRupee(report.sales.lankaqrSalesAmount)}</p>
+                <p className="mt-2 text-sm text-sand-ink">Cash {formatRupee(report.sales.cashSalesAmount)} · Card {formatRupee(report.sales.cardSalesAmount)} · LankaQR {formatRupee(report.sales.lankaqrSalesAmount)}</p>
               </div>
               <div className="rounded-lg border border-mist p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-sand">Returns</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Returns</p>
                 <p className="mt-2 font-display text-3xl text-espresso">{report.returns.totalReturnsCount}</p>
-                <p className="mt-2 text-sm text-sand">Refunded {formatRupee(report.returns.totalRefundAmount)}</p>
+                <p className="mt-2 text-sm text-sand-ink">Refunded {formatRupee(report.returns.totalRefundAmount)}</p>
               </div>
             </CardContent>
           </Card>
@@ -220,23 +221,23 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="flex items-center justify-between">
-                <span className="text-sand">Opening float</span>
+                <span className="text-sand-ink">Opening float</span>
                 <span className="font-mono text-espresso">{formatRupee(report.cashReconciliation.openingFloat)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sand">Cash sales</span>
+                <span className="text-sand-ink">Cash sales</span>
                 <span className="font-mono text-espresso">{formatRupee(report.cashReconciliation.cashSalesAmount)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sand">Cash refunds</span>
+                <span className="text-sand-ink">Cash refunds</span>
                 <span className="font-mono text-espresso">{formatRupee(report.cashReconciliation.cashRefundAmount)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sand">Deposits</span>
+                <span className="text-sand-ink">Deposits</span>
                 <span className="font-mono text-espresso">{formatRupee(report.cashReconciliation.cashDeposited)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sand">Petty cash out</span>
+                <span className="text-sand-ink">Petty cash out</span>
                 <span className="font-mono text-espresso">{formatRupee(report.cashReconciliation.pettyCashOut)}</span>
               </div>
               <div className="border-t border-mist pt-3">
@@ -254,14 +255,14 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
             </CardHeader>
             <CardContent className="space-y-3">
               {report.topProductsSold.length === 0 ? (
-                <p className="text-sm text-sand">No completed sale lines in this shift yet.</p>
+                <p className="text-sm text-sand-ink">No completed sale lines in this shift yet.</p>
               ) : (
                 report.topProductsSold.slice(0, 5).map((item) => (
                   <div key={`${item.productName}-${item.variantDescription}`} className="rounded-lg border border-mist p-3">
                     <p className="font-medium text-espresso">{item.productName}</p>
-                    <p className="text-xs text-sand">{item.variantDescription}</p>
+                    <p className="text-xs text-sand-ink">{item.variantDescription}</p>
                     <div className="mt-2 flex items-center justify-between text-sm">
-                      <span className="text-sand">Qty {item.totalQtySold}</span>
+                      <span className="text-sand-ink">Qty {item.totalQtySold}</span>
                       <span className="font-mono text-espresso">{formatRupee(item.totalRevenue)}</span>
                     </div>
                   </div>

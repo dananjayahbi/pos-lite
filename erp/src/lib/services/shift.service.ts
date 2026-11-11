@@ -4,6 +4,7 @@ import type { ShiftStatus, SaleStatus, PaymentMethod, ReturnRefundMethod } from 
 import { sumPaymentBreakdown } from '@/lib/services/paymentBreakdown';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 // ── Open Shift ───────────────────────────────────────────────────────────────
 
@@ -556,7 +557,7 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
       openedAt: shift.openedAt.toISOString(),
       closedAt: shift.closedAt?.toISOString() ?? null,
       status: shift.status,
-      cashierName: shift.cashier.email,
+      cashierName: staffDisplayName(shift.cashier.email),
       openingFloat: openingFloat.toNumber(),
       notes: shift.notes,
     },

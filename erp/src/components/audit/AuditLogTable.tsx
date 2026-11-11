@@ -25,6 +25,7 @@ interface AuditLogEntry {
   entityId: string;
   action: string;
   actorId: string | null;
+  actorName: string;
   actorRole: string;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
@@ -67,10 +68,6 @@ function formatDate(dateStr: string): string {
   const hours = String(d.getHours()).padStart(2, '0');
   const minutes = String(d.getMinutes()).padStart(2, '0');
   return `${day} ${month} ${year}, ${hours}:${minutes}`;
-}
-
-function truncateId(id: string): string {
-  return id.length > 8 ? `${id.slice(0, 8)}…` : id;
 }
 
 // ── Props ────────────────────────────────────────────────────────────────────
@@ -163,8 +160,8 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
   if (entries.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-lg border border-mist bg-pearl/50 py-16">
-        <p className="text-sand">No audit log entries found.</p>
-        <p className="mt-1 text-sm text-sand/70">Try adjusting your filters.</p>
+        <p className="text-sand-ink">No audit log entries found.</p>
+        <p className="mt-1 text-sm text-sand-ink/70">Try adjusting your filters.</p>
       </div>
     );
   }
@@ -182,9 +179,8 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
           <TableHeader>
             <TableRow className="bg-linen/40">
               <TableHead className="text-espresso">Entity Type</TableHead>
-              <TableHead className="text-espresso">Entity ID</TableHead>
               <TableHead className="text-espresso">Action</TableHead>
-              <TableHead className="text-espresso">Performed By</TableHead>
+              <TableHead className="text-espresso">User</TableHead>
               <TableHead className="text-espresso">Date</TableHead>
             </TableRow>
           </TableHeader>
@@ -202,16 +198,13 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
                     {entry.entityType.replace(/([a-z])([A-Z])/g, '$1 $2')}
                   </Badge>
                 </TableCell>
-                <TableCell className="font-mono text-xs text-sand">
-                  {truncateId(entry.entityId)}
-                </TableCell>
                 <TableCell className="text-sm text-espresso">
                   {formatActionName(entry.action)}
                 </TableCell>
                 <TableCell className="text-sm text-espresso">
-                  {entry.actorId ?? 'System'}
+                  {entry.actorName}
                 </TableCell>
-                <TableCell className="text-sm text-sand">
+                <TableCell className="text-sm text-sand-ink">
                   {formatDate(entry.createdAt)}
                 </TableCell>
               </TableRow>
@@ -223,7 +216,7 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
       {/* Pagination */}
       {data && data.total > 0 && (
         <div className="flex items-center justify-between pt-4">
-          <p className="text-sm text-sand">
+          <p className="text-sm text-sand-ink">
             Showing {rangeStart} – {rangeEnd} of {data.total}
           </p>
           <div className="flex gap-2">

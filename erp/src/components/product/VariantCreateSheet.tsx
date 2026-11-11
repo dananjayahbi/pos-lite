@@ -155,7 +155,7 @@ export function VariantCreateSheet({
       <SheetContent side="right" className="flex w-full flex-col sm:w-[480px] sm:max-w-[480px]" showCloseButton={false}>
         <SheetHeader className="border-b border-sand/30 px-6 py-4">
           <SheetTitle className="font-display text-lg text-espresso">Add Variant</SheetTitle>
-          <SheetDescription className="font-body text-sm text-mist">
+          <SheetDescription className="font-body text-sm text-mist-ink">
             Create a new form/pack-size variant with its own pricing.
           </SheetDescription>
         </SheetHeader>
@@ -175,7 +175,7 @@ export function VariantCreateSheet({
                 type="button"
                 variant="outline"
                 size="icon"
-                className="shrink-0 border-sand text-mist hover:text-espresso"
+                className="shrink-0 border-sand text-mist-ink hover:text-espresso"
                 onClick={() => setValue('barcode', generateBarcode(), { shouldDirty: true, shouldValidate: true })}
                 aria-label="Auto-generate barcode"
               >
@@ -221,7 +221,7 @@ export function VariantCreateSheet({
           <div className="space-y-1.5">
             <Label htmlFor="create-cost-price" className="font-body text-sm text-espresso">Cost Price</Label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mist">Rs.</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mist-ink">Rs.</span>
               <Input
                 id="create-cost-price"
                 className="pl-10 text-right"
@@ -236,7 +236,7 @@ export function VariantCreateSheet({
           <div className="space-y-1.5">
             <Label htmlFor="create-retail-price" className="font-body text-sm text-espresso">Retail Price</Label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mist">Rs.</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mist-ink">Rs.</span>
               <Input
                 id="create-retail-price"
                 className={`pl-10 text-right ${retailBelowCost ? 'border-orange-400 ring-1 ring-orange-400' : ''}`}
@@ -254,7 +254,7 @@ export function VariantCreateSheet({
           <div className="space-y-1.5">
             <Label htmlFor="create-wholesale-price" className="font-body text-sm text-espresso">Wholesale Price</Label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mist">Rs.</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-mist-ink">Rs.</span>
               <Input
                 id="create-wholesale-price"
                 className="pl-10 text-right"
@@ -302,7 +302,7 @@ export function VariantCreateSheet({
             </div>
           ) : (
             <div className="flex w-full justify-end gap-3">
-              <Button type="button" variant="outline" className="border-mist text-mist hover:text-espresso" onClick={handleClose}>
+              <Button type="button" variant="outline" className="border-mist text-mist-ink hover:text-espresso" onClick={handleClose}>
                 Cancel
               </Button>
               <Button type="submit" form="variant-create-form" className="bg-espresso text-pearl hover:bg-espresso/90" disabled={mutation.isPending}>

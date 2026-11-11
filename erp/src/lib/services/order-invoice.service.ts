@@ -32,6 +32,26 @@ export function mapInvoiceLines(lines: InvoiceLineSource[]): OrderInvoiceLine[] 
   }));
 }
 
+/** Website orders have no Sale; their snapshot lines live on DeliveryLine. */
+export interface DeliveryLineSource {
+  skuSnapshot: string | null;
+  productNameSnapshot: string;
+  quantity: number;
+  unitPrice: { toNumber(): number };
+  lineTotal: { toNumber(): number };
+}
+
+export function mapDeliveryInvoiceLines(lines: DeliveryLineSource[]): OrderInvoiceLine[] {
+  return lines.map((line) => ({
+    sku: line.skuSnapshot ?? '',
+    description: line.productNameSnapshot,
+    quantity: line.quantity,
+    unitPrice: toNumber(line.unitPrice),
+    discountAmount: 0,
+    lineTotal: toNumber(line.lineTotal),
+  }));
+}
+
 /**
  * Assemble the printable invoice payload for a delivery (order). Fetches the
  * sale + line items, customer, shipping address, shipping fee and totals, and
@@ -47,6 +67,7 @@ export async function getOrderInvoiceData(
     include: {
       address: true,
       customer: { select: { name: true, phone: true, email: true } },
+      lines: { orderBy: { createdAt: 'asc' as const } },
       sale: {
         include: {
           lines: true,
@@ -59,9 +80,12 @@ export async function getOrderInvoiceData(
 
   const branding = await getLabelTemplate(tenantId);
 
-  const lines: OrderInvoiceLine[] = mapInvoiceLines(delivery.sale?.lines ?? ([] as InvoiceLineSource[]));
-
   const sale = delivery.sale;
+  const lines: OrderInvoiceLine[] = sale
+    ? mapInvoiceLines(sale.lines)
+    : mapDeliveryInvoiceLines(delivery.lines);
+  const lineSubtotal = lines.reduce((total, line) => total + line.lineTotal, 0);
+  const shippingFee = delivery.shippingFee != null ? toNumber(delivery.shippingFee) : null;
 
   return {
     orderRef: delivery.orderRef,
@@ -89,12 +113,16 @@ export async function getOrderInvoiceData(
         }
       : null,
     lines,
-    subtotal: sale ? toNumber(sale.subtotal) : toNumber(delivery.codAmount),
+    subtotal: sale ? toNumber(sale.subtotal) : lineSubtotal || toNumber(delivery.codAmount),
     discountAmount: sale ? toNumber(sale.discountAmount) : 0,
     taxAmount: sale ? toNumber(sale.taxAmount) : 0,
-    shippingFee: delivery.shippingFee != null ? toNumber(delivery.shippingFee) : null,
+    shippingFee,
     deliveryFee: delivery.deliveryFee != null ? toNumber(delivery.deliveryFee) : null,
     codAmount: toNumber(delivery.codAmount),
-    totalAmount: sale ? toNumber(sale.totalAmount) : toNumber(delivery.codAmount),
+    // The website total is goods + shipping; a sale already stores its own
+    // delivery charge in totalAmount, so only add shipping for website orders.
+    totalAmount: sale
+      ? toNumber(sale.totalAmount)
+      : (lineSubtotal || toNumber(delivery.codAmount)) + (shippingFee ?? 0),
   };
 }

@@ -14,6 +14,21 @@ const nextConfig: NextConfig = {
     'localhost',
     '127.0.0.1',
     '192.168.1.92',
+    // LAN addresses this machine has held, so a phone/other PC on the same
+    // network can load the app. Next matches these as exact hostnames, so
+    // every address a developer uses must be listed — add yours when it
+    // changes (`ipconfig`). Without this, `/_next/*` answers 403 and the page
+    // renders blank even though the HTML itself is served.
+    '192.168.1.244',
+    '192.168.1.209',
+    // VS Code / GitHub dev tunnels (`xxxx-3003.use.devtunnels.ms`) forward to
+    // this server so remote viewers can use the app. Next treats the forwarded
+    // origin as cross-site and answers 403 for `/_next/*` (HMR + chunks) unless
+    // it is allowlisted. Set NEXT_DEV_TUNNEL_ORIGIN to your tunnel hostname.
+    '*.use.devtunnels.ms',
+    // localhost.run free tunnels (`<id>.lhr.life`). Same reason as above.
+    '*.lhr.life',
+    ...(process.env.NEXT_DEV_TUNNEL_ORIGIN ? [process.env.NEXT_DEV_TUNNEL_ORIGIN] : []),
   ],
   images: {
     // Local dev on this machine resolves public hosts (pub-*.r2.dev, res.cloudinary.com)

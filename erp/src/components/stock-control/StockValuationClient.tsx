@@ -67,12 +67,12 @@ export function StockValuationClient() {
         <Card className="w-full max-w-md text-center">
           <CardHeader>
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sand/30">
-              <Lock className="h-6 w-6 text-mist" />
+              <Lock className="h-6 w-6 text-mist-ink" />
             </div>
             <CardTitle className="font-display text-xl text-espresso">Access Restricted</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="font-body text-sm text-mist">
+            <p className="font-body text-sm text-mist-ink">
               You do not have permission to view stock valuation data. Contact your administrator if you need access.
             </p>
             <Link
@@ -153,7 +153,7 @@ export function StockValuationClient() {
   return (
     <div className="space-y-6 p-6">
       {/* Breadcrumb */}
-      <nav className="font-body text-sm text-mist">
+      <nav className="font-body text-sm text-mist-ink">
         <Link href="/stock-control" className="hover:text-espresso">
           Stock Control
         </Link>
@@ -166,7 +166,7 @@ export function StockValuationClient() {
         <div>
           <h1 className="font-display text-2xl font-semibold text-espresso">Stock Valuation</h1>
           {valuation && (
-            <p className="mt-1 font-body text-sm text-mist">As of {formatTimestamp(valuation.calculatedAt)}</p>
+            <p className="mt-1 font-body text-sm text-mist-ink">As of {formatTimestamp(valuation.calculatedAt)}</p>
           )}
         </div>
         <div className="flex gap-2">
@@ -204,56 +204,56 @@ export function StockValuationClient() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="font-body text-sm font-medium text-mist">Total Retail Value</CardTitle>
+                <CardTitle className="font-body text-sm font-medium text-mist-ink">Total Retail Value</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="font-display text-2xl font-semibold text-espresso">
                   {formatRupee(valuation.retailValue)}
                 </p>
-                <p className="mt-1 font-body text-xs text-mist">What your stock could sell for</p>
+                <p className="mt-1 font-body text-xs text-mist-ink">What your stock could sell for</p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="font-body text-sm font-medium text-mist">Total Cost Value</CardTitle>
+                <CardTitle className="font-body text-sm font-medium text-mist-ink">Total Cost Value</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="font-display text-2xl font-semibold text-espresso">
                   {formatRupee(valuation.costValue)}
                 </p>
-                <p className="mt-1 font-body text-xs text-mist">What your current stock cost to acquire</p>
+                <p className="mt-1 font-body text-xs text-mist-ink">What your current stock cost to acquire</p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="font-body text-sm font-medium text-mist">Estimated Gross Margin</CardTitle>
+                <CardTitle className="font-body text-sm font-medium text-mist-ink">Estimated Gross Margin</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className={`font-display text-2xl font-semibold ${marginColor(valuation.estimatedMarginPercent)}`}>
                   {valuation.estimatedMarginPercent.toFixed(1)}%
                 </p>
-                <p className="mt-1 font-body text-xs text-mist">{formatRupee(valuation.estimatedMargin)}</p>
+                <p className="mt-1 font-body text-xs text-mist-ink">{formatRupee(valuation.estimatedMargin)}</p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="font-body text-sm font-medium text-mist">Variants in Stock</CardTitle>
+                <CardTitle className="font-body text-sm font-medium text-mist-ink">Variants in Stock</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="font-display text-2xl font-semibold text-espresso">
                   {valuation.variantCount.toLocaleString()}
                 </p>
-                <p className="mt-1 font-body text-xs text-mist">Active product variants with stock</p>
+                <p className="mt-1 font-body text-xs text-mist-ink">Active product variants with stock</p>
               </CardContent>
             </Card>
           </div>
 
           {/* Info note */}
           <div className="rounded-lg border border-sand bg-linen px-4 py-3">
-            <p className="font-body text-xs text-mist">
+            <p className="font-body text-xs text-mist-ink">
               Values are based on current stock quantities multiplied by retail and cost prices. Actual margins may differ
               due to discounts, promotions, or price changes.
             </p>
@@ -269,7 +269,7 @@ export function StockValuationClient() {
                     <TableHead>
                       <button
                         type="button"
-                        className="flex items-center gap-1 font-body text-xs font-medium text-mist hover:text-espresso"
+                        className="flex items-center gap-1 font-body text-xs font-medium text-mist-ink hover:text-espresso"
                         onClick={() => handleSort('categoryName')}
                       >
                         Category <ArrowUpDown className="h-3 w-3" />
@@ -278,7 +278,7 @@ export function StockValuationClient() {
                     <TableHead className="text-right">
                       <button
                         type="button"
-                        className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist hover:text-espresso"
+                        className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist-ink hover:text-espresso"
                         onClick={() => handleSort('variantCount')}
                       >
                         Variants <ArrowUpDown className="h-3 w-3" />
@@ -287,7 +287,7 @@ export function StockValuationClient() {
                     <TableHead className="text-right">
                       <button
                         type="button"
-                        className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist hover:text-espresso"
+                        className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist-ink hover:text-espresso"
                         onClick={() => handleSort('retailValue')}
                       >
                         Retail Value <ArrowUpDown className="h-3 w-3" />
@@ -296,7 +296,7 @@ export function StockValuationClient() {
                     <TableHead className="text-right">
                       <button
                         type="button"
-                        className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist hover:text-espresso"
+                        className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist-ink hover:text-espresso"
                         onClick={() => handleSort('costValue')}
                       >
                         Cost Value <ArrowUpDown className="h-3 w-3" />
@@ -305,7 +305,7 @@ export function StockValuationClient() {
                     <TableHead className="text-right">
                       <button
                         type="button"
-                        className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist hover:text-espresso"
+                        className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist-ink hover:text-espresso"
                         onClick={() => handleSort('marginPercent')}
                       >
                         Margin % <ArrowUpDown className="h-3 w-3" />
@@ -314,7 +314,7 @@ export function StockValuationClient() {
                     <TableHead className="text-right">
                       <button
                         type="button"
-                        className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist hover:text-espresso"
+                        className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist-ink hover:text-espresso"
                         onClick={() => handleSort('share')}
                       >
                         Share of Total <ArrowUpDown className="h-3 w-3" />
@@ -325,7 +325,7 @@ export function StockValuationClient() {
                 <TableBody>
                   {sortedCategories.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-8 text-center font-body text-sm text-mist">
+                      <TableCell colSpan={6} className="py-8 text-center font-body text-sm text-mist-ink">
                         No category data available
                       </TableCell>
                     </TableRow>

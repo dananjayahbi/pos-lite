@@ -28,6 +28,8 @@ export function LineItemDiscountControl({ item }: LineItemDiscountControlProps) 
 
   const lineTotal = item.unitPrice * item.quantity;
   const parsedInput = parseFloat(inputValue) || 0;
+  const hasActiveDiscount = item.discountPercent > 0;
+  const appliedDiscountAmount = (lineTotal * item.discountPercent) / 100;
 
   const effectivePercent =
     mode === 'percent'
@@ -51,8 +53,38 @@ export function LineItemDiscountControl({ item }: LineItemDiscountControlProps) 
     setActiveLine(null);
   };
 
+  /** Explicit removal — typing 0 cannot clear because Apply needs a positive value. */
+  const handleRemove = () => {
+    setLineDiscount(item.variantId, 0);
+    setInputValue('');
+    setOverrideBlocked(false);
+    setActiveLine(null);
+  };
+
   return (
     <div className="px-4 py-2 bg-linen/50 border-t border-mist/20">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="font-body text-[11px] text-mist-ink">
+          Line discount{hasActiveDiscount ? ` — applied ${item.discountPercent}% off` : ''}
+        </span>
+        {hasActiveDiscount && (
+          <button
+            type="button"
+            onClick={handleRemove}
+            className="font-body text-[11px] text-[#9B2226] hover:text-[#9B2226]/80 transition-colors"
+            aria-label={`Remove discount from ${item.productName}`}
+          >
+            Remove discount
+          </button>
+        )}
+      </div>
+
+      {hasActiveDiscount && (
+        <p className="mb-1.5 font-body text-[11px] text-[#2D6A4F]">
+          Applied: {item.discountPercent}% off ({formatRupee(appliedDiscountAmount)})
+        </p>
+      )}
+
       <div className="flex items-center gap-2">
         {/* Mode toggle */}
         <div className="flex shrink-0">
@@ -62,7 +94,7 @@ export function LineItemDiscountControl({ item }: LineItemDiscountControlProps) 
             className={`px-2.5 py-1 text-xs font-body rounded-l-md transition-colors ${
               mode === 'percent'
                 ? 'bg-sand text-espresso'
-                : 'bg-transparent border border-mist text-mist'
+                : 'bg-transparent border border-mist text-mist-ink'
             }`}
           >
             %
@@ -73,7 +105,7 @@ export function LineItemDiscountControl({ item }: LineItemDiscountControlProps) 
             className={`px-2.5 py-1 text-xs font-body rounded-r-md transition-colors ${
               mode === 'fixed'
                 ? 'bg-sand text-espresso'
-                : 'bg-transparent border border-mist text-mist'
+                : 'bg-transparent border border-mist text-mist-ink'
             }`}
           >
             Rs.
@@ -110,7 +142,7 @@ export function LineItemDiscountControl({ item }: LineItemDiscountControlProps) 
 
       {/* Live preview */}
       {parsedInput > 0 && (
-        <p className={`font-body text-xs mt-1 ${exceedsTotal ? 'text-[#9B2226]' : 'text-mist'}`}>
+        <p className={`font-body text-xs mt-1 ${exceedsTotal ? 'text-[#9B2226]' : 'text-mist-ink'}`}>
           {exceedsTotal
             ? 'Discount exceeds line total'
             : `New line total: ${formatRupee(Math.max(0, newLineTotal))}`}

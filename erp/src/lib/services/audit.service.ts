@@ -25,6 +25,7 @@
 import { createHash } from 'crypto';
 import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 export const AUTH_ACTIONS = {
   LOGIN_SUCCESS: 'LOGIN_SUCCESS',
@@ -65,6 +66,9 @@ export const AUDIT_ACTIONS = {
   // Staff
   STAFF_ROLE_CHANGED: 'STAFF_ROLE_CHANGED',
   STAFF_PERMISSION_CHANGED: 'STAFF_PERMISSION_CHANGED',
+  // Attendance / time clock
+  ATTENDANCE_ADJUSTED: 'ATTENDANCE_ADJUSTED',
+  ATTENDANCE_STATUS_SET: 'ATTENDANCE_STATUS_SET',
   // M03-08 (GAP-2): admin set-password on a staff account.
   STAFF_PASSWORD_RESET: 'STAFF_PASSWORD_RESET',
   // Promotion
@@ -79,6 +83,7 @@ export const AUDIT_ACTIONS = {
   // Petty Cash
   PETTY_CASH_FUND_CREATED: 'PETTY_CASH_FUND_CREATED',
   PETTY_CASH_FUND_UPDATED: 'PETTY_CASH_FUND_UPDATED',
+  PETTY_CASH_TOP_UP: 'PETTY_CASH_TOP_UP',
   // Payment Accounts (ledger-backed money containers)
   PAYMENT_ACCOUNT_CREATED: 'PAYMENT_ACCOUNT_CREATED',
   PAYMENT_ACCOUNT_UPDATED: 'PAYMENT_ACCOUNT_UPDATED',
@@ -90,6 +95,10 @@ export const AUDIT_ACTIONS = {
   SHIFT_CLOSED: 'SHIFT_CLOSED',
   // Commissions
   COMMISSION_PAYOUT_CREATED: 'COMMISSION_PAYOUT_CREATED',
+  // Payroll
+  PAYROLL_RUN_GENERATED: 'PAYROLL_RUN_GENERATED',
+  PAYROLL_PAYSLIP_EMAILED: 'PAYROLL_PAYSLIP_EMAILED',
+  PAYROLL_SETTINGS_UPDATED: 'PAYROLL_SETTINGS_UPDATED',
   // Settings
   SETTINGS_CHANGED: 'SETTINGS_CHANGED',
   // Delivery / Courier
@@ -105,6 +114,12 @@ export const AUDIT_ACTIONS = {
   COURIER_SETTINGS_UPDATED: 'COURIER_SETTINGS_UPDATED',
   LABEL_TEMPLATE_UPDATED: 'LABEL_TEMPLATE_UPDATED',
   PACKAGING_STOCK_ADJUSTED: 'PACKAGING_STOCK_ADJUSTED',
+  PACKAGING_ITEM_CREATED: 'PACKAGING_ITEM_CREATED',
+  PACKAGING_ITEM_UPDATED: 'PACKAGING_ITEM_UPDATED',
+  PACKAGING_ITEM_DELETED: 'PACKAGING_ITEM_DELETED',
+  PACKAGING_CATEGORY_CREATED: 'PACKAGING_CATEGORY_CREATED',
+  PACKAGING_CATEGORY_UPDATED: 'PACKAGING_CATEGORY_UPDATED',
+  PACKAGING_CATEGORY_DELETED: 'PACKAGING_CATEGORY_DELETED',
   RECONCILIATION_IMPORTED: 'RECONCILIATION_IMPORTED',
   // M26-02/OBS-40: dispute operations were all logged as RECONCILIATION_IMPORTED,
   // so the ledger could not tell open/update/resolve apart.
@@ -116,6 +131,12 @@ export const AUDIT_ACTIONS = {
   RAW_MATERIAL_UPDATED: 'RAW_MATERIAL_UPDATED',
   RAW_MATERIAL_DELETED: 'RAW_MATERIAL_DELETED',
   RAW_MATERIAL_STOCK_ADJUSTED: 'RAW_MATERIAL_STOCK_ADJUSTED',
+  RAW_MATERIAL_CATEGORY_CREATED: 'RAW_MATERIAL_CATEGORY_CREATED',
+  RAW_MATERIAL_CATEGORY_UPDATED: 'RAW_MATERIAL_CATEGORY_UPDATED',
+  RAW_MATERIAL_CATEGORY_DELETED: 'RAW_MATERIAL_CATEGORY_DELETED',
+  RAW_MATERIAL_UNIT_CREATED: 'RAW_MATERIAL_UNIT_CREATED',
+  RAW_MATERIAL_UNIT_UPDATED: 'RAW_MATERIAL_UNIT_UPDATED',
+  RAW_MATERIAL_UNIT_DELETED: 'RAW_MATERIAL_UNIT_DELETED',
   // Bill of Materials & Production (Factory)
   BOM_CREATED: 'BOM_CREATED',
   BOM_UPDATED: 'BOM_UPDATED',
@@ -263,4 +284,31 @@ export async function getAuditLogs(tenantId: string, filters: GetAuditLogsFilter
   ]);
 
   return { data, total, page, pageSize };
+}
+
+/**
+ * Resolve `actorId` values to human-readable user labels for the audit log UI
+ * and export. System-generated rows (no actor) render as "System"; deleted or
+ * unknown users fall back to a neutral label instead of leaking a bare CUID.
+ */
+export async function attachAuditActorNames<T extends { actorId: string | null }>(
+  entries: T[],
+): Promise<Array<T & { actorName: string }>> {
+  const actorIds = Array.from(
+    new Set(entries.map((entry) => entry.actorId).filter((id): id is string => Boolean(id))),
+  );
+
+  const users =
+    actorIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: actorIds } },
+          select: { id: true, email: true },
+        })
+      : [];
+  const emailById = new Map(users.map((user) => [user.id, user.email]));
+
+  return entries.map((entry) => ({
+    ...entry,
+    actorName: entry.actorId ? staffDisplayName(emailById.get(entry.actorId)) : 'System',
+  }));
 }

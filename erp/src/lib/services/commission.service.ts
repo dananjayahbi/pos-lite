@@ -1,6 +1,14 @@
 import { prisma } from '@/lib/prisma';
+import { ApiError } from '@/lib/api/errors';
 import { AUDIT_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
+import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/paymentAccount.service';
+import { adjustFundBalance, assertFundCanSpend } from '@/lib/services/petty-cash.service';
+import {
+  allocateCommissionPayment,
+  summarizeOpenCommission,
+} from '@/lib/services/commission-allocation';
+import { PaymentEntrySource } from '@/generated/prisma/client';
 import Decimal from 'decimal.js';
 
 type CommissionPayoutMetadata = {
@@ -141,14 +149,73 @@ export async function getCommissionsForUser(
 }
 
 export async function getUnpaidTotal(tenantId: string, userId: string) {
-  const result = await prisma.commissionRecord.aggregate({
-    where: { tenantId, userId, isPaid: false },
-    _sum: { earnedAmount: true },
-  });
-  return result._sum.earnedAmount ?? new Decimal(0);
+  const [earned, paid, legacyPaid] = await Promise.all([
+    prisma.commissionRecord.aggregate({
+      where: { tenantId, userId },
+      _sum: { earnedAmount: true },
+    }),
+    prisma.commissionRecord.aggregate({
+      where: { tenantId, userId },
+      _sum: { paidAmount: true },
+    }),
+    prisma.commissionRecord.aggregate({
+      where: { tenantId, userId, isPaid: true, paidAmount: 0 },
+      _sum: { earnedAmount: true },
+    }),
+  ]);
+  return (earned._sum.earnedAmount ?? new Decimal(0)).minus(
+    (paid._sum.paidAmount ?? new Decimal(0)).plus(legacyPaid._sum.earnedAmount ?? new Decimal(0)),
+  );
 }
 
-export async function createCommissionPayout(input: {
+/** Commission totals for one staff member over a date range (payslip). */
+export async function getCommissionSummaryForUser(
+  tenantId: string,
+  userId: string,
+  periodStart: Date,
+  periodEnd: Date,
+) {
+  const [earnedAgg, paidAgg, legacyPaidAgg] = await Promise.all([
+    prisma.commissionRecord.aggregate({
+      where: {
+        tenantId,
+        userId,
+        createdAt: { gte: periodStart, lte: periodEnd },
+      },
+      _sum: { earnedAmount: true },
+    }),
+    prisma.commissionRecord.aggregate({
+      where: {
+        tenantId,
+        userId,
+        createdAt: { gte: periodStart, lte: periodEnd },
+      },
+      _sum: { paidAmount: true },
+    }),
+    prisma.commissionRecord.aggregate({
+      where: {
+        tenantId,
+        userId,
+        isPaid: true,
+        paidAmount: 0,
+        createdAt: { gte: periodStart, lte: periodEnd },
+      },
+      _sum: { earnedAmount: true },
+    }),
+  ]);
+
+  const earned = earnedAgg._sum.earnedAmount ?? new Decimal(0);
+  const paid = (paidAgg._sum.paidAmount ?? new Decimal(0)).plus(
+    legacyPaidAgg._sum.earnedAmount ?? new Decimal(0),
+  );
+  return {
+    earned: earned.toString(),
+    paid: paid.toString(),
+    unpaid: earned.minus(paid).toString(),
+  };
+}
+
+export interface CreateCommissionPayoutInput {
   tenantId: string;
   userId: string;
   periodStart: Date;
@@ -156,14 +223,32 @@ export async function createCommissionPayout(input: {
   authorizedById: string;
   authorizedByRole: string;
   notes?: string | undefined;
+  /** Legacy free-text method; new payouts derive this from the account name. */
   paymentMethod?: string | undefined;
   proofReference?: string | undefined;
-}) {
-  return prisma.$transaction(async (tx) => {
+  /** Payment account the money leaves. Required for new payouts. */
+  paymentAccountId?: string | undefined;
+  /** Amount to pay now. Omit to settle the full outstanding balance. */
+  amount?: Decimal.Value | undefined;
+}
+
+export async function createCommissionPayout(input: CreateCommissionPayoutInput) {
+  if (!input.paymentAccountId) {
+    throw new ApiError(422, 'VALIDATION_ERROR', 'Select a payment account for this payout');
+  }
+  const paymentAccountId = input.paymentAccountId;
+
+  const transactionResult = await prisma.$transaction(async (tx) => {
     // M20-02 (XC-06): serialize concurrent double-submits for the same staff
-    // member by locking the user row first — the loser re-reads isPaid=true and
-    // finds no unpaid records, so exactly one payout is created.
+    // member by locking the user row first — the loser re-reads the settled
+    // balance and cannot pay the same commission twice.
     await lockForUpdate(tx, 'users', '"id" = $1', [input.userId]);
+
+    const staff = await tx.user.findFirst({
+      where: { id: input.userId, tenantId: input.tenantId },
+      select: { email: true, fullName: true },
+    });
+    if (!staff) throw ApiError.notFound('Staff member not found');
 
     const unpaidRecords = await tx.commissionRecord.findMany({
       where: {
@@ -172,21 +257,56 @@ export async function createCommissionPayout(input: {
         isPaid: false,
         createdAt: { gte: input.periodStart, lte: input.periodEnd },
       },
+      select: { id: true, earnedAmount: true, paidAmount: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
     });
 
-    if (unpaidRecords.length === 0) {
+    const { netOutstanding, records: openRecords } = summarizeOpenCommission(unpaidRecords);
+
+    if (netOutstanding.lte(0)) {
       throw new Error('No unpaid commission records found for this period');
     }
 
-    const totalEarned = unpaidRecords.reduce(
-      (sum: Decimal, r: { earnedAmount: Decimal }) => sum.add(new Decimal(r.earnedAmount.toString())),
-      new Decimal(0),
+    const requested =
+      input.amount === undefined ? netOutstanding : new Decimal(input.amount.toString());
+    if (requested.lte(0)) {
+      throw new ApiError(422, 'VALIDATION_ERROR', 'Payout amount must be greater than zero');
+    }
+    if (requested.gt(netOutstanding.plus(0.005))) {
+      throw new ApiError(
+        422,
+        'VALIDATION_ERROR',
+        `Payout amount cannot exceed the unpaid balance of ${netOutstanding
+          .toDecimalPlaces(2)
+          .toString()}`,
+      );
+    }
+
+    const amount = requested.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+    const account = await tx.paymentAccount.findFirst({
+      where: { id: paymentAccountId, tenantId: input.tenantId },
+      include: { pettyCashFund: { select: { id: true } } },
+    });
+    if (!account) throw ApiError.notFound('Payment account not found');
+    if (account.status !== 'ACTIVE') {
+      throw ApiError.conflict(`Account "${account.name}" is closed and cannot pay commissions`);
+    }
+
+    await assertSufficientFunds(tx, input.tenantId, account.id, amount);
+    const pettyCashFundId = account.pettyCashFund?.id ?? null;
+    if (pettyCashFundId) {
+      await assertFundCanSpend(input.tenantId, pettyCashFundId, amount.toNumber(), false);
+    }
+
+    const staffName = staff.fullName?.trim() || staff.email.split('@')[0] || staff.email;
+    const serializedNotes = serializePayoutNotes(
+      buildPayoutMetadata({
+        note: input.notes,
+        paymentMethod: account.name,
+        proofReference: input.proofReference,
+      }),
     );
-    const serializedNotes = serializePayoutNotes(buildPayoutMetadata({
-      note: input.notes,
-      paymentMethod: input.paymentMethod,
-      proofReference: input.proofReference,
-    }));
 
     const payout = await tx.commissionPayout.create({
       data: {
@@ -194,41 +314,97 @@ export async function createCommissionPayout(input: {
         userId: input.userId,
         periodStart: input.periodStart,
         periodEnd: input.periodEnd,
-        totalEarned,
+        totalEarned: amount,
         authorizedById: input.authorizedById,
+        paymentAccountId: account.id,
+        paymentAccountName: account.name,
         ...(serializedNotes ? { notes: serializedNotes } : {}),
       },
-      include: {
-        user: { select: { email: true } },
-        authorizedBy: { select: { email: true } },
+    });
+
+    // Commission is salary expense: the same transaction writes the expense
+    // ledger row and the account debit so cash flow and accounts reconcile.
+    const expense = await tx.expense.create({
+      data: {
+        tenantId: input.tenantId,
+        category: 'STAFF_COMMISSIONS',
+        amount,
+        description: `Staff commission payout — ${staffName} (${input.periodStart
+          .toISOString()
+          .slice(0, 10)} to ${input.periodEnd.toISOString().slice(0, 10)})`,
+        paymentAccountId: account.id,
+        recordedById: input.authorizedById,
+        expenseDate: new Date(),
       },
     });
 
-    await tx.commissionRecord.updateMany({
-      where: { id: { in: unpaidRecords.map((r: { id: string }) => r.id) } },
-      data: { isPaid: true, payoutId: payout.id },
+    await tx.commissionPayout.update({
+      where: { id: payout.id },
+      data: { expenseId: expense.id },
     });
 
-    await createAuditLog({
-      tenantId: input.tenantId,
-      actorId: input.authorizedById,
-      actorRole: input.authorizedByRole,
-      entityType: 'CommissionPayout',
-      entityId: payout.id,
-      action: AUDIT_ACTIONS.COMMISSION_PAYOUT_CREATED,
-      after: {
-        payoutId: payout.id,
-        userId: input.userId,
-        periodStart: input.periodStart.toISOString(),
-        periodEnd: input.periodEnd.toISOString(),
-        totalEarned: totalEarned.toString(),
-        paymentMethod: input.paymentMethod ?? null,
-        proofReference: input.proofReference ?? null,
-      },
-    });
+    await postLedgerEntries(
+      tx,
+      input.tenantId,
+      input.authorizedById,
+      [
+        {
+          accountId: account.id,
+          source: PaymentEntrySource.EXPENSE,
+          sourceId: expense.id,
+          description: `Staff commissions — ${staffName}`.slice(0, 200),
+          credit: amount,
+        },
+      ],
+      { allowPettyCashAccount: true },
+    );
 
-    return payout;
+    const allocations = allocateCommissionPayment(openRecords, amount);
+    for (const allocation of allocations) {
+      await tx.commissionRecord.update({
+        where: { id: allocation.id },
+        data: {
+          paidAmount: allocation.newPaid,
+          isPaid: allocation.isPaid,
+          payoutId: payout.id,
+        },
+      });
+    }
+
+    return { payout, pettyCashFundId, amount, accountName: account.name, staffName, expenseId: expense.id };
   });
+
+  // A linked petty-cash payout also reduces the fund's running balance. Kept
+  // outside the transaction because adjustFundBalance owns its own write and
+  // low-balance check.
+  if (transactionResult.pettyCashFundId) {
+    await adjustFundBalance(
+      input.tenantId,
+      transactionResult.pettyCashFundId,
+      -transactionResult.amount.toNumber(),
+    );
+  }
+
+  await createAuditLog({
+    tenantId: input.tenantId,
+    actorId: input.authorizedById,
+    actorRole: input.authorizedByRole,
+    entityType: 'CommissionPayout',
+    entityId: transactionResult.payout.id,
+    action: AUDIT_ACTIONS.COMMISSION_PAYOUT_CREATED,
+    after: {
+      payoutId: transactionResult.payout.id,
+      userId: input.userId,
+      periodStart: input.periodStart.toISOString(),
+      periodEnd: input.periodEnd.toISOString(),
+      amountPaid: transactionResult.amount.toString(),
+      paymentAccount: transactionResult.accountName,
+      expenseId: transactionResult.expenseId,
+      proofReference: input.proofReference ?? null,
+    },
+  });
+
+  return transactionResult.payout;
 }
 
 export async function getCommissionPayouts(
@@ -260,8 +436,9 @@ export async function getCommissionPayouts(
     prisma.commissionPayout.findMany({
       where,
       include: {
-        user: { select: { email: true, role: true } },
-        authorizedBy: { select: { email: true } },
+        user: { select: { email: true, fullName: true, role: true } },
+        authorizedBy: { select: { email: true, fullName: true } },
+        paymentAccount: { select: { id: true, name: true } },
       },
       orderBy: { paidAt: 'desc' },
       skip: (page - 1) * pageSize,
@@ -277,14 +454,19 @@ export async function getCommissionPayouts(
         id: record.id,
         userId: record.userId,
         userEmail: record.user.email,
+        userName: record.user.fullName?.trim() || null,
         userRole: record.user.role,
         totalEarned: record.totalEarned.toString(),
         periodStart: record.periodStart,
         periodEnd: record.periodEnd,
         paidAt: record.paidAt,
         authorizedByEmail: record.authorizedBy.email,
+        authorizedByName: record.authorizedBy.fullName?.trim() || null,
         note: metadata.note ?? null,
         paymentMethod: metadata.paymentMethod ?? null,
+        paymentAccountId: record.paymentAccountId,
+        paymentAccountName: record.paymentAccountName ?? record.paymentAccount?.name ?? null,
+        expenseId: record.expenseId,
         proofReference: metadata.proofReference ?? null,
       };
     }),
@@ -302,12 +484,12 @@ export async function getCommissionSummaryForTenant(
 ) {
   const users = await prisma.user.findMany({
     where: { tenantId, isActive: true },
-    select: { id: true, email: true, role: true },
+    select: { id: true, email: true, fullName: true, role: true },
   });
 
   const summaries = await Promise.all(
     users.map(async (user) => {
-      const [earned, paid] = await Promise.all([
+      const [earned, paid, legacyPaid] = await Promise.all([
         prisma.commissionRecord.aggregate({
           where: {
             tenantId,
@@ -320,7 +502,16 @@ export async function getCommissionSummaryForTenant(
           where: {
             tenantId,
             userId: user.id,
+            createdAt: { gte: periodStart, lte: periodEnd },
+          },
+          _sum: { paidAmount: true },
+        }),
+        prisma.commissionRecord.aggregate({
+          where: {
+            tenantId,
+            userId: user.id,
             isPaid: true,
+            paidAmount: 0,
             createdAt: { gte: periodStart, lte: periodEnd },
           },
           _sum: { earnedAmount: true },
@@ -328,12 +519,15 @@ export async function getCommissionSummaryForTenant(
       ]);
 
       const totalEarned = earned._sum.earnedAmount ?? new Decimal(0);
-      const totalPaid = paid._sum.earnedAmount ?? new Decimal(0);
+      const totalPaid = (paid._sum.paidAmount ?? new Decimal(0)).plus(
+        legacyPaid._sum.earnedAmount ?? new Decimal(0),
+      );
       const unpaid = new Decimal(totalEarned.toString()).sub(new Decimal(totalPaid.toString()));
 
       return {
         userId: user.id,
         email: user.email,
+        fullName: user.fullName?.trim() || null,
         role: user.role,
         totalEarned: totalEarned.toString(),
         totalPaid: totalPaid.toString(),

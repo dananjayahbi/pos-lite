@@ -452,6 +452,24 @@ test.describe('Module 15 - Promotions, Discounts & Customer Pricing', () => {
     if (response.status() === 201) state.promotionIds.push((await body(response)).data.id);
   });
 
+  test('F10 promotions page content fills the available width like other store pages', async ({ page }) => {
+    await login(page);
+    await page.goto(`${BASE_URL}/promotions`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Promotions' })).toBeVisible({ timeout: 45_000 });
+    await page.waitForLoadState('networkidle');
+
+    const main = page.locator('main#main-content');
+    const content = main.locator('> div').first();
+    const mainBox = await main.boundingBox();
+    const contentBox = await content.boundingBox();
+    expect(mainBox).not.toBeNull();
+    expect(contentBox).not.toBeNull();
+    // The page wrapper must span the main column (minus sub-pixel rounding);
+    // a max-width container leaves large gutters on wide screens.
+    expect(contentBox!.width).toBeGreaterThanOrEqual(mainBox!.width - 2);
+    expect(Math.abs(contentBox!.x - mainBox!.x)).toBeLessThanOrEqual(1);
+  });
+
   test('T2 does not leak promotion data across a future or expired time window', async ({ page }) => {
     await login(page);
     const expired = await createPromotion(page, {

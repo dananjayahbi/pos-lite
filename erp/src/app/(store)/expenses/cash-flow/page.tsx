@@ -81,7 +81,8 @@ export default function CashFlowPage() {
     data &&
     (parseFloat(data.totalIncome) !== 0 ||
       parseFloat(data.totalExpenses) !== 0 ||
-      data.cashMovements.length > 0);
+      data.cashMovements.length > 0 ||
+      data.paymentAccountActivity.length > 0);
 
   const netCashFlowNum = data ? parseFloat(data.netCashFlow) : 0;
 
@@ -107,7 +108,7 @@ export default function CashFlowPage() {
       {/* Date Range + Generate */}
       <div className="flex flex-wrap items-end gap-4">
         <div>
-          <Label className="text-sm text-sand">From</Label>
+          <Label className="text-sm text-sand-ink">From</Label>
           <Input
             type="date"
             value={dateFrom}
@@ -116,7 +117,7 @@ export default function CashFlowPage() {
           />
         </div>
         <div>
-          <Label className="text-sm text-sand">To</Label>
+          <Label className="text-sm text-sand-ink">To</Label>
           <Input
             type="date"
             value={dateTo}
@@ -140,14 +141,14 @@ export default function CashFlowPage() {
 
       {/* No query yet */}
       {!queryDates && !isLoading && (
-        <div className="py-16 text-center text-sand">
+        <div className="py-16 text-center text-sand-ink">
           Select a date range and click &quot;Generate Report&quot; to view the cash flow statement.
         </div>
       )}
 
       {/* Empty state */}
       {queryDates && !isLoading && data && !hasActivity && (
-        <div className="py-16 text-center text-sand">
+        <div className="py-16 text-center text-sand-ink">
           No financial activity recorded for this period.
         </div>
       )}
@@ -208,11 +209,11 @@ export default function CashFlowPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex justify-between">
-                <span className="text-sand">Gross Sales</span>
+                <span className="text-sand-ink">Gross Sales</span>
                 <span className="font-mono text-espresso">{formatRupee(data.grossIncome)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sand">Refunds</span>
+                <span className="text-sand-ink">Refunds</span>
                 <span className="font-mono text-terracotta">-{formatRupee(data.refunds)}</span>
               </div>
               <div className="my-2 border-t border-mist" />
@@ -221,7 +222,7 @@ export default function CashFlowPage() {
                 <span className="font-mono text-espresso">{formatRupee(data.totalIncome)}</span>
               </div>
               {data.incomeByMethod.length > 0 && (
-                <p className="mt-2 text-sm text-sand">
+                <p className="mt-2 text-sm text-sand-ink">
                   {data.incomeByMethod
                     .map((m) => `${METHOD_LABELS[m.method] ?? m.method}: ${formatRupee(m.total)}`)
                     .join(' · ')}
@@ -277,6 +278,75 @@ export default function CashFlowPage() {
                     </TableRow>
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Payment Account Activity */}
+          {data.paymentAccountActivity.length > 0 && (
+            <Card className="border-mist">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-display text-espresso">Payment Account Activity</CardTitle>
+                <Link href="/payment-accounts" className="text-sm text-terracotta hover:underline">
+                  Manage accounts
+                </Link>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-linen/40">
+                      <TableHead className="text-espresso">Account</TableHead>
+                      <TableHead className="text-espresso">Type</TableHead>
+                      <TableHead className="text-right text-espresso">Money In</TableHead>
+                      <TableHead className="text-right text-espresso">Money Out</TableHead>
+                      <TableHead className="text-right text-espresso">Net</TableHead>
+                      <TableHead className="text-right text-espresso">Current Balance</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.paymentAccountActivity.map((account) => (
+                      <TableRow key={account.accountId}>
+                        <TableCell className="font-medium">{account.accountName}</TableCell>
+                        <TableCell className="text-sand-ink">{account.accountType.replace(/_/g, ' ')}</TableCell>
+                        <TableCell className="text-right font-mono text-green-700">
+                          {formatRupee(account.debit)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-terracotta">
+                          {formatRupee(account.credit)}
+                        </TableCell>
+                        <TableCell
+                          className={`text-right font-mono ${
+                            parseFloat(account.net) >= 0 ? 'text-green-700' : 'text-terracotta'
+                          }`}
+                        >
+                          {formatRupee(account.net)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {formatRupee(account.currentBalance)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="bg-linen/40 font-semibold">
+                      <TableCell colSpan={2}>Total</TableCell>
+                      <TableCell className="text-right font-mono text-green-700">
+                        {formatRupee(data.paymentAccountTotals.debit)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-terracotta">
+                        {formatRupee(data.paymentAccountTotals.credit)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {formatRupee(data.paymentAccountTotals.net)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {formatRupee(data.paymentAccountTotals.totalActiveBalance)}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+                <p className="mt-2 text-xs text-sand-ink">
+                  Ledger totals include sales, refunds, expenses, deposits, withdrawals and internal
+                  transfers for the selected window. Internal transfers net to zero.
+                </p>
               </CardContent>
             </Card>
           )}

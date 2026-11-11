@@ -72,6 +72,8 @@ export const NAV_SEARCH_INDEX: NavSearchEntry[] = [
   { title: 'New Staff Member', path: '/staff', description: 'Create a new staff member.', keywords: ['add staff member', 'new staff', 'add staff', 'employee'], group: 'Operations', permission: 'staff:manage', kind: 'action' },
   { title: 'Attendance', path: '/staff/timeclock', description: 'Attendance and timeclock records.', keywords: ['clock in', 'punch'], group: 'Operations', permission: 'staff:attendance:view' },
   { title: 'Staff Commissions', path: '/staff/commissions', description: 'Staff commission payouts and history.', keywords: ['commission', 'payout'], group: 'Operations', permission: 'staff:view' },
+  { title: 'Run Payroll', path: '/payroll', description: 'Generate the monthly salary run with EPF/ETF.', keywords: ['payroll', 'salary', 'epf', 'etf', 'payslip'], group: 'Operations', permission: 'payroll:view' },
+  { title: 'Payroll Reports & Bank Sheets', path: '/payroll/reports', description: 'Bank salary sheet, EPF/ETF returns and payroll summary.', keywords: ['bank sheet', 'epf', 'etf', 'c form', 'payroll report'], group: 'Operations', permission: 'payroll:view' },
 
   // ── Growth ────────────────────────────────────────────────────
   { title: 'Promotions', path: '/promotions', description: 'Create and manage promotions and discounts.', keywords: ['discount', 'offer'], group: 'Growth', permission: 'promotion:create' },
@@ -114,11 +116,12 @@ export const NAV_SEARCH_INDEX: NavSearchEntry[] = [
   // ── Settings ──────────────────────────────────────────────────
   { title: 'My Account', path: '/settings/account', description: 'Your account preferences and profile.', keywords: ['profile', 'password'], group: 'Settings' },
   { title: 'Tax Settings', path: '/settings/taxes', description: 'Configure tax rates.', keywords: ['tax', 'vat'], group: 'Settings', permission: 'settings:tax' },
+  { title: 'Payment Settings', path: '/settings/payments', description: 'Configure LankaQR merchant identity and the static QR.', keywords: ['lankaqr', 'qr', 'payments', 'lankapay'], group: 'Settings', permission: 'settings:payments' },
   { title: 'Team & Permissions', path: '/settings/users', description: 'Manage users and role permissions.', keywords: ['users', 'roles'], group: 'Settings', permission: 'settings:users' },
   { title: 'Hardware Settings', path: '/settings/hardware', description: 'Configure printers and peripherals.', keywords: ['printer', 'device'], group: 'Settings', permission: 'settings:hardware' },
   { title: 'Store Profile', path: '/settings/store', description: 'Store and business profile details.', keywords: ['business', 'profile'], group: 'Settings', permission: 'settings:store_profile' },
+  { title: 'Units', path: '/settings/units', description: 'Manage the tenant-wide units of measure.', keywords: ['unit', 'measure', 'kg', 'litre', 'liter', 'bottle'], group: 'Settings', permission: 'raw_material:view' },
   { title: 'Website', path: '/settings/website', description: 'Configure the public storefront website.', keywords: ['storefront', 'theme'], group: 'Settings' },
-  { title: 'Webhooks', path: '/settings/webhooks', description: 'Manage outbound webhooks.', keywords: ['hooks', 'integrations'], group: 'Settings' },
   { title: 'Audit Log', path: '/settings/audit-log', description: 'System audit trail with export.', keywords: ['logs', 'history'], group: 'Settings', permission: 'settings:view_audit_log' },
 
   // ── Notable actions ───────────────────────────────────────────

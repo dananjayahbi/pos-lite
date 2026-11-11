@@ -38,6 +38,9 @@ export function CartDiscountControl() {
   const newTotal = subtotal - discountAmount;
   const exceedsTotal = newTotal < 0;
   const needsOverride = !isPrivileged && effectivePercent > POS_DISCOUNT_THRESHOLDS.cartMaxPercent;
+  // What is actually applied (the input preview is a separate, in-progress value).
+  const appliedDiscountAmount =
+    cartDiscountPercent > 0 ? (subtotal * cartDiscountPercent) / 100 : cartDiscountAmount;
 
   const handleApply = () => {
     if (exceedsTotal || parsedInput <= 0) return;
@@ -59,17 +62,28 @@ export function CartDiscountControl() {
   return (
     <div className="px-4 py-2 border-t border-mist/30">
       <div className="flex items-center justify-between mb-1.5">
-        <span className="font-body text-[13px] text-mist">Cart Discount</span>
+        <span className="font-body text-[13px] text-mist-ink">Cart Discount</span>
         {hasActiveDiscount && (
           <button
             type="button"
             onClick={handleClear}
             className="font-body text-[11px] text-[#9B2226] hover:text-[#9B2226]/80 transition-colors"
+            aria-label="Remove cart discount"
           >
-            Clear
+            Remove
           </button>
         )}
       </div>
+
+      {hasActiveDiscount && (
+        <p className="mb-1.5 font-body text-[11px] text-[#2D6A4F]">
+          Applied:{' '}
+          {cartDiscountPercent > 0
+            ? `${cartDiscountPercent}% off`
+            : `${formatRupee(cartDiscountAmount)} off`}{' '}
+          ({formatRupee(Math.min(subtotal, appliedDiscountAmount))})
+        </p>
+      )}
 
       <div className="flex items-center gap-2">
         {/* Mode toggle */}
@@ -80,7 +94,7 @@ export function CartDiscountControl() {
             className={`px-2.5 py-1 text-xs font-body rounded-l-md transition-colors ${
               mode === 'percent'
                 ? 'bg-sand text-espresso'
-                : 'bg-transparent border border-mist text-mist'
+                : 'bg-transparent border border-mist text-mist-ink'
             }`}
           >
             %
@@ -91,7 +105,7 @@ export function CartDiscountControl() {
             className={`px-2.5 py-1 text-xs font-body rounded-r-md transition-colors ${
               mode === 'fixed'
                 ? 'bg-sand text-espresso'
-                : 'bg-transparent border border-mist text-mist'
+                : 'bg-transparent border border-mist text-mist-ink'
             }`}
           >
             Rs.
@@ -128,7 +142,7 @@ export function CartDiscountControl() {
 
       {/* Live preview */}
       {parsedInput > 0 && (
-        <p className={`font-body text-xs mt-1 ${exceedsTotal ? 'text-[#9B2226]' : 'text-mist'}`}>
+        <p className={`font-body text-xs mt-1 ${exceedsTotal ? 'text-[#9B2226]' : 'text-mist-ink'}`}>
           {exceedsTotal
             ? 'Discount exceeds cart total'
             : `New total: ${formatRupee(Math.max(0, newTotal))}`}

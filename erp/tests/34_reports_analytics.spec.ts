@@ -742,3 +742,67 @@ test.describe('§0 Cleanup', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §9 — Revenue Trend chart data (ISSUE 9)
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('§9 Revenue Trend chart data', () => {
+  const today = new Date();
+  const ymd = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const lastOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+  test('P9: a single-month range in Monthly mode returns one bucket', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    const res = await page.request.get(
+      `${REPORTS.revenueTrend}?from=${ymd(firstOfMonth)}&to=${ymd(lastOfMonth)}&granularity=monthly`,
+    );
+    expect(res.status()).toBe(200);
+    const json = await res.json();
+    // The chart used to render blank because a single-point polyline draws
+    // nothing; the API has always returned the bucket.
+    expect(json.data.timeSeries.length).toBeGreaterThanOrEqual(1);
+    for (const point of json.data.timeSeries) {
+      expect(typeof point.date).toBe('string');
+      expect(Number.isFinite(Number(point.revenue))).toBe(true);
+    }
+    expect(json.data.stats.totalTransactions).toBeGreaterThanOrEqual(0);
+  });
+
+  test('P10: peak hours carry the transactions from the period', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    const from = new Date();
+    from.setDate(from.getDate() - 29);
+    const res = await page.request.get(
+      `${REPORTS.revenueTrend}?from=${ymd(from)}&to=${ymd(today)}&granularity=daily`,
+    );
+    expect(res.status()).toBe(200);
+    const json = await res.json();
+    expect(json.data.peakHours).toHaveLength(24);
+    const active = json.data.peakHours.filter((h: any) => h.count > 0);
+    expect(json.data.stats.totalTransactions).toBeGreaterThan(0);
+    expect(active.length).toBeGreaterThan(0);
+    const counted = json.data.peakHours.reduce((sum: number, h: any) => sum + h.count, 0);
+    expect(counted).toBe(json.data.stats.totalTransactions);
+  });
+
+  test('P11: Monthly mode renders a chart marker (single bucket)', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    await page.goto(
+      `${BASE_URL}/reports/revenue-trend?from=${ymd(firstOfMonth)}&to=${ymd(lastOfMonth)}&granularity=monthly`,
+      { waitUntil: 'domcontentloaded' },
+    );
+    await expect(page.getByText('Revenue & Returns Over Time')).toBeVisible({ timeout: 30_000 });
+    // At least one plotted data point must exist, even for a single bucket.
+    await expect
+      .poll(async () => page.locator('svg circle').count(), { timeout: 20_000 })
+      .toBeGreaterThan(0);
+    // Peak-hours bars must have a non-zero rendered height.
+    const heights = await page.locator('div[title*="sales)"]').evaluateAll((els) =>
+      els.map((el) => (el as HTMLElement).getBoundingClientRect().height),
+    );
+    expect(heights.length).toBeGreaterThan(0);
+    expect(Math.max(...heights)).toBeGreaterThan(0);
+  });
+});

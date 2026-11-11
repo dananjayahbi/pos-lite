@@ -235,7 +235,7 @@ export function GoodsReceivingForm({
   if (displayableLines.length === 0) {
     return (
       <div className="space-y-4">
-        <div className="rounded-lg border border-mist/40 bg-linen p-6 text-center text-sm text-mist">
+        <div className="rounded-lg border border-mist/40 bg-linen p-6 text-center text-sm text-mist-ink">
           All lines have already been fully received.
         </div>
         {onCancel ? (
@@ -276,7 +276,7 @@ export function GoodsReceivingForm({
                   <TableCell>
                     <p className="font-medium text-espresso">{line.productNameSnapshot}</p>
                     <p className="text-xs text-muted-foreground">{line.variantDescriptionSnapshot}</p>
-                    <p className="text-[11px] font-mono text-mist mt-1">SKU {line.variant.sku}</p>
+                    <p className="text-[11px] font-mono text-mist-ink mt-1">SKU {line.variant.sku}</p>
                   </TableCell>
                   <TableCell className="text-center">{line.orderedQty}</TableCell>
                   <TableCell className="text-center">{line.receivedQty}</TableCell>
@@ -359,7 +359,7 @@ export function GoodsReceivingForm({
               ? `Receiving ${totalItems} item(s) across ${lineCount} line(s)`
               : 'Enter quantities to receive'}
           </p>
-          <p className="text-xs text-mist mt-1">
+          <p className="text-xs text-mist-ink mt-1">
             Adjust actual cost prices only when the supplier invoice differs from the expected amount.
             Batch number and expiry date are optional — fill them in to keep the received goods
             traceable in Inventory → Batches.

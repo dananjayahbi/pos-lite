@@ -20,7 +20,7 @@ export function ProductionHistoryPanel({ compact = false }: ProductionHistoryPan
 
   if (logs.length === 0) {
     return (
-      <p className="py-4 text-center text-sm text-mist">
+      <p className="py-4 text-center text-sm text-mist-ink">
         No production runs recorded yet.
       </p>
     );
@@ -33,7 +33,7 @@ export function ProductionHistoryPanel({ compact = false }: ProductionHistoryPan
           <li key={log.id} className="flex items-center justify-between py-2">
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-espresso">{log.variantName}</p>
-              <p className="truncate text-xs text-mist">
+              <p className="truncate text-xs text-mist-ink">
                 {log.variantSku} · {formatDate(log.createdAt)}
               </p>
             </div>
@@ -50,7 +50,7 @@ export function ProductionHistoryPanel({ compact = false }: ProductionHistoryPan
     <div className="rounded-lg border bg-white shadow-sm">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b text-left text-xs uppercase tracking-wide text-mist">
+          <tr className="border-b text-left text-xs uppercase tracking-wide text-mist-ink">
             <th className="px-4 py-3 font-medium">Product</th>
             <th className="px-4 py-3 font-medium">Quantity</th>
             <th className="px-4 py-3 font-medium">By</th>
@@ -62,11 +62,11 @@ export function ProductionHistoryPanel({ compact = false }: ProductionHistoryPan
             <tr key={log.id}>
               <td className="px-4 py-3">
                 <div className="text-espresso">{log.variantName}</div>
-                <div className="text-xs text-mist">{log.variantSku}</div>
+                <div className="text-xs text-mist-ink">{log.variantSku}</div>
               </td>
               <td className="px-4 py-3 font-semibold text-espresso">+{log.quantity}</td>
-              <td className="px-4 py-3 text-mist">{log.actorName}</td>
-              <td className="px-4 py-3 text-mist">{formatDate(log.createdAt)}</td>
+              <td className="px-4 py-3 text-mist-ink">{log.actorName}</td>
+              <td className="px-4 py-3 text-mist-ink">{formatDate(log.createdAt)}</td>
             </tr>
           ))}
         </tbody>

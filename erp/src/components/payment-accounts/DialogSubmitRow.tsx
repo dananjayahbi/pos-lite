@@ -46,7 +46,7 @@ export function DialogSubmitRow({
         variant="ghost"
         onClick={onCancel}
         disabled={isPending}
-        className="font-body text-sand hover:text-espresso"
+        className="font-body text-sand-ink hover:text-espresso"
       >
         Cancel
       </Button>

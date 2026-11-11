@@ -128,7 +128,7 @@ function CustomerPricingRuleForm({
               maxLength={60}
               className="font-mono uppercase"
             />
-            <p className="text-xs text-mist">
+            <p className="text-xs text-mist-ink">
               Matches the tag stored on the customer record exactly.
             </p>
           </div>
@@ -183,14 +183,14 @@ function CustomerPricingRuleForm({
               />
             </div>
           </div>
-          <p className="text-xs text-mist">
+          <p className="text-xs text-mist-ink">
             Leave both dates blank for an open-ended rule.
           </p>
 
           <div className="flex items-center justify-between rounded-lg border border-mist/40 px-3 py-2">
             <div>
               <Label htmlFor="cp-active" className="text-sm text-espresso">Active</Label>
-              <p className="text-xs text-mist">Inactive rules never apply to a cart.</p>
+              <p className="text-xs text-mist-ink">Inactive rules never apply to a cart.</p>
             </div>
             <Switch
               id="cp-active"

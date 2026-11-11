@@ -35,7 +35,7 @@ export function HealthConcernMultiSelect({
 
   return (
     <div className="space-y-4 rounded-lg border border-sand/30 bg-linen/40 p-4">
-      <p className="font-body text-xs font-semibold uppercase tracking-wider text-mist">
+      <p className="font-body text-xs font-semibold uppercase tracking-wider text-mist-ink">
         Health Concerns (shown on storefront)
       </p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

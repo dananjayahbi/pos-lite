@@ -121,11 +121,6 @@ enum RawMaterialCategory {
   CHEMICALS
 }
 
-enum Unit {
-  LITERS
-  KILOGRAMS
-}
-
 enum StockTakeStatus {
   IN_PROGRESS
   PENDING_APPROVAL
@@ -241,6 +236,8 @@ enum PromotionType {
   CART_PERCENTAGE
   CART_FIXED
   CATEGORY_PERCENTAGE
+  PRODUCT_PERCENTAGE
+  PRODUCT_FIXED
   BOGO
   MIX_AND_MATCH
   PROMO_CODE
@@ -258,6 +255,7 @@ enum ExpenseCategory {
   TEA_SUGAR
   OFFICE_STATIONERY
   TRAVEL
+  STAFF_COMMISSIONS
 }
 
 enum CashMovementType {
@@ -454,6 +452,20 @@ model User {
   deletedAt      DateTime?
   commissionRate Decimal?  @db.Decimal(5, 2)
   clockedInAt    DateTime?
+  // HR profile collected by the staff onboarding form.
+  fullName           String?
+  nic                String?
+  contactNumber      String?
+  address            String?
+  // Salary components used for payslips / ETF / EPF calculations.
+  basicSalary        Decimal? @db.Decimal(12, 2)
+  allowances         Decimal? @db.Decimal(12, 2)
+  // Banking and statutory identifiers.
+  bankName           String?
+  bankBranch         String?
+  bankAccountNumber  String?
+  etfNumber          String?
+  epfNumber          String?
 
   sessions                      Session[]
   stockMovements                StockMovement[]
@@ -472,7 +484,11 @@ model User {
   commissionRecords             CommissionRecord[]
   commissionPayoutsAsUser       CommissionPayout[]   @relation("PayoutUser")
   commissionPayoutsAsAuthorizer CommissionPayout[]   @relation("PayoutAuthorizer")
+  payrollRunsGenerated          PayrollRun[]         @relation("PayrollRunGenerator")
+  payrollItems                  PayrollItem[]        @relation("PayrollItemUser")
   timeClocks                    TimeClock[]
+  attendanceDays                AttendanceDay[]      @relation("AttendanceDayUser")
+  attendanceRecordedBy          AttendanceDay[]      @relation("AttendanceDayRecorder")
   expenses                      Expense[]
   authorizedCashMovements       CashMovement[]
   savedReports                  SavedReport[]
@@ -608,7 +624,10 @@ model Tenant {
   birthdayGreetingLogs        BirthdayGreetingLog[]
   commissionRecords           CommissionRecord[]
   commissionPayouts           CommissionPayout[]
+  payrollRuns                 PayrollRun[]
+  payrollItems                PayrollItem[]
   timeClocks                  TimeClock[]
+  attendanceDays              AttendanceDay[]
   promotions                  Promotion[]
   customerPricingRules        CustomerPricingRule[]
   expenses                    Expense[]
@@ -635,12 +654,15 @@ model Tenant {
   rateCards                   RateCard[]
   rateCardEntries             RateCardEntry[]
   packagingItems              PackagingItem[]
+  packagingCategories         PackagingCategoryOption[]
   packagingConsumptions       PackagingConsumption[]
   deliveryRecoveries          DeliveryRecovery[]
   reconciliationLedgerEntries ReconciliationLedgerEntry[]
   reconciliationDisputes      ReconciliationDispute[]
   statementImports            StatementImport[]
   rawMaterials                RawMaterial[]
+  rawMaterialCategories       RawMaterialCategoryOption[]
+  rawMaterialUnits            RawMaterialUnit[]
   billOfMaterials             BillOfMaterials[]
   productionLogs              ProductionLog[]
   batchTrackings              BatchTracking[]
@@ -804,6 +826,7 @@ model Product {
   deletedAt   DateTime?
 
   variants ProductVariant[]
+  promotions Promotion[]
 
   @@index([tenantId])
   @@index([tenantId, categoryId])
@@ -908,8 +931,12 @@ model RawMaterial {
   tenantId           String
   tenant             Tenant             @relation(fields: [tenantId], references: [id])
   name               String
-  category           RawMaterialCategory
-  unit               Unit
+  // Stable category key. Default keys live in RAW_MATERIAL_CATEGORIES; tenants
+  // can add their own keys through RawMaterialCategoryOption.
+  category           String
+  // Tenant-managed unit key. Built-in keys live in DEFAULT_RAW_MATERIAL_UNITS;
+  // tenants can add their own through RawMaterialUnit.
+  unit               String
   quantity           Decimal            @default(0)
   lowStockThreshold  Decimal            @default(0)
   description        String?
@@ -923,6 +950,45 @@ model RawMaterial {
   @@index([tenantId])
   @@index([tenantId, category])
   @@map("raw_materials")
+}
+
+// Tenant-managed raw-material categories. The three built-in categories are
+// seeded per tenant; custom ones (e.g. Bottles & Caps) are added from the UI.
+model RawMaterialCategoryOption {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key       String
+  name      String
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("raw_material_categories")
+}
+
+// Tenant-managed units of measure. The built-in units (Liters, Kilograms,
+// Units) are seeded per tenant; custom units can be added from Settings →
+// Units or inline from the raw-material form.
+model RawMaterialUnit {
+  id         String    @id @default(cuid())
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key        String
+  name       String
+  // Compact form shown next to quantities (e.g. "kg", "L", "bottle").
+  shortLabel String
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("raw_material_units")
 }
 
 model BillOfMaterials {
@@ -1113,6 +1179,10 @@ model SaleLine {
   variantDescriptionSnapshot String
   sku                        String
   unitPrice                  Decimal        @db.Decimal(12, 2)
+  // Historical cost at the moment of sale, so P&L COGS does not move when the
+  // variant's current cost price is edited later. Nullable for legacy rows and
+  // held-sale paths; reports fall back to ProductVariant.costPrice.
+  costPriceSnapshot          Decimal?       @db.Decimal(12, 2)
   quantity                   Int
   discountPercent            Decimal        @default(0) @db.Decimal(12, 2)
   discountAmount             Decimal        @default(0) @db.Decimal(12, 2)
@@ -1256,7 +1326,13 @@ model Customer {
   tenant                      Tenant    @relation(fields: [tenantId], references: [id])
   name                        String
   phone                       String
+  // Optional secondary contact number (e.g. a family member or office line).
+  phone2                      String?
   email                       String?
+  // Postal / billing address captured on the customer card. `city` stores the
+  // Trans Express city name so the value can be reused for courier dispatch.
+  address                     String?
+  city                        String?
   gender                      Gender?
   birthday                    DateTime?
   lastBirthdayMessageSentYear Int?
@@ -1400,15 +1476,30 @@ model PurchaseOrderLine {
   @@map("purchase_order_lines")
 }
 
+enum BroadcastChannel {
+  EMAIL
+  SMS
+  // Legacy channel retained so historical rows keep a valid value.
+  WHATSAPP
+}
+
 model CustomerBroadcast {
-  id             String   @id @default(cuid())
+  id             String           @id @default(cuid())
   tenantId       String
-  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  tenant         Tenant           @relation(fields: [tenantId], references: [id])
+  channel        BroadcastChannel @default(EMAIL)
+  // Email subject. Null for SMS.
+  subject        String?
+  // Delivery body: the SMS text, or the plain-text fallback for email.
   message        String
-  sentAt         DateTime @default(now())
+  // Email HTML template (already personalised at send time). Null for SMS.
+  htmlBody       String?
+  // Public image URLs attached to an email broadcast.
+  imageUrls      String[]         @default([])
+  sentAt         DateTime         @default(now())
   recipientCount Int
   sentById       String
-  sentBy         User     @relation(fields: [sentById], references: [id])
+  sentBy         User             @relation(fields: [sentById], references: [id])
   filters        Json
 
   @@index([tenantId])
@@ -1443,6 +1534,10 @@ model CommissionRecord {
   baseAmount     Decimal           @db.Decimal(12, 2)
   commissionRate Decimal           @db.Decimal(5, 2)
   earnedAmount   Decimal           @db.Decimal(12, 2)
+  /// Amount of this record already settled. Partial commission payouts leave
+  /// the remainder open; `isPaid` flips true only when paidAmount reaches
+  /// earnedAmount (negative return adjustments settle when they reach it too).
+  paidAmount     Decimal           @default(0) @db.Decimal(12, 2)
   payoutId       String?
   payout         CommissionPayout? @relation(fields: [payoutId], references: [id])
   isPaid         Boolean           @default(false)
@@ -1466,12 +1561,110 @@ model CommissionPayout {
   authorizedById String
   authorizedBy   User     @relation("PayoutAuthorizer", fields: [authorizedById], references: [id])
   notes          String?
+  /// Account the payout was paid from. Optional so historical payouts remain
+  /// valid; new payouts always name the account the owner selected.
+  paymentAccountId   String?
+  paymentAccount     PaymentAccount? @relation(fields: [paymentAccountId], references: [id])
+  /// Human-readable snapshot so a later rename/re-close does not rewrite history.
+  paymentAccountName String?
+  /// Expense ledger row created automatically for this payout.
+  expenseId      String?  @unique
+  expense        Expense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
   createdAt      DateTime @default(now())
 
   records CommissionRecord[]
 
   @@index([tenantId, userId])
   @@map("commission_payouts")
+}
+
+// ── Payroll ──────────────────────────────────────────────────────────────────
+
+enum PayrollRunStatus {
+  DRAFT
+  GENERATED
+  PAID
+}
+
+/**
+ * One monthly payroll run. Item rows snapshot the calculated amounts so a
+ * later change to a staff salary, commission or attendance record cannot
+ * rewrite a payslip that has already been issued.
+ */
+model PayrollRun {
+  id                 String           @id @default(cuid())
+  tenantId           String
+  tenant             Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Canonical YYYY-MM period key.
+  periodMonth        String
+  periodStart        DateTime         @db.Date
+  periodEnd          DateTime         @db.Date
+  status             PayrollRunStatus @default(GENERATED)
+  workingDays        Int
+  overtimeMultiplier Decimal          @db.Decimal(5, 2)
+  employeeEpfRate    Decimal          @db.Decimal(5, 2)
+  employerEpfRate    Decimal          @db.Decimal(5, 2)
+  employerEtfRate    Decimal          @db.Decimal(5, 2)
+  totalBasic         Decimal          @db.Decimal(14, 2)
+  totalAllowances    Decimal          @db.Decimal(14, 2)
+  totalOvertime      Decimal          @db.Decimal(14, 2)
+  totalCommission    Decimal          @db.Decimal(14, 2)
+  totalGross         Decimal          @db.Decimal(14, 2)
+  totalDeductions    Decimal          @db.Decimal(14, 2)
+  totalEmployeeEpf   Decimal          @db.Decimal(14, 2)
+  totalEmployerEpf   Decimal          @db.Decimal(14, 2)
+  totalEmployerEtf   Decimal          @db.Decimal(14, 2)
+  totalNet           Decimal          @db.Decimal(14, 2)
+  totalCompanyCost   Decimal          @db.Decimal(14, 2)
+  generatedById      String
+  generatedBy        User             @relation("PayrollRunGenerator", fields: [generatedById], references: [id])
+  generatedAt        DateTime         @default(now())
+  notes              String?
+  items              PayrollItem[]
+
+  @@unique([tenantId, periodMonth])
+  @@index([tenantId, periodMonth])
+  @@map("payroll_runs")
+}
+
+model PayrollItem {
+  id                String     @id @default(cuid())
+  payrollRunId      String
+  payrollRun        PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  tenantId          String
+  tenant            Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User       @relation("PayrollItemUser", fields: [userId], references: [id])
+  staffName         String
+  staffEmail        String
+  role              String
+  nic               String?
+  bankName          String?
+  bankBranch        String?
+  bankAccountNumber String?
+  epfNumber         String?
+  etfNumber         String?
+  basicSalary       Decimal    @db.Decimal(12, 2)
+  allowances        Decimal    @db.Decimal(12, 2)
+  overtimeMinutes   Int
+  overtimeAmount    Decimal    @db.Decimal(12, 2)
+  commissionAmount  Decimal    @db.Decimal(12, 2)
+  grossSalary       Decimal    @db.Decimal(14, 2)
+  noPayDays         Decimal    @db.Decimal(5, 1)
+  noPayDeduction    Decimal    @db.Decimal(12, 2)
+  advanceDeduction  Decimal    @db.Decimal(12, 2)
+  totalDeductions   Decimal    @db.Decimal(14, 2)
+  employeeEpf       Decimal    @db.Decimal(12, 2)
+  employerEpf       Decimal    @db.Decimal(12, 2)
+  employerEtf       Decimal    @db.Decimal(12, 2)
+  netSalary         Decimal    @db.Decimal(14, 2)
+  emailedAt         DateTime?
+  emailStatus       String?
+  createdAt         DateTime   @default(now())
+
+  @@unique([payrollRunId, userId])
+  @@index([tenantId, userId])
+  @@map("payroll_items")
 }
 
 model TimeClock {
@@ -1492,6 +1685,37 @@ model TimeClock {
   @@map("time_clocks")
 }
 
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LEAVE
+  HALF_DAY
+  HOLIDAY
+}
+
+// Per-staff, per-day attendance override. TimeClock still records the actual
+// punches; this row carries the human status (Leave/Absent/Half Day) and notes
+// set from the all-staff attendance view.
+model AttendanceDay {
+  id           String           @id @default(cuid())
+  tenantId     String
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User             @relation("AttendanceDayUser", fields: [userId], references: [id], onDelete: Cascade)
+  // Date-only (no time component) in the tenant's local calendar.
+  date         DateTime         @db.Date
+  status       AttendanceStatus @default(PRESENT)
+  notes        String?
+  recordedById String
+  recordedBy   User             @relation("AttendanceDayRecorder", fields: [recordedById], references: [id])
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([tenantId, userId, date])
+  @@index([tenantId, date])
+  @@map("attendance_days")
+}
+
 model Promotion {
   id               String        @id @default(cuid())
   tenantId         String
@@ -1502,6 +1726,8 @@ model Promotion {
   promoCode        String?
   targetCategoryId String?
   targetCategory   Category?     @relation(fields: [targetCategoryId], references: [id])
+  targetProductId  String?
+  targetProduct    Product?      @relation(fields: [targetProductId], references: [id])
   minQuantity      Int?
   startsAt         DateTime?
   endsAt           DateTime?
@@ -1510,6 +1736,7 @@ model Promotion {
   createdAt        DateTime      @default(now())
 
   @@index([tenantId, isActive])
+  @@index([targetProductId])
   @@map("promotions")
 }
 
@@ -1548,6 +1775,7 @@ model Expense {
   recordedBy      User            @relation(fields: [recordedById], references: [id])
   expenseDate     DateTime
   createdAt       DateTime        @default(now())
+  commissionPayout CommissionPayout?
 
   @@index([tenantId, expenseDate])
   @@index([pettyCashFundId])
@@ -1566,6 +1794,10 @@ model PettyCashFund {
   id                 String           @id @default(cuid())
   tenantId           String
   tenant             Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // The default CASH account this float is backed by. Every top-up and linked
+  // expense posts to this account's ledger so /payment-accounts stays in sync.
+  paymentAccountId   String?          @unique
+  paymentAccount     PaymentAccount?  @relation(fields: [paymentAccountId], references: [id], onDelete: SetNull)
   name               String           @default("Main Petty Cash")
   currency           String           @default("LKR")
   openingBalance     Decimal          @db.Decimal(12, 2)
@@ -2155,7 +2387,7 @@ model CourierShipment {
   id                  String          @id @default(cuid())
   tenantId            String
   tenant              Tenant          @relation(fields: [tenantId], references: [id])
-  deliveryId          String          @unique
+  deliveryId          String
   delivery            Delivery        @relation(fields: [deliveryId], references: [id])
   provider            CarrierProvider @default(TRANSEXPRESS)
   env                 CourierEnv      @default(STAGING)
@@ -2174,6 +2406,7 @@ model CourierShipment {
 
   @@unique([tenantId, waybillId])
   @@index([tenantId, status])
+  @@index([deliveryId, createdAt])
   @@index([provider])
   @@map("courier_shipments")
 }
@@ -2281,7 +2514,9 @@ model PackagingItem {
   id                   String            @id @default(cuid())
   tenantId             String
   tenant               Tenant            @relation(fields: [tenantId], references: [id])
-  category             PackagingCategory
+  // Tenant-defined category key (see PackagingCategoryOption). Was a closed
+  // enum until tenants needed to add their own categories.
+  category             String
   name                 String
   sku                  String?
   unit                 PackagingUnit     @default(PIECE)
@@ -2297,6 +2532,25 @@ model PackagingItem {
 
   @@index([tenantId, category])
   @@map("packaging_items")
+}
+
+/// Tenant-managed packaging categories. The enum above only pins the built-in
+/// defaults that are seeded lazily for every tenant; tenants can add, rename
+/// or retire categories without a schema change.
+model PackagingCategoryOption {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key       String
+  name      String
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("packaging_category_options")
 }
 
 model PackagingConsumption {
@@ -2488,6 +2742,9 @@ model PaymentAccount {
   updatedAt     DateTime             @updatedAt
 
   entries PaymentAccountEntry[]
+  // Back-relation for the petty-cash float this account backs (if any).
+  pettyCashFund PettyCashFund?
+  commissionPayouts CommissionPayout[]
 
   @@unique([tenantId, name])
   @@index([tenantId, status])

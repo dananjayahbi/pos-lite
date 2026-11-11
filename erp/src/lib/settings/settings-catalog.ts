@@ -27,6 +27,12 @@ export const SETTINGS_CATALOG: SettingsCatalogEntry[] = [
     permission: PERMISSIONS.SETTINGS.manageTax,
   },
   {
+    href: '/settings/payments',
+    label: 'Payments & LankaQR',
+    description: 'LankaQR merchant identity, static QR image and cashier instructions.',
+    permission: PERMISSIONS.SETTINGS.managePayments,
+  },
+  {
     href: '/settings/users',
     label: 'Team & Permissions',
     description: 'Staff accounts, roles and per-user permission overrides.',
@@ -43,12 +49,6 @@ export const SETTINGS_CATALOG: SettingsCatalogEntry[] = [
     label: 'Website',
     description: 'Public storefront content, hero slides, navigation and ads.',
     permission: PERMISSIONS.SETTINGS.manageWebsite,
-  },
-  {
-    href: '/settings/webhooks',
-    label: 'Webhooks',
-    description: 'Outbound endpoints and delivery retry history.',
-    permission: PERMISSIONS.SETTINGS.viewWebhookEndpoints,
   },
   {
     href: '/settings/audit-log',

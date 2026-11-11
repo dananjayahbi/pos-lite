@@ -31,11 +31,11 @@ export function SalesByPaymentChart({ data }: SalesByPaymentChartProps) {
         <CardTitle className="text-base font-semibold text-espresso">
           Sales by Payment
         </CardTitle>
-        <p className="text-xs text-sand">Last 7 days</p>
+        <p className="text-xs text-sand-ink">Last 7 days</p>
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <p className="py-8 text-center text-sm text-sand">
+          <p className="py-8 text-center text-sm text-sand-ink">
             No payment data yet.
           </p>
         ) : (

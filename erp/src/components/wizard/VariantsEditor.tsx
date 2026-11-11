@@ -63,14 +63,14 @@ export function VariantsEditor({
             Bulk price apply
           </h4>
         </div>
-        <p className="mb-3 text-xs text-mist font-body">
+        <p className="mb-3 text-xs text-mist-ink font-body">
           Set the same cost or retail price across every variant. Leave a field
           empty to skip it.
         </p>
         <div className="flex flex-wrap items-end gap-3">
           {canViewCost && (
             <div className="space-y-1">
-              <label className="font-body text-[10px] uppercase tracking-wide text-mist">
+              <label className="font-body text-[10px] uppercase tracking-wide text-mist-ink">
                 Cost (Rs.)
               </label>
               <Input
@@ -85,7 +85,7 @@ export function VariantsEditor({
             </div>
           )}
           <div className="space-y-1">
-            <label className="font-body text-[10px] uppercase tracking-wide text-mist">
+            <label className="font-body text-[10px] uppercase tracking-wide text-mist-ink">
               Retail (Rs.)
             </label>
             <Input

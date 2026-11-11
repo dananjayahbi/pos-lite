@@ -42,7 +42,7 @@ export default function PaymentMethodManagementCard({
               <ShieldCheck className="h-4 w-4 text-terracotta" />
               <p className="font-medium">Hosted checkout only</p>
             </div>
-            <p className="mt-2 text-sm text-sand">
+            <p className="mt-2 text-sm text-sand-ink">
               Card updates happen through PayHere checkout for PCI-safe billing method changes.
             </p>
           </div>
@@ -51,7 +51,7 @@ export default function PaymentMethodManagementCard({
               <CreditCard className="h-4 w-4 text-terracotta" />
               <p className="font-medium">Current billing token</p>
             </div>
-            <p className="mt-2 text-sm text-sand">
+            <p className="mt-2 text-sm text-sand-ink">
               {hasSavedBillingToken
                 ? 'A recurring billing token is currently attached to this subscription.'
                 : 'No recurring token is attached yet. Completing checkout will create or refresh it.'}
@@ -62,7 +62,7 @@ export default function PaymentMethodManagementCard({
               <RefreshCcw className="h-4 w-4 text-terracotta" />
               <p className="font-medium">Change the card</p>
             </div>
-            <p className="mt-2 text-sm text-sand">
+            <p className="mt-2 text-sm text-sand-ink">
               Re-run hosted checkout to refresh the payment method tied to the subscription.
             </p>
           </div>

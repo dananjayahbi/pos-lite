@@ -70,7 +70,7 @@ export default function LogoUploader({ tenantId, currentUrl, onUploaded }: Props
             // eslint-disable-next-line @next/next/no-img-element
             <img src={preview} alt="Business logo" className="h-full w-full object-contain" />
           ) : (
-            <ImageIcon className="h-6 w-6 text-sand" />
+            <ImageIcon className="h-6 w-6 text-sand-ink" />
           )}
         </div>
 

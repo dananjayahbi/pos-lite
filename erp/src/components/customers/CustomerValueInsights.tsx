@@ -35,7 +35,7 @@ export function CustomerValueInsights({
       {/* Recency */}
       <Card>
         <CardHeader className="pb-1">
-          <CardTitle className="text-xs font-body text-sand uppercase tracking-wide flex items-center gap-1.5">
+          <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide flex items-center gap-1.5">
             <CalendarClock className="h-3.5 w-3.5" />
             Last Purchase
           </CardTitle>
@@ -44,7 +44,7 @@ export function CustomerValueInsights({
           {relative ? (
             <div>
               <p className="text-xl font-mono font-semibold text-espresso">{relative}</p>
-              <p className="text-xs text-sand mt-1">
+              <p className="text-xs text-sand-ink mt-1">
                 {new Date(lastPurchaseAt!).toLocaleDateString('en-LK', {
                   year: 'numeric',
                   month: 'short',
@@ -53,7 +53,7 @@ export function CustomerValueInsights({
               </p>
             </div>
           ) : (
-            <p className="text-sm text-sand">No purchase on record</p>
+            <p className="text-sm text-sand-ink">No purchase on record</p>
           )}
         </CardContent>
       </Card>
@@ -61,14 +61,14 @@ export function CustomerValueInsights({
       {/* Preferred categories */}
       <Card>
         <CardHeader className="pb-1">
-          <CardTitle className="text-xs font-body text-sand uppercase tracking-wide flex items-center gap-1.5">
+          <CardTitle className="text-xs font-body text-sand-ink uppercase tracking-wide flex items-center gap-1.5">
             <Tags className="h-3.5 w-3.5" />
             Preferred Categories
           </CardTitle>
         </CardHeader>
         <CardContent>
           {preferredCategories.length === 0 ? (
-            <p className="text-sm text-sand">No purchase data yet</p>
+            <p className="text-sm text-sand-ink">No purchase data yet</p>
           ) : (
             <ul className="space-y-2">
               {preferredCategories.map((c) => (
@@ -76,7 +76,7 @@ export function CustomerValueInsights({
                   <Badge variant="secondary" className="text-xs">
                     {c.categoryName}
                   </Badge>
-                  <span className="text-xs font-mono text-sand">
+                  <span className="text-xs font-mono text-sand-ink">
                     {c.quantity} unit{c.quantity === 1 ? '' : 's'} · {formatRupee(c.lineTotal)}
                   </span>
                 </li>

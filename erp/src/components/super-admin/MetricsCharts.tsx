@@ -64,7 +64,7 @@ export default function MetricsCharts({ revenueByPlan }: MetricsChartsProps) {
               <p className="font-mono text-sm font-bold text-espresso">
                 {formatLKR(totalRevenue)}
               </p>
-              <p className="text-xs text-mist">MRR</p>
+              <p className="text-xs text-mist-ink">MRR</p>
             </div>
           </div>
 
@@ -78,7 +78,7 @@ export default function MetricsCharts({ revenueByPlan }: MetricsChartsProps) {
                 />
                 <div>
                   <p className="text-sm font-medium text-espresso">{plan.planName}</p>
-                  <p className="font-mono text-xs text-mist">
+                  <p className="font-mono text-xs text-mist-ink">
                     {formatLKR(plan.monthlyCumulativeRevenue)} · {plan.activeCount} subscriber
                     {plan.activeCount !== 1 ? 's' : ''}
                   </p>
@@ -86,7 +86,7 @@ export default function MetricsCharts({ revenueByPlan }: MetricsChartsProps) {
               </div>
             ))}
             {revenueByPlan.length === 0 && (
-              <p className="text-sm text-mist">No active plans</p>
+              <p className="text-sm text-mist-ink">No active plans</p>
             )}
           </div>
         </div>

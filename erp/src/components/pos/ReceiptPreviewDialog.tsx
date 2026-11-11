@@ -66,20 +66,20 @@ export function ReceiptPreviewDialog({
         {/* Summary block */}
         <div className="bg-linen rounded-lg border-2 border-sand p-4 space-y-3">
           <div className="flex justify-between items-center">
-            <span className="font-body text-sm text-mist">Sale Ref</span>
+            <span className="font-body text-sm text-mist-ink">Sale Ref</span>
             <span className="font-mono text-sm text-espresso">
               {completedSale.id.slice(0, 8).toUpperCase()}
             </span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="font-body text-sm text-mist">Total</span>
+            <span className="font-body text-sm text-mist-ink">Total</span>
             <span className="font-mono text-xl font-bold text-espresso">
               {formatRupee(completedSale.totalAmount)}
             </span>
           </div>
           {showChange && (
             <div className="flex justify-between items-center">
-              <span className="font-body text-sm text-mist">Change Due</span>
+              <span className="font-body text-sm text-mist-ink">Change Due</span>
               <span
                 className={`font-mono text-xl font-bold ${
                   changeAmount.isZero() ? 'text-espresso' : 'text-[#2D6A4F]'
@@ -105,7 +105,7 @@ export function ReceiptPreviewDialog({
         <button
           type="button"
           onClick={onClose}
-          className="w-full text-center font-body text-sm text-mist hover:text-espresso transition-colors py-1"
+          className="w-full text-center font-body text-sm text-mist-ink hover:text-espresso transition-colors py-1"
         >
           No Receipt — close
         </button>

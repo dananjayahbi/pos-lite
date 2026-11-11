@@ -256,7 +256,7 @@ export function WizardStep2Variants() {
         <h2 className="font-display text-xl text-espresso mb-1">
           Step 2: Variant Matrix
         </h2>
-        <p className="text-sm text-mist font-body">
+        <p className="text-sm text-mist-ink font-body">
           Define dosage forms and pack sizes, then configure pricing for each variant.
         </p>
       </div>
@@ -295,7 +295,7 @@ export function WizardStep2Variants() {
       )}
 
       {fields.length === 0 && (
-        <div className="text-center text-mist py-8 font-body text-sm">
+        <div className="text-center text-mist-ink py-8 font-body text-sm">
           Add forms or pack sizes above to generate the variant matrix.
         </div>
       )}

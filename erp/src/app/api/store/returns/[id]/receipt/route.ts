@@ -2,6 +2,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getReturnById } from '@/lib/services/return.service';
 import { buildReturnReceiptHtml } from '@/lib/return-receipt-renderer';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 function htmlPage(title: string, message: string): string {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title></head><body style="font-family:sans-serif;text-align:center;padding:40px;"><h1>${title}</h1><p>${message}</p></body></html>`;
@@ -42,8 +43,12 @@ export async function GET(_request: Request, props: { params: Promise<{ id: stri
       });
     }
 
-    const cashierName = returnRecord.initiatedBy?.email ?? 'Unknown';
-    const managerName = returnRecord.authorizedBy?.email ?? 'Unknown';
+    const cashierName = returnRecord.initiatedBy
+      ? staffDisplayName(returnRecord.initiatedBy.email)
+      : 'Unknown';
+    const managerName = returnRecord.authorizedBy
+      ? staffDisplayName(returnRecord.authorizedBy.email)
+      : 'Unknown';
     const html = buildReturnReceiptHtml(returnRecord, tenant, cashierName, managerName);
 
     return new Response(html, {

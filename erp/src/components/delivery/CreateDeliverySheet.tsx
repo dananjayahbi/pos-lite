@@ -63,6 +63,7 @@ export function CreateDeliverySheet({ open, onOpenChange }: CreateDeliverySheetP
 
   const weight = watch('totalWeightKg') as number | undefined;
   const cityId = watch('address.cityId') as number | undefined;
+  const cityName = watch('address.cityName') as string | undefined;
 
   // Fetch a rate preview whenever the weight or destination city changes.
   useEffect(() => {
@@ -73,10 +74,10 @@ export function CreateDeliverySheet({ open, onOpenChange }: CreateDeliverySheetP
   }, [open, weight, cityId]);
 
   const cities = (locations.data?.cities ?? []) as Array<{
-    id: number;
+    id: number | null;
     name: string;
-    districtId?: number | null;
   }>;
+  const usingFallbackCities = locations.data?.source === 'FALLBACK';
 
   const onSubmit = (data: z.output<typeof CreateDeliverySchema>) => {
     createDelivery.mutate(data, { onSuccess: closeCreate });
@@ -135,12 +136,11 @@ export function CreateDeliverySheet({ open, onOpenChange }: CreateDeliverySheetP
           <div className="space-y-1.5">
             <Label>City *</Label>
             <Select
-              value={cityId != null ? String(cityId) : ''}
-              onValueChange={(v) => {
-                const city = cities.find((c) => String(c.id) === v);
-                setValue('address.cityId', Number(v));
-                setValue('address.cityName', city?.name ?? '');
-                if (city?.districtId) setValue('address.districtId', city.districtId);
+              value={cityName ?? ''}
+              onValueChange={(name) => {
+                const city = cities.find((c) => c.name === name);
+                setValue('address.cityName', name, { shouldValidate: true });
+                setValue('address.cityId', city?.id ?? undefined);
               }}
             >
               <SelectTrigger>
@@ -148,12 +148,18 @@ export function CreateDeliverySheet({ open, onOpenChange }: CreateDeliverySheetP
               </SelectTrigger>
               <SelectContent>
                 {cities.map((city) => (
-                  <SelectItem key={city.id} value={String(city.id)}>
+                  <SelectItem key={city.name} value={city.name}>
                     {city.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {usingFallbackCities && (
+              <p className="text-xs text-espresso/50">
+                Standard city list — sync Trans Express in Courier Settings to use live courier
+                cities and zone rates.
+              </p>
+            )}
             {errors.address?.cityName && (
               <p className="text-sm text-terracotta">{errors.address.cityName.message}</p>
             )}

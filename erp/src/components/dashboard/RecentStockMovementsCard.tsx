@@ -47,7 +47,7 @@ export function RecentStockMovementsCard() {
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle className="text-base font-semibold text-espresso">Recent Stock Movements</CardTitle>
-          <p className="mt-1 text-sm text-sand">Latest stock adjustments, receipts, and returns.</p>
+          <p className="mt-1 text-sm text-sand-ink">Latest stock adjustments, receipts, and returns.</p>
         </div>
         <Link href="/stock-control/movements" className="text-xs text-terracotta hover:underline">
           View audit →
@@ -78,7 +78,7 @@ export function RecentStockMovementsCard() {
               : movements.length === 0
                 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="py-10 text-center text-sm text-sand">
+                      <TableCell colSpan={5} className="py-10 text-center text-sm text-sand-ink">
                         No stock movements recorded yet.
                       </TableCell>
                     </TableRow>
@@ -104,7 +104,7 @@ export function RecentStockMovementsCard() {
                             {positive ? `+${movement.quantityDelta}` : movement.quantityDelta}
                           </span>
                         </TableCell>
-                        <TableCell className="text-sm text-sand">
+                        <TableCell className="text-sm text-sand-ink">
                           {stockActorLabel(movement.actor)}
                         </TableCell>
                       </TableRow>

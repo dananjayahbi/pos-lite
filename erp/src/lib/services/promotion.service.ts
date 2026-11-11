@@ -38,6 +38,8 @@ interface GroupedPromotions {
   CART_PERCENTAGE: PromotionRow[];
   CART_FIXED: PromotionRow[];
   CATEGORY_PERCENTAGE: PromotionRow[];
+  PRODUCT_PERCENTAGE: PromotionRow[];
+  PRODUCT_FIXED: PromotionRow[];
   BOGO: PromotionRow[];
   MIX_AND_MATCH: PromotionRow[];
   PROMO_CODE: PromotionRow[];
@@ -50,11 +52,13 @@ interface PromotionRow {
   value: { toString(): string }; // Prisma Decimal
   promoCode: string | null;
   targetCategoryId: string | null;
+  targetProductId: string | null;
   minQuantity: number | null;
   startsAt: Date | null;
   endsAt: Date | null;
   isActive: boolean;
   description: string | null;
+  createdAt: Date;
 }
 
 // ── Fetch Active Promotions ──────────────────────────────────────────────────
@@ -84,6 +88,8 @@ export async function fetchActivePromotions(tenantId: string): Promise<GroupedPr
     CART_PERCENTAGE: [],
     CART_FIXED: [],
     CATEGORY_PERCENTAGE: [],
+    PRODUCT_PERCENTAGE: [],
+    PRODUCT_FIXED: [],
     BOGO: [],
     MIX_AND_MATCH: [],
     PROMO_CODE: [],
@@ -209,6 +215,72 @@ export function evaluateCategoryDiscounts(
       label: `${promo.name} — ${value.toString()}% off category`,
       discountAmount: totalDiscount.toString(),
       promotionType: 'CATEGORY_PERCENTAGE',
+      affectedLines,
+    });
+  }
+
+  return { applied, skipped };
+}
+
+// ── Evaluate Product Discounts ───────────────────────────────────────────────
+
+/**
+ * Percentage discount scoped to one product. `productByVariantId` maps cart
+ * variants to their parent product so the promotion applies to every variant
+ * of the targeted product.
+ */
+export function evaluateProductDiscounts(
+  cartLines: CartLine[],
+  promos: PromotionRow[],
+  alreadyDiscounted: Set<string>,
+  productByVariantId: Map<string, string>,
+): { applied: AppliedDiscount[]; skipped: SkippedPromotion[] } {
+  const applied: AppliedDiscount[] = [];
+  const skipped: SkippedPromotion[] = [];
+
+  for (const promo of promos) {
+    if (!promo.targetProductId) {
+      skipped.push({ promotionId: promo.id, reason: 'No target product set' });
+      continue;
+    }
+
+    const matchingLines = cartLines.filter(
+      (l) =>
+        productByVariantId.get(l.variantId) === promo.targetProductId &&
+        !alreadyDiscounted.has(l.variantId),
+    );
+
+    if (matchingLines.length === 0) {
+      skipped.push({ promotionId: promo.id, reason: 'No matching items in cart' });
+      continue;
+    }
+
+    const value = new Decimal(promo.value.toString());
+    const isFixed = promo.type === 'PRODUCT_FIXED';
+    let totalDiscount = new Decimal(0);
+    const affectedLines: string[] = [];
+
+    for (const line of matchingLines) {
+      const lineTotal = new Decimal(line.unitPrice).times(line.quantity);
+      const manualDisc = line.manualDiscountAmount ? new Decimal(line.manualDiscountAmount) : new Decimal(0);
+      const afterManual = lineTotal.minus(manualDisc);
+      // Percentage: a share of the line. Fixed: a flat LKR amount off the line,
+      // capped so one promotion can never discount more than the line is worth.
+      const disc = isFixed
+        ? Decimal.min(value, afterManual).toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+        : afterManual.times(value).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      totalDiscount = totalDiscount.plus(disc);
+      affectedLines.push(line.variantId);
+      alreadyDiscounted.add(line.variantId);
+    }
+
+    applied.push({
+      promotionId: promo.id,
+      label: isFixed
+        ? `${promo.name} — Rs. ${value.toFixed(2)} off product`
+        : `${promo.name} — ${value.toString()}% off product`,
+      discountAmount: totalDiscount.toString(),
+      promotionType: promo.type,
       affectedLines,
     });
   }
@@ -390,17 +462,43 @@ export async function evaluatePromotions(
   // 2. Fetch automatic promotions
   const grouped = await fetchActivePromotions(tenantId);
 
-  // 3. Category discounts
+  // 3. Product discounts (most specific first: product beats category/cart).
+  // Percentage and fixed product promotions share the same target-product
+  // contract and precedence; the newer fixed type wins its target first because
+  // promotions are evaluated newest-first within this step.
+  const productPromotions = [
+    ...grouped.PRODUCT_PERCENTAGE,
+    ...grouped.PRODUCT_FIXED,
+  ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  if (productPromotions.length > 0) {
+    const variantIds = [...new Set(cartLines.map((line) => line.variantId))];
+    const variants = await prisma.productVariant.findMany({
+      where: { id: { in: variantIds }, product: { tenantId } },
+      select: { id: true, productId: true },
+    });
+    const productByVariantId = new Map(variants.map((variant) => [variant.id, variant.productId]));
+
+    const productResult = evaluateProductDiscounts(
+      cartLines,
+      productPromotions,
+      alreadyDiscounted,
+      productByVariantId,
+    );
+    appliedDiscounts.push(...productResult.applied);
+    skippedPromotions.push(...productResult.skipped);
+  }
+
+  // 4. Category discounts
   const catResult = evaluateCategoryDiscounts(cartLines, grouped.CATEGORY_PERCENTAGE, alreadyDiscounted);
   appliedDiscounts.push(...catResult.applied);
   skippedPromotions.push(...catResult.skipped);
 
-  // 4. BOGO / Mix & Match
+  // 5. BOGO / Mix & Match
   const bogoResult = evaluateBOGO(cartLines, [...grouped.BOGO, ...grouped.MIX_AND_MATCH], alreadyDiscounted);
   appliedDiscounts.push(...bogoResult.applied);
   skippedPromotions.push(...bogoResult.skipped);
 
-  // 5. Cart-level promotions
+  // 6. Cart-level promotions
   const subtotal = cartLines.reduce((sum, l) => {
     const lineTotal = new Decimal(l.unitPrice).times(l.quantity);
     const manualDisc = l.manualDiscountAmount ? new Decimal(l.manualDiscountAmount) : new Decimal(0);
@@ -411,7 +509,7 @@ export async function evaluatePromotions(
   appliedDiscounts.push(...cartResult.applied);
   skippedPromotions.push(...cartResult.skipped);
 
-  // 6. Promo code
+  // 7. Promo code
   if (promoCode) {
     const codeResult = await validatePromoCode(tenantId, promoCode, cartLines);
     if ('error' in codeResult) {
@@ -434,7 +532,10 @@ export async function evaluatePromotions(
 export async function getPromotions(tenantId: string) {
   return prisma.promotion.findMany({
     where: { tenantId },
-    include: { targetCategory: { select: { id: true, name: true } } },
+    include: {
+      targetCategory: { select: { id: true, name: true } },
+      targetProduct: { select: { id: true, name: true } },
+    },
     orderBy: { createdAt: 'desc' },
   });
 }
@@ -448,6 +549,7 @@ export async function createPromotion(tenantId: string, data: CreatePromotionInp
       value: data.value,
       ...(data.promoCode !== undefined && { promoCode: data.promoCode }),
       ...(data.targetCategoryId !== undefined && { targetCategoryId: data.targetCategoryId }),
+      ...(data.targetProductId !== undefined && { targetProductId: data.targetProductId }),
       ...(data.minQuantity !== undefined && { minQuantity: data.minQuantity }),
       ...(data.startsAt !== undefined && { startsAt: new Date(data.startsAt) }),
       ...(data.endsAt !== undefined && { endsAt: new Date(data.endsAt) }),
@@ -478,6 +580,7 @@ export async function updatePromotion(tenantId: string, id: string, data: Update
       ...(data.value !== undefined && { value: data.value }),
       ...(data.promoCode !== undefined && { promoCode: data.promoCode }),
       ...(data.targetCategoryId !== undefined && { targetCategoryId: data.targetCategoryId }),
+      ...(data.targetProductId !== undefined && { targetProductId: data.targetProductId }),
       ...(data.minQuantity !== undefined && { minQuantity: data.minQuantity }),
       ...(data.startsAt !== undefined && { startsAt: new Date(data.startsAt) }),
       ...(data.endsAt !== undefined && { endsAt: new Date(data.endsAt) }),

@@ -26,7 +26,7 @@ export default async function SuperAdminPlansPage() {
     <main className="mx-auto max-w-6xl p-6 md:p-8">
       <div className="mb-6">
         <h1 className="font-display text-2xl font-bold text-espresso">Subscription Plans</h1>
-        <p className="mt-1 text-sm text-mist">
+        <p className="mt-1 text-sm text-mist-ink">
           Manage subscription tiers, pricing, and feature limits.
         </p>
       </div>

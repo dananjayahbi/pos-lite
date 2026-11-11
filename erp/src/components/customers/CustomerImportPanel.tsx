@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import { Download, FileUp, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  CUSTOMER_IMPORT_COLUMNS,
+  CUSTOMER_IMPORT_TEMPLATE_CSV,
+} from '@/lib/validators/customer-import.validators';
 
 interface ImportResult {
   imported: number;
@@ -26,8 +30,9 @@ export function CustomerImportPanel({ onSuccess, showBackLink = false }: Custome
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDownloadTemplate = () => {
-    const headers = 'Name,Phone,Email,Gender,Birthday,Tags,Notes\n';
-    const blob = new Blob([headers], { type: 'text/csv' });
+    const blob = new Blob([CUSTOMER_IMPORT_TEMPLATE_CSV], {
+      type: 'text/csv;charset=utf-8',
+    });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -81,11 +86,25 @@ export function CustomerImportPanel({ onSuccess, showBackLink = false }: Custome
 
       <div className="rounded-xl border border-mist/40 bg-pearl p-5">
         <p className="text-sm font-medium text-espresso">CSV format</p>
-        <p className="mt-2 font-mono text-xs text-sand">Name, Phone, Email, Gender, Birthday, Tags, Notes</p>
-        <p className="mt-2 text-xs text-mist">
-          Gender accepts MALE, FEMALE, or OTHER. Birthday should use YYYY-MM-DD.
-          Multiple tags can be comma-separated in a single cell.
+        <p className="mt-2 break-words font-mono text-xs text-sand-ink">
+          {CUSTOMER_IMPORT_COLUMNS.join(', ')}
         </p>
+        <div className="mt-2 space-y-1 text-xs text-mist-ink">
+          <p>
+            <span className="font-medium text-espresso">Name</span> and{' '}
+            <span className="font-medium text-espresso">Phone</span> are required. Phone and
+            Phone2 accept 07XXXXXXXX or +94XXXXXXXXX.
+          </p>
+          <p>
+            Gender accepts MALE, FEMALE, or OTHER. Birthday uses YYYY-MM-DD. Multiple tags can be
+            comma-separated in a single cell.
+          </p>
+          <p>
+            Address may contain commas — wrap it in double quotes (e.g.{' '}
+            <code className="rounded bg-linen px-1">&quot;12 Galle Road, Colombo&quot;</code>).
+            City is stored exactly as entered.
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -114,12 +133,12 @@ export function CustomerImportPanel({ onSuccess, showBackLink = false }: Custome
           onClick={() => fileInputRef.current?.click()}
           className="flex w-full flex-col items-center justify-center gap-3"
         >
-          <FileUp className="h-10 w-10 text-mist" />
+          <FileUp className="h-10 w-10 text-mist-ink" />
           <div>
             <p className="text-sm font-medium text-espresso">
               {file ? file.name : 'Choose a customer CSV file'}
             </p>
-            <p className="mt-1 text-xs text-mist">Max 500 rows and 2MB per upload.</p>
+            <p className="mt-1 text-xs text-mist-ink">Max 500 rows and 2MB per upload.</p>
           </div>
         </button>
       </div>

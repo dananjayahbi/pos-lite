@@ -42,7 +42,7 @@ export function CopyableText({
       <button
         type="button"
         onClick={handleCopy}
-        className="shrink-0 p-0.5 text-mist hover:text-espresso transition-colors"
+        className="shrink-0 p-0.5 text-mist-ink hover:text-espresso transition-colors"
         aria-label={`Copy ${label.toLowerCase()}`}
         title={`Copy ${label.toLowerCase()}`}
       >

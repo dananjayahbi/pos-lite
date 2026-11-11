@@ -15,6 +15,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -141,7 +142,7 @@ export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
   if (!po) {
     return (
       <div className="space-y-4 p-6 md:p-8">
-        <p className="text-mist">Purchase order not found.</p>
+        <p className="text-mist-ink">Purchase order not found.</p>
         <Button variant="outline" asChild>
           <Link href="/suppliers/purchase-orders">
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -163,14 +164,14 @@ export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
         <div>
           <Link
             href="/suppliers/purchase-orders"
-            className="mb-2 inline-flex items-center gap-1 text-sm text-mist hover:text-terracotta"
+            className="mb-2 inline-flex items-center gap-1 text-sm text-mist-ink hover:text-terracotta"
           >
             <ArrowLeft className="h-3 w-3" /> Purchase Orders
           </Link>
           <h1 className="font-mono text-2xl font-semibold text-espresso">{po.referenceNo}</h1>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <POStatusBadge status={status} />
-            <span className="text-sm text-mist">Ordered {formatPoDate(po.orderDate)}</span>
+            <span className="text-sm text-mist-ink">Ordered {formatPoDate(po.orderDate)}</span>
             {po.paidAt ? (
               <span className="inline-flex items-center gap-1 text-sm text-green-700">
                 <Check className="h-3 w-3" /> Paid in full
@@ -242,7 +243,7 @@ export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
         paymentTermDays={po.paymentTermDays}
         orderDate={po.orderDate}
         createdAt={po.createdAt}
-        createdByEmail={po.createdBy.email}
+        createdByName={staffDisplayName(po.createdBy.email)}
       />
 
       {/* Totals */}
@@ -257,7 +258,7 @@ export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
       {po.notes ? (
         <Card>
           <CardContent className="pt-6">
-            <p className="mb-1 text-xs text-mist">Notes</p>
+            <p className="mb-1 text-xs text-mist-ink">Notes</p>
             <p className="whitespace-pre-wrap text-sm text-espresso">{po.notes}</p>
           </CardContent>
         </Card>

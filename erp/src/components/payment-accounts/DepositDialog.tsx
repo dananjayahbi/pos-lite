@@ -97,7 +97,7 @@ function DepositForm({ account, accounts, onSubmit, onCancel }: DepositFormProps
     <>
       <DialogHeader>
         <DialogTitle className="font-display">Deposit</DialogTitle>
-        <DialogDescription className="font-body text-sm text-mist">
+        <DialogDescription className="font-body text-sm text-mist-ink">
           Money coming into this account. Leave the source empty when the money
           enters the business from outside.
         </DialogDescription>
@@ -105,7 +105,7 @@ function DepositForm({ account, accounts, onSubmit, onCancel }: DepositFormProps
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="rounded-lg border border-mist bg-linen/40 p-3">
-          <p className="font-body text-[11px] uppercase tracking-wide text-mist">
+          <p className="font-body text-[11px] uppercase tracking-wide text-mist-ink">
             Target account
           </p>
           <div className="mt-1 flex items-center justify-between gap-2">
@@ -114,12 +114,12 @@ function DepositForm({ account, accounts, onSubmit, onCancel }: DepositFormProps
                 {account.name}
               </p>
               {account.accountNumber && (
-                <p className="font-mono text-[11px] text-sand">{account.accountNumber}</p>
+                <p className="font-mono text-[11px] text-sand-ink">{account.accountNumber}</p>
               )}
             </div>
             <AccountTypeBadge type={account.type} />
           </div>
-          <p className="mt-2 font-body text-xs text-sand">
+          <p className="mt-2 font-body text-xs text-sand-ink">
             Current balance:{' '}
             <span className="font-mono text-espresso">{formatRupee(account.balance)}</span>
           </p>
@@ -127,7 +127,7 @@ function DepositForm({ account, accounts, onSubmit, onCancel }: DepositFormProps
 
         <div>
           <Label htmlFor="deposit-from" className="font-body">
-            Deposit from <span className="font-normal text-mist">(optional)</span>
+            Deposit from <span className="font-normal text-mist-ink">(optional)</span>
           </Label>
           <div className="mt-1.5">
             <AccountSelect
@@ -143,7 +143,7 @@ function DepositForm({ account, accounts, onSubmit, onCancel }: DepositFormProps
             />
           </div>
           {source && sourceBalance !== null && (
-            <p className="mt-1 font-body text-[11px] text-sand">
+            <p className="mt-1 font-body text-[11px] text-sand-ink">
               Available in {source.name}: {formatRupee(sourceBalance)}
             </p>
           )}

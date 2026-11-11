@@ -29,9 +29,9 @@ function SummaryCard({
       <Card className="h-full border-mist bg-pearl transition-colors hover:border-terracotta/40">
         <CardContent className="flex h-full items-start justify-between gap-3 pt-6">
           <div>
-            <p className="text-sm text-sand">{label}</p>
+            <p className="text-sm text-sand-ink">{label}</p>
             <div className="mt-1 text-2xl font-bold text-espresso">{value}</div>
-            <p className="mt-1 text-xs text-mist">{helper}</p>
+            <p className="mt-1 text-xs text-mist-ink">{helper}</p>
           </div>
           <div className="rounded-lg bg-linen p-2 text-terracotta">{icon}</div>
         </CardContent>
@@ -73,7 +73,7 @@ export function StockSummaryWidgets({ permissions }: StockSummaryWidgetsProps) {
         canViewValue && summary?.totalStockValue != null ? (
           formatRupee(summary.totalStockValue)
         ) : (
-          <span className="inline-flex items-center gap-2 text-base font-medium text-mist">
+          <span className="inline-flex items-center gap-2 text-base font-medium text-mist-ink">
             <Lock className="h-4 w-4" /> Restricted
           </span>
         ),

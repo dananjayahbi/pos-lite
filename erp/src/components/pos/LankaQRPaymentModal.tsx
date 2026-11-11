@@ -14,6 +14,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { PaymentModalProps, CompletedSale } from '@/types/pos.types';
+import {
+  DEFAULT_LANKA_QR_SETTINGS,
+  isRenderableQrImageUrl,
+  type LankaQrSettings,
+} from '@/lib/payments/lanka-qr-config';
 
 /**
  * LankaQR payment modal.
@@ -28,9 +33,11 @@ export function LankaQRPaymentModal({
   onSaleComplete,
   totalAmount,
   salePayload,
-}: PaymentModalProps) {
+  settings = DEFAULT_LANKA_QR_SETTINGS,
+}: PaymentModalProps & { settings?: LankaQrSettings }) {
   const [qrReferenceNumber, setQrReferenceNumber] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const hasQrImage = isRenderableQrImageUrl(settings.qrImageUrl);
 
   // Reset state when dialog closes
   useEffect(() => {
@@ -52,6 +59,10 @@ export function LankaQRPaymentModal({
 
   const handleSubmit = async () => {
     if (isSubmitting) return;
+    if (settings.referenceRequired && !qrReferenceNumber.trim()) {
+      toast.error('Enter the LankaQR transaction reference before confirming');
+      return;
+    }
     setIsSubmitting(true);
     try {
       const res = await fetch('/api/store/sales', {
@@ -98,7 +109,7 @@ export function LankaQRPaymentModal({
       >
         <DialogHeader>
           <DialogTitle className="font-display">LankaQR Payment</DialogTitle>
-          <DialogDescription className="font-body text-sm text-mist">
+          <DialogDescription className="font-body text-sm text-mist-ink">
             Customer pays via a LankaQR banking app.
           </DialogDescription>
         </DialogHeader>
@@ -106,7 +117,7 @@ export function LankaQRPaymentModal({
         <div className="space-y-4">
           {/* Total Due */}
           <div>
-            <p className="text-xs font-body uppercase tracking-wide text-mist">
+            <p className="text-xs font-body uppercase tracking-wide text-mist-ink">
               Total Due
             </p>
             <p className="font-mono text-3xl font-bold text-espresso">
@@ -114,23 +125,51 @@ export function LankaQRPaymentModal({
             </p>
           </div>
 
-          {/* Info banner */}
+          {/* Static merchant QR */}
+          {hasQrImage ? (
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-mist bg-white p-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={settings.qrImageUrl}
+                alt="LankaQR merchant QR code"
+                className="h-48 w-48 object-contain"
+              />
+              {settings.merchantName && (
+                <p className="font-body text-sm font-medium text-espresso">
+                  {settings.merchantName}
+                </p>
+              )}
+              {(settings.bankName || settings.merchantId) && (
+                <p className="text-center font-body text-xs text-mist-ink">
+                  {[settings.bankName, settings.merchantId ? `MID ${settings.merchantId}` : '']
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-mist bg-linen p-4 text-center">
+              <QrCode className="h-12 w-12 text-mist-ink" aria-hidden="true" />
+              <p className="font-body text-sm text-espresso">
+                No static QR image is configured. Ask a manager to add your bank-issued
+                LankaQR image in Settings → Payments.
+              </p>
+            </div>
+          )}
+
+          {/* Cashier instructions */}
           <div className="rounded-lg border-l-4 border-[#1D4E89] bg-linen p-3">
-            <p className="font-body text-sm text-espresso">
-              Ask the customer to scan your LankaQR code and pay the amount
-              shown above. This system does not connect to the QR terminal
-              directly.
-            </p>
+            <p className="font-body text-sm text-espresso">{settings.instructions}</p>
           </div>
 
-          {/* Optional QR reference */}
+          {/* QR reference */}
           <div>
             <div className="mb-1 flex items-center gap-1">
               <label className="text-sm font-body text-espresso">
-                QR Reference (optional)
+                QR Reference {settings.referenceRequired ? '' : '(optional)'}
               </label>
               <span title="Used for reconciliation with your bank's QR transaction records">
-                <Info className="h-3.5 w-3.5 text-mist cursor-help" />
+                <Info className="h-3.5 w-3.5 text-mist-ink cursor-help" />
               </span>
             </div>
             <Input
@@ -140,7 +179,13 @@ export function LankaQRPaymentModal({
               placeholder="e.g. QR-TX-881200"
               maxLength={20}
               className="font-mono"
+              required={settings.referenceRequired}
             />
+            {settings.referenceRequired && !qrReferenceNumber.trim() && (
+              <p className="mt-1 text-xs font-body text-mist-ink">
+                Required — enter the reference shown in the customer&apos;s payment confirmation.
+              </p>
+            )}
           </div>
 
           {/* Submit */}
@@ -164,7 +209,7 @@ export function LankaQRPaymentModal({
           <button
             type="button"
             onClick={handleClose}
-            className="w-full text-center font-body text-sm text-mist hover:text-espresso transition-colors"
+            className="w-full text-center font-body text-sm text-mist-ink hover:text-espresso transition-colors"
           >
             Cancel
           </button>

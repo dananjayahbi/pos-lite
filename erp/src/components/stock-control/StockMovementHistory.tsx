@@ -20,6 +20,7 @@ import { mergeSearchParams } from '@/lib/urlUtils';
 import { useGlobalStockMovements } from '@/hooks/useGlobalStockMovements';
 import { useStockActors } from '@/hooks/useStockActors';
 import { stockActorLabel } from '@/lib/stock/actor-label';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -121,9 +122,9 @@ export function StockMovementHistory({ permissions }: StockMovementHistoryProps)
       <div className="flex min-h-[60vh] items-center justify-center p-8">
         <Card className="max-w-md">
           <CardContent className="flex flex-col items-center gap-4 pt-6 text-center">
-            <ShieldX className="h-12 w-12 text-mist" />
+            <ShieldX className="h-12 w-12 text-mist-ink" />
             <h2 className="font-display text-xl text-espresso">Access Denied</h2>
-            <p className="text-sm text-mist">You don&apos;t have permission to view stock movements.</p>
+            <p className="text-sm text-mist-ink">You don&apos;t have permission to view stock movements.</p>
             <Button variant="outline" asChild>
               <Link href="/stock-control">Back to Stock Control</Link>
             </Button>
@@ -272,12 +273,13 @@ function StockMovementHistoryInner() {
   // ── Pagination helpers ─────────────────────────────────────────────────────
   const startItem = meta ? (meta.page - 1) * meta.limit + 1 : 0;
   const endItem = meta ? Math.min(meta.page * meta.limit, meta.total) : 0;
+  const selectedActor = actors.find((actor) => actor.id === actorId);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 p-6 md:p-8">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-mist">
+      <nav className="flex items-center gap-1.5 text-sm text-mist-ink">
         <Link href="/" className="hover:text-espresso transition-colors">Dashboard</Link>
         <span>/</span>
         <Link href="/stock-control" className="hover:text-espresso transition-colors">Stock Control</Link>
@@ -289,7 +291,7 @@ function StockMovementHistoryInner() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-2xl font-semibold text-espresso">Stock Movement History</h1>
-          <p className="mt-1 font-body text-sm text-mist">View and export all stock movements across your inventory.</p>
+          <p className="mt-1 font-body text-sm text-mist-ink">View and export all stock movements across your inventory.</p>
         </div>
         <Button variant="outline" onClick={handleExport} disabled={exporting}>
           {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
@@ -303,13 +305,13 @@ function StockMovementHistoryInner() {
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-medium text-espresso">People changing stock</p>
-                <p className="mt-1 text-xs text-mist">
+                <p className="mt-1 text-xs text-mist-ink">
                   {actors.length} staff member{actors.length === 1 ? '' : 's'} appear in the stock audit trail.
                 </p>
               </div>
               {actorId && (
                 <Badge variant="secondary" className="w-fit">
-                  Filtered to {actors.find((actor) => actor.id === actorId)?.email ?? actorId}
+                  Filtered to {selectedActor ? staffDisplayName(selectedActor.email) : actorId}
                 </Badge>
               )}
             </div>
@@ -323,15 +325,15 @@ function StockMovementHistoryInner() {
                     className={`rounded-full border px-3 py-1 text-xs transition-colors ${
                       active
                         ? 'border-terracotta bg-white text-espresso'
-                        : 'border-mist/50 bg-linen/50 text-mist hover:text-espresso'
+                        : 'border-mist/50 bg-linen/50 text-mist-ink hover:text-espresso'
                     }`}
                   >
-                    {actor.email}
+                    {staffDisplayName(actor.email)}
                   </button>
                 );
               })}
               {actors.length > 8 && (
-                <span className="rounded-full border border-mist/40 px-3 py-1 text-xs text-mist">
+                <span className="rounded-full border border-mist/40 px-3 py-1 text-xs text-mist-ink">
                   +{actors.length - 8} more in filter list
                 </span>
               )}
@@ -347,7 +349,7 @@ function StockMovementHistoryInner() {
           <div className="flex flex-wrap items-end gap-3">
             {/* From */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-mist">From</label>
+              <label className="text-xs font-medium text-mist-ink">From</label>
               <div className="flex items-center gap-1">
                 <Input
                   type="date"
@@ -358,7 +360,7 @@ function StockMovementHistoryInner() {
                 {from && (
                   <button
                     onClick={() => updateParams({ from: null, page: '1' })}
-                    className="text-mist hover:text-espresso"
+                    className="text-mist-ink hover:text-espresso"
                     aria-label="Clear from date"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -369,7 +371,7 @@ function StockMovementHistoryInner() {
 
             {/* To */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-mist">To</label>
+              <label className="text-xs font-medium text-mist-ink">To</label>
               <div className="flex items-center gap-1">
                 <Input
                   type="date"
@@ -380,7 +382,7 @@ function StockMovementHistoryInner() {
                 {to && (
                   <button
                     onClick={() => updateParams({ to: null, page: '1' })}
-                    className="text-mist hover:text-espresso"
+                    className="text-mist-ink hover:text-espresso"
                     aria-label="Clear to date"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -391,9 +393,9 @@ function StockMovementHistoryInner() {
 
             {/* Search */}
             <div className="space-y-1 flex-1 min-w-50">
-              <label className="text-xs font-medium text-mist">Product / SKU</label>
+              <label className="text-xs font-medium text-mist-ink">Product / SKU</label>
               <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-mist" />
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-mist-ink" />
                 <Input
                   placeholder="Search by product name or SKU..."
                   value={searchInput}
@@ -405,7 +407,7 @@ function StockMovementHistoryInner() {
 
             {/* Actor */}
             <div className="space-y-1 min-w-45">
-              <label className="text-xs font-medium text-mist">Staff</label>
+              <label className="text-xs font-medium text-mist-ink">Staff</label>
               <Select
                 value={actorId || '__all__'}
                 onValueChange={(v) => updateParams({ actorId: v === '__all__' ? null : v, page: '1' })}
@@ -416,7 +418,7 @@ function StockMovementHistoryInner() {
                 <SelectContent>
                   <SelectItem value="__all__">All Staff</SelectItem>
                   {actors.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.email}</SelectItem>
+                    <SelectItem key={a.id} value={a.id}>{staffDisplayName(a.email)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -425,7 +427,7 @@ function StockMovementHistoryInner() {
 
           {/* Row 2: reason chips */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-mist">Reasons</label>
+            <label className="text-xs font-medium text-mist-ink">Reasons</label>
             <div className="flex flex-wrap gap-2">
               {ALL_REASONS.map((r) => {
                 const active = selectedReasons.has(r);
@@ -436,7 +438,7 @@ function StockMovementHistoryInner() {
                     className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                       active
                         ? 'border-sand bg-white text-espresso'
-                        : 'border-transparent bg-linen/50 text-mist'
+                        : 'border-transparent bg-linen/50 text-mist-ink'
                     }`}
                   >
                     <span className={`h-2 w-2 rounded-full ${REASON_DOT_COLOR[r]}`} />
@@ -488,7 +490,7 @@ function StockMovementHistoryInner() {
           )}
           {actorId && (
             <Badge variant="secondary" className="gap-1">
-              Staff: {actors.find((a) => a.id === actorId)?.email ?? actorId}
+              Staff: {selectedActor ? staffDisplayName(selectedActor.email) : actorId}
               <button onClick={() => updateParams({ actorId: null, page: '1' })} aria-label="Remove actor filter">
                 <X className="h-3 w-3" />
               </button>
@@ -544,7 +546,7 @@ function StockMovementHistoryInner() {
                 ? (
                     <TableRow>
                       <TableCell colSpan={9} className="h-40">
-                        <div className="flex flex-col items-center justify-center gap-2 text-mist">
+                        <div className="flex flex-col items-center justify-center gap-2 text-mist-ink">
                           <PackageSearch className="h-10 w-10" />
                           <p className="text-sm">No stock movements found for the selected filters</p>
                         </div>
@@ -565,12 +567,12 @@ function StockMovementHistoryInner() {
                           >
                             {m.variant.product.name}
                           </Link>
-                          <span className="block text-xs text-mist">{m.variant.product.category.name}</span>
+                          <span className="block text-xs text-mist-ink">{m.variant.product.category.name}</span>
                         </TableCell>
                         <TableCell>
                           <span className="font-mono text-xs">{m.variant.sku}</span>
                           {(m.variant.form || m.variant.packSize) && (
-                            <span className="ml-1.5 text-xs text-mist">
+                            <span className="ml-1.5 text-xs text-mist-ink">
                               {[m.variant.form, m.variant.packSize].filter(Boolean).join(' / ')}
                             </span>
                           )}
@@ -585,16 +587,16 @@ function StockMovementHistoryInner() {
                             {m.quantityDelta > 0 ? `+${m.quantityDelta}` : m.quantityDelta}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right text-sm text-mist">{m.quantityBefore}</TableCell>
+                        <TableCell className="text-right text-sm text-mist-ink">{m.quantityBefore}</TableCell>
                         <TableCell className={`text-right text-sm font-medium ${isLow ? 'text-red-600' : 'text-espresso'}`}>
                           {m.quantityAfter}
                         </TableCell>
-                        <TableCell className="text-sm text-mist">{stockActorLabel(m.actor)}</TableCell>
-                        <TableCell className="max-w-50 text-sm text-mist">
+                        <TableCell className="text-sm text-mist-ink">{stockActorLabel(m.actor)}</TableCell>
+                        <TableCell className="max-w-50 text-sm text-mist-ink">
                           {m.note ? (
                             <span title={m.note}>{truncate(m.note, 60)}</span>
                           ) : (
-                            <span className="text-mist/50">—</span>
+                            <span className="text-mist-ink/50">—</span>
                           )}
                         </TableCell>
                       </TableRow>
@@ -607,7 +609,7 @@ function StockMovementHistoryInner() {
       {/* Pagination */}
       {meta && meta.totalPages > 0 && (
         <div className="flex items-center justify-between text-sm">
-          <p className="text-mist">
+          <p className="text-mist-ink">
             Showing {startItem}–{endItem} of {meta.total}
           </p>
           <div className="flex items-center gap-2">
