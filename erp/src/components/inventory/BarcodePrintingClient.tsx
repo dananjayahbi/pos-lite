@@ -5,6 +5,8 @@ import Link from 'next/link';
 import {
   ArrowLeft,
   Barcode as BarcodeIcon,
+  ChevronLeft,
+  ChevronRight,
   Minus,
   Plus,
   Printer,
@@ -16,6 +18,10 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useProducts } from '@/hooks/useProducts';
+import {
+  ProductThumbnail,
+  resolveProductThumbnail,
+} from '@/components/sales/ProductThumbnail';
 import {
   BarcodeSheetPage,
   type SheetLabelData,
@@ -39,6 +45,7 @@ interface VariantOption {
   form: string | null;
   packSize: string | null;
   retailPrice: number;
+  imageUrl: string | null;
 }
 
 interface QueueItem extends VariantOption {
@@ -47,6 +54,8 @@ interface QueueItem extends VariantOption {
 
 const MIN_COPIES = 1;
 const MAX_COPIES = 99;
+/** Products fetched per page; ordering (newest first) is server-side. */
+const PRODUCTS_PER_PAGE = 10;
 
 function clampCopies(value: number): number {
   if (!Number.isFinite(value)) return MIN_COPIES;
@@ -58,14 +67,21 @@ function clampCopies(value: number): number {
 export function BarcodePrintingClient() {
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
+  const [page, setPage] = useState(1);
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [fillLastSheet, setFillLastSheet] = useState(false);
 
-  const { data, isLoading } = useProducts({
+  const { data, isLoading, isFetching } = useProducts({
     search: deferredSearch.trim() || undefined,
-    limit: 25,
+    limit: PRODUCTS_PER_PAGE,
+    page,
     status: 'active',
   });
+
+  const totalProducts = data?.meta?.total ?? 0;
+  const totalPages = Math.max(1, data?.meta?.totalPages ?? 1);
+  const firstOnPage = totalProducts === 0 ? 0 : (page - 1) * PRODUCTS_PER_PAGE + 1;
+  const lastOnPage = Math.min(page * PRODUCTS_PER_PAGE, totalProducts);
 
   const options = useMemo<VariantOption[]>(() => {
     const rows: VariantOption[] = [];
@@ -83,6 +99,12 @@ export function BarcodePrintingClient() {
           form: variant.form,
           packSize: variant.packSize,
           retailPrice: Number(variant.retailPrice),
+          imageUrl: resolveProductThumbnail(
+            product.mainImageThumbnailUrl,
+            product.mainImageUrl,
+            variant.thumbnailImageUrls,
+            variant.imageUrls,
+          ),
         });
       }
     }
@@ -230,7 +252,10 @@ export function BarcodePrintingClient() {
                   id="barcode-product-search"
                   data-testid="barcode-product-search"
                   value={search}
-                  onChange={(event) => setSearch(event.target.value)}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setPage(1);
+                  }}
                   placeholder="Search by product, SKU or barcode"
                   className="pl-8"
                 />
@@ -261,7 +286,11 @@ export function BarcodePrintingClient() {
                         data-testid="barcode-result-row"
                         className="flex items-center gap-3 px-3 py-2"
                       >
-                        <BarcodeIcon className="h-4 w-4 shrink-0 text-mist-ink" />
+                        <ProductThumbnail
+                          src={option.imageUrl}
+                          alt={option.productName}
+                          size={36}
+                        />
                         <div className="min-w-0 flex-1">
                           <div className="truncate font-body text-sm text-espresso">
                             {option.productName}
@@ -293,6 +322,48 @@ export function BarcodePrintingClient() {
                   })}
                 </ul>
               )}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-sand/40 px-3 py-2">
+              <span
+                data-testid="barcode-products-range"
+                className="font-body text-xs text-mist-ink"
+              >
+                {totalProducts === 0
+                  ? 'No products'
+                  : `${firstOnPage}–${lastOnPage} of ${totalProducts}`}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-8 border-sand p-0 text-espresso"
+                  aria-label="Previous products page"
+                  disabled={page <= 1 || isFetching}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span
+                  data-testid="barcode-products-page"
+                  aria-live="polite"
+                  className="min-w-[72px] text-center font-body text-xs text-mist-ink"
+                >
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-8 border-sand p-0 text-espresso"
+                  aria-label="Next products page"
+                  disabled={page >= totalPages || isFetching}
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </section>
 
@@ -330,13 +401,16 @@ export function BarcodePrintingClient() {
                       data-testid="barcode-selected-row"
                       className="flex items-center gap-3 px-3 py-2"
                     >
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-body text-sm text-espresso">
-                          {item.productName}
-                        </div>
-                        <div className="truncate font-body text-xs text-mist-ink">
-                          {variantText ? `${variantText} · ` : ''}
-                          <span className="font-mono">{item.sku}</span>
+                      <div className="flex min-w-0 flex-1 items-center gap-2">
+                        <ProductThumbnail src={item.imageUrl} alt="" size={32} />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-body text-sm text-espresso">
+                            {item.productName}
+                          </div>
+                          <div className="truncate font-body text-xs text-mist-ink">
+                            {variantText ? `${variantText} · ` : ''}
+                            <span className="font-mono">{item.sku}</span>
+                          </div>
                         </div>
                       </div>
 

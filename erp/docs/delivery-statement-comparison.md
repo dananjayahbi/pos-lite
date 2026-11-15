@@ -134,3 +134,26 @@ node --env-file=.env --import tsx scripts/qa-reconciliation-seed.ts
 node --env-file=.env --import tsx scripts/qa-reconciliation-seed.ts --cleanup
 ```
 
+The seed is idempotent: it deletes the previous `QA-RECON-` deliveries before
+recreating them, and `--cleanup` removes exactly those rows plus their dependent
+shipment/ledger records. It targets the `dilani` tenant (Ruhunu Weda Gedara);
+change the slug in the script if the database has a different tenant.
+
+### What each workbook should show
+
+Fixtures are dated July 2026, so selecting any non-overlapping range still
+compares the sheet's own period (`rangeAdjusted: true`). Expected results against
+a freshly seeded database:
+
+| Workbook | Expected result |
+| --- | --- |
+| `happy-path-july-2026.xlsx` | Range auto-adjusts to 2026-07-13…20; 8 system deliveries, 8 matched, 0 differences, COD variance 0.00 |
+| `mixed-differences-july-2026.xlsx` | Range 2026-06-30…07-22; 3 matched, 9 differences (1 COD, 1 charge, 1 status, 2 missing each direction, 1 duplicate), variance +1,125.00 |
+| `order-ref-fallback-july-2026.xlsx` | 8/8 matched via ORDER NO (no waybill column) |
+| `unknown-waybills-july-2026.xlsx` | 25 statement rows, all "not in our system" (plus 1 system delivery missing from the sheet) |
+| `outside-range-june-2026.xlsx` | Range auto-adjusts to 2026-06-01…02; both rows "not in our system" |
+| `empty-sheet.xlsx` | "No readable rows" warning; 8 July deliveries flagged missing in statement |
+
+To re-create the deliveries after a database reset, run the seed command above;
+the generated workbooks are committed under `test-artifacts/reconciliation/`.
+

@@ -505,7 +505,11 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
     await page.keyboard.type(`${state.variant.barcode ?? state.variant.sku}\n`, { delay: 5 });
     await expect(page.getByText('Sub-total').first()).toBeVisible({ timeout: 30_000 });
 
+    // The discount section is collapsed by default to give the line items
+    // more room; the dedicated shortcut opens it from the barcode box.
+    await page.keyboard.press('Alt+Shift+D');
     const discountInput = page.locator('input[type="number"]').first();
+    await expect(discountInput).toBeVisible();
     await discountInput.fill('10');
     await page.getByRole('button', { name: 'Apply', exact: true }).first().click();
     await expect(page.getByText('Discount', { exact: true })).toBeVisible();
@@ -562,6 +566,8 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
     await expect(page.getByText('Sub-total').first()).toBeVisible({ timeout: 30_000 });
 
     // A 100% cart discount makes the amount due zero even for VAT products.
+    // The discount section starts collapsed, so open it with its shortcut.
+    await page.keyboard.press('Alt+Shift+D');
     await page.locator('input[type="number"]').first().fill('100');
     await page.getByRole('button', { name: 'Apply', exact: true }).first().click();
 

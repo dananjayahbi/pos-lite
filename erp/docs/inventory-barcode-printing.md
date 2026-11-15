@@ -7,14 +7,24 @@ Barcode Printing**.
 
 | Area | Contents |
 | --- | --- |
-| Left — *Add products* | Search by product name, SKU or barcode. Every matching variant is listed with its form, pack size, SKU and barcode; **Add** queues it. |
-| Left — *Selected products* | One row per queued variant with a copies stepper (1–99), a remove button and **Clear all**. |
+| Left — *Add products* | Search by product name, SKU or barcode. Each matching variant shows the product thumbnail (or a placeholder), form, pack size, SKU and barcode; **Add** queues it. The list is paginated **10 products per page**, sorted newest-first by the server; the footer shows the visible range and previous/next page controls. |
+| Left — *Selected products* | One row per queued variant with a thumbnail, copies stepper (1–99), a remove button and **Clear all**. |
 | Left — *Fill the last sheet* | Repeats the queue in order until the final A4 page is full, so one variant can produce a whole sheet. |
 | Right — *A4 preview* | Live portrait A4 pages (24 labels per page) showing exactly what will print, page by page — like a PDF preview. |
 | Header | Total label count, page count and **Print A4**. |
 
 Adding a variant that is already queued increments its copy count instead of
 creating a duplicate row.
+
+## Product picker loading
+
+The picker never loads the whole catalogue. It calls
+`GET /api/store/products?status=active&page=N&limit=10`; the API applies the
+search filter, sorts by `createdAt DESC` (newest products first) and returns
+`meta.total` / `meta.totalPages`, so the browser only receives the 10 products
+for the visible page. Typing in the search box resets the page to 1. Thumbnails
+use `resolveProductThumbnail()` (product thumbnail → product image → variant
+thumbnail → variant image), falling back to a bag icon when no image exists.
 
 ## Sheet geometry
 
@@ -75,5 +85,6 @@ in print.
 - `src/lib/barcode.test.ts` — check digit, EAN-13 validity, symbology fallback.
 - `src/lib/barcode-sheet.core.test.ts` — copy expansion, page overflow, fill-last-sheet.
 - `tests/37_barcode_printing.spec.ts` — navigation/empty state, demo barcodes,
-  queue → pages → fill, Print A4 overlay page count, and creating a product in
+  queue → pages → fill, Print A4 overlay page count, product image thumbnails,
+  server-side pagination (10 per page, newest first), and creating a product in
   the wizard that receives a saved, scannable barcode.

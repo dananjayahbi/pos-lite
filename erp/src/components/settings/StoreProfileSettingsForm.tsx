@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { LogoUploadField } from '@/components/shared/LogoUploadField';
 import {
   Card,
   CardContent,
@@ -93,14 +94,24 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="logoUrl">Logo URL</Label>
-            <Input
-              id="logoUrl"
-              value={values.logoUrl}
-              onChange={(event) => update('logoUrl', event.target.value)}
-              placeholder="https://cdn.example.com/logo.png"
+            <Label>Store logo</Label>
+            <LogoUploadField
+              logoUrl={values.logoUrl || null}
+              onChange={(url) => update('logoUrl', url ?? '')}
+              uploadUrl="/api/settings/store/logo"
+              alt="Store logo"
+              hint={
+                <>
+                  JPEG / PNG / WebP / SVG
+                  <br />
+                  Max 2 MB · stored in R2
+                </>
+              }
             />
-            <p className="text-xs text-sand-ink">Optional. This can be used later in printed or digital brand surfaces.</p>
+            <p className="text-xs text-sand-ink">
+              Shown in the POS header, receipts and customer touchpoints. Upload replaces the
+              current logo; press Save Store Profile to apply it.
+            </p>
           </div>
 
           <div className="space-y-2">

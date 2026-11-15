@@ -319,4 +319,99 @@ test.describe.serial('Module 37 — Barcode Printing', () => {
     const del = await page.request.delete(`${BASE_URL}/api/store/products/${created!.id}`);
     expect(del.ok()).toBe(true);
   });
+
+  test('37.6 product picker is server-paginated (10/page, newest first) and shows thumbnails', async ({
+    page,
+  }) => {
+    const createdIds: string[] = [];
+
+    try {
+      // Make the test independent of catalogue size: ensure at least two pages.
+      const initial = await page.request
+        .get(`${BASE_URL}/api/store/products?status=active&limit=1&page=1`)
+        .then((res) => res.json());
+      const needed = Math.max(0, 11 - (initial.meta.total as number));
+      if (needed > 0) {
+        const categories = await page.request
+          .get(`${BASE_URL}/api/store/categories`)
+          .then((res) => res.json());
+        const categoryId = categories.data?.[0]?.id as string;
+        expect(categoryId, 'a seeded category exists').toBeTruthy();
+
+        for (let index = 0; index < needed; index += 1) {
+          const created = await page.request.post(`${BASE_URL}/api/store/products`, {
+            data: {
+              name: `QA Paging ${RUN_ID} ${index}`,
+              categoryId,
+              taxRule: 'EXEMPT',
+              variantDefinitions: [
+                {
+                  sku: `QA-PG-${RUN_ID}-${index}`,
+                  costPrice: 10,
+                  retailPrice: 100,
+                  initialStock: 1,
+                },
+              ],
+            },
+          });
+          expect(created.status(), 'paging fixture created').toBe(201);
+          const json = await created.json();
+          createdIds.push(json.data.id as string);
+        }
+      }
+
+      // Backend contract: 10 products per page, newest first, with page metadata.
+      const firstJson = await page.request
+        .get(`${BASE_URL}/api/store/products?status=active&limit=10&page=1`)
+        .then((res) => res.json());
+      const total = firstJson.meta.total as number;
+      const totalPages = firstJson.meta.totalPages as number;
+      const firstPage = firstJson.data as Array<{ name: string; createdAt: string }>;
+
+      expect(firstJson.meta.limit).toBe(10);
+      expect(firstPage.length).toBe(10);
+      expect(totalPages).toBe(Math.ceil(total / 10));
+      expect(totalPages).toBeGreaterThan(1);
+      const times = firstPage.map((product) => new Date(product.createdAt).getTime());
+      expect(times).toEqual([...times].sort((a, b) => b - a));
+
+      await gotoBarcodePrinting(page);
+      await expect(page.getByTestId('barcode-products-page')).toHaveText(
+        `Page 1 of ${totalPages}`,
+      );
+      await expect(page.getByTestId('barcode-products-range')).toContainText(`of ${total}`);
+      await expect(page.getByTestId('barcode-result-row').first()).toContainText(
+        firstPage[0]!.name,
+      );
+
+      const secondPage = await page.request
+        .get(`${BASE_URL}/api/store/products?status=active&limit=10&page=2`)
+        .then((res) => res.json())
+        .then((json) => json.data as Array<{ name: string }>);
+
+      await page.getByRole('button', { name: 'Next products page' }).click();
+      await expect(page.getByTestId('barcode-products-page')).toHaveText(
+        `Page 2 of ${totalPages}`,
+      );
+      await expect(page.getByTestId('barcode-result-row').first()).toContainText(
+        secondPage[0]!.name,
+      );
+      await page.getByRole('button', { name: 'Previous products page' }).click();
+      await expect(page.getByTestId('barcode-products-page')).toHaveText(
+        `Page 1 of ${totalPages}`,
+      );
+
+      // A seeded product with an image renders its thumbnail in the picker.
+      await page.getByTestId('barcode-product-search').fill('BAI-08-OIL-100ML');
+      const imageRow = page
+        .getByTestId('barcode-result-row')
+        .filter({ hasText: 'BAI-08-OIL-100ML' })
+        .first();
+      await expect(imageRow.locator('img')).toBeVisible({ timeout: 30_000 });
+    } finally {
+      for (const id of createdIds) {
+        await page.request.delete(`${BASE_URL}/api/store/products/${id}`);
+      }
+    }
+  });
 });

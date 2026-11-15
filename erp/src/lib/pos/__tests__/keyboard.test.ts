@@ -93,7 +93,22 @@ describe('matchesShortcut', () => {
 
   it('documents every shortcut the screen implements', () => {
     const keys = POS_SHORTCUT_HELP.flatMap((entry) => entry.keys);
-    for (const expected of ['F2', 'F4', 'F8', 'F9', '?', 'Alt', 'C', 'Enter', 'Delete']) {
+    for (const expected of [
+      'F2',
+      'F4',
+      'F8',
+      'F9',
+      '?',
+      'Alt',
+      'Shift',
+      'C',
+      'A',
+      'U',
+      'D',
+      'P',
+      'Enter',
+      'Delete',
+    ]) {
       expect(keys).toContain(expected);
     }
   });

@@ -150,17 +150,18 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   addItem: (item) => {
     set((state) => {
+      // The cart is newest-first so the product the cashier just scanned is
+      // always visible at the top of the list instead of below the fold.
       const existing = state.items.find((i) => i.variantId === item.variantId);
       if (existing) {
         return {
-          items: state.items.map((i) =>
-            i.variantId === item.variantId
-              ? { ...i, quantity: i.quantity + item.quantity }
-              : i,
-          ),
+          items: [
+            { ...existing, quantity: existing.quantity + item.quantity },
+            ...state.items.filter((i) => i.variantId !== item.variantId),
+          ],
         };
       }
-      return { items: [...state.items, { ...item, discountPercent: 0 }] };
+      return { items: [{ ...item, discountPercent: 0 }, ...state.items] };
     });
     schedulePromoEval(get);
     sendCFDUpdate(get());

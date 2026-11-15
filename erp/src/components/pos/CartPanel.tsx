@@ -1,19 +1,20 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { ShoppingBag, ArchiveRestore, Banknote, CreditCard, QrCode, UserPlus, Layers, X, Tag } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { ShoppingBag, ArchiveRestore, UserPlus, X, Tag } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Decimal from 'decimal.js';
 import { formatRupee } from '@/lib/format';
 import { useCartStore, getCartTotal, getSaleDiscountAmount } from '@/stores/cartStore';
 import { createCartPromotionSnapshot } from '@/stores/cartPromotions';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CartLineItem } from '@/components/pos/CartLineItem';
 import { LineItemDiscountControl } from '@/components/pos/LineItemDiscountControl';
 import { CartDiscountControl } from '@/components/pos/CartDiscountControl';
 import { HoldSaleButton } from '@/components/pos/HoldSaleButton';
 import { RetrieveHeldSalesSheet } from '@/components/pos/RetrieveHeldSalesSheet';
+import { PaymentMethodModal } from '@/components/pos/PaymentMethodModal';
+import type { PaymentMethodMode } from '@/components/pos/PaymentMethodModal';
 import { CashPaymentModal } from '@/components/pos/CashPaymentModal';
 import { CardPaymentModal } from '@/components/pos/CardPaymentModal';
 import { SplitPaymentModal } from '@/components/pos/SplitPaymentModal';
@@ -82,13 +83,14 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
 
   const [retrieveOpen, setRetrieveOpen] = useState(false);
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card' | 'split' | 'lankaqr' | null>(null);
-  const [paymentPopoverOpen, setPaymentPopoverOpen] = useState(false);
+  const [paymentMethodOpen, setPaymentMethodOpen] = useState(false);
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
   const [zeroValueOpen, setZeroValueOpen] = useState(false);
   const [completedSale, setCompletedSale] = useState<CompletedSale | null>(null);
   const [changeAmount, setChangeAmount] = useState<Decimal | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [promoCodeInput, setPromoCodeInput] = useState('');
+  const promoInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
   const { data: heldSalesData } = useQuery({
@@ -222,6 +224,8 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
     });
   };
 
+  // Keyboard-first payment entry: `F4` (or the Charge / Pay button) opens the
+  // tender dialog; zero-value carts go straight to the reason flow.
   const openPayment = () => {
     if (isPOSDialogOpen()) return;
     if (!hasItems || !hasValidCustomer) return;
@@ -229,7 +233,32 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
       setZeroValueOpen(true);
       return;
     }
-    setPaymentPopoverOpen(true);
+    setPaymentMethodOpen(true);
+  };
+
+  const handlePaymentMethodSelect = (mode: PaymentMethodMode) => {
+    setPaymentMethodOpen(false);
+    setPaymentMode(mode);
+  };
+
+  const applyPromoCode = useCallback(() => {
+    const code = promoCodeInput.trim();
+    if (!code) {
+      focusPOSBarcodeInput();
+      return;
+    }
+    setPromoCode(code);
+    setPromoCodeInput('');
+    evaluatePromotionsAction();
+    // The promo field is a temporary focus owner: hand the keyboard back to
+    // the barcode box as soon as the code is submitted.
+    focusPOSBarcodeInput();
+  }, [promoCodeInput, setPromoCode, evaluatePromotionsAction]);
+
+  const removePromoCode = () => {
+    setPromoCode(null);
+    evaluatePromotionsAction();
+    focusPOSBarcodeInput();
   };
 
   usePOSShortcuts([
@@ -252,6 +281,34 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
       handler: () => {
         if (isPOSDialogOpen()) return;
         document.getElementById('pos-customer-search')?.focus();
+      },
+    },
+    {
+      key: 'A',
+      alt: true,
+      allowInEditable: true,
+      handler: () => {
+        if (isPOSDialogOpen()) return;
+        setAddCustomerOpen(true);
+      },
+    },
+    {
+      key: 'U',
+      alt: true,
+      allowInEditable: true,
+      handler: () => {
+        if (isPOSDialogOpen() || !linkedCustomerId) return;
+        unlinkCustomer();
+        focusPOSBarcodeInput();
+      },
+    },
+    {
+      key: 'P',
+      alt: true,
+      allowInEditable: true,
+      handler: () => {
+        if (isPOSDialogOpen() || !hasItems) return;
+        promoInputRef.current?.focus();
       },
     },
   ]);
@@ -306,11 +363,13 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
                 linkCustomer(c.id, c.name, c.phone, c.creditBalance);
                 focusPOSBarcodeInput();
               }}
-              onClear={() => {}}
+              onCancel={() => focusPOSBarcodeInput()}
             />
             <button
               type="button"
               onClick={() => setAddCustomerOpen(true)}
+              aria-keyshortcuts="Alt+A"
+              title="Add a customer (Alt+A)"
               className="flex min-h-10 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-sand px-3 py-1.5 font-body text-xs text-sand-ink hover:text-espresso hover:border-terracotta transition-colors"
             >
               <UserPlus className="h-3.5 w-3.5" />
@@ -331,7 +390,7 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
                   </p>
                 )}
               </div>
-              <button type="button" onClick={() => { unlinkCustomer(); }} className="text-mist-ink hover:text-espresso transition-colors" aria-label="Unlink customer">
+              <button type="button" onClick={() => { unlinkCustomer(); }} className="text-mist-ink hover:text-espresso transition-colors" aria-label="Unlink customer" aria-keyshortcuts="Alt+U" title="Unlink customer (Alt+U)">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -395,10 +454,7 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
               <span className="font-mono text-xs text-espresso bg-linen px-2 py-1 rounded">{appliedPromoCode}</span>
               <button
                 type="button"
-                onClick={() => {
-                  setPromoCode(null);
-                  evaluatePromotionsAction();
-                }}
+                onClick={removePromoCode}
                 className="text-mist-ink hover:text-[#9B2226] transition-colors"
                 aria-label="Remove promo code"
               >
@@ -411,21 +467,29 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
           ) : (
             <div className="flex items-center gap-2">
               <input
+                ref={promoInputRef}
+                id="pos-promo-code-input"
                 type="text"
                 value={promoCodeInput}
                 onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
-                placeholder="Promo code"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    applyPromoCode();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setPromoCodeInput('');
+                    focusPOSBarcodeInput();
+                  }
+                }}
+                placeholder="Promo code (Alt+P)"
+                aria-keyshortcuts="Alt+P"
                 className="flex-1 px-2 py-1.5 border border-mist/50 rounded text-xs font-mono bg-pearl text-espresso placeholder:text-mist-ink/50 focus:outline-none focus:border-terracotta"
               />
               <button
                 type="button"
                 disabled={!promoCodeInput.trim()}
-                onClick={() => {
-                  if (!promoCodeInput.trim()) return;
-                  setPromoCode(promoCodeInput.trim());
-                  setPromoCodeInput('');
-                  evaluatePromotionsAction();
-                }}
+                onClick={applyPromoCode}
                 className="px-3 py-1.5 rounded bg-espresso text-pearl text-xs font-body hover:bg-espresso/90 transition-colors disabled:opacity-40 min-h-10"
               >
                 Apply
@@ -501,69 +565,16 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
                 Zero-Value Sale
               </button>
             ) : (
-            <Popover open={paymentPopoverOpen} onOpenChange={setPaymentPopoverOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  disabled={!hasItems || !hasValidCustomer}
-                  aria-keyshortcuts="F4"
-                  title="Charge / Pay (F4)"
-                  className="min-h-12 w-full rounded-lg bg-espresso py-3 font-body text-base font-bold text-pearl transition-colors hover:bg-espresso/90 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Charge / Pay
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-48 p-1.5" side="top" align="center">
-                <div className="space-y-0.5">
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 font-body text-sm text-espresso hover:bg-linen transition-colors"
-                    onClick={() => {
-                      setPaymentPopoverOpen(false);
-                      setPaymentMode('cash');
-                    }}
-                  >
-                    <Banknote className="h-4 w-4 text-terracotta" />
-                    Cash
-                  </button>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 font-body text-sm text-espresso hover:bg-linen transition-colors"
-                    onClick={() => {
-                      setPaymentPopoverOpen(false);
-                      setPaymentMode('card');
-                    }}
-                  >
-                    <CreditCard className="h-4 w-4 text-terracotta" />
-                    Card
-                  </button>
-                  {lankaQr.enabled && (
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 font-body text-sm text-espresso hover:bg-linen transition-colors"
-                      onClick={() => {
-                        setPaymentPopoverOpen(false);
-                        setPaymentMode('lankaqr');
-                      }}
-                    >
-                      <QrCode className="h-4 w-4 text-terracotta" />
-                      LankaQR
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 font-body text-sm text-espresso hover:bg-linen transition-colors"
-                    onClick={() => {
-                      setPaymentPopoverOpen(false);
-                      setPaymentMode('split');
-                    }}
-                  >
-                    <Layers className="h-4 w-4 text-terracotta" />
-                    Split
-                  </button>
-                </div>
-              </PopoverContent>
-            </Popover>
+              <button
+                type="button"
+                disabled={!hasItems || !hasValidCustomer}
+                onClick={() => setPaymentMethodOpen(true)}
+                aria-keyshortcuts="F4"
+                title="Charge / Pay (F4)"
+                className="min-h-12 w-full rounded-lg bg-espresso py-3 font-body text-base font-bold text-pearl transition-colors hover:bg-espresso/90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Charge / Pay
+              </button>
             )}
           </div>
         </div>
@@ -575,6 +586,16 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
           setRetrieveOpen(open);
           if (!open) focusPOSBarcodeInput();
         }}
+      />
+      <PaymentMethodModal
+        open={paymentMethodOpen}
+        onClose={() => {
+          setPaymentMethodOpen(false);
+          focusPOSBarcodeInput();
+        }}
+        onSelect={handlePaymentMethodSelect}
+        allowLankaQr={lankaQr.enabled}
+        totalLabel={formatRupee(amountDue.toNumber())}
       />
       <CashPaymentModal
         open={paymentMode === 'cash'}

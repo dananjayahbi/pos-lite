@@ -54,16 +54,43 @@ pressing `F1` / `?`. The same list lives in `POS_SHORTCUT_HELP`
 | `← → ↑ ↓`   | Move between product cards, then cart rows        |
 | `+` / `−`   | Increase / decrease the focused cart row quantity |
 | `Delete`    | Remove the focused cart row                       |
-| `F4`        | Open payment (Charge / Pay; Zero-Value when due)  |
+| `F4`        | Open the payment method dialog (Charge / Pay; Zero-Value when due) |
+| `Alt + Shift + D` | Show / hide the cart discount section        |
+| `Alt + P`   | Focus the promo code field                        |
+| `Alt + C`   | Focus the customer search                         |
+| `Alt + A`   | Add a new customer                                |
+| `Alt + U`   | Unlink the current customer                       |
 | `F8`        | Hold the current sale                             |
 | `F9`        | Retrieve a held sale                              |
-| `Alt + C`   | Focus the customer search                         |
 | `F1` / `?`  | Show the shortcut guide                           |
 | `Esc`       | Close a dialog / popover, or clear the search     |
 
 Modal dialogs keep Radix's focus trap and `Esc` handling. The cash and card
 payment dialogs submit with `Enter` as well as the button, so a sale can be
 completed without leaving the keyboard.
+
+### Modal-first actions
+
+Actions that need more than one input open a dialog instead of an inline
+control, so the barcode box never has to fight a popover for focus:
+
+- **Charge / Pay (`F4`)** opens a payment-method dialog. `↑`/`↓` move between
+  Cash, Card, LankaQR (when enabled) and Split; `Enter` picks one and `1`–`4`
+  select directly. `Esc` closes it and returns to the barcode box.
+- **Cart discount (`Alt + Shift + D`)** toggles the compact section. It is
+  collapsed by default so the line-item list gets the vertical space;
+  expanding it focuses the amount field, `Enter` applies, and `Esc` collapses
+  it again.
+- **Promo code (`Alt + P`)** focuses the promo field only while it is in use.
+  `Enter` applies the code, `Esc` cancels; both hand focus back to the barcode
+  box, so the next scan lands in the right place.
+- **Customer search (`Alt + C`)** stays a combobox: type a name or number, use
+  `↑`/`↓` to highlight a result and `Enter` to link it. `Esc` closes the list
+  and refocuses the scanner. `Alt + A` opens Add Customer and `Alt + U`
+  unlinks the current customer.
+
+The cart list is newest-first, so the product just scanned or added is always
+the first row instead of appearing below the fold.
 
 Printable shortcuts (`/`, `?`, `Alt+C`) are suppressed while a text field owns
 the keystrokes; function keys (`F2`, `F4`, `F8`, `F9`) work even from the
