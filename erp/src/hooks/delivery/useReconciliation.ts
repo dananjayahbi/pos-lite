@@ -38,6 +38,25 @@ export function useReconciliation() {
     },
   });
 
+  const compareStatement = useMutation({
+    mutationFn: async (input: { file: File; from: string; to: string }) => {
+      const form = new FormData();
+      form.append('file', input.file);
+      form.append('from', input.from);
+      form.append('to', input.to);
+      const res = await fetch('/api/store/reconciliation/compare', {
+        method: 'POST',
+        body: form,
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error?.message ?? 'Failed to compare statement');
+      return json.data;
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
   const openDispute = useMutation({
     mutationFn: async (input: { ledgerEntryId: string; reason: string; disputedAmount: number }) => {
       const res = await fetch('/api/store/reconciliation/disputes', {
@@ -82,6 +101,7 @@ export function useReconciliation() {
     data: query.data,
     isLoading: query.isLoading,
     importCsv,
+    compareStatement,
     openDispute,
     updateDispute,
   };

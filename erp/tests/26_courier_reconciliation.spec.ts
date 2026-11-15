@@ -748,6 +748,94 @@ test.describe('§10 Time-travel & retroactive handling', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// §X — Delivery-vs-statement comparison (dry run)
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('§X Delivery comparison', () => {
+  async function compareStatement(
+    page: any,
+    filename: string,
+    content: string,
+    from: string,
+    to: string,
+  ) {
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(Buffer.from(content, 'utf-8'))]), filename);
+    form.append('from', from);
+    form.append('to', to);
+    return page.request.post(`${RECON_URL}/compare`, { multipart: form as never });
+  }
+
+  test('X1: compares a statement over a date range and lists every difference without settling', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    const csv = remittanceCsv([
+      `BA-CMP-${RUN_TAG},3900,475,Delivered,2026-07-13`,
+      `BA-CMP-${RUN_TAG},3900,475,Delivered,2026-07-13`,
+      `,100,0,Delivered,2026-07-13`,
+      `BA-OFF-${RUN_TAG},100,0,Delivered,2026-06-01`,
+    ]);
+    const res = await compareStatement(page, `cmp-${RUN_TAG}.csv`, csv, '2026-07-01', '2026-07-31');
+    expect(res.status(), await res.text()).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    const report = json.data;
+    expect(report.range).toEqual({ from: '2026-07-01', to: '2026-07-31' });
+    // One canonical in-range row, one duplicate, one no-waybill row, one out of range.
+    expect(report.summary.statementRows).toBe(1);
+    expect(report.summary.duplicates).toBe(1);
+    expect(report.summary.statementRowsOutsideRange).toBe(1);
+    // The seeded tenant has no delivered orders in 2026-07: every sheet row is ours-only.
+    expect(report.summary.missingInSystem).toBe(1);
+    expect(report.summary.systemDeliveries).toBe(0);
+    expect(report.rows.map((row: any) => row.status)).toEqual(
+      expect.arrayContaining(['DUPLICATE_IN_STATEMENT', 'MISSING_IN_SYSTEM', 'MISSING_WAYBILL']),
+    );
+    // The check must not import or settle anything.
+    const ledger = await getRecon(page);
+    expect(ledger.total).toBe(0);
+  });
+
+  test('X2: rejects a missing file, an unsupported extension, and a reversed range', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    const empty = new FormData();
+    empty.append('from', '2026-07-01');
+    empty.append('to', '2026-07-31');
+    const missing = await page.request.post(`${RECON_URL}/compare`, { multipart: empty as never });
+    expect(missing.status()).toBe(400);
+
+    const unsupported = await compareStatement(
+      page,
+      `cmp-${RUN_TAG}.txt`,
+      'not a sheet',
+      '2026-07-01',
+      '2026-07-31',
+    );
+    expect(unsupported.status()).toBe(400);
+
+    const reversed = await compareStatement(
+      page,
+      `cmp-${RUN_TAG}.csv`,
+      remittanceCsv([`BA-REV-${RUN_TAG},100,0,Delivered,2026-07-13`]),
+      '2026-07-31',
+      '2026-07-01',
+    );
+    expect(reversed.status()).toBe(400);
+  });
+
+  test('X3: the comparison surface is read-only for a cashier (no recon permission)', async ({ page }) => {
+    await login(page, CASHIER1_EMAIL, CASHIER1_PASSWORD);
+    const content = remittanceCsv([`BA-X3-${RUN_TAG},1,0,Delivered,2026-07-13`]);
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(Buffer.from(content, 'utf-8'))]), 'x3.csv');
+    form.append('from', '2026-07-01');
+    form.append('to', '2026-07-31');
+    const res = await page.request.post(`${RECON_URL}/compare`, {
+      multipart: form as never,
+    });
+    expect([401, 403]).toContain(res.status());
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // §11 — Cleanup
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('cleanup: verify no reconciliation state was mutated', () => {

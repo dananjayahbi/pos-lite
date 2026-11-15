@@ -10,9 +10,11 @@ import { useCustomerSearch } from '@/hooks/useCustomerSearch';
 interface CustomerSearchDropdownProps {
   onSelect: (customer: { id: string; name: string; phone: string; creditBalance: string }) => void;
   onClear: () => void;
+  /** Optional id so the POS shell can target the field from a shortcut. */
+  inputId?: string;
 }
 
-export function CustomerSearchDropdown({ onSelect, onClear }: CustomerSearchDropdownProps) {
+export function CustomerSearchDropdown({ onSelect, onClear, inputId }: CustomerSearchDropdownProps) {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [open, setOpen] = useState(false);
@@ -44,6 +46,7 @@ export function CustomerSearchDropdown({ onSelect, onClear }: CustomerSearchDrop
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-mist-ink" />
         <Input
           ref={inputRef}
+          id={inputId}
           placeholder="Link customer..."
           value={search}
           onChange={(e) => {

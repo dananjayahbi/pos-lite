@@ -148,4 +148,23 @@ body {
   body {
     @apply bg-background text-foreground;
   }
+
+  /* POS touch mode: no double-tap zoom delay and no accidental text
+     selection when a cashier taps a product tile or cart line. */
+  button,
+  [role='button'],
+  a,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Keyboard mode: a visible ring must survive on both the dark POS toolbar
+     and the linen product grid. */
+  :focus-visible {
+    outline: 2px solid var(--color-terracotta);
+    outline-offset: 2px;
+  }
 }

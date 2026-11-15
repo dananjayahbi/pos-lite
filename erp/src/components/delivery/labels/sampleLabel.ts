@@ -18,6 +18,7 @@ export const SAMPLE_DELIVERY = {
   itemCount: 2,
   totalWeightKg: 1.5,
   waybill: 'TE-12345678',
+  deliveredAt: '2026-07-20T10:15:00.000Z',
   address: SAMPLE_ADDRESS,
 };
 

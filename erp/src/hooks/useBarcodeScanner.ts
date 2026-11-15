@@ -9,6 +9,14 @@ const INTER_KEY_THRESHOLD_MS = 50;
 const FLUSH_TIMEOUT_MS = 100;
 const MIN_BARCODE_LENGTH = 6;
 
+/**
+ * Barcodes accepted by `/api/store/variants/barcode/[barcode]` (mirrors the
+ * route's pattern). Anything else is a search term, not a scan — so the
+ * always-focused search box can press Enter without a spurious
+ * "unknown barcode" toast.
+ */
+const BARCODE_API_PATTERN = /^[a-zA-Z0-9-]{8,20}$/;
+
 interface BarcodeScanResult {
   id: string;
   sku: string;
@@ -25,68 +33,113 @@ interface UseBarcodeScanner {
   enabled?: boolean;
 }
 
+export interface ScanBarcodeOptions {
+  /** Show the "unknown barcode" toast. Off when the caller routes searches too. */
+  notifyUnknown?: boolean;
+}
+
+export interface ScanBarcodeResult {
+  ok: boolean;
+  productName?: string;
+  variantDescription?: string;
+}
+
+/**
+ * Resolves a scanned code and adds it to the cart.
+ *
+ * Shared by the global keyboard-wedge listener and the always-focused POS
+ * scan input, so both pathways have identical lookup/stock/toast behaviour.
+ */
+export function useBarcodeScanToCart(onScan?: (productName: string, variantDescription: string) => void) {
+  const queryClient = useQueryClient();
+  const addItem = useCartStore((s) => s.addItem);
+
+  const scanBarcode = useCallback(
+    async (rawCode: string, options: ScanBarcodeOptions = {}): Promise<ScanBarcodeResult> => {
+      const barcode = rawCode.trim();
+      if (barcode.length < MIN_BARCODE_LENGTH) return { ok: false };
+      if (!BARCODE_API_PATTERN.test(barcode)) return { ok: false };
+
+      try {
+        const data = await queryClient.fetchQuery<BarcodeScanResult | null>({
+          queryKey: ['variant-by-barcode', barcode],
+          queryFn: async () => {
+            const res = await fetch(`/api/store/variants/barcode/${encodeURIComponent(barcode)}`);
+            if (res.status === 404) return null;
+            if (!res.ok) throw new Error('Barcode lookup failed');
+            const json = await res.json();
+            return json.data as BarcodeScanResult;
+          },
+          staleTime: 5 * 60 * 1000, // 5 min cache
+        });
+
+        if (!data) {
+          if (options.notifyUnknown) toast.error(`Unknown barcode: ${barcode}`);
+          return { ok: false };
+        }
+
+        const variantDescription =
+          [data.form, data.packSize].filter(Boolean).join(' / ') || 'Default';
+
+        if (data.stockQuantity <= 0) {
+          toast.warning(`Out of stock: ${data.productName}${variantDescription !== 'Default' ? ` (${variantDescription})` : ''}`);
+          return { ok: false, productName: data.productName, variantDescription };
+        }
+
+        addItem({
+          variantId: data.id,
+          productName: data.productName,
+          variantDescription,
+          sku: data.sku,
+          unitPrice: Number(data.retailPrice),
+          quantity: 1,
+        });
+
+        onScan?.(data.productName, variantDescription);
+        return { ok: true, productName: data.productName, variantDescription };
+      } catch {
+        if (options.notifyUnknown) toast.error(`Barcode lookup failed for: ${barcode}`);
+        return { ok: false };
+      }
+    },
+    [queryClient, addItem, onScan],
+  );
+
+  return { scanBarcode };
+}
+
+/**
+ * Global keyboard-wedge scanner.
+ *
+ * Kept as a fallback for scans typed while focus sits outside a text field
+ * (for example after the cashier taps a product card). When the always-focused
+ * POS scan input owns the keystrokes, this listener stays out of the way and
+ * the input's own handler performs the lookup.
+ */
 export function useBarcodeScanner({ onScan, enabled = true }: UseBarcodeScanner = {}) {
   const bufferRef = useRef('');
   const lastKeyTimeRef = useRef(0);
   const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const queryClient = useQueryClient();
-  const addItem = useCartStore((s) => s.addItem);
+  const { scanBarcode } = useBarcodeScanToCart(onScan);
 
-  const flush = useCallback(async (scannedCode: string) => {
-    const barcode = scannedCode.trim();
-    if (barcode.length < MIN_BARCODE_LENGTH) return;
-
-    try {
-      const data = await queryClient.fetchQuery<BarcodeScanResult | null>({
-        queryKey: ['variant-by-barcode', barcode],
-        queryFn: async () => {
-          const res = await fetch(`/api/store/variants/barcode/${encodeURIComponent(barcode)}`);
-          if (res.status === 404) return null;
-          if (!res.ok) throw new Error('Barcode lookup failed');
-          const json = await res.json();
-          return json.data as BarcodeScanResult;
-        },
-        staleTime: 5 * 60 * 1000, // 5 min cache
-      });
-
-      if (!data) {
-        toast.error(`Unknown barcode: ${barcode}`);
-        return;
-      }
-
-      if (data.stockQuantity <= 0) {
-        const desc = [data.form, data.packSize].filter(Boolean).join(' / ');
-        toast.warning(`Out of stock: ${data.productName}${desc ? ` (${desc})` : ''}`);
-        return;
-      }
-
-      const variantDescription =
-        [data.form, data.packSize].filter(Boolean).join(' / ') || 'Default';
-
-      addItem({
-        variantId: data.id,
-        productName: data.productName,
-        variantDescription,
-        sku: data.sku,
-        unitPrice: Number(data.retailPrice),
-        quantity: 1,
-      });
-
-      onScan?.(data.productName, variantDescription);
-    } catch {
-      toast.error(`Barcode lookup failed for: ${barcode}`);
-    }
-  }, [queryClient, addItem, onScan]);
+  const flush = useCallback(
+    async (scannedCode: string) => {
+      await scanBarcode(scannedCode, { notifyUnknown: true });
+    },
+    [scanBarcode],
+  );
 
   useEffect(() => {
     if (!enabled) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip if focused on an input element
+      // Text fields own their keystrokes: the POS scan box (or any other
+      // input) resolves scans through its own Enter/burst handler.
       const active = document.activeElement;
       if (
         active instanceof HTMLInputElement ||
         active instanceof HTMLTextAreaElement ||
+        active instanceof HTMLSelectElement ||
         (active instanceof HTMLElement && active.isContentEditable)
       ) {
         return;
@@ -100,7 +153,7 @@ export function useBarcodeScanner({ onScan, enabled = true }: UseBarcodeScanner 
           e.preventDefault();
           const code = bufferRef.current;
           bufferRef.current = '';
-          flush(code);
+          void flush(code);
         }
         return;
       }
@@ -122,7 +175,7 @@ export function useBarcodeScanner({ onScan, enabled = true }: UseBarcodeScanner 
         if (bufferRef.current.length >= MIN_BARCODE_LENGTH) {
           const code = bufferRef.current;
           bufferRef.current = '';
-          flush(code);
+          void flush(code);
         }
       }, FLUSH_TIMEOUT_MS);
     };

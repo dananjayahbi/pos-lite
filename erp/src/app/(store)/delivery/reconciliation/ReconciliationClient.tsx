@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { LedgerTable } from '@/components/delivery/reconciliation/LedgerTable';
 import { RemittanceUpload } from '@/components/delivery/reconciliation/RemittanceUpload';
+import { StatementComparison } from '@/components/delivery/reconciliation/StatementComparison';
 
 interface AgingSummary {
   buckets: { under7: number; under14: number; overdue: number };
@@ -63,7 +64,7 @@ export function ReconciliationClient() {
   const { hasPermission } = usePermissions();
   const canView = hasPermission(PERMISSIONS.DELIVERY.viewReconciliation);
   const canImport = hasPermission(PERMISSIONS.DELIVERY.importRemittance);
-  const { data, isLoading, importCsv, openDispute, updateDispute } = useReconciliation();
+  const { data, isLoading, importCsv, compareStatement, openDispute, updateDispute } = useReconciliation();
 
   if (!canView) {
     return (
@@ -202,6 +203,11 @@ export function ReconciliationClient() {
           ))}
         </div>
       )}
+
+      <StatementComparison
+        isComparing={compareStatement.isPending}
+        onCompare={(input) => compareStatement.mutateAsync(input)}
+      />
 
       {!isLoading && (
         <>

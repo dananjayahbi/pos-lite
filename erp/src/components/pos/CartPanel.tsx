@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ShoppingBag, ArchiveRestore, Banknote, CreditCard, QrCode, UserPlus, Layers, X, Tag } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -27,6 +27,8 @@ import { DEFAULT_LANKA_QR_SETTINGS } from '@/lib/payments/lanka-qr-config';
 import { CustomerSearchDropdown } from '@/components/customers/CustomerSearchDropdown';
 import { Switch } from '@/components/ui/switch';
 import { usePersistCartEffect } from '@/hooks/usePersistCartEffect';
+import { usePOSShortcuts } from '@/hooks/usePOSShortcuts';
+import { focusPOSBarcodeInput, isPOSDialogOpen } from '@/lib/pos/keyboard';
 import { clearCartSnapshot } from '@/lib/idb-store';
 
 interface CartPanelProps {
@@ -175,13 +177,20 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
     setCompletedSale(null);
     setChangeAmount(null);
     queryClient.invalidateQueries({ queryKey: ['held-sales-count'] });
+    focusPOSBarcodeInput();
   };
 
   const handleReceiptClose = () => {
     setReceiptOpen(false);
     setCompletedSale(null);
     setChangeAmount(null);
+    focusPOSBarcodeInput();
   };
+
+  const handlePaymentClose = useCallback(() => {
+    setPaymentMode(null);
+    focusPOSBarcodeInput();
+  }, []);
 
   const handleClearCart = () => {
     const snapshot = [...items];
@@ -213,6 +222,40 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
     });
   };
 
+  const openPayment = () => {
+    if (isPOSDialogOpen()) return;
+    if (!hasItems || !hasValidCustomer) return;
+    if (isZeroValue) {
+      setZeroValueOpen(true);
+      return;
+    }
+    setPaymentPopoverOpen(true);
+  };
+
+  usePOSShortcuts([
+    {
+      key: 'F4',
+      allowInEditable: true,
+      handler: openPayment,
+    },
+    {
+      key: 'F9',
+      allowInEditable: true,
+      handler: () => {
+        if (isPOSDialogOpen() || heldCount === 0) return;
+        setRetrieveOpen(true);
+      },
+    },
+    {
+      key: 'C',
+      alt: true,
+      handler: () => {
+        if (isPOSDialogOpen()) return;
+        document.getElementById('pos-customer-search')?.focus();
+      },
+    },
+  ]);
+
   return (
     <div className="flex flex-col h-full bg-pearl">
       {/* Header */}
@@ -230,7 +273,9 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
             <button
               type="button"
               onClick={() => setRetrieveOpen(true)}
-              className="flex items-center gap-1 font-body text-xs text-terracotta hover:text-espresso transition-colors"
+              className="flex min-h-11 items-center gap-1 px-1 font-body text-xs text-terracotta hover:text-espresso transition-colors"
+              title="Retrieve a held sale (F9)"
+              aria-keyshortcuts="F9"
             >
               <ArchiveRestore className="h-3.5 w-3.5" />
               Retrieve
@@ -243,7 +288,7 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
             <button
               type="button"
               onClick={handleClearCart}
-              className="font-body text-xs text-[#9B2226] hover:text-[#9B2226]/80 transition-colors"
+              className="inline-flex min-h-11 items-center px-1 font-body text-xs text-[#9B2226] hover:text-[#9B2226]/80 transition-colors"
             >
               Clear Cart
             </button>
@@ -256,13 +301,17 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
         {!linkedCustomerId ? (
           <div className="space-y-1.5">
             <CustomerSearchDropdown
-              onSelect={(c) => linkCustomer(c.id, c.name, c.phone, c.creditBalance)}
+              inputId="pos-customer-search"
+              onSelect={(c) => {
+                linkCustomer(c.id, c.name, c.phone, c.creditBalance);
+                focusPOSBarcodeInput();
+              }}
               onClear={() => {}}
             />
             <button
               type="button"
               onClick={() => setAddCustomerOpen(true)}
-              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-sand px-3 py-1.5 font-body text-xs text-sand-ink hover:text-espresso hover:border-terracotta transition-colors"
+              className="flex min-h-10 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-sand px-3 py-1.5 font-body text-xs text-sand-ink hover:text-espresso hover:border-terracotta transition-colors"
             >
               <UserPlus className="h-3.5 w-3.5" />
               Add Customer
@@ -377,7 +426,7 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
                   setPromoCodeInput('');
                   evaluatePromotionsAction();
                 }}
-                className="px-3 py-1.5 rounded bg-espresso text-pearl text-xs font-body hover:bg-espresso/90 transition-colors disabled:opacity-40"
+                className="px-3 py-1.5 rounded bg-espresso text-pearl text-xs font-body hover:bg-espresso/90 transition-colors disabled:opacity-40 min-h-10"
               >
                 Apply
               </button>
@@ -446,7 +495,8 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
                 type="button"
                 disabled={!hasValidCustomer}
                 onClick={() => setZeroValueOpen(true)}
-                className="w-full py-3 rounded-lg bg-terracotta text-pearl font-body text-base font-bold hover:bg-terracotta/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                aria-keyshortcuts="F4"
+                className="min-h-12 w-full rounded-lg bg-terracotta py-3 font-body text-base font-bold text-pearl transition-colors hover:bg-terracotta/90 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Zero-Value Sale
               </button>
@@ -456,7 +506,9 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
                 <button
                   type="button"
                   disabled={!hasItems || !hasValidCustomer}
-                  className="w-full py-3 rounded-lg bg-espresso text-pearl font-body text-base font-bold hover:bg-espresso/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-keyshortcuts="F4"
+                  title="Charge / Pay (F4)"
+                  className="min-h-12 w-full rounded-lg bg-espresso py-3 font-body text-base font-bold text-pearl transition-colors hover:bg-espresso/90 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Charge / Pay
                 </button>
@@ -519,25 +571,28 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
       <RetrieveHeldSalesSheet
         shiftId={shiftId}
         open={retrieveOpen}
-        onOpenChange={setRetrieveOpen}
+        onOpenChange={(open) => {
+          setRetrieveOpen(open);
+          if (!open) focusPOSBarcodeInput();
+        }}
       />
       <CashPaymentModal
         open={paymentMode === 'cash'}
-        onClose={() => setPaymentMode(null)}
+        onClose={handlePaymentClose}
         onSaleComplete={handleSaleComplete}
         totalAmount={amountDue}
         salePayload={salePayload}
       />
       <CardPaymentModal
         open={paymentMode === 'card'}
-        onClose={() => setPaymentMode(null)}
+        onClose={handlePaymentClose}
         onSaleComplete={handleSaleComplete}
         totalAmount={amountDue}
         salePayload={salePayload}
       />
       <SplitPaymentModal
         open={paymentMode === 'split'}
-        onClose={() => setPaymentMode(null)}
+        onClose={handlePaymentClose}
         onSaleComplete={handleSaleComplete}
         totalAmount={amountDue}
         salePayload={salePayload}
@@ -545,7 +600,7 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
       />
       <LankaQRPaymentModal
         open={paymentMode === 'lankaqr'}
-        onClose={() => setPaymentMode(null)}
+        onClose={handlePaymentClose}
         onSaleComplete={handleSaleComplete}
         totalAmount={amountDue}
         salePayload={salePayload}
@@ -553,17 +608,24 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
       />
       <ZeroValuePaymentModal
         open={zeroValueOpen}
-        onClose={() => setZeroValueOpen(false)}
+        onClose={() => {
+          setZeroValueOpen(false);
+          focusPOSBarcodeInput();
+        }}
         onSaleComplete={handleSaleComplete}
         totalAmount={amountDue}
         salePayload={salePayload}
       />
       <AddCustomerDialog
         open={addCustomerOpen}
-        onOpenChange={setAddCustomerOpen}
+        onOpenChange={(open) => {
+          setAddCustomerOpen(open);
+          if (!open) focusPOSBarcodeInput();
+        }}
         onLinked={(c) => {
           setAddCustomerOpen(false);
           linkCustomer(c.id, c.name, c.phone, c.creditBalance);
+          focusPOSBarcodeInput();
         }}
       />
       <ReceiptPreviewDialog

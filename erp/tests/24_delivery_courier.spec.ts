@@ -305,4 +305,21 @@ test.describe('Module 24: Delivery, Orders & Courier API Integration', () => {
     expect(json.data.orderRef).toMatch(/^DEL-\d{4}-\d{4}$/);
     expect(new Date(json.data.createdAt).toString()).not.toBe('Invalid Date');
   });
+
+  test('A20 waybill preview follows the Proof of Delivery layout', async ({ page }) => {
+    await page.goto(`${BASE_URL}/delivery/label`, { waitUntil: 'domcontentloaded' });
+    const label = page.getByTestId('waybill-label');
+    await expect(label).toBeVisible({ timeout: 45_000 });
+
+    // The courier sticker's three blocks and its header barcode.
+    await expect(label.getByText('Proof of Delivery')).toBeVisible();
+    await expect(label.getByText('Customer Details')).toBeVisible();
+    await expect(label.getByText('Order Description')).toBeVisible();
+    await expect(label.getByText('From', { exact: true })).toBeVisible();
+    await expect(label.getByText('Order No', { exact: true })).toBeVisible();
+    await expect(label.getByText('TE-12345678')).toBeVisible();
+    await expect(label.getByText('2,500.00')).toBeVisible();
+    await expect(label.getByText(/^\d{2}\/\d{2}\/\d{4}$/)).toBeVisible();
+    await expect(label.locator('svg').first()).toBeVisible();
+  });
 });

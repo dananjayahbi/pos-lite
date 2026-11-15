@@ -198,13 +198,54 @@ export function LabelTemplateForm({
 
       <Card className="border-mist">
         <CardHeader>
+          <CardTitle className="font-display text-espresso">Sender &amp; footer</CardTitle>
+          <CardDescription>
+            Printed in the Proof of Delivery block and the company footer.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="label-from-contact">Sender contact</Label>
+            <Input
+              id="label-from-contact"
+              value={template.fromContact}
+              onChange={(e) => onChange({ fromContact: e.target.value })}
+              placeholder="e.g. 076 199 2828"
+              maxLength={60}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="label-footer-address">Company address</Label>
+            <Input
+              id="label-footer-address"
+              value={template.footerAddress}
+              onChange={(e) => onChange({ footerAddress: e.target.value })}
+              placeholder="No: 95, Aththidiya Road, Bellanthara"
+              maxLength={160}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="label-footer-phone">Direct line</Label>
+            <Input
+              id="label-footer-phone"
+              value={template.footerPhone}
+              onChange={(e) => onChange({ footerPhone: e.target.value })}
+              placeholder="e.g. 011 2 999 888"
+              maxLength={60}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-mist">
+        <CardHeader>
           <CardTitle className="font-display text-espresso">Fields</CardTitle>
           <CardDescription>Choose which details appear on the label.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2.5">
           <ToggleRow
             label="Barcodes"
-            hint="Order ref (top-right) and courier waybill (center)"
+            hint="Courier waybill barcode in the header (order ref fallback)"
             checked={template.showBarcodes}
             onCheckedChange={(v) => onChange({ showBarcodes: v })}
           />
@@ -236,6 +277,7 @@ export function LabelTemplateForm({
           />
           <ToggleRow
             label="Pickup address"
+            hint="Fallback company address in the footer when none is set above"
             checked={template.showPickupAddress}
             onCheckedChange={(v) => onChange({ showPickupAddress: v })}
           />

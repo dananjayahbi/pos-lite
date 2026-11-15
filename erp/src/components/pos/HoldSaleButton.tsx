@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCartStore } from '@/stores/cartStore';
+import { usePOSShortcuts } from '@/hooks/usePOSShortcuts';
+import { isPOSDialogOpen } from '@/lib/pos/keyboard';
 
 interface HoldSaleButtonProps {
   shiftId: string;
@@ -71,12 +73,25 @@ export function HoldSaleButton({ shiftId }: HoldSaleButtonProps) {
     }
   }
 
+  usePOSShortcuts([
+    {
+      key: 'F8',
+      allowInEditable: true,
+      handler: () => {
+        if (disabled || isPOSDialogOpen()) return;
+        void handleHold();
+      },
+    },
+  ]);
+
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={handleHold}
-      className="w-full py-2 rounded-lg border border-sand bg-transparent text-espresso font-body text-sm hover:bg-sand/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      aria-keyshortcuts="F8"
+      title="Hold this sale (F8)"
+      className="min-h-11 w-full rounded-lg border border-sand bg-transparent py-2 font-body text-sm text-espresso transition-colors hover:bg-sand/20 disabled:cursor-not-allowed disabled:opacity-40"
     >
       {loading ? 'Holding…' : 'Hold Sale'}
     </button>

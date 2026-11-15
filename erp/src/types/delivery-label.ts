@@ -12,6 +12,12 @@ export interface DeliveryLabelTemplate {
   borderColor: string;
   headerLayout: LabelHeaderLayout;
   pageSize: LabelPageSize;
+  /** Sender contact shown in the Proof of Delivery block. */
+  fromContact: string;
+  /** Company address printed under the company name in the footer. */
+  footerAddress: string;
+  /** Direct line printed beside the footer address. */
+  footerPhone: string;
   showBarcodes: boolean;
   showOrderRef: boolean;
   showCod: boolean;

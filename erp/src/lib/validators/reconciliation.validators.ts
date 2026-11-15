@@ -24,3 +24,20 @@ export const ReconciliationFiltersSchema = z.object({
 });
 
 export type ReconciliationFilters = z.infer<typeof ReconciliationFiltersSchema>;
+
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a YYYY-MM-DD date');
+
+/**
+ * Inclusive date range for a delivery-vs-statement comparison. Both ends are
+ * date-only so the UI can post plain `<input type="date">` values.
+ */
+export const DeliveryComparisonRangeSchema = z
+  .object({ from: isoDate, to: isoDate })
+  .refine((value) => value.from <= value.to, {
+    message: 'The start date must be on or before the end date',
+    path: ['from'],
+  });
+
+export type DeliveryComparisonRange = z.infer<typeof DeliveryComparisonRangeSchema>;

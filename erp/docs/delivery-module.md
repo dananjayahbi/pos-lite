@@ -127,10 +127,22 @@ Tracking effects:
 - Website invoices now render the stored `DeliveryLine` snapshots (product, SKU,
   quantity, unit price, line total) and include the shipping fee in the grand
   total. Sale-linked invoices continue to use `Sale.totalAmount`.
-- Labels are printed through the browser (`window.print()`); the label designer
-  saves branding, fields and page-size preferences. Page size and the
-  origin/pickup toggles currently affect the sample preview only — real labels
-  use the standard 80 mm layout.
+- Labels are printed through the browser (`window.print()`). The printed waybill
+  follows the courier "Proof of Delivery" sticker layout (`ShippingLabel`):
+  company logo + waybill barcode in the header, a sender block (From, Contact,
+  Date, Order No), a customer block (To, Address, Branch, Contact, COD), an
+  Order Description block, and a company footer with address and direct line.
+  The waybill barcode falls back to the order reference only when no courier
+  waybill exists.
+- `/delivery/label` saves branding, sender contact, footer address/phone,
+  colors, visible fields, header layout, and page size. Page size controls the
+  printed width (A4 190 mm, A6 95 mm, thermal 72 mm); the printer's own paper
+  setting still decides the physical page. The origin and pickup-address toggles
+  remain display options for the preview and print.
+- Formatting rules live in `src/lib/delivery/waybill.ts` (DD/MM/YYYY dates,
+  grouped money without a currency prefix, item/weight description, barcode
+  fallback) and are covered by
+  `src/lib/delivery/__tests__/waybill.test.ts`.
 
 ## COD reconciliation
 
@@ -139,6 +151,11 @@ created when a COD parcel becomes `DELIVERED` (tracking or bulk status), and are
 cleared/reversed on cancel/return. Remittances are imported as CSV/XLSX with
 `waybill, amount, fees, status, date`; rows match by waybill → order ref →
 barcode. Disputes are one per ledger entry (a second open attempt returns 409).
+
+Before importing, **Check courier statement** compares a date-ranged courier
+workbook with our delivered orders and lists every difference per waybill. See
+`docs/delivery-statement-comparison.md`. The check is read-only; importing
+remains a separate action.
 
 ## Test data and local checks
 
@@ -156,5 +173,4 @@ The module still does not post website revenue/COD receipts to payment accounts,
 expense courier fees, emit delivery webhooks, or send customer failure/delivery
 notifications. These are product-accounting integrations rather than delivery
 pipeline blockers; see the references under `REFERENCES/delivery-integration-plan/`.
-Label page-size/origin rendering and the customer `Delivery.customerId` link for
-website orders are also follow-ups.
+The customer `Delivery.customerId` link for website orders is also a follow-up.

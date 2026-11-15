@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { signOut } from 'next-auth/react';
 import { Clock, LayoutDashboard, LogOut, RotateCcw, WifiOff, Loader2 } from 'lucide-react';
 import { ShiftCloseModal } from '@/components/pos/ShiftCloseModal';
 import { CartPanel } from '@/components/pos/CartPanel';
+import { POSShortcutHelp } from '@/components/pos/POSShortcutHelp';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import type { LankaQrSettings } from '@/lib/payments/lanka-qr-config';
@@ -83,7 +83,7 @@ export function POSTerminalShell({
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-espresso h-dvh overflow-hidden">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 h-12 shrink-0">
+      <div className="flex items-center justify-between px-4 h-14 shrink-0">
         <div className="flex items-center gap-2">
           {businessLogoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -128,7 +128,7 @@ export function POSTerminalShell({
           {showOwnerDashboardShortcut && (
             <Link
               href="/dashboard"
-              className="inline-flex items-center gap-1 rounded-md border border-terracotta/40 px-2 py-1 text-xs font-medium text-terracotta transition-colors hover:border-pearl hover:text-pearl"
+              className="inline-flex min-h-11 items-center gap-1 rounded-md border border-terracotta/40 px-2 py-1 text-xs font-medium text-terracotta transition-colors hover:border-pearl hover:text-pearl"
               aria-label="Owner dashboard"
               title="Owner dashboard"
             >
@@ -139,23 +139,27 @@ export function POSTerminalShell({
 
           <Link
             href="/pos/returns"
-            className="text-terracotta hover:text-pearl transition-colors p-1.5"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-md text-terracotta transition-colors hover:text-pearl focus:outline-none focus-visible:ring-2 focus-visible:ring-pearl/60"
             aria-label="Return history"
+            title="Return history"
           >
             <RotateCcw className="h-5 w-5" />
           </Link>
           <Link
             href="/pos/history"
-            className="text-terracotta hover:text-pearl transition-colors p-1.5"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-md text-terracotta transition-colors hover:text-pearl focus:outline-none focus-visible:ring-2 focus-visible:ring-pearl/60"
             aria-label="Shift history"
+            title="Shift history"
           >
             <Clock className="h-5 w-5" />
           </Link>
+          <POSShortcutHelp />
           <button
             type="button"
             onClick={() => setCloseModalOpen(true)}
-            className="text-terracotta hover:text-pearl transition-colors p-1.5"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-md text-terracotta transition-colors hover:text-pearl focus:outline-none focus-visible:ring-2 focus-visible:ring-pearl/60"
             aria-label="Close shift"
+            title="Close shift"
           >
             <LogOut className="h-5 w-5" />
           </button>

@@ -3,7 +3,16 @@
 import Barcode from 'react-barcode';
 import { renderPrintOverlay } from '@/lib/print-overlay';
 import { cn } from '@/lib/utils';
-import type { DeliveryLabelTemplate } from '@/types/delivery-label';
+import {
+  buildWaybillDescription,
+  formatWaybillAmount,
+  formatWaybillDate,
+  waybillBarcodeValue,
+} from '@/lib/delivery/waybill';
+import type {
+  DeliveryLabelTemplate,
+  LabelPageSize,
+} from '@/types/delivery-label';
 import { buildSampleLabelProps } from './sampleLabel';
 
 interface Address {
@@ -22,6 +31,9 @@ interface DeliveryLike {
   codAmount: string | number;
   itemCount?: number | undefined;
   totalWeightKg?: string | number | null | undefined;
+  deliveredAt?: string | null | undefined;
+  dispatchedAt?: string | null | undefined;
+  createdAt?: string | null | undefined;
 }
 
 interface ShippingLabelProps {
@@ -43,19 +55,46 @@ interface LabelDeliveryLike {
   itemCount?: number | null;
   totalWeightKg?: string | number | null;
   waybill?: string | null;
+  deliveredAt?: string | null;
+  dispatchedAt?: string | null;
+  createdAt?: string | null;
   address?: Partial<Address> | null;
   shipments?: { waybillId?: string | null }[];
 }
 
-function formatLkr(value: string | number): string {
-  const num = Number(value);
-  return `Rs. ${num.toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const PAGE_WIDTH: Record<LabelPageSize, string> = {
+  a4: 'max-w-[190mm]',
+  a6: 'max-w-[95mm]',
+  thermal: 'max-w-[72mm]',
+};
+
+function WaybillRow({
+  label,
+  value,
+  borderColor,
+}: {
+  label: string;
+  value: string;
+  borderColor: string;
+}) {
+  return (
+    <div
+      className="flex items-start justify-between gap-3 border-b py-[7px]"
+      style={{ borderColor }}
+    >
+      <span className="shrink-0 text-[12px] font-bold leading-tight">{label}</span>
+      <span className="text-right text-[12px] font-bold leading-tight break-words">{value}</span>
+    </div>
+  );
 }
 
 /**
- * Branded shipping label rendered from a per-tenant template. Colors, header
- * layout, field visibility, and the footer note all come from `template`.
- * The label is self-contained enough to be rendered inside a print overlay.
+ * Courier "Proof of Delivery" waybill.
+ *
+ * Layout follows the TransExpress barcode-print sticker: logo + waybill barcode
+ * header, then the sender, customer, and order blocks as label/value rows, then
+ * the company footer. The per-tenant template still controls the logo, colors,
+ * which rows are visible, and the sender/footer text.
  */
 export function ShippingLabel({
   template,
@@ -74,101 +113,181 @@ export function ShippingLabel({
     .filter(Boolean)
     .join(', ');
 
-  const showOrderBarcode = template.showBarcodes && template.showOrderRef && Boolean(delivery.orderRef);
+  const barcodeValue = waybillBarcodeValue({
+    waybillId,
+    orderRef: delivery.orderRef,
+    showOrderRef: template.showOrderRef,
+  });
   const centered = template.headerLayout === 'centered';
+  const branchParts = [address.cityName, address.districtName].filter(
+    (part): part is string => Boolean(part),
+  );
+  const branch =
+    branchParts.length > 0
+      ? branchParts.every((part) => part === branchParts[0])
+        ? branchParts[0]!
+        : branchParts.join(' / ')
+      : '';
+  const contact = [address.phone, address.phone2].filter(Boolean).join(' / ');
+  const description = buildWaybillDescription({
+    itemCount: delivery.itemCount,
+    totalWeightKg: delivery.totalWeightKg,
+    showItemCount: template.showItemCount,
+    showWeight: template.showWeight,
+    fallback: delivery.orderRef,
+  });
+
+  const date =
+    delivery.deliveredAt ?? delivery.dispatchedAt ?? delivery.createdAt ?? null;
+  const footerAddress =
+    (template.showPickupAddress ? template.footerAddress || pickupAddress : null) ?? null;
+  const footerPhone = template.footerPhone || template.fromContact || null;
 
   return (
     <div
-      className="mx-auto w-85 border-2 bg-white text-espresso shadow print:shadow-none"
+      data-testid="waybill-label"
+      className={cn(
+        'mx-auto w-full border bg-white p-4 text-[#111111] shadow print:shadow-none',
+        PAGE_WIDTH[template.pageSize],
+      )}
       style={{ borderColor: template.borderColor }}
     >
-      {/* Brand header */}
+      {/* Logo + waybill barcode */}
       <div
         className={cn(
-          'flex items-center gap-2 border-b-2 px-3 py-2',
-          centered ? 'flex-col justify-center gap-1 text-center' : 'justify-between',
+          'flex items-start gap-3 border-b-2 pb-3',
+          centered ? 'flex-col items-center text-center' : 'justify-between',
         )}
-        style={{ borderColor: template.borderColor, backgroundColor: template.accentColor, color: '#ffffff' }}
+        style={{ borderColor: template.borderColor }}
       >
-        <div className="flex items-center gap-2">
+        <div className={cn('flex items-center gap-3', centered && 'flex-col text-center')}>
           {template.logoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={template.logoUrl} alt="" className="h-8 w-8 rounded bg-white object-contain" />
+            <img
+              src={template.logoUrl}
+              alt=""
+              className="h-14 w-14 shrink-0 object-contain"
+            />
           )}
           <div>
-            <p className="font-display text-lg font-bold leading-tight">{template.brandName}</p>
+            <p
+              className="font-display text-base font-bold leading-tight"
+              style={{ color: template.accentColor }}
+            >
+              {template.brandName || origin || 'AyurPOS'}
+            </p>
             {template.showOrigin && origin && (
-              <p className="text-[10px] tracking-wide text-white/80">{origin}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-black/60">
+                {origin}
+              </p>
             )}
           </div>
         </div>
-        {showOrderBarcode && (
-          <Barcode value={delivery.orderRef} width={1} height={26} fontSize={9} displayValue={false} lineColor="#ffffff" />
+
+        {template.showBarcodes && barcodeValue && (
+          <div className={cn('flex max-w-[58%] flex-col items-end', centered && 'items-center')}>
+            <Barcode
+              value={barcodeValue}
+              width={template.pageSize === 'a4' ? 1.8 : 1.15}
+              height={template.pageSize === 'a4' ? 56 : 46}
+              displayValue={false}
+              margin={0}
+            />
+            <p className="mt-1 font-mono text-sm font-bold tracking-wide">{barcodeValue}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Sender block */}
+      <h2
+        className="mt-3 text-[15px] font-bold leading-tight"
+        style={{ color: template.accentColor }}
+      >
+        Proof of Delivery
+      </h2>
+      <div className="mt-1">
+        <WaybillRow
+          label="From"
+          value={template.brandName || origin || '—'}
+          borderColor={template.borderColor}
+        />
+        <WaybillRow
+          label="Contact"
+          value={template.fromContact || '—'}
+          borderColor={template.borderColor}
+        />
+        <WaybillRow
+          label="Date"
+          value={formatWaybillDate(date)}
+          borderColor={template.borderColor}
+        />
+        {template.showOrderRef && (
+          <WaybillRow
+            label="Order No"
+            value={delivery.orderRef || '—'}
+            borderColor={template.borderColor}
+          />
         )}
       </div>
 
       {/* Customer block */}
-      <div className="px-3 py-2">
-        <p className="text-[10px] uppercase tracking-wider text-espresso/60">Ship to</p>
-        <p className="font-display text-xl font-bold leading-snug">{address.fullName}</p>
-        <p className="text-base font-semibold">
-          {address.phone}
-          {address.phone2 ? ` · ${address.phone2}` : ''}
-        </p>
-        <p className="mt-1 text-sm font-medium leading-snug">{fullAddress}</p>
-      </div>
-
-      {/* Meta */}
-      <div className="grid grid-cols-2 gap-1 border-t px-3 py-2 text-xs" style={{ borderColor: template.borderColor }}>
-        {template.showOrderRef && (
-          <div>
-            <p className="text-espresso/60">Order Ref</p>
-            <p className="font-mono font-semibold">{delivery.orderRef}</p>
-          </div>
-        )}
+      <h2 className="mt-3 text-[15px] font-bold leading-tight" style={{ color: template.accentColor }}>
+        Customer Details
+      </h2>
+      <div className="mt-1">
+        <WaybillRow
+          label="To"
+          value={address.fullName || '—'}
+          borderColor={template.borderColor}
+        />
+        <WaybillRow
+          label="Address"
+          value={fullAddress || '—'}
+          borderColor={template.borderColor}
+        />
+        <WaybillRow label="Branch" value={branch || '—'} borderColor={template.borderColor} />
+        <WaybillRow label="Contact" value={contact || '—'} borderColor={template.borderColor} />
         {template.showCod && (
-          <div>
-            <p className="text-espresso/60">COD</p>
-            <p className="font-semibold">{formatLkr(delivery.codAmount)}</p>
-          </div>
-        )}
-        {template.showItemCount && (
-          <div>
-            <p className="text-espresso/60">Items</p>
-            <p className="font-semibold">{delivery.itemCount ?? 1}</p>
-          </div>
-        )}
-        {template.showWeight && (
-          <div>
-            <p className="text-espresso/60">Weight</p>
-            <p className="font-semibold">
-              {delivery.totalWeightKg ? `${delivery.totalWeightKg} kg` : '—'}
-            </p>
-          </div>
+          <WaybillRow
+            label="COD"
+            value={formatWaybillAmount(delivery.codAmount)}
+            borderColor={template.borderColor}
+          />
         )}
       </div>
 
-      {/* Courier barcode */}
-      {template.showBarcodes && waybillId && (
-        <div className="flex flex-col items-center border-t px-3 py-2" style={{ borderColor: template.borderColor }}>
-          <Barcode value={waybillId} width={2} height={50} fontSize={12} />
-          <p className="font-mono text-xs">{waybillId}</p>
-        </div>
-      )}
+      {/* Order description */}
+      <h2 className="mt-3 text-[15px] font-bold leading-tight" style={{ color: template.accentColor }}>
+        Order Description
+      </h2>
+      <div className="mt-1">
+        <WaybillRow
+          label="Items"
+          value={description || delivery.orderRef || '—'}
+          borderColor={template.borderColor}
+        />
+      </div>
 
-      {template.showPickupAddress && pickupAddress && (
-        <p className="border-t px-3 py-1 text-[10px] text-espresso/60" style={{ borderColor: template.borderColor }}>
-          Pickup: {pickupAddress}
-        </p>
-      )}
-
-      {template.footerNote && (
-        <p
-          className="border-t px-3 py-1 text-center text-[10px] font-semibold"
+      {/* Company footer */}
+      {(template.brandName || footerAddress || footerPhone || template.footerNote) && (
+        <footer
+          className="mt-4 border-t pt-3 text-center"
           style={{ borderColor: template.borderColor }}
         >
-          {template.footerNote}
-        </p>
+          <p className="text-[11px] font-bold leading-tight">{template.brandName}</p>
+          {footerAddress && (
+            <p className="text-[11px] font-semibold leading-tight">
+              {footerAddress}
+              {footerPhone ? ` - Direct Line: ${footerPhone}` : ''}
+            </p>
+          )}
+          {!footerAddress && footerPhone && (
+            <p className="text-[11px] font-semibold leading-tight">Direct Line: {footerPhone}</p>
+          )}
+          {template.footerNote && (
+            <p className="mt-1 text-[10px] font-semibold leading-tight">{template.footerNote}</p>
+          )}
+        </footer>
       )}
     </div>
   );
@@ -198,6 +317,9 @@ export function toLabelProps(delivery: LabelDeliveryLike): {
       codAmount: delivery.codAmount ?? 0,
       itemCount: delivery.itemCount ?? 1,
       totalWeightKg: delivery.totalWeightKg,
+      deliveredAt: delivery.deliveredAt ?? null,
+      dispatchedAt: delivery.dispatchedAt ?? null,
+      createdAt: delivery.createdAt ?? null,
     },
     waybillId: delivery.waybill ?? shipment?.waybillId ?? null,
   };

@@ -67,21 +67,56 @@ export function CategoryTabs({
   }, []);
 
   const pillClasses = (isSelected: boolean) =>
-    `shrink-0 rounded-full px-4 py-2 font-body text-[13px] transition-colors duration-150 ease-in-out ${
+    `shrink-0 rounded-full px-4 min-h-11 inline-flex items-center justify-center font-body text-[13px] transition-colors duration-150 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta focus-visible:ring-offset-2 ${
       isSelected
         ? 'bg-sand text-espresso border-b-2 border-sand'
         : 'bg-transparent text-terracotta hover:bg-sand/50'
     }`;
 
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const tabs = Array.from(
+      scrollRef.current?.querySelectorAll<HTMLElement>('[data-category-tab]') ?? [],
+    );
+    if (tabs.length === 0) return;
+    const current = tabs.indexOf(document.activeElement as HTMLElement);
+    if (current === -1) return;
+
+    let next = current;
+    switch (event.key) {
+      case 'ArrowRight':
+        next = current + 1;
+        break;
+      case 'ArrowLeft':
+        next = current - 1;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = tabs.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    const target = tabs[Math.min(Math.max(next, 0), tabs.length - 1)];
+    target?.focus();
+  };
+
   return (
     <div className="relative">
       <div
         ref={scrollRef}
+        role="group"
+        aria-label="Product categories"
+        onKeyDown={handleTabKeyDown}
         className="flex gap-2 px-4 py-3 overflow-x-auto whitespace-nowrap"
         style={{ scrollbarWidth: 'none' }}
       >
         <button
           type="button"
+          data-category-tab=""
+          aria-pressed={selectedCategoryId === null}
           onClick={() => onCategoryChange(null)}
           className={pillClasses(selectedCategoryId === null)}
         >
@@ -91,6 +126,8 @@ export function CategoryTabs({
           <button
             key={cat.id}
             type="button"
+            data-category-tab=""
+            aria-pressed={selectedCategoryId === cat.id}
             onClick={() => onCategoryChange(cat.id)}
             className={pillClasses(selectedCategoryId === cat.id)}
           >
@@ -132,7 +169,7 @@ function ScrollArrow({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className={`absolute top-1/2 z-10 -translate-y-1/2 rounded-full border border-mist bg-linen p-1 text-espresso shadow-sm transition-colors hover:bg-sand ${
+      className={`absolute top-1/2 z-10 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-mist bg-linen text-espresso shadow-sm transition-colors hover:bg-sand ${
         direction === 'left' ? 'left-1' : 'right-1'
       }`}
     >
