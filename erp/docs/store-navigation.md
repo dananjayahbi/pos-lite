@@ -6,11 +6,11 @@ workflow:
 
 1. **Overview** — Dashboard, Notifications
 2. **Retail & Clinic** — POS, Sales, Returns & Refunds, Cashier Shifts, Appointments
-3. **Inventory** — Products & Stock, Categories, Brands, Stock Control, Adjustments,
-   Movements, Stock Takes, Low Stock, Valuation
+3. **Inventory** — Products & Stock, Barcode Printing, Categories, Brands, Stock
+   Control, Adjustments, Movements, Stock Takes, Low Stock, Valuation
 4. **Purchases & Factory** — Purchase Orders, Suppliers, Raw Materials, BOM, Factory
 5. **Delivery & Courier** — Dispatch Orders, Deliveries, Packaging, Courier
-   Settings & Rates, Rate Card, Label Design, Recovery
+   Settings & Rates, Rate Card, Waybill Design, Recovery
 6. **CRM & Marketing** — Customers, Broadcast, Promotions
 7. **HR & Payroll** — Staff, Attendance, Commissions
 8. **Finance & Cash** — Expenses, Petty Cash, Cash Flow, Payment Accounts,

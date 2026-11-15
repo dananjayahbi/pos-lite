@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Loader2 } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -24,9 +25,15 @@ interface BulkStatusDialogProps {
   count: number;
   onCancel: () => void;
   onConfirm: (status: DeliveryStatus) => void;
+  isPending?: boolean;
 }
 
-export function BulkStatusDialog({ count, onCancel, onConfirm }: BulkStatusDialogProps) {
+export function BulkStatusDialog({
+  count,
+  onCancel,
+  onConfirm,
+  isPending = false,
+}: BulkStatusDialogProps) {
   const [status, setStatus] = useState<DeliveryStatus>('PENDING_DISPATCH');
 
   return (
@@ -56,10 +63,20 @@ export function BulkStatusDialog({ count, onCancel, onConfirm }: BulkStatusDialo
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={onCancel}>
+          <Button variant="outline" onClick={onCancel} disabled={isPending}>
             Cancel
           </Button>
-          <Button onClick={() => onConfirm(status)}>Apply</Button>
+          <Button
+            onClick={() => onConfirm(status)}
+            disabled={isPending}
+            aria-busy={isPending}
+            data-testid="bulk-status-apply"
+          >
+            {isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" data-testid="loading-spinner" />
+            ) : null}
+            {isPending ? 'Applying…' : 'Apply'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -27,6 +27,7 @@ export interface ProductListItem {
   isArchived: boolean;
   tags: string[];
   mainImageUrl: string | null;
+  mainImageThumbnailUrl: string | null;
   category: { id: string; name: string } | null;
   brand: { id: string; name: string } | null;
   _count: { variants: number };
@@ -39,6 +40,7 @@ export interface ProductListItem {
     stockQuantity: number;
     lowStockThreshold: number;
     imageUrls: string[];
+    thumbnailImageUrls: string[];
     retailPrice: number;
     batchTrackings?: Array<{
       id: string;

@@ -9,9 +9,9 @@ import { prisma } from '@/lib/prisma';
 import { PageContainer } from '@/components/shared/PageContainer';
 import { LabelDesignerClient } from './LabelDesignerClient';
 
-export const metadata = { title: 'Label Design | AyurPOS' };
+export const metadata = { title: 'Waybill Design | AyurPOS' };
 
-export default async function LabelDesignPage() {
+export default async function WaybillDesignPage() {
   const session = await auth();
   if (!session?.user) redirect('/login');
   const tenantId = session.user.tenantId;

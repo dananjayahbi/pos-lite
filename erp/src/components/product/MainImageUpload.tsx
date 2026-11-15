@@ -10,16 +10,23 @@ interface MainImageUploadProps {
   value: string;
   /** Called with the uploaded/removed URL ('' to clear). */
   onChange: (url: string) => void;
+  /** 256×256 thumbnail URL generated alongside the main image. */
+  thumbnailValue?: string;
+  /** Called with the thumbnail URL ('' to clear). */
+  onThumbnailChange?: (url: string) => void;
   label?: string;
 }
 
 /**
  * Single-image uploader for a product's main image (shown on storefront cards).
- * Uploads immediately to `/api/upload` and reports the resulting URL.
+ * Uploads immediately to `/api/upload`, which returns both the full-size URL
+ * and an optimised thumbnail used by POS/inventory icon tiles.
  */
 export function MainImageUpload({
   value,
   onChange,
+  thumbnailValue = '',
+  onThumbnailChange,
   label = 'Main Image',
 }: MainImageUploadProps) {
   const [uploading, setUploading] = useState(false);
@@ -67,9 +74,13 @@ export function MainImageUpload({
       setUploading(false);
       setProgress(null);
       if (xhr.status >= 200 && xhr.status < 300) {
-        const data = JSON.parse(xhr.responseText) as { url: string };
+        const data = JSON.parse(xhr.responseText) as {
+          url: string;
+          thumbnailUrl?: string | null;
+        };
         if (data.url) {
           onChange(data.url);
+          onThumbnailChange?.(data.thumbnailUrl ?? data.url);
           setBroken(false);
           toast.success('Main image uploaded');
         } else {
@@ -94,6 +105,7 @@ export function MainImageUpload({
 
   function handleRemove() {
     onChange('');
+    onThumbnailChange?.('');
     setBroken(false);
     toast('Main image removed', {
       duration: 5000,
@@ -113,7 +125,7 @@ export function MainImageUpload({
             </div>
           ) : (
             <Image
-              src={value}
+              src={thumbnailValue || value}
               alt="Main product image"
               fill
               className="object-cover"

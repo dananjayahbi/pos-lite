@@ -25,10 +25,15 @@ export function ProductCard({
   const variants = product.variants ?? [];
   const totalStock = variants.reduce((sum, v) => sum + v.stockQuantity, 0);
 
-  // Product-level image takes precedence; variant images are only a fallback.
+  // Icon-size surface: prefer the generated thumbnail; fall back to the full
+  // image for legacy products that predate thumbnail generation.
+  const variantWithImage = variants.find((v) => v.imageUrls.length > 0);
   const firstImage =
+    product.mainImageThumbnailUrl ??
     product.mainImageUrl ??
-    variants.find((v) => v.imageUrls.length > 0)?.imageUrls[0];
+    (variantWithImage
+      ? variantWithImage.thumbnailImageUrls?.[0] ?? variantWithImage.imageUrls[0]
+      : undefined);
 
   // Any variant with an expired or near-expiry batch triggers the badge.
   const hasNearExpiry = variants.some((v) =>

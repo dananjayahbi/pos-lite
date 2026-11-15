@@ -23,6 +23,33 @@ Large statements are capped at 8 MB. The comparison is tenant-scoped and needs
 `delivery:recon:view` (the same permission as the page) plus the `delivery`
 feature module.
 
+## Dates, auto-correction, and empty results
+
+The date range filters **both** sides. If the workbook has readable `ORDER DATE`
+values and **none** of them fall inside the selected range, the comparison runs
+over the sheet's own period instead. The UI then says so explicitly and moves
+the From/To fields to the period that was actually compared:
+
+> Your selected range 2026-11-01 → 2026-11-30 does not overlap this sheet, so we
+> compared the statement's own period instead: 2026-06-15 → 2026-07-13.
+
+The API keeps both ranges (`range` = compared period, `requestedRange` = what
+was selected) and sets `rangeAdjusted: true`. Rows outside the compared period
+are never silently compared; they are counted in `statementRowsOutsideRange`.
+
+A comparison with nothing on one side is never presented as success:
+
+| Warning                   | When                                              | Severity |
+| ------------------------- | ------------------------------------------------- | -------- |
+| `NO_STATEMENT_ROWS`       | The workbook has no readable data rows.            | critical |
+| `STATEMENT_OUT_OF_RANGE`  | Every readable row is outside the compared period. | critical |
+| `NO_SYSTEM_DELIVERIES`    | The period has no DELIVERED orders on our side.    | warning  |
+
+The green "No differences in this range" banner only appears when at least one
+delivery actually matched. A sheet whose dates are all outside the range, an
+empty sheet, or a period with no deliveries always shows a warning instead.
+
+
 ## What is compared
 
 Our side comes from **DELIVERED** orders whose `deliveredAt` falls inside the
@@ -68,6 +95,8 @@ default and can filter by waybill/order reference.
 ## Summary numbers
 
 - **System deliveries** and **Statement rows** — the two populations compared.
+  The statement card also shows the number of readable rows and how many were
+  skipped as outside the range.
 - **Matched** / **Differences** — count of tallied rows vs anything else.
 - **Missing in statement** and **Not in our system** — counts plus the money
   involved on each side.
@@ -91,4 +120,17 @@ default and can filter by waybill/order reference.
 `src/lib/services/__tests__/reconciliation-compare.test.ts` covers matched
 rows, COD shortfalls, tolerance, fee/status mismatches, both missing directions,
 duplicates, waybill normalization, order-ref fallback, range filtering, result
-ordering, and the real Trans Express header mapping.
+ordering, statement date coverage, empty-sheet/no-delivery warnings, and the
+real Trans Express header mapping.
+
+`tests/26_courier_reconciliation.spec.ts` §X covers the API and UI end to end.
+`scripts/qa-reconciliation-seed.ts` seeds deliveries in every state (matched,
+COD/charge/status drift, not in statement, no waybill, order-ref fallback,
+duplicate, not in system, undelivered) and writes matching `.xlsx` sheets under
+`test-artifacts/reconciliation/` for manual browser checks:
+
+```bash
+node --env-file=.env --import tsx scripts/qa-reconciliation-seed.ts
+node --env-file=.env --import tsx scripts/qa-reconciliation-seed.ts --cleanup
+```
+

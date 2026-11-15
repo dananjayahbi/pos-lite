@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDeliveryComparison,
+  getStatementDateSpan,
+  hasStatementRowInRange,
   normalizeComparisonKey,
   parseMoney,
   parseStatementDate,
@@ -64,6 +66,33 @@ describe('parseStatementDate', () => {
     );
     expect(parseStatementDate('')).toBeNull();
     expect(parseStatementDate('not a date')).toBeNull();
+  });
+});
+
+describe('statement date coverage', () => {
+  it('reports the earliest and latest readable date in the sheet', () => {
+    expect(
+      getStatementDateSpan([
+        statement({ date: '2026-07-31 10:00:00' }),
+        statement({ date: '2026-07-01 09:00:00' }),
+        statement({ date: 'not a date' }),
+        statement({ date: null }),
+      ]),
+    ).toEqual({ from: '2026-07-01', to: '2026-07-31' });
+    expect(getStatementDateSpan([])).toBeNull();
+    expect(getStatementDateSpan([statement({ date: null })])).toBeNull();
+  });
+
+  it('detects whether any row can belong to the requested range', () => {
+    const rows = [
+      statement({ date: '2026-07-13 16:45:03' }),
+      statement({ date: null }),
+    ];
+    expect(hasStatementRowInRange(rows, '2026-07-01', '2026-07-31')).toBe(true);
+    expect(hasStatementRowInRange(rows, '2026-11-01', '2026-11-30')).toBe(true);
+    expect(
+      hasStatementRowInRange([statement({ date: '2026-07-13' })], '2026-11-01', '2026-11-30'),
+    ).toBe(false);
   });
 });
 
@@ -219,6 +248,60 @@ describe('buildDeliveryComparison', () => {
     });
     expect(report.rows[0]?.status).toBe('MISSING_IN_STATEMENT');
     expect(report.rows.at(-1)?.status).not.toBe('MISSING_IN_STATEMENT');
+  });
+
+  it('flags an empty statement instead of claiming there is nothing to fix', () => {
+    const report = buildDeliveryComparison({
+      deliveries: [],
+      statementRows: [],
+      ...RANGE,
+      filename: 'empty.xlsx',
+    });
+    expect(report.rows).toHaveLength(0);
+    expect(report.warnings.map((warning) => warning.code)).toEqual(['NO_STATEMENT_ROWS']);
+    expect(report.warnings[0]?.severity).toBe('critical');
+    expect(report.warnings[0]?.message).toContain('empty.xlsx');
+  });
+
+  it('flags a statement whose every row falls outside the compared range', () => {
+    const report = buildDeliveryComparison({
+      deliveries: [],
+      statementRows: [statement({ date: '2025-01-05' })],
+      from: '2026-11-01',
+      to: '2026-11-30',
+    });
+    expect(report.rows).toHaveLength(0);
+    expect(report.summary.statementRowsTotal).toBe(1);
+    expect(report.summary.statementRowsInRange).toBe(0);
+    expect(report.summary.statementDateFrom).toBe('2025-01-05');
+    expect(report.warnings.map((warning) => warning.code)).toEqual(['STATEMENT_OUT_OF_RANGE']);
+    expect(report.warnings[0]?.message).toContain('2025-01-05 to 2025-01-05');
+  });
+
+  it('warns when the period has no system deliveries at all', () => {
+    const report = buildDeliveryComparison({
+      deliveries: [],
+      statementRows: [statement()],
+      ...RANGE,
+    });
+    expect(report.summary.missingInSystem).toBe(1);
+    expect(report.warnings.map((warning) => warning.code)).toEqual(['NO_SYSTEM_DELIVERIES']);
+    expect(report.warnings[0]?.severity).toBe('warning');
+  });
+
+  it('keeps the requested range beside the statement range that was used', () => {
+    const report = buildDeliveryComparison({
+      deliveries: [delivery()],
+      statementRows: [statement()],
+      from: '2026-07-01',
+      to: '2026-07-31',
+      requestedRange: { from: '2026-11-01', to: '2026-11-30' },
+      rangeAdjusted: true,
+    });
+    expect(report.range).toEqual({ from: '2026-07-01', to: '2026-07-31' });
+    expect(report.requestedRange).toEqual({ from: '2026-11-01', to: '2026-11-30' });
+    expect(report.rangeAdjusted).toBe(true);
+    expect(report.summary.matched).toBe(1);
   });
 });
 

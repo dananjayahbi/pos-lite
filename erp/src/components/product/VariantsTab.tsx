@@ -62,6 +62,7 @@ interface Variant {
   stockQuantity: number;
   lowStockThreshold: number;
   imageUrls: string[];
+  thumbnailImageUrls?: string[];
 }
 
 interface VariantsTabProps {
@@ -402,7 +403,7 @@ function VariantRows({
                 aria-label={`View image ${i + 1}`}
               >
                 <Image
-                  src={url}
+                  src={variant.thumbnailImageUrls?.[i] ?? url}
                   alt={`${variant.sku} image ${i + 1}`}
                   fill
                   className="object-cover"

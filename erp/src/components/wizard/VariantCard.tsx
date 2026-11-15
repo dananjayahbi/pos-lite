@@ -15,6 +15,7 @@ import {
   PRODUCT_FORM_ICONS,
   type ProductFormValue,
 } from '@/lib/constants/product-options';
+import { generateBarcode } from '@/lib/barcode';
 import { VariantImagesUpload } from './VariantImagesUpload';
 
 interface VariantCardProps {
@@ -24,10 +25,6 @@ interface VariantCardProps {
   setValue: UseFormSetValue<VariantFormData>;
   watch: UseFormWatch<VariantFormData>;
   control: Control<VariantFormData>;
-}
-
-function generateBarcode(): string {
-  return String(Math.floor(10000000 + Math.random() * 90000000));
 }
 
 function getFormLabel(form: string): string {
@@ -144,7 +141,7 @@ export function VariantCard({
               id={`barcode-${index}`}
               {...register(`variants.${index}.barcode`)}
               className="flex-1 font-mono text-sm"
-              placeholder="Optional"
+              placeholder="Auto-generated"
             />
             <button
               type="button"

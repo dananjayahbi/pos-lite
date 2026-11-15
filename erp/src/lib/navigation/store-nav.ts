@@ -83,6 +83,12 @@ export const storeNavGroups: NavGroup[] = [
         permission: PERMISSIONS.PRODUCT.viewProduct,
       },
       {
+        name: 'Barcode Printing',
+        href: '/inventory/barcode-printing',
+        roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
+        permission: PERMISSIONS.PRODUCT.viewProduct,
+      },
+      {
         name: 'Categories',
         href: '/categories',
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
@@ -213,7 +219,7 @@ export const storeNavGroups: NavGroup[] = [
         match: 'exact',
       },
       {
-        name: 'Label Design',
+        name: 'Waybill Design',
         href: '/delivery/label',
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.DELIVERY.manageLabelTemplate,

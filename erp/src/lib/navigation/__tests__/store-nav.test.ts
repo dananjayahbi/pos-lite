@@ -24,6 +24,7 @@ const EXPECTED_HREFS = [
   '/staff/shifts',
   '/appointments',
   '/inventory',
+  '/inventory/barcode-printing',
   '/categories',
   '/brands',
   '/stock-control',

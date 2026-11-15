@@ -1,8 +1,43 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { renderPrintOverlay } from '@/lib/print-overlay';
 import { OrderInvoice } from './OrderInvoice';
 import type { OrderInvoiceData } from '@/types/order-invoice';
+
+/**
+ * A4 portrait print rules. Injected with the invoice content so the invoice is
+ * always printed on A4 regardless of the browser's default paper size. The
+ * overlay keeps its own 8 px screen padding, so the printable content is
+ * 180 mm — comfortably inside A4's 190 mm printable width after 10 mm margins.
+ */
+const INVOICE_PRINT_STYLES = `
+@media print {
+  @page { size: A4 portrait; margin: 10mm; }
+  /* The app's pearl page background must not print: it was the large beige
+     block below the invoice in the old design. */
+  html, body { background: #ffffff !important; }
+  .shipping-label-print-root { background: #ffffff !important; }
+  .invoice-a4 {
+    width: 180mm !important;
+    max-width: 180mm !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    break-after: page;
+    page-break-after: always;
+  }
+  .invoice-a4:last-child { break-after: auto; page-break-after: auto; }
+}`;
+
+function InvoicePrintFrame({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <style>{INVOICE_PRINT_STYLES}</style>
+      {children}
+    </>
+  );
+}
 
 /** Fetch the assembled invoice payload for a delivery. */
 export async function fetchOrderInvoice(deliveryId: string): Promise<OrderInvoiceData> {
@@ -22,7 +57,11 @@ export async function fetchOrderInvoice(deliveryId: string): Promise<OrderInvoic
  */
 export async function printOrderInvoice(deliveryId: string): Promise<void> {
   const data = await fetchOrderInvoice(deliveryId);
-  renderPrintOverlay(<OrderInvoice data={data} />);
+  renderPrintOverlay(
+    <InvoicePrintFrame>
+      <OrderInvoice data={data} />
+    </InvoicePrintFrame>,
+  );
 }
 
 /**
@@ -34,10 +73,12 @@ export async function printOrderInvoices(deliveryIds: string[]): Promise<void> {
   if (deliveryIds.length === 0) return;
   const results = await Promise.all(deliveryIds.map((id) => fetchOrderInvoice(id)));
   renderPrintOverlay(
-    <div className="space-y-8">
-      {results.map((data) => (
-        <OrderInvoice key={data.orderRef} data={data} />
-      ))}
-    </div>,
+    <InvoicePrintFrame>
+      <div>
+        {results.map((data) => (
+          <OrderInvoice key={data.orderRef} data={data} />
+        ))}
+      </div>
+    </InvoicePrintFrame>,
   );
 }

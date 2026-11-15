@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatRupee } from '@/lib/format';
 import { useCancelDelivery, useShipmentTracking } from '@/hooks/delivery';
@@ -101,8 +102,12 @@ function ShipmentStatusCard({ delivery }: { delivery: DeliveryDetail }) {
             size="sm"
             onClick={() => tracking.refresh()}
             disabled={tracking.isLoading}
+            aria-busy={tracking.isLoading}
           >
-            {tracking.isLoading ? 'Tracking...' : 'Track'}
+            {tracking.isLoading ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" data-testid="loading-spinner" />
+            ) : null}
+            {tracking.isLoading ? 'Tracking…' : 'Track'}
           </Button>
         )}
         {tracking.data && (
@@ -146,8 +151,12 @@ export function DeliveryDetailPanel({ delivery }: DeliveryDetailPanelProps) {
             className="text-terracotta"
             onClick={() => cancel.mutate({ id: delivery.id })}
             disabled={cancel.isPending}
+            aria-busy={cancel.isPending}
           >
-            {cancel.isPending ? 'Cancelling...' : 'Cancel Delivery'}
+            {cancel.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" data-testid="loading-spinner" />
+            ) : null}
+            {cancel.isPending ? 'Cancelling…' : 'Cancel Delivery'}
           </Button>
         )}
       </div>

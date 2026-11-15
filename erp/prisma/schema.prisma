@@ -810,6 +810,9 @@ model Product {
   // Single representative image shown on storefront product cards
   // (products have variants, each with their own imageUrls).
   mainImageUrl String?
+  // Optimised (256×256 WebP) variant of the main image for icon-size surfaces
+  // such as the POS product grid. Full-size mainImageUrl stays for the website.
+  mainImageThumbnailUrl String?
   // Ayurvedic health/usage content — rendered as structured sections on the
   // storefront product detail page. Nullable for backward compatibility.
   activeIngredients String?
@@ -850,6 +853,9 @@ model ProductVariant {
   stockQuantity     Int       @default(0)
   lowStockThreshold Int       @default(5)
   imageUrls         String[]  @default([])
+  // Parallel to imageUrls: optimised 256×256 WebP versions for POS/inventory
+  // thumbnails. Full imageUrls remain for product galleries.
+  thumbnailImageUrls String[] @default([])
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   deletedAt         DateTime?

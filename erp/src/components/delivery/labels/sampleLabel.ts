@@ -1,6 +1,6 @@
 import type { DeliveryLabelTemplate } from '@/types/delivery-label';
 
-/** Sample address used by the label preview and "print sample". */
+/** Sample address used by the waybill preview and "print sample". */
 export const SAMPLE_ADDRESS = {
   fullName: 'Sample Customer',
   phone: '077 123 4567',
@@ -22,21 +22,45 @@ export const SAMPLE_DELIVERY = {
   address: SAMPLE_ADDRESS,
 };
 
-/** Sample extras used when rendering the label. */
-export const SAMPLE_LABEL_EXTRAS = {
-  waybillId: 'TE-12345678',
-  origin: 'Colombo',
-  pickupAddress: 'Warehouse 1, Colombo',
-} as const;
-
-/** Sample props fully assembled for direct use by `printShippingLabel`. */
+/** Sample props fully assembled for direct use by `printSampleLabel`. */
 export function buildSampleLabelProps(template: DeliveryLabelTemplate) {
   return {
     template,
     address: SAMPLE_ADDRESS,
     delivery: SAMPLE_DELIVERY,
-    waybillId: SAMPLE_LABEL_EXTRAS.waybillId,
-    origin: SAMPLE_LABEL_EXTRAS.origin,
-    pickupAddress: SAMPLE_LABEL_EXTRAS.pickupAddress,
+    waybillId: SAMPLE_DELIVERY.waybill,
   };
+}
+
+/** A second sample so the 2-up A4 sheet can be demonstrated. */
+export const SAMPLE_DELIVERY_2 = {
+  orderRef: 'ORD-00002',
+  codAmount: 3300,
+  itemCount: 1,
+  totalWeightKg: 0.5,
+  waybill: 'TE-12345679',
+  deliveredAt: '2026-07-20T11:30:00.000Z',
+  address: {
+    ...SAMPLE_ADDRESS,
+    fullName: 'Nimal Perera',
+    phone: '071 987 6543',
+    addressLine1: '45 Temple Road',
+    addressLine2: 'Kandy',
+    cityName: 'Kandy',
+    districtName: 'Kandy',
+    postalCode: '20000',
+  },
+};
+
+/** Two sample labels — exactly what one printed A4 landscape sheet looks like. */
+export function buildSampleSheetProps(template: DeliveryLabelTemplate) {
+  return [
+    buildSampleLabelProps(template),
+    {
+      template,
+      address: SAMPLE_DELIVERY_2.address,
+      delivery: SAMPLE_DELIVERY_2,
+      waybillId: SAMPLE_DELIVERY_2.waybill,
+    },
+  ];
 }

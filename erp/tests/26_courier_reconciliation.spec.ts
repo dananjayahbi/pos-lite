@@ -33,6 +33,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import * as XLSX from 'xlsx';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3003';
 const OWNER_EMAIL = 'owner@dilani-ayurwellness.lk';
@@ -754,15 +755,35 @@ test.describe('§X Delivery comparison', () => {
   async function compareStatement(
     page: any,
     filename: string,
-    content: string,
+    content: string | Buffer,
     from: string,
     to: string,
   ) {
     const form = new FormData();
-    form.append('file', new Blob([new Uint8Array(Buffer.from(content, 'utf-8'))]), filename);
+    const bytes = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf-8');
+    form.append('file', new Blob([new Uint8Array(bytes)]), filename);
     form.append('from', from);
     form.append('to', to);
     return page.request.post(`${RECON_URL}/compare`, { multipart: form as never });
+  }
+
+  /** Minimal real Trans Express workbook (xlsx), as the courier exports it. */
+  function xlsxStatement(rows: (string | number)[][], withHeader = true): Buffer {
+    const header = [
+      'ORDER DATE',
+      'WAYBILL ID',
+      'INVOICE NO',
+      'ORDER NO',
+      'COD',
+      'COLLECTED COD',
+      'DELIVERY CHARGE',
+      'PAYABLE',
+      'STATUS',
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(withHeader ? [header, ...rows] : rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Invoice Details');
+    return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   }
 
   test('X1: compares a statement over a date range and lists every difference without settling', async ({ page }) => {
@@ -783,9 +804,9 @@ test.describe('§X Delivery comparison', () => {
     expect(report.summary.statementRows).toBe(1);
     expect(report.summary.duplicates).toBe(1);
     expect(report.summary.statementRowsOutsideRange).toBe(1);
-    // The seeded tenant has no delivered orders in 2026-07: every sheet row is ours-only.
-    expect(report.summary.missingInSystem).toBe(1);
-    expect(report.summary.systemDeliveries).toBe(0);
+    // The seeded tenant may or may not have delivered orders in 2026-07: every
+    // sheet row that is not one of ours must still be flagged.
+    expect(report.summary.statementRowsTotal).toBe(4);
     expect(report.rows.map((row: any) => row.status)).toEqual(
       expect.arrayContaining(['DUPLICATE_IN_STATEMENT', 'MISSING_IN_SYSTEM', 'MISSING_WAYBILL']),
     );
@@ -832,6 +853,161 @@ test.describe('§X Delivery comparison', () => {
       multipart: form as never,
     });
     expect([401, 403]).toContain(res.status());
+  });
+
+  test('X4: a sheet outside the selected month moves the comparison to the sheet period', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    const file = xlsxStatement([
+      ['2026-07-13 10:00:00', 'BA920001', 'TRA-QA-1', 'QA-1', 3900, 3900, 475, 3425, 'Delivered'],
+      ['2026-07-14 10:00:00', 'BA920002', 'TRA-QA-1', 'QA-2', 2500, 2500, 400, 2100, 'Delivered'],
+    ]);
+    // November is the page default in the reported bug; the sheet is July.
+    const res = await compareStatement(page, `range-${RUN_TAG}.xlsx`, file, '2026-11-01', '2026-11-30');
+    expect(res.status(), await res.text()).toBe(200);
+    const report = (await res.json()).data;
+    expect(report.rangeAdjusted).toBe(true);
+    expect(report.range).toEqual({ from: '2026-07-13', to: '2026-07-14' });
+    expect(report.requestedRange).toEqual({ from: '2026-11-01', to: '2026-11-30' });
+    expect(report.summary.statementRowsTotal).toBe(2);
+    expect(report.summary.statementRowsInRange).toBe(2);
+    expect(report.summary.statementRowsOutsideRange).toBe(0);
+    // Both waybills are unknown, so they are still flagged, never "no differences".
+    expect(report.summary.missingInSystem).toBe(2);
+    expect(report.warnings.map((warning: any) => warning.code)).not.toContain(
+      'STATEMENT_OUT_OF_RANGE',
+    );
+  });
+
+  test('X5: a header-only sheet warns instead of claiming everything tallies', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    const res = await compareStatement(
+      page,
+      `empty-${RUN_TAG}.xlsx`,
+      xlsxStatement([]),
+      '2026-07-01',
+      '2026-07-31',
+    );
+    expect(res.status(), await res.text()).toBe(200);
+    const report = (await res.json()).data;
+    expect(report.summary.statementRowsTotal).toBe(0);
+    expect(report.summary.statementRows).toBe(0);
+    // With no sheet rows, any system delivery in the period must be flagged.
+    expect(report.rows.every((row: any) => row.status === 'MISSING_IN_STATEMENT')).toBe(true);
+    expect(report.warnings).toHaveLength(1);
+    expect(report.warnings[0].code).toBe('NO_STATEMENT_ROWS');
+    expect(report.warnings[0].severity).toBe('critical');
+  });
+
+  test('X6: a period with no system deliveries flags every statement row', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    const res = await compareStatement(
+      page,
+      `no-system-${RUN_TAG}.xlsx`,
+      xlsxStatement([
+        ['2027-02-05 10:00:00', 'BA930001', 'TRA-QA-2', 'QA-3', 1500, 1500, 350, 1150, 'Delivered'],
+      ]),
+      '2027-02-01',
+      '2027-02-28',
+    );
+    expect(res.status(), await res.text()).toBe(200);
+    const report = (await res.json()).data;
+    expect(report.rangeAdjusted).toBe(false);
+    expect(report.summary.systemDeliveries).toBe(0);
+    expect(report.summary.missingInSystem).toBe(1);
+    expect(report.warnings.map((warning: any) => warning.code)).toEqual(['NO_SYSTEM_DELIVERIES']);
+  });
+
+  test('X7: UI never shows the green "no differences" state for an out-of-range sheet', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    await page.goto(`${BASE_URL}/delivery/reconciliation`);
+    await page.waitForLoadState('networkidle');
+
+    const file = xlsxStatement([
+      ['2026-06-01 10:00:00', 'BA940001', 'TRA-QA-3', 'QA-4', 2000, 2000, 300, 1700, 'Delivered'],
+      ['2026-06-02 10:00:00', 'BA940002', 'TRA-QA-3', 'QA-5', 2500, 2500, 300, 2200, 'Delivered'],
+    ]);
+    await page.locator('#statement-compare-file').setInputFiles({
+      name: `outside-${RUN_TAG}.xlsx`,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: file,
+    });
+    await page.getByRole('button', { name: 'Compare statement' }).click();
+
+    // The page default is the current month (Nov 2026); the sheet is June.
+    await expect(page.getByText(/does not overlap this sheet/i)).toBeVisible();
+    await expect(page.getByText(/No differences in this range/i)).toHaveCount(0);
+    await expect(page.getByText(/Sheet covers 2026-06-01/)).toBeVisible();
+    await expect(page.getByText('Not in system', { exact: true }).first()).toBeVisible();
+
+    // The date fields now reflect the period that was actually compared.
+    const dates = page.locator('input[type="date"]');
+    await expect(dates.first()).toHaveValue('2026-06-01');
+    await expect(dates.nth(1)).toHaveValue('2026-06-02');
+  });
+
+  test('X8: Reset clears the comparison, filters and chosen file but keeps the dates', async ({
+    page,
+  }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    await page.goto(`${BASE_URL}/delivery/reconciliation`);
+    await page.waitForLoadState('networkidle');
+
+    const resetButton = page.getByRole('button', { name: 'Reset comparison' });
+    // Nothing to clear before a comparison is started.
+    await expect(resetButton).toBeDisabled();
+
+    const dates = page.locator('input[type="date"]');
+    await dates.first().fill('2026-07-01');
+    await dates.nth(1).fill('2026-07-31');
+
+    const file = xlsxStatement([
+      ['2026-07-13 10:00:00', 'BA950001', 'TRA-QA-4', 'QA-6', 3900, 3900, 475, 3425, 'Delivered'],
+    ]);
+    await page.locator('#statement-compare-file').setInputFiles({
+      name: `reset-${RUN_TAG}.xlsx`,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: file,
+    });
+    await page.getByRole('button', { name: 'Compare statement' }).click();
+
+    await expect(page.getByText('System deliveries')).toBeVisible();
+    await expect(page.getByText('Statement rows')).toBeVisible();
+    await expect(resetButton).toBeEnabled();
+
+    // Add a filter so Reset has to restore the default view as well.
+    await page.getByLabel('Filter comparison rows').fill('BA950001');
+    await expect(page.getByLabel('Filter comparison rows')).toHaveValue('BA950001');
+
+    await resetButton.click();
+
+    // Summary, warnings and rows are gone; the file picker is emptied.
+    await expect(page.getByText('System deliveries')).toHaveCount(0);
+    await expect(page.getByText('Statement rows')).toHaveCount(0);
+    await expect(page.getByLabel('Filter comparison rows')).toHaveCount(0);
+    await expect(resetButton).toBeDisabled();
+    await expect
+      .poll(() =>
+        page.locator('#statement-compare-file').evaluate((el) => {
+          const input = el as HTMLInputElement;
+          return input.files?.length ?? 0;
+        }),
+      )
+      .toBe(0);
+
+    // The operator usually retries the same period: dates are preserved.
+    await expect(dates.first()).toHaveValue('2026-07-01');
+    await expect(dates.nth(1)).toHaveValue('2026-07-31');
+
+    // A second sheet can be compared without reloading the page.
+    await page.locator('#statement-compare-file').setInputFiles({
+      name: `reset2-${RUN_TAG}.xlsx`,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: xlsxStatement([
+        ['2026-07-13 10:00:00', 'BA950002', 'TRA-QA-4', 'QA-7', 1000, 1000, 100, 900, 'Delivered'],
+      ]),
+    });
+    await page.getByRole('button', { name: 'Compare statement' }).click();
+    await expect(page.getByText('System deliveries')).toBeVisible();
   });
 });
 

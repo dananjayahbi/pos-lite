@@ -1,8 +1,12 @@
 import 'server-only';
 
 import { prisma } from '@/lib/prisma';
-import { getLabelTemplate } from '@/lib/services/label.service';
+import { getTenantBranding } from '@/lib/tenant-branding';
 import type { OrderInvoiceData, OrderInvoiceLine } from '@/types/order-invoice';
+
+/** Invoice chrome stays neutral: the waybill design owns the courier palette. */
+const INVOICE_ACCENT = '#3A2D28';
+const INVOICE_BORDER = '#3A2D28';
 
 export function toNumber(value: unknown): number {
   if (value === null || value === undefined) return 0;
@@ -53,6 +57,18 @@ export function mapDeliveryInvoiceLines(lines: DeliveryLineSource[]): OrderInvoi
 }
 
 /**
+ * Chooses the invoice's line source: POS sale lines are authoritative, but a
+ * linked sale with no lines must not blank the table when the delivery itself
+ * has item snapshots.
+ */
+export function selectInvoiceLines(
+  saleLines: OrderInvoiceLine[],
+  deliveryLines: OrderInvoiceLine[],
+): OrderInvoiceLine[] {
+  return saleLines.length > 0 ? saleLines : deliveryLines;
+}
+
+/**
  * Assemble the printable invoice payload for a delivery (order). Fetches the
  * sale + line items, customer, shipping address, shipping fee and totals, and
  * resolves the tenant's branding from the label template so invoices match the
@@ -78,22 +94,27 @@ export async function getOrderInvoiceData(
 
   if (!delivery) throw new Error('DELIVERY_NOT_FOUND');
 
-  const branding = await getLabelTemplate(tenantId);
+  const branding = await getTenantBranding(tenantId);
 
   const sale = delivery.sale;
-  const lines: OrderInvoiceLine[] = sale
-    ? mapInvoiceLines(sale.lines)
-    : mapDeliveryInvoiceLines(delivery.lines);
+  // POS sales carry the authoritative item lines. Website/manual deliveries
+  // carry DeliveryLine snapshots instead. Prefer sale lines, but fall back to
+  // delivery lines when the linked sale has no lines (e.g. a zero-value sale),
+  // otherwise the invoice table would render empty while the delivery does
+  // have items.
+  const saleLines = sale ? mapInvoiceLines(sale.lines) : [];
+  const deliveryLines = mapDeliveryInvoiceLines(delivery.lines);
+  const lines = selectInvoiceLines(saleLines, deliveryLines);
   const lineSubtotal = lines.reduce((total, line) => total + line.lineTotal, 0);
   const shippingFee = delivery.shippingFee != null ? toNumber(delivery.shippingFee) : null;
 
   return {
     orderRef: delivery.orderRef,
     createdAt: delivery.createdAt.toISOString(),
-    brandName: branding.brandName,
+    brandName: branding.name,
     logoUrl: branding.logoUrl,
-    accentColor: branding.accentColor,
-    borderColor: branding.borderColor,
+    accentColor: INVOICE_ACCENT,
+    borderColor: INVOICE_BORDER,
     customer: delivery.customer
       ? {
           name: delivery.customer.name,
@@ -113,7 +134,7 @@ export async function getOrderInvoiceData(
         }
       : null,
     lines,
-    subtotal: sale ? toNumber(sale.subtotal) : lineSubtotal || toNumber(delivery.codAmount),
+    subtotal: sale && saleLines.length > 0 ? toNumber(sale.subtotal) : lineSubtotal || toNumber(delivery.codAmount),
     discountAmount: sale ? toNumber(sale.discountAmount) : 0,
     taxAmount: sale ? toNumber(sale.taxAmount) : 0,
     shippingFee,
@@ -124,5 +145,8 @@ export async function getOrderInvoiceData(
     totalAmount: sale
       ? toNumber(sale.totalAmount)
       : (lineSubtotal || toNumber(delivery.codAmount)) + (shippingFee ?? 0),
+    paymentMethod: delivery.paymentMethod,
+    paymentStatus: delivery.paymentStatus,
+    paymentDetail: delivery.payhereMethod,
   };
 }

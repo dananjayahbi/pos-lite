@@ -6,6 +6,14 @@ import type { ReactNode } from 'react';
 
 const PRINT_ROOT_CLASS = 'shipping-label-print-root';
 
+/** Class applied to the print overlay root; exported for page-specific CSS. */
+export const PRINT_OVERLAY_CLASS = PRINT_ROOT_CLASS;
+
+export interface PrintOverlayOptions {
+  /** Extra CSS appended to the `@media print` block (page size, sheet grid…). */
+  printStyles?: string;
+}
+
 /**
  * Renders arbitrary printable content into a full-screen overlay and triggers
  * the browser print dialog. Only the overlay content is printed; the rest of the
@@ -14,8 +22,11 @@ const PRINT_ROOT_CLASS = 'shipping-label-print-root';
  *
  * Shared by the shipping label and the order/shipping invoice so all printable
  * documents use the same overlay + print pipeline.
+ *
+ * Shared by the shipping label and the order/shipping invoice so all printable
+ * documents use the same overlay + print pipeline.
  */
-export function renderPrintOverlay(content: ReactNode): void {
+export function renderPrintOverlay(content: ReactNode, options: PrintOverlayOptions = {}): void {
   const overlay = document.createElement('div');
   overlay.className = PRINT_ROOT_CLASS;
   Object.assign(overlay.style, {
@@ -39,13 +50,13 @@ export function renderPrintOverlay(content: ReactNode): void {
   style.textContent = `@media print {
     body > *:not(.${PRINT_ROOT_CLASS}) { display: none !important; }
     .${PRINT_ROOT_CLASS} { display: block !important; position: static !important; overflow: visible !important; padding: 8px !important; }
+    ${options.printStyles ?? ''}
   }
   /* Force background colors and images to print regardless of the browser's
      "Background graphics" print setting. */
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }`;
   document.head.appendChild(style);
 
-  let fallback: number | undefined;
   const cleanup = () => {
     root.unmount();
     overlay.remove();
@@ -53,7 +64,7 @@ export function renderPrintOverlay(content: ReactNode): void {
     window.removeEventListener('afterprint', cleanup);
     if (fallback) window.clearTimeout(fallback);
   };
-  fallback = window.setTimeout(cleanup, 5000);
+  const fallback = window.setTimeout(cleanup, 5000);
   window.addEventListener('afterprint', cleanup);
 
   // Wait for images (e.g. the logo) to finish loading so they appear in the

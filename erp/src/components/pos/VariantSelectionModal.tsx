@@ -75,8 +75,14 @@ export function VariantSelectionModal({
   const selectedVariant = variants.find((v) => v.id === selectedVariantId);
   const hoveredVariant = variants.find((v) => v.id === hoveredVariantId);
   const displayVariant = hoveredVariant ?? selectedVariant ?? variants[0];
-  // The selected/hovered variant image wins; otherwise use the product-level image.
-  const thumbnail = displayVariant?.imageUrls?.[0] ?? product?.mainImageUrl ?? null;
+  // The selected/hovered variant thumbnail wins; otherwise use the product-level
+  // thumbnail, then any full-size image as a legacy fallback.
+  const thumbnail =
+    displayVariant?.thumbnailImageUrls?.[0] ??
+    displayVariant?.imageUrls?.[0] ??
+    product?.mainImageThumbnailUrl ??
+    product?.mainImageUrl ??
+    null;
 
   const variantDescriptor = selectedVariant
     ? [selectedVariant.form, selectedVariant.packSize].filter(Boolean).join(' / ')

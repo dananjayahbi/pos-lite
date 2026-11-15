@@ -1,7 +1,14 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  FileSpreadsheet,
+  Loader2,
+  RotateCcw,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatRupee } from '@/lib/format';
@@ -49,9 +56,15 @@ interface ComparisonRow {
 interface ComparisonReport {
   filename: string;
   range: { from: string; to: string };
+  requestedRange: { from: string; to: string };
+  rangeAdjusted: boolean;
   summary: {
     systemDeliveries: number;
     statementRows: number;
+    statementRowsTotal: number;
+    statementRowsInRange: number;
+    statementDateFrom: string | null;
+    statementDateTo: string | null;
     matched: number;
     differences: number;
     missingInStatement: number;
@@ -67,6 +80,11 @@ interface ComparisonReport {
     missingInSystemAmount: number;
     statementRowsOutsideRange: number;
   };
+  warnings: {
+    code: 'STATEMENT_OUT_OF_RANGE' | 'NO_STATEMENT_ROWS' | 'NO_SYSTEM_DELIVERIES';
+    severity: 'ok' | 'warning' | 'critical';
+    message: string;
+  }[];
   rows: ComparisonRow[];
 }
 
@@ -150,11 +168,35 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
     try {
       const result = await onCompare({ file, from, to });
       setReport(result);
+      // If the sheet's own dates overrode a non-overlapping selection, reflect
+      // the range that was actually compared in the date fields.
+      if (result.rangeAdjusted) {
+        setFrom(result.range.from);
+        setTo(result.range.to);
+      }
     } catch (cause) {
       setReport(null);
       setError(cause instanceof Error ? cause.message : 'Could not compare the statement');
     }
   };
+
+  /**
+   * Clears everything a comparison produced (report, errors, filters and the
+   * chosen file) so a second sheet can be uploaded without reloading the page.
+   * The selected date range is kept on purpose — the operator usually re-runs
+   * the same period with a corrected sheet.
+   */
+  const handleReset = useCallback(() => {
+    setReport(null);
+    setError(null);
+    setFile(null);
+    setSearch('');
+    setOnlyDifferences(true);
+    if (inputRef.current) inputRef.current.value = '';
+  }, []);
+
+  const hasSomethingToClear =
+    report !== null || file !== null || error !== null || search.length > 0 || !onlyDifferences;
 
   const handleExport = () => {
     if (!report) return;
@@ -243,8 +285,10 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
             Courier statement (.csv, .xlsx, .xls)
             <input
               ref={inputRef}
+              id="statement-compare-file"
               type="file"
               accept=".csv,.xlsx,.xls"
+              aria-label="Courier statement file"
               onChange={(event) => {
                 setFile(event.target.files?.[0] ?? null);
                 setReport(null);
@@ -265,6 +309,18 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
             {isComparing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             {isComparing ? 'Comparing…' : 'Compare statement'}
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleReset}
+            disabled={!hasSomethingToClear || isComparing}
+            aria-label="Reset comparison"
+            data-testid="comparison-reset"
+            className="border-mist text-espresso"
+          >
+            <RotateCcw className="mr-2 h-4 w-4" />
+            Reset
+          </Button>
           <p className="font-body text-[11px] text-espresso/50">
             Matched by <span className="font-mono">WAYBILL ID</span> (order ref fallback).
             Columns read: collected COD, delivery charge, status, order date.
@@ -279,9 +335,49 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
 
         {summary && report && (
           <>
+            {report.rangeAdjusted && (
+              <div
+                role="status"
+                className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 font-body text-sm text-amber-900"
+              >
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  Your selected range {report.requestedRange.from} → {report.requestedRange.to} does
+                  not overlap this sheet, so we compared the statement&apos;s own period instead:{' '}
+                  <strong>
+                    {report.range.from} → {report.range.to}
+                  </strong>
+                  .
+                </span>
+              </div>
+            )}
+
+            {report.warnings.map((warning) => (
+              <div
+                key={warning.code}
+                role="alert"
+                className={`flex items-start gap-2 rounded-md px-3 py-2 font-body text-sm ${
+                  warning.severity === 'critical'
+                    ? 'border border-[#E7B4B3] bg-[#FCE9E8] text-[#9B2226]'
+                    : 'border border-amber-200 bg-amber-50 text-amber-900'
+                }`}
+              >
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{warning.message}</span>
+              </div>
+            ))}
+
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <SummaryCard label="System deliveries" value={summary.systemDeliveries} />
-              <SummaryCard label="Statement rows" value={summary.statementRows} />
+              <SummaryCard
+                label="Statement rows"
+                value={summary.statementRows}
+                hint={
+                  summary.statementRowsTotal !== summary.statementRows
+                    ? `${summary.statementRowsTotal} readable · ${summary.statementRowsOutsideRange} outside range`
+                    : undefined
+                }
+              />
               <SummaryCard
                 label="Matched"
                 value={summary.matched}
@@ -336,6 +432,11 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
                   className="h-9 w-64 rounded-md border border-mist bg-pearl px-2 font-body text-xs text-espresso"
                   aria-label="Filter comparison rows"
                 />
+                {summary.statementDateFrom && summary.statementDateTo && (
+                  <span className="font-body text-[11px] text-espresso/50">
+                    Sheet covers {summary.statementDateFrom} → {summary.statementDateTo}
+                  </span>
+                )}
                 {summary.statementRowsOutsideRange > 0 && (
                   <span className="font-body text-[11px] text-espresso/50">
                     {summary.statementRowsOutsideRange} statement row(s) outside the selected range
@@ -353,12 +454,32 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
               </div>
             </div>
 
-            {rows.length === 0 ? (
-              <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-4 font-body text-sm text-green-800">
-                <CheckCircle2 className="h-5 w-5" />
-                {onlyDifferences
-                  ? 'No differences in this range — every delivery tallies with the statement.'
-                  : 'No rows matched the filter.'}
+            {report.rows.length === 0 ? (
+              <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-4 font-body text-sm text-amber-900">
+                <AlertTriangle className="h-5 w-5" />
+                Nothing was compared for this period — see the message above before relying on this
+                result.
+              </div>
+            ) : rows.length === 0 ? (
+              <div
+                className={`flex items-center gap-2 rounded-md border px-3 py-4 font-body text-sm ${
+                  onlyDifferences && summary.differences === 0
+                    ? 'border-green-200 bg-green-50 text-green-800'
+                    : 'border-mist bg-linen/40 text-espresso/70'
+                }`}
+              >
+                {onlyDifferences && summary.differences === 0 ? (
+                  <>
+                    <CheckCircle2 className="h-5 w-5" />
+                    No differences in this range — all {summary.matched} matching deliveries tally
+                    with the statement.
+                  </>
+                ) : (
+                  <>
+                    <FileSpreadsheet className="h-5 w-5" />
+                    No rows matched the filter.
+                  </>
+                )}
               </div>
             ) : (
               <div className="overflow-x-auto rounded-md border border-mist/60">
@@ -442,8 +563,8 @@ function SummaryCard({
 }: {
   label: string;
   value: number | string;
-  hint?: string;
-  tone?: string;
+  hint?: string | undefined;
+  tone?: string | undefined;
 }) {
   return (
     <div className="rounded-lg border border-mist/60 bg-pearl px-3 py-2">

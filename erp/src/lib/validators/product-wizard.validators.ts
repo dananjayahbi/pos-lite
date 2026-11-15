@@ -24,6 +24,7 @@ export const productStep1Schema = z.object({
   tags: z.array(z.string()).max(20, 'Maximum 20 tags'),
   taxRule: z.enum(TAX_RULES),
   mainImageUrl: z.string().max(500).optional(),
+  mainImageThumbnailUrl: z.string().max(500).optional(),
   activeIngredients: z.string().max(5000).optional(),
   usageInstructions: z.string().max(5000).optional(),
   healthBenefits: z.string().max(5000).optional(),

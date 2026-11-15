@@ -15,7 +15,7 @@ in the separate `website/` app.
 | `/delivery/packaging` | `delivery:packaging:manage` | Items, categories, stock adjustments |
 | `/delivery/settings` | `delivery:courier:manage` | Trans Express account + location sync |
 | `/delivery/rate-card` | `delivery:ratecard:manage` | Base rate and zone overrides |
-| `/delivery/label` | `delivery:label:manage` | Shipping-label template designer |
+| `/delivery/label` | `delivery:label:manage` | Waybill design (fixed TransExpress layout) |
 | `/delivery/reconciliation` | `delivery:recon:view` | COD ledger, remittance import, disputes |
 | `/orders` | `delivery:view` | Order list + bulk prepare/status/labels/invoices |
 
@@ -128,17 +128,20 @@ Tracking effects:
   quantity, unit price, line total) and include the shipping fee in the grand
   total. Sale-linked invoices continue to use `Sale.totalAmount`.
 - Labels are printed through the browser (`window.print()`). The printed waybill
-  follows the courier "Proof of Delivery" sticker layout (`ShippingLabel`):
-  company logo + waybill barcode in the header, a sender block (From, Contact,
-  Date, Order No), a customer block (To, Address, Branch, Contact, COD), an
-  Order Description block, and a company footer with address and direct line.
-  The waybill barcode falls back to the order reference only when no courier
-  waybill exists.
-- `/delivery/label` saves branding, sender contact, footer address/phone,
-  colors, visible fields, header layout, and page size. Page size controls the
-  printed width (A4 190 mm, A6 95 mm, thermal 72 mm); the printer's own paper
-  setting still decides the physical page. The origin and pickup-address toggles
-  remain display options for the preview and print.
+  is fixed to the Trans Express "Proof of Delivery" sticker: courier logo +
+  waybill barcode in the header, a sender block (From, Contact, Date, Order No),
+  a customer block (To, Address, Branch, Contact, COD), an Order Description
+  row, and the courier's fixed company footer (TransExpress Lanka Services).
+  Only the sender name and contact are editable. The waybill barcode falls back
+  to the order reference only when no courier waybill exists.
+- **Two waybills print on one A4 landscape sheet.** Each waybill is
+  148.5 × 210 mm; the print CSS sets `@page { size: A4 landscape; margin: 0 }`
+  and lays the labels out in a two-column grid, so a batch no longer wastes most
+  of the page. Single-label prints use the same landscape sheet.
+- The page is titled **Waybill Design** (`/delivery/label`). Accent/border
+  colours, header layout, page-size, field toggles, and footer-note controls
+  were removed with the fixed design; the saved template is now
+  `{ brandName, fromContact }` and older saved values are ignored safely.
 - Formatting rules live in `src/lib/delivery/waybill.ts` (DD/MM/YYYY dates,
   grouped money without a currency prefix, item/weight description, barcode
   fallback) and are covered by

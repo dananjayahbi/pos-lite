@@ -74,9 +74,21 @@ export interface DeliveryComparisonRow {
   message: string;
 }
 
+export interface DeliveryComparisonRange {
+  from: string;
+  to: string;
+}
+
 export interface DeliveryComparisonSummary {
   systemDeliveries: number;
   statementRows: number;
+  /** Every readable row in the sheet, before the date-range filter. */
+  statementRowsTotal: number;
+  /** Rows that were considered inside the compared period (including invalid keys). */
+  statementRowsInRange: number;
+  /** Earliest/latest ORDER DATE found in the sheet (`YYYY-MM-DD`), when readable. */
+  statementDateFrom: string | null;
+  statementDateTo: string | null;
   matched: number;
   differences: number;
   missingInStatement: number;
@@ -93,10 +105,27 @@ export interface DeliveryComparisonSummary {
   statementRowsOutsideRange: number;
 }
 
+export type DeliveryComparisonWarningCode =
+  | 'STATEMENT_OUT_OF_RANGE'
+  | 'NO_STATEMENT_ROWS'
+  | 'NO_SYSTEM_DELIVERIES';
+
+export interface DeliveryComparisonWarning {
+  code: DeliveryComparisonWarningCode;
+  severity: DeliveryComparisonSeverity;
+  message: string;
+}
+
 export interface DeliveryComparisonReport {
   filename: string;
-  range: { from: string; to: string };
+  /** The period that was actually compared (may differ from the requested one). */
+  range: DeliveryComparisonRange;
+  /** What the operator selected in the date fields. */
+  requestedRange: DeliveryComparisonRange;
+  /** True when the statement's own dates overrode a non-overlapping selection. */
+  rangeAdjusted: boolean;
   summary: DeliveryComparisonSummary;
+  warnings: DeliveryComparisonWarning[];
   rows: DeliveryComparisonRow[];
 }
 
@@ -166,6 +195,50 @@ export function parseStatementDate(value: string | null | undefined): Date | nul
   }
   const parsed = new Date(trimmed);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** Earliest and latest readable ORDER DATE in a statement (`YYYY-MM-DD`). */
+export interface StatementDateSpan {
+  from: string;
+  to: string;
+}
+
+export function getStatementDateSpan(
+  rows: StatementRowForComparison[],
+): StatementDateSpan | null {
+  let min: number | null = null;
+  let max: number | null = null;
+  for (const row of rows) {
+    const date = parseStatementDate(row.date);
+    if (!date) continue;
+    const ms = date.getTime();
+    if (min === null || ms < min) min = ms;
+    if (max === null || ms > max) max = ms;
+  }
+  if (min === null || max === null) return null;
+  return {
+    from: new Date(min).toISOString().slice(0, 10),
+    to: new Date(max).toISOString().slice(0, 10),
+  };
+}
+
+/**
+ * True when at least one statement row could belong to the inclusive range.
+ * Rows without a readable date are always considered (they cannot be filtered).
+ */
+export function hasStatementRowInRange(
+  rows: StatementRowForComparison[],
+  from: string,
+  to: string,
+): boolean {
+  const rangeStart = new Date(`${from}T00:00:00.000Z`).getTime();
+  const rangeEnd = new Date(`${to}T23:59:59.999Z`).getTime();
+  return rows.some((row) => {
+    const date = parseStatementDate(row.date);
+    if (date === null) return true;
+    const ms = date.getTime();
+    return ms >= rangeStart && ms <= rangeEnd;
+  });
 }
 
 function round2(value: number): number {
@@ -239,6 +312,9 @@ export interface BuildDeliveryComparisonInput {
   from: string;
   /** Inclusive, `YYYY-MM-DD`. */
   to: string;
+  /** The range the operator asked for when `from`/`to` were auto-corrected. */
+  requestedRange?: DeliveryComparisonRange;
+  rangeAdjusted?: boolean;
   tolerance?: number;
   filename?: string;
 }
@@ -256,6 +332,8 @@ export function buildDeliveryComparison({
   statementRows,
   from,
   to,
+  requestedRange,
+  rangeAdjusted = false,
   tolerance = DEFAULT_TOLERANCE,
   filename = 'statement',
 }: BuildDeliveryComparisonInput): DeliveryComparisonReport {
@@ -267,6 +345,7 @@ export function buildDeliveryComparison({
   const byWaybill = new Map<string, StatementRowForComparison>();
   const byOrderRef = new Map<string, StatementRowForComparison>();
   let statementRowsOutsideRange = 0;
+  let statementRowsInRange = 0;
   let duplicateCount = 0;
 
   for (const statement of statementRows) {
@@ -278,6 +357,7 @@ export function buildDeliveryComparison({
         continue;
       }
     }
+    statementRowsInRange++;
 
     const waybillKey = normalizeComparisonKey(statement.waybill);
     const orderRefKey = normalizeComparisonKey(statement.orderRef);
@@ -488,9 +568,14 @@ export function buildDeliveryComparison({
   const count = (status: DeliveryComparisonStatus) =>
     rows.filter((row) => row.status === status).length;
 
+  const statementSpan = getStatementDateSpan(statementRows);
   const summary: DeliveryComparisonSummary = {
     systemDeliveries: relevantDeliveries.length,
     statementRows: canonical.length,
+    statementRowsTotal: statementRows.length,
+    statementRowsInRange,
+    statementDateFrom: statementSpan?.from ?? null,
+    statementDateTo: statementSpan?.to ?? null,
     matched: count('MATCHED'),
     differences: rows.filter((row) => row.status !== 'MATCHED').length,
     missingInStatement: count('MISSING_IN_STATEMENT'),
@@ -507,10 +592,37 @@ export function buildDeliveryComparison({
     statementRowsOutsideRange,
   };
 
+  const warnings: DeliveryComparisonWarning[] = [];
+  if (statementRows.length === 0) {
+    warnings.push({
+      code: 'NO_STATEMENT_ROWS',
+      severity: 'critical',
+      message: `No readable rows were found in ${filename}. Check that it is the courier's Invoice Details sheet and that it has data rows beneath the header.`,
+    });
+  } else if (statementRowsInRange === 0) {
+    const span = statementSpan
+      ? ` (it covers ${statementSpan.from} to ${statementSpan.to})`
+      : '';
+    warnings.push({
+      code: 'STATEMENT_OUT_OF_RANGE',
+      severity: 'critical',
+      message: `None of the ${statementRows.length} statement rows fall inside ${from} to ${to}${span}, so nothing could be compared.`,
+    });
+  } else if (relevantDeliveries.length === 0) {
+    warnings.push({
+      code: 'NO_SYSTEM_DELIVERIES',
+      severity: 'warning',
+      message: `No delivered orders exist in our system for ${from} to ${to}, so every statement row is flagged as not in our system. This is expected only if the courier is reporting orders we never recorded.`,
+    });
+  }
+
   return {
     filename,
     range: { from, to },
+    requestedRange: requestedRange ?? { from, to },
+    rangeAdjusted,
     summary,
+    warnings,
     rows,
   };
 }

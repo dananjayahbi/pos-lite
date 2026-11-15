@@ -7,6 +7,8 @@ import {
 } from '@/lib/services/reconciliation-parser.service';
 import {
   buildDeliveryComparison,
+  getStatementDateSpan,
+  hasStatementRowInRange,
   parseMoney,
   type DeliveryComparisonReport,
   type StatementRowForComparison,
@@ -31,8 +33,27 @@ export async function getDeliveryComparisonReport(
   const parsed = parseRemittanceFile(filename, buffer);
   const statementRows = toStatementRows(parsed);
 
-  const rangeStart = new Date(`${from}T00:00:00.000Z`);
-  const rangeEnd = new Date(`${to}T23:59:59.999Z`);
+  // The uploaded sheet — not the current calendar month — usually defines the
+  // period the operator means to reconcile. If the sheet has readable dates and
+  // NONE of them fall inside the selected range, compare the sheet's own period
+  // instead of silently discarding every row and claiming "no differences".
+  const requestedRange = { from, to };
+  let effectiveFrom = from;
+  let effectiveTo = to;
+  let rangeAdjusted = false;
+  const span = getStatementDateSpan(statementRows);
+  if (
+    span !== null &&
+    statementRows.length > 0 &&
+    !hasStatementRowInRange(statementRows, from, to)
+  ) {
+    effectiveFrom = span.from;
+    effectiveTo = span.to;
+    rangeAdjusted = true;
+  }
+
+  const rangeStart = new Date(`${effectiveFrom}T00:00:00.000Z`);
+  const rangeEnd = new Date(`${effectiveTo}T23:59:59.999Z`);
 
   const deliveries = await prisma.delivery.findMany({
     where: {
@@ -74,8 +95,10 @@ export async function getDeliveryComparisonReport(
   return buildDeliveryComparison({
     deliveries: systemRows,
     statementRows,
-    from,
-    to,
+    from: effectiveFrom,
+    to: effectiveTo,
+    requestedRange,
+    rangeAdjusted,
     filename,
   });
 }

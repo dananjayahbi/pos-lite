@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { uploadFile } from '@/lib/storage';
+import { createThumbnail } from '@/lib/image-thumbnail';
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -46,7 +47,24 @@ export async function POST(req: NextRequest) {
       maxSizeBytes: MAX_SIZE,
     });
 
-    return NextResponse.json({ url: result.url });
+    // Feature update #14: store a second, 256x256 WebP version for icon-size
+    // surfaces (POS grid, inventory rows, pickers). A thumbnail failure must
+    // not lose the already-uploaded full image, so it degrades to `null` and
+    // consumers fall back to the full URL.
+    let thumbnailUrl: string | null = null;
+    try {
+      const thumbnail = await createThumbnail(buffer);
+      const thumbResult = await uploadFile(thumbnail, `${path}-thumb`, {
+        contentType: 'image/webp',
+        folder: 'variant-images',
+        maxSizeBytes: MAX_SIZE,
+      });
+      thumbnailUrl = thumbResult.url;
+    } catch (thumbnailError) {
+      console.warn('[POST /api/upload] thumbnail generation failed:', thumbnailError);
+    }
+
+    return NextResponse.json({ url: result.url, thumbnailUrl });
   } catch (error) {
     console.error('Upload error:', error);
     const message = error instanceof Error ? error.message : 'Upload failed';

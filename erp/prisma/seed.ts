@@ -1,6 +1,7 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Prisma, PrismaClient } from '../src/generated/prisma/client';
 import { TRIAL_PERIOD_DAYS } from '../src/lib/billing/constants';
+import { ean13CheckDigit } from '../src/lib/barcode';
 import bcrypt from 'bcryptjs';
 import Decimal from 'decimal.js';
 
@@ -473,6 +474,16 @@ function generateSku(brandName: string, form: string, packSize: string, productI
   return `${brandCode}-${String(productIndex).padStart(2, '0')}-${formAbbrev}-${packAbbrev}`;
 }
 
+/**
+ * Deterministic EAN-13 for seeded demo products: internal prefix 200 + a
+ * zero-padded sequence + GS1 check digit. Real products get a random barcode at
+ * creation time (product.service.allocateBarcode); demo data stays reproducible.
+ */
+function generateSeedBarcode(sequence: number): string {
+  const body = `200${String(sequence).padStart(9, '0')}`;
+  return body + ean13CheckDigit(body);
+}
+
 async function seedSampleCatalog() {
   const tenant = await prisma.tenant.findFirst({ where: { slug: 'dilani' } });
   if (!tenant) {
@@ -560,6 +571,7 @@ async function seedSampleCatalog() {
       productId: string;
       tenantId: string;
       sku: string;
+      barcode: string;
       form: string;
       packSize: string;
       costPrice: number;
@@ -589,6 +601,7 @@ async function seedSampleCatalog() {
         productId: product.id,
         tenantId,
         sku,
+        barcode: generateSeedBarcode(totalVariants + 1),
         form: sp.form,
         packSize,
         costPrice,

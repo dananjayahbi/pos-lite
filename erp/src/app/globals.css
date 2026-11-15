@@ -149,6 +149,15 @@ body {
     @apply bg-background text-foreground;
   }
 
+  /* UI update #6 — every data table sits on a white surface instead of
+     inheriting the pearl page background. Covers both the shared <Table>
+     component and the hand-written <table> elements used by a few modules.
+     Row/header utilities (bg-linen, bg-muted, hover states) still win because
+     Tailwind utilities load after the base layer. */
+  table {
+    background-color: #ffffff;
+  }
+
   /* POS touch mode: no double-tap zoom delay and no accidental text
      selection when a cashier taps a product tile or cart line. */
   button,

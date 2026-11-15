@@ -58,3 +58,21 @@ export function resolveProductImage(
   const first = (variantImageUrls ?? []).find((u) => !!u);
   return first ?? null;
 }
+
+/**
+ * Icon-size resolver (POS grid, sale picker): prefer generated thumbnails, then
+ * fall back to full-size images for rows that predate thumbnail generation.
+ */
+export function resolveProductThumbnail(
+  mainThumbnailUrl: string | null | undefined,
+  mainImageUrl: string | null | undefined,
+  variantThumbnailUrls?: string[] | null,
+  variantImageUrls?: string[] | null,
+): string | null {
+  if (mainThumbnailUrl) return mainThumbnailUrl;
+  if (mainImageUrl) return mainImageUrl;
+  const variantThumb = (variantThumbnailUrls ?? []).find((u) => !!u);
+  if (variantThumb) return variantThumb;
+  const variantFull = (variantImageUrls ?? []).find((u) => !!u);
+  return variantFull ?? null;
+}

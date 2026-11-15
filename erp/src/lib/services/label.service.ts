@@ -17,8 +17,8 @@ function readSaved(settings: unknown): Partial<DeliveryLabelTemplate> | null {
 }
 
 /**
- * Resolve the effective template: merge saved over defaults, then fill any empty
- * brand/logo from the tenant branding. Never throws for a missing/corrupt blob.
+ * Resolve the effective template: merge saved over defaults, then fill an empty
+ * sender name from the tenant branding. Never throws for a missing/corrupt blob.
  */
 export async function getLabelTemplate(tenantId: string): Promise<DeliveryLabelTemplate> {
   const tenant = await prisma.tenant.findUnique({
@@ -33,7 +33,6 @@ export async function getLabelTemplate(tenantId: string): Promise<DeliveryLabelT
   return {
     ...merged,
     brandName: merged.brandName?.trim() ? merged.brandName : branding.name,
-    logoUrl: merged.logoUrl?.trim() ? merged.logoUrl : branding.logoUrl,
   };
 }
 
@@ -54,8 +53,8 @@ export async function saveLabelTemplate(
       : {};
 
   const normalized: LabelTemplateInput = {
-    ...input,
-    logoUrl: input.logoUrl?.trim() ? input.logoUrl : null,
+    brandName: input.brandName,
+    fromContact: input.fromContact,
   };
 
   const nextSettings: Prisma.InputJsonValue = {

@@ -82,6 +82,7 @@ export function WizardStep1BasicInfo() {
           tags: step1Data.tags,
           taxRule: step1Data.taxRule,
           mainImageUrl: step1Data.mainImageUrl,
+          mainImageThumbnailUrl: step1Data.mainImageThumbnailUrl ?? '',
           activeIngredients: step1Data.activeIngredients,
           usageInstructions: step1Data.usageInstructions,
           healthBenefits: step1Data.healthBenefits,
@@ -98,6 +99,7 @@ export function WizardStep1BasicInfo() {
           tags: [],
           taxRule: TAX_RULE.STANDARD_VAT,
           mainImageUrl: '',
+          mainImageThumbnailUrl: '',
           activeIngredients: '',
           usageInstructions: '',
           healthBenefits: '',
@@ -118,6 +120,7 @@ export function WizardStep1BasicInfo() {
       tags: data.tags,
       taxRule: data.taxRule,
       mainImageUrl: data.mainImageUrl ?? '',
+      mainImageThumbnailUrl: data.mainImageThumbnailUrl ?? '',
       activeIngredients: data.activeIngredients ?? '',
       usageInstructions: data.usageInstructions ?? '',
       healthBenefits: data.healthBenefits ?? '',
@@ -456,7 +459,14 @@ export function WizardStep1BasicInfo() {
           control={control}
           name="mainImageUrl"
           render={({ field }) => (
-            <MainImageUpload value={field.value ?? ''} onChange={field.onChange} />
+            <MainImageUpload
+              value={field.value ?? ''}
+              onChange={field.onChange}
+              thumbnailValue={watch('mainImageThumbnailUrl') ?? ''}
+              onThumbnailChange={(url) =>
+                setValue('mainImageThumbnailUrl', url, { shouldDirty: true })
+              }
+            />
           )}
         />
         {errors.mainImageUrl && (

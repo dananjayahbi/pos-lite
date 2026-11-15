@@ -11,7 +11,7 @@ import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/com
 import { formatRupee } from '@/lib/format';
 import { toYMD } from '@/lib/date-range';
 import { CustomerPicker, type PickedCustomer } from '@/components/sales/CustomerPicker';
-import { ProductThumbnail, resolveProductImage } from '@/components/sales/ProductThumbnail';
+import { ProductThumbnail, resolveProductThumbnail } from '@/components/sales/ProductThumbnail';
 import { saleQueryKey } from '@/components/sales/saleQueryKey';
 import {
   DEFAULT_LANKA_QR_SETTINGS,
@@ -28,12 +28,14 @@ interface ProductVariant {
   stockQuantity: number;
   retailPrice: string;
   imageUrls?: string[];
+  thumbnailImageUrls?: string[];
 }
 
 interface Product {
   id: string;
   name: string;
   mainImageUrl: string | null;
+  mainImageThumbnailUrl?: string | null;
   variants: ProductVariant[];
 }
 
@@ -147,7 +149,12 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
           unitPrice: parseFloat(variant.retailPrice),
           quantity: 1,
           discountPercent: 0,
-          imageUrl: resolveProductImage(product.mainImageUrl, variant.imageUrls),
+          imageUrl: resolveProductThumbnail(
+            product.mainImageThumbnailUrl,
+            product.mainImageUrl,
+            variant.thumbnailImageUrls,
+            variant.imageUrls,
+          ),
         },
       ];
     });
@@ -350,7 +357,12 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                       className="hover:bg-linen flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors"
                     >
                       <ProductThumbnail
-                        src={resolveProductImage(product.mainImageUrl, variant.imageUrls)}
+                        src={resolveProductThumbnail(
+                          product.mainImageThumbnailUrl,
+                          product.mainImageUrl,
+                          variant.thumbnailImageUrls,
+                          variant.imageUrls,
+                        )}
                         alt={product.name}
                         size={36}
                       />

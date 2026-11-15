@@ -14,6 +14,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
 import { printShippingLabels } from '@/components/delivery/labels/ShippingLabel';
 import { printOrderInvoice, printOrderInvoices } from '@/components/delivery/invoices/printOrderInvoice';
+import { waitForPrintOverlayToClose } from '@/lib/print-session';
 import { toast } from 'sonner';
 import { OrderFilters } from '@/components/orders/OrderFilters';
 import { OrdersTable } from '@/components/orders/OrdersTable';
@@ -32,6 +33,8 @@ export function OrdersPageClient() {
   const [status, setStatus] = useState<DeliveryStatus | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  /** Which print action is currently running (`bulk-*` or `<kind>:<id>`). */
+  const [printBusy, setPrintBusy] = useState<string | null>(null);
 
   const { data, isLoading } = useOrders({ status, search });
   const { data: labelTemplate } = useLabelTemplate();
@@ -58,29 +61,65 @@ export function OrdersPageClient() {
   const selectedOrders = orders.filter((o) => selectedIds.has(o.id));
 
   const handleStatusChange = (newStatus: DeliveryStatus) => {
-    setStatusDialogOpen(false);
     const ids = Array.from(selectedIds);
-    bulkStatus.mutate({ deliveryIds: ids, status: newStatus });
-    setSelectedIds(new Set());
+    bulkStatus.mutate(
+      { deliveryIds: ids, status: newStatus },
+      {
+        onSuccess: () => {
+          setStatusDialogOpen(false);
+          setSelectedIds(new Set());
+        },
+      },
+    );
   };
 
   const handleCreateDelivery = () => {
     const ids = Array.from(selectedIds);
-    bulkCreate.mutate(ids);
-    setSelectedIds(new Set());
+    bulkCreate.mutate(ids, {
+      onSuccess: () => setSelectedIds(new Set()),
+    });
+  };
+
+  const runPrint = async (key: string, action: () => Promise<void>) => {
+    setPrintBusy(key);
+    try {
+      await action();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Printing failed');
+    } finally {
+      setPrintBusy(null);
+    }
   };
 
   const handlePrint = () => {
-    printShippingLabels(selectedOrders, template);
+    if (selectedOrders.length === 0) return;
+    void runPrint('bulk-waybills', async () => {
+      printShippingLabels(selectedOrders, template);
+      await waitForPrintOverlayToClose();
+    });
   };
 
   const handlePrintInvoices = () => {
     const ids = selectedOrders.map((o) => o.id);
-    void printOrderInvoices(ids).catch((e: Error) => toast.error(e.message));
+    if (ids.length === 0) return;
+    void runPrint('bulk-invoices', async () => {
+      await printOrderInvoices(ids);
+      await waitForPrintOverlayToClose();
+    });
+  };
+
+  const handlePrintSingleWaybill = (order: DeliveryListItem) => {
+    void runPrint(`waybill:${order.id}`, async () => {
+      printShippingLabels([order], template);
+      await waitForPrintOverlayToClose();
+    });
   };
 
   const handlePrintSingleInvoice = (order: DeliveryListItem) => {
-    void printOrderInvoice(order.id).catch((e: Error) => toast.error(e.message));
+    void runPrint(`invoice:${order.id}`, async () => {
+      await printOrderInvoice(order.id);
+      await waitForPrintOverlayToClose();
+    });
   };
 
   return (
@@ -104,6 +143,10 @@ export function OrdersPageClient() {
         onCreateDelivery={handleCreateDelivery}
         onPrint={handlePrint}
         onPrintInvoices={handlePrintInvoices}
+        isCreatingDelivery={bulkCreate.isPending}
+        isPrintingWaybills={printBusy === 'bulk-waybills'}
+        isPrintingInvoices={printBusy === 'bulk-invoices'}
+        isBusy={printBusy !== null || bulkCreate.isPending || bulkStatus.isPending}
       />
 
       {isLoading && (
@@ -127,8 +170,15 @@ export function OrdersPageClient() {
           onToggle={toggle}
           onToggleAll={toggleAll}
           onView={(id) => router.push(`/delivery/${id}`)}
-          onPrint={(order) => printShippingLabels([order], template)}
+          onPrint={handlePrintSingleWaybill}
           onPrintInvoice={handlePrintSingleInvoice}
+          printingWaybillId={
+            printBusy?.startsWith('waybill:') ? printBusy.slice('waybill:'.length) : null
+          }
+          printingInvoiceId={
+            printBusy?.startsWith('invoice:') ? printBusy.slice('invoice:'.length) : null
+          }
+          printBusy={printBusy !== null}
         />
       )}
 
@@ -137,6 +187,7 @@ export function OrdersPageClient() {
           count={selectedIds.size}
           onCancel={() => setStatusDialogOpen(false)}
           onConfirm={handleStatusChange}
+          isPending={bulkStatus.isPending}
         />
       )}
     </div>
