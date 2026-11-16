@@ -387,7 +387,7 @@ export async function completeStockTakeSession(
   const uncounted = items.filter((i) => i.countedQuantity === null);
   if (uncounted.length > 0) {
     const skus = uncounted.map((i) => i.variant.sku).join(', ');
-    throw new Error(`Cannot complete: uncounted items remain — ${skus}`);
+    throw new Error(`Cannot complete: uncounted items remain - ${skus}`);
   }
 
   const updated = await prisma.stockTakeSession.update({

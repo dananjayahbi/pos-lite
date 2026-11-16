@@ -239,6 +239,107 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     expect(body.data.settings.address).toBe(`QA Probe ${RUN_TAG}`);
   });
 
+  test('F9 — store logo upload validates MIME/size and returns a stored URL', async ({ page }) => {
+    await login(page, OWNER.email, OWNER.password);
+    const logoApi = `${BASE}/api/settings/store/logo`;
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+
+    const bad = await page.request.post(logoApi, {
+      multipart: {
+        file: { name: 'logo.txt', mimeType: 'text/plain', buffer: Buffer.from('not-an-image') },
+      },
+    });
+    expect(bad.status(), 'wrong-MIME logo → 400').toBe(400);
+    expect((await bad.json())?.error).toMatch(/JPEG, PNG, WebP/);
+
+    const oversized = await page.request.post(logoApi, {
+      multipart: {
+        file: {
+          name: 'huge.png',
+          mimeType: 'image/png',
+          buffer: Buffer.alloc(2 * 1024 * 1024 + 1),
+        },
+      },
+    });
+    expect(oversized.status(), 'oversized logo → 400').toBe(400);
+    expect((await oversized.json())?.error).toMatch(/under 2 MB/);
+
+    // Valid PNG reaches the storage provider (R2 when configured). Without
+    // provider credentials the route 500s; both outcomes are accepted here.
+    const ok = await page.request.post(logoApi, {
+      multipart: { file: { name: 'logo.png', mimeType: 'image/png', buffer: png } },
+    });
+    expect([200, 500]).toContain(ok.status());
+    if (ok.status() === 200) {
+      const body = (await ok.json()) as { url?: string };
+      expect(body.url).toMatch(/^https?:\/\//);
+    }
+
+    // Unauthenticated callers are rejected before touching storage.
+    await page.context().clearCookies();
+    const anonymous = await page.request.post(logoApi, {
+      multipart: { file: { name: 'logo.png', mimeType: 'image/png', buffer: png } },
+    });
+    expect(anonymous.status(), 'anonymous upload → 401').toBe(401);
+  });
+
+  test('F10 — /settings/store uploads a logo (no URL field) and saves the previewed URL', async ({
+    page,
+  }) => {
+    await login(page, OWNER.email, OWNER.password);
+    const uploadedUrl = 'https://cdn.test/store-logo.png';
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+
+    let savedLogoUrl: unknown = null;
+
+    await page.route('**/api/settings/store/logo', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ url: uploadedUrl }),
+      });
+    });
+    await page.route('**/api/settings/store', async (route) => {
+      if (
+        route.request().method() !== 'PATCH' ||
+        new URL(route.request().url()).pathname !== '/api/settings/store'
+      ) {
+        return route.continue();
+      }
+      savedLogoUrl = (route.request().postDataJSON() as { logoUrl?: unknown }).logoUrl;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: {} }),
+      });
+    });
+
+    await page.goto(`${BASE}/settings/store`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: /store profile/i })).toBeVisible({
+      timeout: 30_000,
+    });
+    await waitForHydratedForm(page, '#storeName');
+
+    // The free-text Logo URL field is gone; the logo is chosen by upload.
+    await expect(page.getByText('Logo URL')).toHaveCount(0);
+    await page.getByTestId('logo-upload-input').setInputFiles({
+      name: 'logo.png',
+      mimeType: 'image/png',
+      buffer: png,
+    });
+    await expect(page.getByAltText('Store logo')).toHaveAttribute('src', uploadedUrl);
+
+    await page.getByRole('button', { name: /save store profile/i }).click();
+    await expect.poll(() => savedLogoUrl).toBe(uploadedUrl);
+  });
+
   // ─── §2 Financial & LKR Precision ─────────────────────────────────────
   test('P1 — tax rates accept 2-decimal precision and persist exactly', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);

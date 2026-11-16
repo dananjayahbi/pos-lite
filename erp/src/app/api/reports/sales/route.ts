@@ -221,7 +221,7 @@ export async function GET(request: NextRequest) {
       return {
         variantId,
         productName: variant?.product.name ?? "Unknown",
-        variantDescription: variantDesc || variant?.sku || "—",
+        variantDescription: variantDesc || variant?.sku || "-",
         unitsSold: units,
         returnedUnits,
         netUnits,

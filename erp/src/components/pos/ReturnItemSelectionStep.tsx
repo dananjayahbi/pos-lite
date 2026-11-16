@@ -120,7 +120,7 @@ export function ReturnItemSelectionStep({
                   {line.quantity}
                 </TableCell>
                 <TableCell className="text-center font-body text-xs text-mist-ink">
-                  {line.returnedQuantity > 0 ? line.returnedQuantity : '—'}
+                  {line.returnedQuantity > 0 ? line.returnedQuantity : '-'}
                 </TableCell>
                 <TableCell className="text-center font-body text-xs">
                   {returnable > 0 ? (

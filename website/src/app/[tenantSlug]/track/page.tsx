@@ -43,7 +43,7 @@ export async function generateMetadata({ params }: TrackPageProps): Promise<Meta
   const { tenantSlug } = await params;
   const tenant = await getTenantInfo(tenantSlug).catch(() => null);
   return {
-    title: `${tenant?.name ?? 'Store'} — Track Order`,
+    title: `${tenant?.name ?? 'Store'} - Track Order`,
     description: 'Track your order and see the latest delivery status.',
   };
 }

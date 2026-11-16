@@ -185,7 +185,7 @@ export function CreatePurchaseOrderClient() {
         );
         router.push(`/suppliers/purchase-orders/${json.data.id}`);
       } catch {
-        toast.error('Network error — please try again');
+        toast.error('Network error - please try again');
       } finally {
         setSubmittingStatus(null);
       }

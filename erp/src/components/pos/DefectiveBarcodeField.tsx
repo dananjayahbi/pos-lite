@@ -72,7 +72,7 @@ export function DefectiveBarcodeField({
         report('invalid', json?.error?.message ?? 'Barcode not found in this store');
       }
     } catch {
-      report('invalid', 'Network error — please try again');
+      report('invalid', 'Network error - please try again');
     }
   };
 

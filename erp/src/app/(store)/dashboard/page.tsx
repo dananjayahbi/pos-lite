@@ -46,7 +46,7 @@ function StatCard({
           <p className="text-espresso mt-1 text-2xl font-bold">{value}</p>
           {sub && <p className="text-mist-ink mt-1 text-xs">{sub}</p>}
         </div>
-        <div className="bg-linen text-terracotta rounded-lg p-2">{icon}</div>
+        <div className="bg-linen text-terracotta rounded-xl p-2.5">{icon}</div>
       </CardContent>
     </Card>
   );
@@ -117,25 +117,25 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
       <StatCard
         label="Today's Revenue"
         value={lkr.format(todayRevenue)}
-        icon={<TrendingUp className="h-5 w-5" />}
+        icon={<TrendingUp className="h-6 w-6" />}
         sub={`${todaySales.length} transaction${todaySales.length !== 1 ? 's' : ''}`}
       />
       <StatCard
         label="Today's Sales"
         value={todaySales.length}
-        icon={<ShoppingBag className="h-5 w-5" />}
+        icon={<ShoppingBag className="h-6 w-6" />}
         sub="Completed today"
       />
       <StatCard
         label="Active Customers"
         value={totalCustomers.toLocaleString()}
-        icon={<Users className="h-5 w-5" />}
+        icon={<Users className="h-6 w-6" />}
         sub="All time"
       />
       <StatCard
         label="Low Stock Alerts"
         value={lowStockCount}
-        icon={<AlertTriangle className="h-5 w-5" />}
+        icon={<AlertTriangle className="h-6 w-6" />}
         sub={
           openShift
             ? `Shift open · ${openShift.openedAt.toLocaleTimeString('en-LK', {
@@ -194,7 +194,7 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
                       : 'bg-purple-100 text-purple-800'
                 }
               >
-                {sale.paymentMethod ?? '—'}
+                {sale.paymentMethod ?? '-'}
               </Badge>
             </TableCell>
             <TableCell className="text-espresso font-medium">
@@ -206,7 +206,7 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
                     hour: '2-digit',
                     minute: '2-digit',
                   })
-                : '—'}
+                : '-'}
             </TableCell>
           </TableRow>
         ))}
@@ -260,7 +260,7 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
           <TableHead>SKU</TableHead>
           <TableHead>In Stock</TableHead>
           <TableHead>Min</TableHead>
-          <TableHead></TableHead>
+          <TableHead />
         </TableRow>
       </TableHeader>
       <TableBody>

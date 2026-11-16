@@ -45,7 +45,7 @@ export function PayrollSettingsCard({ initialValues, onSaved }: Props) {
       toast.success('Payroll settings saved');
       onSaved?.();
     } catch {
-      toast.error('Network error — could not save payroll settings');
+      toast.error('Network error - could not save payroll settings');
     } finally {
       setSaving(false);
     }

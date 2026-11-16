@@ -363,7 +363,7 @@ export async function cancelDelivery(
           quantityBefore: variant.stockQuantity,
           quantityAfter: variant.stockQuantity + line.quantity,
           reason: 'WEBSITE_ORDER' as StockMovementReason,
-          note: 'Website order canceled — stock returned',
+          note: 'Website order canceled - stock returned',
           actorId: userId,
         },
       });

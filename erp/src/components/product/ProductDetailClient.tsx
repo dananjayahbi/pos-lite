@@ -78,6 +78,7 @@ const editProductSchema = z.object({
   tags: z.array(z.string()).max(20, 'Maximum 20 tags'),
   taxRule: z.enum(['STANDARD_VAT', 'SSCL', 'EXEMPT']),
   mainImageUrl: z.string().max(500).optional(),
+  mainImageThumbnailUrl: z.string().max(500).optional(),
   activeIngredients: z.string().max(5000).optional(),
   usageInstructions: z.string().max(5000).optional(),
   healthBenefits: z.string().max(5000).optional(),
@@ -393,6 +394,7 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
       tags: (product.tags as string[]) ?? [],
       taxRule: (product.taxRule as EditProductFormData['taxRule']) ?? 'STANDARD_VAT',
       mainImageUrl: (product.mainImageUrl as string) ?? '',
+      mainImageThumbnailUrl: (product.mainImageThumbnailUrl as string) ?? '',
       activeIngredients: (product.activeIngredients as string) ?? '',
       usageInstructions: (product.usageInstructions as string) ?? '',
       healthBenefits: (product.healthBenefits as string) ?? '',
@@ -445,6 +447,10 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
             <MainImageUpload
               value={form.watch('mainImageUrl') ?? ''}
               onChange={(url) => form.setValue('mainImageUrl', url, { shouldDirty: true })}
+              thumbnailValue={form.watch('mainImageThumbnailUrl') ?? ''}
+              onThumbnailChange={(url) =>
+                form.setValue('mainImageThumbnailUrl', url, { shouldDirty: true })
+              }
             />
           </div>
 

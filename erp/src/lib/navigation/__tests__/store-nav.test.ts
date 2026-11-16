@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 
-import { storeNavGroups } from '@/lib/navigation/store-nav';
+import {
+  storeNavGroups,
+  resolveActiveNavHref,
+  type NavItem,
+} from '@/lib/navigation/store-nav';
 
 const EXPECTED_GROUPS = [
   'Overview',
@@ -24,6 +28,7 @@ const EXPECTED_HREFS = [
   '/staff/shifts',
   '/appointments',
   '/inventory',
+  '/inventory/barcode-printing',
   '/categories',
   '/brands',
   '/stock-control',
@@ -86,5 +91,47 @@ describe('store navigation', () => {
     for (const group of storeNavGroups) {
       expect(group.items.length, `${group.label} is empty`).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('active nav item resolution', () => {
+  const allItems: NavItem[] = storeNavGroups.flatMap((group) => group.items);
+
+  it('resolves each documented route to its own item', () => {
+    for (const href of EXPECTED_HREFS) {
+      expect(resolveActiveNavHref(href, allItems), href).toBe(href);
+    }
+  });
+
+  it('picks the most specific item on nested routes instead of the section', () => {
+    // The regression: /inventory is a prefix of /inventory/barcode-printing.
+    expect(resolveActiveNavHref('/inventory/barcode-printing', allItems)).toBe(
+      '/inventory/barcode-printing',
+    );
+    expect(resolveActiveNavHref('/inventory', allItems)).toBe('/inventory');
+    expect(resolveActiveNavHref('/stock-control/movements', allItems)).toBe(
+      '/stock-control/movements',
+    );
+    expect(resolveActiveNavHref('/delivery/reconciliation', allItems)).toBe(
+      '/delivery/reconciliation',
+    );
+  });
+
+  it('does not highlight exact-match sections on child routes', () => {
+    expect(resolveActiveNavHref('/dashboard/sales', allItems)).toBeNull();
+    expect(resolveActiveNavHref('/customers/broadcast', allItems)).toBe(
+      '/customers/broadcast',
+    );
+  });
+
+  it('resolves deeper descendant routes to the owning nav item', () => {
+    expect(resolveActiveNavHref('/settings/store/branding', allItems)).toBe('/settings/store');
+    expect(resolveActiveNavHref('/inventory/barcode-printing/history', allItems)).toBe(
+      '/inventory/barcode-printing',
+    );
+  });
+
+  it('returns null when no item matches', () => {
+    expect(resolveActiveNavHref('/unknown-route', allItems)).toBeNull();
   });
 });

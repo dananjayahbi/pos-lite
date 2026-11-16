@@ -7,7 +7,7 @@ import {
 
 const base = { email: 'staff@example.com', role: 'CASHIER' as const };
 
-describe('CreateStaffSchema — HR profile fields', () => {
+describe('CreateStaffSchema - HR profile fields', () => {
   it('accepts the full onboarding payload', () => {
     const parsed = CreateStaffSchema.parse({
       ...base,
@@ -58,7 +58,7 @@ describe('CreateStaffSchema — HR profile fields', () => {
   });
 });
 
-describe('StaffListQuerySchema — table filters', () => {
+describe('StaffListQuerySchema - table filters', () => {
   it('accepts a name/email search and an assignable role', () => {
     const parsed = StaffListQuerySchema.parse({ search: 'Nimal', role: 'CASHIER' });
     expect(parsed.search).toBe('Nimal');
@@ -71,7 +71,7 @@ describe('StaffListQuerySchema — table filters', () => {
   });
 });
 
-describe('UpdateStaffSchema — partial HR updates', () => {
+describe('UpdateStaffSchema - partial HR updates', () => {
   it('accepts a single profile field', () => {
     const parsed = UpdateStaffSchema.parse({ address: 'New address' });
     expect(parsed.address).toBe('New address');

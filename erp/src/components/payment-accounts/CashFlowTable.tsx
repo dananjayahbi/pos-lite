@@ -170,7 +170,7 @@ export function CashFlowTable({ accounts }: CashFlowTableProps) {
                           <AccountTypeBadge type={entry.account.type} />
                         </div>
                       ) : (
-                        <span className="font-body text-xs text-mist-ink">—</span>
+                        <span className="font-body text-xs text-mist-ink">-</span>
                       )}
                     </TableCell>
                     <TableCell className="max-w-xs truncate font-body">
@@ -180,10 +180,10 @@ export function CashFlowTable({ accounts }: CashFlowTableProps) {
                       {ENTRY_SOURCE_LABELS[entry.source]}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs">
-                      {parseMoney(entry.debit) === 0 ? '—' : formatRupee(entry.debit)}
+                      {parseMoney(entry.debit) === 0 ? '-' : formatRupee(entry.debit)}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs">
-                      {parseMoney(entry.credit) === 0 ? '—' : formatRupee(entry.credit)}
+                      {parseMoney(entry.credit) === 0 ? '-' : formatRupee(entry.credit)}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs text-espresso">
                       {formatRupee(entry.balanceAfter)}

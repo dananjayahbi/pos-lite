@@ -10,7 +10,7 @@ function at(hour: number, minute = 0): Date {
   return new Date(2026, 10, 6, hour, minute, 0, 0);
 }
 
-describe('computeAttendanceTotals — 8-hour standard and OT', () => {
+describe('computeAttendanceTotals - 8-hour standard and OT', () => {
   it('reports no overtime for a standard 8-hour day', () => {
     const result = computeAttendanceTotals([
       { clockedInAt: at(8), clockedOutAt: at(16) },

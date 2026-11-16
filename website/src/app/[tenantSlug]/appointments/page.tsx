@@ -34,10 +34,10 @@ export async function generateMetadata({
       `Reserve an appointment with ${siteName}.`;
 
     return {
-      title: `${title} — ${siteName}`,
+      title: `${title} - ${siteName}`,
       description,
       openGraph: {
-        title: `${title} — ${siteName}`,
+        title: `${title} - ${siteName}`,
         description,
       },
     };

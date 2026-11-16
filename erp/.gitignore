@@ -47,6 +47,9 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 
+# QA fixture artifacts (regenerate with scripts/qa-reconciliation-seed.ts)
+/test-artifacts/
+
 # Local dev server stdout/stderr captures
 dev-run.log
 dev-run.err.log

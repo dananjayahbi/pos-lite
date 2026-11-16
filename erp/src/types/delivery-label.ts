@@ -1,23 +1,13 @@
-/** Shared types for the custom shipping-label designer. */
+/** Shared types for the Trans Express waybill design. */
 
-export type LabelHeaderLayout = 'left' | 'centered';
-
-export type LabelPageSize = 'a6' | 'a4' | 'thermal';
-
-/** Per-tenant shipping-label template. Persisted under `Tenant.settings.delivery.label`. */
+/**
+ * Per-tenant waybill template. The design itself is fixed (copied from the
+ * courier's Proof of Delivery sticker); only the sender identity varies.
+ * Persisted under `Tenant.settings.delivery.label`.
+ */
 export interface DeliveryLabelTemplate {
+  /** Sender name printed in the "From" row. Falls back to tenant branding. */
   brandName: string;
-  logoUrl: string | null;
-  accentColor: string;
-  borderColor: string;
-  headerLayout: LabelHeaderLayout;
-  pageSize: LabelPageSize;
-  showBarcodes: boolean;
-  showOrderRef: boolean;
-  showCod: boolean;
-  showItemCount: boolean;
-  showWeight: boolean;
-  showOrigin: boolean;
-  showPickupAddress: boolean;
-  footerNote: string;
+  /** Sender contact printed in the "Contact" row. */
+  fromContact: string;
 }

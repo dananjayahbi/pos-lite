@@ -3,7 +3,7 @@ import { CreateSaleSchema } from '@/lib/validators/sale.validators';
 
 const baseLine = [{ variantId: 'v1', quantity: 1, discountPercent: 0 }];
 
-describe('CreateSaleSchema — mandatory customer (doc 32)', () => {
+describe('CreateSaleSchema - mandatory customer (doc 32)', () => {
   it('accepts a sale with a linked customerId', () => {
     const parsed = CreateSaleSchema.safeParse({
       shiftId: 'shift-1',
@@ -206,7 +206,7 @@ describe('CreateSaleSchema — mandatory customer (doc 32)', () => {
   });
 });
 
-describe('CreateSaleSchema — zero-value reason (docs 33 & 34)', () => {
+describe('CreateSaleSchema - zero-value reason (docs 33 & 34)', () => {
   it('accepts a zero-value sale with NONE payment and a BANK_PAYMENT reason', () => {
     const parsed = CreateSaleSchema.safeParse({
       shiftId: 'shift-1',

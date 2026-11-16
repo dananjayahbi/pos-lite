@@ -100,7 +100,7 @@ export function CustomerImportPanel({ onSuccess, showBackLink = false }: Custome
             comma-separated in a single cell.
           </p>
           <p>
-            Address may contain commas — wrap it in double quotes (e.g.{' '}
+            Address may contain commas - wrap it in double quotes (e.g.{' '}
             <code className="rounded bg-linen px-1">&quot;12 Galle Road, Colombo&quot;</code>).
             City is stored exactly as entered.
           </p>

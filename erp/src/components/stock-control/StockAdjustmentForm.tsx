@@ -368,7 +368,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
       // Low stock warning toast
       if (json.data.lowStockTriggered) {
         toast.warning(
-          `${json.data.productName} — ${json.data.sku} is low on stock. Current stock: ${json.data.quantityAfter}`,
+          `${json.data.productName} - ${json.data.sku} is low on stock. Current stock: ${json.data.quantityAfter}`,
           {
             action: {
               label: 'View Low Stock →',
@@ -576,9 +576,9 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
               ) : isLocked && selectedVariant ? (
                 // Locked variant chip (arrived from a Low Stock record)
                 <div className="rounded-md border border-sand/40 bg-linen/50 px-3 py-2">
-                  <p className="font-mono text-xs text-espresso">{selectedVariant.sku ?? '—'}</p>
+                  <p className="font-mono text-xs text-espresso">{selectedVariant.sku ?? '-'}</p>
                   <p className="font-body text-xs text-mist-ink">
-                    {selectedVariant.form ?? '—'} / {selectedVariant.packSize ?? '—'} · Stock:{' '}
+                    {selectedVariant.form ?? '-'} / {selectedVariant.packSize ?? '-'} · Stock:{' '}
                     {selectedVariant.stockQuantity}
                   </p>
                 </div>
@@ -594,9 +594,9 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                   <SelectContent>
                     {variants.map((v) => (
                       <SelectItem key={v.id} value={v.id}>
-                        <span className="font-mono text-xs">{v.sku ?? '—'}</span>
+                        <span className="font-mono text-xs">{v.sku ?? '-'}</span>
                         <span className="ml-1">
-                          — {v.form ?? '—'} / {v.packSize ?? '—'}
+                          - {v.form ?? '-'} / {v.packSize ?? '-'}
                         </span>
                         <span className="ml-1 text-mist-ink">
                           (Stock: {v.stockQuantity})
@@ -704,7 +704,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
               )}
               {quantity > 999 && (
                 <p className="font-body text-xs text-amber-600">
-                  Large adjustment — please double-check the quantity.
+                  Large adjustment - please double-check the quantity.
                 </p>
               )}
 

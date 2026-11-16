@@ -8,7 +8,7 @@ export function salesProductLabel(row: {
   variantDescription?: string | null;
 }): string {
   const variant = row.variantDescription?.trim();
-  return variant && variant !== "—"
+  return variant && variant !== "-"
     ? `${row.productName} - ${variant}`
     : row.productName;
 }

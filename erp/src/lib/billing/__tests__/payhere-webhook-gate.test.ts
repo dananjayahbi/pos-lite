@@ -89,7 +89,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('POST /api/webhooks/payhere — signature gate runs before any DB access', () => {
+describe('POST /api/webhooks/payhere - signature gate runs before any DB access', () => {
   it('a forged IPN performs NO invoice lookup and creates NO payment event', async () => {
     setSecret(SECRET);
 

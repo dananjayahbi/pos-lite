@@ -46,4 +46,9 @@ export interface OrderInvoiceData {
   deliveryFee: number | null;
   codAmount: number;
   totalAmount: number;
+  /** How the customer pays: COD or CARD (order-level enum). */
+  paymentMethod: 'COD' | 'CARD';
+  paymentStatus: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED';
+  /** Card brand / gateway method when known (e.g. "VISA"). */
+  paymentDetail?: string | null;
 }

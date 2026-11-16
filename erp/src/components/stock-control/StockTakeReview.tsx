@@ -404,7 +404,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
               <dd className="text-sm text-espresso">
                 {sessionData.completedAt
                   ? formatDateTime(sessionData.completedAt)
-                  : '—'}
+                  : '-'}
               </dd>
             </div>
             <div>
@@ -551,26 +551,26 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
                           </div>
                         </TableCell>
                         <TableCell className="text-sm text-espresso">
-                          {variantParts || '—'}
+                          {variantParts || '-'}
                         </TableCell>
                         <TableCell className="text-right text-sm text-mist-ink">
                           {item.systemQuantity}
                         </TableCell>
                         <TableCell className="text-right text-sm font-semibold text-espresso">
-                          {item.countedQuantity ?? '—'}
+                          {item.countedQuantity ?? '-'}
                         </TableCell>
                         <TableCell className="text-right">
                           {item.discrepancy !== null ? (
                             <DiscrepancyBadge value={item.discrepancy} />
                           ) : (
-                            <span className="text-mist-ink">—</span>
+                            <span className="text-mist-ink">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-center">
                           {item.isRecounted ? (
                             <RefreshCw className="mx-auto h-4 w-4 text-terracotta" />
                           ) : (
-                            <span className="text-mist-ink">—</span>
+                            <span className="text-mist-ink">-</span>
                           )}
                         </TableCell>
                         {resolvedTab === 'discrepancies' && (
@@ -582,7 +582,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
                                 {item.systemQuantity + item.discrepancy}
                               </span>
                             ) : (
-                              <span className="text-mist-ink">—</span>
+                              <span className="text-mist-ink">-</span>
                             )}
                           </TableCell>
                         )}

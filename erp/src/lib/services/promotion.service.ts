@@ -212,7 +212,7 @@ export function evaluateCategoryDiscounts(
 
     applied.push({
       promotionId: promo.id,
-      label: `${promo.name} — ${value.toString()}% off category`,
+      label: `${promo.name} - ${value.toString()}% off category`,
       discountAmount: totalDiscount.toString(),
       promotionType: 'CATEGORY_PERCENTAGE',
       affectedLines,
@@ -277,8 +277,8 @@ export function evaluateProductDiscounts(
     applied.push({
       promotionId: promo.id,
       label: isFixed
-        ? `${promo.name} — Rs. ${value.toFixed(2)} off product`
-        : `${promo.name} — ${value.toString()}% off product`,
+        ? `${promo.name} - Rs. ${value.toFixed(2)} off product`
+        : `${promo.name} - ${value.toString()}% off product`,
       discountAmount: totalDiscount.toString(),
       promotionType: promo.type,
       affectedLines,
@@ -375,7 +375,7 @@ export function evaluateCartPromotions(
   if (bestPromo && bestDiscount.greaterThan(0)) {
     applied.push({
       promotionId: bestPromo.id,
-      label: `${bestPromo.name} — ${bestPromo.type === 'CART_PERCENTAGE' ? `${new Decimal(bestPromo.value.toString())}% off cart` : `₹${new Decimal(bestPromo.value.toString())} off cart`}`,
+      label: `${bestPromo.name} - ${bestPromo.type === 'CART_PERCENTAGE' ? `${new Decimal(bestPromo.value.toString())}% off cart` : `₹${new Decimal(bestPromo.value.toString())} off cart`}`,
       discountAmount: bestDiscount.toString(),
       promotionType: bestPromo.type,
       affectedLines: cartLines.map((l) => l.variantId),
@@ -431,7 +431,7 @@ export async function validatePromoCode(
 
   return {
     promotionId: promo.id,
-    label: `${promo.name} — ${value.toString()}% off (code: ${promo.promoCode})`,
+    label: `${promo.name} - ${value.toString()}% off (code: ${promo.promoCode})`,
     discountAmount: disc.toString(),
     promotionType: 'PROMO_CODE',
     affectedLines: cartLines.map((l) => l.variantId),

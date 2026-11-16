@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
 
           const productName = variant.product.name;
           const sku = variant.sku;
-          const title = `${productName} — ${sku} is low on stock`;
+          const title = `${productName} - ${sku} is low on stock`;
           const notifBody = `Current stock: ${newQty} units. Threshold: ${variant.lowStockThreshold} units. Adjusted by: ${staffDisplayName(session.user.email)}.`;
 
           notificationsToCreate.push({

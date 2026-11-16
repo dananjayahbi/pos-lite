@@ -24,6 +24,7 @@ export const variantEditSchema = z.object({
   wholesalePrice: z.number().positive().nullable().optional(),
   lowStockThreshold: z.number().int().min(0, 'Must be 0 or greater'),
   imageUrls: z.array(z.string()).optional(),
+  thumbnailImageUrls: z.array(z.string()).optional(),
 });
 
 export type VariantEditFormData = z.infer<typeof variantEditSchema>;

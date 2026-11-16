@@ -90,7 +90,7 @@ export default function AccountPasswordForm() {
         void router.push('/login');
       }, 2000);
     } catch {
-      toast.error('Network error — could not update password');
+      toast.error('Network error - could not update password');
     } finally {
       setSaving(false);
     }

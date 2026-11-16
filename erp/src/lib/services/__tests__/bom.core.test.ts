@@ -11,7 +11,7 @@ import {
 } from '@/lib/services/bom.core';
 import { Prisma } from '@/generated/prisma/client';
 
-describe('bom.core — buildProductionBatchNumber', () => {
+describe('bom.core - buildProductionBatchNumber', () => {
   it('builds a deterministic MFG batch number from the production-log id', () => {
     expect(buildProductionBatchNumber('cmabc123xyz789', new Date('2026-11-01T12:00:00Z'))).toBe(
       'MFG-20261101-23XYZ789',
@@ -31,7 +31,7 @@ describe('bom.core — buildProductionBatchNumber', () => {
   });
 });
 
-describe('bom.core — computeIngredientRequirement', () => {
+describe('bom.core - computeIngredientRequirement', () => {
   it('multiplies quantity per unit by units produced', () => {
     expect(computeIngredientRequirement(0.5, 10)).toBe(5);
     expect(computeIngredientRequirement(2, 3)).toBe(6);
@@ -48,7 +48,7 @@ describe('bom.core — computeIngredientRequirement', () => {
   });
 });
 
-describe('bom.core — computeConsumptionPlan', () => {
+describe('bom.core - computeConsumptionPlan', () => {
   const ingredients: BomIngredient[] = [
     {
       rawMaterialId: 'a',
@@ -98,7 +98,7 @@ describe('bom.core — computeConsumptionPlan', () => {
   });
 });
 
-describe('bom.core — toBomIngredient', () => {
+describe('bom.core - toBomIngredient', () => {
   it('converts Prisma decimal fields to numbers', () => {
     const ingredient = toBomIngredient({
       id: 'i1',
@@ -136,7 +136,7 @@ describe('bom.core — toBomIngredient', () => {
   });
 });
 
-describe('bom.core — isSourceEligibleForProduction', () => {
+describe('bom.core - isSourceEligibleForProduction', () => {
   it('returns true for manufactured goods', () => {
     expect(isSourceEligibleForProduction('MANUFACTURED')).toBe(true);
   });

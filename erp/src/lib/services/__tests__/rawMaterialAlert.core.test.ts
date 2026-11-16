@@ -9,7 +9,7 @@ function material(quantity: string, threshold: string) {
   };
 }
 
-describe('rawMaterialAlert — evaluateRawMaterialAlert', () => {
+describe('rawMaterialAlert - evaluateRawMaterialAlert', () => {
   it('returns null when no threshold is configured', () => {
     expect(evaluateRawMaterialAlert(material('10', '0'))).toBeNull();
   });

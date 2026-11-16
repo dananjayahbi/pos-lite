@@ -101,7 +101,7 @@ export function POLinesEditor({ lines, onChange, errors, disabled }: POLinesEdit
                 <span className="min-w-0 text-sm font-medium text-espresso">
                   Line {index + 1}
                   {line.label ? (
-                    <span className="ml-2 font-normal text-mist-ink">— {line.label}</span>
+                    <span className="ml-2 font-normal text-mist-ink">- {line.label}</span>
                   ) : null}
                 </span>
                 <div className="flex shrink-0 items-center gap-2">

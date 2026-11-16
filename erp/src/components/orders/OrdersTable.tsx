@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { Loader2 } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
 import { OrderStatusBadge } from './OrderStatusBadge';
 import type { DeliveryListItem } from '@/types/delivery';
@@ -13,6 +14,12 @@ interface OrdersTableProps {
   onView: (id: string) => void;
   onPrint: (order: DeliveryListItem) => void;
   onPrintInvoice: (order: DeliveryListItem) => void;
+  /** Order whose waybill is currently being prepared. */
+  printingWaybillId?: string | null;
+  /** Order whose invoice is currently being prepared. */
+  printingInvoiceId?: string | null;
+  /** Any row-level print is running. */
+  printBusy?: boolean;
 }
 
 export function OrdersTable({
@@ -23,6 +30,9 @@ export function OrdersTable({
   onView,
   onPrint,
   onPrintInvoice,
+  printingWaybillId = null,
+  printingInvoiceId = null,
+  printBusy = false,
 }: OrdersTableProps) {
   const allSelected = orders.length > 0 && orders.every((o) => selectedIds.has(o.id));
 
@@ -66,9 +76,9 @@ export function OrdersTable({
                 </td>
                 <td className="px-4 py-3 text-sm font-medium text-espresso">{order.orderRef}</td>
                 <td className="px-4 py-3 text-sm text-espresso">
-                  {order.customer?.name ?? order.address?.fullName ?? '—'}
+                  {order.customer?.name ?? order.address?.fullName ?? '-'}
                 </td>
-                <td className="px-4 py-3 text-sm text-espresso/60">{order.address?.cityName ?? '—'}</td>
+                <td className="px-4 py-3 text-sm text-espresso/60">{order.address?.cityName ?? '-'}</td>
                 <td className="px-4 py-3 text-sm text-espresso/60">{order.itemCount ?? 1}</td>
                 <td className="px-4 py-3 text-sm text-espresso">{formatRupee(order.codAmount ?? 0)}</td>
                 <td className="px-4 py-3">
@@ -80,11 +90,37 @@ export function OrdersTable({
                     <Button size="sm" variant="ghost" onClick={() => onView(order.id)}>
                       View
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => onPrint(order)}>
-                      Print
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onPrint(order)}
+                      disabled={printBusy}
+                      aria-busy={printingWaybillId === order.id}
+                      data-testid={`order-waybill-${order.id}`}
+                    >
+                      {printingWaybillId === order.id ? (
+                        <Loader2
+                          className="mr-1.5 h-3.5 w-3.5 animate-spin"
+                          data-testid="loading-spinner"
+                        />
+                      ) : null}
+                      {printingWaybillId === order.id ? 'Preparing…' : 'Waybill'}
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => onPrintInvoice(order)}>
-                      Invoice
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onPrintInvoice(order)}
+                      disabled={printBusy}
+                      aria-busy={printingInvoiceId === order.id}
+                      data-testid={`order-invoice-${order.id}`}
+                    >
+                      {printingInvoiceId === order.id ? (
+                        <Loader2
+                          className="mr-1.5 h-3.5 w-3.5 animate-spin"
+                          data-testid="loading-spinner"
+                        />
+                      ) : null}
+                      {printingInvoiceId === order.id ? 'Printing…' : 'Invoice'}
                     </Button>
                   </div>
                 </td>

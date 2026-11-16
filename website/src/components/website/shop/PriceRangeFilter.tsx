@@ -63,7 +63,7 @@ export function PriceRangeFilter({ bounds, valueMin, valueMax, onApply }: PriceR
       {/* Live value labels */}
       <div className="flex items-center justify-between text-xs text-gray-400 mb-2 font-sans">
         <span className="text-[#97c93e] font-semibold">{formatLKR(localMin)}</span>
-        <span className="text-[#64748b]">—</span>
+        <span className="text-[#64748b]">-</span>
         <span className="text-[#97c93e] font-semibold">{formatLKR(localMax)}</span>
       </div>
 

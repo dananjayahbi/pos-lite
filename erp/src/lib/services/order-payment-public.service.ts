@@ -48,7 +48,7 @@ export function payhereStatusLabel(
   }
   switch (status) {
     case 'PAID':
-      return 'Payment received — thank you';
+      return 'Payment received - thank you';
     case 'REFUNDED':
       return 'Payment refunded';
     case 'FAILED':

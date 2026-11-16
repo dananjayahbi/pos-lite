@@ -7,7 +7,7 @@ interface StatusTimelineProps {
 }
 
 function formatDate(value: string) {
-  if (!value) return '—';
+  if (!value) return '-';
   return new Date(value).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',

@@ -158,7 +158,7 @@ export function SaleDetailModal({
                   {line.quantity}
                 </TableCell>
                 <TableCell className="text-right font-mono text-xs">
-                  {line.discountPercent > 0 ? `${line.discountPercent}%` : '—'}
+                  {line.discountPercent > 0 ? `${line.discountPercent}%` : '-'}
                 </TableCell>
                 <TableCell className="text-right font-mono text-xs font-semibold">
                   {formatRupee(line.lineTotalAfterDiscount)}

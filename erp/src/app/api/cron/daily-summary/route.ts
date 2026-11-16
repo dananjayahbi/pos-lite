@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
         // FAILED when the provider was configured but rejected the send.
         const result = await sendEmail(
           owner.email,
-          `Daily Summary — ${formatDate(start)}`,
+          `Daily Summary - ${formatDate(start)}`,
           html,
         );
 
@@ -173,7 +173,7 @@ export async function GET(request: NextRequest) {
               recipientEmail: owner.email,
               status: notConfigured ? 'PENDING' : 'FAILED',
               errorMessage: notConfigured
-                ? 'Email provider not configured (RESEND_API_KEY unset) — not sent'
+                ? 'Email provider not configured (RESEND_API_KEY unset) - not sent'
                 : `Email provider error (${result.reason ?? 'unknown'})`,
             },
           });

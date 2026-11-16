@@ -66,6 +66,24 @@ const SPEND_BANDS = [
   { label: 'Rs. 25,000+', min: 25000, max: undefined },
 ] as const;
 
+// ── Relative timestamps ──────────────────────────────────────────────────────
+
+/**
+ * Module-level so the relative labels are not re-evaluated as a render-side
+ * side effect; they are display-only text for the customer list.
+ */
+function formatRelativeDate(value?: string | null) {
+  if (!value) return '-';
+  const seconds = Math.floor((Date.now() - new Date(value).getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  const days = Math.floor(seconds / 86400);
+  if (days < 1) return `${Math.floor(seconds / 3600)}h ago`;
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CustomersPage() {
@@ -92,10 +110,20 @@ export default function CustomersPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Reset page on filter change
-  useEffect(() => {
+  // Reset the page whenever a filter changes. Done in the handlers (not an
+  // effect) so the query is not run twice for the old and new page.
+  const changeTag = (value: string) => {
+    setTag(value);
     setPage(1);
-  }, [tag, spendBand, audience]);
+  };
+  const changeSpendBand = (value: string) => {
+    setSpendBand(value);
+    setPage(1);
+  };
+  const changeAudience = (value: RepeatBuyersFilter) => {
+    setAudience(value);
+    setPage(1);
+  };
 
   // Build query params
   const band = SPEND_BANDS[Number(spendBand)] ?? SPEND_BANDS[0];
@@ -140,29 +168,17 @@ export default function CustomersPage() {
     return 'text-espresso';
   };
 
-  const formatRelativeDate = (value?: string | null) => {
-    if (!value) return '—';
-    const seconds = Math.floor((Date.now() - new Date(value).getTime()) / 1000);
-    if (seconds < 60) return 'just now';
-    const days = Math.floor(seconds / 86400);
-    if (days < 1) return `${Math.floor(seconds / 3600)}h ago`;
-    if (days < 30) return `${days}d ago`;
-    const months = Math.floor(days / 30);
-    if (months < 12) return `${months}mo ago`;
-    return `${Math.floor(months / 12)}y ago`;
-  };
-
   return (
     <div className="space-y-6 p-6 md:p-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-display font-bold text-espresso">Customers</h1>
           <p className="text-sm text-sand-ink mt-1">
             Manage your customer directory
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 sm:justify-end">
           <Button variant="outline" asChild>
             <Link href="/customers/import">
               <Upload className="mr-2 h-4 w-4" />
@@ -180,7 +196,7 @@ export default function CustomersPage() {
       <div className="flex flex-wrap items-center gap-3">
         <RepeatBuyersTabs
           value={audience}
-          onChange={setAudience}
+          onChange={changeAudience}
           repeatCount={result?.total}
         />
         <Input
@@ -189,7 +205,7 @@ export default function CustomersPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="w-64"
         />
-        <Select value={tag} onValueChange={setTag}>
+        <Select value={tag} onValueChange={changeTag}>
           <SelectTrigger className="w-40">
             <SelectValue placeholder="Tag" />
           </SelectTrigger>
@@ -202,7 +218,7 @@ export default function CustomersPage() {
             <SelectItem value="ONLINE">Online</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={spendBand} onValueChange={setSpendBand}>
+        <Select value={spendBand} onValueChange={changeSpendBand}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Spend" />
           </SelectTrigger>

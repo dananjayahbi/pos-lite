@@ -78,6 +78,14 @@
   --chart-3: #CBAD8D;
   --chart-4: #D1C7BD;
   --chart-5: #EBE3DB;
+
+  /* ── Custom scrollbars (UI update #14) ─────────────────────── */
+  /* Theme-derived so the scrollbar follows the terracotta/espresso palette
+     instead of the operating system's default grey. */
+  --scrollbar-size: 10px;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: color-mix(in srgb, var(--color-terracotta) 82%, var(--color-pearl));
+  --scrollbar-thumb-hover: var(--color-espresso);
 }
 
 body {
@@ -88,6 +96,49 @@ body {
 
 * {
   box-sizing: border-box;
+}
+
+/* ── Theme scrollbars (UI update #14) ───────────────────────────
+   Firefox and Chromium 121+ use the standard properties; WebKit/Blink pick up
+   the pseudo-elements. Kept in the base layer so the `.scrollbar-none` utility
+   (utilities layer) still wins where a bar must be hidden. */
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+
+  ::-webkit-scrollbar {
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    /* Inset the thumb so it floats inside the track instead of filling it. */
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover,
+  ::-webkit-scrollbar-thumb:active {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: var(--scrollbar-track);
+  }
+
+  ::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
 }
 
 /* ── Utility: hide scrollbar while keeping scrollable ─────────── */
@@ -147,5 +198,33 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* UI update #6 — every data table sits on a white surface instead of
+     inheriting the pearl page background. Covers both the shared <Table>
+     component and the hand-written <table> elements used by a few modules.
+     Row/header utilities (bg-linen, bg-muted, hover states) still win because
+     Tailwind utilities load after the base layer. */
+  table {
+    background-color: #ffffff;
+  }
+
+  /* POS touch mode: no double-tap zoom delay and no accidental text
+     selection when a cashier taps a product tile or cart line. */
+  button,
+  [role='button'],
+  a,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Keyboard mode: a visible ring must survive on both the dark POS toolbar
+     and the linen product grid. */
+  :focus-visible {
+    outline: 2px solid var(--color-terracotta);
+    outline-offset: 2px;
   }
 }

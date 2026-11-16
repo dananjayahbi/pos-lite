@@ -90,7 +90,7 @@ export function PackSizePickerPanel({
             onChange={(e) => setCustomInput(e.target.value)}
             onKeyDown={handleCustomKeyDown}
             onBlur={handleCustomBlur}
-            placeholder="e.g. 75g — type & press Enter"
+            placeholder="e.g. 75g - type & press Enter"
             className="font-body text-sm h-8"
           />
           {value && (

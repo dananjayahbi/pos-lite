@@ -76,10 +76,10 @@ export async function GET(request: NextRequest) {
       saleId: sale.id,
       staff: staffDisplayName(sale.cashier?.email),
       reason: sale.zeroValueReason ?? null,
-      reasonLabel: sale.zeroValueReason ? REASON_LABELS[sale.zeroValueReason] ?? sale.zeroValueReason : '—',
+      reasonLabel: sale.zeroValueReason ? REASON_LABELS[sale.zeroValueReason] ?? sale.zeroValueReason : '-',
       linkedOrderRef: sale.zeroValueLinkedOrderRef ?? null,
-      customerName: sale.customer?.name ?? '—',
-      customerPhone: sale.customer?.phone ?? '—',
+      customerName: sale.customer?.name ?? '-',
+      customerPhone: sale.customer?.phone ?? '-',
       saleNumber: sale.id.slice(0, 8).toUpperCase(),
       completedAt: sale.completedAt?.toISOString() ?? sale.createdAt.toISOString(),
     }));

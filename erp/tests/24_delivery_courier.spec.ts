@@ -305,4 +305,71 @@ test.describe('Module 24: Delivery, Orders & Courier API Integration', () => {
     expect(json.data.orderRef).toMatch(/^DEL-\d{4}-\d{4}$/);
     expect(new Date(json.data.createdAt).toString()).not.toBe('Invalid Date');
   });
+
+  test('A20 waybill preview follows the Proof of Delivery layout', async ({ page }) => {
+    await page.goto(`${BASE_URL}/delivery/label`, { waitUntil: 'domcontentloaded' });
+    const label = page.getByTestId('waybill-label');
+    await expect(label).toBeVisible({ timeout: 45_000 });
+
+    // The courier sticker's three blocks and its header barcode.
+    await expect(label.getByText('Proof of Delivery')).toBeVisible();
+    await expect(label.getByText('Customer Details')).toBeVisible();
+    await expect(label.getByText('Order Description')).toBeVisible();
+    await expect(label.getByText('From', { exact: true })).toBeVisible();
+    await expect(label.getByText('Order No', { exact: true })).toBeVisible();
+    await expect(label.getByText('TE-12345678')).toBeVisible();
+    await expect(label.getByText('2,500.00')).toBeVisible();
+    await expect(label.getByText(/^\d{2}\/\d{2}\/\d{4}$/)).toBeVisible();
+    await expect(label.locator('svg').first()).toBeVisible();
+  });
+
+  test('A21 the page is called Waybill Design and the old design controls are gone', async ({ page }) => {
+    await page.goto(`${BASE_URL}/delivery/label`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Waybill Design' })).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByText('Accent color')).toHaveCount(0);
+    await expect(page.getByText('Border color')).toHaveCount(0);
+    await expect(page.getByText('Header layout')).toHaveCount(0);
+    await expect(page.getByText('Page size')).toHaveCount(0);
+    await expect(page.getByText('Footer note')).toHaveCount(0);
+    // The fixed courier footer is printed on the waybill.
+    const label = page.getByTestId('waybill-label');
+    await expect(label.getByText(/TransExpress Lanka Services/)).toBeVisible();
+    await expect(label.getByText(/Aththidiya Road, Bellanthara/)).toBeVisible();
+    // The downloaded logo asset is used, not a remote URL.
+    await expect(label.locator('img[src="/delivery/transexpress-logo.png"]')).toBeVisible();
+  });
+
+  test('A22 printing lays out two waybills on one A4 landscape sheet', async ({ page }) => {
+    // window.print() would block the test; record the call instead.
+    await page.addInitScript(() => {
+      (window as unknown as { __printCalls: number }).__printCalls = 0;
+      window.print = () => {
+        (window as unknown as { __printCalls: number }).__printCalls += 1;
+      };
+    });
+    await page.goto(`${BASE_URL}/delivery/label`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('waybill-label')).toBeVisible({ timeout: 45_000 });
+
+    await page.getByRole('button', { name: 'Print 2-up sample' }).click();
+
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __printCalls: number }).__printCalls), {
+        timeout: 10_000,
+      })
+      .toBe(1);
+
+    const info = await page.evaluate(() => ({
+      pages: document.querySelectorAll('.waybill-page').length,
+      labels: document.querySelectorAll('.waybill-sheet [data-testid="waybill-label"]').length,
+      css: Array.from(document.querySelectorAll('style'))
+        .map((style) => style.textContent ?? '')
+        .join('\n'),
+    }));
+    expect(info.pages).toBe(2);
+    expect(info.labels).toBe(2);
+    expect(info.css).toContain('size: A4 landscape');
+    expect(info.css).toContain('grid-template-columns: 148.5mm 148.5mm');
+    expect(info.css).toContain('height: 210mm');
+  });
+
 });

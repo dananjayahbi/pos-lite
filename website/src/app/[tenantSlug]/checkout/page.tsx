@@ -46,7 +46,7 @@ export async function generateMetadata({ params }: CheckoutPageProps): Promise<M
   const { tenantSlug } = await params;
   const tenant = await getTenantInfo(tenantSlug).catch(() => null);
   return {
-    title: `${tenant?.name ?? 'Store'} — Checkout`,
+    title: `${tenant?.name ?? 'Store'} - Checkout`,
     description: 'Place your order for cash on delivery.',
   };
 }

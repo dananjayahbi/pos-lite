@@ -28,7 +28,7 @@ export async function generateMetadata({
     const siteName = configResponse?.config?.siteName || tenant.name;
     const title =
       configResponse?.config?.aboutPageTitle ||
-      `About — ${siteName}`;
+      `About - ${siteName}`;
     const description =
       configResponse?.config?.metaDescription ||
       `Learn more about ${siteName}.`;

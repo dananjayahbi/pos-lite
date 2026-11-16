@@ -95,12 +95,12 @@ export function VariantImagesUpload({
       for (const file of toProcess) {
         if (!ALLOWED_TYPES.includes(file.type)) {
           toast.error(
-            `"${file.name}" — Only JPEG, PNG, and WebP images are accepted.`,
+            `"${file.name}" - Only JPEG, PNG, and WebP images are accepted.`,
           );
           continue;
         }
         if (file.size > MAX_BYTES) {
-          toast.error(`"${file.name}" — Image must be under 5 MB.`);
+          toast.error(`"${file.name}" - Image must be under 5 MB.`);
           continue;
         }
         validFiles.push(file);

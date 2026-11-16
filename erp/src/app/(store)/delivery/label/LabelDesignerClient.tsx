@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useLabelTemplate } from '@/hooks/delivery';
 import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
@@ -10,18 +10,13 @@ import type { DeliveryLabelTemplate } from '@/types/delivery-label';
 
 export function LabelDesignerClient() {
   const { data, isLoading, save, reset } = useLabelTemplate();
-  const [template, setTemplate] = useState<DeliveryLabelTemplate>(DEFAULT_LABEL_TEMPLATE);
-  const [hydrated, setHydrated] = useState(false);
-
-  // Hydrate local editor state once the saved template loads (never clobber edits).
-  useEffect(() => {
-    if (!data || hydrated) return;
-    setHydrated(true);
-    setTemplate(data);
-  }, [data, hydrated]);
+  // `null` means "no local edits yet": the saved template is rendered directly.
+  // Editing copies it into a draft, so no effect has to hydrate state later.
+  const [draft, setDraft] = useState<DeliveryLabelTemplate | null>(null);
+  const template = draft ?? data ?? DEFAULT_LABEL_TEMPLATE;
 
   const patch = (next: Partial<DeliveryLabelTemplate>) =>
-    setTemplate((current) => ({ ...current, ...next }));
+    setDraft({ ...template, ...next });
 
   if (isLoading) {
     return (
@@ -38,9 +33,9 @@ export function LabelDesignerClient() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="font-display text-2xl font-bold text-espresso">Label Design</h1>
+        <h1 className="font-display text-2xl font-bold text-espresso">Waybill Design</h1>
         <p className="mt-1 text-sm text-sand-ink">
-          Customize how shipping labels render when a delivery is printed.
+          Fixed TransExpress Proof of Delivery design, printed two per A4 landscape sheet.
         </p>
       </div>
 
@@ -50,12 +45,12 @@ export function LabelDesignerClient() {
           onChange={patch}
           onSave={() =>
             save.mutate(template, {
-              onSuccess: (saved) => setTemplate(saved),
+              onSuccess: (saved) => setDraft(saved),
             })
           }
           onReset={() =>
             reset.mutate(undefined, {
-              onSuccess: (saved) => setTemplate(saved),
+              onSuccess: (saved) => setDraft(saved),
             })
           }
           isSaving={save.isPending}

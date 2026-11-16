@@ -88,10 +88,10 @@ function AddCustomerForm({ onCancel, onLinked }: AddCustomerFormProps) {
         setIsSubmitting(false);
         return;
       }
-      toast.success(`Customer added — ${json.data!.name}`);
+      toast.success(`Customer added - ${json.data!.name}`);
       onLinked(json.data!);
     } catch {
-      setError('Network error — please try again');
+      setError('Network error - please try again');
       setIsSubmitting(false);
     }
   };

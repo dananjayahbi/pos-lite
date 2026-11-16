@@ -3,10 +3,20 @@
 import { Minus, Plus, X, Sparkles } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
 import { useCartStore, getLineTotalAfterDiscount } from '@/stores/cartStore';
+import { focusPOSBarcodeInput } from '@/lib/pos/keyboard';
 import type { CartItem } from '@/stores/cartStore';
 
 interface CartLineItemProps {
   item: CartItem;
+}
+
+/** Moves focus to the previous/next cart row for keyboard-only review. */
+function focusAdjacentCartLine(from: HTMLElement, direction: 1 | -1) {
+  const lines = Array.from(document.querySelectorAll<HTMLElement>('[data-cart-line]'));
+  const index = lines.indexOf(from);
+  if (index === -1) return;
+  const next = lines[index + direction];
+  next?.focus();
 }
 
 export function CartLineItem({ item }: CartLineItemProps) {
@@ -24,10 +34,48 @@ export function CartLineItem({ item }: CartLineItemProps) {
   return (
     <div
       role="button"
+      data-cart-line=""
       tabIndex={0}
+      aria-label={`${item.productName}, ${item.variantDescription}, quantity ${item.quantity}, ${formatRupee(lineTotal.toNumber())}`}
+      aria-pressed={isActive}
       onClick={() => setActiveLine(item.variantId)}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveLine(item.variantId); }}
-      className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${isActive ? 'bg-linen' : 'hover:bg-linen/50'}`}
+      onKeyDown={(e) => {
+        // Child buttons keep their native Enter/Space behaviour; the row
+        // shortcuts only apply when the row itself has focus.
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          setActiveLine(item.variantId);
+          return;
+        }
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          focusAdjacentCartLine(e.currentTarget, e.key === 'ArrowDown' ? 1 : -1);
+          return;
+        }
+        if (e.key === '+' || e.key === '=') {
+          e.preventDefault();
+          updateQuantity(item.variantId, item.quantity + 1);
+          return;
+        }
+        if (e.key === '-' || e.key === '_') {
+          e.preventDefault();
+          updateQuantity(item.variantId, Math.max(1, item.quantity - 1));
+          return;
+        }
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          removeItem(item.variantId);
+          focusPOSBarcodeInput();
+          return;
+        }
+        if (e.key === 'Escape') {
+          setActiveLine(null);
+        }
+      }}
+      className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-terracotta ${
+        isActive ? 'bg-linen' : 'hover:bg-linen/50'
+      }`}
     >
       {/* Product info */}
       <div className="flex-1 min-w-0">
@@ -43,7 +91,7 @@ export function CartLineItem({ item }: CartLineItemProps) {
                 e.stopPropagation();
                 setLineDiscount(item.variantId, 0);
               }}
-              className="text-[#9B2226]/70 hover:text-[#9B2226] transition-colors"
+              className="inline-flex h-6 w-6 items-center justify-center text-[#9B2226]/70 hover:text-[#9B2226] transition-colors"
               aria-label={`Remove discount from ${item.productName}`}
               title="Remove line discount"
             >
@@ -66,16 +114,16 @@ export function CartLineItem({ item }: CartLineItemProps) {
           type="button"
           onClick={() => updateQuantity(item.variantId, item.quantity - 1)}
           disabled={item.quantity <= 1}
-          className="p-1 text-terracotta hover:text-espresso disabled:opacity-40"
+          className="inline-flex h-10 w-10 items-center justify-center text-terracotta hover:text-espresso disabled:opacity-40 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta"
           aria-label={`Decrease quantity of ${item.productName}`}
         >
           <Minus className="h-3.5 w-3.5" />
         </button>
-        <span className="font-mono text-sm text-espresso w-6 text-center">{item.quantity}</span>
+        <span className="font-mono text-sm text-espresso w-6 text-center" aria-live="polite">{item.quantity}</span>
         <button
           type="button"
           onClick={() => updateQuantity(item.variantId, item.quantity + 1)}
-          className="p-1 text-terracotta hover:text-espresso"
+          className="inline-flex h-10 w-10 items-center justify-center text-terracotta hover:text-espresso rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta"
           aria-label={`Increase quantity of ${item.productName}`}
         >
           <Plus className="h-3.5 w-3.5" />
@@ -90,8 +138,12 @@ export function CartLineItem({ item }: CartLineItemProps) {
       {/* Remove button */}
       <button
         type="button"
-        onClick={(e) => { e.stopPropagation(); removeItem(item.variantId); }}
-        className="p-1 text-mist-ink hover:text-[#9B2226] transition-colors"
+        onClick={(e) => {
+          e.stopPropagation();
+          removeItem(item.variantId);
+          focusPOSBarcodeInput();
+        }}
+        className="inline-flex h-10 w-10 items-center justify-center rounded-md text-mist-ink hover:text-[#9B2226] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta"
         aria-label={`Remove ${item.productName} from cart`}
       >
         <X className="h-3.5 w-3.5" />

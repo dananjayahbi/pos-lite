@@ -65,7 +65,7 @@ export function LineItemDiscountControl({ item }: LineItemDiscountControlProps) 
     <div className="px-4 py-2 bg-linen/50 border-t border-mist/20">
       <div className="flex items-center justify-between mb-1.5">
         <span className="font-body text-[11px] text-mist-ink">
-          Line discount{hasActiveDiscount ? ` — applied ${item.discountPercent}% off` : ''}
+          Line discount{hasActiveDiscount ? ` - applied ${item.discountPercent}% off` : ''}
         </span>
         {hasActiveDiscount && (
           <button

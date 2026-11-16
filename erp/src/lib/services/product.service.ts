@@ -12,8 +12,42 @@ import { Prisma } from '@/generated/prisma/client';
 import type { HealthConcern, ProductSource, TaxRule } from '@/generated/prisma/client';
 import { createAuditLog, writeAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { ApiError } from '@/lib/api/errors';
+import { generateBarcode } from '@/lib/barcode';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Minimal client surface needed to reserve a barcode (works inside a tx). */
+type BarcodeAllocationClient = Pick<Prisma.TransactionClient, 'productVariant'>;
+
+/**
+ * Reserves a tenant-unique EAN-13 barcode.
+ *
+ * Generation happens on the server (never in the browser) so the value that is
+ * stored is the value that gets printed. `taken` lets a batch allocation avoid
+ * colliding with itself before the rows are written.
+ */
+export async function allocateBarcode(
+  client: BarcodeAllocationClient,
+  tenantId: string,
+  taken: Set<string> = new Set(),
+): Promise<string> {
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const candidate = generateBarcode();
+    if (taken.has(candidate)) continue;
+
+    const existing = await client.productVariant.findFirst({
+      where: { tenantId, barcode: candidate },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      taken.add(candidate);
+      return candidate;
+    }
+  }
+
+  throw new Error('Could not allocate a unique barcode');
+}
 
 // ── Input Types ──────────────────────────────────────────────────────────────
 
@@ -44,6 +78,7 @@ export interface CreateProductInput {
   tags?: string[] | undefined;
   taxRule?: TaxRule | undefined;
   mainImageUrl?: string | null | undefined;
+  mainImageThumbnailUrl?: string | null | undefined;
   activeIngredients?: string | null | undefined;
   usageInstructions?: string | null | undefined;
   healthBenefits?: string | null | undefined;
@@ -61,6 +96,7 @@ export interface UpdateProductInput {
   taxRule?: TaxRule | undefined;
   isArchived?: boolean | undefined;
   mainImageUrl?: string | null | undefined;
+  mainImageThumbnailUrl?: string | null | undefined;
   activeIngredients?: string | null | undefined;
   usageInstructions?: string | null | undefined;
   healthBenefits?: string | null | undefined;
@@ -81,6 +117,7 @@ export interface CreateVariantInput {
   initialStock?: number | undefined;
   lowStockThreshold?: number | undefined;
   imageUrls?: string[] | undefined;
+  thumbnailImageUrls?: string[] | undefined;
 }
 
 export interface UpdateVariantInput {
@@ -94,6 +131,7 @@ export interface UpdateVariantInput {
   stockQuantity?: number | undefined;
   lowStockThreshold?: number | undefined;
   imageUrls?: string[] | undefined;
+  thumbnailImageUrls?: string[] | undefined;
 }
 
 export interface CreateCategoryInput {
@@ -200,6 +238,7 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
             stockQuantity: true,
             lowStockThreshold: true,
             imageUrls: true,
+            thumbnailImageUrls: true,
             retailPrice: true,
             costPrice: true,
             // Batch/expiry summary (doc 30) — surfaced in inventory lists.
@@ -254,6 +293,7 @@ export async function createProduct(tenantId: string, actorId: string, data: Cre
       tags: data.tags ?? [],
       taxRule: data.taxRule ?? 'STANDARD_VAT',
       mainImageUrl: data.mainImageUrl ?? null,
+      mainImageThumbnailUrl: data.mainImageThumbnailUrl ?? null,
       activeIngredients: data.activeIngredients ?? null,
       usageInstructions: data.usageInstructions ?? null,
       healthBenefits: data.healthBenefits ?? null,
@@ -311,6 +351,17 @@ export async function createProductVariants(
     skuSet.add(v.sku);
   }
 
+  // Duplicate barcodes supplied explicitly in one batch are a caller bug, not
+  // something to paper over with generation: surface it before the DB does.
+  const barcodeSet = new Set<string>();
+  for (const v of resolvedVariants) {
+    if (!v.barcode) continue;
+    if (barcodeSet.has(v.barcode)) {
+      throw new Error(`Duplicate barcode in batch: ${v.barcode}`);
+    }
+    barcodeSet.add(v.barcode);
+  }
+
   // Check for existing SKUs in the same tenant
   const existingSkus = await prisma.productVariant.findMany({
     where: {
@@ -327,12 +378,22 @@ export async function createProductVariants(
   }
 
   const created = await prisma.$transaction(async (tx) => {
+    // Barcode guarantee (client requirement 03): every variant leaves creation
+    // with a saved barcode. An explicit value is respected; otherwise one is
+    // allocated inside the same transaction, so a rolled-back product never
+    // leaves a barcode "reserved" in the browser only.
+    const withBarcodes: Array<(typeof resolvedVariants)[number] & { barcode: string }> = [];
+    for (const v of resolvedVariants) {
+      const barcode = v.barcode ?? (await allocateBarcode(tx, tenantId, barcodeSet));
+      withBarcodes.push({ ...v, barcode });
+    }
+
     await tx.productVariant.createMany({
-      data: resolvedVariants.map((v) => ({
+      data: withBarcodes.map((v) => ({
         productId,
         tenantId,
         sku: v.sku,
-        barcode: v.barcode ?? null,
+        barcode: v.barcode,
         form: v.form ?? null,
         packSize: v.packSize ?? null,
         costPrice: v.costPrice,
@@ -341,6 +402,7 @@ export async function createProductVariants(
         stockQuantity: v.initialStock ?? v.stockQuantity ?? 0,
         lowStockThreshold: v.lowStockThreshold ?? 5,
         imageUrls: v.imageUrls ?? [],
+        thumbnailImageUrls: v.thumbnailImageUrls ?? [],
       })),
     });
 
@@ -389,6 +451,7 @@ export async function updateProduct(
   if (data.taxRule !== undefined) updateData.taxRule = data.taxRule;
   if (data.isArchived !== undefined) updateData.isArchived = data.isArchived;
   if (data.mainImageUrl !== undefined) updateData.mainImageUrl = data.mainImageUrl;
+  if (data.mainImageThumbnailUrl !== undefined) updateData.mainImageThumbnailUrl = data.mainImageThumbnailUrl;
   if (data.activeIngredients !== undefined) updateData.activeIngredients = data.activeIngredients;
   if (data.usageInstructions !== undefined) updateData.usageInstructions = data.usageInstructions;
   if (data.healthBenefits !== undefined) updateData.healthBenefits = data.healthBenefits;
@@ -475,6 +538,7 @@ export async function updateProductVariant(
   if (data.stockQuantity !== undefined) updateData.stockQuantity = data.stockQuantity;
   if (data.lowStockThreshold !== undefined) updateData.lowStockThreshold = data.lowStockThreshold;
   if (data.imageUrls !== undefined) updateData.imageUrls = data.imageUrls;
+  if (data.thumbnailImageUrls !== undefined) updateData.thumbnailImageUrls = data.thumbnailImageUrls;
 
   const updated = await prisma.productVariant.update({
     where: { id: variantId },

@@ -94,7 +94,7 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
   const variants = products.flatMap((product) =>
     (product.variants ?? []).map((variant) => ({
       id: variant.id,
-      label: `${product.name} — ${variant.sku}`,
+      label: `${product.name} - ${variant.sku}`,
     })),
   );
 
@@ -233,10 +233,10 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
                       </SelectContent>
                     </Select>
                     <div className="text-right text-sm text-espresso">
-                      {selected ? selected.quantity : '—'}
+                      {selected ? selected.quantity : '-'}
                     </div>
                     <div className="text-sm text-mist-ink">
-                      {selected ? (selected.unitName ?? getUnitLabel(selected.unit)) : '—'}
+                      {selected ? (selected.unitName ?? getUnitLabel(selected.unit)) : '-'}
                     </div>
                     <div className="relative">
                       <Input

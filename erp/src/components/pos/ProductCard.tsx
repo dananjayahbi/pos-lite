@@ -10,20 +10,30 @@ interface ProductCardProps {
   product: ProductListItem;
   onAddDirectly: (variantId: string) => void;
   onOpenVariantModal: (productId: string) => void;
+  /** Roving tabindex supplied by the grid; -1 for off-path cards. */
+  tabIndex?: number;
+  onFocus?: () => void;
 }
 
 export function ProductCard({
   product,
   onAddDirectly,
   onOpenVariantModal,
+  tabIndex = 0,
+  onFocus,
 }: ProductCardProps) {
   const variants = product.variants ?? [];
   const totalStock = variants.reduce((sum, v) => sum + v.stockQuantity, 0);
 
-  // Product-level image takes precedence; variant images are only a fallback.
+  // Icon-size surface: prefer the generated thumbnail; fall back to the full
+  // image for legacy products that predate thumbnail generation.
+  const variantWithImage = variants.find((v) => v.imageUrls.length > 0);
   const firstImage =
+    product.mainImageThumbnailUrl ??
     product.mainImageUrl ??
-    variants.find((v) => v.imageUrls.length > 0)?.imageUrls[0];
+    (variantWithImage
+      ? variantWithImage.thumbnailImageUrls?.[0] ?? variantWithImage.imageUrls[0]
+      : undefined);
 
   // Any variant with an expired or near-expiry batch triggers the badge.
   const hasNearExpiry = variants.some((v) =>
@@ -53,12 +63,19 @@ export function ProductCard({
   return (
     <div
       role="button"
-      tabIndex={0}
+      data-pos-product=""
+      tabIndex={tabIndex}
+      aria-label={`${product.name}, ${formatRupee(minPrice)}${totalStock === 0 ? ', out of stock' : ''}`}
+      aria-disabled={totalStock === 0}
+      onFocus={onFocus}
       onClick={handleClick}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') handleClick();
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleClick();
+        }
       }}
-      className={`relative cursor-pointer rounded-lg bg-white shadow-sm hover:shadow-md transition-shadow overflow-hidden h-[165px] ${
+      className={`relative cursor-pointer rounded-lg bg-white shadow-sm hover:shadow-md transition-shadow overflow-hidden h-[165px] focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta focus-visible:ring-offset-2 focus-visible:ring-offset-linen ${
         totalStock === 0 ? 'opacity-60' : ''
       }`}
     >

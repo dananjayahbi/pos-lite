@@ -8,12 +8,17 @@ import { toast } from 'sonner';
 interface ProductImageUploadProps {
   imageUrls: string[];
   onImagesChange: (urls: string[]) => void;
+  /** Parallel thumbnail URLs (same order/index as imageUrls). */
+  thumbnailUrls?: string[];
+  onThumbnailsChange?: (urls: string[]) => void;
   maxImages?: number | undefined;
 }
 
 export function ProductImageUpload({
   imageUrls,
   onImagesChange,
+  thumbnailUrls,
+  onThumbnailsChange,
   maxImages,
 }: ProductImageUploadProps) {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -21,6 +26,7 @@ export function ProductImageUpload({
   const [brokenUrls, setBrokenUrls] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const max = maxImages ?? 5;
+  const thumbs = thumbnailUrls ?? [];
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -60,8 +66,17 @@ export function ProductImageUpload({
     xhr.onload = () => {
       setUploadProgress(null);
       if (xhr.status >= 200 && xhr.status < 300) {
-        const data = JSON.parse(xhr.responseText) as { url: string };
+        const data = JSON.parse(xhr.responseText) as {
+          url: string;
+          thumbnailUrl?: string | null;
+        };
+        // Keep the thumbnail list index-aligned with imageUrls: fall back to
+        // the full URL when the server could not produce a thumbnail.
+        const thumbnail = data.thumbnailUrl ?? data.url;
         onImagesChange([...imageUrls, data.url]);
+        if (onThumbnailsChange) {
+          onThumbnailsChange([...thumbs, thumbnail]);
+        }
       } else {
         setError('Upload failed. Please try again.');
       }
@@ -77,16 +92,23 @@ export function ProductImageUpload({
     xhr.send(formData);
   }
 
-  function handleRemove(url: string) {
-    const updated = imageUrls.filter((u) => u !== url);
+  function handleRemove(index: number) {
+    const updated = imageUrls.filter((_, i) => i !== index);
+    const removedThumb = thumbs[index];
     onImagesChange(updated);
+    if (onThumbnailsChange) {
+      onThumbnailsChange(thumbs.filter((_, i) => i !== index));
+    }
 
     toast('Image removed', {
       duration: 5000,
       action: {
         label: 'Undo',
         onClick: () => {
-          onImagesChange([...updated, url]);
+          onImagesChange([...updated, imageUrls[index]!]);
+          if (onThumbnailsChange && removedThumb != null) {
+            onThumbnailsChange([...thumbs.filter((_, i) => i !== index), removedThumb]);
+          }
         },
       },
     });
@@ -96,7 +118,7 @@ export function ProductImageUpload({
     <div className="space-y-1.5">
       <div className="flex flex-wrap gap-2">
         {/* Existing image tiles */}
-        {imageUrls.map((url) => (
+        {imageUrls.map((url, index) => (
           <div
             key={url}
             className="relative group h-20 w-20 rounded border border-sand/30 overflow-hidden"
@@ -108,7 +130,7 @@ export function ProductImageUpload({
               </div>
             ) : (
               <Image
-                src={url}
+                src={thumbs[index] ?? url}
                 alt=""
                 fill
                 className="object-cover"
@@ -119,7 +141,7 @@ export function ProductImageUpload({
             )}
             <button
               type="button"
-              onClick={() => handleRemove(url)}
+              onClick={() => handleRemove(index)}
               className="absolute top-0.5 right-0.5 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-[#9B2226]/70 text-pearl text-[10px] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[#9B2226]"
             >
               <X className="h-2.5 w-2.5" />

@@ -1,10 +1,16 @@
 'use client';
 
 import Barcode from 'react-barcode';
+import type { ReactNode } from 'react';
 import { renderPrintOverlay } from '@/lib/print-overlay';
-import { cn } from '@/lib/utils';
+import {
+  buildWaybillDescription,
+  formatWaybillAmount,
+  formatWaybillDate,
+  waybillBarcodeValue,
+} from '@/lib/delivery/waybill';
 import type { DeliveryLabelTemplate } from '@/types/delivery-label';
-import { buildSampleLabelProps } from './sampleLabel';
+import { buildSampleLabelProps, buildSampleSheetProps } from './sampleLabel';
 
 interface Address {
   fullName: string;
@@ -22,6 +28,9 @@ interface DeliveryLike {
   codAmount: string | number;
   itemCount?: number | undefined;
   totalWeightKg?: string | number | null | undefined;
+  deliveredAt?: string | null | undefined;
+  dispatchedAt?: string | null | undefined;
+  createdAt?: string | null | undefined;
 }
 
 interface ShippingLabelProps {
@@ -29,8 +38,6 @@ interface ShippingLabelProps {
   address: Address;
   delivery: DeliveryLike;
   waybillId?: string | null;
-  origin?: string | null;
-  pickupAddress?: string | null;
 }
 
 /**
@@ -43,28 +50,52 @@ interface LabelDeliveryLike {
   itemCount?: number | null;
   totalWeightKg?: string | number | null;
   waybill?: string | null;
+  deliveredAt?: string | null;
+  dispatchedAt?: string | null;
+  createdAt?: string | null;
   address?: Partial<Address> | null;
   shipments?: { waybillId?: string | null }[];
 }
 
-function formatLkr(value: string | number): string {
-  const num = Number(value);
-  return `Rs. ${num.toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** Fixed parts of the courier's Proof of Delivery sticker. */
+const COURIER_LOGO = '/delivery/transexpress-logo.png';
+const COURIER_FOOTER = [
+  'TransExpress Lanka Services (Pvt) Ltd',
+  'No: 95, Aththidiya Road, Bellanthara - Direct Line: 011 2 999 888',
+];
+
+/** One A4 landscape sheet fits exactly two portrait waybills. */
+export const WAYBILL_PER_SHEET = 2;
+export const WAYBILL_WIDTH_MM = 148.5;
+export const WAYBILL_HEIGHT_MM = 210;
+
+function WaybillRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-[4mm] border-b border-black py-[1.7mm] text-[10pt] font-bold leading-tight">
+      <span className="shrink-0">
+        <span>{label}</span>
+        <span className="ml-[1mm]">:</span>
+      </span>
+      <span className="break-words text-right">{value}</span>
+    </div>
+  );
+}
+
+function SectionTitle({ children }: { children: ReactNode }) {
+  return <h2 className="mt-[3.5mm] text-[11.5pt] font-bold leading-tight">{children}</h2>;
 }
 
 /**
- * Branded shipping label rendered from a per-tenant template. Colors, header
- * layout, field visibility, and the footer note all come from `template`.
- * The label is self-contained enough to be rendered inside a print overlay.
+ * Trans Express "Proof of Delivery" waybill.
+ *
+ * The layout is fixed to the courier's sticker: logo + waybill barcode header,
+ * sender block, customer block, order description, and the courier's company
+ * footer. Only the sender name/contact come from the tenant template.
+ *
+ * The component fills its parent cell; printing places two of those cells on
+ * one A4 landscape sheet (see `printShippingLabels`).
  */
-export function ShippingLabel({
-  template,
-  address,
-  delivery,
-  waybillId,
-  origin,
-  pickupAddress,
-}: ShippingLabelProps) {
+export function ShippingLabel({ template, address, delivery, waybillId }: ShippingLabelProps) {
   const fullAddress = [
     address.addressLine1,
     address.addressLine2,
@@ -74,102 +105,90 @@ export function ShippingLabel({
     .filter(Boolean)
     .join(', ');
 
-  const showOrderBarcode = template.showBarcodes && template.showOrderRef && Boolean(delivery.orderRef);
-  const centered = template.headerLayout === 'centered';
+  const barcodeValue = waybillBarcodeValue({
+    waybillId,
+    orderRef: delivery.orderRef,
+    showOrderRef: true,
+  });
+  const branchParts = [address.cityName, address.districtName].filter(
+    (part): part is string => Boolean(part),
+  );
+  const branch =
+    branchParts.length > 0
+      ? branchParts.every((part) => part === branchParts[0])
+        ? branchParts[0]!
+        : branchParts.join(' / ')
+      : '';
+  const contact = [address.phone, address.phone2].filter(Boolean).join(' / ');
+  const description = buildWaybillDescription({
+    itemCount: delivery.itemCount,
+    totalWeightKg: delivery.totalWeightKg,
+    showItemCount: true,
+    showWeight: true,
+    fallback: delivery.orderRef,
+  });
+  const date = delivery.deliveredAt ?? delivery.dispatchedAt ?? delivery.createdAt ?? null;
 
   return (
     <div
-      className="mx-auto w-85 border-2 bg-white text-espresso shadow print:shadow-none"
-      style={{ borderColor: template.borderColor }}
+      data-testid="waybill-label"
+      className="flex h-full w-full flex-col bg-white px-[6mm] py-[5mm] text-black"
     >
-      {/* Brand header */}
-      <div
-        className={cn(
-          'flex items-center gap-2 border-b-2 px-3 py-2',
-          centered ? 'flex-col justify-center gap-1 text-center' : 'justify-between',
-        )}
-        style={{ borderColor: template.borderColor, backgroundColor: template.accentColor, color: '#ffffff' }}
-      >
-        <div className="flex items-center gap-2">
-          {template.logoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={template.logoUrl} alt="" className="h-8 w-8 rounded bg-white object-contain" />
-          )}
-          <div>
-            <p className="font-display text-lg font-bold leading-tight">{template.brandName}</p>
-            {template.showOrigin && origin && (
-              <p className="text-[10px] tracking-wide text-white/80">{origin}</p>
-            )}
-          </div>
-        </div>
-        {showOrderBarcode && (
-          <Barcode value={delivery.orderRef} width={1} height={26} fontSize={9} displayValue={false} lineColor="#ffffff" />
-        )}
-      </div>
-
-      {/* Customer block */}
-      <div className="px-3 py-2">
-        <p className="text-[10px] uppercase tracking-wider text-espresso/60">Ship to</p>
-        <p className="font-display text-xl font-bold leading-snug">{address.fullName}</p>
-        <p className="text-base font-semibold">
-          {address.phone}
-          {address.phone2 ? ` · ${address.phone2}` : ''}
-        </p>
-        <p className="mt-1 text-sm font-medium leading-snug">{fullAddress}</p>
-      </div>
-
-      {/* Meta */}
-      <div className="grid grid-cols-2 gap-1 border-t px-3 py-2 text-xs" style={{ borderColor: template.borderColor }}>
-        {template.showOrderRef && (
-          <div>
-            <p className="text-espresso/60">Order Ref</p>
-            <p className="font-mono font-semibold">{delivery.orderRef}</p>
-          </div>
-        )}
-        {template.showCod && (
-          <div>
-            <p className="text-espresso/60">COD</p>
-            <p className="font-semibold">{formatLkr(delivery.codAmount)}</p>
-          </div>
-        )}
-        {template.showItemCount && (
-          <div>
-            <p className="text-espresso/60">Items</p>
-            <p className="font-semibold">{delivery.itemCount ?? 1}</p>
-          </div>
-        )}
-        {template.showWeight && (
-          <div>
-            <p className="text-espresso/60">Weight</p>
-            <p className="font-semibold">
-              {delivery.totalWeightKg ? `${delivery.totalWeightKg} kg` : '—'}
+      {/* Fixed courier header: logo left, waybill barcode right. */}
+      <header className="flex items-start justify-between gap-[4mm] border-b border-black pb-[3mm]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={COURIER_LOGO}
+          alt="TransExpress"
+          className="h-[17mm] w-auto shrink-0 object-contain"
+        />
+        {barcodeValue && (
+          <div className="flex flex-col items-center">
+            <Barcode
+              value={barcodeValue}
+              width={1.5}
+              height={44}
+              displayValue={false}
+              margin={0}
+            />
+            <p className="mt-[1mm] font-mono text-[10pt] font-bold tracking-wide">
+              {barcodeValue}
             </p>
           </div>
         )}
+      </header>
+
+      <SectionTitle>Proof of Delivery</SectionTitle>
+
+      <div className="mt-[1mm]">
+        <WaybillRow label="From" value={template.brandName || '-'} />
+        <WaybillRow label="Contact" value={template.fromContact || '-'} />
+        <WaybillRow label="Date" value={formatWaybillDate(date)} />
+        <WaybillRow label="Order No" value={delivery.orderRef || '-'} />
       </div>
 
-      {/* Courier barcode */}
-      {template.showBarcodes && waybillId && (
-        <div className="flex flex-col items-center border-t px-3 py-2" style={{ borderColor: template.borderColor }}>
-          <Barcode value={waybillId} width={2} height={50} fontSize={12} />
-          <p className="font-mono text-xs">{waybillId}</p>
-        </div>
-      )}
+      <SectionTitle>Customer Details</SectionTitle>
 
-      {template.showPickupAddress && pickupAddress && (
-        <p className="border-t px-3 py-1 text-[10px] text-espresso/60" style={{ borderColor: template.borderColor }}>
-          Pickup: {pickupAddress}
-        </p>
-      )}
+      <div className="mt-[1mm]">
+        <WaybillRow label="To" value={address.fullName || '-'} />
+        <WaybillRow label="Address" value={fullAddress || '-'} />
+        <WaybillRow label="Branch" value={branch || '-'} />
+        <WaybillRow label="Contact" value={contact || '-'} />
+        <WaybillRow label="COD" value={formatWaybillAmount(delivery.codAmount)} />
+      </div>
 
-      {template.footerNote && (
-        <p
-          className="border-t px-3 py-1 text-center text-[10px] font-semibold"
-          style={{ borderColor: template.borderColor }}
-        >
-          {template.footerNote}
-        </p>
-      )}
+      <div className="mt-[3.5mm] flex items-start justify-between gap-[4mm] border-b border-black pb-[1.7mm]">
+        <h2 className="shrink-0 text-[11.5pt] font-bold leading-tight">Order Description</h2>
+        <span className="break-words text-right text-[10pt] font-bold leading-tight">
+          {description}
+        </span>
+      </div>
+
+      <footer className="mt-[4mm] text-center text-[9.5pt] font-bold leading-snug">
+        {COURIER_FOOTER.map((line) => (
+          <p key={line}>{line}</p>
+        ))}
+      </footer>
     </div>
   );
 }
@@ -198,27 +217,72 @@ export function toLabelProps(delivery: LabelDeliveryLike): {
       codAmount: delivery.codAmount ?? 0,
       itemCount: delivery.itemCount ?? 1,
       totalWeightKg: delivery.totalWeightKg,
+      deliveredAt: delivery.deliveredAt ?? null,
+      dispatchedAt: delivery.dispatchedAt ?? null,
+      createdAt: delivery.createdAt ?? null,
     },
     waybillId: delivery.waybill ?? shipment?.waybillId ?? null,
   };
 }
+
+/** A4 landscape with two portrait waybills, edge to edge. */
+const WAYBILL_SHEET_CSS = `@page { size: A4 landscape; margin: 0; }
+.shipping-label-print-root { padding: 0 !important; }
+.waybill-sheet { display: grid; grid-template-columns: ${WAYBILL_WIDTH_MM}mm ${WAYBILL_WIDTH_MM}mm; }
+.waybill-page {
+  width: ${WAYBILL_WIDTH_MM}mm;
+  height: ${WAYBILL_HEIGHT_MM}mm;
+  overflow: hidden;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}`;
 
 /**
  * Renders a real delivery's label into a print overlay. Only the label is
  * printed; the rest of the app is hidden via injected print CSS.
  */
 export function printShippingLabel(delivery: LabelDeliveryLike, template: DeliveryLabelTemplate): void {
-  renderPrintOverlay(<ShippingLabel template={template} {...toLabelProps(delivery)} />);
+  renderPrintOverlay(
+    <div className="waybill-sheet">
+      <div className="waybill-page">
+        <ShippingLabel template={template} {...toLabelProps(delivery)} />
+      </div>
+    </div>,
+    { printStyles: WAYBILL_SHEET_CSS },
+  );
 }
 
 /** Renders a sample label (from the designer) into the print overlay. */
 export function printSampleLabel(template: DeliveryLabelTemplate): void {
-  renderPrintOverlay(<ShippingLabel {...buildSampleLabelProps(template)} />);
+  const props = buildSampleLabelProps(template);
+  renderPrintOverlay(
+    <div className="waybill-sheet">
+      <div className="waybill-page">
+        <ShippingLabel {...props} />
+      </div>
+    </div>,
+    { printStyles: WAYBILL_SHEET_CSS },
+  );
+}
+
+/** Prints a full two-up A4 landscape sheet (both sample waybills). */
+export function printSampleSheet(template: DeliveryLabelTemplate): void {
+  renderPrintOverlay(
+    <div className="waybill-sheet">
+      {buildSampleSheetProps(template).map((props) => (
+        <div className="waybill-page" key={props.waybillId}>
+          <ShippingLabel {...props} />
+        </div>
+      ))}
+    </div>,
+    { printStyles: WAYBILL_SHEET_CSS },
+  );
 }
 
 /**
- * Renders multiple deliveries' labels stacked in a single print overlay (one
- * label per order), so a whole batch can be printed in one dialog.
+ * Renders multiple deliveries' labels in a single print overlay. Two labels
+ * share each A4 landscape sheet, so a whole batch prints without wasting most
+ * of the page.
  */
 export function printShippingLabels(
   deliveries: LabelDeliveryLike[],
@@ -226,11 +290,15 @@ export function printShippingLabels(
 ): void {
   if (deliveries.length === 0) return;
   renderPrintOverlay(
-    <div className="space-y-6">
-      {deliveries.map((delivery) => (
-        <ShippingLabel key={delivery.orderRef} template={template} {...toLabelProps(delivery)} />
+    <div className="waybill-sheet">
+      {deliveries.map((delivery, index) => (
+        <div className="waybill-page" key={`${delivery.orderRef}-${index}`}>
+          <ShippingLabel template={template} {...toLabelProps(delivery)} />
+        </div>
       ))}
     </div>,
+    { printStyles: WAYBILL_SHEET_CSS },
   );
 }
 
+export { WAYBILL_SHEET_CSS };

@@ -48,7 +48,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   const url = buildApiUrl(SITE.apiBaseUrl, path);
   if (!url) {
     throw new ApiError(
-      `Cannot build ERP API URL — NEXT_PUBLIC_API_BASE_URL is not configured.`,
+      `Cannot build ERP API URL - NEXT_PUBLIC_API_BASE_URL is not configured.`,
       0,
     );
   }

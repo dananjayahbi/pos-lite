@@ -15,7 +15,7 @@ import {
   UNITS,
 } from '@/lib/services/rawMaterial.core';
 
-describe('rawMaterial.core — categories & units', () => {
+describe('rawMaterial.core - categories & units', () => {
   it('exposes all three built-in raw material categories', () => {
     expect(RAW_MATERIAL_CATEGORIES).toEqual([
       'OILS_LIQUIDS',
@@ -61,7 +61,7 @@ describe('rawMaterial.core — categories & units', () => {
   });
 });
 
-describe('rawMaterial.core — custom category keys', () => {
+describe('rawMaterial.core - custom category keys', () => {
   it('slugs category names into stable uppercase keys', () => {
     expect(slugifyRawMaterialCategoryKey('Bottles & Caps')).toBe('BOTTLES_CAPS');
     expect(slugifyRawMaterialCategoryKey('  Labels  ')).toBe('LABELS');
@@ -78,7 +78,7 @@ describe('rawMaterial.core — custom category keys', () => {
   });
 });
 
-describe('rawMaterial.core — stock status', () => {
+describe('rawMaterial.core - stock status', () => {
   it('classifies zero quantity as OUT', () => {
     expect(getRawMaterialStockStatus(0, 5)).toBe('OUT');
     expect(getRawMaterialStockStatus(-2, 5)).toBe('OUT');
@@ -104,7 +104,7 @@ describe('rawMaterial.core — stock status', () => {
   });
 });
 
-describe('rawMaterial.core — quantity arithmetic', () => {
+describe('rawMaterial.core - quantity arithmetic', () => {
   it('adds a positive delta', () => {
     expect(applyQuantityDelta(10, 5)).toBe(15);
   });

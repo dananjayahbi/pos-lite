@@ -88,7 +88,7 @@ export function generatePDF(
   // Header block
   doc.setFontSize(16);
   doc.setTextColor(59, 47, 47);
-  doc.text(`AyurPOS — ${title}`, 40, 40);
+  doc.text(`AyurPOS - ${title}`, 40, 40);
   doc.setFontSize(10);
   doc.setTextColor(107, 91, 91);
   doc.text(dateRange, 40, 56);

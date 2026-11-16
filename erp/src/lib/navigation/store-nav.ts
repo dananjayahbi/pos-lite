@@ -15,6 +15,36 @@ export interface NavGroup {
 }
 
 /**
+ * True when `pathname` is the item's own route or a descendant of it.
+ *
+ * `exact` items only match their route, which keeps section entries such as
+ * `/settings/store` from lighting up on unrelated child pages.
+ */
+export function isNavItemActive(
+  pathname: string,
+  item: Pick<NavItem, 'href' | 'match'>,
+): boolean {
+  if (item.match === 'exact') return pathname === item.href;
+  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+}
+
+/**
+ * Resolves the single nav item that should be highlighted for `pathname`.
+ *
+ * Prefix matching on its own highlights every ancestor: on
+ * `/inventory/barcode-printing` both `/inventory` and the barcode page match.
+ * The most specific (longest) href wins, so exactly one item is ever active.
+ */
+export function resolveActiveNavHref(pathname: string, items: NavItem[]): string | null {
+  let best: NavItem | null = null;
+  for (const item of items) {
+    if (!isNavItemActive(pathname, item)) continue;
+    if (!best || item.href.length > best.href.length) best = item;
+  }
+  return best?.href ?? null;
+}
+
+/**
  * Store sidebar information architecture.
  *
  * Ordered by the operator's workflow (retail → stock → purchasing/factory →
@@ -79,6 +109,12 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Products & Stock',
         href: '/inventory',
+        roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
+        permission: PERMISSIONS.PRODUCT.viewProduct,
+      },
+      {
+        name: 'Barcode Printing',
+        href: '/inventory/barcode-printing',
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.PRODUCT.viewProduct,
       },
@@ -213,7 +249,7 @@ export const storeNavGroups: NavGroup[] = [
         match: 'exact',
       },
       {
-        name: 'Label Design',
+        name: 'Waybill Design',
         href: '/delivery/label',
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.DELIVERY.manageLabelTemplate,

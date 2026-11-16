@@ -52,9 +52,9 @@ function totals(rows: StatutoryRow[]) {
 function epfSheet(meta: StatutoryMeta, rows: StatutoryRow[]): XLSX.WorkSheet {
   const total = totals(rows);
   const aoa: (string | number)[][] = [
-    ['C FORM — CONTRIBUTIONS TO EMPLOYEES PROVIDENT FUND'],
+    ['C FORM - CONTRIBUTIONS TO EMPLOYEES PROVIDENT FUND'],
     ['Employer', meta.companyName],
-    ['Employer EPF Number', meta.employerEpfNumber || '—'],
+    ['Employer EPF Number', meta.employerEpfNumber || '-'],
     ['Month', meta.periodLabel],
     [],
     [
@@ -101,9 +101,9 @@ function epfSheet(meta: StatutoryMeta, rows: StatutoryRow[]): XLSX.WorkSheet {
 function etfSheet(meta: StatutoryMeta, rows: StatutoryRow[]): XLSX.WorkSheet {
   const total = totals(rows);
   const aoa: (string | number)[][] = [
-    ['EMPLOYEES TRUST FUND — MONTHLY RETURN'],
+    ['EMPLOYEES TRUST FUND - MONTHLY RETURN'],
     ['Employer', meta.companyName],
-    ['Employer ETF Number', meta.employerEtfNumber || '—'],
+    ['Employer ETF Number', meta.employerEtfNumber || '-'],
     ['Month', meta.periodLabel],
     [],
     [
@@ -157,12 +157,12 @@ export function generateStatutoryReturnPdf(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(59, 47, 47);
-  doc.text('C FORM — EPF CONTRIBUTIONS', 40, 42);
+  doc.text('C FORM - EPF CONTRIBUTIONS', 40, 42);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9.5);
   doc.setTextColor(107, 91, 91);
   doc.text(
-    `${meta.companyName} • EPF No. ${meta.employerEpfNumber || '—'} • ${meta.periodLabel}`,
+    `${meta.companyName} • EPF No. ${meta.employerEpfNumber || '-'} • ${meta.periodLabel}`,
     40,
     60,
   );
@@ -184,8 +184,8 @@ export function generateStatutoryReturnPdf(
     body: rows.map((row, index) => [
       String(index + 1),
       row.staffName,
-      row.nic ?? '—',
-      row.epfNumber ?? '—',
+      row.nic ?? '-',
+      row.epfNumber ?? '-',
       money(row.grossSalary),
       money(row.employeeEpf),
       money(row.employerEpf),
@@ -208,7 +208,7 @@ export function generateStatutoryReturnPdf(
   doc.setFontSize(9.5);
   doc.setTextColor(107, 91, 91);
   doc.text(
-    `${meta.companyName} • ETF No. ${meta.employerEtfNumber || '—'} • ${meta.periodLabel}`,
+    `${meta.companyName} • ETF No. ${meta.employerEtfNumber || '-'} • ${meta.periodLabel}`,
     40,
     60,
   );
@@ -229,8 +229,8 @@ export function generateStatutoryReturnPdf(
     body: rows.map((row, index) => [
       String(index + 1),
       row.staffName,
-      row.nic ?? '—',
-      row.etfNumber ?? '—',
+      row.nic ?? '-',
+      row.etfNumber ?? '-',
       money(row.grossSalary),
       money(row.employerEtf),
     ]),

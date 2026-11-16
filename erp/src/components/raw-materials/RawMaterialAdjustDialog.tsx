@@ -73,7 +73,7 @@ export function RawMaterialAdjustDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Adjust stock — {material.name}</DialogTitle>
+          <DialogTitle>Adjust stock - {material.name}</DialogTitle>
           <DialogDescription>
             Current quantity: {material.quantity} {getUnitLabel(material.unit)}. Enter a
             positive value to add stock or a negative value to consume stock.

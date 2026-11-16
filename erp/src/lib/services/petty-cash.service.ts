@@ -84,7 +84,7 @@ const DEFAULT_CATEGORIES: ExpenseCategory[] = [
 export const DEFAULT_LOW_BALANCE_THRESHOLD = 5000;
 
 /** Note shown on the auto-created payment account card. */
-const PETTY_CASH_ACCOUNT_NOTE = 'Default petty cash account — managed from Petty Cash.';
+const PETTY_CASH_ACCOUNT_NOTE = 'Default petty cash account - managed from Petty Cash.';
 
 /**
  * Ledger sources that represent money entering the petty-cash account.
@@ -175,7 +175,7 @@ async function backfillLinkedExpenseEntries(
       accountId,
       source: PaymentEntrySource.EXPENSE,
       sourceId: expense.id,
-      description: `${expense.category} — ${expense.description}`.slice(0, 200),
+      description: `${expense.category} - ${expense.description}`.slice(0, 200),
       credit: expense.amount,
       entryDate: expense.expenseDate,
     }));
@@ -557,7 +557,7 @@ export async function topUpPettyCash(
             source: PaymentEntrySource.FUND_TRANSFER,
             sourceId: groupId,
             transferGroupId: groupId,
-            description: `Petty Cash Replenishment — ${fund.name}`.slice(0, 200),
+            description: `Petty Cash Replenishment - ${fund.name}`.slice(0, 200),
             credit: amount,
             ...(entryDate !== undefined ? { entryDate } : {}),
           },

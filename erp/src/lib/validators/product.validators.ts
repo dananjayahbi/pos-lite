@@ -36,6 +36,7 @@ export const CreateVariantInputSchema = z
       .optional(),
     sku: z.string().max(50).optional(),
     imageUrls: z.array(z.string().url()).max(10).default([]),
+    thumbnailImageUrls: z.array(z.string().url()).max(10).default([]),
     initialStock: z.number().int().min(0).default(0),
   })
   .refine((data) => data.retailPrice >= data.costPrice, {
@@ -80,6 +81,7 @@ export const UpdateVariantSchema = z
     wholesalePrice: z.number().positive().nullable().optional(),
     lowStockThreshold: z.number().int().min(0).optional(),
     imageUrls: z.array(z.string().url()).optional(),
+    thumbnailImageUrls: z.array(z.string().url()).max(10).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.costPrice !== undefined && data.retailPrice !== undefined) {
@@ -121,6 +123,13 @@ const CreateProductObject = z
     taxRule: z.nativeEnum(TaxRule).default('STANDARD_VAT'),
     // Single representative image for storefront product cards.
     mainImageUrl: z
+      .string()
+      .max(500)
+      .optional()
+      .transform((val) => (val === '' ? null : val))
+      .pipe(z.string().max(500).nullable().optional()),
+    /** 256×256 WebP version of mainImageUrl for POS/inventory icons. */
+    mainImageThumbnailUrl: z
       .string()
       .max(500)
       .optional()

@@ -4,7 +4,7 @@ import {
   EXPENSE_CATEGORIES,
 } from '@/lib/validators/expense.validators';
 
-describe('CreateExpenseSchema — petty-cash categories & receipt (docs 37, 38)', () => {
+describe('CreateExpenseSchema - petty-cash categories & receipt (docs 37, 38)', () => {
   it('exposes the petty-cash categories in the enum set', () => {
     expect(EXPENSE_CATEGORIES).toContain('STAFF_MEALS');
     expect(EXPENSE_CATEGORIES).toContain('TEA_SUGAR');

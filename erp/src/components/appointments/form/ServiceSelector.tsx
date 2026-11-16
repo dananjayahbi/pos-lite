@@ -30,7 +30,7 @@ export function ServiceSelector({ value, onChange }: ServiceSelectorProps) {
           <SelectItem value="">No service</SelectItem>
           {activeServices.map((s) => (
             <SelectItem key={s.id} value={s.id}>
-              {s.name} — {s.durationMins}min — ${Number(s.price).toFixed(2)}
+              {s.name} - {s.durationMins}min - ${Number(s.price).toFixed(2)}
             </SelectItem>
           ))}
         </SelectContent>

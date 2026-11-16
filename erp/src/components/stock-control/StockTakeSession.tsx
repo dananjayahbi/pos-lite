@@ -460,7 +460,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
                     <div className="text-xs text-mist-ink">{item.variant.product.category.name}</div>
                   </TableCell>
                   <TableCell className="font-body text-sm text-mist-ink">
-                    {variantInfo || '—'}
+                    {variantInfo || '-'}
                   </TableCell>
                   <TableCell className="text-center font-mono text-sm text-mist-ink">
                     {item.systemQuantity}
@@ -484,13 +484,13 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
                       />
                     ) : (
                       <span className="font-mono text-sm text-espresso">
-                        {item.countedQuantity ?? '—'}
+                        {item.countedQuantity ?? '-'}
                       </span>
                     )}
                   </TableCell>
                   <TableCell className="text-center font-mono text-sm">
                     {item.discrepancy === null ? (
-                      <span className="text-mist-ink">—</span>
+                      <span className="text-mist-ink">-</span>
                     ) : item.discrepancy === 0 ? (
                       <span className="text-green-600">0</span>
                     ) : item.discrepancy > 0 ? (

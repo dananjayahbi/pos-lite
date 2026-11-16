@@ -28,7 +28,7 @@ export async function generateMetadata({
     const siteName = configResponse?.config?.siteName || tenant.name;
     const title =
       configResponse?.config?.contactPageTitle ||
-      `Contact — ${siteName}`;
+      `Contact - ${siteName}`;
     const description = `Get in touch with ${siteName}.`;
 
     return {

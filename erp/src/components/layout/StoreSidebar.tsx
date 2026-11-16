@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { UserRole } from '@/generated/prisma/client';
 
-import { storeNavGroups, type NavItem } from '@/lib/navigation/store-nav';
+import { storeNavGroups, resolveActiveNavHref, type NavItem } from '@/lib/navigation/store-nav';
 
 interface StoreSidebarProps {
   userRole: UserRole;
@@ -26,22 +26,6 @@ function canAccessItem(item: NavItem, userRole: UserRole, permissions: string[])
   return true;
 }
 
-function isActivePath(
-  pathname: string,
-  href: string,
-  match: 'exact' | 'prefix' = 'prefix',
-): boolean {
-  if (match === 'exact') {
-    return pathname === href;
-  }
-
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
-
-function formatRole(role: UserRole): string {
-  return role.replace(/_/g, ' ');
-}
-
 export default function StoreSidebar({
   userRole,
   permissions,
@@ -51,22 +35,41 @@ export default function StoreSidebar({
 }: StoreSidebarProps) {
   const pathname = usePathname();
 
+  // Resolve the single active item up front: nested routes match their section
+  // item too, and only the most specific href may be highlighted.
+  const accessibleItems = storeNavGroups
+    .flatMap((group) => group.items)
+    .filter((item) => canAccessItem(item, userRole, permissions));
+  const activeHref = resolveActiveNavHref(pathname, accessibleItems);
+
   return (
     <div className="bg-pearl flex h-full flex-col overflow-hidden">
-      <div className="shrink-0">
-        <div className="px-5 py-5">
-          <div className="flex items-center gap-2">
-            {businessLogoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={businessLogoUrl} alt="" className="h-7 w-7 rounded object-contain" />
-            ) : null}
-            <p className="font-display text-espresso text-xl font-bold">{businessName}</p>
-          </div>
-          <p className="text-sand-ink mt-1 text-xs font-semibold tracking-[0.2em] uppercase">
-            {formatRole(userRole)}
+      <div className="border-mist shrink-0 border-b">
+        <div
+          data-testid="sidebar-header"
+          className="flex h-16 items-center gap-2 px-5"
+        >
+          {businessLogoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={businessLogoUrl}
+              alt=""
+              className="h-9 w-9 shrink-0 rounded object-contain"
+            />
+          ) : null}
+          {/*
+           * Store names are often longer than the 256 px sidebar. Wrapping to
+           * two balanced lines keeps the full name at the same font size inside
+           * the 64 px header (which must stay aligned with the top bar) instead
+           * of truncating it to "Ruhunu Weda G…".
+           */}
+          <p
+            title={businessName}
+            className="font-display text-espresso line-clamp-2 min-w-0 text-balance break-words text-xl font-bold leading-tight"
+          >
+            {businessName}
           </p>
         </div>
-        <div className="border-mist mx-5 border-b" />
       </div>
 
       <nav className="min-h-0 flex-1 overflow-y-auto scrollbar-none px-3 py-4">
@@ -86,7 +89,7 @@ export default function StoreSidebar({
               </p>
               <ul className="flex flex-col">
                 {visibleItems.map((item) => {
-                  const isActive = isActivePath(pathname, item.href, item.match);
+                  const isActive = item.href === activeHref;
 
                   const isPosLink =
                     item.href === '/pos' && (userRole === 'OWNER' || userRole === 'MANAGER');
@@ -95,6 +98,7 @@ export default function StoreSidebar({
                     <li key={item.href}>
                       <Link
                         href={item.href}
+                        aria-current={isActive ? 'page' : undefined}
                         {...(onNavigate ? { onClick: onNavigate } : {})}
                         {...(isPosLink ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
                         className={`flex h-9 items-center rounded-r-md border-l-[3px] px-3 text-sm font-medium transition-colors ${

@@ -67,7 +67,7 @@ export default function PaymentSettingsForm({ initialValues }: Props) {
       setValues(saved);
       toast.success('Payment settings saved');
     } catch {
-      toast.error('Network error — could not save payment settings');
+      toast.error('Network error - could not save payment settings');
     } finally {
       setSaving(false);
     }
@@ -147,7 +147,7 @@ export default function PaymentSettingsForm({ initialValues }: Props) {
                 className="font-mono text-xs"
               />
               <p className="text-xs text-mist-ink">
-                Use the QR image supplied by your bank. The cashier sees it in the payment modal —
+                Use the QR image supplied by your bank. The cashier sees it in the payment modal -
                 customers scan it with their own banking app.
               </p>
             </div>

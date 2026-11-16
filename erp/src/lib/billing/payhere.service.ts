@@ -41,7 +41,7 @@ export function buildPayhereCheckoutPayload(
     cancel_url: `${baseUrl}/${tenant.slug}/billing?status=cancelled`,
     notify_url: `${baseUrl}/api/webhooks/payhere`,
     order_id: invoice.id,
-    items: `AyurPOS ${subscription.plan.name} Plan — Subscription`,
+    items: `AyurPOS ${subscription.plan.name} Plan - Subscription`,
     currency,
     amount,
     first_name: ownerUser.email.split("@")[0] ?? "",

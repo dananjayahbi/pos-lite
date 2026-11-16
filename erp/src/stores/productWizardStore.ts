@@ -9,6 +9,7 @@ export interface Step1Data {
   tags: string[];
   taxRule: TaxRule;
   mainImageUrl: string;
+  mainImageThumbnailUrl?: string;
   activeIngredients: string;
   usageInstructions: string;
   healthBenefits: string;

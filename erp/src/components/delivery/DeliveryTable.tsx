@@ -30,7 +30,7 @@ interface DeliveryTableProps {
 const PENDING_STATUSES = ['PLACED', 'PENDING_DISPATCH', 'HOLD'];
 
 function formatDate(value?: string | null) {
-  if (!value) return '—';
+  if (!value) return '-';
   return new Date(value).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -52,7 +52,7 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
 
   return (
     <>
-      <div className="rounded-lg border border-espresso/10">
+      <div className="overflow-x-auto rounded-lg border border-espresso/10">
         <table className="w-full">
           <thead>
             <tr className="border-b border-espresso/10 bg-espresso/5">
@@ -79,16 +79,16 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                 >
                   <td className="px-4 py-3 text-sm font-medium text-espresso">{d.orderRef}</td>
                   <td className="px-4 py-3 text-sm text-espresso">
-                    {d.customer?.name ?? d.address?.fullName ?? '—'}
+                    {d.customer?.name ?? d.address?.fullName ?? '-'}
                   </td>
                   <td className="px-4 py-3 text-sm text-espresso/60">
-                    {d.address?.cityName ?? '—'}
+                    {d.address?.cityName ?? '-'}
                   </td>
                   <td className="px-4 py-3 text-sm text-espresso">
                     {formatRupee(d.codAmount ?? 0)}
                   </td>
                   <td className="px-4 py-3 text-sm text-espresso/60">
-                    {d.shippingFee != null ? formatRupee(d.shippingFee) : '—'}
+                    {d.shippingFee != null ? formatRupee(d.shippingFee) : '-'}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col items-start gap-1">
@@ -96,7 +96,7 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                       {d.status === 'FAILED' && <FailureReasonTag reason={d.failureReason} />}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-espresso/60">{waybill ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-espresso/60">{waybill ?? '-'}</td>
                   <td className="px-4 py-3 text-sm text-espresso/60">
                     {formatDate(d.dispatchedAt)}
                   </td>

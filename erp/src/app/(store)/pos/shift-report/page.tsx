@@ -148,7 +148,7 @@ function ShiftReportPageContent() {
           <Row label="Shift ID" value={shift.id.slice(-8).toUpperCase()} />
           <Row label="Cashier" value={shift.cashierName} />
           <Row label="Opened" value={formatDateTime(shift.openedAt)} />
-          <Row label="Closed" value={shift.closedAt ? formatDateTime(shift.closedAt) : '—'} />
+          <Row label="Closed" value={shift.closedAt ? formatDateTime(shift.closedAt) : '-'} />
           <Row label="Duration" value={formatDuration(shift.openedAt, shift.closedAt)} />
           <Row label="Status" value={shift.status} />
         </div>
@@ -205,7 +205,7 @@ function ShiftReportPageContent() {
         />
         <Row
           label="Actual Cash Counted"
-          value={cashReconciliation.actualCashCounted !== null ? formatRupee(cashReconciliation.actualCashCounted) : '—'}
+          value={cashReconciliation.actualCashCounted !== null ? formatRupee(cashReconciliation.actualCashCounted) : '-'}
         />
         {cashReconciliation.cashDifference !== null && (
           <Row

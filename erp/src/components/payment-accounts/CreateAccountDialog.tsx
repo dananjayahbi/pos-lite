@@ -93,7 +93,7 @@ function DetailsEditor({ rows, onChange, disabled }: DetailsEditorProps) {
         </span>
       </div>
       <p className="mt-1 font-body text-[11px] text-sand-ink">
-        Branch, SWIFT code, merchant id — whatever helps identify this account.
+        Branch, SWIFT code, merchant id - whatever helps identify this account.
       </p>
 
       <div className="mt-2 space-y-2">
@@ -239,7 +239,7 @@ function AccountForm({ account, onCreate, onUpdate, onCancel }: AccountFormProps
             id="payment-account-name"
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="e.g. Commercial Bank — Main"
+            placeholder="e.g. Commercial Bank - Main"
             maxLength={NAME_MAX_LENGTH}
             className="mt-1.5 border-mist"
             disabled={isSubmitting}

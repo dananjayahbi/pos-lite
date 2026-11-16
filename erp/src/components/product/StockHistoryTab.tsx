@@ -201,7 +201,7 @@ export function StockHistoryTab({ productId }: StockHistoryTabProps) {
                       {formatDateTime(m.createdAt)}
                     </TableCell>
                     <TableCell className="font-mono text-sm text-espresso">
-                      {m.variant?.sku ?? '—'}
+                      {m.variant?.sku ?? '-'}
                     </TableCell>
                     <TableCell>
                       <ReasonBadge reason={m.reason} />
@@ -224,10 +224,10 @@ export function StockHistoryTab({ productId }: StockHistoryTabProps) {
                       {m.quantityBefore} → {m.quantityAfter}
                     </TableCell>
                     <TableCell className="font-body text-sm text-espresso truncate max-w-[160px]">
-                      {m.actor ? staffDisplayName(m.actor.email) : '—'}
+                      {m.actor ? staffDisplayName(m.actor.email) : '-'}
                     </TableCell>
                     <TableCell className="font-body text-sm text-espresso max-w-[200px] truncate">
-                      {m.note || '—'}
+                      {m.note || '-'}
                     </TableCell>
                   </TableRow>
                 ),

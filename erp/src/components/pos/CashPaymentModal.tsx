@@ -100,7 +100,7 @@ export function CashPaymentModal({
       }
       onSaleComplete(json.data!);
     } catch {
-      toast.error('Network error — please try again');
+      toast.error('Network error - please try again');
       setIsSubmitting(false);
     }
   };
@@ -139,20 +139,28 @@ export function CashPaymentModal({
 
           {/* Cash Received */}
           <div>
-            <label className="mb-1 block text-sm font-body text-espresso">
+            <label htmlFor="pos-cash-received" className="mb-1 block text-sm font-body text-espresso">
               Cash Received
             </label>
             <div className="flex items-center gap-2">
               <span className="shrink-0 font-body text-sm text-mist-ink">Rs.</span>
               <Input
                 ref={inputRef}
+                id="pos-cash-received"
                 type="text"
                 inputMode="decimal"
                 autoFocus
                 value={cashReceived}
                 onChange={(e) => setCashReceived(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleSubmit();
+                  }
+                }}
                 className="font-mono"
                 placeholder="0.00"
+                aria-keyshortcuts="Enter"
               />
             </div>
           </div>
@@ -180,7 +188,7 @@ export function CashPaymentModal({
               Change
             </p>
             {changeResult.type === 'empty' && (
-              <p className="font-mono text-lg text-mist-ink">—</p>
+              <p className="font-mono text-lg text-mist-ink">-</p>
             )}
             {changeResult.type === 'sufficient' && (
               <p className="font-mono text-lg text-[#2D6A4F]">
@@ -189,7 +197,7 @@ export function CashPaymentModal({
             )}
             {changeResult.type === 'insufficient' && (
               <p className="font-mono text-lg text-[#9B2226]">
-                Insufficient — customer owes more
+                Insufficient - customer owes more
               </p>
             )}
           </div>
@@ -204,7 +212,7 @@ export function CashPaymentModal({
             {isSubmitting ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
-              `Complete Sale — ${formatRupee(totalAmount.toNumber())}`
+              `Complete Sale - ${formatRupee(totalAmount.toNumber())}`
             )}
           </Button>
 

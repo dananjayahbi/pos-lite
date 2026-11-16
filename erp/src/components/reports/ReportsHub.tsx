@@ -46,7 +46,7 @@ export function ReportsHub({ permissions }: { permissions: readonly string[] }) 
                 <Link
                   key={entry.href}
                   href={entry.href}
-                  className="border-mist bg-pearl hover:border-terracotta/50 rounded-xl border transition-colors"
+                  className="border-mist bg-pearl hover:border-terracotta/50 min-w-0 rounded-xl border transition-colors"
                 >
                   <Card className="h-full ring-0">
                     <CardHeader>

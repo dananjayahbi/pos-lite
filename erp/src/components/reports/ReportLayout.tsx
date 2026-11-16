@@ -447,8 +447,8 @@ function ReportLayoutInner({
       <div className="flex h-full min-h-0 flex-col">
         {/* ── Header strip ─────────────────────────────────────── */}
         <header className="flex items-center gap-3 border-b border-mist bg-linen px-4 py-3">
-          {/* Mobile menu trigger */}
-          <div className="md:hidden">
+          {/* Mobile / tablet menu trigger (the report sidebar only appears at xl) */}
+          <div className="xl:hidden">
             <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon" aria-label="Open report navigation">
@@ -464,11 +464,11 @@ function ReportLayoutInner({
             </Sheet>
           </div>
 
-          <h1 className="font-display text-lg font-bold text-espresso md:hidden">
+          <h1 className="font-display text-lg font-bold text-espresso xl:hidden">
             Reports
           </h1>
 
-          <div className="flex flex-1 items-center gap-2 md:gap-3">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 md:gap-3">
             <DateRangePicker
               from={from}
               to={to}
@@ -726,8 +726,8 @@ function ReportLayoutInner({
 
         {/* ── Body ─────────────────────────────────────────────── */}
         <div className="flex flex-1 min-h-0">
-          {/* Desktop sidebar */}
-          <aside className="hidden md:flex md:w-56 md:flex-col md:border-r md:border-mist md:bg-pearl">
+          {/* Desktop sidebar — only where both sidebars fit (xl and up). */}
+          <aside className="hidden xl:flex xl:w-56 xl:flex-col xl:border-r xl:border-mist xl:bg-pearl">
             <div className="px-4 pt-4 pb-2">
               <h2 className="font-display text-lg font-bold text-espresso">
                 Reports
@@ -737,7 +737,7 @@ function ReportLayoutInner({
           </aside>
 
           {/* Main content */}
-          <main className="flex-1 overflow-auto bg-white p-4 md:p-6">
+          <main className="min-w-0 flex-1 overflow-auto bg-white p-4 md:p-6">
             {children}
           </main>
         </div>

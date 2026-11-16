@@ -86,7 +86,7 @@ export function LankaQRPaymentModal({
       }
       onSaleComplete(json.data!);
     } catch {
-      toast.error('Network error — please try again');
+      toast.error('Network error - please try again');
       setIsSubmitting(false);
     }
   };
@@ -183,7 +183,7 @@ export function LankaQRPaymentModal({
             />
             {settings.referenceRequired && !qrReferenceNumber.trim() && (
               <p className="mt-1 text-xs font-body text-mist-ink">
-                Required — enter the reference shown in the customer&apos;s payment confirmation.
+                Required - enter the reference shown in the customer&apos;s payment confirmation.
               </p>
             )}
           </div>
@@ -200,7 +200,7 @@ export function LankaQRPaymentModal({
             ) : (
               <>
                 <QrCode className="h-5 w-5" />
-                Confirm LankaQR Payment — {formatRupee(totalAmount.toNumber())}
+                Confirm LankaQR Payment - {formatRupee(totalAmount.toNumber())}
               </>
             )}
           </Button>

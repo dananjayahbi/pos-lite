@@ -47,6 +47,7 @@ interface VariantData {
   lowStockThreshold: number;
   stockQuantity: number;
   imageUrls: string[];
+  thumbnailImageUrls?: string[];
 }
 
 interface Props {
@@ -112,12 +113,15 @@ export function VariantEditSheet({
         wholesalePrice: variant.wholesalePrice != null ? toNum(variant.wholesalePrice) : null,
         lowStockThreshold: variant.lowStockThreshold,
         imageUrls: variant.imageUrls ?? [],
+        thumbnailImageUrls: variant.thumbnailImageUrls ?? [],
       });
     }
     setShowDiscardConfirm(false);
   }, [variant, reset]);
 
   const watchedImageUrls = watch('imageUrls') ?? variant?.imageUrls ?? [];
+  const watchedThumbnailUrls =
+    watch('thumbnailImageUrls') ?? variant?.thumbnailImageUrls ?? [];
   const watchedRetail = watch('retailPrice');
   const watchedCost = watch('costPrice');
   const retailBelowCost =
@@ -355,6 +359,10 @@ export function VariantEditSheet({
             <ProductImageUpload
               imageUrls={watchedImageUrls}
               onImagesChange={(urls) => setValue('imageUrls', urls, { shouldDirty: true })}
+              thumbnailUrls={watchedThumbnailUrls}
+              onThumbnailsChange={(urls) =>
+                setValue('thumbnailImageUrls', urls, { shouldDirty: true })
+              }
               maxImages={10}
             />
           </div>

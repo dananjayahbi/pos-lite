@@ -61,9 +61,9 @@ describe('zSafeShortText (XC-04 short-identifier tier)', () => {
   });
 
   it('accepts unicode names byte-exact after trim', () => {
-    const r = schema.safeParse('  सजाओ — Report 01  ');
+    const r = schema.safeParse('  सजाओ - Report 01  ');
     expect(r.success).toBe(true);
-    if (r.success) expect(r.data).toBe('सजाओ — Report 01');
+    if (r.success) expect(r.data).toBe('सजाओ - Report 01');
   });
 
   it('rejects empty / whitespace-only values', () => {
@@ -86,7 +86,7 @@ describe('zFreeText (XC-04 free-text tier: store verbatim, escape on render)', (
   });
 
   it('preserves unicode byte-exact (proves no over-sanitization)', () => {
-    const input = 'सजाओ — usage instructions 🙂 <>&"\' ok';
+    const input = 'सजाओ - usage instructions 🙂 <>&"\' ok';
     const r = schema.safeParse(input);
     expect(r.success).toBe(true);
     if (r.success) {

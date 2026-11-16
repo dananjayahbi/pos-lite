@@ -49,7 +49,7 @@ export function POReferenceField({
       <p id="po-reference-hint" className="flex items-center gap-1 text-xs text-mist-ink">
         <Wand2 className="h-3 w-3" />
         {isCustom
-          ? 'Your own reference — must be unique in this store.'
+          ? 'Your own reference - must be unique in this store.'
           : `Auto-generated on save (${nextAuto}). Leave blank to let the server number it.`}
       </p>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}

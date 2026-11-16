@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
       }
     } else {
       console.warn(
-        "[PayHere IPN] No invoice found for order_id — skipping audit event:",
+        "[PayHere IPN] No invoice found for order_id - skipping audit event:",
         order_id,
       );
     }

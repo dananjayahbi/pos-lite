@@ -30,7 +30,7 @@ interface ShiftDetail {
 }
 
 function formatDateTime(value: string | null) {
-  if (!value) return '—';
+  if (!value) return '-';
   return new Date(value).toLocaleString('en-LK', {
     dateStyle: 'medium',
     timeStyle: 'short',

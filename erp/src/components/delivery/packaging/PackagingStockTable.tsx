@@ -82,7 +82,7 @@ export function PackagingStockTable({
                     {item.categoryName ?? item.category}
                   </Badge>
                 </td>
-                <td className="text-espresso/60 px-4 py-3 font-mono text-xs">{item.sku ?? '—'}</td>
+                <td className="text-espresso/60 px-4 py-3 font-mono text-xs">{item.sku ?? '-'}</td>
                 <td className="text-espresso/60 px-4 py-3 text-sm">{item.unit}</td>
                 <td
                   className={`px-4 py-3 text-right text-sm font-semibold ${isLow ? 'text-terracotta' : 'text-espresso'}`}
@@ -119,7 +119,7 @@ export function PackagingStockTable({
                   )}
                 </td>
                 <td className="text-espresso/60 px-4 py-3 text-right text-sm">
-                  {item.consumptionPerParcel != null ? Number(item.consumptionPerParcel) : '—'}
+                  {item.consumptionPerParcel != null ? Number(item.consumptionPerParcel) : '-'}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-1">

@@ -62,6 +62,7 @@ interface Variant {
   stockQuantity: number;
   lowStockThreshold: number;
   imageUrls: string[];
+  thumbnailImageUrls?: string[];
 }
 
 interface VariantsTabProps {
@@ -92,9 +93,9 @@ function StockBadge({ qty, threshold }: { qty: number; threshold: number }) {
 // ── Format price ─────────────────────────────────────────────────────────────
 
 function formatPrice(value: string | number | null | undefined): string {
-  if (value === null || value === undefined) return '—';
+  if (value === null || value === undefined) return '-';
   const num = typeof value === 'string' ? parseFloat(value) : value;
-  if (isNaN(num)) return '—';
+  if (isNaN(num)) return '-';
   return formatRupee(num);
 }
 
@@ -402,7 +403,7 @@ function VariantRows({
                 aria-label={`View image ${i + 1}`}
               >
                 <Image
-                  src={url}
+                  src={variant.thumbnailImageUrls?.[i] ?? url}
                   alt={`${variant.sku} image ${i + 1}`}
                   fill
                   className="object-cover"
@@ -422,15 +423,15 @@ function VariantRows({
             )}
           </div>
         ) : (
-          <span className="text-xs text-mist-ink italic">—</span>
+          <span className="text-xs text-mist-ink italic">-</span>
         )}
       </TableCell>
       <TableCell className="font-mono text-sm text-espresso">{variant.sku}</TableCell>
       <TableCell className="font-mono text-sm text-espresso">
-        {variant.barcode || '—'}
+        {variant.barcode || '-'}
       </TableCell>
       <TableCell className="font-body text-sm text-espresso">
-        {variant.packSize || '—'}
+        {variant.packSize || '-'}
       </TableCell>
       <TableCell className="font-body text-sm text-espresso">
         {variant.form ? (
@@ -442,7 +443,7 @@ function VariantRows({
             {resolveFormLabel(variant.form)}
           </span>
         ) : (
-          '—'
+          '-'
         )}
       </TableCell>
       {canViewCost && (

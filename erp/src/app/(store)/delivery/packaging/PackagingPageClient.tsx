@@ -186,7 +186,7 @@ export function PackagingPageClient() {
 
       {items.length === 0 && !isLoading ? (
         <div className="border-espresso/20 text-espresso/50 flex items-center justify-center gap-2 rounded-lg border border-dashed py-8 text-sm">
-          No packaging items — add your first item above.
+          No packaging items - add your first item above.
         </div>
       ) : null}
     </div>

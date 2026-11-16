@@ -143,14 +143,14 @@ export async function generatePayrollPayslipPdf(
       3: { cellWidth: 155 },
     },
     body: [
-      ['Employee', data.item.staffName, 'Employee ID', data.item.epfNumber ?? '—'],
-      ['Role', data.item.role, 'NIC', data.item.nic ?? '—'],
-      ['Email', data.item.staffEmail, 'EPF / ETF No.', `${data.item.epfNumber ?? '—'} / ${data.item.etfNumber ?? '—'}`],
+      ['Employee', data.item.staffName, 'Employee ID', data.item.epfNumber ?? '-'],
+      ['Role', data.item.role, 'NIC', data.item.nic ?? '-'],
+      ['Email', data.item.staffEmail, 'EPF / ETF No.', `${data.item.epfNumber ?? '-'} / ${data.item.etfNumber ?? '-'}`],
       [
         'Bank',
-        [data.item.bankName, data.item.bankBranch].filter(Boolean).join(' — ') || '—',
+        [data.item.bankName, data.item.bankBranch].filter(Boolean).join(' - ') || '-',
         'Account No.',
-        data.item.bankAccountNumber ?? '—',
+        data.item.bankAccountNumber ?? '-',
       ],
     ],
   });
@@ -263,7 +263,7 @@ export async function generatePayrollPayslipPdf(
     margin,
     pageHeight - 28,
   );
-  doc.text('System-generated payslip — no signature required.', pageWidth - margin, pageHeight - 28, {
+  doc.text('System-generated payslip - no signature required.', pageWidth - margin, pageHeight - 28, {
     align: 'right',
   });
 

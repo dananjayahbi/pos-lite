@@ -420,8 +420,8 @@ export async function transferFunds(
     await assertSufficientFunds(tx, tenantId, from.id, amount);
 
     const note = input.note?.trim();
-    const description = note ? `Transfer to ${to.name} — ${note}` : `Transfer to ${to.name}`;
-    const inbound = note ? `Transfer from ${from.name} — ${note}` : `Transfer from ${from.name}`;
+    const description = note ? `Transfer to ${to.name} - ${note}` : `Transfer to ${to.name}`;
+    const inbound = note ? `Transfer from ${from.name} - ${note}` : `Transfer from ${from.name}`;
 
     // A transfer INTO petty cash is a top-up by another name, so it is allowed
     // and must move the fund's running balance in the same transaction. The
@@ -522,7 +522,7 @@ export async function depositFunds(
         source: PaymentEntrySource.DEPOSIT,
         sourceId: groupId,
         transferGroupId: groupId,
-        description: note ? `Deposit to ${target.name} — ${note}` : `Deposit to ${target.name}`,
+        description: note ? `Deposit to ${target.name} - ${note}` : `Deposit to ${target.name}`,
         credit: amount,
         ...(input.entryDate !== undefined ? { entryDate: input.entryDate } : {}),
       });
@@ -533,7 +533,7 @@ export async function depositFunds(
       source: PaymentEntrySource.DEPOSIT,
       sourceId: groupId,
       transferGroupId: groupId,
-      description: note ? `Deposit — ${note}` : 'Deposit',
+      description: note ? `Deposit - ${note}` : 'Deposit',
       debit: amount,
       ...(input.entryDate !== undefined ? { entryDate: input.entryDate } : {}),
     });
@@ -582,7 +582,7 @@ export async function withdrawFunds(
         source: PaymentEntrySource.WITHDRAWAL,
         sourceId: groupId,
         transferGroupId: groupId,
-        description: note ? `Withdrawal — ${note}` : 'Withdrawal',
+        description: note ? `Withdrawal - ${note}` : 'Withdrawal',
         credit: amount,
         ...(input.entryDate !== undefined ? { entryDate: input.entryDate } : {}),
       },
@@ -601,7 +601,7 @@ export async function withdrawFunds(
         source: PaymentEntrySource.WITHDRAWAL,
         sourceId: groupId,
         transferGroupId: groupId,
-        description: note ? `Withdrawal from ${source.name} — ${note}` : `Withdrawal from ${source.name}`,
+        description: note ? `Withdrawal from ${source.name} - ${note}` : `Withdrawal from ${source.name}`,
         debit: amount,
         ...(input.entryDate !== undefined ? { entryDate: input.entryDate } : {}),
       });

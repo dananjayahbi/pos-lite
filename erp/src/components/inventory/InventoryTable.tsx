@@ -33,15 +33,21 @@ interface InventoryTableProps {
 
 function ProductThumbnail({
   mainImageUrl,
+  mainImageThumbnailUrl,
   variants,
 }: {
   mainImageUrl?: ProductListItem['mainImageUrl'];
+  mainImageThumbnailUrl?: ProductListItem['mainImageThumbnailUrl'];
   variants?: ProductListItem['variants'];
 }) {
-  // Prefer the product-level main image; fall back to the first variant image.
+  // Icon-size row: prefer generated thumbnails, fall back to full images.
+  const variantWithImage = variants?.find((v) => v.imageUrls.length > 0);
   const firstImage =
+    mainImageThumbnailUrl ??
     mainImageUrl ??
-    variants?.find((v) => v.imageUrls.length > 0)?.imageUrls[0];
+    (variantWithImage
+      ? variantWithImage.thumbnailImageUrls?.[0] ?? variantWithImage.imageUrls[0]
+      : undefined);
 
   if (firstImage) {
     return (
@@ -237,6 +243,7 @@ export function InventoryTable({
                     <div className="flex items-center gap-3">
                       <ProductThumbnail
                         mainImageUrl={product.mainImageUrl}
+                        mainImageThumbnailUrl={product.mainImageThumbnailUrl}
                         variants={product.variants}
                       />
                       <span className="font-body text-sm font-medium text-espresso">
@@ -245,10 +252,10 @@ export function InventoryTable({
                     </div>
                   </TableCell>
                   <TableCell className="font-body text-sm text-espresso/70">
-                    {product.category?.name ?? '—'}
+                    {product.category?.name ?? '-'}
                   </TableCell>
                   <TableCell className="font-body text-sm text-espresso/70">
-                    {product.brand?.name ?? '—'}
+                    {product.brand?.name ?? '-'}
                   </TableCell>
                   <TableCell className="font-body text-sm text-espresso/70">
                     {product._count.variants}

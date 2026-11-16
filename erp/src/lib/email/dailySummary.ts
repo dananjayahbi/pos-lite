@@ -30,7 +30,7 @@ export function composeDailySummaryEmail(data: DailySummaryData): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Daily Sales Summary — ${escapeHtml(tenantName)}</title>
+  <title>Daily Sales Summary - ${escapeHtml(tenantName)}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#f5f1ec;font-family:Arial,Helvetica,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f1ec;padding:32px 16px;">

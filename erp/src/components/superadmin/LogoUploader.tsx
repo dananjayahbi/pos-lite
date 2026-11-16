@@ -40,7 +40,7 @@ export default function LogoUploader({ tenantId, currentUrl, onUploaded }: Props
         onUploaded(json.url);
         toast.success('Logo uploaded');
       } catch {
-        toast.error('Network error — could not upload logo');
+        toast.error('Network error - could not upload logo');
       } finally {
         setUploading(false);
       }

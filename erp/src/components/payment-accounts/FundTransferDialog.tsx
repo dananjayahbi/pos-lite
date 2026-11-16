@@ -175,7 +175,7 @@ function TransferForm({
 
         {sourceIsPettyCash && (
           <p className="rounded-lg border border-[#9B2226]/30 bg-[#9B2226]/5 p-2 font-body text-xs text-[#9B2226]">
-            Petty cash cannot be a transfer source — record the spend as a Petty Cash expense.
+            Petty cash cannot be a transfer source - record the spend as a Petty Cash expense.
           </p>
         )}
 

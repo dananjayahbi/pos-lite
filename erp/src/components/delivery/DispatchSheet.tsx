@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
+import { Loader2 } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -27,6 +28,7 @@ import {
 import { useDispatchDelivery, useLabelTemplate } from '@/hooks/delivery';
 import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
 import { printShippingLabel } from './labels/ShippingLabel';
+import { waitForPrintOverlayToClose } from '@/lib/print-session';
 import type { DeliveryListItem } from '@/types/delivery';
 
 interface DispatchSheetProps {
@@ -38,6 +40,7 @@ interface DispatchSheetProps {
 export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
   const dispatch = useDispatchDelivery();
   const { data: labelTemplate } = useLabelTemplate();
+  const [printing, setPrinting] = useState(false);
 
   const {
     register,
@@ -71,6 +74,17 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
       },
       { onSuccess: onClose },
     );
+  };
+
+  const handlePrintWaybill = async () => {
+    if (!delivery) return;
+    setPrinting(true);
+    try {
+      printShippingLabel(delivery, labelTemplate ?? DEFAULT_LABEL_TEMPLATE);
+      await waitForPrintOverlayToClose();
+    } finally {
+      setPrinting(false);
+    }
   };
 
   return (
@@ -120,12 +134,26 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => printShippingLabel(delivery, labelTemplate ?? DEFAULT_LABEL_TEMPLATE)}
+                onClick={() => void handlePrintWaybill()}
+                disabled={printing || dispatch.isPending}
+                aria-busy={printing}
+                data-testid="dispatch-waybill-button"
               >
-                Print Label
+                {printing ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" data-testid="loading-spinner" />
+                ) : null}
+                {printing ? 'Preparing waybill…' : 'Waybill'}
               </Button>
-              <Button type="submit" disabled={dispatch.isPending}>
-                {dispatch.isPending ? 'Dispatching...' : 'Dispatch'}
+              <Button
+                type="submit"
+                disabled={dispatch.isPending || printing}
+                aria-busy={dispatch.isPending}
+                data-testid="dispatch-confirm-button"
+              >
+                {dispatch.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" data-testid="loading-spinner" />
+                ) : null}
+                {dispatch.isPending ? 'Dispatching…' : 'Dispatch'}
               </Button>
             </div>
           </form>

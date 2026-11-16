@@ -133,7 +133,7 @@ export function ReturnRefundOptionsStep({
           id="return-reason"
           value={reason}
           onChange={(e) => onChange({ reason: e.target.value.slice(0, 200) })}
-          placeholder="Customer changed their mind — wrong size"
+          placeholder="Customer changed their mind - wrong size"
           maxLength={200}
           rows={3}
           className="font-body text-sm resize-none"

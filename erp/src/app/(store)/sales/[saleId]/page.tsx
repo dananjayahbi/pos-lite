@@ -20,7 +20,7 @@ import { staffDisplayName } from '@/lib/utils/staff-name';
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDateTime(date: Date | string | null): string {
-  if (!date) return '—';
+  if (!date) return '-';
   return new Date(date).toLocaleString('en-LK', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
@@ -164,7 +164,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
                 </TableCell>
                 <TableCell className="text-right text-sm">{line.quantity}</TableCell>
                 <TableCell className="text-right text-sm">
-                  {Number(line.discountPercent) > 0 ? `${Number(line.discountPercent)}%` : '—'}
+                  {Number(line.discountPercent) > 0 ? `${Number(line.discountPercent)}%` : '-'}
                 </TableCell>
                 <TableCell className="text-espresso text-right font-mono text-sm font-medium">
                   {formatRupee(Number(line.lineTotalAfterDiscount))}
@@ -173,7 +173,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
                   {line.returnedQuantity > 0 ? (
                     <span className="text-terracotta">{line.returnedQuantity}</span>
                   ) : (
-                    '—'
+                    '-'
                   )}
                 </TableCell>
               </TableRow>
@@ -206,7 +206,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
                     {formatRupee(Number(payment.amount))}
                   </TableCell>
                   <TableCell className="text-sand-ink font-mono text-xs">
-                    {payment.cardReferenceNumber ?? '—'}
+                    {payment.cardReferenceNumber ?? '-'}
                   </TableCell>
                 </TableRow>
               ))}

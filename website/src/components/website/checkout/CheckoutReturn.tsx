@@ -89,14 +89,14 @@ export function CheckoutReturn({
       {unreachable && !payment ? (
         <p className="text-center text-sm text-[#94a3b8]">
           We couldn&apos;t reach the store to confirm your payment. Your order is
-          safe — please check the tracking page or contact us.
+          safe - please check the tracking page or contact us.
         </p>
       ) : null}
 
       {timedOut && payment && payment.paymentStatus === 'PENDING' ? (
         <p className="text-center text-sm text-[#94a3b8]">
           This is taking longer than usual. Your payment is still being processed
-          — no need to place the order again.
+          - no need to place the order again.
         </p>
       ) : null}
 

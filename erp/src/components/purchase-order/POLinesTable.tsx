@@ -55,7 +55,7 @@ export function POLinesTable({ lines }: { lines: POLine[] }) {
                     {formatRupee(Number(line.expectedCostPrice) * line.orderedQty)}
                   </TableCell>
                   <TableCell className="text-right font-mono">
-                    {line.actualCostPrice != null ? formatRupee(line.actualCostPrice) : '—'}
+                    {line.actualCostPrice != null ? formatRupee(line.actualCostPrice) : '-'}
                   </TableCell>
                 </TableRow>
               ))}

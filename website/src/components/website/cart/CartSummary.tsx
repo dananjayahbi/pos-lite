@@ -43,7 +43,7 @@ export function CartSummary({
 
       {!allInStock && (
         <p className="mb-3 rounded bg-amber-400/10 px-3 py-2 text-xs text-amber-300">
-          One or more items are now out of stock — please review your cart.
+          One or more items are now out of stock - please review your cart.
         </p>
       )}
 

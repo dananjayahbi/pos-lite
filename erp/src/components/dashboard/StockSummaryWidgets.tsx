@@ -33,7 +33,7 @@ function SummaryCard({
             <div className="mt-1 text-2xl font-bold text-espresso">{value}</div>
             <p className="mt-1 text-xs text-mist-ink">{helper}</p>
           </div>
-          <div className="rounded-lg bg-linen p-2 text-terracotta">{icon}</div>
+          <div className="rounded-xl bg-linen p-2.5 text-terracotta">{icon}</div>
         </CardContent>
       </Card>
     </Link>
@@ -51,21 +51,21 @@ export function StockSummaryWidgets({ permissions }: StockSummaryWidgetsProps) {
       value: summary?.totalProducts ?? 0,
       helper: 'Active products currently tracked',
       href: '/inventory',
-      icon: <Boxes className="h-5 w-5" />,
+      icon: <Boxes className="h-6 w-6" />,
     },
     {
       label: 'Low Stock Variants',
       value: summary?.lowStockVariants ?? 0,
       helper: 'Variants already below threshold',
       href: '/stock-control/low-stock',
-      icon: <AlertTriangle className="h-5 w-5" />,
+      icon: <AlertTriangle className="h-6 w-6" />,
     },
     {
       label: 'Pending Stock Takes',
       value: summary?.pendingStockTakes ?? 0,
       helper: 'Counts waiting for approval',
       href: '/stock-control/stock-takes',
-      icon: <ClipboardList className="h-5 w-5" />,
+      icon: <ClipboardList className="h-6 w-6" />,
     },
     {
       label: 'Inventory Retail Value',
@@ -79,7 +79,7 @@ export function StockSummaryWidgets({ permissions }: StockSummaryWidgetsProps) {
         ),
       helper: canViewValue ? 'Snapshot across active variants' : 'Requires cost-price permission',
       href: '/stock-control/valuation',
-      icon: <Wallet className="h-5 w-5" />,
+      icon: <Wallet className="h-6 w-6" />,
     },
   ];
 

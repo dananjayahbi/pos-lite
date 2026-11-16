@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 import { TaxRule, Prisma } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
+import { allocateBarcode } from '@/lib/services/product.service';
 import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 
 const ImportRowSchema = z.object({
@@ -92,6 +93,9 @@ export async function POST(req: NextRequest) {
       let productsCreated = 0;
       let variantsCreated = 0;
       let skuCounter = 0;
+      // Shared across the whole import so two generated barcodes in the same
+      // CSV can never collide with each other before they reach the DB.
+      const takenBarcodes = new Set<string>();
 
       for (const [, groupRows] of groups) {
         const firstRow = groupRows[0];
@@ -137,16 +141,36 @@ export async function POST(req: NextRequest) {
         });
         productsCreated++;
 
-        const variantData = groupRows.map((row) => {
+        const variantData: Array<{
+          productId: string;
+          tenantId: string;
+          sku: string;
+          barcode: string;
+          form: string | null;
+          packSize: string | null;
+          costPrice: Prisma.Decimal;
+          retailPrice: Prisma.Decimal;
+          wholesalePrice: Prisma.Decimal | null;
+          stockQuantity: number;
+          lowStockThreshold: number;
+          imageUrls: string[];
+          thumbnailImageUrls: string[];
+        }> = [];
+
+        for (const row of groupRows) {
           skuCounter++;
           const sku =
             row.sku?.trim() ||
             `IMP-${firstRow!.productName.substring(0, 3).toUpperCase()}-${skuCounter.toString().padStart(4, '0')}`;
-          return {
+          // Client requirement 03: imported rows without a barcode get one too.
+          const supplied = row.barcode?.trim();
+          const barcode = supplied || (await allocateBarcode(tx, tenantId, takenBarcodes));
+
+          variantData.push({
             productId: product.id,
             tenantId,
             sku,
-            barcode: row.barcode?.trim() || null,
+            barcode,
             form: row.form?.trim() || null,
             packSize: row.packSize?.trim() || null,
             costPrice: new Prisma.Decimal(row.costPrice ?? 0),
@@ -157,8 +181,9 @@ export async function POST(req: NextRequest) {
             stockQuantity: 0,
             lowStockThreshold: row.lowStockThreshold ?? 5,
             imageUrls: [] as string[],
-          };
-        });
+            thumbnailImageUrls: [] as string[],
+          });
+        }
 
         await tx.productVariant.createMany({ data: variantData });
         variantsCreated += variantData.length;

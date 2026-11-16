@@ -24,7 +24,7 @@ export default async function PaymentSettingsPage() {
       <div>
         <h1 className="font-display text-2xl font-bold text-espresso">Payment settings</h1>
         <p className="mt-1 text-sm text-sand-ink">
-          Configure how the POS accepts LankaQR — the national QR payment standard operated by
+          Configure how the POS accepts LankaQR - the national QR payment standard operated by
           LankaPay. Your bank issues the merchant QR; paste or upload it here so the cashier can
           display it at the counter.
         </p>

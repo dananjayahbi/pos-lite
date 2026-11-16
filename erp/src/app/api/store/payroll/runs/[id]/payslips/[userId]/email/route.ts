@@ -40,7 +40,7 @@ export async function POST(
     const html = `
       <div style="font-family: Inter, Arial, sans-serif; color: #1A1210; line-height: 1.6;">
         <h2 style="font-family: 'Playfair Display', Georgia, serif; color: #3A2D28;">
-          ${tenant.name} — Payslip
+          ${tenant.name} - Payslip
         </h2>
         <p>Dear ${item.staffName},</p>
         <p>Your payslip for <strong>${run.periodMonth}</strong> is attached.</p>
@@ -57,7 +57,7 @@ export async function POST(
 
     const result = await sendEmail(
       item.staffEmail,
-      `Payslip — ${run.periodMonth} — ${tenant.name}`,
+      `Payslip - ${run.periodMonth} - ${tenant.name}`,
       html,
       {
         text: `Payslip for ${run.periodMonth}. Net salary: ${formatRupee(

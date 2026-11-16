@@ -106,7 +106,7 @@ export default function HardwareSettingsForm({ initialValues }: Props) {
       Object.assign(initialValues, values);
       setValues({ ...values });
     } catch {
-      toast.error('Network error — could not save settings');
+      toast.error('Network error - could not save settings');
     } finally {
       setSaving(false);
     }
@@ -144,11 +144,11 @@ export default function HardwareSettingsForm({ initialValues }: Props) {
     } catch {
       setPrintFeedback({
         status: 'error',
-        message: 'Network error — could not reach printer',
+        message: 'Network error - could not reach printer',
         details: 'Verify the POS host can reach the printer on the configured IP and port.',
         checkedAt: new Date().toLocaleString(),
       });
-      toast.error('Network error — could not reach printer');
+      toast.error('Network error - could not reach printer');
     } finally {
       setTestingPrint(false);
     }
@@ -184,11 +184,11 @@ export default function HardwareSettingsForm({ initialValues }: Props) {
     } catch {
       setDrawerFeedback({
         status: 'error',
-        message: 'Network error — could not reach drawer',
+        message: 'Network error - could not reach drawer',
         details: 'If your drawer is connected through the printer, test the printer first and confirm the kick cable is seated.',
         checkedAt: new Date().toLocaleString(),
       });
-      toast.error('Network error — could not reach drawer');
+      toast.error('Network error - could not reach drawer');
     } finally {
       setTestingDrawer(false);
     }

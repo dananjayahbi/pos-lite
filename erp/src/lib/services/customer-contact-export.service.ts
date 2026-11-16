@@ -223,7 +223,7 @@ async function sendContactExportEmail(input: DeliverInput): Promise<boolean> {
       ? Buffer.from(input.content, 'utf-8')
       : input.content;
 
-  const subject = `Customer contact export — ${input.rowCount} contacts`;
+  const subject = `Customer contact export - ${input.rowCount} contacts`;
 
   try {
     await resend.emails.send({

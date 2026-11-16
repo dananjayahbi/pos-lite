@@ -124,7 +124,7 @@ export function buildPayhereCheckoutFields(
   const merchantId = getPayhereMerchantId();
   if (!merchantId) {
     throw new Error(
-      "PAYHERE_MERCHANT_ID is not configured — cannot build a checkout payload",
+      "PAYHERE_MERCHANT_ID is not configured - cannot build a checkout payload",
     );
   }
 

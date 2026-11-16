@@ -50,7 +50,7 @@ function formatDate(dateStr: string): string {
 }
 
 function displayValue(val: unknown): string {
-  if (val === null || val === undefined) return '—';
+  if (val === null || val === undefined) return '-';
   if (typeof val === 'object') return JSON.stringify(val);
   return String(val);
 }

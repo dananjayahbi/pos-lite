@@ -45,7 +45,7 @@ const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | '
 };
 
 function formatDate(iso: string | null): string {
-  if (!iso) return '—';
+  if (!iso) return '-';
   return new Date(iso).toLocaleDateString('en-LK', {
     year: 'numeric',
     month: 'short',

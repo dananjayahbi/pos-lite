@@ -209,10 +209,10 @@ export function ImportPreviewTable({ data, mapping, onBack }: ImportPreviewTable
                     )}
                   </td>
                   <td className="px-4 py-2 font-mono text-xs text-mist-ink">{row.rowNumber}</td>
-                  <td className="px-4 py-2 font-body text-espresso">{row.mappedData.productName || '—'}</td>
-                  <td className="px-4 py-2 font-mono text-xs text-espresso">{row.mappedData.sku || '—'}</td>
+                  <td className="px-4 py-2 font-body text-espresso">{row.mappedData.productName || '-'}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-espresso">{row.mappedData.sku || '-'}</td>
                   <td className="px-4 py-2 text-right font-mono text-xs text-espresso">
-                    {row.mappedData.retailPrice || '—'}
+                    {row.mappedData.retailPrice || '-'}
                   </td>
                   <td className="px-4 py-2 text-center">{statusBadge(row.status)}</td>
                 </tr>

@@ -229,7 +229,7 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
                 Select items to return
                 {sale && (
                   <span className="ml-1.5 font-normal text-sand-ink">
-                    — Sale {sale.id.slice(-8).toUpperCase()} · {formatRupee(parseFloat(sale.totalAmount))}
+                    - Sale {sale.id.slice(-8).toUpperCase()} · {formatRupee(parseFloat(sale.totalAmount))}
                   </span>
                 )}
               </p>

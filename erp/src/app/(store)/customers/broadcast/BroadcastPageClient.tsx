@@ -166,7 +166,7 @@ export function BroadcastPageClient() {
         );
       } else if (status === 'SENDING') {
         toast.success(
-          `${isEmail ? 'Email' : 'SMS'} broadcast queued for ${total} customer${total !== 1 ? 's' : ''}. Delivery continues in the background — check Broadcast History for the result.`,
+          `${isEmail ? 'Email' : 'SMS'} broadcast queued for ${total} customer${total !== 1 ? 's' : ''}. Delivery continues in the background - check Broadcast History for the result.`,
         );
       } else {
         toast.success(`Broadcast started for ${total} customer${total !== 1 ? 's' : ''}.`);
@@ -297,7 +297,7 @@ export function BroadcastPageClient() {
                     >
                       <td className="px-4 py-3 font-medium text-espresso">{c.name}</td>
                       <td className="px-4 py-3 text-sand-ink font-mono text-xs">
-                        {(isEmail ? c.email : c.phone) ?? '—'}
+                        {(isEmail ? c.email : c.phone) ?? '-'}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
@@ -308,7 +308,7 @@ export function BroadcastPageClient() {
                               </Badge>
                             ))
                           ) : (
-                            <span className="text-mist-ink text-xs">—</span>
+                            <span className="text-mist-ink text-xs">-</span>
                           )}
                         </div>
                       </td>

@@ -186,8 +186,8 @@ export default function PettyCashSection({ shiftId, isOpen }: PettyCashSectionPr
                         {typeLabel(m.type)}
                       </Badge>
                     </td>
-                    <td className="py-2 pr-3 text-espresso/70">{m.reason ?? '—'}</td>
-                    <td className="py-2 pr-3 text-espresso/70">{m.authorizedByName ?? '—'}</td>
+                    <td className="py-2 pr-3 text-espresso/70">{m.reason ?? '-'}</td>
+                    <td className="py-2 pr-3 text-espresso/70">{m.authorizedByName ?? '-'}</td>
                     <td className="py-2 text-right font-mono text-espresso">
                       {isOutflow(m.type) ? '−' : '+'}{formatRupee(m.amount)}
                     </td>

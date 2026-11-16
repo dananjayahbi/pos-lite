@@ -170,7 +170,7 @@ export function SplitPaymentModal({
       }
       onSaleComplete(json.data!);
     } catch {
-      toast.error('Network error — please try again');
+      toast.error('Network error - please try again');
       setIsSubmitting(false);
     }
   };
@@ -195,7 +195,7 @@ export function SplitPaymentModal({
         <DialogHeader>
           <DialogTitle className="font-display">Split Payment</DialogTitle>
           <DialogDescription className="font-body text-sm text-mist-ink">
-            Part digital (card / LankaQR), part cash — both amounts must add up
+            Part digital (card / LankaQR), part cash - both amounts must add up
             to the total.
           </DialogDescription>
         </DialogHeader>
@@ -274,14 +274,14 @@ export function SplitPaymentModal({
             </label>
             <div className="rounded-lg border border-sand/30 bg-sand/20 px-3 py-2">
               {cashAmount === null ? (
-                <span className="font-mono text-lg text-mist-ink">—</span>
+                <span className="font-mono text-lg text-mist-ink">-</span>
               ) : cashAmount.eq(0) ? (
                 <div>
                   <span className="font-mono text-lg text-espresso">
                     Rs. 0.00
                   </span>
                   <p className="mt-0.5 text-xs font-body text-mist-ink">
-                    Entire amount on card — no cash needed
+                    Entire amount on card - no cash needed
                   </p>
                 </div>
               ) : cashAmount.lessThan(0) ? (
@@ -342,7 +342,7 @@ export function SplitPaymentModal({
                   Change
                 </p>
                 {changeResult.type === 'empty' && (
-                  <p className="font-mono text-base text-mist-ink">—</p>
+                  <p className="font-mono text-base text-mist-ink">-</p>
                 )}
                 {changeResult.type === 'sufficient' && (
                   <p className="font-mono text-base text-[#2D6A4F]">
@@ -401,7 +401,7 @@ export function SplitPaymentModal({
             {isSubmitting ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
-              `Complete Split Payment — ${formatRupee(totalAmount.toNumber())}`
+              `Complete Split Payment - ${formatRupee(totalAmount.toNumber())}`
             )}
           </Button>
 

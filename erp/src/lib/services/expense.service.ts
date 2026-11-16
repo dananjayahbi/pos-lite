@@ -91,7 +91,7 @@ async function reverseExpenseLedger(
         accountId: entry.accountId,
         source: PaymentEntrySource.ADJUSTMENT,
         sourceId: expenseId,
-        description: `Expense reversal — ${description}`.slice(0, 200),
+        description: `Expense reversal - ${description}`.slice(0, 200),
         ...(net.greaterThan(0)
           ? { credit: net }
           : { debit: net.abs() }),
@@ -183,7 +183,7 @@ export async function createExpense(
             accountId: effectiveAccountId,
             source: PaymentEntrySource.EXPENSE,
             sourceId: created.id,
-            description: `${data.category} — ${data.description}`.slice(0, 200),
+            description: `${data.category} - ${data.description}`.slice(0, 200),
             credit: data.amount,
             entryDate: new Date(data.expenseDate),
           },
@@ -348,7 +348,7 @@ export async function updateExpense(
               accountId: newAccountId,
               source: PaymentEntrySource.EXPENSE,
               sourceId: id,
-              description: `${updated.category} — ${updated.description}`.slice(0, 200),
+              description: `${updated.category} - ${updated.description}`.slice(0, 200),
               credit: newAmount,
               entryDate: newExpenseDate,
             },

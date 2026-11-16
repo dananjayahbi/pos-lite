@@ -41,11 +41,11 @@ export function WizardStep3Review() {
   const categoryName =
     categories.find((c) => c.id === step1Data?.categoryId)?.name ??
     step1Data?.categoryId ??
-    '—';
+    '-';
   const brandName = step1Data?.brandId
     ? (brands.find((b) => b.id === step1Data.brandId)?.name ??
        step1Data.brandId)
-    : '—';
+    : '-';
 
   const { mutate: createProduct, isPending } = useMutation({
     mutationFn: async (): Promise<ProductCreateOutcome> => {
@@ -55,12 +55,13 @@ export function WizardStep3Review() {
       // Upload pending files for each variant
       const variantImageUrls: Record<
         string,
-        { urls: string[]; primaryIndex: number }
+        { urls: string[]; thumbnails: string[]; primaryIndex: number }
       > = {};
       for (const v of step2Data.variants) {
         const key = `${v.form ?? ''}|${v.packSize ?? ''}`;
         const pending = getPendingImages(key);
         const uploadedUrls: string[] = [];
+        const uploadedThumbnails: string[] = [];
         for (const entry of pending.pending) {
           const formData = new FormData();
           formData.append('image', entry.file);
@@ -69,12 +70,17 @@ export function WizardStep3Review() {
             body: formData,
           });
           if (res.ok) {
-            const data = (await res.json()) as { url: string };
+            const data = (await res.json()) as {
+              url: string;
+              thumbnailUrl?: string | null;
+            };
             uploadedUrls.push(data.url);
+            uploadedThumbnails.push(data.thumbnailUrl ?? data.url);
           }
         }
         variantImageUrls[key] = {
           urls: uploadedUrls,
+          thumbnails: uploadedThumbnails,
           primaryIndex: pending.primaryIndex,
         };
       }
@@ -87,6 +93,7 @@ export function WizardStep3Review() {
         tags: step1Data.tags,
         taxRule: step1Data.taxRule,
         mainImageUrl: step1Data.mainImageUrl || undefined,
+        mainImageThumbnailUrl: step1Data.mainImageThumbnailUrl || undefined,
         activeIngredients: step1Data.activeIngredients || undefined,
         usageInstructions: step1Data.usageInstructions || undefined,
         healthBenefits: step1Data.healthBenefits || undefined,
@@ -99,12 +106,19 @@ export function WizardStep3Review() {
           const key = `${v.form ?? ''}|${v.packSize ?? ''}`;
           const imgData = variantImageUrls[key];
           const urls = imgData?.urls ?? v.imageUrls ?? [];
+          const thumbnails = imgData?.thumbnails ?? [];
           const pIdx = imgData?.primaryIndex ?? 0;
-          const reordered =
-            urls.length > 0 && pIdx > 0
-              ? [urls[pIdx], ...urls.filter((_, i) => i !== pIdx)]
-              : urls;
-          return { ...v, imageUrls: reordered };
+          const reorder = <T,>(items: T[]): T[] =>
+            items.length > 0 && pIdx > 0
+              ? [items[pIdx]!, ...items.filter((_, i) => i !== pIdx)]
+              : items;
+          return {
+            ...v,
+            imageUrls: reorder(urls),
+            ...(thumbnails.length > 0
+              ? { thumbnailImageUrls: reorder(thumbnails) }
+              : {}),
+          };
         }),
       };
 
@@ -171,13 +185,13 @@ export function WizardStep3Review() {
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div className="text-sm">
             <p className="font-semibold text-amber-900">
-              Product created — variants failed
+              Product created - variants failed
             </p>
             <p className="mt-1 text-amber-800">{partialWarning.message}</p>
             <p className="mt-1 text-amber-800">
               The product was saved but no variants were created. Fix the
               variant data and add variants from the product&rsquo;s edit page
-              — do not submit this form again.
+              - do not submit this form again.
             </p>
             {partialWarning.productId && (
               <Button
@@ -296,17 +310,17 @@ export function WizardStep3Review() {
                           v.form}
                       </span>
                     ) : (
-                      '—'
+                      '-'
                     )}
                   </td>
                   <td className="px-4 py-2 text-espresso">
-                    {v.packSize ?? '—'}
+                    {v.packSize ?? '-'}
                   </td>
                   <td className="px-4 py-2 font-mono text-xs text-sand-ink">
-                    {v.sku ?? '—'}
+                    {v.sku ?? '-'}
                   </td>
                   <td className="px-4 py-2 font-mono text-xs text-sand-ink">
-                    {v.barcode ?? '—'}
+                    {v.barcode ?? '-'}
                   </td>
                   <td className="px-4 py-2 text-right text-espresso">
                     {v.initialStock ?? 0}

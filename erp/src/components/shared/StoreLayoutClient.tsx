@@ -62,7 +62,10 @@ export default function StoreLayoutClient({
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {/* Desktop header */}
-            <header className="sticky top-0 z-40 hidden items-center justify-between border-b border-mist bg-pearl/95 px-6 py-3 backdrop-blur-sm md:flex">
+            <header
+              data-testid="store-header"
+              className="border-mist bg-pearl/95 sticky top-0 z-40 hidden h-16 items-center justify-between border-b px-6 backdrop-blur-sm md:flex"
+            >
               <NavSearchTrigger onOpen={() => setGlobalSearchOpen(true)} />
               <div className="flex items-center gap-3">
                 <TimeClockWidget variant="compact" />

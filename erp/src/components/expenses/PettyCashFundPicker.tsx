@@ -69,7 +69,7 @@ export function PettyCashFundPicker({
           <SelectItem value="none">Not linked</SelectItem>
           <SelectItem value={fund.id}>
             {fund.name}
-            {typeof balance === 'number' ? ` — ${formatLKR(balance)} available` : ''}
+            {typeof balance === 'number' ? ` - ${formatLKR(balance)} available` : ''}
           </SelectItem>
         </SelectContent>
       </Select>

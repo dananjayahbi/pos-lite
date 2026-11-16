@@ -34,7 +34,7 @@ describe('XC-02 canonical envelope', () => {
 
   it('toErrorResponse: ApiError passthrough; unknown → 500 without internals', async () => {
     const thrown = new Error(
-      'Unique constraint failed on the fields: (`tenantId`,`name`) — prisma at /home/dev/.next/server/app/api/store/products/route.ts:183',
+      'Unique constraint failed on the fields: (`tenantId`,`name`) - prisma at /home/dev/.next/server/app/api/store/products/route.ts:183',
     );
     Object.assign(thrown, { name: 'SomeOtherError' });
     const res = toErrorResponse(thrown, 'test');

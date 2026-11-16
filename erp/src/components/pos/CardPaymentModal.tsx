@@ -67,7 +67,7 @@ export function CardPaymentModal({
       }
       onSaleComplete(json.data!);
     } catch {
-      toast.error('Network error — please try again');
+      toast.error('Network error - please try again');
       setIsSubmitting(false);
     }
   };
@@ -114,7 +114,7 @@ export function CardPaymentModal({
           {/* Terminal Reference */}
           <div>
             <div className="mb-1 flex items-center gap-1">
-              <label className="text-sm font-body text-espresso">
+              <label htmlFor="pos-card-reference" className="text-sm font-body text-espresso">
                 Terminal Reference / Approval Code
               </label>
               <span title="Used for reconciliation with your card terminal's transaction records">
@@ -122,12 +122,21 @@ export function CardPaymentModal({
               </span>
             </div>
             <Input
+              id="pos-card-reference"
               type="text"
+              autoFocus
               value={cardReferenceNumber}
               onChange={(e) => setCardReferenceNumber(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void handleSubmit();
+                }
+              }}
               placeholder="e.g. 481200"
               maxLength={20}
               className="font-mono"
+              aria-keyshortcuts="Enter"
             />
           </div>
 
@@ -145,7 +154,7 @@ export function CardPaymentModal({
             {isSubmitting ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
-              `Card Payment Confirmed — ${formatRupee(totalAmount.toNumber())}`
+              `Card Payment Confirmed - ${formatRupee(totalAmount.toNumber())}`
             )}
           </Button>
 

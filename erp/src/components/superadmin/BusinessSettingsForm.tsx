@@ -94,7 +94,7 @@ export default function BusinessSettingsForm({ tenantId, initialValues }: Props)
       setValues({ ...values });
       router.refresh();
     } catch {
-      toast.error('Network error — could not save business settings');
+      toast.error('Network error - could not save business settings');
     } finally {
       setSaving(false);
     }

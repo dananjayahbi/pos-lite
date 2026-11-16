@@ -54,8 +54,8 @@ export function DateRangeFilter({ value, onChange }: DateRangeFilterProps) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {/* Preset segment */}
-      <div className="flex items-center rounded-lg border border-mist bg-white p-0.5">
+      {/* Preset segment — wraps on narrow tills instead of clipping */}
+      <div className="flex flex-wrap items-center rounded-lg border border-mist bg-white p-0.5">
         {PRESETS.map((preset) => (
           <button
             key={preset.key}
@@ -74,7 +74,7 @@ export function DateRangeFilter({ value, onChange }: DateRangeFilterProps) {
 
       {/* Custom date inputs */}
       {value.preset === 'custom' && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <input
             type="date"
             value={value.from}

@@ -116,7 +116,7 @@ function BookBody({ account }: { account: PaymentAccount }) {
           {header.accountNumber ? (
             <span className="font-mono">{header.accountNumber}</span>
           ) : (
-            'Account book — every ledger entry for this account.'
+            'Account book - every ledger entry for this account.'
           )}
         </DialogDescription>
         <p className="font-body text-sm text-sand-ink">
@@ -228,10 +228,10 @@ function BookBody({ account }: { account: PaymentAccount }) {
                         {ENTRY_SOURCE_LABELS[entry.source]}
                       </TableCell>
                       <TableCell className="text-right font-mono text-xs">
-                        {parseMoney(entry.debit) === 0 ? '—' : formatRupee(entry.debit)}
+                        {parseMoney(entry.debit) === 0 ? '-' : formatRupee(entry.debit)}
                       </TableCell>
                       <TableCell className="text-right font-mono text-xs">
-                        {parseMoney(entry.credit) === 0 ? '—' : formatRupee(entry.credit)}
+                        {parseMoney(entry.credit) === 0 ? '-' : formatRupee(entry.credit)}
                       </TableCell>
                       <TableCell className="text-right font-mono text-xs text-espresso">
                         {formatRupee(entry.balanceAfter)}

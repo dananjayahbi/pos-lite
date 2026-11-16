@@ -152,11 +152,11 @@ export const PRODUCT_SOURCE_OPTIONS: Array<{
   {
     value: PRODUCT_SOURCE.MANUFACTURED,
     label: 'Manufactured',
-    description: 'Made in-house — eligible for Bill of Materials & production',
+    description: 'Made in-house - eligible for Bill of Materials & production',
   },
   {
     value: PRODUCT_SOURCE.TRADED,
     label: 'Traded',
-    description: 'Resold as-is — goes through purchase/receipt only',
+    description: 'Resold as-is - goes through purchase/receipt only',
   },
 ];

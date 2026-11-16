@@ -10,7 +10,7 @@ import { evaluateBatchAlert } from '@/lib/services/batchAlert.service';
 
 const DAY = 86_400_000;
 
-describe('batchTracking.core — getBatchExpiryStatus', () => {
+describe('batchTracking.core - getBatchExpiryStatus', () => {
   const now = new Date('2026-01-01T00:00:00Z');
 
   it('returns EXPIRED for a past expiry date', () => {
@@ -36,7 +36,7 @@ describe('batchTracking.core — getBatchExpiryStatus', () => {
   });
 });
 
-describe('batchTracking.core — isExpiryAlertNeeded', () => {
+describe('batchTracking.core - isExpiryAlertNeeded', () => {
   const now = new Date('2026-01-01T00:00:00Z');
 
   it('flags expired batches', () => {
@@ -53,7 +53,7 @@ describe('batchTracking.core — isExpiryAlertNeeded', () => {
   });
 });
 
-describe('batchTracking.core — daysUntilExpiry', () => {
+describe('batchTracking.core - daysUntilExpiry', () => {
   it('returns null for undated batches', () => {
     expect(daysUntilExpiry(null)).toBeNull();
     expect(daysUntilExpiry(undefined)).toBeNull();
@@ -65,7 +65,7 @@ describe('batchTracking.core — daysUntilExpiry', () => {
   });
 });
 
-describe('batchTracking.core — describeExpiryStatus', () => {
+describe('batchTracking.core - describeExpiryStatus', () => {
   it('returns human-readable labels', () => {
     expect(describeExpiryStatus('EXPIRED')).toBe('Expired');
     expect(describeExpiryStatus('EXPIRING_SOON')).toBe('Expiring soon');
@@ -73,7 +73,7 @@ describe('batchTracking.core — describeExpiryStatus', () => {
   });
 });
 
-describe('batchAlert.service — evaluateBatchAlert', () => {
+describe('batchAlert.service - evaluateBatchAlert', () => {
   const now = Date.now();
 
   it('maps expired to EXPIRED severity', () => {

@@ -113,7 +113,7 @@ export function CustomerPricingTab() {
         <div>
           <h2 className="font-display text-lg text-espresso">Customer Pricing</h2>
           <p className="font-body text-sm text-mist-ink">
-            {activeCount} active rule{activeCount === 1 ? '' : 's'} — tagged customers get the
+            {activeCount} active rule{activeCount === 1 ? '' : 's'} - tagged customers get the
             rule price when it is below the normal selling price.
           </p>
         </div>

@@ -78,7 +78,7 @@ export function POPaymentAccountField({
       ) : (
         <p className="text-xs text-mist-ink">
           {accounts.length === 0 && !isLoading
-            ? 'No active payment accounts — create one under Payment Accounts.'
+            ? 'No active payment accounts - create one under Payment Accounts.'
             : 'Which account the payable will be settled from.'}
         </p>
       )}

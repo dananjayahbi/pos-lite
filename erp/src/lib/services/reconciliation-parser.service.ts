@@ -16,10 +16,14 @@ export interface RemittanceParsedRow {
   waybill?: string | undefined;
   orderRef?: string | undefined;
   barcode?: string | undefined;
+  /** Collected COD (what the courier says it received). */
   amount?: string | undefined;
+  /** Courier deduction / delivery charge. */
   fees?: string | undefined;
   status?: string | undefined;
   date?: string | undefined;
+  /** Net amount the courier says it will remit (PAYABLE column). */
+  payable?: string | undefined;
   raw: Record<string, string>;
 }
 
@@ -34,27 +38,91 @@ export function detectStatementFileType(filename: string): RemittanceFileType | 
   return null;
 }
 
+/**
+ * Finds the best header for a field.
+ *
+ * Exact matches in candidate order win over partial matches, and candidates
+ * are ordered most-specific first. That matters for real courier exports such
+ * as the Trans Express "Invoice Details" sheet, where `COD` and
+ * `COLLECTED COD` (or `COMMISSION` and `DELIVERY CHARGE`) both exist and a
+ * naive "first header containing cod/fee" would pick the wrong column.
+ */
+function pickHeader(keys: string[], candidates: string[]): string | undefined {
+  const normalized = keys.map((key) => key.trim().toLowerCase());
+  for (const candidate of candidates) {
+    const idx = normalized.indexOf(candidate);
+    if (idx >= 0) return keys[idx];
+  }
+  for (const candidate of candidates) {
+    const idx = normalized.findIndex((key) => key.includes(candidate));
+    if (idx >= 0) return keys[idx];
+  }
+  return undefined;
+}
+
 /** Tolerant column detection across statement variants. */
 export function normalizeRow(row: Record<string, string>): RemittanceParsedRow {
   const keys = Object.keys(row);
-  const lower = keys.map((k) => k.toLowerCase());
 
   const pick = (...names: string[]): string | undefined => {
-    const idx = lower.findIndex((l) => names.some((n) => l.includes(n)));
-    if (idx < 0) return undefined;
-    const key = keys[idx];
+    const key = pickHeader(keys, names);
     if (!key) return undefined;
-    return row[key] ?? undefined;
+    const value = row[key];
+    if (value === undefined || value === null) return undefined;
+    const trimmed = String(value).trim();
+    return trimmed.length > 0 ? trimmed : undefined;
   };
 
   return {
-    waybill: pick("waybill", "way_bill", "airwaybill", "airway bill", "awb"),
-    orderRef: pick("order_ref", "orderref", "order no", "order_no", "order_number", "orderno", "invoice", "reference", "internal_order"),
-    barcode: pick("barcode", "tracking_no", "tracking_no_", "trackingid", "tracking_id", "tn"),
-    amount: pick("amount", "cod", "settled", "paid", "received", "remitted"),
-    fees: pick("fee", "charge", "cost", "commission", "deduction"),
-    status: pick("status", "state"),
-    date: pick("date", "settled_at", "time", "remittance_date"),
+    waybill: pick(
+      "waybill id",
+      "waybill",
+      "way_bill",
+      "airwaybill",
+      "airway bill",
+      "awb",
+      "tracking number",
+    ),
+    orderRef: pick(
+      "order reference",
+      "order_ref",
+      "orderref",
+      "order no",
+      "order_no",
+      "order_number",
+      "orderno",
+      "invoice no",
+      "invoice",
+      "reference",
+      "internal_order",
+    ),
+    barcode: pick("barcode", "tracking_no", "trackingid", "tracking_id", "tn"),
+    // Collected COD is the money the courier reports receiving; prefer the
+    // explicit "collected" column over the order's COD value when both exist.
+    amount: pick(
+      "collected cod",
+      "cod amount",
+      "collected",
+      "settled amount",
+      "settled",
+      "amount",
+      "cod",
+      "paid",
+      "received",
+      "remitted",
+    ),
+    fees: pick(
+      "delivery charge",
+      "courier charge",
+      "deduction",
+      "fee",
+      "charge",
+      "commission",
+      "cost",
+    ),
+    status: pick("delivery status", "status", "state"),
+    date: pick("order date", "delivery date", "settled_at", "settled at", "date", "time", "remittance date"),
+    payable: pick("payable", "net payout", "net amount", "net payable"),
     raw: row,
   };
 }

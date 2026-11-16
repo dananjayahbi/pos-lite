@@ -69,7 +69,7 @@ export function PaymentAccountsPageClient() {
       sendJson<PaymentAccount>('/api/store/payment-accounts', 'POST', payload),
     onSuccess: async (account) => {
       await invalidateAll();
-      toast.success(`Account created — ${account.name}`);
+      toast.success(`Account created - ${account.name}`);
       closeDialog();
     },
   });
@@ -79,7 +79,7 @@ export function PaymentAccountsPageClient() {
       sendJson<PaymentAccount>(`/api/store/payment-accounts/${id}`, 'PATCH', payload),
     onSuccess: async (account) => {
       await invalidateAll();
-      toast.success(`Account updated — ${account.name}`);
+      toast.success(`Account updated - ${account.name}`);
       closeDialog();
     },
   });

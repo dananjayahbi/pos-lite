@@ -361,7 +361,7 @@ export function GoodsReceivingForm({
           </p>
           <p className="text-xs text-mist-ink mt-1">
             Adjust actual cost prices only when the supplier invoice differs from the expected amount.
-            Batch number and expiry date are optional — fill them in to keep the received goods
+            Batch number and expiry date are optional - fill them in to keep the received goods
             traceable in Inventory → Batches.
           </p>
         </div>

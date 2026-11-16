@@ -80,6 +80,25 @@ async function fixture(page: Page) {
   throw new Error('No seeded POS variant with stock >= 4');
 }
 
+/**
+ * Reads the live stock of one specific variant.
+ *
+ * `fixture()` returns the first product with any variant >= 4 in stock, so it
+ * can resolve to a *different* variant once the sold one nears the threshold.
+ * Stock deductions must therefore be asserted against the sold variant itself.
+ */
+async function variantStock(page: Page, variant: any): Promise<number> {
+  const body = await json(
+    await page.request.get(`/api/store/products?search=${encodeURIComponent(variant.sku)}&limit=10`),
+  );
+  const list: any[] = Array.isArray(body?.data) ? body.data : [];
+  const match = list
+    .flatMap((product) => product.variants ?? [])
+    .find((candidate: any) => candidate.id === variant.id);
+  if (!match) throw new Error(`Variant ${variant.id} not found while reading stock`);
+  return match.stockQuantity;
+}
+
 async function customer(page: Page, suffix = RUN) {
   const response = await post(page, '/api/store/sales/walkin-customer', {
     name: `POS QA ${suffix}`,
@@ -127,7 +146,7 @@ async function voidSale(page: Page, saleId?: string) {
 
 test.describe('Module 14 - POS Billing & Checkout', () => {
   test.describe.configure({ mode: 'serial', timeout: 180_000 });
-  const state: { shiftId?: string; variant?: any; productName?: string; customer?: any; saleIds: string[]; baselineStock?: number; replacement?: any } = { saleIds: [] };
+  const state: { shiftId?: string; variant?: any; productName?: string; customer?: any; saleIds: string[]; replacement?: any } = { saleIds: [] };
 
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
@@ -136,7 +155,6 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
     const resolvedFixture = await fixture(page);
     state.variant = resolvedFixture.variant;
     state.productName = resolvedFixture.product.name;
-    state.baselineStock = resolvedFixture.variant.stockQuantity;
     state.customer = await customer(page);
     // M14-04 / M14-01: EXEMPT-taxed barcode variant for genuine zero-total sales.
     state.replacement = await replacementFixture(page);
@@ -200,7 +218,7 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
 
   test('F3 applies Decimal-safe discount/tax arithmetic and exact stock deduction', async ({ page }) => {
     await login(page);
-    const stockBeforeSale = state.baselineStock! - 1;
+    const stockBeforeSale = await variantStock(page, state.variant);
     const result = await createSale(page, {
       shiftId: state.shiftId, customerId: state.customer.id,
       lines: [{ variantId: state.variant.id, quantity: 2, discountPercent: 10 }],
@@ -214,7 +232,7 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
     expect(tax.toFixed(2)).toBe(tax.toFixed(2));
     expect(Number(sale.totalAmount)).toBe(Number((subtotal - Number(sale.discountAmount) + tax).toFixed(2)));
     expect(Number((sale.lines[0].lineTotalBeforeDiscount))).toBe(Number((Number(sale.lines[0].unitPrice) * 2).toFixed(2)));
-    const stockAfterSale = (await fixture(page)).variant.stockQuantity;
+    const stockAfterSale = await variantStock(page, state.variant);
     expect(stockAfterSale).toBe(stockBeforeSale - 2);
     state.saleIds.push(sale.id);
   });
@@ -487,7 +505,11 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
     await page.keyboard.type(`${state.variant.barcode ?? state.variant.sku}\n`, { delay: 5 });
     await expect(page.getByText('Sub-total').first()).toBeVisible({ timeout: 30_000 });
 
+    // The discount section is collapsed by default to give the line items
+    // more room; the dedicated shortcut opens it from the barcode box.
+    await page.keyboard.press('Alt+Shift+D');
     const discountInput = page.locator('input[type="number"]').first();
+    await expect(discountInput).toBeVisible();
     await discountInput.fill('10');
     await page.getByRole('button', { name: 'Apply', exact: true }).first().click();
     await expect(page.getByText('Discount', { exact: true })).toBeVisible();
@@ -511,8 +533,14 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
     await page.keyboard.type(`${state.variant.barcode ?? state.variant.sku}\n`, { delay: 5 });
     await expect(page.getByText('Sub-total').first()).toBeVisible({ timeout: 30_000 });
 
-    // Open the line-discount editor for the cart row.
-    await page.locator('[role="button"]').filter({ hasText: state.productName! }).first().click();
+    // Open the line-discount editor for the cart row. Scope to the cart (the
+    // scan also filters the product grid) and click the product-info side of
+    // the row so the quantity stepper's stopPropagation is not hit.
+    await page
+      .locator('[data-cart-line]')
+      .filter({ hasText: state.productName! })
+      .first()
+      .click({ position: { x: 24, y: 18 } });
     await expect(page.getByText(/line discount/i).first()).toBeVisible();
 
     const lineDiscountInput = page.locator('input[type="number"]').first();
@@ -538,6 +566,8 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
     await expect(page.getByText('Sub-total').first()).toBeVisible({ timeout: 30_000 });
 
     // A 100% cart discount makes the amount due zero even for VAT products.
+    // The discount section starts collapsed, so open it with its shortcut.
+    await page.keyboard.press('Alt+Shift+D');
     await page.locator('input[type="number"]').first().fill('100');
     await page.getByRole('button', { name: 'Apply', exact: true }).first().click();
 
@@ -552,5 +582,71 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
     // Receipt preview opens and the cart is cleared.
     await expect(page.getByRole('button', { name: /New Sale/i })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(/Cart is empty/i)).toBeVisible();
+  });
+
+  test('C8 keeps the barcode box focused and supports keyboard-only add and F4 payment', async ({ page }) => {
+    await login(page);
+    await ensureShift(page);
+    await page.goto(`${BASE_URL}/pos`, { waitUntil: 'domcontentloaded' });
+
+    const barcodeBox = page.locator('#pos-barcode-input');
+    await expect(barcodeBox).toBeVisible({ timeout: 30_000 });
+    // The terminal hands the scanner a focused target without any click.
+    await expect(barcodeBox).toBeFocused({ timeout: 10_000 });
+
+    // A tap on empty grid space returns focus to the scanner.
+    await page.getByRole('group', { name: 'Product results' }).click({ position: { x: 5, y: 5 } });
+    await expect(barcodeBox).toBeFocused();
+
+    await page.keyboard.type(`${state.variant.barcode ?? state.variant.sku}\n`, { delay: 5 });
+    await expect(page.getByText('Sub-total').first()).toBeVisible({ timeout: 30_000 });
+    await expect(barcodeBox).toBeFocused();
+
+    // F4 opens the tender menu with no pointer; Escape closes it.
+    await page.keyboard.press('F4');
+    await expect(page.getByRole('button', { name: 'Cash', exact: true })).toBeVisible({ timeout: 5_000 });
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: 'Cash', exact: true })).toHaveCount(0);
+
+    // Leave the shared cart empty for later tests.
+    await page.getByRole('button', { name: /Remove .* from cart/i }).first().click();
+  });
+
+  test('C9 keeps the promo field inside the collapsible discounts section', async ({ page }) => {
+    await login(page);
+    await ensureShift(page);
+    await page.goto(`${BASE_URL}/pos`, { waitUntil: 'domcontentloaded' });
+
+    const barcodeBox = page.locator('#pos-barcode-input');
+    await expect(barcodeBox).toBeFocused({ timeout: 30_000 });
+    await page.keyboard.type(`${state.variant.barcode ?? state.variant.sku}\n`, { delay: 5 });
+    await expect(page.getByText('Sub-total').first()).toBeVisible({ timeout: 30_000 });
+
+    const discountInput = page.locator('#pos-cart-discount-input');
+    const promoInput = page.locator('#pos-promo-code-input');
+
+    // Collapsed by default: the promo field is hidden with the discount field.
+    await expect(discountInput).toHaveCount(0);
+    await expect(promoInput).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Discounts & promo/i })).toBeVisible();
+
+    // One toggle reveals both.
+    await page.keyboard.press('Alt+Shift+D');
+    await expect(discountInput).toBeVisible();
+    await expect(promoInput).toBeVisible();
+
+    // Collapse, then Alt+P expands the same section and focuses the promo box.
+    await page.keyboard.press('Alt+Shift+D');
+    await expect(promoInput).toHaveCount(0);
+    await page.keyboard.press('Alt+P');
+    await expect(promoInput).toBeFocused({ timeout: 10_000 });
+
+    // Escape clears the field and restores the scanner focus.
+    await page.keyboard.press('Escape');
+    await expect(barcodeBox).toBeFocused();
+    await expect(discountInput).toBeVisible();
+
+    // Leave the shared cart empty for later tests.
+    await page.getByRole('button', { name: /Remove .* from cart/i }).first().click();
   });
 });

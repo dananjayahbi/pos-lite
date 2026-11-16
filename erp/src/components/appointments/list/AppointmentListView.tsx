@@ -88,13 +88,13 @@ export function AppointmentListView({ onAppointmentClick, onNewClick }: Appointm
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-espresso">
-                      {appt.customer?.name ?? appt.walkInName ?? '—'}
+                      {appt.customer?.name ?? appt.walkInName ?? '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-espresso/60">
-                      {appt.service?.name ?? '—'}
+                      {appt.service?.name ?? '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-espresso/60">
-                      {appt.staff ? staffDisplayName(appt.staff.email) : '—'}
+                      {appt.staff ? staffDisplayName(appt.staff.email) : '-'}
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={appt.status} />

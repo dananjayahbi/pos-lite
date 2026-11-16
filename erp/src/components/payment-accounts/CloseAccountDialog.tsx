@@ -135,7 +135,7 @@ function CloseForm({ account, accounts, onSubmit, onCancel }: CloseFormProps) {
             </div>
             {transferToAccountId === null && (
               <p className="mt-1 font-body text-xs text-[#9B2226]">
-                Pick a receiving account — closing is blocked while a balance remains.
+                Pick a receiving account - closing is blocked while a balance remains.
               </p>
             )}
             {targetIsPettyCash && (
@@ -167,7 +167,7 @@ function CloseForm({ account, accounts, onSubmit, onCancel }: CloseFormProps) {
         </div>
 
         <p className="rounded-lg border border-[#9B2226]/30 bg-[#9B2226]/5 p-2 font-body text-xs text-[#9B2226]">
-          Closing <span className="font-semibold">{account.name}</span> is permanent — it can no
+          Closing <span className="font-semibold">{account.name}</span> is permanent - it can no
           longer receive deposits, transfers or sales payments.
         </p>
 

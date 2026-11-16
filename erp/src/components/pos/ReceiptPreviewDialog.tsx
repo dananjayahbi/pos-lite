@@ -107,7 +107,7 @@ export function ReceiptPreviewDialog({
           onClick={onClose}
           className="w-full text-center font-body text-sm text-mist-ink hover:text-espresso transition-colors py-1"
         >
-          No Receipt — close
+          No Receipt - close
         </button>
 
         {/* New Sale button */}

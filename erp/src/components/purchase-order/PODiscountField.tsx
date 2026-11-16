@@ -82,7 +82,7 @@ export function PODiscountField({
       </div>
       <p className="text-xs text-mist-ink">
         {type === null
-          ? 'No discount — click a type to apply one.'
+          ? 'No discount - click a type to apply one.'
           : type === 'PERCENTAGE'
             ? 'Applied to the subtotal, capped at 100%.'
             : 'Capped so the payable never goes below zero.'}

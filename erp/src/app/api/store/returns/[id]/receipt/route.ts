@@ -33,7 +33,7 @@ export async function GET(_request: Request, props: { params: Promise<{ id: stri
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { name: true, settings: true },
+      select: { name: true, logoUrl: true, settings: true },
     });
 
     if (!tenant) {
@@ -56,7 +56,11 @@ export async function GET(_request: Request, props: { params: Promise<{ id: stri
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store, no-cache, must-revalidate',
-        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+        // The tenant logo is hosted on the same app (or an external CDN), so
+        // images must be allowed for the branded header; everything else stays
+        // locked down.
+        'Content-Security-Policy':
+          "default-src 'none'; img-src 'self' data: blob: https:; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
       },
     });
   } catch (error) {

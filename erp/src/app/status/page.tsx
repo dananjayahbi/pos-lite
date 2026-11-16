@@ -197,7 +197,7 @@ export default function StatusPage() {
           <ComponentCard
             title="WhatsApp API"
             status={whatsappStatus}
-            subtitle="Third-party service — status not monitored"
+            subtitle="Third-party service - status not monitored"
             isFetching={false}
           />
           <ComponentCard

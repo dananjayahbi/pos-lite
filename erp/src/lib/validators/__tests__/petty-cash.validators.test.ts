@@ -6,7 +6,7 @@ import {
 
 const validFundId = 'cmfund000000000000000000';
 
-describe('UpdatePettyCashFundSchema — standalone fund (doc 36)', () => {
+describe('UpdatePettyCashFundSchema - standalone fund (doc 36)', () => {
   it('accepts a name change only', () => {
     const parsed = UpdatePettyCashFundSchema.safeParse({
       fundId: validFundId,
@@ -70,7 +70,7 @@ describe('UpdatePettyCashFundSchema — standalone fund (doc 36)', () => {
   });
 });
 
-describe('TopUpPettyCashSchema — Add Cash In', () => {
+describe('TopUpPettyCashSchema - Add Cash In', () => {
   it('accepts a numeric amount and optional source / date / note', () => {
     const parsed = TopUpPettyCashSchema.safeParse({
       amount: 10000,

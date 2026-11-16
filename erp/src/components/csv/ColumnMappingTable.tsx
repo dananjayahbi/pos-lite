@@ -126,10 +126,10 @@ export function ColumnMappingTable({
                     onValueChange={(v) => handleChange(field.key, v)}
                   >
                     <SelectTrigger className="w-[200px] font-body text-sm">
-                      <SelectValue placeholder="— Not mapped —" />
+                      <SelectValue placeholder="- Not mapped -" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={NOT_MAPPED}>— Not mapped —</SelectItem>
+                      <SelectItem value={NOT_MAPPED}>- Not mapped -</SelectItem>
                       {headers.map((h) => (
                         <SelectItem key={h} value={h}>
                           {h}
@@ -144,7 +144,7 @@ export function ColumnMappingTable({
                       {previewValues[field.key]!.join(', ')}
                     </span>
                   ) : (
-                    <span className="font-body text-xs text-mist-ink">—</span>
+                    <span className="font-body text-xs text-mist-ink">-</span>
                   )}
                 </td>
               </tr>

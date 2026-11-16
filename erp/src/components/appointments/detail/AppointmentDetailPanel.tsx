@@ -56,7 +56,7 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
                     {new Date(appointment.startTime).toLocaleTimeString('en-US', {
                       hour: '2-digit', minute: '2-digit',
                     })}
-                    {' — '}
+                    {' - '}
                     {new Date(appointment.endTime).toLocaleTimeString('en-US', {
                       hour: '2-digit', minute: '2-digit',
                     })}

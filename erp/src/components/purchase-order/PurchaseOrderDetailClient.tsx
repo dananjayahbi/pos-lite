@@ -120,7 +120,7 @@ export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
       const result = await recordPurchaseOrderPayment(poId, payload);
       toast.success(
         result.settled
-          ? 'Payment recorded — PO settled in full'
+          ? 'Payment recorded - PO settled in full'
           : `Payment of ${formatRupee(result.amount)} recorded`,
       );
       setPayOpen(false);

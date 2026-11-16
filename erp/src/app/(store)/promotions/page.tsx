@@ -156,7 +156,7 @@ function getValueLabel(type: PromotionTypeValue): string {
 function getPreviewText(name: string, type: PromotionTypeValue, value: number): string {
   if (!name || value <= 0) return '';
   if (type === 'CART_PERCENTAGE' || type === 'CATEGORY_PERCENTAGE' || type === 'PRODUCT_PERCENTAGE' || type === 'PROMO_CODE') {
-    return `${name} — ${value}% off${
+    return `${name} - ${value}% off${
       type === 'CART_PERCENTAGE'
         ? ' your entire cart'
         : type === 'CATEGORY_PERCENTAGE'
@@ -166,9 +166,9 @@ function getPreviewText(name: string, type: PromotionTypeValue, value: number): 
             : ' with code'
     }`;
   }
-  if (type === 'CART_FIXED') return `${name} — ${formatRupee(value)} off your cart`;
-  if (type === 'PRODUCT_FIXED') return `${name} — ${formatRupee(value)} off the selected product`;
-  return `${name} — Buy ${value}+ get one free`;
+  if (type === 'CART_FIXED') return `${name} - ${formatRupee(value)} off your cart`;
+  if (type === 'PRODUCT_FIXED') return `${name} - ${formatRupee(value)} off the selected product`;
+  return `${name} - Buy ${value}+ get one free`;
 }
 
 // ── Create / Edit Form ───────────────────────────────────────────────────────
@@ -576,7 +576,7 @@ export default function PromotionsPage() {
                         {formatValue(promo.type, promo.value)}
                       </TableCell>
                       <TableCell className="font-mono text-sm text-mist-ink">
-                        {promo.type === 'PROMO_CODE' && promo.promoCode ? promo.promoCode : '—'}
+                        {promo.type === 'PROMO_CODE' && promo.promoCode ? promo.promoCode : '-'}
                       </TableCell>
                       <TableCell>
                         <Switch

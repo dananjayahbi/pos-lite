@@ -168,7 +168,7 @@ export function ReturnDetailModal({
             </div>
             <div className="col-span-2">
               <span className="text-mist-ink text-xs">Return Reason</span>
-              <p className="text-espresso">{returnData.reason || '—'}</p>
+              <p className="text-espresso">{returnData.reason || '-'}</p>
             </div>
           </div>
 
@@ -191,7 +191,7 @@ export function ReturnDetailModal({
                       {line.productNameSnapshot}
                     </TableCell>
                     <TableCell className="font-body text-xs text-mist-ink">
-                      {line.variantDescriptionSnapshot || '—'}
+                      {line.variantDescriptionSnapshot || '-'}
                     </TableCell>
                     <TableCell className="font-body text-xs text-espresso text-center">
                       {line.quantity}
@@ -224,7 +224,13 @@ export function ReturnDetailModal({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => window.print()}
+              onClick={() =>
+                window.open(
+                  `/api/store/returns/${returnData.id}/receipt`,
+                  '_blank',
+                  'noopener',
+                )
+              }
             >
               <Printer className="h-4 w-4 mr-1.5" />
               Print Return Receipt

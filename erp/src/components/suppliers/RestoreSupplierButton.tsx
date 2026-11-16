@@ -76,7 +76,7 @@ export function RestoreSupplierButton({ supplierId, supplierName }: RestoreSuppl
             <DialogTitle>Restore {supplierName}?</DialogTitle>
             <DialogDescription>
               The supplier will reappear in the active list and become editable again. Nothing
-              else changes — PO history is untouched.
+              else changes - PO history is untouched.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

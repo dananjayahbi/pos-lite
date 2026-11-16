@@ -132,13 +132,13 @@ export default async function BillingPage({
                     tenantId={tenantId}
                     planId={subscription.planId}
                     billingCycle="monthly"
-                    buttonLabel={`Monthly — LKR ${subscription.plan.monthlyPrice}`}
+                    buttonLabel={`Monthly - LKR ${subscription.plan.monthlyPrice}`}
                   />
                   <PayHereCheckoutButton
                     tenantId={tenantId}
                     planId={subscription.planId}
                     billingCycle="annual"
-                    buttonLabel={`Annual — LKR ${subscription.plan.annualPrice}`}
+                    buttonLabel={`Annual - LKR ${subscription.plan.annualPrice}`}
                   />
                 </div>
               </CardContent>
@@ -207,13 +207,13 @@ export default async function BillingPage({
                   tenantId={tenantId}
                   planId={subscription.planId}
                   billingCycle="monthly"
-                  buttonLabel="Reactivate — Monthly"
+                  buttonLabel="Reactivate - Monthly"
                 />
                 <PayHereCheckoutButton
                   tenantId={tenantId}
                   planId={subscription.planId}
                   billingCycle="annual"
-                  buttonLabel="Reactivate — Annual"
+                  buttonLabel="Reactivate - Annual"
                 />
               </CardContent>
             </Card>

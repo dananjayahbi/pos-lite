@@ -53,7 +53,7 @@ export function AnnouncementBarSettingsForm({
           <div>
             <h3 className="text-sm font-semibold text-espresso">Announcement Bar</h3>
             <p className="text-xs text-text-muted mt-0.5">
-              A slim notice shown at the very top of your public website — use it
+              A slim notice shown at the very top of your public website - use it
               for offers, delivery notices or seasonal messages.
             </p>
           </div>

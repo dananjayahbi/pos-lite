@@ -501,7 +501,7 @@ function StockMovementHistoryInner() {
               {/* M09-03 (OBS-22): the chips are an exclusion model (all
                   reasons start selected; clicking one excludes it), so the
                   pill spells that out instead of reading inverted. */}
-              Showing {selectedReasons.size} of {ALL_REASONS.length} reasons — click to exclude
+              Showing {selectedReasons.size} of {ALL_REASONS.length} reasons - click to exclude
               <button onClick={() => updateParams({ reasons: null, page: '1' })} aria-label="Reset reasons filter">
                 <X className="h-3 w-3" />
               </button>
@@ -596,7 +596,7 @@ function StockMovementHistoryInner() {
                           {m.note ? (
                             <span title={m.note}>{truncate(m.note, 60)}</span>
                           ) : (
-                            <span className="text-mist-ink/50">—</span>
+                            <span className="text-mist-ink/50">-</span>
                           )}
                         </TableCell>
                       </TableRow>

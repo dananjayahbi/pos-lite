@@ -35,9 +35,9 @@ export function addDays(day: string, days: number): string | undefined {
 
 /** `dd Mon yyyy` for anything ISO-like; `—` when unusable. */
 export function formatPoDate(value: string | null | undefined): string {
-  if (!value) return '—';
+  if (!value) return '-';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
+  if (Number.isNaN(date.getTime())) return '-';
   return date.toLocaleDateString('en-GB', {
     day: '2-digit',
     month: 'short',

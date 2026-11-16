@@ -141,11 +141,11 @@ export async function POST(
               deliveryId: order.id,
               status: order.status,
               source: 'INTERNAL',
-              remarks: 'Card payment unavailable — order switched to cash on delivery',
+              remarks: 'Card payment unavailable - order switched to cash on delivery',
             },
           });
           console.warn(
-            '[POST /api/public/site/[tenantSlug]/orders] CARD requested but PayHere is not configured — order switched to COD',
+            '[POST /api/public/site/[tenantSlug]/orders] CARD requested but PayHere is not configured - order switched to COD',
           );
         }
       }

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   mapDeliveryInvoiceLines,
   mapInvoiceLines,
+  selectInvoiceLines,
   toNumber,
   type DeliveryLineSource,
   type InvoiceLineSource,
@@ -75,6 +76,37 @@ describe('mapDeliveryInvoiceLines', () => {
 
   it('uses an empty SKU when the snapshot has none', () => {
     expect(mapDeliveryInvoiceLines([makeDeliveryLine({ skuSnapshot: null })])[0]?.sku).toBe('');
+  });
+});
+
+describe('selectInvoiceLines', () => {
+  const saleLine = {
+    sku: 'SALE-1',
+    description: 'Sale line',
+    quantity: 1,
+    unitPrice: 500,
+    discountAmount: 0,
+    lineTotal: 500,
+  };
+  const deliveryLine = {
+    sku: 'WEB-1',
+    description: 'Website line',
+    quantity: 2,
+    unitPrice: 250,
+    discountAmount: 0,
+    lineTotal: 500,
+  };
+
+  it('prefers the POS sale lines when they exist', () => {
+    expect(selectInvoiceLines([saleLine], [deliveryLine])).toEqual([saleLine]);
+  });
+
+  it('falls back to delivery lines when the linked sale has none', () => {
+    expect(selectInvoiceLines([], [deliveryLine])).toEqual([deliveryLine]);
+  });
+
+  it('returns an empty list when neither source has lines', () => {
+    expect(selectInvoiceLines([], [])).toEqual([]);
   });
 });
 

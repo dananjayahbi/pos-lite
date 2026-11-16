@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
         });
 
         if (recipients.length > 0) {
-          const title = `${productName} — ${sku} is low on stock`;
+          const title = `${productName} - ${sku} is low on stock`;
           const body = `Current stock: ${newQty} units. Threshold: ${variant.lowStockThreshold} units. Adjusted by: ${staffDisplayName(session.user.email)}.`;
 
           await tx.notificationRecord.createMany({

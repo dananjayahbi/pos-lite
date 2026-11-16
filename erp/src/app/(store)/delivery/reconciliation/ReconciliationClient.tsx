@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { LedgerTable } from '@/components/delivery/reconciliation/LedgerTable';
 import { RemittanceUpload } from '@/components/delivery/reconciliation/RemittanceUpload';
+import { StatementComparison } from '@/components/delivery/reconciliation/StatementComparison';
 
 interface AgingSummary {
   buckets: { under7: number; under14: number; overdue: number };
@@ -63,7 +64,7 @@ export function ReconciliationClient() {
   const { hasPermission } = usePermissions();
   const canView = hasPermission(PERMISSIONS.DELIVERY.viewReconciliation);
   const canImport = hasPermission(PERMISSIONS.DELIVERY.importRemittance);
-  const { data, isLoading, importCsv, openDispute, updateDispute } = useReconciliation();
+  const { data, isLoading, importCsv, compareStatement, openDispute, updateDispute } = useReconciliation();
 
   if (!canView) {
     return (
@@ -187,7 +188,7 @@ export function ReconciliationClient() {
                   {stat?.count ?? 0}
                 </p>
                 <p className="text-xs text-espresso/50">
-                  {stat ? formatRupee(Math.abs(stat.variance)) : '—'}
+                  {stat ? formatRupee(Math.abs(stat.variance)) : '-'}
                 </p>
               </CardContent>
             </Card>
@@ -203,6 +204,11 @@ export function ReconciliationClient() {
         </div>
       )}
 
+      <StatementComparison
+        isComparing={compareStatement.isPending}
+        onCompare={(input) => compareStatement.mutateAsync(input)}
+      />
+
       {!isLoading && (
         <>
           {canImport && (
@@ -214,9 +220,9 @@ export function ReconciliationClient() {
           )}
 
           <Card className="border-mist">
-            <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
               <CardTitle className="font-display text-lg">Ledger</CardTitle>
-              <span className="text-xs text-espresso/50">{total} entries</span>
+              <span className="shrink-0 text-xs text-espresso/50">{total} entries</span>
             </CardHeader>
             <CardContent className="p-0">
               <LedgerTable

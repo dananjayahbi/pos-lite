@@ -91,7 +91,7 @@ export const NAV_SEARCH_INDEX: NavSearchEntry[] = [
   { title: 'Add Item', path: '/delivery/packaging', description: 'Add a new packaging stock item.', keywords: ['add packaging stock item', 'new packaging item', 'packaging stock'], group: 'Delivery', permission: 'delivery:packaging:manage', kind: 'action' },
   { title: 'Reconciliation', path: '/delivery/reconciliation', description: 'Reconcile cash-on-delivery collections.', keywords: ['cod', 'settlement'], group: 'Delivery', permission: 'delivery:recon:view' },
   { title: 'Courier Settings', path: '/delivery/settings', description: 'Configure courier integrations.', keywords: ['courier', 'api'], group: 'Delivery', permission: 'delivery:courier:manage' },
-  { title: 'Label Design', path: '/delivery/label', description: 'Customize shipping label templates.', keywords: ['template', 'print'], group: 'Delivery', permission: 'delivery:label:manage' },
+  { title: 'Waybill Design', path: '/delivery/label', description: 'Fixed TransExpress waybill design, two per A4 sheet.', keywords: ['waybill', 'label', 'print'], group: 'Delivery', permission: 'delivery:label:manage' },
 
   // ── Factory ───────────────────────────────────────────────────
   { title: 'Factory Dashboard', path: '/factory', description: 'Factory production overview.', keywords: ['production'], group: 'Factory', permission: 'factory:dashboard:view' },

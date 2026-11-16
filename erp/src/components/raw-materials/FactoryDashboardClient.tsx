@@ -37,7 +37,7 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
             <Boxes className="h-4 w-4 text-mist-ink" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-espresso">{stats?.totalMaterials ?? '—'}</div>
+            <div className="text-2xl font-bold text-espresso">{stats?.totalMaterials ?? '-'}</div>
           </CardContent>
         </Card>
 
@@ -47,7 +47,7 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
             <AlertTriangle className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-amber-600">{stats?.lowStockCount ?? '—'}</div>
+            <div className="text-2xl font-bold text-amber-600">{stats?.lowStockCount ?? '-'}</div>
           </CardContent>
         </Card>
 
@@ -57,7 +57,7 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
             <PackageX className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats?.outOfStockCount ?? '—'}</div>
+            <div className="text-2xl font-bold text-red-600">{stats?.outOfStockCount ?? '-'}</div>
           </CardContent>
         </Card>
       </div>
