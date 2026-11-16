@@ -74,7 +74,7 @@ describe('XC-01 parseQueryInt', () => {
     }
   });
 
-  it('malformed stays 400 — an overflow must not be confused with garbage', () => {
+  it('malformed stays 400 - an overflow must not be confused with garbage', () => {
     // '1e20' is not a digit string, so the regex rejects it (NOT saturated).
     expect(() => parseQueryInt(sp('page=1e20'), 'page', { default: 1 })).toThrow(ApiError);
     expect(() => parseQueryInt(sp('page=99999999999999999999x'), 'page')).toThrow(ApiError);

@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
       continue;
     }
 
-    const message = `Happy Birthday ${customer.name}! 🎂 Come celebrate with us at ${tenant.name} — show this message for a special treat.`;
+    const message = `Happy Birthday ${customer.name}! 🎂 Come celebrate with us at ${tenant.name} - show this message for a special treat.`;
 
     try {
       const response = await fetch(whatsapp.endpoint, {

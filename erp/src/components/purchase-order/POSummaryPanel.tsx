@@ -96,7 +96,7 @@ export function POSummaryPanel({
                 : ''}
             </span>
             <span className="font-mono text-espresso">
-              {totals.discountAmount > 0 ? `− ${formatRupee(totals.discountAmount)}` : '—'}
+              {totals.discountAmount > 0 ? `− ${formatRupee(totals.discountAmount)}` : '-'}
             </span>
           </div>
           <div className="flex items-center justify-between border-t border-sand/30 pt-2 text-base font-semibold">

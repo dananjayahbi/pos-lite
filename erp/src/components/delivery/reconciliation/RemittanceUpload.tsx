@@ -25,19 +25,19 @@ export function RemittanceUpload({ onImport }: RemittanceUploadProps) {
 
   return (
     <div className="flex flex-col items-start gap-3 rounded-lg border border-espresso/10 bg-linen/40 p-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-start gap-3">
+      <div className="flex min-w-0 items-start gap-3">
         <UploadCloud className="mt-0.5 h-5 w-5 shrink-0 text-espresso/50" />
-        <div>
+        <div className="min-w-0">
           <Label htmlFor="remittance-csv" className="font-medium text-espresso">
             Import Remittance Statement
           </Label>
-          <p className="mt-1 max-w-md text-xs text-espresso/50">
+          <p className="mt-1 max-w-md break-words text-xs text-espresso/50">
             Upload the Trans Express portal export (.csv, .xlsx, or .xls).
             Expected columns:{' '}
             <span className="font-mono text-espresso/70">
               waybill, amount, fees, status, date
             </span>
-            . Matching is by waybill, order reference, or barcode and is idempotent — re-uploading never double-settles.
+            . Matching is by waybill, order reference, or barcode and is idempotent - re-uploading never double-settles.
           </p>
         </div>
       </div>

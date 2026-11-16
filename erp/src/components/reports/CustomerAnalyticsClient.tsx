@@ -273,7 +273,7 @@ function TopCustomersTable({
                 {fmtCurrency(c.aov)}
               </TableCell>
               <TableCell>
-                {c.lastVisit ? fmtDate(c.lastVisit) : "—"}
+                {c.lastVisit ? fmtDate(c.lastVisit) : "-"}
               </TableCell>
             </TableRow>
           ))}

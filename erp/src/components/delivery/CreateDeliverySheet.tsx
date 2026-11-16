@@ -156,7 +156,7 @@ export function CreateDeliverySheet({ open, onOpenChange }: CreateDeliverySheetP
             </Select>
             {usingFallbackCities && (
               <p className="text-xs text-espresso/50">
-                Standard city list — sync Trans Express in Courier Settings to use live courier
+                Standard city list - sync Trans Express in Courier Settings to use live courier
                 cities and zone rates.
               </p>
             )}

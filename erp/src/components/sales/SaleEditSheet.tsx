@@ -69,7 +69,7 @@ export function SaleEditSheet({ sale, open, onOpenChange, onSaved }: SaleEditShe
           <SheetTitle className="font-display text-espresso">Edit Sale</SheetTitle>
           <SheetDescription className="text-sand-ink text-xs">
             Customer, date and delivery charge only. Items, prices and payments are
-            immutable — use a return or a void for those.
+            immutable - use a return or a void for those.
           </SheetDescription>
         </SheetHeader>
         {/* Keyed on the sale id so opening a different row mounts a freshly
@@ -177,7 +177,7 @@ function SaleEditForm({
           value={customer}
           onChange={setCustomer}
           disabled={isPending || !isCompleted}
-          guestHint="No customer linked — this sale is recorded as a guest / walk-in."
+          guestHint="No customer linked - this sale is recorded as a guest / walk-in."
         />
 
         <div>

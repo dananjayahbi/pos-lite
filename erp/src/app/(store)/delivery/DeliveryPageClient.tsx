@@ -53,19 +53,19 @@ export function DeliveryPageClient() {
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search orders, customers, waybills..."
-            className="w-72"
+            className="w-full sm:w-64"
           />
           <Select
             value={statusFilter ?? '__all'}
             onValueChange={(v) => setStatusFilter(v === '__all' ? null : v)}
           >
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-full sm:w-44">
               <SelectValue placeholder="All statuses" />
             </SelectTrigger>
             <SelectContent>
@@ -79,7 +79,11 @@ export function DeliveryPageClient() {
           </Select>
         </div>
 
-        {canCreate && <Button onClick={openCreate}>Create Delivery</Button>}
+        {canCreate && (
+          <Button onClick={openCreate} className="shrink-0 self-start lg:self-auto">
+            Create Delivery
+          </Button>
+        )}
       </div>
 
       {/* Loading */}

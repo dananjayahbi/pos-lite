@@ -38,7 +38,7 @@ export interface ResourceDeleteButtonProps {
 
 /** Shared copy for the "record still has products" blocked state (M04-02). */
 export function productsAssignedReason(count: number): string {
-  return `${count} product${count === 1 ? '' : 's'} assigned — reassign or archive them first`;
+  return `${count} product${count === 1 ? '' : 's'} assigned - reassign or archive them first`;
 }
 
 export function ResourceDeleteButton({

@@ -384,7 +384,7 @@ export default function CustomerDetailPage({
                       {formatRupee(sale.totalAmount)}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {sale.paymentMethod ?? '—'}
+                      {sale.paymentMethod ?? '-'}
                     </TableCell>
                   </TableRow>
                 ))
@@ -425,29 +425,29 @@ export default function CustomerDetailPage({
               <p className="text-sm text-espresso">
                 {customer.gender
                   ? customer.gender.charAt(0) + customer.gender.slice(1).toLowerCase()
-                  : '—'}
+                  : '-'}
               </p>
             </div>
             <div>
               <p className="text-xs uppercase text-sand-ink tracking-wide mb-1">Birthday</p>
               <p className="text-sm text-espresso">
-                {customer.birthday ? formatDate(customer.birthday) : '—'}
+                {customer.birthday ? formatDate(customer.birthday) : '-'}
               </p>
             </div>
             <div>
               <p className="text-xs uppercase text-sand-ink tracking-wide mb-1">Contact No 2</p>
               <p className="text-sm text-espresso font-mono">
-                {customer.phone2 ?? '—'}
+                {customer.phone2 ?? '-'}
               </p>
             </div>
             <div>
               <p className="text-xs uppercase text-sand-ink tracking-wide mb-1">City</p>
-              <p className="text-sm text-espresso">{customer.city ?? '—'}</p>
+              <p className="text-sm text-espresso">{customer.city ?? '-'}</p>
             </div>
             <div className="col-span-2">
               <p className="text-xs uppercase text-sand-ink tracking-wide mb-1">Address</p>
               <p className="text-sm text-espresso whitespace-pre-wrap">
-                {customer.address ?? '—'}
+                {customer.address ?? '-'}
               </p>
             </div>
             <div>

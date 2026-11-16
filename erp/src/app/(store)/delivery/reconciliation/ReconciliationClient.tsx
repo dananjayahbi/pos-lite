@@ -188,7 +188,7 @@ export function ReconciliationClient() {
                   {stat?.count ?? 0}
                 </p>
                 <p className="text-xs text-espresso/50">
-                  {stat ? formatRupee(Math.abs(stat.variance)) : '—'}
+                  {stat ? formatRupee(Math.abs(stat.variance)) : '-'}
                 </p>
               </CardContent>
             </Card>
@@ -220,9 +220,9 @@ export function ReconciliationClient() {
           )}
 
           <Card className="border-mist">
-            <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
               <CardTitle className="font-display text-lg">Ledger</CardTitle>
-              <span className="text-xs text-espresso/50">{total} entries</span>
+              <span className="shrink-0 text-xs text-espresso/50">{total} entries</span>
             </CardHeader>
             <CardContent className="p-0">
               <LedgerTable

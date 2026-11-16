@@ -309,7 +309,7 @@ export function PurchaseOrdersListClient() {
                   </TableCell>
                   <TableCell className="text-mist-ink">{formatPoDate(po.orderDate)}</TableCell>
                   <TableCell className="text-mist-ink">
-                    {po.expectedDeliveryDate ? formatPoDate(po.expectedDeliveryDate) : '—'}
+                    {po.expectedDeliveryDate ? formatPoDate(po.expectedDeliveryDate) : '-'}
                   </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>

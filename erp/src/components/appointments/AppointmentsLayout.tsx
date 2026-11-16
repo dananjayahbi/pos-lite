@@ -19,7 +19,7 @@ export function AppointmentsLayout({ children }: AppointmentsLayoutProps) {
   ];
 
   return (
-    <div className="space-y-4">
+    <div data-testid="appointments-page" className="space-y-4 p-4 md:p-6">
       <Tabs value={pathname} onValueChange={(v) => router.push(v)}>
         <TabsList>
           {tabs.map((tab) => (

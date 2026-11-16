@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { customerToFormValues } from '@/lib/utils/customer-form';
 
-describe('customerToFormValues — New Customer', () => {
+describe('customerToFormValues - New Customer', () => {
   it('returns an empty form when no customer is supplied', () => {
     expect(customerToFormValues()).toEqual({
       name: '',
@@ -18,7 +18,7 @@ describe('customerToFormValues — New Customer', () => {
   });
 });
 
-describe('customerToFormValues — Edit Customer prefill', () => {
+describe('customerToFormValues - Edit Customer prefill', () => {
   it('maps every customer field into the drawer values', () => {
     const values = customerToFormValues({
       id: 'cm1',

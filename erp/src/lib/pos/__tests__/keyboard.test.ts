@@ -106,6 +106,7 @@ describe('matchesShortcut', () => {
       'U',
       'D',
       'P',
+      'M',
       'Enter',
       'Delete',
     ]) {

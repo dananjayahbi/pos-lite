@@ -421,7 +421,7 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
                       {formatDateTime(s.startedAt)}
                     </TableCell>
                     <TableCell className="font-body text-sm text-mist-ink">
-                      {s.completedAt ? formatDateTime(s.completedAt) : '—'}
+                      {s.completedAt ? formatDateTime(s.completedAt) : '-'}
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm">
                       {s.discrepancyCount > 0 ? (
@@ -525,7 +525,7 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
                   <p className="mt-0.5 font-body text-xs text-mist-ink">
                     {cancelTarget.discrepancyCount > 0
                       ? `${cancelTarget.discrepancyCount} stock adjustment${cancelTarget.discrepancyCount === 1 ? '' : 's'} will be applied before cancelling.`
-                      : 'All counted items match system quantities — no adjustments needed.'}
+                      : 'All counted items match system quantities - no adjustments needed.'}
                   </p>
                 </div>
               </label>

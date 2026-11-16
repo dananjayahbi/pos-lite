@@ -48,7 +48,7 @@ describe('clearSessionCookies (production)', () => {
     expect(headers).toHaveLength(SESSION_COOKIE_NAMES.length);
   });
 
-  it('marks every deletion Secure — without it browsers discard __Secure- deletions', () => {
+  it('marks every deletion Secure - without it browsers discard __Secure- deletions', () => {
     const headers = setCookieHeaders(clearSessionCookiesAndReturn());
     for (const header of headers) {
       expect(header, `${header} must carry Secure`).toMatch(/;\s*Secure(\s*;|$)/i);
@@ -68,7 +68,7 @@ describe('clearSessionCookies (production)', () => {
 });
 
 describe('clearSessionCookies (development)', () => {
-  it('omits Secure — dev runs over HTTP where a Secure cookie is rejected', () => {
+  it('omits Secure - dev runs over HTTP where a Secure cookie is rejected', () => {
     setNodeEnv('development');
     const headers = setCookieHeaders(clearSessionCookiesAndReturn());
     expect(headers.length).toBeGreaterThan(0);

@@ -65,7 +65,7 @@ export function ProductionLogDialog({ bomId, onClose }: ProductionLogDialogProps
         const batch = json?.data?.batchNumber;
         toast.success(
           batch
-            ? `Production of ${qty} unit(s) logged — batch ${batch}`
+            ? `Production of ${qty} unit(s) logged - batch ${batch}`
             : `Production of ${qty} unit(s) logged`,
         );
         onClose();

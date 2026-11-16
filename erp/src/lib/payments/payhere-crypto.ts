@@ -166,7 +166,7 @@ export function warnSecretNotConfigured(now: number = Date.now()): boolean {
   }
   lastSecretWarningAt = now;
   console.warn(
-    "[PayHere IPN] PAYHERE_MERCHANT_SECRET is not configured — every IPN will fail the signature gate " +
+    "[PayHere IPN] PAYHERE_MERCHANT_SECRET is not configured - every IPN will fail the signature gate " +
       "(reason SECRET_NOT_CONFIGURED) and no payment will ever be recorded. " +
       `Set PAYHERE_MERCHANT_SECRET; this warning is throttled to one per ${SECRET_WARNING_THROTTLE_MS / 1000}s.`,
   );

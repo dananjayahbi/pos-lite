@@ -1,15 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ShoppingBag, ArchiveRestore, UserPlus, X, Tag } from 'lucide-react';
+import { ArchiveRestore, UserPlus, X, Tag } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Decimal from 'decimal.js';
 import { formatRupee } from '@/lib/format';
 import { useCartStore, getCartTotal, getSaleDiscountAmount } from '@/stores/cartStore';
 import { createCartPromotionSnapshot } from '@/stores/cartPromotions';
-import { CartLineItem } from '@/components/pos/CartLineItem';
-import { LineItemDiscountControl } from '@/components/pos/LineItemDiscountControl';
+import { CartLineItems } from '@/components/pos/CartLineItems';
 import { CartDiscountControl } from '@/components/pos/CartDiscountControl';
 import { HoldSaleButton } from '@/components/pos/HoldSaleButton';
 import { RetrieveHeldSalesSheet } from '@/components/pos/RetrieveHeldSalesSheet';
@@ -36,15 +35,24 @@ interface CartPanelProps {
   shiftId: string;
   /** Tenant LankaQR configuration; defaults keep the tender available. */
   lankaQr?: LankaQrSettings | undefined;
+  /**
+   * When false the line-item list is not rendered. The keyboard-only console
+   * shows the ticket in its page-wide left column and keeps this rail for the
+   * customer, discounts, totals and pay actions only.
+   */
+  showLineItems?: boolean;
 }
 
-export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: CartPanelProps) {
+export function CartPanel({
+  shiftId,
+  lankaQr = DEFAULT_LANKA_QR_SETTINGS,
+  showLineItems = true,
+}: CartPanelProps) {
   const items = useCartStore((s) => s.items);
   const cartDiscountPercent = useCartStore((s) => s.cartDiscountPercent);
   const cartDiscountAmount = useCartStore((s) => s.cartDiscountAmount);
   const taxRate = useCartStore((s) => s.taxRate);
   const clearCart = useCartStore((s) => s.clearCart);
-  const activeLineId = useCartStore((s) => s.activeLineId);
   const authorizingManagerId = useCartStore((s) => s.authorizingManagerId);
   const linkedCustomerId = useCartStore((s) => s.linkedCustomerId);
   const linkedCustomerName = useCartStore((s) => s.linkedCustomerName);
@@ -91,7 +99,18 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [promoCodeInput, setPromoCodeInput] = useState('');
   const promoInputRef = useRef<HTMLInputElement>(null);
+  // Discount + promo share one collapsible section (UI update #10); the state
+  // lives here so Alt+P can expand it before focusing the promo field.
+  const [discountExpanded, setDiscountExpanded] = useState(false);
+  const focusPromoAfterExpand = useRef(false);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (discountExpanded && focusPromoAfterExpand.current) {
+      focusPromoAfterExpand.current = false;
+      promoInputRef.current?.focus();
+    }
+  }, [discountExpanded]);
 
   const { data: heldSalesData } = useQuery({
     queryKey: ['held-sales-count', shiftId],
@@ -171,13 +190,17 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
     // grid — without this the sold items stay in the cart and get charged twice.
     clearCart();
     clearCartSnapshot('ayurpos_cart_default').catch(() => {});
-    toast.success(`Sale completed — ${formatRupee(sale.totalAmount)}`);
+    setDiscountExpanded(false);
+    setPromoCodeInput('');
+    toast.success(`Sale completed - ${formatRupee(sale.totalAmount)}`);
   };
 
   const handleNewSale = () => {
     setReceiptOpen(false);
     setCompletedSale(null);
     setChangeAmount(null);
+    setDiscountExpanded(false);
+    setPromoCodeInput('');
     queryClient.invalidateQueries({ queryKey: ['held-sales-count'] });
     focusPOSBarcodeInput();
   };
@@ -208,6 +231,8 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
     });
     clearCart();
     clearCartSnapshot('ayurpos_cart_default').catch(() => {});
+    setDiscountExpanded(false);
+    setPromoCodeInput('');
     toast('Cart cleared', {
       action: {
         label: 'Undo',
@@ -308,6 +333,13 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
       allowInEditable: true,
       handler: () => {
         if (isPOSDialogOpen() || !hasItems) return;
+        if (!discountExpanded) {
+          // The promo field lives inside the collapsible section: open it and
+          // hand the cursor over once the input has mounted.
+          focusPromoAfterExpand.current = true;
+          setDiscountExpanded(true);
+          return;
+        }
         promoInputRef.current?.focus();
       },
     },
@@ -318,8 +350,10 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
       {/* Header */}
       <div className="flex items-center justify-between px-4 h-[52px] shrink-0 border-b border-mist/50">
         <div className="flex items-center gap-2">
-          <h2 className="font-display text-base text-espresso">Cart</h2>
-          {hasItems && (
+          <h2 className="font-display text-base text-espresso">
+            {showLineItems ? 'Cart' : 'Current sale'}
+          </h2>
+          {hasItems && showLineItems && (
             <span className="bg-terracotta text-pearl text-xs font-body px-2 py-0.5 rounded-full">
               {items.length}
             </span>
@@ -376,7 +410,7 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
               Add Customer
             </button>
             <p className="text-center font-body text-[11px] text-mist-ink">
-              No customer selected — this will be billed as a guest sale.
+              No customer selected - this will be billed as a guest sale.
             </p>
           </div>
         ) : (
@@ -421,82 +455,88 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
         )}
       </div>
 
-      {/* Line items (scrollable) */}
-      <div className="flex-1 overflow-y-auto">
-        {!hasItems ? (
-          <div className="flex flex-col items-center justify-center h-full text-mist-ink">
-            <ShoppingBag className="h-10 w-10 mb-2" />
-            <p className="font-body text-sm">Cart is empty — add a product to start</p>
-          </div>
-        ) : (
-          <div>
-            {items.map((item) => (
-              <div key={item.variantId} className="border-b border-mist/30 last:border-b-0">
-                <CartLineItem item={item} />
-                {activeLineId === item.variantId && (
-                  <LineItemDiscountControl item={item} />
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Line items (scrollable). Hidden when the ticket lives in the
+          keyboard console's left column. */}
+      {showLineItems ? (
+        <CartLineItems className="flex-1 overflow-y-auto" />
+      ) : (
+        <div className="flex-1" aria-hidden="true" />
+      )}
 
-      {/* Cart-level discount */}
-      {hasItems && <CartDiscountControl />}
-
-      {/* Promo code input */}
+      {/* Discounts & promo — one collapsible section so both reclaim space */}
       {hasItems && (
-        <div className="shrink-0 px-4 py-2 border-t border-mist/30">
-          {appliedPromoCode ? (
-            <div className="flex items-center gap-2">
-              <Tag className="h-3.5 w-3.5 text-terracotta" />
-              <span className="font-mono text-xs text-espresso bg-linen px-2 py-1 rounded">{appliedPromoCode}</span>
-              <button
-                type="button"
-                onClick={removePromoCode}
-                className="text-mist-ink hover:text-[#9B2226] transition-colors"
-                aria-label="Remove promo code"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-              {promoCodeError && (
-                <span className="font-body text-xs text-[#9B2226]">{promoCodeError}</span>
+        <CartDiscountControl
+          expanded={discountExpanded}
+          onExpandedChange={(next) => {
+            setDiscountExpanded(next);
+            if (!next) setPromoCodeInput('');
+          }}
+          activePromoCode={appliedPromoCode}
+        >
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1 font-body text-[11px] font-medium uppercase tracking-wide text-mist-ink">
+                <Tag className="h-3 w-3" aria-hidden="true" />
+                Promo code
+              </span>
+              {appliedPromoCode && (
+                <button
+                  type="button"
+                  onClick={removePromoCode}
+                  className="font-body text-[11px] text-[#9B2226] transition-colors hover:text-[#9B2226]/80"
+                  aria-label="Remove promo code"
+                >
+                  Remove
+                </button>
               )}
             </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <input
-                ref={promoInputRef}
-                id="pos-promo-code-input"
-                type="text"
-                value={promoCodeInput}
-                onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    applyPromoCode();
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    setPromoCodeInput('');
-                    focusPOSBarcodeInput();
-                  }
-                }}
-                placeholder="Promo code (Alt+P)"
-                aria-keyshortcuts="Alt+P"
-                className="flex-1 px-2 py-1.5 border border-mist/50 rounded text-xs font-mono bg-pearl text-espresso placeholder:text-mist-ink/50 focus:outline-none focus:border-terracotta"
-              />
-              <button
-                type="button"
-                disabled={!promoCodeInput.trim()}
-                onClick={applyPromoCode}
-                className="px-3 py-1.5 rounded bg-espresso text-pearl text-xs font-body hover:bg-espresso/90 transition-colors disabled:opacity-40 min-h-10"
-              >
-                Apply
-              </button>
-            </div>
-          )}
-        </div>
+
+            {appliedPromoCode ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded bg-linen px-2 py-1 font-mono text-xs text-espresso">
+                  {appliedPromoCode}
+                </span>
+                <span className="font-body text-[11px] text-[#2D6A4F]">
+                  Applied to this sale
+                </span>
+                {promoCodeError && (
+                  <span className="font-body text-xs text-[#9B2226]">{promoCodeError}</span>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  ref={promoInputRef}
+                  id="pos-promo-code-input"
+                  type="text"
+                  value={promoCodeInput}
+                  onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      applyPromoCode();
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      setPromoCodeInput('');
+                      focusPOSBarcodeInput();
+                    }
+                  }}
+                  placeholder="Promo code (Alt+P)"
+                  aria-keyshortcuts="Alt+P"
+                  className="min-w-0 flex-1 rounded border border-mist/50 bg-pearl px-2 py-1.5 font-mono text-xs text-espresso placeholder:text-mist-ink/50 focus:border-terracotta focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={!promoCodeInput.trim()}
+                  onClick={applyPromoCode}
+                  className="min-h-10 rounded bg-espresso px-3 py-1.5 font-body text-xs text-pearl transition-colors hover:bg-espresso/90 disabled:opacity-40"
+                >
+                  Apply
+                </button>
+              </div>
+            )}
+          </div>
+        </CartDiscountControl>
       )}
 
       {/* Totals section */}
@@ -549,7 +589,7 @@ export function CartPanel({ shiftId, lankaQr = DEFAULT_LANKA_QR_SETTINGS }: Cart
           <div className="px-4 pb-4 space-y-2">
             {hasItems && !isGuestSale && !hasValidCustomer && (
               <p className="rounded-md bg-[#FCE9E8] px-3 py-2 text-center font-body text-xs text-[#9B2226]">
-                The linked customer has no mobile number — unlink them to bill as
+                The linked customer has no mobile number - unlink them to bill as
                 a guest, or add a new customer.
               </p>
             )}

@@ -226,14 +226,14 @@ export default function SuppliersPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {s.contactName ?? '—'}
+                    {s.contactName ?? '-'}
                   </TableCell>
                   <TableCell className="font-mono text-sm">{s.phone}</TableCell>
                   <TableCell className="text-sm">
                     {s.whatsappNumber === s.phone ? (
                       <span className="text-muted-foreground">Same as phone</span>
                     ) : (
-                      <span className="font-mono">{s.whatsappNumber ?? '—'}</span>
+                      <span className="font-mono">{s.whatsappNumber ?? '-'}</span>
                     )}
                   </TableCell>
                   <TableCell>

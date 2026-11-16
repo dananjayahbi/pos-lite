@@ -38,4 +38,37 @@ test('sidebar header aligns with the top bar and has room for the logo', async (
   // The redundant role label is gone from the sidebar.
   await expect(page.locator('aside').getByText('OWNER', { exact: true })).toHaveCount(0);
   await expect(page.locator('aside').getByText('Ruhunu Weda Gedara')).toBeVisible();
+
+  // The store name is long for a 256 px sidebar. It must wrap to two lines at
+  // the same font size instead of being clipped to "Ruhunu Weda G…".
+  const nameMetrics = await page
+    .locator('aside [data-testid="sidebar-header"] p')
+    .first()
+    .evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        text: (el.textContent ?? '').trim(),
+        clientWidth: el.clientWidth,
+        scrollWidth: el.scrollWidth,
+        clientHeight: el.clientHeight,
+        scrollHeight: el.scrollHeight,
+        lineHeight: Number.parseFloat(style.lineHeight),
+        fontSize: style.fontSize,
+        whiteSpace: style.whiteSpace,
+        textOverflow: style.textOverflow,
+      };
+    });
+
+  expect(nameMetrics.text).toBe('Ruhunu Weda Gedara');
+  expect(nameMetrics.textOverflow).not.toBe('ellipsis');
+  expect(nameMetrics.scrollWidth, 'name does not overflow horizontally').toBeLessThanOrEqual(
+    nameMetrics.clientWidth + 1,
+  );
+  expect(nameMetrics.scrollHeight, 'name does not overflow vertically').toBeLessThanOrEqual(
+    nameMetrics.clientHeight + 1,
+  );
+  expect(nameMetrics.clientHeight, 'name wraps to two lines').toBeGreaterThanOrEqual(
+    nameMetrics.lineHeight * 1.8,
+  );
+  expect(nameMetrics.fontSize, 'font size is unchanged').toBe('20px');
 });

@@ -31,11 +31,11 @@ export function OrderInvoice({ data }: { data: OrderInvoiceData }) {
     : null;
 
   const customerName = data.customer?.name ?? address?.fullName ?? 'N/A';
-  const customerPhone = data.customer?.phone ?? address?.phone ?? '—';
+  const customerPhone = data.customer?.phone ?? address?.phone ?? '-';
 
   const orderDate = new Date(data.createdAt);
   const formattedDate = Number.isNaN(orderDate.getTime())
-    ? '—'
+    ? '-'
     : orderDate.toLocaleString('en-LK', {
         dateStyle: 'medium',
         timeStyle: 'short',
@@ -132,7 +132,7 @@ export function OrderInvoice({ data }: { data: OrderInvoiceData }) {
           <p className="text-[10px] uppercase tracking-wider text-espresso/60">Ship To</p>
           <p className="text-base font-bold">{address?.fullName ?? customerName}</p>
           <p className="text-sm">{address?.phone ?? customerPhone}</p>
-          <p className="text-sm text-espresso/70">{fullAddress ?? '—'}</p>
+          <p className="text-sm text-espresso/70">{fullAddress ?? '-'}</p>
         </div>
       </div>
 
@@ -162,11 +162,11 @@ export function OrderInvoice({ data }: { data: OrderInvoiceData }) {
           {data.lines.map((line, i) => (
             <tr key={`${line.sku}-${i}`} className="border-b border-espresso/10">
               <td className="px-2 py-2 font-mono text-xs">{line.sku}</td>
-              <td className="px-2 py-2">{line.description || '—'}</td>
+              <td className="px-2 py-2">{line.description || '-'}</td>
               <td className="px-2 py-2 text-right">{line.quantity}</td>
               <td className="px-2 py-2 text-right">{formatRupee(line.unitPrice)}</td>
               <td className="px-2 py-2 text-right">
-                {line.discountAmount > 0 ? formatRupee(line.discountAmount) : '—'}
+                {line.discountAmount > 0 ? formatRupee(line.discountAmount) : '-'}
               </td>
               <td className="px-2 py-2 text-right font-semibold">{formatRupee(line.lineTotal)}</td>
             </tr>

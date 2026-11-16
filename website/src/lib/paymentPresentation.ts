@@ -61,7 +61,7 @@ export function presentPaymentStatus(
             tone: 'pending',
             title: 'Confirming your payment',
             description:
-              'We are waiting for the card network to confirm your payment. This page refreshes automatically — no action is needed.',
+              'We are waiting for the card network to confirm your payment. This page refreshes automatically - no action is needed.',
           }
         : {
             tone: 'neutral',

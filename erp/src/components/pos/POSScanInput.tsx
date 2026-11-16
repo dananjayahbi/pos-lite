@@ -18,6 +18,8 @@ interface POSScanInputProps {
   onScan: (code: string) => Promise<boolean> | boolean;
   /** Minimum length before a burst is auto-flushed without an Enter key. */
   minScanLength?: number;
+  /** Overrides the placeholder copy. */
+  placeholder?: string;
 }
 
 /**
@@ -36,6 +38,7 @@ export function POSScanInput({
   onValueChange,
   onScan,
   minScanLength = 6,
+  placeholder,
 }: POSScanInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const lastKeyAtRef = useRef(0);
@@ -125,7 +128,7 @@ export function POSScanInput({
           aria-label="Scan barcode or search products"
           aria-keyshortcuts="F2"
           aria-describedby="pos-scan-hint"
-          placeholder="Search products, SKU, barcode… or scan"
+          placeholder={placeholder ?? 'Search products, SKU, barcode… or scan'}
           value={value}
           onChange={(event) => {
             const next = event.target.value;
@@ -143,7 +146,7 @@ export function POSScanInput({
             }
           }}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') {
+            if (event.key === 'Enter' && !event.altKey && !event.ctrlKey && !event.metaKey) {
               event.preventDefault();
               void submitValue(event.currentTarget.value);
               return;
@@ -176,7 +179,7 @@ export function POSScanInput({
         ) : null}
       </div>
       <p id="pos-scan-hint" className="mt-1 font-body text-[11px] text-mist-ink">
-        Scanner ready — scan any time. <kbd className="font-mono">F2</kbd> refocuses,
+        Scanner ready - scan any time. <kbd className="font-mono">F2</kbd> refocuses,
         <kbd className="ml-1 font-mono">Enter</kbd> adds, <kbd className="ml-1 font-mono">?</kbd> shows all keys.
       </p>
     </div>

@@ -41,11 +41,11 @@ export function WizardStep3Review() {
   const categoryName =
     categories.find((c) => c.id === step1Data?.categoryId)?.name ??
     step1Data?.categoryId ??
-    '—';
+    '-';
   const brandName = step1Data?.brandId
     ? (brands.find((b) => b.id === step1Data.brandId)?.name ??
        step1Data.brandId)
-    : '—';
+    : '-';
 
   const { mutate: createProduct, isPending } = useMutation({
     mutationFn: async (): Promise<ProductCreateOutcome> => {
@@ -185,13 +185,13 @@ export function WizardStep3Review() {
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div className="text-sm">
             <p className="font-semibold text-amber-900">
-              Product created — variants failed
+              Product created - variants failed
             </p>
             <p className="mt-1 text-amber-800">{partialWarning.message}</p>
             <p className="mt-1 text-amber-800">
               The product was saved but no variants were created. Fix the
               variant data and add variants from the product&rsquo;s edit page
-              — do not submit this form again.
+              - do not submit this form again.
             </p>
             {partialWarning.productId && (
               <Button
@@ -310,17 +310,17 @@ export function WizardStep3Review() {
                           v.form}
                       </span>
                     ) : (
-                      '—'
+                      '-'
                     )}
                   </td>
                   <td className="px-4 py-2 text-espresso">
-                    {v.packSize ?? '—'}
+                    {v.packSize ?? '-'}
                   </td>
                   <td className="px-4 py-2 font-mono text-xs text-sand-ink">
-                    {v.sku ?? '—'}
+                    {v.sku ?? '-'}
                   </td>
                   <td className="px-4 py-2 font-mono text-xs text-sand-ink">
-                    {v.barcode ?? '—'}
+                    {v.barcode ?? '-'}
                   </td>
                   <td className="px-4 py-2 text-right text-espresso">
                     {v.initialStock ?? 0}

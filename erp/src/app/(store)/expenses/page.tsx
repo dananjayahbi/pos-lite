@@ -479,7 +479,7 @@ export default function ExpensesPage() {
                       <TableCell className="text-sm text-sand-ink">
                         {expense.paymentAccountId
                           ? accountNameById.get(expense.paymentAccountId) ?? 'Linked account'
-                          : '—'}
+                          : '-'}
                       </TableCell>
                       <TableCell className="text-right font-mono">{formatRupee(expense.amount)}</TableCell>
                       <TableCell className="text-sm text-sand-ink">{staffDisplayName(expense.recordedBy.email)}</TableCell>
@@ -587,7 +587,7 @@ export default function ExpensesPage() {
                 <span className="text-sm">
                   {viewExpense.paymentAccountId
                     ? accountNameById.get(viewExpense.paymentAccountId) ?? 'Linked account'
-                    : '—'}
+                    : '-'}
                 </span>
               </div>
               {viewExpense.receiptImageUrl && (

@@ -74,13 +74,13 @@ export default function PaymentMethodManagementCard({
               tenantId={tenantId}
               planId={planId}
               billingCycle="monthly"
-              buttonLabel="Refresh Payment Method — Monthly"
+              buttonLabel="Refresh Payment Method - Monthly"
             />
             <PayHereCheckoutButton
               tenantId={tenantId}
               planId={planId}
               billingCycle="annual"
-              buttonLabel="Refresh Payment Method — Annual"
+              buttonLabel="Refresh Payment Method - Annual"
             />
           </div>
         )}

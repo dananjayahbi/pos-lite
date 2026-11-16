@@ -161,19 +161,19 @@ export function ShippingLabel({ template, address, delivery, waybillId }: Shippi
       <SectionTitle>Proof of Delivery</SectionTitle>
 
       <div className="mt-[1mm]">
-        <WaybillRow label="From" value={template.brandName || '—'} />
-        <WaybillRow label="Contact" value={template.fromContact || '—'} />
+        <WaybillRow label="From" value={template.brandName || '-'} />
+        <WaybillRow label="Contact" value={template.fromContact || '-'} />
         <WaybillRow label="Date" value={formatWaybillDate(date)} />
-        <WaybillRow label="Order No" value={delivery.orderRef || '—'} />
+        <WaybillRow label="Order No" value={delivery.orderRef || '-'} />
       </div>
 
       <SectionTitle>Customer Details</SectionTitle>
 
       <div className="mt-[1mm]">
-        <WaybillRow label="To" value={address.fullName || '—'} />
-        <WaybillRow label="Address" value={fullAddress || '—'} />
-        <WaybillRow label="Branch" value={branch || '—'} />
-        <WaybillRow label="Contact" value={contact || '—'} />
+        <WaybillRow label="To" value={address.fullName || '-'} />
+        <WaybillRow label="Address" value={fullAddress || '-'} />
+        <WaybillRow label="Branch" value={branch || '-'} />
+        <WaybillRow label="Contact" value={contact || '-'} />
         <WaybillRow label="COD" value={formatWaybillAmount(delivery.codAmount)} />
       </div>
 

@@ -67,7 +67,7 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
       Object.assign(initialValues, values);
       setValues({ ...values });
     } catch {
-      toast.error('Network error — could not save store profile');
+      toast.error('Network error - could not save store profile');
     } finally {
       setSaving(false);
     }

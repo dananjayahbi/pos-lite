@@ -106,7 +106,7 @@ export function ZeroValuePaymentModal({
         });
       }
     } catch {
-      setValidateResult({ status: 'invalid', message: 'Network error — please try again' });
+      setValidateResult({ status: 'invalid', message: 'Network error - please try again' });
     }
   };
 
@@ -139,7 +139,7 @@ export function ZeroValuePaymentModal({
       }
       onSaleComplete(json.data!);
     } catch {
-      toast.error('Network error — please try again');
+      toast.error('Network error - please try again');
       setIsSubmitting(false);
     }
   };

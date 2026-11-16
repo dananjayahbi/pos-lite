@@ -57,7 +57,7 @@ interface ShiftListResponse {
 }
 
 function formatDateTime(value: string | null): string {
-  if (!value) return '—';
+  if (!value) return '-';
   return new Date(value).toLocaleString('en-LK', {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -325,7 +325,7 @@ export default function StaffShiftsPage() {
                   <TableRow key={shift.id}>
                     <TableCell>
                       <div>
-                        <p className="font-medium text-espresso">{shift.cashier ? staffDisplayName(shift.cashier.email) : '—'}</p>
+                        <p className="font-medium text-espresso">{shift.cashier ? staffDisplayName(shift.cashier.email) : '-'}</p>
                         <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">{shift.cashier?.role.replace(/_/g, ' ') ?? ''}</p>
                       </div>
                     </TableCell>
@@ -343,7 +343,7 @@ export default function StaffShiftsPage() {
                     <TableCell className="font-mono text-sm text-espresso">
                       {shift.closure?.cashDifference !== undefined && shift.closure?.cashDifference !== null
                         ? formatRupee(shift.closure.cashDifference)
-                        : '—'}
+                        : '-'}
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-2">

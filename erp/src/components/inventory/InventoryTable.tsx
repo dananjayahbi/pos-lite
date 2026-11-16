@@ -252,10 +252,10 @@ export function InventoryTable({
                     </div>
                   </TableCell>
                   <TableCell className="font-body text-sm text-espresso/70">
-                    {product.category?.name ?? '—'}
+                    {product.category?.name ?? '-'}
                   </TableCell>
                   <TableCell className="font-body text-sm text-espresso/70">
-                    {product.brand?.name ?? '—'}
+                    {product.brand?.name ?? '-'}
                   </TableCell>
                   <TableCell className="font-body text-sm text-espresso/70">
                     {product._count.variants}

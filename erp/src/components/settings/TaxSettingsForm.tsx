@@ -66,7 +66,7 @@ export default function TaxSettingsForm({ initialValues }: Props) {
       Object.assign(initialValues, values);
       setValues({ ...values });
     } catch {
-      toast.error('Network error — could not save tax settings');
+      toast.error('Network error - could not save tax settings');
     } finally {
       setSaving(false);
     }

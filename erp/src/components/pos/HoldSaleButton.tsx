@@ -63,7 +63,7 @@ export function HoldSaleButton({ shiftId }: HoldSaleButtonProps) {
       queryClient.invalidateQueries({ queryKey: ['held-sales-count'] });
       queryClient.invalidateQueries({ queryKey: ['held-sales'] });
       toast.success(
-        `Sale held — Reference ${json.data.shortId}. Tap Retrieve to continue it.`,
+        `Sale held - Reference ${json.data.shortId}. Tap Retrieve to continue it.`,
         { duration: 8000 },
       );
     } catch {

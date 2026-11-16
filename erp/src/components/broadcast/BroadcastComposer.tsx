@@ -203,7 +203,7 @@ export function BroadcastComposer({
               <SelectContent>
                 {BROADCAST_TEMPLATES.map((template) => (
                   <SelectItem key={template.id} value={template.id}>
-                    {template.name} — {template.description}
+                    {template.name} - {template.description}
                   </SelectItem>
                 ))}
               </SelectContent>

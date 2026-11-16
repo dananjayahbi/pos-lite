@@ -75,7 +75,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       throw new ApiError(
         400,
         'STORE_CREDIT_REQUIRES_CUSTOMER',
-        'Store credit cannot be applied to a guest sale — link a customer first',
+        'Store credit cannot be applied to a guest sale - link a customer first',
         { path: ['appliedStoreCredit'] },
       );
     }
@@ -231,7 +231,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       throw new ApiError(
         422,
         'NONE_PAYMENT_REQUIRES_ZERO_VALUE',
-        'A non-zero sale requires CASH/CARD/SPLIT/LANKAQR — NONE is reserved for zero-value sales',
+        'A non-zero sale requires CASH/CARD/SPLIT/LANKAQR - NONE is reserved for zero-value sales',
       );
     }
     if (isZeroValue && !input.zeroValueReason) {
@@ -252,7 +252,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
         select: { id: true },
       });
       if (!originalSale) {
-        throw new Error(`Original order ${ref} not found — replacement cannot be linked`);
+        throw new Error(`Original order ${ref} not found - replacement cannot be linked`);
       }
       resolvedLinkedOrderRef = ref;
     }
@@ -921,7 +921,7 @@ export async function updateSale(
     throw new ApiError(
       400,
       'SALE_NOT_EDITABLE',
-      'Only completed sales can be edited — held and voided sales cannot be amended',
+      'Only completed sales can be edited - held and voided sales cannot be amended',
     );
   }
 
@@ -981,7 +981,7 @@ export async function updateSale(
         throw new ApiError(
           400,
           'SALE_PAYMENTS_OUT_OF_BALANCE',
-          'This sale\u2019s payments no longer reconcile with its total — void it instead of editing the delivery charge',
+          'This sale\u2019s payments no longer reconcile with its total - void it instead of editing the delivery charge',
         );
       }
     }
@@ -1004,7 +1004,7 @@ export async function updateSale(
     throw new ApiError(
       400,
       'INVALID_DELIVERY_CHARGE',
-      'This delivery charge would reduce the settled total to zero — void the sale instead',
+      'This delivery charge would reduce the settled total to zero - void the sale instead',
     );
   }
 

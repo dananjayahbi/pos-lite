@@ -108,8 +108,8 @@ export function ShiftOpenModal({
         </div>
 
         <p className="text-sm text-espresso/60 font-body mt-4">
-          Welcome, {cashierName}. Enter the opening float — the cash currently
-          in your till — to begin processing sales.
+          Welcome, {cashierName}. Enter the opening float - the cash currently
+          in your till - to begin processing sales.
         </p>
 
         <div className="mt-6">

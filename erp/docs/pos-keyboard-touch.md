@@ -9,7 +9,48 @@ may actually deploy:
 | Keyboard only       | A barcode scanner plus the keyboard; no pointer at all.   |
 | Mouse + keyboard    | The classic desktop flow.                                 |
 
-All three share the same surface — there is no separate "touch mode" toggle.
+All three share the same sale flow. The header exposes a **mode selector** so a
+till can pick the layout that matches its hardware (see below).
+
+## Choosing a profile
+
+The POS toolbar has a segmented **Mouse & keyboard / Keyboard only** selector.
+`Alt+M` toggles it from the keyboard, which matters because the keyboard-only
+profile has no pointer targets that depend on a mouse.
+
+| Profile | Layout |
+| --- | --- |
+| **Mouse & keyboard** (default) | Product grid, category tabs and the cart — the classic desktop and touch layout. |
+| **Keyboard only** | A dedicated console: no product grid and no category tabs. A regular-size scan box with a keyboard-navigable match list, a page-wide ticket and a summary/actions rail. |
+
+The choice is stored in `localStorage` under `ayurpos.pos.input-mode`
+(`src/lib/pos/input-mode.ts`), so it survives reloads and applies to every tab on
+that device. Switching profiles does not touch the cart or the open shift.
+
+### The keyboard-only console
+
+`src/components/pos/KeyboardPOSWorkspace.tsx` is a separate surface, not a CSS
+variation of the grid:
+
+- one always-focused scan box (`#pos-barcode-input`, still targeted by `F2` and
+  every focus helper) at the same regular height as the grid's search field;
+- scanner bursts and `Enter` resolve through the same barcode API/SKU rules as
+  the grid;
+- typing a name or SKU opens a capped match list above the ticket; `↑`/`↓` move
+  the highlight and `Enter` adds the highlighted variant;
+- the **added products (the ticket) fill the page-wide left column** via the
+  shared `CartLineItems` component — the same list the classic cart renders, not
+  a second summary. `↑`/`↓` move between lines, `+`/`-` change quantity and
+  `Del` removes one;
+- the right rail is summary-only: customer linking, discounts/promo, totals and
+  the Charge / Pay button, with every shortcut unchanged (`F4`, `F8`, `F9`,
+  `Alt+C`, `Alt+Shift+D`, …).
+
+`CartPanel` takes `showLineItems={false}` for this layout, so the line items are
+mounted exactly once (left) and the rail never repeats them.
+
+Because the grid and categories are not mounted, there is no mouse-shaped
+affordance in the keyboard path and the ticket gets the full screen width.
 
 ## The always-focused barcode box
 
@@ -50,13 +91,15 @@ pressing `F1` / `?`. The same list lives in `POS_SHORTCUT_HELP`
 | Keys        | Action                                            |
 | ----------- | ------------------------------------------------- |
 | `F2`        | Focus the barcode / search box (`/` also works)   |
+| `Alt + M`   | Switch mouse & keyboard ↔ keyboard-only layout    |
+| `Alt + Enter` | Enter / exit fullscreen                         |
 | `Enter`     | Add the scanned or searched product               |
 | `← → ↑ ↓`   | Move between product cards, then cart rows        |
 | `+` / `−`   | Increase / decrease the focused cart row quantity |
 | `Delete`    | Remove the focused cart row                       |
 | `F4`        | Open the payment method dialog (Charge / Pay; Zero-Value when due) |
-| `Alt + Shift + D` | Show / hide the cart discount section        |
-| `Alt + P`   | Focus the promo code field                        |
+| `Alt + Shift + D` | Show / hide discounts & promo          |
+| `Alt + P`   | Expand discounts & focus the promo code           |
 | `Alt + C`   | Focus the customer search                         |
 | `Alt + A`   | Add a new customer                                |
 | `Alt + U`   | Unlink the current customer                       |
@@ -69,6 +112,16 @@ Modal dialogs keep Radix's focus trap and `Esc` handling. The cash and card
 payment dialogs submit with `Enter` as well as the button, so a sale can be
 completed without leaving the keyboard.
 
+### Fullscreen
+
+The toolbar has a **fullscreen** button (`Maximize2` / `Minimize2`, next to the
+shortcut guide). It calls the browser Fullscreen API on the document, so the
+fitted POS shell fills the display without browser chrome. `Alt + Enter` toggles
+it from the keyboard; the icon and `aria-pressed` state follow
+`fullscreenchange`, so leaving with Esc or F11 stays in sync. If the browser or
+an embedding policy blocks fullscreen, the action reports it with a toast and
+leaves the terminal as-is.
+
 ### Modal-first actions
 
 Actions that need more than one input open a dialog instead of an inline
@@ -77,13 +130,14 @@ control, so the barcode box never has to fight a popover for focus:
 - **Charge / Pay (`F4`)** opens a payment-method dialog. `↑`/`↓` move between
   Cash, Card, LankaQR (when enabled) and Split; `Enter` picks one and `1`–`4`
   select directly. `Esc` closes it and returns to the barcode box.
-- **Cart discount (`Alt + Shift + D`)** toggles the compact section. It is
-  collapsed by default so the line-item list gets the vertical space;
-  expanding it focuses the amount field, `Enter` applies, and `Esc` collapses
-  it again.
-- **Promo code (`Alt + P`)** focuses the promo field only while it is in use.
-  `Enter` applies the code, `Esc` cancels; both hand focus back to the barcode
-  box, so the next scan lands in the right place.
+- **Discounts & promo (`Alt + Shift + D`)** is one collapsible section holding
+  both the manual cart discount and the promo-code field. It is collapsed by
+  default so the line-item list gets the vertical space; expanding it focuses
+  the discount amount, `Enter` applies, and `Esc` collapses it again. An applied
+  promo code stays visible in the collapsed header.
+- **Promo code (`Alt + P`)** expands the same section (if needed) and focuses
+  the promo field. `Enter` applies the code, `Esc` cancels; both hand focus back
+  to the barcode box, so the next scan lands in the right place.
 - **Customer search (`Alt + C`)** stays a combobox: type a name or number, use
   `↑`/`↓` to highlight a result and `Enter` to link it. `Esc` closes the list
   and refocuses the scanner. `Alt + A` opens Add Customer and `Alt + U`
@@ -121,7 +175,16 @@ barcode box because that is the cashier's default focus.
 - `src/lib/pos/__tests__/keyboard.test.ts` covers shortcut normalization,
   editable-target detection, exact modifier matching, auto-repeat suppression,
   and that the documented shortcut list matches the implemented keys.
-- `tests/14_pos_billing.spec.ts` — the full Module 14 suite (23 tests) passes
+- `src/lib/pos/__tests__/input-mode.test.ts` covers parsing, persistence and the
+  blocked-storage fallback for the input profile.
+- `tests/43_pos_input_modes.spec.ts` switches profiles, checks the grid and
+  categories disappear, verifies the scan box keeps its regular height, adds a
+  product by keyboard, asserts the line appears once in the page-wide ticket
+  (and never in the summary rail), reloads to prove persistence, and returns
+  with `Alt+M`.
+- `tests/45_pos_fullscreen.spec.ts` checks the toolbar toggle and `Alt+Enter`
+  against a stubbed Fullscreen API (label/aria-pressed follow the event).
+- `tests/14_pos_billing.spec.ts` — the full Module 14 suite (24 tests) passes
   against the seeded dev server. `C1`/`C5` cover scanner-style bursts entering
   the always-focused box, and `C8` covers the focus contract plus keyboard-only
   add → `F4` payment and Escape.

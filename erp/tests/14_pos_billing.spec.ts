@@ -611,4 +611,42 @@ test.describe('Module 14 - POS Billing & Checkout', () => {
     // Leave the shared cart empty for later tests.
     await page.getByRole('button', { name: /Remove .* from cart/i }).first().click();
   });
+
+  test('C9 keeps the promo field inside the collapsible discounts section', async ({ page }) => {
+    await login(page);
+    await ensureShift(page);
+    await page.goto(`${BASE_URL}/pos`, { waitUntil: 'domcontentloaded' });
+
+    const barcodeBox = page.locator('#pos-barcode-input');
+    await expect(barcodeBox).toBeFocused({ timeout: 30_000 });
+    await page.keyboard.type(`${state.variant.barcode ?? state.variant.sku}\n`, { delay: 5 });
+    await expect(page.getByText('Sub-total').first()).toBeVisible({ timeout: 30_000 });
+
+    const discountInput = page.locator('#pos-cart-discount-input');
+    const promoInput = page.locator('#pos-promo-code-input');
+
+    // Collapsed by default: the promo field is hidden with the discount field.
+    await expect(discountInput).toHaveCount(0);
+    await expect(promoInput).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Discounts & promo/i })).toBeVisible();
+
+    // One toggle reveals both.
+    await page.keyboard.press('Alt+Shift+D');
+    await expect(discountInput).toBeVisible();
+    await expect(promoInput).toBeVisible();
+
+    // Collapse, then Alt+P expands the same section and focuses the promo box.
+    await page.keyboard.press('Alt+Shift+D');
+    await expect(promoInput).toHaveCount(0);
+    await page.keyboard.press('Alt+P');
+    await expect(promoInput).toBeFocused({ timeout: 10_000 });
+
+    // Escape clears the field and restores the scanner focus.
+    await page.keyboard.press('Escape');
+    await expect(barcodeBox).toBeFocused();
+    await expect(discountInput).toBeVisible();
+
+    // Leave the shared cart empty for later tests.
+    await page.getByRole('button', { name: /Remove .* from cart/i }).first().click();
+  });
 });

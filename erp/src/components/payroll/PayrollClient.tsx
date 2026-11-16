@@ -242,22 +242,22 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
         <StatCard
           icon={<Users className="text-terracotta h-4 w-4" />}
           label="Employees"
-          value={preview ? String(preview.rows.length) : '—'}
+          value={preview ? String(preview.rows.length) : '-'}
         />
         <StatCard
           icon={<CalendarDays className="text-terracotta h-4 w-4" />}
           label="Gross salary"
-          value={preview ? formatRupee(totals.gross) : '—'}
+          value={preview ? formatRupee(totals.gross) : '-'}
         />
         <StatCard
           icon={<Play className="text-terracotta h-4 w-4" />}
           label="Net payable"
-          value={preview ? formatRupee(totals.net) : '—'}
+          value={preview ? formatRupee(totals.net) : '-'}
         />
         <StatCard
           icon={<FileBarChart className="text-terracotta h-4 w-4" />}
           label="Total company cost"
-          value={preview ? formatRupee(totals.companyCost) : '—'}
+          value={preview ? formatRupee(totals.companyCost) : '-'}
         />
       </div>
 
@@ -407,7 +407,7 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                 ) : (
                   <Play className="mr-2 h-4 w-4" />
                 )}
-                Generate payroll — {formatRupee(totals.net)} net
+                Generate payroll - {formatRupee(totals.net)} net
               </Button>
             </div>
           )}

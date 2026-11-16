@@ -81,7 +81,7 @@ export default async function SystemHealthPage() {
             <p className="text-espresso/70">PostgreSQL</p>
             {db.connected ? (
               <p className="text-green-700">
-                <span className="mr-1">●</span>Connected — {db.latency}ms
+                <span className="mr-1">●</span>Connected - {db.latency}ms
               </p>
             ) : (
               <div>

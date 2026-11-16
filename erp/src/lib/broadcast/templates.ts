@@ -72,7 +72,7 @@ export const BROADCAST_TEMPLATES: BroadcastTemplate[] = [
         <div class="content">
           <h2>A special offer, just for you</h2>
           <p>Hi {{name}},</p>
-          <p>Enjoy a limited-time discount on your favourite products. Offer ends soon — don&apos;t miss it.</p>
+          <p>Enjoy a limited-time discount on your favourite products. Offer ends soon - don&apos;t miss it.</p>
           <p style="margin:28px 0;">
             <a class="button" href="https://example.com">Shop the offer</a>
           </p>
@@ -111,7 +111,7 @@ export const BROADCAST_TEMPLATES: BroadcastTemplate[] = [
         <div class="content">
           <p>Hi {{name}},</p>
           <p>Everyone at {{storeName}} wishes you a wonderful birthday and a healthy year ahead.</p>
-          <p>Drop by and celebrate with us — we would love to see you.</p>
+          <p>Drop by and celebrate with us - we would love to see you.</p>
         </div>
         <div class="footer">You are receiving this email from {{storeName}}.</div>
       </div>

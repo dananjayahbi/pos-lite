@@ -40,7 +40,7 @@ function defaultTo(): string {
 
 function fmtTimestamp(iso: string): string {
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return "—";
+  if (isNaN(d.getTime())) return "-";
   return d.toLocaleString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -248,7 +248,7 @@ export default function ZeroValueAuditClient() {
                       <TableCell className="font-mono text-xs">
                         {row.linkedOrderRef
                           ? row.linkedOrderRef.slice(0, 8).toUpperCase()
-                          : "—"}
+                          : "-"}
                       </TableCell>
                       <TableCell className="font-body text-sm">
                         {row.customerName}

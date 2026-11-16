@@ -26,7 +26,7 @@ function rupees(value: string): string {
 
 export function generateBankSheetXlsx(meta: BankSheetMeta, rows: BankSheetRow[]): Buffer {
   const aoa: (string | number)[][] = [
-    [`${meta.companyName} — Bank Salary Sheet`],
+    [`${meta.companyName} - Bank Salary Sheet`],
     [`Period: ${meta.periodLabel}`, `Generated: ${meta.generatedAt.toLocaleString('en-GB')}`],
     [],
     ['No.', 'Employee Name', 'Bank', 'Branch', 'Account Number', 'Net Salary (LKR)'],
@@ -63,7 +63,7 @@ export function generateBankSheetPdf(meta: BankSheetMeta, rows: BankSheetRow[]):
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
   doc.setTextColor(59, 47, 47);
-  doc.text(`${meta.companyName} — Bank Salary Sheet`, 40, 42);
+  doc.text(`${meta.companyName} - Bank Salary Sheet`, 40, 42);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9.5);
@@ -84,9 +84,9 @@ export function generateBankSheetPdf(meta: BankSheetMeta, rows: BankSheetRow[]):
     body: rows.map((row, index) => [
       String(index + 1),
       row.staffName,
-      row.bankName ?? '—',
-      row.bankBranch ?? '—',
-      row.bankAccountNumber ?? '—',
+      row.bankName ?? '-',
+      row.bankBranch ?? '-',
+      row.bankAccountNumber ?? '-',
       rupees(row.netSalary),
     ]),
     foot: [

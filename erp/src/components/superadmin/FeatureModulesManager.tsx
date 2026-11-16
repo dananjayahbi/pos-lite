@@ -42,7 +42,7 @@ export default function FeatureModulesManager({ tenantId, initialEnabledModules 
           `${MODULE_DEFINITIONS.find((m) => m.name === moduleName)?.label ?? moduleName} ${currentlyEnabled ? 'disabled' : 'enabled'}`,
         );
       } catch {
-        toast.error('Network error — could not update feature modules');
+        toast.error('Network error - could not update feature modules');
       } finally {
         setLoading(null);
       }

@@ -3,10 +3,24 @@
 import { useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import {
+  CartesianGrid,
+  Line,
+  LineChart as RechartsLineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReportContext } from "@/lib/reports/ReportContext";
+import {
+  buildRevenueSeries,
+  pickAxisTicks,
+  type RevenueSeriesPoint,
+} from "@/lib/reports/revenue-trend";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -36,18 +50,45 @@ function fmtCurrency(val: string | number): string {
   }).format(num);
 }
 
-function fmtDate(iso: string, granularity: string): string {
-  const d = new Date(iso);
+const compactCurrency = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+/** Axis tick label for a UTC bucket timestamp. */
+function fmtAxisDate(timestamp: number, granularity: string): string {
+  const d = new Date(timestamp);
   if (granularity === "monthly") {
-    return d.toLocaleDateString("en-US", { year: "numeric", month: "short" });
-  }
-  if (granularity === "weekly") {
-    return `Wk ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+    return d.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      timeZone: "UTC",
+    });
   }
   return d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
   });
+}
+
+/** Full label for the tooltip header. */
+function fmtTooltipDate(timestamp: number, granularity: string): string {
+  const d = new Date(timestamp);
+  if (granularity === "monthly") {
+    return d.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      timeZone: "UTC",
+    });
+  }
+  const day = d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+  return granularity === "weekly" ? `Week of ${day}` : day;
 }
 
 function fmtHour(h: number): string {
@@ -141,138 +182,93 @@ function StatCard({
   );
 }
 
-// ── SVG Line Chart ───────────────────────────────────────────────
+// ── Revenue & Returns Chart ──────────────────────────────────────
 
-function LineChart({
+function RevenueTrendChart({
   data,
   granularity,
 }: {
-  data: TimeSeriesPoint[];
+  data: RevenueSeriesPoint[];
   granularity: string;
 }) {
   if (data.length === 0) {
     return (
-      <div className="flex h-48 items-center justify-center text-sm text-mist-ink">
+      <div className="flex h-56 items-center justify-center text-sm text-mist-ink">
         No data for selected range
       </div>
     );
   }
 
-  const revenues = data.map((d) => parseFloat(d.revenue));
-  const returns = data.map((d) => parseFloat(d.returns));
-  const maxVal = Math.max(...revenues, ...returns, 1);
-
-  const pad = 8;
-  const w = 100;
-  const h = 100;
-  const plotW = w - pad * 2;
-  const plotH = h - pad * 2;
-
-  function toCoords(values: number[]): Array<{ x: number; y: number }> {
-    return values.map((v, i) => ({
-      x:
-        data.length === 1
-          ? pad + plotW / 2
-          : pad + (i / (data.length - 1)) * plotW,
-      y: pad + plotH - (v / maxVal) * plotH,
-    }));
-  }
-
-  const toPointString = (coords: Array<{ x: number; y: number }>) =>
-    coords.map((c) => `${c.x},${c.y}`).join(" ");
-
-  const revenueCoords = toCoords(revenues);
-  const returnCoords = toCoords(returns);
-  const baseline = pad + plotH;
+  // A single bucket still needs a visible marker and a non-degenerate domain.
+  const domain: [number, number] =
+    data.length === 1
+      ? [data[0]!.timestamp - 12 * 60 * 60 * 1000, data[0]!.timestamp + 12 * 60 * 60 * 1000]
+      : [data[0]!.timestamp, data[data.length - 1]!.timestamp];
+  // Daily ranges stay readable without marking every point.
+  const showDots = data.length <= 31;
 
   return (
-    <div>
-      <svg
-        viewBox={`0 0 ${w} ${h}`}
-        className="h-48 w-full"
-        preserveAspectRatio="none"
-      >
-        {/* grid lines */}
-        {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
-          const y = pad + plotH - pct * plotH;
-          return (
-            <line
-              key={pct}
-              x1={pad}
-              y1={y}
-              x2={w - pad}
-              y2={y}
-              stroke="#D1C7BD"
-              strokeWidth="0.15"
-            />
-          );
-        })}
-        {/* ISSUE 9: a polyline needs two points — a single monthly bucket
-            rendered nothing. Draw a bar (and a dot) for that case. */}
-        {data.length === 1 ? (
-          <>
-            <rect
-              x={revenueCoords[0]!.x - 2}
-              y={revenueCoords[0]!.y}
-              width={4}
-              height={Math.max(baseline - revenueCoords[0]!.y, 0.5)}
-              fill="#A48374"
-              opacity={0.55}
-            />
-            <rect
-              x={returnCoords[0]!.x - 3.5}
-              y={returnCoords[0]!.y}
-              width={3}
-              height={Math.max(baseline - returnCoords[0]!.y, 0)}
-              fill="#3A2D28"
-              opacity={0.5}
-            />
-          </>
-        ) : (
-          <>
-            {/* revenue line */}
-            <polyline
-              points={toPointString(revenueCoords)}
-              fill="none"
-              stroke="#A48374"
-              strokeWidth="0.6"
-              strokeLinejoin="round"
-            />
-            {/* returns line */}
-            <polyline
-              points={toPointString(returnCoords)}
-              fill="none"
-              stroke="#3A2D28"
-              strokeWidth="0.4"
-              strokeDasharray="1,1"
-              strokeLinejoin="round"
-            />
-          </>
-        )}
-        {/* data points (always visible, including the single-point case) */}
-        {revenueCoords.map((c, i) => (
-          <circle key={`rev-${data[i]!.date}`} cx={c.x} cy={c.y} r={1.1} fill="#A48374">
-            <title>
-              {`${fmtDate(data[i]!.date, granularity)}: ${fmtCurrency(revenues[i]!)}`}
-            </title>
-          </circle>
-        ))}
-        {returnCoords.map((c, i) => (
-          <circle
-            key={`ret-${data[i]!.date}`}
-            cx={c.x}
-            cy={c.y}
-            r={0.9}
-            fill="#3A2D28"
-            opacity={0.8}
-          >
-            <title>
-              {`${fmtDate(data[i]!.date, granularity)} returns: ${fmtCurrency(returns[i]!)}`}
-            </title>
-          </circle>
-        ))}
-      </svg>
-      <div className="mt-1 flex items-center gap-4 text-xs text-mist-ink">
+    <div data-testid="revenue-trend-chart" className="w-full">
+      <ResponsiveContainer width="100%" height={300}>
+        <RechartsLineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#D1C7BD" vertical={false} />
+          <XAxis
+            dataKey="timestamp"
+            type="number"
+            scale="time"
+            domain={domain}
+            ticks={pickAxisTicks(data, 6)}
+            tickFormatter={(value) => fmtAxisDate(Number(value), granularity)}
+            tick={{ fontSize: 11, fill: "#7B6E64" }}
+            tickLine={false}
+            axisLine={{ stroke: "#D1C7BD" }}
+            minTickGap={16}
+          />
+          <YAxis
+            tick={{ fontSize: 11, fill: "#7B6E64" }}
+            tickLine={false}
+            axisLine={false}
+            width={64}
+            allowDecimals={false}
+            tickFormatter={(value) => `Rs. ${compactCurrency.format(Number(value))}`}
+          />
+          <Tooltip
+            cursor={{ stroke: "#CBAD8D", strokeWidth: 1 }}
+            contentStyle={{
+              borderRadius: 10,
+              border: "1px solid #D1C7BD",
+              fontSize: 12,
+              boxShadow: "0 6px 16px rgba(58, 45, 40, 0.12)",
+            }}
+            labelStyle={{ color: "#3A2D28", fontWeight: 600, marginBottom: 4 }}
+            labelFormatter={(value) => fmtTooltipDate(Number(value), granularity)}
+            formatter={(value, name) => [
+              fmtCurrency(Number(value)),
+              name === "revenue" ? "Revenue" : "Returns",
+            ]}
+          />
+          <Line
+            type="monotone"
+            dataKey="revenue"
+            name="revenue"
+            stroke="#A48374"
+            strokeWidth={2}
+            dot={showDots ? { r: 2.5, fill: "#A48374", strokeWidth: 0 } : false}
+            activeDot={{ r: 4, fill: "#A48374", strokeWidth: 0 }}
+          />
+          <Line
+            type="monotone"
+            dataKey="returns"
+            name="returns"
+            stroke="#3A2D28"
+            strokeWidth={1.5}
+            strokeDasharray="4 4"
+            dot={showDots ? { r: 2, fill: "#3A2D28", strokeWidth: 0 } : false}
+            activeDot={{ r: 4, fill: "#3A2D28", strokeWidth: 0 }}
+          />
+        </RechartsLineChart>
+      </ResponsiveContainer>
+      <div className="mt-2 flex items-center gap-4 text-xs text-mist-ink">
         <span className="flex items-center gap-1">
           <span className="inline-block h-0.5 w-4 bg-terracotta" /> Revenue
         </span>
@@ -280,19 +276,6 @@ function LineChart({
           <span className="inline-block h-0.5 w-4 border-t border-dashed border-espresso" />{" "}
           Returns
         </span>
-      </div>
-      {/* x-axis labels */}
-      <div className="mt-1 flex justify-between text-[10px] text-mist-ink">
-        {data.length <= 12
-          ? data.map((d) => (
-              <span key={d.date}>{fmtDate(d.date, granularity)}</span>
-            ))
-          : [data[0], data[Math.floor(data.length / 2)], data[data.length - 1]].map(
-              (d) =>
-                d ? (
-                  <span key={d.date}>{fmtDate(d.date, granularity)}</span>
-                ) : null,
-            )}
       </div>
     </div>
   );
@@ -359,6 +342,13 @@ export default function RevenueTrendClient() {
     queryFn: () => fetchRevenueTrend(from, to, granularity),
   });
 
+  // Fill every bucket in the selected range so the line follows the calendar
+  // instead of connecting only the days that happened to have sales.
+  const series = useMemo(
+    () => buildRevenueSeries(data?.timeSeries ?? [], from, to, granularity),
+    [data, from, to, granularity],
+  );
+
   const reportRows = useMemo(() => {
     if (!data) return [];
     return data.timeSeries.map((row) => ({
@@ -406,22 +396,22 @@ export default function RevenueTrendClient() {
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
           title="Total Revenue"
-          value={data ? fmtCurrency(data.stats.totalRevenue) : "—"}
+          value={data ? fmtCurrency(data.stats.totalRevenue) : "-"}
           loading={isLoading}
         />
         <StatCard
           title="Total Transactions"
-          value={data ? data.stats.totalTransactions.toLocaleString() : "—"}
+          value={data ? data.stats.totalTransactions.toLocaleString() : "-"}
           loading={isLoading}
         />
         <StatCard
           title="Avg Order Value"
-          value={data ? fmtCurrency(data.stats.avgOrderValue) : "—"}
+          value={data ? fmtCurrency(data.stats.avgOrderValue) : "-"}
           loading={isLoading}
         />
         <StatCard
           title="Return Rate"
-          value={data ? `${data.stats.returnRate}%` : "—"}
+          value={data ? `${data.stats.returnRate}%` : "-"}
           loading={isLoading}
         />
       </div>
@@ -435,12 +425,9 @@ export default function RevenueTrendClient() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <Skeleton className="h-48 w-full" />
+            <Skeleton className="h-56 w-full" />
           ) : (
-            <LineChart
-              data={data?.timeSeries ?? []}
-              granularity={granularity}
-            />
+            <RevenueTrendChart data={series} granularity={granularity} />
           )}
         </CardContent>
       </Card>

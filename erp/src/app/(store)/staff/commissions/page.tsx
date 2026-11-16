@@ -412,7 +412,7 @@ export default function CommissionReportsPage() {
                       {payout.paymentAccountName ?? payout.paymentMethod ?? 'Manual'}
                     </TableCell>
                     <TableCell className="text-right font-mono">{formatRupee(payout.totalEarned)}</TableCell>
-                    <TableCell className="text-sm text-sand-ink">{payout.proofReference ?? '—'}</TableCell>
+                    <TableCell className="text-sm text-sand-ink">{payout.proofReference ?? '-'}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="outline" size="sm" onClick={() => setSelectedHistory(payout)}>
                         View Receipt
@@ -476,7 +476,7 @@ export default function CommissionReportsPage() {
                       ) : (
                         paymentAccounts.map((account) => (
                           <SelectItem key={account.id} value={account.id}>
-                            {account.name} — {formatRupee(account.balance)}
+                            {account.name} - {formatRupee(account.balance)}
                           </SelectItem>
                         ))
                       )}

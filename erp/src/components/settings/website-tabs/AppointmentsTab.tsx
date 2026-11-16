@@ -131,10 +131,10 @@ export function AppointmentsTab({ config, onChange }: AppointmentsTabProps) {
             )}
           />
           {appointments.enabled
-            ? `Public — ${selectedIds.length > 0 ? selectedIds.length : 'all'} service${
+            ? `Public - ${selectedIds.length > 0 ? selectedIds.length : 'all'} service${
                 selectedIds.length === 1 ? '' : 's'
               } offered, synced with ERP /appointments`
-            : 'Hidden — booking page is not publicly accessible'}
+            : 'Hidden - booking page is not publicly accessible'}
         </div>
       </div>
 

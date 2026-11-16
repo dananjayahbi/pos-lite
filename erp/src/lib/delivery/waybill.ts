@@ -7,9 +7,9 @@
 
 /** Reference date format: DD/MM/YYYY. */
 export function formatWaybillDate(value: string | Date | null | undefined): string {
-  if (!value) return '—';
+  if (!value) return '-';
   const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
+  if (Number.isNaN(date.getTime())) return '-';
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
   return `${day}/${month}/${date.getFullYear()}`;
@@ -17,9 +17,9 @@ export function formatWaybillDate(value: string | Date | null | undefined): stri
 
 /** The courier's sheet prints money without a currency prefix: 3,300.00. */
 export function formatWaybillAmount(value: string | number | null | undefined): string {
-  if (value === null || value === undefined || value === '') return '—';
+  if (value === null || value === undefined || value === '') return '-';
   const num = Number(value);
-  if (!Number.isFinite(num)) return '—';
+  if (!Number.isFinite(num)) return '-';
   return num.toLocaleString('en-LK', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -50,7 +50,7 @@ export function buildWaybillDescription({
   }
   const description = parts.join(' · ');
   if (description) return description;
-  return fallback ?? '—';
+  return fallback ?? '-';
 }
 
 /**

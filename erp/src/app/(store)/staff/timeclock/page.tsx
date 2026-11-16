@@ -291,13 +291,13 @@ export default function TimeclockPage() {
                             )}
                           </TableCell>
                           <TableCell className="font-mono text-sm">
-                            {row.clockInAt ? formatTime(row.clockInAt) : '—'}
+                            {row.clockInAt ? formatTime(row.clockInAt) : '-'}
                           </TableCell>
                           <TableCell className="font-mono text-sm">
-                            {row.clockOutAt ? formatTime(row.clockOutAt) : '—'}
+                            {row.clockOutAt ? formatTime(row.clockOutAt) : '-'}
                           </TableCell>
                           <TableCell className="text-right font-mono text-sm">
-                            {row.totalMinutes > 0 ? formatMinutes(row.totalMinutes) : '—'}
+                            {row.totalMinutes > 0 ? formatMinutes(row.totalMinutes) : '-'}
                           </TableCell>
                           <TableCell
                             className={`text-right font-mono text-sm ${
@@ -306,7 +306,7 @@ export default function TimeclockPage() {
                           >
                             {row.overtimeMinutes > 0
                               ? `+${formatMinutes(row.overtimeMinutes)}`
-                              : '—'}
+                              : '-'}
                           </TableCell>
                           <TableCell className="text-right">
                             {canManage ? (
@@ -332,7 +332,7 @@ export default function TimeclockPage() {
                                 </Button>
                               </div>
                             ) : (
-                              <span className="text-xs text-sand-ink">—</span>
+                              <span className="text-xs text-sand-ink">-</span>
                             )}
                           </TableCell>
                         </TableRow>

@@ -104,7 +104,7 @@ export function LowStockList({ permissions }: LowStockListProps) {
             )}
           </div>
           <p className="mt-1 font-body text-sm text-mist-ink">
-            Variants at or below their low stock threshold — sorted by urgency.
+            Variants at or below their low stock threshold - sorted by urgency.
           </p>
         </div>
         <Button

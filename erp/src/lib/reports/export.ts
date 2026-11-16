@@ -158,7 +158,7 @@ export function buildPrintHtml(
 </style>
 </head><body>
 <div class="header">
-  <h1>AyurPOS — ${escapeHTML(reportTitle)}</h1>
+  <h1>AyurPOS - ${escapeHTML(reportTitle)}</h1>
   <p>${escapeHTML(dateRange)}</p>
 </div>
 <table><thead><tr>${thCells}</tr></thead><tbody>${bodyRows}</tbody></table>

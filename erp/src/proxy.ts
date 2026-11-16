@@ -371,7 +371,7 @@ export default async function proxy(request: NextRequest) {
           return denySession(request, user, 'version-mismatch');
         }
       } catch (err) {
-        console.error('Proxy sessionVersion bridge failed — denying (fail-closed):', err);
+        console.error('Proxy sessionVersion bridge failed - denying (fail-closed):', err);
         return denySession(request, user, 'bridge-error');
       }
     }
@@ -407,7 +407,7 @@ export default async function proxy(request: NextRequest) {
           return denyTenant(request, 'SUSPENDED');
         }
       } catch (err) {
-        console.error('Proxy tenant-status bridge failed — denying (fail-closed):', err);
+        console.error('Proxy tenant-status bridge failed - denying (fail-closed):', err);
         return denyTenant(request, 'unavailable');
       }
     }

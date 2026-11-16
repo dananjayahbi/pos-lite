@@ -122,7 +122,7 @@ export default function SubscriptionOverviewCard({
           <div className="flex items-start gap-2 rounded-md border border-terracotta/30 bg-terracotta/10 p-3">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-terracotta" />
             <p className="text-sm text-terracotta">
-              Payment overdue — {graceDaysRemaining} grace day
+              Payment overdue - {graceDaysRemaining} grace day
               {graceDaysRemaining !== 1 ? "s" : ""} remaining before
               suspension.
             </p>

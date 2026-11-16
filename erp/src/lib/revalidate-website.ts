@@ -58,7 +58,7 @@ export async function revalidateTenantStorefront(
   });
   if (!tenant?.slug) {
     console.warn(
-      `[revalidate-website] Tenant ${tenantId} not found — skipping revalidation`,
+      `[revalidate-website] Tenant ${tenantId} not found - skipping revalidation`,
     );
     return;
   }
@@ -94,7 +94,7 @@ export async function revalidateWebsiteCache(
 ): Promise<void> {
   if (!REVALIDATION_SECRET) {
     console.warn(
-      '[revalidate-website] REVALIDATION_SECRET not set — skipping revalidation. ' +
+      '[revalidate-website] REVALIDATION_SECRET not set - skipping revalidation. ' +
         'Add REVALIDATION_SECRET to the ERP .env.local file.',
     );
     return;

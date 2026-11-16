@@ -168,7 +168,7 @@ export async function createPO(tenantId: string, createdById: string, input: Cre
     }
   }
 
-  throw new Error('Could not allocate a purchase order reference — please retry');
+  throw new Error('Could not allocate a purchase order reference - please retry');
 }
 
 // ── Get PO by ID ─────────────────────────────────────────────────────────────
@@ -339,7 +339,7 @@ export async function updatePO(
     const received = po.lines.filter((line) => line.receivedQty > 0);
     if (received.length > 0) {
       throw new Error(
-        'Lines cannot be edited after goods have been received — adjust stock or raise a new purchase order instead',
+        'Lines cannot be edited after goods have been received - adjust stock or raise a new purchase order instead',
       );
     }
   }

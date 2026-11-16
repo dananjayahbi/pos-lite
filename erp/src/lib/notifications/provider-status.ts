@@ -89,7 +89,7 @@ export function warnProviderNotConfigured(provider: OutboundProvider): boolean {
         ? 'SMS_API_URL + SMS_API_KEY'
         : 'RESEND_API_KEY';
   console.warn(
-    `[integrations] ${provider} provider is NOT configured — outbound sends will fail. ` +
+    `[integrations] ${provider} provider is NOT configured - outbound sends will fail. ` +
       `Supply ${credentialHint} (INF-03).`,
   );
   return true;

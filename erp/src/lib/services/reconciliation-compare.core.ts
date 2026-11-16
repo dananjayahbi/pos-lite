@@ -275,7 +275,7 @@ function compareMatchedPair(
     const direction = collected < expected ? 'short' : 'over';
     issues.push({
       code: 'AMOUNT_MISMATCH',
-      message: `Collected ${money(collected)} vs system COD ${money(expected)} — ${direction} by ${money(
+      message: `Collected ${money(collected)} vs system COD ${money(expected)} - ${direction} by ${money(
         Math.abs(round2(collected - expected)),
       )}.`,
     });
@@ -290,7 +290,7 @@ function compareMatchedPair(
       code: 'FEE_MISMATCH',
       message: `Courier charge ${money(statement.fees as number)} vs system shipping fee ${money(
         delivery.shippingFee as number,
-      )} — difference ${money(feeDifference)}.`,
+      )} - difference ${money(feeDifference)}.`,
     });
   }
 

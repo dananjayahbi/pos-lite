@@ -179,7 +179,7 @@ export default function NotificationsPage() {
                 >
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="flex gap-3">
-                      <div className="mt-0.5 rounded-full bg-linen p-2 text-terracotta">
+                      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center self-start rounded-full bg-linen text-terracotta">
                         <Icon className="h-4 w-4" />
                       </div>
                       <div className="space-y-1">

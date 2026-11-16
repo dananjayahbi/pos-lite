@@ -51,9 +51,24 @@ export default function StoreSidebar({
         >
           {businessLogoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={businessLogoUrl} alt="" className="h-9 w-9 rounded object-contain" />
+            <img
+              src={businessLogoUrl}
+              alt=""
+              className="h-9 w-9 shrink-0 rounded object-contain"
+            />
           ) : null}
-          <p className="font-display text-espresso truncate text-xl font-bold">{businessName}</p>
+          {/*
+           * Store names are often longer than the 256 px sidebar. Wrapping to
+           * two balanced lines keeps the full name at the same font size inside
+           * the 64 px header (which must stay aligned with the top bar) instead
+           * of truncating it to "Ruhunu Weda G…".
+           */}
+          <p
+            title={businessName}
+            className="font-display text-espresso line-clamp-2 min-w-0 text-balance break-words text-xl font-bold leading-tight"
+          >
+            {businessName}
+          </p>
         </div>
       </div>
 

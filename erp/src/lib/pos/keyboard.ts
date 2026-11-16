@@ -26,13 +26,15 @@ export interface POSShortcutHelpEntry {
 /** Single source of truth for the in-app shortcut guide (and docs). */
 export const POS_SHORTCUT_HELP: POSShortcutHelpEntry[] = [
   { keys: ['F2'], label: 'Focus the barcode / search box' },
+  { keys: ['Alt', 'M'], label: 'Switch between mouse & keyboard and keyboard-only layout' },
+  { keys: ['Alt', 'Enter'], label: 'Enter / exit fullscreen' },
   { keys: ['Enter'], label: 'Add the scanned or searched product' },
   { keys: ['←', '→', '↑', '↓'], label: 'Move between products, then cart lines' },
   { keys: ['+', '−'], label: 'Increase / decrease the focused cart line' },
   { keys: ['Delete'], label: 'Remove the focused cart line' },
   { keys: ['F4'], label: 'Open the payment method dialog (Charge / Pay)' },
-  { keys: ['Alt', 'Shift', 'D'], label: 'Show / hide the cart discount' },
-  { keys: ['Alt', 'P'], label: 'Focus the promo code field' },
+  { keys: ['Alt', 'Shift', 'D'], label: 'Show / hide discounts & promo' },
+  { keys: ['Alt', 'P'], label: 'Expand discounts & focus the promo code' },
   { keys: ['Alt', 'C'], label: 'Focus the customer search' },
   { keys: ['Alt', 'A'], label: 'Add a new customer' },
   { keys: ['Alt', 'U'], label: 'Unlink the current customer' },

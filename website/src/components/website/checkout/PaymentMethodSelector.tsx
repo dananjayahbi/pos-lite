@@ -61,7 +61,7 @@ export function PaymentMethodSelector({
               <span>
                 <span className="block text-sm font-medium text-white">
                   {method.label}
-                  {method.value === 'CARD' ? ` — ${totalLabel}` : ''}
+                  {method.value === 'CARD' ? ` - ${totalLabel}` : ''}
                 </span>
                 <span className="block text-xs text-[#94a3b8]">{method.hint}</span>
               </span>

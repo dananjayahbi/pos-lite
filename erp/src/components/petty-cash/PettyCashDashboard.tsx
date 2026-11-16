@@ -476,7 +476,7 @@ export default function PettyCashDashboard() {
                               className="h-8 w-8 rounded object-cover"
                             />
                           ) : (
-                            <span className="text-sm text-sand-ink">—</span>
+                            <span className="text-sm text-sand-ink">-</span>
                           )}
                         </TableCell>
                       </TableRow>

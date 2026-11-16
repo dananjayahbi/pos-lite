@@ -112,7 +112,7 @@ export async function payPurchaseOrder(
         accountId: account.id,
         source: PaymentEntrySource.PURCHASE_ORDER_PAYMENT,
         sourceId: payment.id,
-        description: `PO ${po.referenceNo} — ${po.supplier.name}`,
+        description: `PO ${po.referenceNo} - ${po.supplier.name}`,
         credit: requested,
         entryDate: paidAt,
       },

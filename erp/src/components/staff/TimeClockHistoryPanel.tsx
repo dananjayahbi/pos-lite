@@ -153,16 +153,16 @@ export function TimeClockHistoryPanel({
                             hour: '2-digit',
                             minute: '2-digit',
                           })
-                        : '—'}
+                        : '-'}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {record.durationMinutes !== null ? formatMinutes(record.durationMinutes) : '—'}
+                      {record.durationMinutes !== null ? formatMinutes(record.durationMinutes) : '-'}
                     </TableCell>
                     <TableCell className="font-mono text-xs">
-                      {record.shift ? `${record.shift.id.slice(0, 8)}…` : '—'}
+                      {record.shift ? `${record.shift.id.slice(0, 8)}…` : '-'}
                     </TableCell>
                     <TableCell className="max-w-[180px] truncate text-sm text-sand-ink">
-                      {record.notes ?? '—'}
+                      {record.notes ?? '-'}
                     </TableCell>
                     <TableCell>
                       {record.clockedOutAt ? (

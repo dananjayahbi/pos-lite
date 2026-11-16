@@ -131,7 +131,7 @@ export function LogoUploadField({
             </div>
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs text-mist-ink">
-              —
+              -
             </div>
           )}
 

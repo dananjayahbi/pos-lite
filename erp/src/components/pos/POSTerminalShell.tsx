@@ -1,13 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Clock, LayoutDashboard, LogOut, RotateCcw, WifiOff, Loader2 } from 'lucide-react';
 import { ShiftCloseModal } from '@/components/pos/ShiftCloseModal';
 import { CartPanel } from '@/components/pos/CartPanel';
 import { POSShortcutHelp } from '@/components/pos/POSShortcutHelp';
+import { FullscreenToggle } from '@/components/pos/FullscreenToggle';
+import { InputModeSelector } from '@/components/pos/InputModeSelector';
+import { KeyboardPOSWorkspace } from '@/components/pos/KeyboardPOSWorkspace';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
+import { usePOSInputMode } from '@/hooks/usePOSInputMode';
 import type { LankaQrSettings } from '@/lib/payments/lanka-qr-config';
 
 function formatElapsed(ms: number): string {
@@ -28,18 +32,16 @@ function ShiftIndicator({
   cashierName: string;
   shiftOpenedAt: string;
 }) {
-  const [elapsed, setElapsed] = useState('');
-
-  const updateElapsed = useCallback(() => {
-    const diff = Date.now() - new Date(shiftOpenedAt).getTime();
-    setElapsed(formatElapsed(diff));
-  }, [shiftOpenedAt]);
+  const [elapsed, setElapsed] = useState(() =>
+    formatElapsed(Date.now() - new Date(shiftOpenedAt).getTime()),
+  );
 
   useEffect(() => {
-    updateElapsed();
-    const interval = setInterval(updateElapsed, 1000);
+    const tick = () =>
+      setElapsed(formatElapsed(Date.now() - new Date(shiftOpenedAt).getTime()));
+    const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [updateElapsed]);
+  }, [shiftOpenedAt]);
 
   return (
     <span className="font-body text-sm text-pearl/80">
@@ -79,11 +81,14 @@ export function POSTerminalShell({
 }: POSTerminalShellProps) {
   const [closeModalOpen, setCloseModalOpen] = useState(false);
   const { isOnline, isSyncing } = useOfflineSync();
+  const { mode, setMode } = usePOSInputMode();
+  // History surfaces have no ticket, so the profile selector is pointless there.
+  const keyboardOnly = showCart && mode === 'keyboard-only';
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-espresso h-dvh overflow-hidden">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 h-14 shrink-0">
+      <div className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 py-1 sm:px-4">
         <div className="flex items-center gap-2">
           {businessLogoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -125,6 +130,7 @@ export function POSTerminalShell({
         </div>
 
         <div className="flex items-center gap-2">
+          {showCart && <InputModeSelector mode={mode} onChange={setMode} />}
           {showOwnerDashboardShortcut && (
             <Link
               href="/dashboard"
@@ -154,6 +160,7 @@ export function POSTerminalShell({
             <Clock className="h-5 w-5" />
           </Link>
           <POSShortcutHelp />
+          <FullscreenToggle />
           <button
             type="button"
             onClick={() => setCloseModalOpen(true)}
@@ -168,18 +175,24 @@ export function POSTerminalShell({
 
       {/* Main content */}
       <div className="flex flex-1 flex-col md:flex-row overflow-hidden">
-        {/* Left panel */}
-        <div className={`w-full bg-linen overflow-y-auto ${showCart ? 'md:w-[63%]' : 'md:w-full'}`}>
-          {children}
-        </div>
+        {keyboardOnly ? (
+          <KeyboardPOSWorkspace shiftId={shiftId} lankaQr={lankaQr} />
+        ) : (
+          <>
+            {/* Left panel */}
+            <div className={`w-full bg-linen overflow-y-auto ${showCart ? 'md:w-[63%]' : 'md:w-full'}`}>
+              {children}
+            </div>
 
-        {/* Right panel */}
-        {showCart && (
-          <div className="w-full md:w-[37%] bg-pearl overflow-hidden">
-            <ErrorBoundary>
-              <CartPanel shiftId={shiftId} lankaQr={lankaQr} />
-            </ErrorBoundary>
-          </div>
+            {/* Right panel */}
+            {showCart && (
+              <div className="w-full md:w-[37%] bg-pearl overflow-hidden">
+                <ErrorBoundary>
+                  <CartPanel shiftId={shiftId} lankaQr={lankaQr} />
+                </ErrorBoundary>
+              </div>
+            )}
+          </>
         )}
       </div>
 

@@ -329,7 +329,7 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
         tenantId: input.tenantId,
         category: 'STAFF_COMMISSIONS',
         amount,
-        description: `Staff commission payout — ${staffName} (${input.periodStart
+        description: `Staff commission payout - ${staffName} (${input.periodStart
           .toISOString()
           .slice(0, 10)} to ${input.periodEnd.toISOString().slice(0, 10)})`,
         paymentAccountId: account.id,
@@ -352,7 +352,7 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
           accountId: account.id,
           source: PaymentEntrySource.EXPENSE,
           sourceId: expense.id,
-          description: `Staff commissions — ${staffName}`.slice(0, 200),
+          description: `Staff commissions - ${staffName}`.slice(0, 200),
           credit: amount,
         },
       ],

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BroadcastSendSchema } from '@/lib/validators/broadcast.validators';
 
-describe('BroadcastSendSchema — email', () => {
+describe('BroadcastSendSchema - email', () => {
   it('accepts a subject with an HTML body and image URLs', () => {
     const parsed = BroadcastSendSchema.parse({
       channel: 'EMAIL',
@@ -62,7 +62,7 @@ describe('BroadcastSendSchema — email', () => {
   });
 });
 
-describe('BroadcastSendSchema — SMS', () => {
+describe('BroadcastSendSchema - SMS', () => {
   it('accepts a short message', () => {
     const parsed = BroadcastSendSchema.parse({ channel: 'SMS', message: 'Hi {{name}}' });
     expect(parsed.channel).toBe('SMS');

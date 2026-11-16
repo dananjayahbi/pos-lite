@@ -271,7 +271,7 @@ export function VariantSelectionModal({
               }}
               className="w-full bg-espresso text-pearl font-body py-2.5 rounded-lg hover:bg-espresso/90 disabled:opacity-50"
             >
-              {selectedVariant ? `Add ${quantity} to Cart — ${variantDescriptor}` : 'Select a variant'}
+              {selectedVariant ? `Add ${quantity} to Cart - ${variantDescriptor}` : 'Select a variant'}
             </button>
           </>
         )}

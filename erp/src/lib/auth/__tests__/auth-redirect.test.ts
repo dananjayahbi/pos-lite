@@ -55,7 +55,7 @@ describe('resolveAuthRedirect', () => {
     );
   });
 
-  it('rejects a foreign host — no open redirect', () => {
+  it('rejects a foreign host - no open redirect', () => {
     expect(resolveAuthRedirect('https://evil.example/login', baseUrl, tunnel)).toBe(
       baseUrl,
     );

@@ -290,7 +290,7 @@ export function generateInvoiceHtml(data: InvoiceTemplateData): string {
           <h3>Invoice Details</h3>
           <p><span class="label">Date: </span><span class="value">${formatDate(data.createdAt)}</span></p>
           <p><span class="label">Due: </span><span class="value">${formatDate(data.dueDate)}</span></p>
-          <p><span class="label">Period: </span><span class="value">${formatDate(data.billingPeriodStart)} — ${formatDate(data.billingPeriodEnd)}</span></p>
+          <p><span class="label">Period: </span><span class="value">${formatDate(data.billingPeriodStart)} - ${formatDate(data.billingPeriodEnd)}</span></p>
           <p style="margin-top: 8px;">
             <span class="status-badge" style="background:${badge.bg}; color:${badge.text};">${badge.label}</span>
             ${data.paidAt ? `<br/><span class="label" style="font-size:11px;">Paid on ${formatDate(data.paidAt)}</span>` : ""}
@@ -309,7 +309,7 @@ export function generateInvoiceHtml(data: InvoiceTemplateData): string {
         </thead>
         <tbody>
           <tr>
-            <td>${escapeHtml(data.subscription.plan.name)} Plan — Subscription</td>
+            <td>${escapeHtml(data.subscription.plan.name)} Plan - Subscription</td>
             <td>1</td>
             <td>${escapeHtml(data.currency)} ${amount}</td>
             <td>${escapeHtml(data.currency)} ${amount}</td>

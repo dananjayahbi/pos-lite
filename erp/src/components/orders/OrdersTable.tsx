@@ -76,9 +76,9 @@ export function OrdersTable({
                 </td>
                 <td className="px-4 py-3 text-sm font-medium text-espresso">{order.orderRef}</td>
                 <td className="px-4 py-3 text-sm text-espresso">
-                  {order.customer?.name ?? order.address?.fullName ?? '—'}
+                  {order.customer?.name ?? order.address?.fullName ?? '-'}
                 </td>
-                <td className="px-4 py-3 text-sm text-espresso/60">{order.address?.cityName ?? '—'}</td>
+                <td className="px-4 py-3 text-sm text-espresso/60">{order.address?.cityName ?? '-'}</td>
                 <td className="px-4 py-3 text-sm text-espresso/60">{order.itemCount ?? 1}</td>
                 <td className="px-4 py-3 text-sm text-espresso">{formatRupee(order.codAmount ?? 0)}</td>
                 <td className="px-4 py-3">

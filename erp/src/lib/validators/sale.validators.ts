@@ -95,7 +95,7 @@ export const CreateSaleSchema = z
       ctx.addIssue({
         code: 'custom',
         path: ['paymentMethod'],
-        message: 'A non-zero sale requires CASH/CARD/SPLIT/LANKAQR — NONE is reserved for zero-value sales with a reason',
+        message: 'A non-zero sale requires CASH/CARD/SPLIT/LANKAQR - NONE is reserved for zero-value sales with a reason',
       });
     }
     if (data.paymentMethod === 'CASH') {
@@ -141,7 +141,7 @@ export const CreateSaleSchema = z
         ctx.addIssue({
           code: 'custom',
           path: ['appliedStoreCredit'],
-          message: 'Store credit cannot be applied to a guest sale — link a customer first',
+          message: 'Store credit cannot be applied to a guest sale - link a customer first',
         });
       }
     }

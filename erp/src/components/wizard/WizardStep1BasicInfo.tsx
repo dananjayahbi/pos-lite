@@ -218,7 +218,7 @@ export function WizardStep1BasicInfo() {
         </Label>
         <Textarea
           id="description"
-          placeholder="Describe the product — uses, ingredients, benefits…"
+          placeholder="Describe the product - uses, ingredients, benefits…"
           className="font-body min-h-[100px]"
           {...register('description')}
         />

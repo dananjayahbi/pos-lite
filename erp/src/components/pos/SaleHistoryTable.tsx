@@ -88,7 +88,7 @@ export function getShortId(id: string): string {
 /** `dd MMM yyyy` in the operator's local timezone. */
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return '-';
   return d.toLocaleDateString('en-GB', {
     day: '2-digit',
     month: 'short',
@@ -99,7 +99,7 @@ function formatDate(dateStr: string): string {
 /** `HH:mm` in the operator's local timezone. */
 function formatTime(dateStr: string): string {
   const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return '-';
   return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
@@ -112,7 +112,7 @@ function PaymentBadge({ method }: { method: string | null }) {
   if (!method)
     return (
       <Badge variant="secondary" className="text-[10px]">
-        —
+        -
       </Badge>
     );
   const colors: Record<string, string> = {

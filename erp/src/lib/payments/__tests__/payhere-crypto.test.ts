@@ -106,7 +106,7 @@ describe('computeInnerHash', () => {
 });
 
 describe('computeCheckoutHash', () => {
-  it('matches the documented formula — and does NOT include status_code', () => {
+  it('matches the documented formula - and does NOT include status_code', () => {
     const input = { merchantId: MERCHANT_ID, orderId: ORDER_ID, amount: AMOUNT, currency: CURRENCY };
     expect(computeCheckoutHash(SECRET, input)).toBe(referenceCheckoutHash(SECRET, input));
   });
@@ -132,7 +132,7 @@ describe('computeCheckoutHash', () => {
 });
 
 describe('computeIpnSignature', () => {
-  it('matches the documented formula — INCLUDING status_code', () => {
+  it('matches the documented formula - INCLUDING status_code', () => {
     const input = {
       merchantId: MERCHANT_ID,
       orderId: ORDER_ID,
@@ -216,7 +216,7 @@ describe('verifyPayhereSignature', () => {
     });
   });
 
-  it('accepts an UPPERCASE signature — the only casing the gateway sends', () => {
+  it('accepts an UPPERCASE signature - the only casing the gateway sends', () => {
     setSecret(SECRET);
     const md5sig = referenceIpnSignature(SECRET, base).toUpperCase();
     expect(verifyPayhereSignature({ ...base, md5sig }).valid).toBe(true);

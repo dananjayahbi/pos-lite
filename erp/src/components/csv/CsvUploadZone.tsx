@@ -160,7 +160,7 @@ export function CsvUploadZone({ onParsed }: CsvUploadZoneProps) {
         <div className="rounded-lg border border-sand bg-pearl p-4 space-y-3">
           <p className="font-body text-sm text-espresso">
             <span className="font-semibold">{parseResult.fileName}</span>
-            {' — '}
+            {' - '}
             {parseResult.rowCount} row{parseResult.rowCount !== 1 ? 's' : ''} detected
           </p>
           <div className="flex flex-wrap gap-1.5">

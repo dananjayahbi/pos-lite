@@ -115,6 +115,22 @@ default and can filter by waybill/order reference.
 - API: `POST /api/store/reconciliation/compare` (multipart `file`, `from`, `to`).
 - UI: `src/components/delivery/reconciliation/StatementComparison.tsx`.
 
+### Responsive result view
+
+The comparison has ten columns. Rendering them as one table on a laptop at
+125–150% scaling clipped the right-most **What is different** column, so the
+result now has two presentations:
+
+- **Below `2xl` (1536 px)** — one labelled record card per row
+  (`data-testid="comparison-row-card"`): status + waybill + order ref on top,
+  a two/three-column labelled grid for COD, fees and status, then the full
+  explanation. Nothing is hidden behind a horizontal scroller.
+- **`2xl` and up** — the dense ten-column table, which fits its container with
+  room to spare.
+
+The Ledger table on the same page uses the same rule at `xl` (1280 px). See
+[responsive-layout.md](./responsive-layout.md) for the shared checklist.
+
 ## Tests
 
 `src/lib/services/__tests__/reconciliation-compare.test.ts` covers matched

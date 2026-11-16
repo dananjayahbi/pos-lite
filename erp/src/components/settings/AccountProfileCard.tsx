@@ -14,7 +14,7 @@ export interface AccountProfile {
 }
 
 function formatDate(value?: string | null): string {
-  if (!value) return '—';
+  if (!value) return '-';
   return new Date(value).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',

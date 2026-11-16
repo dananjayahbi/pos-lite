@@ -97,9 +97,9 @@ export function POPaymentHistory({
                 {payments.map((payment) => (
                   <TableRow key={payment.id}>
                     <TableCell>{formatPoDate(payment.paidAt)}</TableCell>
-                    <TableCell>{payment.account?.name ?? '—'}</TableCell>
-                    <TableCell className="font-mono text-xs">{payment.reference ?? '—'}</TableCell>
-                    <TableCell className="max-w-[18rem] truncate">{payment.note ?? '—'}</TableCell>
+                    <TableCell>{payment.account?.name ?? '-'}</TableCell>
+                    <TableCell className="font-mono text-xs">{payment.reference ?? '-'}</TableCell>
+                    <TableCell className="max-w-[18rem] truncate">{payment.note ?? '-'}</TableCell>
                     <TableCell className="text-right font-mono">
                       {formatRupee(payment.amount)}
                     </TableCell>

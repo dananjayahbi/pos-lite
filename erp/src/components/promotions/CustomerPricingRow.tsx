@@ -38,7 +38,7 @@ interface CustomerPricingRowProps {
 
 export function CustomerPricingRow({ rule, onDeactivate, isDeactivating }: CustomerPricingRowProps) {
   const variantLabel = rule.variant
-    ? `${rule.variant.product.name} — ${rule.variant.sku}`
+    ? `${rule.variant.product.name} - ${rule.variant.sku}`
     : 'All variants';
 
   return (

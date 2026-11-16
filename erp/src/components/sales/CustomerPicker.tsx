@@ -37,7 +37,7 @@ export function CustomerPicker({
   value,
   onChange,
   label = 'Customer',
-  guestHint = 'No customer linked — the sale is recorded as a guest / walk-in.',
+  guestHint = 'No customer linked - the sale is recorded as a guest / walk-in.',
   disabled = false,
   className = '',
 }: CustomerPickerProps) {
@@ -81,7 +81,7 @@ export function CustomerPicker({
             disabled={disabled}
             className="text-sand-ink hover:text-terracotta shrink-0 transition-colors disabled:opacity-50"
             aria-label="Clear customer (record as guest)"
-            title="Clear customer — record as guest"
+            title="Clear customer - record as guest"
           >
             <X className="h-4 w-4" />
           </button>
@@ -98,7 +98,7 @@ export function CustomerPicker({
                 setShowDropdown(true);
               }}
               onFocus={() => setShowDropdown(true)}
-              placeholder="Guest / walk-in — search to link a customer"
+              placeholder="Guest / walk-in - search to link a customer"
               className="pl-9"
               autoComplete="off"
               disabled={disabled}

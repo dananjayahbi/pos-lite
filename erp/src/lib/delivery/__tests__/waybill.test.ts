@@ -13,9 +13,9 @@ describe('formatWaybillDate', () => {
   });
 
   it('uses an em dash for missing or invalid values', () => {
-    expect(formatWaybillDate(null)).toBe('—');
-    expect(formatWaybillDate(undefined)).toBe('—');
-    expect(formatWaybillDate('not a date')).toBe('—');
+    expect(formatWaybillDate(null)).toBe('-');
+    expect(formatWaybillDate(undefined)).toBe('-');
+    expect(formatWaybillDate('not a date')).toBe('-');
   });
 });
 
@@ -27,8 +27,8 @@ describe('formatWaybillAmount', () => {
   });
 
   it('handles junk without producing NaN', () => {
-    expect(formatWaybillAmount('abc')).toBe('—');
-    expect(formatWaybillAmount(null)).toBe('—');
+    expect(formatWaybillAmount('abc')).toBe('-');
+    expect(formatWaybillAmount(null)).toBe('-');
   });
 });
 

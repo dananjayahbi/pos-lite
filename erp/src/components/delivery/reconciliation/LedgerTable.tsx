@@ -86,9 +86,9 @@ const AUDIT_COLORS: Record<string, string> = {
 };
 
 function formatDate(value?: string | null): string {
-  if (!value) return '—';
+  if (!value) return '-';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
+  if (Number.isNaN(date.getTime())) return '-';
   return date.toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -116,8 +116,23 @@ export function LedgerTable({
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-espresso/10">
-      <table className="w-full min-w-210">
+    <>
+      {/* Narrow screens: one labelled card per ledger entry, so long refs and
+          badges never get clipped behind a horizontal scrollbar. */}
+      <div className="space-y-2 p-3 xl:hidden" data-testid="ledger-cards">
+        {entries.map((entry) => (
+          <LedgerEntryCard
+            key={entry.id}
+            entry={entry}
+            canDispute={canDispute}
+            {...(onOpenDispute ? { onOpenDispute } : {})}
+            {...(onUpdateDispute ? { onUpdateDispute } : {})}
+          />
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-lg border border-espresso/10 xl:block">
+        <table className="w-full min-w-210">
         <thead>
           <tr className="border-b border-espresso/10 bg-espresso/5">
             <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Order Ref</th>
@@ -145,16 +160,16 @@ export function LedgerTable({
             return (
               <tr key={entry.id} className="border-b border-espresso/5 last:border-0 hover:bg-espresso/5">
                 <td className="px-4 py-3 font-mono text-xs font-semibold text-espresso">
-                  {entry.delivery?.orderRef ?? '—'}
+                  {entry.delivery?.orderRef ?? '-'}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-espresso/60">
-                  {entry.waybillId ?? '—'}
+                  {entry.waybillId ?? '-'}
                 </td>
                 <td className="px-4 py-3 text-right text-sm font-semibold text-espresso">
                   {formatRupee(Number(entry.expectedCod))}
                 </td>
                 <td className="px-4 py-3 text-right text-sm text-espresso/70">
-                  {entry.expectedNetPayout != null ? formatRupee(Number(entry.expectedNetPayout)) : '—'}
+                  {entry.expectedNetPayout != null ? formatRupee(Number(entry.expectedNetPayout)) : '-'}
                 </td>
                 <td className="px-4 py-3">
                   <Badge
@@ -173,16 +188,16 @@ export function LedgerTable({
                       {AUDIT_LABELS[entry.auditStatus] ?? entry.auditStatus}
                     </Badge>
                   ) : (
-                    <span className="text-xs text-espresso/40">—</span>
+                    <span className="text-xs text-espresso/40">-</span>
                   )}
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-xs font-medium text-espresso/60">
-                    {MATCH_LABELS[entry.matchMethod ?? ''] ?? entry.matchMethod ?? '—'}
+                    {MATCH_LABELS[entry.matchMethod ?? ''] ?? entry.matchMethod ?? '-'}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right text-sm text-espresso/70">
-                  {entry.settledAmount != null ? formatRupee(Number(entry.settledAmount)) : '—'}
+                  {entry.settledAmount != null ? formatRupee(Number(entry.settledAmount)) : '-'}
                 </td>
                 <td className="px-4 py-3 text-xs text-espresso/60">
                   {formatDate(entry.settledAt)}
@@ -196,7 +211,7 @@ export function LedgerTable({
                       {CATEGORY_LABELS[entry.discrepancyCategory] ?? entry.discrepancyCategory}
                     </Badge>
                   ) : (
-                    <span className="text-sm text-espresso/40">{entry.discrepancyNote ?? '—'}</span>
+                    <span className="text-sm text-espresso/40">{entry.discrepancyNote ?? '-'}</span>
                   )}
                   {variance !== null && (
                     <span
@@ -224,7 +239,124 @@ export function LedgerTable({
             );
           })}
         </tbody>
-      </table>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function LedgerEntryCard({
+  entry,
+  canDispute,
+  onOpenDispute,
+  onUpdateDispute,
+}: {
+  entry: LedgerEntry;
+  canDispute: boolean;
+  onOpenDispute?: (input: { ledgerEntryId: string; reason: string; disputedAmount: number }) => void;
+  onUpdateDispute?: (input: { disputeId: string; status: string; resolutionNote?: string }) => void;
+}) {
+  const dispute = entry.disputes?.[0];
+  const variance =
+    entry.settledAmount != null && entry.expectedNetPayout != null
+      ? Number(entry.settledAmount) - Number(entry.expectedNetPayout)
+      : null;
+
+  return (
+    <article
+      data-testid="ledger-entry-card"
+      className="min-w-0 rounded-lg border border-espresso/10 bg-pearl p-3"
+    >
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <p className="min-w-0 break-all font-mono text-sm font-semibold text-espresso">
+          {entry.delivery?.orderRef ?? '-'}
+        </p>
+        <span className="break-all font-mono text-xs text-espresso/60">
+          {entry.waybillId ?? '-'}
+        </span>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <Badge
+          variant="outline"
+          className={STATUS_COLORS[entry.status] ?? 'bg-gray-100 text-gray-800'}
+        >
+          {STATUS_LABELS[entry.status] ?? entry.status}
+        </Badge>
+        {entry.auditStatus && (
+          <Badge
+            variant="outline"
+            className={AUDIT_COLORS[entry.auditStatus] ?? 'bg-gray-100 text-gray-800'}
+          >
+            {AUDIT_LABELS[entry.auditStatus] ?? entry.auditStatus}
+          </Badge>
+        )}
+        {entry.discrepancyCategory && (
+          <Badge
+            variant="outline"
+            className={CATEGORY_COLORS[entry.discrepancyCategory] ?? 'bg-gray-100 text-gray-800'}
+          >
+            {CATEGORY_LABELS[entry.discrepancyCategory] ?? entry.discrepancyCategory}
+          </Badge>
+        )}
+      </div>
+
+      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5">
+        <LedgerField label="Expected COD" value={formatRupee(Number(entry.expectedCod))} />
+        <LedgerField
+          label="Net Payout"
+          value={
+            entry.expectedNetPayout != null ? formatRupee(Number(entry.expectedNetPayout)) : '-'
+          }
+        />
+        <LedgerField
+          label="Settled"
+          value={entry.settledAmount != null ? formatRupee(Number(entry.settledAmount)) : '-'}
+        />
+        <LedgerField
+          label="Matched by"
+          value={MATCH_LABELS[entry.matchMethod ?? ''] ?? entry.matchMethod ?? '-'}
+        />
+        <LedgerField label="Settled at" value={formatDate(entry.settledAt)} />
+      </dl>
+
+      {variance !== null && (
+        <p
+          className={`mt-1.5 font-body text-xs font-medium ${
+            variance < -0.01 ? 'text-red-600' : 'text-green-600'
+          }`}
+        >
+          {formatRupee(variance)} vs net
+        </p>
+      )}
+      {entry.discrepancyNote && !entry.discrepancyCategory && (
+        <p className="mt-1.5 break-words font-body text-xs text-espresso/60">
+          {entry.discrepancyNote}
+        </p>
+      )}
+
+      {canDispute && (
+        <div className="mt-2 border-t border-espresso/10 pt-2">
+          <DisputeActions
+            entryId={entry.id}
+            disputeId={dispute?.id ?? null}
+            disputeStatus={dispute?.status ?? null}
+            expectedCod={entry.expectedCod}
+            onOpen={onOpenDispute ?? (() => {})}
+            onUpdate={onUpdateDispute ?? (() => {})}
+          />
+        </div>
+      )}
+    </article>
+  );
+}
+
+function LedgerField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="font-body text-[10px] uppercase tracking-wide text-espresso/45">{label}</dt>
+      <dd className="break-words font-mono text-xs text-espresso">{value}</dd>
     </div>
   );
 }
+

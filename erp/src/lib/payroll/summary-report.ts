@@ -71,7 +71,7 @@ export function generateSummaryReportXlsx(
   const workbook = XLSX.utils.book_new();
 
   const summaryAoa: (string | number)[][] = [
-    [`${meta.companyName} — Monthly Payroll Summary`],
+    [`${meta.companyName} - Monthly Payroll Summary`],
     [`Period: ${meta.periodLabel}`, `Generated: ${meta.generatedAt.toLocaleString('en-GB')}`],
     [],
     ['Item', 'Amount (LKR)'],
@@ -117,7 +117,7 @@ export function generateSummaryReportPdf(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
   doc.setTextColor(59, 47, 47);
-  doc.text(`${meta.companyName} — Monthly Payroll Summary`, 40, 42);
+  doc.text(`${meta.companyName} - Monthly Payroll Summary`, 40, 42);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9.5);
   doc.setTextColor(107, 91, 91);

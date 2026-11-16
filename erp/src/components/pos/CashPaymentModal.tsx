@@ -100,7 +100,7 @@ export function CashPaymentModal({
       }
       onSaleComplete(json.data!);
     } catch {
-      toast.error('Network error — please try again');
+      toast.error('Network error - please try again');
       setIsSubmitting(false);
     }
   };
@@ -188,7 +188,7 @@ export function CashPaymentModal({
               Change
             </p>
             {changeResult.type === 'empty' && (
-              <p className="font-mono text-lg text-mist-ink">—</p>
+              <p className="font-mono text-lg text-mist-ink">-</p>
             )}
             {changeResult.type === 'sufficient' && (
               <p className="font-mono text-lg text-[#2D6A4F]">
@@ -197,7 +197,7 @@ export function CashPaymentModal({
             )}
             {changeResult.type === 'insufficient' && (
               <p className="font-mono text-lg text-[#9B2226]">
-                Insufficient — customer owes more
+                Insufficient - customer owes more
               </p>
             )}
           </div>
@@ -212,7 +212,7 @@ export function CashPaymentModal({
             {isSubmitting ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
-              `Complete Sale — ${formatRupee(totalAmount.toNumber())}`
+              `Complete Sale - ${formatRupee(totalAmount.toNumber())}`
             )}
           </Button>
 

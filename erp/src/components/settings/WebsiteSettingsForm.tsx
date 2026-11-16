@@ -495,7 +495,7 @@ export default function WebsiteSettingsForm() {
           title="Delete all website content"
           description={
             <>
-              This permanently deletes <strong>all saved website content</strong> — branding,
+              This permanently deletes <strong>all saved website content</strong> - branding,
               page copy, navigation, hero slides, ads{config.logoUrl ? ', the logo' : ''} and
               uploaded website images{config.logoUrl ? '' : ''}. The storefront will fall back to
               built-in defaults. <strong>This cannot be undone.</strong>

@@ -34,6 +34,12 @@ layout. The old uppercase role label (`OWNER`) was removed: the role is already
 visible in the account menu/top bar, and dropping it gives the logo enough
 vertical room at the smaller header height.
 
+Long store names are **not truncated**. The name wraps to at most two balanced
+lines (`text-balance leading-tight line-clamp-2`) at the same 20 px display
+size, so "Ruhunu Weda Gedara" reads in full inside the 64 px header rather than
+as "Ruhunu Weda G…". The `title` attribute still exposes the full name for
+unusually long values that need a third line.
+
 ## Active item
 
 The sidebar highlights exactly one item. `resolveActiveNavHref()` in

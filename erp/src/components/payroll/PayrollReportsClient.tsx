@@ -167,7 +167,7 @@ function PayrollReportsContent() {
       if (data.delivered) {
         toast.success('Payslip emailed');
       } else if (data.reason === 'provider-not-configured') {
-        toast.warning('Email provider is not configured — payslip was not sent');
+        toast.warning('Email provider is not configured - payslip was not sent');
       } else {
         toast.error('Email provider rejected the send');
       }
@@ -244,7 +244,7 @@ function PayrollReportsContent() {
           <Card className="border-mist">
             <CardHeader>
               <CardTitle className="font-display text-espresso text-base">
-                Company cost — {run.periodMonth}
+                Company cost - {run.periodMonth}
               </CardTitle>
               <CardDescription>
                 Basic + allowances + OT + commission, employee EPF deduction, and employer EPF/ETF
@@ -271,7 +271,7 @@ function PayrollReportsContent() {
             <ExportCard
               icon={<FileSpreadsheet className="h-5 w-5 text-[#2D6A4F]" />}
               title="Bank salary sheet"
-              description="Employee names, bank accounts and net salary — ready for corporate banking batch upload."
+              description="Employee names, bank accounts and net salary - ready for corporate banking batch upload."
               links={[
                 { href: downloadUrl(run.id, 'bank-sheet', 'xlsx'), label: 'Excel' },
                 { href: downloadUrl(run.id, 'bank-sheet', 'pdf'), label: 'PDF' },
@@ -328,7 +328,7 @@ function PayrollReportsContent() {
                           <p className="text-mist-ink text-xs">{item.staffEmail}</p>
                         </TableCell>
                         <TableCell className="text-xs">
-                          <p>{item.bankName ?? '—'}</p>
+                          <p>{item.bankName ?? '-'}</p>
                           <p className="text-mist-ink font-mono">
                             {item.bankAccountNumber ?? 'No account number'}
                           </p>

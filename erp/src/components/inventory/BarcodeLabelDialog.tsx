@@ -243,7 +243,7 @@ export function BarcodeLabelDialog({
                 </div>
                 {paperSize === 'a4' && (
                   <p className="font-body text-xs text-mist-ink mt-1.5">
-                    A4 mode prints 4 labels per row, 8 rows per page — 32
+                    A4 mode prints 4 labels per row, 8 rows per page - 32
                     labels per sheet.
                   </p>
                 )}

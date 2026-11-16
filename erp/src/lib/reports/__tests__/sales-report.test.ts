@@ -15,7 +15,7 @@ describe('sales report labels and net units', () => {
 
   it('falls back to the product name when there is no variant label', () => {
     expect(
-      salesProductLabel({ productName: 'Brahmi Powder', variantDescription: '—' }),
+      salesProductLabel({ productName: 'Brahmi Powder', variantDescription: '-' }),
     ).toBe('Brahmi Powder');
     expect(salesProductLabel({ productName: 'Brahmi Powder' })).toBe(
       'Brahmi Powder',

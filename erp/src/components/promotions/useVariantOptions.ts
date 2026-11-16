@@ -34,7 +34,7 @@ export function useVariantOptions() {
       return products.flatMap((product) =>
         (product.variants ?? []).map((variant) => ({
           id: variant.id,
-          label: `${product.name} — ${variant.sku}`,
+          label: `${product.name} - ${variant.sku}`,
           retailPrice: variant.retailPrice,
         })),
       );

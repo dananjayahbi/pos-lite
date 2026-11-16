@@ -190,7 +190,7 @@ export default function StaffPage() {
           toast.success('Staff member created with an initial password');
         }
       } else {
-        toast.success('Staff member created (no password set — set one before first sign-in)');
+        toast.success('Staff member created (no password set - set one before first sign-in)');
       }
       setInitialPassword('');
       queryClient.invalidateQueries({ queryKey: ['staff'] });
@@ -520,7 +520,7 @@ export default function StaffPage() {
                     {member.fullName ?? staffDisplayName(member.email)}
                   </TableCell>
                   <TableCell className="font-mono text-sm">
-                    {member.contactNumber ?? '—'}
+                    {member.contactNumber ?? '-'}
                   </TableCell>
                   <TableCell>
                     <RoleBadge role={member.role} />
@@ -536,7 +536,7 @@ export default function StaffPage() {
                   <TableCell className="font-mono text-sm">
                     {member.commissionRate !== null
                       ? `${Number(member.commissionRate).toFixed(2)}%`
-                      : '—'}
+                      : '-'}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="sm" asChild>

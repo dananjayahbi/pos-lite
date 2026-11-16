@@ -98,7 +98,7 @@ function currentMonth(): string {
 }
 
 function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—';
+  if (!iso) return '-';
   return new Date(iso).toLocaleString('en-LK', {
     year: 'numeric',
     month: 'short',
@@ -405,7 +405,7 @@ function ProfileTab({
             <p className="text-espresso font-mono">
               {staffMember.commissionRate !== null
                 ? `${Number(staffMember.commissionRate).toFixed(2)}%`
-                : '—'}
+                : '-'}
             </p>
           </CardContent>
         </Card>
@@ -476,7 +476,7 @@ function ProfileTab({
               </div>
             ) : (
               <p className="text-sand-ink text-sm">
-                Role defaults only — no extra permissions assigned.
+                Role defaults only - no extra permissions assigned.
               </p>
             )}
           </CardContent>
@@ -490,15 +490,15 @@ function ProfileTab({
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <DetailItem label="Full Name" value={staffMember.fullName ?? '—'} />
-              <DetailItem label="NIC" value={staffMember.nic ?? '—'} />
+              <DetailItem label="Full Name" value={staffMember.fullName ?? '-'} />
+              <DetailItem label="NIC" value={staffMember.nic ?? '-'} />
               <DetailItem
                 label="Contact Number"
-                value={staffMember.contactNumber ?? '—'}
+                value={staffMember.contactNumber ?? '-'}
               />
               <DetailItem
                 label="Address"
-                value={staffMember.address ?? '—'}
+                value={staffMember.address ?? '-'}
                 className="sm:col-span-2 lg:col-span-3"
               />
               <DetailItem
@@ -506,7 +506,7 @@ function ProfileTab({
                 value={
                   staffMember.basicSalary !== null
                     ? formatRupee(staffMember.basicSalary)
-                    : '—'
+                    : '-'
                 }
               />
               <DetailItem
@@ -514,7 +514,7 @@ function ProfileTab({
                 value={
                   staffMember.allowances !== null
                     ? formatRupee(staffMember.allowances)
-                    : '—'
+                    : '-'
                 }
               />
               <DetailItem
@@ -524,15 +524,15 @@ function ProfileTab({
                     ? [staffMember.bankName, staffMember.bankBranch]
                         .filter(Boolean)
                         .join(' · ')
-                    : '—'
+                    : '-'
                 }
               />
               <DetailItem
                 label="Account Number"
-                value={staffMember.bankAccountNumber ?? '—'}
+                value={staffMember.bankAccountNumber ?? '-'}
               />
-              <DetailItem label="ETF Number" value={staffMember.etfNumber ?? '—'} />
-              <DetailItem label="EPF Number" value={staffMember.epfNumber ?? '—'} />
+              <DetailItem label="ETF Number" value={staffMember.etfNumber ?? '-'} />
+              <DetailItem label="EPF Number" value={staffMember.epfNumber ?? '-'} />
             </div>
           </CardContent>
         </Card>

@@ -121,7 +121,7 @@ function defaultRange(): { from: string; to: string } {
 }
 
 function money(value: number | null): string {
-  return value === null ? '—' : formatRupee(value);
+  return value === null ? '-' : formatRupee(value);
 }
 
 function signedMoney(value: number): string {
@@ -255,7 +255,7 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
         </CardTitle>
         <p className="text-xs text-espresso/60">
           Upload the courier&apos;s Invoice Details sheet and compare it with our delivered orders.
-          This is a dry run — nothing is settled or changed.
+          This is a dry run - nothing is settled or changed.
         </p>
       </CardHeader>
 
@@ -414,8 +414,8 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
               />
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-mist/60 bg-linen/40 px-3 py-2">
-              <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-col gap-3 rounded-md border border-mist/60 bg-linen/40 px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-wrap items-center gap-3">
                 <label className="flex items-center gap-1.5 font-body text-xs text-espresso">
                   <input
                     type="checkbox"
@@ -429,7 +429,7 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Filter by waybill or order ref"
-                  className="h-9 w-64 rounded-md border border-mist bg-pearl px-2 font-body text-xs text-espresso"
+                  className="h-9 w-full min-w-0 rounded-md border border-mist bg-pearl px-2 font-body text-xs text-espresso sm:w-64"
                   aria-label="Filter comparison rows"
                 />
                 {summary.statementDateFrom && summary.statementDateTo && (
@@ -443,11 +443,20 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                <span className="font-body text-[11px] text-espresso/50">
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 sm:justify-end">
+                <span
+                  className="min-w-0 max-w-full truncate font-body text-[11px] text-espresso/50"
+                  title={`${report.filename} · ${report.range.from} → ${report.range.to}`}
+                >
                   {report.filename} · {report.range.from} → {report.range.to}
                 </span>
-                <Button type="button" variant="outline" size="sm" onClick={handleExport}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExport}
+                  className="shrink-0"
+                >
                   <Download className="mr-1.5 h-3.5 w-3.5" />
                   Export CSV
                 </Button>
@@ -457,7 +466,7 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
             {report.rows.length === 0 ? (
               <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-4 font-body text-sm text-amber-900">
                 <AlertTriangle className="h-5 w-5" />
-                Nothing was compared for this period — see the message above before relying on this
+                Nothing was compared for this period - see the message above before relying on this
                 result.
               </div>
             ) : rows.length === 0 ? (
@@ -471,7 +480,7 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
                 {onlyDifferences && summary.differences === 0 ? (
                   <>
                     <CheckCircle2 className="h-5 w-5" />
-                    No differences in this range — all {summary.matched} matching deliveries tally
+                    No differences in this range - all {summary.matched} matching deliveries tally
                     with the statement.
                   </>
                 ) : (
@@ -482,8 +491,18 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
                 )}
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-md border border-mist/60">
-                <table className="w-full min-w-[980px] border-collapse text-left">
+              <>
+                {/* Narrow and 150%-DPI screens: one record card per row, so no
+                    column is ever cut off behind a horizontal scroller. */}
+                <div className="space-y-2 2xl:hidden" data-testid="comparison-cards">
+                  {rows.map((row) => (
+                    <ComparisonRowCard key={row.id} row={row} meta={STATUS_META[row.status]} />
+                  ))}
+                </div>
+
+                {/* Wide screens can show all ten columns at once. */}
+                <div className="hidden overflow-x-auto rounded-md border border-mist/60 2xl:block">
+                  <table className="w-full min-w-[980px] border-collapse text-left">
                   <thead>
                     <tr className="bg-linen/60 font-body text-[11px] uppercase tracking-wide text-espresso/60">
                       <th className="px-3 py-2">Status</th>
@@ -511,8 +530,8 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
                               {meta.label}
                             </span>
                           </td>
-                          <td className="px-3 py-2 font-mono">{row.waybill ?? '—'}</td>
-                          <td className="px-3 py-2 font-mono">{row.orderRef ?? '—'}</td>
+                          <td className="px-3 py-2 font-mono">{row.waybill ?? '-'}</td>
+                          <td className="px-3 py-2 font-mono">{row.orderRef ?? '-'}</td>
                           <td className="px-3 py-2 text-right font-mono">{money(row.system?.cod ?? null)}</td>
                           <td className="px-3 py-2 text-right font-mono">{money(row.statement?.cod ?? null)}</td>
                           <td
@@ -520,14 +539,14 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
                               row.codDifference && row.codDifference !== 0 ? 'text-[#9B2226]' : ''
                             }`}
                           >
-                            {row.codDifference === null ? '—' : signedMoney(row.codDifference)}
+                            {row.codDifference === null ? '-' : signedMoney(row.codDifference)}
                           </td>
                           <td className="px-3 py-2 text-right font-mono">{money(row.system?.fees ?? null)}</td>
                           <td className="px-3 py-2 text-right font-mono">{money(row.statement?.fees ?? null)}</td>
                           <td className="px-3 py-2">
-                            <span className="text-espresso/70">{row.system?.status ?? '—'}</span>
+                            <span className="text-espresso/70">{row.system?.status ?? '-'}</span>
                             <span className="mx-1 text-espresso/30">/</span>
-                            <span className="text-espresso/70">{row.statement?.status ?? '—'}</span>
+                            <span className="text-espresso/70">{row.statement?.status ?? '-'}</span>
                           </td>
                           <td className="max-w-[360px] px-3 py-2">
                             <span className="flex items-start gap-1.5">
@@ -545,8 +564,9 @@ export function StatementComparison({ onCompare, isComparing }: StatementCompari
                       );
                     })}
                   </tbody>
-                </table>
-              </div>
+                  </table>
+                </div>
+              </>
             )}
           </>
         )}
@@ -567,12 +587,100 @@ function SummaryCard({
   tone?: string | undefined;
 }) {
   return (
-    <div className="rounded-lg border border-mist/60 bg-pearl px-3 py-2">
-      <p className="font-body text-[11px] font-medium uppercase tracking-wide text-espresso/50">
+    <div className="min-w-0 rounded-lg border border-mist/60 bg-pearl px-3 py-2">
+      <p className="break-words font-body text-[11px] font-medium uppercase tracking-wide text-espresso/50">
         {label}
       </p>
-      <p className={`font-display text-xl font-bold ${tone ?? 'text-espresso'}`}>{value}</p>
-      {hint ? <p className="font-body text-[11px] text-espresso/50">{hint}</p> : null}
+      <p className={`break-words font-display text-xl font-bold ${tone ?? 'text-espresso'}`}>
+        {value}
+      </p>
+      {hint ? <p className="break-words font-body text-[11px] text-espresso/50">{hint}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * One comparison record as a card.
+ *
+ * Used below `2xl`, where a ten-column table cannot fit without clipping the
+ * "What is different" column. Every value keeps its own labelled row, so the
+ * explanation is always readable without horizontal scrolling.
+ */
+function ComparisonRowCard({
+  row,
+  meta,
+}: {
+  row: ComparisonRow;
+  meta: { label: string; tone: string };
+}) {
+  return (
+    <article
+      data-testid="comparison-row-card"
+      className="min-w-0 rounded-lg border border-mist/60 bg-pearl p-3"
+    >
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <span
+          className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.tone}`}
+        >
+          {meta.label}
+        </span>
+        <span className="min-w-0 break-all font-mono text-xs text-espresso">
+          {row.waybill ?? '-'}
+        </span>
+        <span className="text-espresso/30" aria-hidden="true">
+          ·
+        </span>
+        <span className="min-w-0 break-all font-mono text-xs text-espresso/70">
+          {row.orderRef ?? '-'}
+        </span>
+      </div>
+
+      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3">
+        <ComparisonField label="System COD" value={money(row.system?.cod ?? null)} />
+        <ComparisonField label="Statement COD" value={money(row.statement?.cod ?? null)} />
+        <ComparisonField
+          label="COD diff"
+          value={row.codDifference === null ? '-' : signedMoney(row.codDifference)}
+          tone={
+            row.codDifference && row.codDifference !== 0 ? 'text-[#9B2226] font-medium' : undefined
+          }
+        />
+        <ComparisonField label="System fee" value={money(row.system?.fees ?? null)} />
+        <ComparisonField label="Sheet fee" value={money(row.statement?.fees ?? null)} />
+        <ComparisonField
+          label="Status found"
+          value={`${row.system?.status ?? '-'} / ${row.statement?.status ?? '-'}`}
+        />
+      </dl>
+
+      <p className="mt-2 flex items-start gap-1.5 border-t border-mist/40 pt-2 font-body text-xs text-espresso">
+        {row.severity !== 'ok' && (
+          <AlertTriangle
+            className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
+              row.severity === 'critical' ? 'text-[#9B2226]' : 'text-amber-600'
+            }`}
+            aria-hidden="true"
+          />
+        )}
+        <span className="min-w-0 break-words">{row.message}</span>
+      </p>
+    </article>
+  );
+}
+
+function ComparisonField({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: string | undefined;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="font-body text-[10px] uppercase tracking-wide text-espresso/45">{label}</dt>
+      <dd className={`break-words font-mono text-xs text-espresso ${tone ?? ''}`}>{value}</dd>
     </div>
   );
 }

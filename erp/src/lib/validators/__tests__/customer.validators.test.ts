@@ -6,7 +6,7 @@ import {
 
 const base = { name: 'Nimal Perera', phone: '0771234567' };
 
-describe('CreateCustomerSchema — contact and address fields', () => {
+describe('CreateCustomerSchema - contact and address fields', () => {
   it('accepts address, city, and a valid secondary contact', () => {
     const parsed = CreateCustomerSchema.parse({
       ...base,
@@ -60,7 +60,7 @@ describe('CreateCustomerSchema — contact and address fields', () => {
   });
 });
 
-describe('UpdateCustomerSchema — partial updates', () => {
+describe('UpdateCustomerSchema - partial updates', () => {
   it('allows updating only the address / city / secondary contact', () => {
     const parsed = UpdateCustomerSchema.parse({
       address: 'New address',

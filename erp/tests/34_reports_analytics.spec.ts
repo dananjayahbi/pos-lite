@@ -795,11 +795,18 @@ test.describe('§9 Revenue Trend chart data', () => {
     );
     await expect(page.getByText('Revenue & Returns Over Time')).toBeVisible({ timeout: 30_000 });
     // At least one plotted data point must exist, even for a single bucket.
+    // Scope to the chart: the sidebar also renders SVG circles, so a page-wide
+    // `svg circle` count passes before the report query has resolved.
+    const chart = page.getByTestId('revenue-trend-chart');
+    await expect(chart).toBeVisible({ timeout: 30_000 });
     await expect
-      .poll(async () => page.locator('svg circle').count(), { timeout: 20_000 })
+      .poll(async () => chart.locator('svg circle').count(), { timeout: 20_000 })
       .toBeGreaterThan(0);
-    // Peak-hours bars must have a non-zero rendered height.
-    const heights = await page.locator('div[title*="sales)"]').evaluateAll((els) =>
+    // Peak-hours bars render only after the query resolves; wait for them and
+    // then assert a non-zero rendered height.
+    const bars = page.locator('div[title*="sales)"]');
+    await expect.poll(async () => bars.count(), { timeout: 20_000 }).toBeGreaterThan(0);
+    const heights = await bars.evaluateAll((els) =>
       els.map((el) => (el as HTMLElement).getBoundingClientRect().height),
     );
     expect(heights.length).toBeGreaterThan(0);

@@ -47,7 +47,7 @@ export async function generateMetadata({
     if (!tenant) return { title: 'Not Found' };
 
     const siteName = configResponse?.config?.siteName || tenant.name;
-    const title = `Shop — ${siteName}`;
+    const title = `Shop - ${siteName}`;
     const description = `Browse all products at ${siteName}.`;
 
     return {
