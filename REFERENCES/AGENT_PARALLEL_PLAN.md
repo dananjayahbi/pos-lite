@@ -81,6 +81,41 @@ For each agent commit:
   guard already exists (added with #321) - verify it and add focused regression
   coverage/hardening rather than duplicating.
 
+## Batch progress log
+
+- Batch 1 submitted + merged: #37, #38, #52, #62, #63 (test-only regression),
+  #64 (cart stock cap, done serially by main).
+- Batch 2 submitted + merged: #75 (sale detail breakdown), #76 (zero-line sales
+  invariant + repair script), #95 (return authorizer), #108 (historical shift
+  closure recompute script).
+- Batch 3 in flight (agents): returns specialist -> #96, #97, #98; appointments
+  specialist -> #120, #121; shifts specialist -> #109.
+- Current main checkpoint SHA after batch 2: see `git log --oneline -1`.
+- Worktrees are reset with `git -C <wt> reset --hard argus_qa` between batches;
+  their old commits are already merged, so this is safe.
+- Every agent task must call `log_task_progress` before `submit_for_review`
+  (Atlas rejects submissions without at least one progress entry).
+- The patch server (`python -m http.server 8765`) can die; restart it when a
+  submission needs a patch fetch.
+- When claim_next_task is called repeatedly, the lease limit allows at least 6
+  concurrent claims; claim a task before assigning it to an agent so the board
+  reflects ownership.
+
+## Next-batch candidates and ownership notes
+
+- Returns tasks are plentiful (#96/#97/#98 done in batch 3); keep the returns
+  specialist on that module.
+- Appointments tasks (#120/#121) + any appointment follow-ups -> appointments
+  specialist.
+- Shift tasks (#109 and successors) -> shifts specialist.
+- Schema/migration tasks stay with the main agent: agents must never edit
+  `prisma/schema.prisma` or migrations. If a task truly needs one, the main
+  agent adds the schema/migration, commits it, resets the agent worktree, and
+  then hands over the code work.
+- Main agent handles delivery/inventory/reports/website/staff tasks that no
+  agent owns, or serial cleanups.
+
+
 ## Guardrails
 
 - Enforce security/money rules server-side, not only in UI.
