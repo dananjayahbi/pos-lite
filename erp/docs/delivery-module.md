@@ -105,6 +105,21 @@ Tracking effects:
   requires a full (9+ digit) phone number, preventing timeline-note leaks and
   short-prefix enumeration.
 
+### Manual tracking refresh
+
+The delivery detail page's **Track** button calls
+`GET /api/store/shipments/:id/track`. That pipeline advances `Delivery.status`
+and writes `DeliveryEvent` rows, so a successful refresh invalidates the
+delivery detail query (badge + timeline) and the delivery list as well as
+caching the tracking payload. The button's busy state follows the mutation
+(`isPending`), not the initial tracking query, so it always returns to “Track”;
+failures raise a toast and are also shown inline under the button.
+
+The Shipment card displays the **courier shipment status** and the **delivery
+status** separately. They are different state machines, so the card explains a
+divergence (for example shipment `SUBMITTED` while the delivery is `DELIVERED`)
+instead of showing one status under a generic label.
+
 ## Cancellation and recovery
 
 - **Standard cancel** (`POST /api/store/deliveries/:id/cancel`) is only valid
