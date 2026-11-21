@@ -4,6 +4,14 @@ import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tansta
 import { toast } from 'sonner';
 import type { DeliveryStatus } from '@/generated/prisma/client';
 import type { BulkResultItem } from '@/lib/validators/order.validators';
+import { bulkResultToast } from '@/components/orders/bulkResult';
+
+function toastBulkResult(results: BulkResultItem[], action: string) {
+  const { level, message } = bulkResultToast(results, action);
+  if (level === 'success') toast.success(message);
+  else if (level === 'warning') toast.warning(message);
+  else toast.error(message);
+}
 
 export const ORDERS_PAGE_SIZE = 50;
 
@@ -68,19 +76,8 @@ export function useBulkStatusChange() {
     onSuccess: (results) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['deliveries'] });
-      const ok = results.filter((r) => r.ok).length;
-      const rejected = results.filter((r) => !r.ok);
-      if (rejected.length === 0) {
-        toast.success(`Updated ${ok} order(s)`);
-      } else if (ok === 0) {
-        toast.error(rejected[0]?.message ?? 'No orders were updated');
-      } else {
-        // ARGUS #263: a mixed selection reports the rejected rows instead of
-        // pretending the whole batch succeeded.
-        toast.warning(
-          `Updated ${ok} order(s); ${rejected.length} rejected: ${rejected[0]?.message ?? 'see details'}`,
-        );
-      }
+      // ARGUS #265: report per-id rejections, not just the OK count.
+      toastBulkResult(results, 'Updated');
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -105,8 +102,9 @@ export function useBulkCreateDelivery() {
     onSuccess: (results) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['deliveries'] });
-      const ok = results.filter((r) => r.ok).length;
-      toast.success(`Prepared ${ok} order(s) for delivery`);
+      // ARGUS #265: prepare failures (already dispatched, wrong status) used to
+      // disappear behind a success toast that only counted the OK rows.
+      toastBulkResult(results, 'Prepared for delivery');
     },
     onError: (error: Error) => {
       toast.error(error.message);

@@ -28,6 +28,7 @@ import { OrdersTable } from '@/components/orders/OrdersTable';
 import { BulkActionBar } from '@/components/orders/BulkActionBar';
 import { BulkStatusDialog } from '@/components/orders/BulkStatusDialog';
 import { paginationSummary } from '@/components/orders/pagination';
+import { retainFailedSelection, summarizeBulkResults } from '@/components/orders/bulkResult';
 import {
   pruneSelection,
   toggleAllVisible,
@@ -137,9 +138,12 @@ export function OrdersPageClient() {
     bulkStatus.mutate(
       { deliveryIds: ids, status: newStatus },
       {
-        onSuccess: () => {
+        onSuccess: (results) => {
+          const summary = summarizeBulkResults(results);
+          // ARGUS #265: keep the dialog and the failed rows when nothing moved.
+          if (summary.okCount === 0) return;
+          setSelectedIds((prev) => retainFailedSelection(prev, results));
           setStatusDialogOpen(false);
-          setSelectedIds(new Set());
         },
       },
     );
@@ -148,7 +152,12 @@ export function OrdersPageClient() {
   const handleCreateDelivery = () => {
     const ids = selectedVisibleIds;
     bulkCreate.mutate(ids, {
-      onSuccess: () => setSelectedIds(new Set()),
+      onSuccess: (results) => {
+        // Failed rows stay selected so they can be retried; never clear the
+        // selection when every row was rejected.
+        if (summarizeBulkResults(results).okCount === 0) return;
+        setSelectedIds((prev) => retainFailedSelection(prev, results));
+      },
     });
   };
 
