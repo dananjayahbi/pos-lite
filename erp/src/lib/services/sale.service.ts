@@ -810,7 +810,10 @@ export async function getSaleById(tenantId: string, saleId: string) {
       lines: {
         include: {
           variant: { include: { product: true } },
-          returnLines: { where: { return: { status: 'COMPLETED' } }, select: { quantity: true } },
+          returnLines: {
+            where: { return: { status: 'COMPLETED' } },
+            select: { quantity: true, lineRefundAmount: true, lineTaxAmount: true },
+          },
         },
       },
       cashier: { select: { id: true, email: true } },
@@ -832,6 +835,16 @@ export async function getSaleById(tenantId: string, saleId: string) {
     lines: sale.lines.map((line) => ({
       ...line,
       returnedQuantity: line.returnLines.reduce((sum, rl) => sum + rl.quantity, 0),
+      // Amounts already refunded, so the return preview also works from the
+      // remaining balance on a repeat partial return (ARGUS #104).
+      returnedRefundAmount: line.returnLines.reduce(
+        (sum, rl) => sum + Number(rl.lineRefundAmount.toString()),
+        0,
+      ),
+      returnedTaxAmount: line.returnLines.reduce(
+        (sum, rl) => sum + Number(rl.lineTaxAmount.toString()),
+        0,
+      ),
     })),
   };
 }

@@ -261,3 +261,93 @@ describe('computeReturnRefund - cart-level discounts', () => {
     expect(result.totalRefund.toNumber()).toBe(saleTotal.toNumber());
   });
 });
+
+/**
+ * ARGUS #104: three separate 1-of-3 returns on a Rs. 100 line must refund the
+ * line exactly. Recomputing `1/3 × 100` each time refunded 33.33 × 3 = 99.99.
+ */
+describe('computeReturnRefund - repeat partial returns', () => {
+  const line = { id: 'line-1', quantity: 3, lineTotalAfterDiscount: dec(100), lineTax: dec(0) };
+  const sale = { lines: [line], taxAmount: dec(0) };
+
+  it('sums three 1-of-3 returns to the line total without a residual', () => {
+    const first = computeReturnRefund(sale, [{ saleLineId: 'line-1', quantity: 1 }]);
+    expect(first.totalRefund.toNumber()).toBe(33.33);
+
+    const second = computeReturnRefund(
+      {
+        lines: [
+          {
+            ...line,
+            returnedQuantity: 1,
+            returnedRefundAmount: first.totalRefund,
+            returnedTaxAmount: first.totalTaxRefund,
+          },
+        ],
+        taxAmount: dec(0),
+      },
+      [{ saleLineId: 'line-1', quantity: 1 }],
+    );
+    expect(second.totalRefund.toNumber()).toBe(33.34);
+
+    const third = computeReturnRefund(
+      {
+        lines: [
+          {
+            ...line,
+            returnedQuantity: 2,
+            returnedRefundAmount: first.totalRefund.plus(second.totalRefund),
+            returnedTaxAmount: first.totalTaxRefund.plus(second.totalTaxRefund),
+          },
+        ],
+        taxAmount: dec(0),
+      },
+      [{ saleLineId: 'line-1', quantity: 1 }],
+    );
+
+    expect(third.totalRefund.toNumber()).toBe(33.33);
+    expect(
+      first.totalRefund.plus(second.totalRefund).plus(third.totalRefund).toNumber(),
+    ).toBe(100);
+  });
+
+  it('refunds the whole remaining balance on the final return', () => {
+    const first = computeReturnRefund(sale, [{ saleLineId: 'line-1', quantity: 2 }]);
+    const final = computeReturnRefund(
+      {
+        lines: [
+          {
+            ...line,
+            returnedQuantity: 2,
+            returnedRefundAmount: first.totalRefund,
+            returnedTaxAmount: first.totalTaxRefund,
+          },
+        ],
+        taxAmount: dec(0),
+      },
+      [{ saleLineId: 'line-1', quantity: 1 }],
+    );
+
+    expect(first.totalRefund.plus(final.totalRefund).toNumber()).toBe(100);
+  });
+
+  it('never refunds more than the line when asked beyond the remaining quantity', () => {
+    const result = computeReturnRefund(
+      {
+        lines: [
+          {
+            ...line,
+            returnedQuantity: 2,
+            returnedRefundAmount: dec('66.67'),
+            returnedTaxAmount: dec(0),
+          },
+        ],
+        taxAmount: dec(0),
+      },
+      [{ saleLineId: 'line-1', quantity: 5 }],
+    );
+
+    expect(result.lines[0]!.quantity).toBe(1);
+    expect(result.totalRefund.toNumber()).toBe(33.33);
+  });
+});

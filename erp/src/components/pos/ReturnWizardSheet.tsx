@@ -218,6 +218,9 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
         quantity: number;
         lineTotalAfterDiscount: number | string;
         lineTax?: number | string | null;
+        returnedQuantity?: number;
+        returnedRefundAmount?: number | string | null;
+        returnedTaxAmount?: number | string | null;
       }>;
     };
     return computeReturnRefund(

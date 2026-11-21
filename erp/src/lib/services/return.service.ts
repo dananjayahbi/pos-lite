@@ -43,6 +43,46 @@ async function getRemainingReturnableQty(
   return result._sum.quantity ?? 0;
 }
 
+interface PriorReturnTotals {
+  quantity: number;
+  refundAmount: Decimal;
+  taxAmount: Decimal;
+}
+
+/**
+ * Quantities and amounts already refunded per sale line (ARGUS #104).
+ *
+ * The refund for a repeat partial return is computed from this remaining
+ * balance, so a final unit return takes the rounding residual instead of
+ * leaving one paisa on every rounded line.
+ */
+async function getPriorReturnTotals(
+  tx: TxClient,
+  saleLineIds: readonly string[],
+): Promise<Map<string, PriorReturnTotals>> {
+  if (saleLineIds.length === 0) return new Map();
+
+  const rows = await tx.returnLine.groupBy({
+    by: ['originalSaleLineId'],
+    where: {
+      originalSaleLineId: { in: [...saleLineIds] },
+      return: { status: ReturnStatus.COMPLETED },
+    },
+    _sum: { quantity: true, lineRefundAmount: true, lineTaxAmount: true },
+  });
+
+  return new Map(
+    rows.map((row) => [
+      row.originalSaleLineId,
+      {
+        quantity: row._sum.quantity ?? 0,
+        refundAmount: new Decimal(row._sum.lineRefundAmount?.toString() ?? '0'),
+        taxAmount: new Decimal(row._sum.lineTaxAmount?.toString() ?? '0'),
+      },
+    ]),
+  );
+}
+
 // ── Validation ───────────────────────────────────────────────────────────────
 
 interface ReturnLineInput {
@@ -167,10 +207,24 @@ export function computeLineRefundAmounts(
     }>;
   },
   requestLines: ReturnLineInput[],
+  priorByLine: ReadonlyMap<
+    string,
+    { quantity: number; refundAmount: Decimal; taxAmount: Decimal }
+  > = new Map(),
 ): { lines: ComputedReturnLine[]; totalRefund: Decimal; totalTaxRefund: Decimal } {
   const refund = computeReturnRefund(
     {
-      lines: sale.lines,
+      lines: sale.lines.map((line) => {
+        const prior = priorByLine.get(line.id);
+        return prior
+          ? {
+              ...line,
+              returnedQuantity: prior.quantity,
+              returnedRefundAmount: prior.refundAmount,
+              returnedTaxAmount: prior.taxAmount,
+            }
+          : line;
+      }),
       taxAmount: sale.taxAmount ?? 0,
       discountAmount: sale.discountAmount ?? 0,
     },
@@ -245,11 +299,15 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
     }
 
     // 2. Compute refunds (goods + the tax actually collected)
+    const priorReturns = await getPriorReturnTotals(
+      tx,
+      input.lines.map((line) => line.saleLineId),
+    );
     const {
       lines: computedLines,
       totalRefund,
       totalTaxRefund,
-    } = computeLineRefundAmounts(sale, input.lines);
+    } = computeLineRefundAmounts(sale, input.lines, priorReturns);
 
     // 3. Create Return record
     // Store credit is held against a customer balance (the POS reads

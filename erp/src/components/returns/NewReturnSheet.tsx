@@ -35,6 +35,9 @@ interface SaleLine {
   /** Tax charged on this line at sale time; 0/absent on legacy rows. */
   lineTax?: string | number | null;
   returnedQuantity: number;
+  /** Refunded so far on completed returns (ARGUS #104). */
+  returnedRefundAmount?: number | string | null;
+  returnedTaxAmount?: number | string | null;
 }
 
 interface SaleDetail {

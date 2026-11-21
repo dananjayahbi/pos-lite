@@ -10,6 +10,16 @@ export interface RefundSaleLine {
   lineTotalAfterDiscount: Decimalish;
   /** Tax charged on the line at sale time (0 for exempt / legacy rows). */
   lineTax?: Decimalish | null;
+  /**
+   * Units already returned on completed returns (ARGUS #104). The remaining
+   * refund is derived from the remaining balance, not from the original line
+   * total, so repeated partial returns cannot leave a rounding residual.
+   */
+  returnedQuantity?: number;
+  /** Goods + tax already refunded for this line (optional on legacy callers). */
+  returnedRefundAmount?: Decimalish | null;
+  /** Tax already refunded for this line (optional on legacy callers). */
+  returnedTaxAmount?: Decimalish | null;
 }
 
 export interface RefundSaleForPricing {
@@ -118,6 +128,12 @@ function allocateLineTax(
  * customer actually paid — never the list line value. A fully discounted
  * (zero-value) sale therefore refunds zero (ARGUS #91).
  *
+ * A line may carry its already-returned quantity and refunded amounts. The
+ * refund is then a share of the **remaining** balance, and the final unit
+ * return takes exactly that remainder. Three separate 1-of-3 returns on a
+ * Rs. 100 line therefore refund 33.33 + 33.34 + 33.33 = 100.00 instead of
+ * leaving a 0.01 residual (ARGUS #104).
+ *
  * Delivery charges are intentionally excluded: they cover a service already
  * rendered for the original sale and are not part of the returned goods.
  */
@@ -145,13 +161,45 @@ export function computeReturnRefund(
     const saleLine = sale.lines.find((line) => line.id === request.saleLineId);
     if (!saleLine || saleLine.quantity <= 0 || request.quantity <= 0) continue;
 
-    const ratio = new Decimal(request.quantity).div(saleLine.quantity);
-    const goodsRefund = ratio
-      .mul(paidBaseByLine.get(saleLine.id) ?? new Decimal(0))
-      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-    const taxRefund = ratio
-      .mul(taxByLine.get(saleLine.id) ?? new Decimal(0))
-      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const originalQty = saleLine.quantity;
+    const priorQty = Decimal.min(
+      Decimal.max(toDecimal(saleLine.returnedQuantity), 0),
+      originalQty,
+    );
+    const remainingQty = originalQty - priorQty.toNumber();
+    if (remainingQty <= 0) continue;
+
+    const quantity = Math.min(request.quantity, remainingQty);
+    const lineTax = taxByLine.get(saleLine.id) ?? new Decimal(0);
+    const lineTotal = (paidBaseByLine.get(saleLine.id) ?? new Decimal(0)).plus(lineTax);
+
+    // Unknown prior amounts (legacy callers) are estimated pro-rata from the
+    // already-returned quantity; an explicit zero means "nothing refunded yet".
+    const priorRefund =
+      saleLine.returnedRefundAmount === undefined || saleLine.returnedRefundAmount === null
+        ? priorQty.gt(0)
+          ? lineTotal.mul(priorQty).div(originalQty).toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+          : new Decimal(0)
+        : toDecimal(saleLine.returnedRefundAmount);
+    const priorTax =
+      saleLine.returnedTaxAmount === undefined || saleLine.returnedTaxAmount === null
+        ? priorQty.gt(0)
+          ? lineTax.mul(priorQty).div(originalQty).toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+          : new Decimal(0)
+        : toDecimal(saleLine.returnedTaxAmount);
+
+    const remainingRefund = Decimal.max(lineTotal.minus(priorRefund), 0);
+    const remainingTax = Decimal.max(lineTax.minus(priorTax), 0);
+    const remainingGoods = Decimal.max(remainingRefund.minus(remainingTax), 0);
+
+    const isFinal = quantity >= remainingQty;
+    const ratio = isFinal ? new Decimal(1) : new Decimal(quantity).div(remainingQty);
+    const goodsRefund = isFinal
+      ? remainingGoods
+      : remainingGoods.mul(ratio).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const taxRefund = isFinal
+      ? remainingTax
+      : remainingTax.mul(ratio).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     const lineRefundAmount = goodsRefund.plus(taxRefund);
 
     totalRefund = totalRefund.plus(lineRefundAmount);
@@ -159,7 +207,7 @@ export function computeReturnRefund(
 
     lines.push({
       saleLineId: saleLine.id,
-      quantity: request.quantity,
+      quantity,
       goodsRefund,
       taxRefund,
       lineRefundAmount,
