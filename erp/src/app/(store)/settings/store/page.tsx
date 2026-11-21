@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { auth } from '@/lib/auth';
 import { denialRouteFor } from '@/lib/auth/page-guards';
 import { hasPermission } from '@/lib/utils/permissions';
@@ -32,6 +33,14 @@ export default async function StoreProfileSettingsPage() {
     select: { name: true, logoUrl: true, settings: true },
   });
 
+  // The storefront has its own brand (WebsiteConfig). It is deliberately kept
+  // separate from the ERP store profile used on receipts/invoices; surface the
+  // difference and link to the website settings (ARGUS #487).
+  const website = await prisma.websiteConfig.findUnique({
+    where: { tenantId: session.user.tenantId },
+    select: { siteName: true, logoUrl: true },
+  });
+
   const settings =
     typeof tenant.settings === 'object' && tenant.settings !== null
       ? (tenant.settings as Record<string, unknown>)
@@ -55,6 +64,20 @@ export default async function StoreProfileSettingsPage() {
         </p>
       </div>
       <StoreProfileSettingsForm initialValues={initialValues} />
+
+      <div className="rounded-lg border border-sand bg-linen/60 p-4 text-sm text-sand-ink">
+        <p className="font-medium text-espresso">Storefront brand is managed separately</p>
+        <p className="mt-1">
+          This profile supplies the name, logo and address on receipts, invoices and internal
+          documents{website?.siteName ? ` (${website.siteName})` : ''}. The public storefront
+          {website?.siteName ? ` shows "${website.siteName}"` : ' uses its own website settings'}
+          {website?.logoUrl || tenant.logoUrl ? ' with its own logo' : ''}; editing this page does
+          not change it.
+        </p>
+        <Link href="/settings/website" className="mt-2 inline-block underline hover:text-terracotta">
+          Manage the website brand
+        </Link>
+      </div>
     </div>
   );
 }

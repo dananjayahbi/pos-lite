@@ -47,3 +47,13 @@ never included. If the audit insert fails, the settings change rolls back.
 
 Pure helpers/tests: `src/lib/settings/settingsAudit.core.ts` and
 `src/lib/settings/__tests__/settingsAudit.core.test.ts`.
+
+## Storefront vs store profile (ARGUS #487)
+
+The ERP store profile (tenant name/logo/address) supplies receipts, invoices and
+internal documents; the public storefront uses its own `WebsiteConfig` brand.
+They are deliberately separate, but the profile page did not say so. It now
+shows a notice naming the website brand (when configured) and links to
+`/settings/website`, so an operator editing the profile knows it will not change
+the storefront and can jump to the right place. Editing the profile still does
+not rewrite the website brand.
