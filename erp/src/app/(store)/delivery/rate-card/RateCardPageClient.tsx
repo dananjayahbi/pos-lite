@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
+import { AlertTriangle } from 'lucide-react';
 import { useRateCard } from '@/hooks/delivery';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
@@ -16,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RateMatrixTable } from '@/components/delivery/rate-card/RateMatrixTable';
+import { rateCardLoadState } from '@/components/delivery/rate-card/rateCardLoadState';
 
 interface RateEntry {
   id?: string;
@@ -42,12 +44,66 @@ function toNumber(value: number | string | null | undefined): number | undefined
   return Number.isNaN(num) ? undefined : num;
 }
 
+/**
+ * Form defaults for an existing card. Undefined numerics are omitted rather
+ * than written as `undefined` (exactOptionalPropertyTypes) — the required-field
+ * validator then insists the operator types a value before saving.
+ */
+function rateCardFormDefaults(card: RateCardData | null) {
+  const baseRate = toNumber(card?.baseRate);
+  const extraKgRate = toNumber(card?.extraKgRate);
+  const freeBaseWeightKg = toNumber(card?.freeBaseWeightKg);
+  const coddCommissionPct = toNumber(card?.coddCommissionPct);
+  const vatRatePct = toNumber(card?.vatRatePct);
+
+  return {
+    name: card?.name ?? 'Trans Express Standard',
+    ...(baseRate !== undefined ? { baseRate } : {}),
+    ...(extraKgRate !== undefined ? { extraKgRate } : {}),
+    ...(freeBaseWeightKg !== undefined ? { freeBaseWeightKg } : {}),
+    ...(coddCommissionPct !== undefined ? { coddCommissionPct } : {}),
+    ...(vatRatePct !== undefined ? { vatRatePct } : {}),
+  };
+}
+
+/**
+ * ARGUS #289: the base/extra/free fields are required and receive real
+ * numbers (`valueAsNumber`), so clearing an input produces NaN and fails
+ * validation instead of silently coercing to 0. COD/VAT stay optional but an
+ * emptied input maps to `undefined` (omitted from the PUT), never 0.
+ */
+const RateCardFormSchema = UpsertRateCardSchema.extend({
+  name: z.string().trim().min(1, 'Rate card name is required').max(120),
+  baseRate: z.number({ error: 'Base rate is required' }).nonnegative('Base rate cannot be negative'),
+  extraKgRate: z
+    .number({ error: 'Extra kg rate is required' })
+    .nonnegative('Extra kg rate cannot be negative'),
+  freeBaseWeightKg: z
+    .number({ error: 'Free base weight is required' })
+    .nonnegative('Free base weight cannot be negative'),
+  coddCommissionPct: z
+    .union([
+      z.number({ error: 'Enter a valid COD commission' }).nonnegative('Cannot be negative'),
+      z.nan().transform(() => undefined),
+    ])
+    .optional(),
+  vatRatePct: z
+    .union([
+      z.number({ error: 'Enter a valid VAT rate' }).nonnegative('Cannot be negative'),
+      z.nan().transform(() => undefined),
+    ])
+    .optional(),
+});
+
 export function RateCardPageClient() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const canManage = hasPermission(PERMISSIONS.DELIVERY.manageRateCard);
-  const { data, isLoading, save, saveEntries } = useRateCard();
+  const { data, isLoading, isError, error, isFetching, refetch, save, saveEntries } =
+    useRateCard();
 
   const card = useMemo(() => (data as RateCardData | undefined) ?? null, [data]);
+  const loadState = rateCardLoadState({ isLoading, isError, data: data ?? null });
+  const isCreate = loadState === 'not-found';
   const initialEntries = card?.entries ?? [];
   const hydrated = useRef(false);
 
@@ -56,47 +112,33 @@ export function RateCardPageClient() {
   // Hydrate the zone matrix once from the loaded rate card.
   useEffect(() => {
     if (hydrated.current) return;
-    if (!data) return;
+    if (loadState !== 'ready' || !card) return;
     hydrated.current = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setEntries((card as RateCardData)?.entries ?? []);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);
+    setEntries(card.entries ?? []);
+  }, [loadState, card]);
 
   const {
     register,
     handleSubmit,
     reset,
     formState: { errors },
-  } = useForm<z.input<typeof UpsertRateCardSchema>, unknown, z.output<typeof UpsertRateCardSchema>>({
-    resolver: standardSchemaResolver(UpsertRateCardSchema),
-    defaultValues: {
-      name: card?.name ?? 'Trans Express Standard',
-      baseRate: toNumber(card?.baseRate),
-      extraKgRate: toNumber(card?.extraKgRate),
-      freeBaseWeightKg: toNumber(card?.freeBaseWeightKg),
-      coddCommissionPct: toNumber(card?.coddCommissionPct),
-      vatRatePct: toNumber(card?.vatRatePct),
-    },
+  } = useForm<
+    z.input<typeof RateCardFormSchema>,
+    unknown,
+    z.output<typeof RateCardFormSchema>
+  >({
+    resolver: standardSchemaResolver(RateCardFormSchema),
+    defaultValues: rateCardFormDefaults(card),
   });
 
   // M25-02 (BUG-63): `defaultValues` are computed once from an initially-null
-  // card. A synchronous double-click could submit that never-hydrated form
-  // (empty numeric inputs → z.coerce.number() → 0) and wipe the card. Re-seed
-  // the form when the real data arrives so the first submit always carries the
-  // loaded values.
+  // card. Re-seed only after a real card has loaded — a failed GET must never
+  // overwrite live values (ARGUS #289).
   useEffect(() => {
-    if (!card) return;
-    reset({
-      name: card.name ?? 'Trans Express Standard',
-      baseRate: toNumber(card.baseRate),
-      extraKgRate: toNumber(card.extraKgRate),
-      freeBaseWeightKg: toNumber(card.freeBaseWeightKg),
-      coddCommissionPct: toNumber(card.coddCommissionPct),
-      vatRatePct: toNumber(card.vatRatePct),
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);
+    if (loadState !== 'ready' || !card) return;
+    reset(rateCardFormDefaults(card));
+  }, [loadState, card, reset]);
 
   // M25-02: a synchronous latch (a ref, not React state) blocks the second
   // click of a double-click before the mutation's isPending state can react.
@@ -122,17 +164,20 @@ export function RateCardPageClient() {
     );
   }
 
-  const onSave = (formData: z.output<typeof UpsertRateCardSchema>) => {
+  const onSave = (formData: z.output<typeof RateCardFormSchema>) => {
+    // ARGUS #289: never submit from the error/loading states.
+    if (loadState !== 'ready' && loadState !== 'not-found') return;
     // M25-02: ignore a second submit that lands while the latch is held.
     if (submittingRef.current) return;
     submittingRef.current = true;
     const body: Record<string, unknown> = { ...formData };
-    // The API creates the first card when none exists, so a null `card` is a
-    // valid starting state (the form is only rendered after the GET resolves).
+    // The API creates the first card when none exists; that is only valid in
+    // the explicit not-found state (loadState === 'not-found').
     save.mutate(body, { onSettled: () => { submittingRef.current = false; } });
   };
 
   const onSaveEntries = () => {
+    if (loadState !== 'ready') return;
     if (submittingRef.current) return;
     submittingRef.current = true;
     saveEntries.mutate(entries, { onSettled: () => { submittingRef.current = false; } });
@@ -151,19 +196,59 @@ export function RateCardPageClient() {
         <CardHeader>
           <CardTitle className="font-display text-lg">Base Rate</CardTitle>
           <CardDescription>
-            Applied when no zone override matches. All amounts are in Rupees (Rs).
+            {isCreate
+              ? 'No rate card is configured yet. Fill in every required field to create the first one.'
+              : 'Applied when no zone override matches. All amounts are in Rupees (Rs).'}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {loadState === 'loading' ? (
             <div className="grid gap-4 sm:grid-cols-2">
               {Array.from({ length: 6 }).map((_, index) => (
                 <Skeleton key={index} className="h-16 w-full" />
               ))}
             </div>
+          ) : loadState === 'error' ? (
+            <div
+              role="alert"
+              className="flex flex-col gap-4 rounded-lg border border-terracotta/30 bg-terracotta/5 p-4 sm:flex-row sm:items-start sm:justify-between"
+            >
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-terracotta" />
+                <div>
+                  <p className="font-body text-sm font-medium text-espresso">
+                    Could not load the rate card
+                  </p>
+                  <p className="mt-1 font-body text-sm text-espresso/70">
+                    {error instanceof Error
+                      ? error.message
+                      : 'The current rates could not be fetched.'}
+                  </p>
+                  <p className="mt-1 font-body text-xs text-espresso/50">
+                    Saving is disabled until the real card loads, so a failed request cannot
+                    overwrite your live pricing.
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void refetch()}
+                disabled={isFetching}
+                className="shrink-0"
+              >
+                {isFetching ? 'Retrying…' : 'Retry'}
+              </Button>
+            </div>
           ) : (
             /* eslint-disable-next-line react-hooks/refs */
             <form onSubmit={handleSubmit(onSave)} className="space-y-4">
+              {isCreate && (
+                <div className="rounded-lg border border-sand bg-linen/60 px-3 py-2 font-body text-sm text-espresso/70">
+                  This will create the tenant&apos;s first delivery rate card. Numeric fields are
+                  required — an empty field will not be saved as 0.
+                </div>
+              )}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="rate-name">Name</Label>
@@ -179,7 +264,7 @@ export function RateCardPageClient() {
                     type="number"
                     step="any"
                     min={0}
-                    {...register('baseRate')}
+                    {...register('baseRate', { valueAsNumber: true })}
                     placeholder="0.00"
                   />
                   {errors.baseRate && (
@@ -193,7 +278,7 @@ export function RateCardPageClient() {
                     type="number"
                     step="any"
                     min={0}
-                    {...register('extraKgRate')}
+                    {...register('extraKgRate', { valueAsNumber: true })}
                     placeholder="0.00"
                   />
                   {errors.extraKgRate && (
@@ -207,7 +292,7 @@ export function RateCardPageClient() {
                     type="number"
                     step="any"
                     min={0}
-                    {...register('freeBaseWeightKg')}
+                    {...register('freeBaseWeightKg', { valueAsNumber: true })}
                     placeholder="1"
                   />
                   {errors.freeBaseWeightKg && (
@@ -221,7 +306,7 @@ export function RateCardPageClient() {
                     type="number"
                     step="any"
                     min={0}
-                    {...register('coddCommissionPct')}
+                    {...register('coddCommissionPct', { valueAsNumber: true })}
                     placeholder="0.00"
                   />
                   {errors.coddCommissionPct && (
@@ -235,7 +320,7 @@ export function RateCardPageClient() {
                     type="number"
                     step="any"
                     min={0}
-                    {...register('vatRatePct')}
+                    {...register('vatRatePct', { valueAsNumber: true })}
                     placeholder="0.00"
                   />
                   {errors.vatRatePct && (
@@ -245,8 +330,11 @@ export function RateCardPageClient() {
               </div>
 
               <div className="flex justify-end">
-                <Button type="submit" disabled={save.isPending}>
-                  {save.isPending ? 'Saving...' : 'Save Rate Card'}
+                <Button
+                  type="submit"
+                  disabled={save.isPending}
+                >
+                  {save.isPending ? 'Saving...' : isCreate ? 'Create Rate Card' : 'Save Rate Card'}
                 </Button>
               </div>
             </form>
@@ -254,22 +342,24 @@ export function RateCardPageClient() {
         </CardContent>
       </Card>
 
-      <Card className="border-mist">
-        <CardHeader>
-          <CardTitle className="font-display text-lg">Zone Overrides</CardTitle>
-          <CardDescription>
-            Origin → destination specific rates. Leave a field empty to fall back to the base rate.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <RateMatrixTable entries={entries} onChange={setEntries} />
-          <div className="mt-4 flex justify-end">
-            <Button onClick={onSaveEntries} disabled={saveEntries.isPending}>
-              {saveEntries.isPending ? 'Saving...' : 'Save Zone Overrides'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {loadState === 'ready' && (
+        <Card className="border-mist">
+          <CardHeader>
+            <CardTitle className="font-display text-lg">Zone Overrides</CardTitle>
+            <CardDescription>
+              Origin → destination specific rates. Leave a field empty to fall back to the base rate.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RateMatrixTable entries={entries} onChange={setEntries} />
+            <div className="mt-4 flex justify-end">
+              <Button onClick={onSaveEntries} disabled={saveEntries.isPending}>
+                {saveEntries.isPending ? 'Saving...' : 'Save Zone Overrides'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
