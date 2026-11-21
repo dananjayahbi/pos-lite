@@ -81,6 +81,7 @@ const RULES: Rule[] = [
   { match: token('RETURN_LINE_FOREIGN'), status: 422, code: 'UNPROCESSABLE', message: 'The return line does not belong to the referenced sale.' },
   { match: token('RETURN_QTY_INVALID'), status: 422, code: 'UNPROCESSABLE', message: 'Return quantity must be greater than zero.' },
   { match: token('RETURN_QTY_EXCEEDS_RETURNABLE'), status: 422, code: 'UNPROCESSABLE', message: 'The requested quantity exceeds the remaining returnable quantity for this line.' },
+  { match: token('RETURN_STORE_CREDIT_REQUIRES_CUSTOMER'), status: 422, code: 'UNPROCESSABLE', message: 'Store credit can only be issued for a sale linked to a customer.' },
 
   // ── Prose messages from the older product/customer services ────────────
   // Status + code are preserved exactly as the routes returned them; only the

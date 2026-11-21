@@ -54,6 +54,12 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
     enabled: open && saleId !== null,
   });
 
+  // Store credit is issued to the sale's customer; a guest sale has nobody to
+  // hold the balance, so the method is unavailable (the API rejects it too).
+  const saleHasCustomer = Boolean(
+    (saleData as { customer?: { id?: string } | null } | undefined)?.customer?.id,
+  );
+
   const resetWizard = useCallback(() => {
     setStep(1);
     setSelectedLines([]);
@@ -85,6 +91,10 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
 
   const handleSubmit = async () => {
     if (!saleId) return;
+    if (refundMethod === 'STORE_CREDIT' && !saleHasCustomer) {
+      toast.error('Store credit requires a sale linked to a customer');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -300,6 +310,7 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
                   refundMethod={refundMethod}
                   cardReversalReference={cardReversalReference}
                   reason={reason}
+                  storeCreditAvailable={saleHasCustomer}
                   onChange={(patch) => {
                     if (patch.refundMethod !== undefined) setRefundMethod(patch.refundMethod);
                     if (patch.cardReversalReference !== undefined) setCardReversalReference(patch.cardReversalReference);

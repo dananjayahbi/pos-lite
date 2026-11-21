@@ -27,6 +27,7 @@ interface SaleLine {
 interface SaleDetail {
   id: string;
   totalAmount: string;
+  customer?: { id: string } | null;
   lines: SaleLine[];
 }
 
@@ -105,10 +106,14 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
   }, [sale]);
 
   const selectedLines = returnLines.filter((l) => l.enabled && l.quantity > 0);
+  const storeCreditAvailable = Boolean(sale?.customer?.id);
 
   const { mutate: submitReturn, isPending } = useMutation({
     mutationFn: async () => {
       if (selectedLines.length === 0) throw new Error('Select at least one item to return');
+      if (refundMethod === 'STORE_CREDIT' && !storeCreditAvailable) {
+        throw new Error('Store credit requires a sale linked to a customer');
+      }
 
       if (!currentUserId) throw new Error('Session expired, please refresh');
       const body: Record<string, unknown> = {
@@ -285,21 +290,35 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
               <div>
                 <Label className="mb-2 block text-xs font-semibold text-espresso">Refund Method</Label>
                 <div className="grid grid-cols-3 gap-2">
-                  {(['CASH', 'CARD_REVERSAL', 'STORE_CREDIT'] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setRefundMethod(m)}
-                      className={`rounded-md border py-2 text-xs font-medium transition-colors ${
-                        refundMethod === m
-                          ? 'border-terracotta bg-terracotta/10 text-terracotta'
-                          : 'border-mist text-sand-ink hover:border-terracotta/50 hover:text-espresso'
-                      }`}
-                    >
-                      {m === 'CARD_REVERSAL' ? 'Card Reversal' : m === 'STORE_CREDIT' ? 'Store Credit' : 'Cash'}
-                    </button>
-                  ))}
+                  {(['CASH', 'CARD_REVERSAL', 'STORE_CREDIT'] as const).map((m) => {
+                    const unavailable = m === 'STORE_CREDIT' && !storeCreditAvailable;
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        disabled={unavailable}
+                        title={
+                          unavailable
+                            ? 'Not available: the original sale is not linked to a customer'
+                            : undefined
+                        }
+                        onClick={() => setRefundMethod(m)}
+                        className={`rounded-md border py-2 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                          refundMethod === m
+                            ? 'border-terracotta bg-terracotta/10 text-terracotta'
+                            : 'border-mist text-sand-ink hover:border-terracotta/50 hover:text-espresso'
+                        }`}
+                      >
+                        {m === 'CARD_REVERSAL' ? 'Card Reversal' : m === 'STORE_CREDIT' ? 'Store Credit' : 'Cash'}
+                      </button>
+                    );
+                  })}
                 </div>
+                {!storeCreditAvailable && (
+                  <p className="mt-1.5 text-[11px] text-mist-ink">
+                    Store credit needs a sale linked to a customer.
+                  </p>
+                )}
               </div>
 
               {/* Card reversal reference */}

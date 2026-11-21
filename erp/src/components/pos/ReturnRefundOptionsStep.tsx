@@ -13,6 +13,8 @@ interface ReturnRefundOptionsStepProps {
   refundMethod: ReturnRefundMethod;
   cardReversalReference: string;
   reason: string;
+  /** Store credit needs a customer to hold the balance (guest sales cannot). */
+  storeCreditAvailable: boolean;
   onChange: (patch: Partial<{ refundMethod: ReturnRefundMethod; cardReversalReference: string; reason: string }>) => void;
 }
 
@@ -33,6 +35,7 @@ export function ReturnRefundOptionsStep({
   refundMethod,
   cardReversalReference,
   reason,
+  storeCreditAvailable,
   onChange,
 }: ReturnRefundOptionsStepProps) {
   return (
@@ -60,13 +63,17 @@ export function ReturnRefundOptionsStep({
         {METHODS.map((method) => {
           const Icon = method.icon;
           const isSelected = refundMethod === method.value;
+          const unavailable = method.value === 'STORE_CREDIT' && !storeCreditAvailable;
 
           return (
             <div key={method.value}>
               <button
                 type="button"
-                onClick={() => onChange({ refundMethod: method.value })}
-                className={`w-full flex items-start gap-3 p-3 rounded-lg border transition-colors text-left ${
+                disabled={unavailable}
+                onClick={() => {
+                  if (!unavailable) onChange({ refundMethod: method.value });
+                }}
+                className={`w-full flex items-start gap-3 p-3 rounded-lg border transition-colors text-left disabled:cursor-not-allowed disabled:opacity-50 ${
                   isSelected
                     ? 'border-terracotta bg-terracotta/5'
                     : 'border-mist/30 bg-white hover:bg-linen/50'
@@ -84,7 +91,9 @@ export function ReturnRefundOptionsStep({
                     {method.label}
                   </p>
                   <p className="font-body text-xs text-mist-ink mt-0.5">
-                    {method.description}
+                    {unavailable
+                      ? 'Not available: the original sale is not linked to a customer.'
+                      : method.description}
                   </p>
                 </div>
                 <div
@@ -116,7 +125,8 @@ export function ReturnRefundOptionsStep({
               {/* Store credit note */}
               {method.value === 'STORE_CREDIT' && isSelected && (
                 <p className="ml-11 mt-2 mb-1 font-body text-xs text-mist-ink">
-                  A store credit record will be created. The credit can be redeemed at checkout once Phase 04 CRM is complete.
+                  The credit is added to the customer&apos;s balance and can be redeemed
+                  at checkout immediately.
                 </p>
               )}
             </div>

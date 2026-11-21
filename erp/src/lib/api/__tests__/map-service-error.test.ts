@@ -18,6 +18,7 @@ describe('INF-02 mapServiceError', () => {
     ['LEDGER_ENTRY_NOT_FOUND', 404],
     ['DISPUTE_NOT_FOUND', 404],
     ['APPOINTMENT_NOT_FOUND', 404],
+    ['RETURN_STORE_CREDIT_REQUIRES_CUSTOMER: sale abc has no linked customer', 422],
   ])('sentinel %s → %i', (message, status) => {
     const mapped = mapServiceError(new Error(message));
     expect(mapped).toBeInstanceOf(ApiError);

@@ -8,6 +8,7 @@ import Decimal from 'decimal.js';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 import { computeReturnRefund } from '@/lib/services/returnRefund.core';
+import { issueCredit } from '@/lib/services/customer.service';
 
 const RETURN_WINDOW_DAYS = 30;
 
@@ -210,6 +211,14 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
     } = computeLineRefundAmounts(sale, input.lines);
 
     // 3. Create Return record
+    // Store credit is held against a customer balance (the POS reads
+    // Customer.creditBalance). A guest sale has nobody to issue it to, so the
+    // refund method is rejected rather than creating an unusable credit row.
+    if (input.refundMethod === ReturnRefundMethod.STORE_CREDIT && !sale.customerId) {
+      throw new Error(
+        `RETURN_STORE_CREDIT_REQUIRES_CUSTOMER: sale ${input.originalSaleId} has no linked customer`,
+      );
+    }
     const returnRecord = await tx.return.create({
       data: {
         tenantId,
@@ -261,15 +270,15 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
       }
     }
 
-    // 6. Create StoreCredit if applicable
+    // 6. Issue store credit to the original sale's customer
     if (input.refundMethod === ReturnRefundMethod.STORE_CREDIT) {
-      await tx.storeCredit.create({
-        data: {
-          tenantId,
-          amount: totalRefund.toFixed(2),
-          note: `Return ref ${returnRecord.id}`,
-        },
-      });
+      await issueCredit(
+        tenantId,
+        sale.customerId!,
+        totalRefund,
+        `Return ref ${returnRecord.id}`,
+        tx,
+      );
     }
 
     // 7. Return fully loaded record

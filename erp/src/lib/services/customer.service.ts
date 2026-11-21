@@ -395,6 +395,27 @@ export async function redeemCredit(
     throw new Error('Redeem amount must be greater than zero');
   }
 
+  // Consume issued credit notes FIFO so `usedAmount` stays truthful and a
+  // credit issued by a return can be traced to the sale that spent it.
+  const credits = await tx.storeCredit.findMany({
+    where: { tenantId, customerId },
+    orderBy: { createdAt: 'asc' },
+  });
+  let remaining = amount;
+  for (const credit of credits) {
+    if (remaining.lte(0)) break;
+    const available = new Decimal(credit.amount.toString()).minus(
+      new Decimal(credit.usedAmount.toString()),
+    );
+    if (available.lte(0)) continue;
+    const consumed = Decimal.min(available, remaining);
+    await tx.storeCredit.update({
+      where: { id: credit.id },
+      data: { usedAmount: { increment: consumed.toNumber() } },
+    });
+    remaining = remaining.minus(consumed);
+  }
+
   const updated = await tx.customer.update({
     where: { id: customerId },
     data: {
@@ -410,6 +431,57 @@ export async function redeemCredit(
     entityId: customerId,
     action: AUDIT_ACTIONS.CUSTOMER_CREDIT_ADJUSTED,
     after: { amountRedeemed: amount.toString(), newBalance: updated.creditBalance.toString() },
+  }).catch(() => {});
+
+  return updated;
+}
+
+/**
+ * Issue store credit to a customer (e.g. a return refunded as credit).
+ *
+ * Both the redeemable balance (`Customer.creditBalance`, which the POS reads)
+ * and the credit-note ledger row are written together, so the credit can
+ * actually be spent and the issuance stays auditable (ARGUS #92).
+ */
+export async function issueCredit(
+  tenantId: string,
+  customerId: string,
+  amount: Decimal,
+  note: string,
+  tx: TxClient,
+) {
+  if (amount.lte(0)) {
+    throw new Error('Credit amount must be greater than zero');
+  }
+
+  const updated = await tx.customer.update({
+    where: { id: customerId },
+    data: {
+      creditBalance: { increment: amount.toNumber() },
+    },
+  });
+
+  await tx.storeCredit.create({
+    data: {
+      tenantId,
+      customerId,
+      amount: amount.toFixed(2),
+      note,
+    },
+  });
+
+  void createAuditLog({
+    tenantId,
+    actorId: null,
+    actorRole: 'SYSTEM',
+    entityType: 'Customer',
+    entityId: customerId,
+    action: AUDIT_ACTIONS.CUSTOMER_CREDIT_ADJUSTED,
+    after: {
+      amountIssued: amount.toString(),
+      newBalance: updated.creditBalance.toString(),
+      note,
+    },
   }).catch(() => {});
 
   return updated;
