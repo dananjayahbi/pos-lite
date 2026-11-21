@@ -4,13 +4,15 @@ import type { ExpenseCategory, Prisma } from '@/generated/prisma/client';
 import type { CreateExpenseInput, UpdateExpenseInput } from '@/lib/validators/expense.validators';
 import { AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
-  adjustFundBalance,
-  assertFundCanSpend,
+  adjustFundBalanceTx,
+  checkFundLowBalance,
   ensureFundPaymentAccount,
+  lockFundRows,
 } from '@/lib/services/petty-cash.service';
 import { PaymentEntrySource } from '@/generated/prisma/client';
 import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/paymentAccount.service';
 import { parseRangeStart, parseRangeEnd } from '@/lib/dates/inclusiveRange';
+import { lockForUpdate } from '@/lib/api/race-guard';
 import { ApiError } from '@/lib/api/errors';
 import { categoryDenialReason } from '@/lib/petty-cash/category-policy';
 import { resolveExpenseLinkUpdate } from '@/lib/expenses/link';
@@ -65,6 +67,42 @@ async function writeExpenseAudit(
 
 function asJson(snapshot: unknown): Prisma.InputJsonValue {
   return snapshot as Prisma.InputJsonValue;
+}
+
+/**
+ * ARGUS #403 - lock the payment accounts an expense touches before locking its
+ * fund(s). Sorted ids keep opposite-direction edits deadlock-free; the fund
+ * service uses the same account -> fund order for top-ups and transfers.
+ */
+async function lockExpenseAccounts(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  accountIds: readonly (string | null | undefined)[],
+): Promise<void> {
+  const ids = Array.from(
+    new Set(accountIds.filter((id): id is string => Boolean(id))),
+  ).sort();
+  for (const id of ids) {
+    await lockForUpdate(
+      tx,
+      'payment_accounts',
+      '"id" = $1 AND "tenantId" = $2',
+      [id, tenantId],
+    );
+  }
+}
+
+async function recheckFundsLowBalance(tenantId: string, fundIds: readonly (string | null)[]) {
+  const ids = Array.from(new Set(fundIds.filter((id): id is string => Boolean(id))));
+  for (const id of ids) {
+    try {
+      await checkFundLowBalance(tenantId, id);
+    } catch (error) {
+      // The money movement already committed; an alert failure must not turn a
+      // successful expense write into a 500.
+      console.error('Petty cash low-balance check failed:', id, error);
+    }
+  }
 }
 
 function buildExpenseWhere(tenantId: string, filters: ExpenseFilters): Record<string, unknown> {
@@ -222,19 +260,23 @@ export async function createExpense(
     }
   }
 
-  // M19-01 (BUG-53, D2): block a linked expense that would overdraw the fund
-  // unless an explicit (permission-checked) manager approval rode along. Runs
-  // BEFORE the row is created so a blocked overdraw writes nothing.
-  if (effectiveFundId) {
-    await assertFundCanSpend(
-      tenantId,
-      effectiveFundId,
-      data.amount,
-      data.overdrawApproved === true,
-    );
-  }
+  // M19-01/#403: the overdraw check and fund deduction happen under the fund
+  // row lock inside the transaction below, not in an unlocked pre-check.
 
   const expense = await prisma.$transaction(async (tx) => {
+    // Consistent lock order with top-ups/transfers: payment account first,
+    // then the fund. Sorted ids make multi-account cases deadlock-free.
+    await lockExpenseAccounts(tx, tenantId, [effectiveAccountId]);
+    if (effectiveFundId) {
+      await lockFundRows(tx, tenantId, [effectiveFundId]);
+      // Re-reads the balance under the lock. If another spend won the race this
+      // throws and no expense/ledger row is written.
+      await adjustFundBalanceTx(tx, tenantId, effectiveFundId, -data.amount, {
+        enforceNonNegative: true,
+        approved: data.overdrawApproved === true,
+      });
+    }
+
     const created = await tx.expense.create({
       data: {
         tenantId,
@@ -301,10 +343,9 @@ export async function createExpense(
     return created;
   });
 
-  // A linked petty-cash expense reduces the fund's running balance.
-  if (effectiveFundId) {
-    await adjustFundBalance(tenantId, effectiveFundId, -data.amount);
-  }
+  // Low-balance evaluation runs after the committed transaction; the money
+  // movement itself is already atomic.
+  await recheckFundsLowBalance(tenantId, [effectiveFundId]);
 
   return expense;
 }
@@ -382,7 +423,6 @@ export async function updateExpense(
   const newFundId = effectiveFundId;
   const newAccountId = effectiveAccountId;
   const newAmount = data.amount !== undefined ? data.amount : oldAmount;
-  const sameFund = oldFundId !== null && newFundId === oldFundId;
 
   // ARGUS #407: enforce the fund allow-list when the update writes a category
   // or moves the expense onto a fund. An untouched category on an existing
@@ -396,21 +436,12 @@ export async function updateExpense(
   }
 
   // M19-01 (D2): an edit that increases or re-links a fund-backed spend is
-  // guarded exactly like a create. When the fund is unchanged the old amount is
-  // credited back for the check (`credit`), because the net deduction is what
-  // the fund must be able to absorb.
+  // guarded exactly like a create. The actual check runs under the fund row
+  // lock inside the transaction (ARGUS #403); this flag only decides whether an
+  // approved overdraw needs an audit row.
   const fundCheckRan = Boolean(
     newFundId && (newFundId !== oldFundId || newAmount !== oldAmount),
   );
-  if (fundCheckRan && newFundId) {
-    await assertFundCanSpend(
-      tenantId,
-      newFundId,
-      newAmount,
-      data.overdrawApproved === true,
-      sameFund ? oldAmount : 0,
-    );
-  }
 
   const newExpenseDate =
     data.expenseDate !== undefined ? new Date(data.expenseDate) : existing.expenseDate;
@@ -426,6 +457,12 @@ export async function updateExpense(
     (data.description !== undefined && data.description !== existing.description);
 
   const expense = await prisma.$transaction(async (tx) => {
+    // ARGUS #403: lock every account/fund this edit touches before changing
+    // anything. Accounts first, then funds, both sorted, so opposite-direction
+    // moves cannot deadlock.
+    await lockExpenseAccounts(tx, tenantId, [oldAccountId, newAccountId]);
+    await lockFundRows(tx, tenantId, [oldFundId, newFundId]);
+
     const updated = await tx.expense.update({
       where: { id },
       data: {
@@ -475,6 +512,28 @@ export async function updateExpense(
       }
     }
 
+    // ARGUS #403: fund balance moves in the same transaction, under the lock
+    // taken above. Same fund = one net delta; moving funds = refund + deduct.
+    if (oldFundId && newFundId && oldFundId === newFundId) {
+      const delta = oldAmount - newAmount;
+      if (delta !== 0) {
+        await adjustFundBalanceTx(tx, tenantId, oldFundId, delta, {
+          enforceNonNegative: newAmount > oldAmount,
+          approved: data.overdrawApproved === true,
+        });
+      }
+    } else {
+      if (oldFundId) {
+        await adjustFundBalanceTx(tx, tenantId, oldFundId, oldAmount);
+      }
+      if (newFundId) {
+        await adjustFundBalanceTx(tx, tenantId, newFundId, -newAmount, {
+          enforceNonNegative: true,
+          approved: data.overdrawApproved === true,
+        });
+      }
+    }
+
     if (fundCheckRan && newFundId && data.overdrawApproved === true) {
       await writeExpenseAudit(tx, {
         tenantId,
@@ -503,15 +562,9 @@ export async function updateExpense(
     return updated;
   });
 
-  // Keep the fund balance in sync with a single net delta when the fund is
-  // unchanged, or a refund+deduct pair when the expense moved between funds.
-  if (oldFundId && newFundId && oldFundId === newFundId) {
-    const delta = oldAmount - newAmount;
-    if (delta !== 0) await adjustFundBalance(tenantId, oldFundId, delta);
-  } else {
-    if (oldFundId) await adjustFundBalance(tenantId, oldFundId, oldAmount);
-    if (newFundId) await adjustFundBalance(tenantId, newFundId, -newAmount);
-  }
+  // Low-balance evaluation runs after the committed transaction; the fund and
+  // ledger movement are already atomic.
+  await recheckFundsLowBalance(tenantId, [oldFundId, newFundId]);
 
   return expense;
 }
@@ -523,6 +576,10 @@ export async function deleteExpense(tenantId: string, id: string, actorId: strin
   }
 
   await prisma.$transaction(async (tx) => {
+    // ARGUS #403: account first, then fund, both locked before any write.
+    await lockExpenseAccounts(tx, tenantId, [expense.paymentAccountId]);
+    await lockFundRows(tx, tenantId, [expense.pettyCashFundId]);
+
     await reverseExpenseLedger(
       tx,
       tenantId,
@@ -530,6 +587,18 @@ export async function deleteExpense(tenantId: string, id: string, actorId: strin
       expense.id,
       expense.description,
     );
+
+    // Refund the fund inside the same transaction; a reversal failure rolls the
+    // delete back instead of leaving a desynced balance.
+    if (expense.pettyCashFundId) {
+      await adjustFundBalanceTx(
+        tx,
+        tenantId,
+        expense.pettyCashFundId,
+        expense.amount.toNumber(),
+      );
+    }
+
     // ARGUS #401: audit in the same transaction as the reversal/delete. The
     // model has no status/deletedAt field, so a hard delete is the only
     // mechanism available; this audit row is the durable tombstone.
@@ -543,8 +612,5 @@ export async function deleteExpense(tenantId: string, id: string, actorId: strin
     await tx.expense.delete({ where: { id } });
   });
 
-  // Restore the fund balance when a linked petty-cash expense is removed.
-  if (expense.pettyCashFundId) {
-    await adjustFundBalance(tenantId, expense.pettyCashFundId, expense.amount.toNumber());
-  }
+  await recheckFundsLowBalance(tenantId, [expense.pettyCashFundId]);
 }

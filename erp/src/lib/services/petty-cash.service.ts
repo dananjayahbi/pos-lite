@@ -12,6 +12,8 @@ import { ApiError } from '@/lib/api/errors';
 import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/paymentAccount.service';
 import { parseRangeEnd, parseRangeStart } from '@/lib/dates/inclusiveRange';
 import { computePettyCashPeriodStatement } from '@/lib/services/pettyCashReport.core';
+import { lockForUpdate } from '@/lib/api/race-guard';
+import { decideFundDelta } from '@/lib/petty-cash/fund-balance';
 import type { TopUpPettyCashInput } from '@/lib/validators/petty-cash.validators';
 import {
   multiplePettyCashFundsMessage,
@@ -1173,6 +1175,58 @@ export async function buildPettyCashExportData(
 
 /** Sentinel thrown when a linked expense would push a fund below zero (M19-01). */
 export const PETTY_CASH_OVERDRAW_SENTINEL = 'Petty cash fund cannot go negative';
+
+/**
+ * ARGUS #403 - lock fund rows in a deterministic order. Callers take account
+ * locks first, then call this, so concurrent expense writes cannot deadlock on
+ * a fund pair moved in opposite directions.
+ */
+export async function lockFundRows(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  fundIds: readonly (string | null | undefined)[],
+): Promise<void> {
+  const ids = Array.from(
+    new Set(fundIds.filter((id): id is string => Boolean(id))),
+  ).sort();
+  for (const id of ids) {
+    await lockForUpdate(tx, 'petty_cash_funds', '"id" = $1 AND "tenantId" = $2', [id, tenantId]);
+  }
+}
+
+/**
+ * ARGUS #403 - apply a fund-balance delta inside the caller's transaction.
+ * The row is locked and re-read first, so the non-negative check and the write
+ * cannot be raced by another spend.
+ */
+export async function adjustFundBalanceTx(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  fundId: string,
+  delta: number,
+  options: { enforceNonNegative?: boolean; approved?: boolean } = {},
+): Promise<number> {
+  await lockForUpdate(tx, 'petty_cash_funds', '"id" = $1', [fundId]);
+  const fund = await tx.pettyCashFund.findFirst({
+    where: { id: fundId, tenantId },
+    select: { currentBalance: true },
+  });
+  if (!fund) {
+    throw new ApiError(404, 'NOT_FOUND', 'Petty cash fund not found');
+  }
+
+  const current = new Decimal(fund.currentBalance.toString());
+  const decision = decideFundDelta(current.toNumber(), delta, options);
+  if (!decision.allowed) {
+    throw new Error(decision.reason ?? PETTY_CASH_OVERDRAW_SENTINEL);
+  }
+
+  await tx.pettyCashFund.update({
+    where: { id: fundId },
+    data: { currentBalance: decision.nextBalance },
+  });
+  return decision.nextBalance;
+}
 
 /**
  * M19-01 (BUG-53, decision D2) — guard a spend against the fund's live balance.
