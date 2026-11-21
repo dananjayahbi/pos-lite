@@ -23,6 +23,7 @@ import {
   lowStockErrorMessage,
   resolveLowStockViewState,
 } from '@/components/stock-control/lowStockState';
+import { resolveLowStockShortfall } from '@/lib/inventory/lowStockShortfall';
 
 interface LowStockListProps {
   permissions: string[];
@@ -232,6 +233,10 @@ export function LowStockList({ permissions }: LowStockListProps) {
               <TableBody>
                 {variants.map((v) => {
                   const isOutOfStock = v.stock_quantity === 0;
+                  const shortfall = resolveLowStockShortfall(
+                    v.stock_quantity,
+                    v.low_stock_threshold,
+                  );
                   return (
                     <TableRow key={v.id}>
                       <TableCell>
@@ -266,8 +271,12 @@ export function LowStockList({ permissions }: LowStockListProps) {
                         {v.low_stock_threshold}
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-body text-sm font-bold text-red-600">
-                          -{v.shortfall}
+                        <span
+                          className={`font-body text-sm font-bold ${
+                            shortfall.amount === 0 ? 'text-amber-600' : 'text-red-600'
+                          }`}
+                        >
+                          {shortfall.label}
                         </span>
                       </TableCell>
                       <TableCell className="text-right font-body text-sm text-espresso">
