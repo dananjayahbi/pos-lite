@@ -58,6 +58,20 @@ describe('getCartTotal tax preview', () => {
     expect(result.total.toNumber()).toBe(4509.96);
   });
 
+  it('taxes after every discount (ARGUS #63 regression)', () => {
+    const result = getCartTotal(
+      [item({ variantId: 'bhringraj', unitPrice: 2098.8 })],
+      0,
+      0,
+      TAX_RATES,
+      209.88, // 10% automatic promotion
+    );
+
+    // 2,098.80 - 209.88 = 1,888.92 taxable; 18% = 340.01 (not 377.78).
+    expect(result.taxAmount.toNumber()).toBe(340.01);
+    expect(result.total.toNumber()).toBe(2228.93);
+  });
+
   it('applies each line tax rule and apportions the combined discount', () => {
     const items = [
       item({ variantId: 'vat', unitPrice: 1000, quantity: 2 }),

@@ -43,4 +43,5 @@ longer subtracts the promotion a second time.
 `src/stores/__tests__/cartTax.test.ts` covers standard VAT, promotions taxed
 after discount, mixed VAT/exempt carts, SSCL, a fully discounted (zero) cart,
 legacy lines without a tax rule, and an arithmetic parity check against the
-sales-service formula.
+sales-service formula. The ARGUS #63 scenario (2,098.80 with a 10% promotion ->
+tax 340.01, total 2,228.93) is a named regression case.

@@ -15,6 +15,8 @@ export interface CartItem {
   unitPrice: number;       // serialized as number, Decimal used internally for math
   quantity: number;
   discountPercent: number;  // 0-100
+  /** Available stock when the line was added; caps the cart quantity. */
+  stockQuantity?: number | undefined;
   /** Product tax rule; drives the per-line VAT/SSCL/exempt preview. */
   taxRule?: TaxRuleValue | undefined;
 }
@@ -55,7 +57,7 @@ interface CartState {
   heldSaleId: string | null;
 
   // Mutators
-  addItem: (item: Omit<CartItem, 'discountPercent'>) => void;
+  addItem: (item: Omit<CartItem, 'discountPercent'>) => { added: number; limited: boolean };
   removeItem: (variantId: string) => void;
   updateQuantity: (variantId: string, quantity: number) => void;
   setLineDiscount: (variantId: string, discountPercent: number) => void;
@@ -166,22 +168,47 @@ export const useCartStore = create<CartState>((set, get) => ({
   heldSaleId: null,
 
   addItem: (item) => {
+    // Never let the cart exceed the stock known at add time; checkout would
+    // fail with Insufficient stock and waste the cashier's time (ARGUS #64).
+    const existing = get().items.find((i) => i.variantId === item.variantId);
+    const currentQty = existing?.quantity ?? 0;
+    const available = Number.isFinite(item.stockQuantity)
+      ? Math.max(0, Math.floor(item.stockQuantity as number))
+      : Number.POSITIVE_INFINITY;
+    const requestedQty = currentQty + item.quantity;
+    const nextQty = Math.min(requestedQty, available);
+    const added = Math.max(0, nextQty - currentQty);
+
+    if (added <= 0) {
+      return { added: 0, limited: true };
+    }
+
     set((state) => {
       // The cart is newest-first so the product the cashier just scanned is
       // always visible at the top of the list instead of below the fold.
-      const existing = state.items.find((i) => i.variantId === item.variantId);
-      if (existing) {
+      const current = state.items.find((i) => i.variantId === item.variantId);
+      if (current) {
         return {
           items: [
-            { ...existing, quantity: existing.quantity + item.quantity },
+            { ...current, quantity: nextQty, stockQuantity: item.stockQuantity ?? current.stockQuantity },
             ...state.items.filter((i) => i.variantId !== item.variantId),
           ],
         };
       }
-      return { items: [{ ...item, discountPercent: 0 }, ...state.items] };
+      return {
+        items: [
+          {
+            ...item,
+            quantity: nextQty,
+            discountPercent: 0,
+          },
+          ...state.items,
+        ],
+      };
     });
     schedulePromoEval(get);
     sendCFDUpdate(get());
+    return { added, limited: nextQty < requestedQty };
   },
 
   removeItem: (variantId) => {
@@ -195,9 +222,13 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   updateQuantity: (variantId, quantity) => {
     set((state) => ({
-      items: state.items.map((i) =>
-        i.variantId === variantId ? { ...i, quantity: Math.max(1, quantity) } : i,
-      ),
+      items: state.items.map((item) => {
+        if (item.variantId !== variantId) return item;
+        const max = Number.isFinite(item.stockQuantity)
+          ? Math.max(1, Math.floor(item.stockQuantity as number))
+          : Number.POSITIVE_INFINITY;
+        return { ...item, quantity: Math.min(Math.max(1, quantity), max) };
+      }),
     }));
     schedulePromoEval(get);
     sendCFDUpdate(get());

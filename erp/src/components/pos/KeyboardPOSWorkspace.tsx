@@ -129,20 +129,26 @@ export function KeyboardPOSWorkspace({ shiftId, lankaQr }: KeyboardPOSWorkspaceP
         return false;
       }
       const description = variantLabel(variant);
-      addItem({
+      const result = addItem({
         variantId: variant.id,
         productName: product.name,
         variantDescription: description,
         sku: variant.sku,
         unitPrice: Number(variant.retailPrice),
         quantity: 1,
+        stockQuantity: variant.stockQuantity,
         taxRule: product.taxRule ?? 'STANDARD_VAT',
       });
-      toast.success(`Added ${product.name} to cart`);
-      showFeedback({
-        type: 'success',
-        text: `Added ${product.name}${description !== 'Default' ? ` · ${description}` : ''}`,
-      });
+      if (result.limited) {
+        toast.warning(`Only ${variant.stockQuantity} in stock for ${product.name}`);
+        showFeedback({ type: 'warning', text: `Stock limit - ${product.name}` });
+      } else {
+        toast.success(`Added ${product.name} to cart`);
+        showFeedback({
+          type: 'success',
+          text: `Added ${product.name}${description !== 'Default' ? ` · ${description}` : ''}`,
+        });
+      }
       setQuery('');
       setDebouncedQuery('');
       setHighlighted(0);

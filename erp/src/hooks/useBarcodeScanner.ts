@@ -88,15 +88,21 @@ export function useBarcodeScanToCart(onScan?: (productName: string, variantDescr
           return { ok: false, productName: data.productName, variantDescription };
         }
 
-        addItem({
+        const addResult = addItem({
           variantId: data.id,
           productName: data.productName,
           variantDescription,
           sku: data.sku,
           unitPrice: Number(data.retailPrice),
           quantity: 1,
+          stockQuantity: data.stockQuantity,
           taxRule: data.taxRule ?? 'STANDARD_VAT',
         });
+        if (addResult.limited) {
+          toast.warning(
+            `Only ${data.stockQuantity} in stock: ${data.productName}${variantDescription !== 'Default' ? ` (${variantDescription})` : ''}`,
+          );
+        }
 
         onScan?.(data.productName, variantDescription);
         return { ok: true, productName: data.productName, variantDescription };

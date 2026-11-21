@@ -45,16 +45,21 @@ export function ProductGrid() {
 
   const addVariantToCart = useCallback(
     (product: ProductListItem, variant: ProductVariant) => {
-      addItem({
+      const result = addItem({
         variantId: variant.id,
         productName: product.name,
         variantDescription: [variant.form, variant.packSize].filter(Boolean).join(' / ') || 'Default',
         sku: variant.sku,
         unitPrice: Number(variant.retailPrice),
         quantity: 1,
+        stockQuantity: variant.stockQuantity,
         taxRule: product.taxRule ?? 'STANDARD_VAT',
       });
-      toast.success(`Added ${product.name} to cart`);
+      if (result.limited) {
+        toast.warning(`Only ${variant.stockQuantity} in stock for ${product.name}`);
+      } else {
+        toast.success(`Added ${product.name} to cart`);
+      }
     },
     [addItem],
   );
