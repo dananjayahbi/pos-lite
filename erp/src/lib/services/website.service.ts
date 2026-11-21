@@ -8,6 +8,14 @@
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/lib/api/errors';
 import { createAuditLog } from '@/lib/services/audit.service';
+import { deleteFile } from '@/lib/storage';
+import { extractTenantAssetPath } from '@/lib/storage/asset-paths';
+import {
+  collectWebsiteAssetCandidates,
+  WEBSITE_RESET_CONFIG_DATA,
+  websiteResetSummary,
+  type WebsiteResetSummary,
+} from '@/lib/website/reset.core';
 import type { Prisma } from '@/generated/prisma/client';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -340,65 +348,60 @@ export async function replaceAds(
 }
 
 /**
- * Reset a tenant's website configuration to defaults: clears the config JSON
- * (sections, social links, nav, footer, about values) and removes all related
- * hero slides and ads. Returns true if a config row existed and was reset.
+ * Reset a tenant's website configuration to defaults: clears every config
+ * field (copy, branding, colours, typography, SEO, nav, sections, footer,
+ * announcement, appointments, about/contact/shop), removes all related hero
+ * slides and ads, and best-effort deletes the tenant's uploaded website assets.
+ * Returns a summary so the UI can report exactly what was removed (ARGUS #497).
  */
-export async function resetWebsiteConfig(tenantId: string): Promise<boolean> {
+export async function resetWebsiteConfig(tenantId: string): Promise<WebsiteResetSummary> {
   const existing = await prisma.websiteConfig.findUnique({
     where: { tenantId },
-    select: { id: true },
+    include: {
+      heroSlides: { orderBy: { sortOrder: 'asc' } },
+      ads: { orderBy: { createdAt: 'desc' } },
+    },
   });
-  if (!existing) return false;
+  if (!existing) {
+    return websiteResetSummary({
+      reset: false,
+      deletedAssets: 0,
+      failedAssets: 0,
+      skippedAssets: 0,
+    });
+  }
+
+  // Resolve tenant-owned storage keys before the DB rows disappear. External
+  // links and unsupported providers are counted as skipped, never deleted.
+  const assetPaths = new Set<string>();
+  let skippedAssets = 0;
+  for (const candidate of collectWebsiteAssetCandidates(existing)) {
+    const path = extractTenantAssetPath(candidate, tenantId);
+    if (path) assetPaths.add(path);
+    else skippedAssets += 1;
+  }
 
   await prisma.$transaction([
     prisma.websiteHeroSlide.deleteMany({ where: { tenantId } }),
     prisma.websiteAd.deleteMany({ where: { tenantId } }),
     prisma.websiteConfig.update({
       where: { id: existing.id },
-      data: {
-        siteName: null,
-        tagline: null,
-        logoUrl: null,
-        faviconUrl: null,
-        metaTitle: null,
-        metaDescription: null,
-        socialLinks: {},
-        navItems: [],
-        sections: {},
-        footerAbout: null,
-        footerColumns: [],
-        aboutPageTitle: null,
-        aboutPageSubtitle: null,
-        aboutHeroImageUrl: null,
-        aboutStoryTitle: null,
-        aboutStoryContent: null,
-        aboutStoryImageUrl: null,
-        aboutMissionTitle: null,
-        aboutMissionContent: null,
-        aboutValuesSectionTitle: null,
-        aboutValues: [],
-        aboutPhoneLabel: null,
-        aboutPhoneNumber: null,
-        contactPageTitle: null,
-        contactPageSubtitle: null,
-        contactHeroImageUrl: null,
-        contactInfoTitle: null,
-        contactAddress: null,
-        contactPhoneDisplay: null,
-        contactEmailDisplay: null,
-        contactBusinessHours: null,
-        contactMapEmbedUrl: null,
-        shopPageTitle: null,
-        shopPageSubtitle: null,
-        shopHeroImageUrl: null,
-        shopPageDescription: null,
-        shopProductsPerPage: 24,
-      },
+      data: WEBSITE_RESET_CONFIG_DATA as unknown as Prisma.WebsiteConfigUpdateInput,
     }),
   ]);
 
-  return true;
+  const results = await Promise.allSettled(
+    [...assetPaths].map((path) => deleteFile(path)),
+  );
+  const deletedAssets = results.filter((result) => result.status === 'fulfilled').length;
+  const failedAssets = results.filter((result) => result.status === 'rejected').length;
+
+  return websiteResetSummary({
+    reset: true,
+    deletedAssets,
+    failedAssets,
+    skippedAssets,
+  });
 }
 
 // ── Public helpers (for customer-facing website) ─────────────────────────────

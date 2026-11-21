@@ -245,7 +245,6 @@ export async function DELETE() {
     if (forbidden) return forbidden;
 
     const reset = await resetWebsiteConfig(tenantId);
-
     // Revalidate the storefront so the reset is reflected immediately.
     try {
       const tenant = await prisma.tenant.findUnique({
@@ -262,7 +261,15 @@ export async function DELETE() {
       console.warn('[DELETE /api/store/website] Revalidation warning:', revalidateErr);
     }
 
-    return NextResponse.json({ success: true, data: { reset } });
+    return NextResponse.json({
+      success: true,
+      data: {
+        reset: reset.reset,
+        deletedAssets: reset.deletedAssets,
+        failedAssets: reset.failedAssets,
+        skippedAssets: reset.skippedAssets,
+      },
+    });
   } catch (error) {
     console.error('DELETE /api/store/website error:', error);
     return NextResponse.json(

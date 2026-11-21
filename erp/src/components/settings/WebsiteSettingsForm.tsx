@@ -25,9 +25,14 @@ const DEFAULT_CONFIG: WebsiteConfigData = {
   primaryColor: '#0a0a0a',
   accentColor: '#b4946e',
   bgColor: '#ece2d6',
+  headingFontFamily: '',
+  bodyFontFamily: '',
+  headingColor: '#0a0a0a',
+  bodyColor: '#555555',
   metaTitle: '',
   metaDescription: '',
   socialLinks: {},
+  announcementBar: { text: '', link: '', isActive: false },
   navItems: [],
   sections: {
     hero: { isActive: true, sortOrder: 1 },
@@ -339,7 +344,22 @@ export default function WebsiteSettingsForm() {
   const handleReset = async () => {
     try {
       const res = await fetch('/api/store/website', { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to reset');
+      const json = (await res.json().catch(() => null)) as
+        | {
+            success?: boolean;
+            data?: {
+              reset?: boolean;
+              deletedAssets?: number;
+              failedAssets?: number;
+              skippedAssets?: number;
+            };
+          }
+        | null;
+      if (!res.ok || !json?.success) throw new Error('Failed to reset');
+
+      const deletedAssets = json.data?.deletedAssets ?? 0;
+      const failedAssets = json.data?.failedAssets ?? 0;
+
       setConfig(DEFAULT_CONFIG);
       setDirtyCount(0);
       initialConfigRef.current = JSON.stringify(DEFAULT_CONFIG);
@@ -347,7 +367,17 @@ export default function WebsiteSettingsForm() {
       setLoadState('empty');
       resetUploadState();
       setShowResetDialog(false);
-      toast.success('Website settings reset to defaults');
+
+      toast.success(
+        deletedAssets > 0
+          ? `Website reset to defaults - ${deletedAssets} uploaded file${deletedAssets === 1 ? '' : 's'} removed`
+          : 'Website reset to defaults',
+      );
+      if (failedAssets > 0) {
+        toast.error(
+          `${failedAssets} uploaded file${failedAssets === 1 ? '' : 's'} could not be removed from storage`,
+        );
+      }
     } catch {
       toast.error('Failed to reset configuration');
     }
@@ -540,9 +570,10 @@ export default function WebsiteSettingsForm() {
 
         {/* Reset confirmation dialog.
             NOTE: `handleReset` calls DELETE /api/store/website, which is a HARD
-            RESET — it nulls every field, deletes all hero slides/ads and all
-            uploaded website assets. The wording below must therefore describe
-            that, not a harmless "discard unsaved changes". */}
+            RESET — it clears every config field (including colours, typography,
+            announcement and appointments), deletes all hero slides/ads and
+            removes uploaded website files where storage allows. The wording
+            below must describe that, not a harmless "discard unsaved changes". */}
         <ResetConfirmDialog
           open={showResetDialog}
           onOpenChange={setShowResetDialog}
@@ -551,10 +582,11 @@ export default function WebsiteSettingsForm() {
           title="Delete all website content"
           description={
             <>
-              This permanently deletes <strong>all saved website content</strong> - branding,
-              page copy, navigation, hero slides, ads{config.logoUrl ? ', the logo' : ''} and
-              uploaded website images{config.logoUrl ? '' : ''}. The storefront will fall back to
-              built-in defaults. <strong>This cannot be undone.</strong>
+              This permanently deletes <strong>all saved website content</strong> -
+              branding, colours, typography, announcement bar, page copy, navigation,
+              appointments settings, hero slides, ads and every uploaded website file.
+              The storefront will fall back to built-in defaults.{' '}
+              <strong>This cannot be undone.</strong>
             </>
           }
           confirmPhrase="delete everything"
