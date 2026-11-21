@@ -5,6 +5,7 @@ import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { computeShippingFeeFromTerms } from '@/lib/delivery/shipping-rate.core';
+import { computeCourierFeeBreakdown } from '@/lib/delivery/courier-fees.core';
 
 /**
  * Local shipping-fee rate engine.
@@ -31,6 +32,11 @@ export interface RateCalcResult {
   extraKgRate: Decimal;
   extraKg: Decimal;
   freeBaseWeightKg: Decimal;
+  /**
+   * False when the tenant has no active rate card (ARGUS #292). `shippingFee` is
+   * zero in that case, but callers must not treat it as free shipping.
+   */
+  configured: boolean;
 }
 
 export async function calculateShippingFee(input: RateCalcInput): Promise<RateCalcResult> {
@@ -52,6 +58,7 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
       shippingFee: new Decimal(0),
       ...defaultCard,
       extraKg: new Decimal(0),
+      configured: false,
     };
   }
 
@@ -117,21 +124,32 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
     ? new Decimal(0)
     : new Decimal(input.weightKg.toString());
 
-  return computeShippingFeeFromTerms(weight, { baseRate, extraKgRate, freeBaseWeightKg });
+  return {
+    ...computeShippingFeeFromTerms(weight, { baseRate, extraKgRate, freeBaseWeightKg }),
+    configured: true,
+  };
 }
 
-/** Compute net payout for reconciliation: Net = GrossCOD − (fee + COD% + VAT%). */
+/**
+ * Compute net payout for reconciliation (ARGUS #293):
+ *
+ *   commission = grossCOD x COD%
+ *   VAT        = (deliveryFee + commission) x VAT%
+ *   net        = grossCOD - deliveryFee - commission - VAT
+ *
+ * VAT is on the courier service, never on the cash collected. The pure
+ * breakdown lives in `lib/delivery/courier-fees.core.ts`.
+ */
 export function computeNetPayout(input: {
   grossCod: Decimal | string | number;
   deliveryFee?: Decimal | string | number | null;
   coddCommissionPct?: Decimal | string | number | null;
   vatRatePct?: Decimal | string | number | null;
 }): Decimal {
-  const gross = new Decimal(input.grossCod.toString());
-  const fee = input.deliveryFee ? new Decimal(input.deliveryFee.toString()) : new Decimal(0);
-  const codPct = input.coddCommissionPct ? new Decimal(input.coddCommissionPct.toString()).div(100) : new Decimal(0);
-  const vatPct = input.vatRatePct ? new Decimal(input.vatRatePct.toString()).div(100) : new Decimal(0);
-
-  const deductions = fee.plus(gross.times(codPct)).plus(gross.times(vatPct));
-  return gross.minus(deductions).toDecimalPlaces(2);
+  return computeCourierFeeBreakdown({
+    grossCod: input.grossCod,
+    deliveryFee: input.deliveryFee ?? null,
+    coddCommissionPct: input.coddCommissionPct ?? null,
+    vatRatePct: input.vatRatePct ?? null,
+  }).netPayout;
 }

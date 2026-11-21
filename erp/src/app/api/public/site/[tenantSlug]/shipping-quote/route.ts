@@ -81,6 +81,11 @@ export async function POST(
       cityName: parsed.data.cityName,
       districtName: parsed.data.districtName,
     });
+    // ARGUS #292: no active rate card is a configuration error, not free
+    // shipping. The storefront must show this instead of a zero quote.
+    if (!quote.configured) {
+      return errorWithCors(request, 409, 'Shipping is not configured for this store');
+    }
     return jsonWithCors(request, { success: true, data: { shippingFee: quote.shippingFee } }, { status: 200 });
   } catch (error) {
     console.error('POST /api/public/site/[tenantSlug]/shipping-quote error:', error);

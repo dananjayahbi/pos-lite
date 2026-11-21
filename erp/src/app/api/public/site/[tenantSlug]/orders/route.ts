@@ -172,6 +172,15 @@ export async function POST(
     if (message === 'OUT_OF_STOCK') {
       return errorWithCors(request, 409, 'One or more items are out of stock');
     }
+    // ARGUS #292: a missing rate card blocks order creation instead of silently
+    // pricing shipping at zero.
+    if (message === 'SHIPPING_NOT_CONFIGURED') {
+      return errorWithCors(
+        request,
+        409,
+        'Shipping is not configured for this store. Please contact the store before ordering.',
+      );
+    }
     return errorWithCors(request, 500, 'An unexpected error occurred');
   }
 }

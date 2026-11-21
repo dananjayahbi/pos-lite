@@ -75,6 +75,12 @@ export function mapDeliveryError(error: unknown): NextResponse | null {
   if (message === 'DELIVERY_MISSING_ADDRESS') return badRequest('Delivery has no shipping address');
   // NEW-F (M24-01): payment-settlement block is a state conflict, not a crash.
   if (message === 'DELIVERY_PAYMENT_NOT_SETTLED') return conflict('Delivery payment has not been settled');
+  // ARGUS #292: missing pricing config is a state conflict, not free delivery.
+  if (message === 'SHIPPING_NOT_CONFIGURED') {
+    return conflict(
+      'Shipping is not configured for this store. Set an active rate card before creating orders or deliveries.',
+    );
+  }
 
   // M26-02/BUG-66: reconciliation-dispute sentinels. These were unmapped, so
   // routine client errors (unknown id, double-dispute, cross-tenant id) 500'd

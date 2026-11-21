@@ -9,6 +9,7 @@ import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import type { TxClient } from '@/lib/services/inventory.service';
 import { calculateShippingFee } from '@/lib/services/rate-engine.service';
+import { resolveShippingChargeDecision } from '@/lib/delivery/shippingConfig.core';
 import { createShipment } from '@/lib/services/shipment.service';
 import { autoDeductPackaging, assertPackagingAvailableForDispatch, notifyLowStock } from '@/lib/services/packaging.service';
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
@@ -141,6 +142,15 @@ export async function createDelivery(
     destinationDistrictId: input.address.districtId,
     destinationCityId: input.address.cityId,
   });
+  // ARGUS #292: no active card is a configuration error, not free shipping.
+  if (
+    resolveShippingChargeDecision({
+      configured: fee.configured,
+      shippingFee: fee.shippingFee.toString(),
+    }).blocked
+  ) {
+    throw new Error('SHIPPING_NOT_CONFIGURED');
+  }
 
   const holdExpiresAt = new Date(Date.now() + HOLD_BUFFER_DURATION_MS);
 
@@ -255,6 +265,14 @@ export async function updateDelivery(
           ? input.address.districtId
           : existing.address?.districtId,
       });
+      if (
+        resolveShippingChargeDecision({
+          configured: fee.configured,
+          shippingFee: fee.shippingFee.toString(),
+        }).blocked
+      ) {
+        throw new Error('SHIPPING_NOT_CONFIGURED');
+      }
       data.shippingFee = fee.shippingFee.toFixed(2);
     }
 
