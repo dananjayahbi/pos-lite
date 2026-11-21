@@ -12,6 +12,7 @@ import {
 import type { Prisma, PrismaClient } from '@/generated/prisma/client';
 import type { TxClient } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
+import { resolveInclusiveDateRange } from '@/lib/api/inclusive-date-range';
 import type {
   CloseAccountInput,
   CreatePaymentAccountInput,
@@ -825,10 +826,13 @@ export async function getAccountBook(
 
   const where: Prisma.PaymentAccountEntryWhereInput = { tenantId, accountId };
 
-  if (query.dateFrom || query.dateTo) {
+  // ARGUS #429: date-only bounds are inclusive local calendar days, shared
+  // with the tenant ledger, Expenses cash flow and inventory movement filters.
+  const range = resolveInclusiveDateRange(query.dateFrom, query.dateTo);
+  if (range.from || range.to) {
     where.entryDate = {
-      ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-      ...(query.dateTo ? { lte: new Date(`${query.dateTo}T23:59:59.999Z`) } : {}),
+      ...(range.from ? { gte: range.from } : {}),
+      ...(range.to ? { lte: range.to } : {}),
     };
   }
   if (query.source) where.source = query.source;
@@ -876,10 +880,11 @@ export async function getCashFlow(
   const where: Prisma.PaymentAccountEntryWhereInput = { tenantId };
 
   if (query.accountId) where.accountId = query.accountId;
-  if (query.dateFrom || query.dateTo) {
+  const range = resolveInclusiveDateRange(query.dateFrom, query.dateTo);
+  if (range.from || range.to) {
     where.entryDate = {
-      ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-      ...(query.dateTo ? { lte: new Date(`${query.dateTo}T23:59:59.999Z`) } : {}),
+      ...(range.from ? { gte: range.from } : {}),
+      ...(range.to ? { lte: range.to } : {}),
     };
   }
 
