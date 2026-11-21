@@ -6,6 +6,7 @@ import Decimal from "decimal.js";
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { saleAccountingDateWhere, netRefundAmount } from '@/lib/reports/accounting';
+import { summarizeCogsSource } from '@/lib/reports/cogsSource';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -120,11 +121,25 @@ export async function GET(request: NextRequest) {
         .toFixed(2),
     }));
 
-    // ── 4. COGS: join sale_lines → product_variants for costPrice ─
+    // ── 4. COGS: split snapshot cost from current-cost fallback (ARGUS #436) ─
+    // The snapshot is historical truth; a missing snapshot falls back to the
+    // variant's current cost, which is reported separately instead of being
+    // silently mixed into one COGS number.
     const cogsResult = await prisma.$queryRaw<
-      { total_cogs: Decimal | null }[]
+      {
+        snapshot_cogs: Decimal | null;
+        fallback_cogs: Decimal | null;
+        snapshot_lines: bigint | number | null;
+        fallback_lines: bigint | number | null;
+      }[]
     >(Prisma.sql`
-      SELECT COALESCE(SUM(COALESCE(sl."costPriceSnapshot", pv."costPrice") * sl."quantity"), 0) AS total_cogs
+      SELECT
+        COALESCE(SUM(CASE WHEN sl."costPriceSnapshot" IS NOT NULL
+          THEN sl."costPriceSnapshot" * sl."quantity" ELSE 0 END), 0) AS snapshot_cogs,
+        COALESCE(SUM(CASE WHEN sl."costPriceSnapshot" IS NULL
+          THEN pv."costPrice" * sl."quantity" ELSE 0 END), 0) AS fallback_cogs,
+        COUNT(*) FILTER (WHERE sl."costPriceSnapshot" IS NOT NULL) AS snapshot_lines,
+        COUNT(*) FILTER (WHERE sl."costPriceSnapshot" IS NULL) AS fallback_lines
       FROM sale_lines sl
       JOIN sales s ON sl."saleId" = s."id"
       JOIN product_variants pv ON sl."variantId" = pv."id"
@@ -134,13 +149,30 @@ export async function GET(request: NextRequest) {
         AND COALESCE(s."saleDate", s."createdAt") <= ${to}
     `);
 
-    const rawCOGS = new Decimal(cogsResult[0]?.total_cogs?.toString() ?? "0");
+    const salesCogsSource = summarizeCogsSource({
+      snapshotCogs: cogsResult[0]?.snapshot_cogs?.toString() ?? "0",
+      fallbackCogs: cogsResult[0]?.fallback_cogs?.toString() ?? "0",
+      snapshotLines: Number(cogsResult[0]?.snapshot_lines ?? 0),
+      fallbackLines: Number(cogsResult[0]?.fallback_lines ?? 0),
+    });
+    const rawCOGS = new Decimal(salesCogsSource.total);
 
-    // ── 5. Returned COGS ─────────────────────────────────────────
+    // ── 5. Returned COGS (same snapshot/fallback split) ─────────
     const returnedCogsResult = await prisma.$queryRaw<
-      { total_cogs: Decimal | null }[]
+      {
+        snapshot_cogs: Decimal | null;
+        fallback_cogs: Decimal | null;
+        snapshot_lines: bigint | number | null;
+        fallback_lines: bigint | number | null;
+      }[]
     >(Prisma.sql`
-      SELECT COALESCE(SUM(COALESCE(sl."costPriceSnapshot", pv."costPrice") * rl."quantity"), 0) AS total_cogs
+      SELECT
+        COALESCE(SUM(CASE WHEN sl."costPriceSnapshot" IS NOT NULL
+          THEN sl."costPriceSnapshot" * rl."quantity" ELSE 0 END), 0) AS snapshot_cogs,
+        COALESCE(SUM(CASE WHEN sl."costPriceSnapshot" IS NULL
+          THEN pv."costPrice" * rl."quantity" ELSE 0 END), 0) AS fallback_cogs,
+        COUNT(*) FILTER (WHERE sl."costPriceSnapshot" IS NOT NULL) AS snapshot_lines,
+        COUNT(*) FILTER (WHERE sl."costPriceSnapshot" IS NULL) AS fallback_lines
       FROM return_lines rl
       JOIN returns r ON rl."returnId" = r."id"
       JOIN sale_lines sl ON sl."id" = rl."originalSaleLineId"
@@ -151,9 +183,13 @@ export async function GET(request: NextRequest) {
         AND r."createdAt" <= ${to}
     `);
 
-    const returnedCOGS = new Decimal(
-      returnedCogsResult[0]?.total_cogs?.toString() ?? "0",
-    );
+    const returnedCogsSource = summarizeCogsSource({
+      snapshotCogs: returnedCogsResult[0]?.snapshot_cogs?.toString() ?? "0",
+      fallbackCogs: returnedCogsResult[0]?.fallback_cogs?.toString() ?? "0",
+      snapshotLines: Number(returnedCogsResult[0]?.snapshot_lines ?? 0),
+      fallbackLines: Number(returnedCogsResult[0]?.fallback_lines ?? 0),
+    });
+    const returnedCOGS = new Decimal(returnedCogsSource.total);
 
     // ── 6. Expenses ──────────────────────────────────────────────
     const expensesByCategory = await prisma.expense.groupBy({
@@ -355,6 +391,19 @@ export async function GET(request: NextRequest) {
       ? new Decimal(0)
       : netProfit.div(netRevenue).times(100);
 
+    const cogsQuality = {
+      sales: salesCogsSource,
+      returned: returnedCogsSource,
+      usesFallback:
+        salesCogsSource.usesFallback || returnedCogsSource.usesFallback,
+      caveats: [
+        ...(salesCogsSource.caveat ? [`Sales COGS: ${salesCogsSource.caveat}`] : []),
+        ...(returnedCogsSource.caveat
+          ? [`Returned COGS: ${returnedCogsSource.caveat}`]
+          : []),
+      ],
+    };
+
     return NextResponse.json({
       success: true,
       data: {
@@ -374,6 +423,7 @@ export async function GET(request: NextRequest) {
         expenseCategories,
         netProfit: netProfit.toFixed(2),
         netMargin: netMargin.toFixed(1),
+        cogsQuality,
         monthlyData,
       },
     });
