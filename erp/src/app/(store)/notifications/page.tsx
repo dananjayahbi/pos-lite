@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useGetNotifications, useInvalidateNotifications } from '@/hooks/useGetNotifications';
 import { getNotificationIcon } from '@/lib/constants/notification-types';
+import { getNotificationHref } from '@/lib/notifications/notification-href';
 import {
   SALE_VOIDED_TITLE,
   buildSaleVoidedCopy,
@@ -50,28 +51,6 @@ function formatRelativeTime(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-LK');
 }
 
-function getNotificationHref(type: string, relatedEntityId: string | null): string | null {
-  switch (type) {
-    case 'LOW_STOCK_ALERT':
-      return '/stock-control/low-stock';
-    case 'PETTY_CASH_LOW':
-      return '/petty-cash';
-    case 'STOCK_TAKE_SUBMITTED':
-    case 'STOCK_TAKE_APPROVED':
-    case 'STOCK_TAKE_REJECTED':
-      return relatedEntityId ? `/stock-control/stock-takes/${relatedEntityId}/review` : null;
-    case 'SALE_COMPLETED':
-      // ARGUS #52: open the sale itself so the operator can confirm the void.
-      return relatedEntityId ? `/sales/${relatedEntityId}` : '/sales';
-    case 'RETURN_PROCESSED':
-      return '/returns';
-    case 'SHIFT_CLOSED':
-      return relatedEntityId ? `/staff/shifts/${relatedEntityId}` : '/staff/shifts';
-    default:
-      return null;
-  }
-}
-
 export default function NotificationsPage() {
   const router = useRouter();
   const invalidate = useInvalidateNotifications();
@@ -97,14 +76,11 @@ export default function NotificationsPage() {
     }
   }
 
-  async function handleOpen(id: string, type: string, relatedEntityId: string | null, isRead: boolean) {
+  async function handleOpen(id: string, href: string, isRead: boolean) {
     if (!isRead) {
       await handleMarkRead(id);
     }
-    const href = getNotificationHref(type, relatedEntityId);
-    if (href) {
-      router.push(href);
-    }
+    router.push(href);
   }
 
   return (
@@ -184,7 +160,11 @@ export default function NotificationsPage() {
             notifications.map((notification) => {
               const isVoidedSale = isVoidedSaleAlert(notification.type, notification.relatedSale);
               const Icon = isVoidedSale ? XCircle : getNotificationIcon(notification.type);
-              const href = getNotificationHref(notification.type, notification.relatedEntityId);
+              const href = getNotificationHref({
+                type: notification.type,
+                relatedEntityId: notification.relatedEntityId,
+                relatedEntityType: notification.relatedEntityType,
+              });
               const title = isVoidedSale ? SALE_VOIDED_TITLE : notification.title;
               const body =
                 isVoidedSale && notification.relatedSale
@@ -225,7 +205,7 @@ export default function NotificationsPage() {
                         </Button>
                       )}
                       {href && (
-                        <Button size="sm" onClick={() => handleOpen(notification.id, notification.type, notification.relatedEntityId, notification.isRead)}>
+                        <Button size="sm" onClick={() => handleOpen(notification.id, href, notification.isRead)}>
                           {isVoidedSale ? 'View sale' : 'Open'}
                         </Button>
                       )}
