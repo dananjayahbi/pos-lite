@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import Decimal from 'decimal.js';
 
-import { buildSaleTenderLegs } from '@/lib/services/saleTender.core';
+import { buildSaleTenderLegs, sumRedeemedCreditLegs } from '@/lib/services/saleTender.core';
 
 function legMap(legs: ReturnType<typeof buildSaleTenderLegs>): Record<string, number> {
   return Object.fromEntries(legs.map((leg) => [leg.method, leg.amount.toNumber()]));
@@ -130,5 +130,28 @@ describe('buildSaleTenderLegs', () => {
 
     expect(legMap(legs)).toEqual({ CARD: 100, STORE_CREDIT: 300, EXCHANGE_CREDIT: 200 });
     expect(legsTotal(legs)).toBe(600);
+  });
+});
+
+/** Voiding a sale must restore both credit tenders (store/exchange). */
+describe('sumRedeemedCreditLegs', () => {
+  it('sums store and exchange credit legs separately', () => {
+    const result = sumRedeemedCreditLegs([
+      { method: 'CASH', amount: new Decimal(100) },
+      { method: 'STORE_CREDIT', amount: new Decimal(300) },
+      { method: 'EXCHANGE_CREDIT', amount: new Decimal(200) },
+      { method: 'CARD', amount: new Decimal(50) },
+    ]);
+
+    expect(result.storeCredit.toNumber()).toBe(300);
+    expect(result.exchangeCredit.toNumber()).toBe(200);
+    expect(result.total.toNumber()).toBe(500);
+  });
+
+  it('returns zero when no credit was redeemed', () => {
+    const result = sumRedeemedCreditLegs([
+      { method: 'CASH', amount: new Decimal(100) },
+    ]);
+    expect(result.total.toNumber()).toBe(0);
   });
 });

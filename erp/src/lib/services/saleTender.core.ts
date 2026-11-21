@@ -73,3 +73,25 @@ export function buildSaleTenderLegs(input: {
 
   return legs;
 }
+
+/**
+ * Credit redeemed by a sale, split by tender (ARGUS void-refund fix).
+ *
+ * A void must return both STORE_CREDIT and EXCHANGE_CREDIT back to the customer;
+ * without this the balance was consumed and the refunded money disappeared.
+ */
+export function sumRedeemedCreditLegs(
+  legs: Array<{ method: PaymentLegMethod; amount: Decimal }>,
+): { storeCredit: Decimal; exchangeCredit: Decimal; total: Decimal } {
+  let storeCredit = new Decimal(0);
+  let exchangeCredit = new Decimal(0);
+  for (const leg of legs) {
+    if (leg.method === 'STORE_CREDIT') storeCredit = storeCredit.plus(leg.amount);
+    if (leg.method === 'EXCHANGE_CREDIT') exchangeCredit = exchangeCredit.plus(leg.amount);
+  }
+  return {
+    storeCredit,
+    exchangeCredit,
+    total: storeCredit.plus(exchangeCredit),
+  };
+}

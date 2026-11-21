@@ -13,7 +13,7 @@ import type { CreateSaleInput, HoldSaleInput, UpdateSaleInput } from '@/lib/vali
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
-import { buildSaleTenderLegs } from '@/lib/services/saleTender.core';
+import { buildSaleTenderLegs, sumRedeemedCreditLegs } from '@/lib/services/saleTender.core';
 import { resolveCashTender } from '@/lib/services/saleCashTender.core';
 import { assertSaleVoidable } from '@/lib/services/saleVoid.core';
 import { assertCompletedSaleShape } from '@/lib/services/saleCompleteness.core';
@@ -1137,6 +1137,29 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
     // Put the money back where it came from. Mirrors the entries written by
     // `postSaleToAccounts` at collection time.
     await reverseSaleAccounts(tx, tenantId, actorId, sale.id, sale.id.slice(0, 8).toUpperCase());
+
+    // Store/exchange credit redeemed on this sale must return to the customer.
+    // The tender legs are the source of truth; voiding previously reversed only
+    // the payment account legs, so the redeemed balance vanished.
+    const creditLegs = await tx.payment.findMany({
+      where: {
+        saleId: sale.id,
+        method: { in: ['STORE_CREDIT', 'EXCHANGE_CREDIT'] },
+      },
+      select: { method: true, amount: true },
+    });
+    const redeemedCredit = sumRedeemedCreditLegs(
+      creditLegs.map((leg) => ({ method: leg.method, amount: new Decimal(leg.amount.toString()) })),
+    );
+    if (sale.customerId && redeemedCredit.total.greaterThan(0)) {
+      await issueCredit(
+        tenantId,
+        sale.customerId,
+        redeemedCredit.total,
+        `Void of sale ${sale.id.slice(0, 8).toUpperCase()} - restored store/exchange credit`,
+        tx,
+      );
+    }
 
     // Voided sales must stop counting toward the customer's lifetime spend and
     // visit/loyalty metrics (ARGUS #308).
