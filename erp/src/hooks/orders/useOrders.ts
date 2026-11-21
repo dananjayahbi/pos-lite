@@ -1,18 +1,40 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { DeliveryStatus } from '@/generated/prisma/client';
 import type { BulkResultItem } from '@/lib/validators/order.validators';
 
+export const ORDERS_PAGE_SIZE = 50;
+
 /** Fetch orders (deliveries) for the Orders management page. */
-export function useOrders(filters: { status?: DeliveryStatus | null; search?: string } = {}) {
+export function useOrders(
+  filters: {
+    status?: DeliveryStatus | null;
+    search?: string;
+    page?: number;
+    limit?: number;
+  } = {},
+) {
+  const page = filters.page ?? 1;
+  const limit = filters.limit ?? ORDERS_PAGE_SIZE;
   const params = new URLSearchParams();
   if (filters.status) params.set('status', filters.status);
   if (filters.search) params.set('search', filters.search);
+  // ARGUS #262: without an explicit page the API caps the response at its
+  // default 50, making rows 51+ unreachable.
+  params.set('page', String(page));
+  params.set('limit', String(limit));
+
+  const queryFilters = {
+    status: filters.status ?? null,
+    search: filters.search ?? '',
+    page,
+    limit,
+  };
 
   return useQuery({
-    queryKey: ['orders', filters],
+    queryKey: ['orders', queryFilters],
     queryFn: async () => {
       const res = await fetch(`/api/store/deliveries?${params.toString()}`);
       const json = await res.json();
@@ -24,6 +46,7 @@ export function useOrders(filters: { status?: DeliveryStatus | null; search?: st
         limit: number;
       };
     },
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   });
 }

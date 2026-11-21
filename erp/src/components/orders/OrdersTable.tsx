@@ -44,7 +44,7 @@ export function OrdersTable({
             <th className="w-10 px-4 py-3">
               <input
                 type="checkbox"
-                aria-label="Select all"
+                aria-label="Select page"
                 checked={allSelected}
                 onChange={onToggleAll}
                 className="h-4 w-4 accent-espresso"

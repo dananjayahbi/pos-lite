@@ -1,1 +1,6 @@
-export { useOrders, useBulkStatusChange, useBulkCreateDelivery } from './useOrders';
+export {
+  ORDERS_PAGE_SIZE,
+  useOrders,
+  useBulkStatusChange,
+  useBulkCreateDelivery,
+} from './useOrders';
