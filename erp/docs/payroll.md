@@ -148,3 +148,11 @@ The URL builder lives in `src/lib/payroll/payslip-links.core.ts` (unit tested),
 so the two buttons cannot collapse back into the same action. The route also
 sets `Cache-Control: private, no-store` for both modes.
 
+## Payslip labels and deduction total (ARGUS #381)
+
+The profile block labels the EPF and ETF numbers as `EPF No.` and `ETF No.` and
+the NIC as `NIC`; there is no invented "Employee ID". The deductions table now
+ends with **Total deductions (no-pay + advances + EPF)**, computed by
+`src/lib/payroll/deductions.core.ts`. That figure reconciles gross to net, and
+the footer formula names it directly instead of adding EPF a second time.
+

@@ -101,6 +101,13 @@ describe('payroll documents', () => {
     });
     expect(isPdf(pdf)).toBe(true);
     expect(pdf.byteLength).toBeGreaterThan(1000);
+
+    // ARGUS #381: no invented "Employee ID"; the EPF number has its own label
+    // and the deduction total reconciles gross to net including employee EPF.
+    const text = pdf.toString('latin1');
+    expect(text).not.toContain('Employee ID');
+    expect(text).toContain('EPF No.');
+    expect(text).toContain('Total deductions');
   });
 
   it('renders bank salary worksheets in Excel and PDF', () => {
