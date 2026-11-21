@@ -144,7 +144,7 @@ test.describe('Module 19 - Expenses & Petty Cash', () => {
 
     // Default: blocked with a typed 422 — nothing is written.
     const blocked = await createExpense(page, {
-      category: 'MAINTENANCE',
+      category: 'MISCELLANEOUS',
       amount: overdraw,
       description: 'QA overdraft blocked',
       expenseDate: new Date().toISOString().slice(0, 10),
@@ -158,7 +158,7 @@ test.describe('Module 19 - Expenses & Petty Cash', () => {
 
     // Manager override: explicit approval drives the balance negative.
     const approved = await createExpense(page, {
-      category: 'MAINTENANCE',
+      category: 'MISCELLANEOUS',
       amount: overdraw,
       description: 'QA overdraft approved',
       expenseDate: new Date().toISOString().slice(0, 10),

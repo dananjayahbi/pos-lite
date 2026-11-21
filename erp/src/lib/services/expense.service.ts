@@ -11,6 +11,8 @@ import {
 import { PaymentEntrySource } from '@/generated/prisma/client';
 import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/paymentAccount.service';
 import { parseRangeStart, parseRangeEnd } from '@/lib/dates/inclusiveRange';
+import { ApiError } from '@/lib/api/errors';
+import { categoryDenialReason } from '@/lib/petty-cash/category-policy';
 
 interface ExpenseFilters {
   category?: string | undefined;
@@ -147,23 +149,40 @@ export async function createExpense(
   // on the same numbers.
   let effectiveFundId = data.pettyCashFundId ?? null;
   let effectiveAccountId = data.paymentAccountId ?? null;
+  let effectiveFundCategories: string[] | null = null;
 
   if (effectiveFundId) {
     const fund = await prisma.pettyCashFund.findFirst({
       where: { id: effectiveFundId, tenantId },
-      select: { paymentAccountId: true },
+      select: { paymentAccountId: true, activeCategories: true },
     });
     if (!fund) throw new Error('Petty cash fund not found');
+    effectiveFundCategories = fund.activeCategories;
     effectiveAccountId = fund.paymentAccountId
       ? fund.paymentAccountId
       : (await ensureFundPaymentAccount(tenantId, effectiveFundId, data.recordedById)).id;
   } else if (effectiveAccountId) {
     const account = await prisma.paymentAccount.findFirst({
       where: { id: effectiveAccountId, tenantId },
-      include: { pettyCashFund: { select: { id: true } } },
+      include: {
+        pettyCashFund: { select: { id: true, activeCategories: true } },
+      },
     });
     if (!account) throw new Error('Payment account not found');
-    if (account.pettyCashFund) effectiveFundId = account.pettyCashFund.id;
+    if (account.pettyCashFund) {
+      effectiveFundId = account.pettyCashFund.id;
+      effectiveFundCategories = account.pettyCashFund.activeCategories;
+    }
+  }
+
+  // ARGUS #407: the fund's Active Categories are enforced server-side. This
+  // runs before any row/ledger write so a disabled category cannot be smuggled
+  // in through the API or a stale form.
+  if (effectiveFundId) {
+    const denial = categoryDenialReason(data.category, effectiveFundCategories);
+    if (denial) {
+      throw new ApiError(422, 'CATEGORY_NOT_ENABLED', denial);
+    }
   }
 
   // M19-01 (BUG-53, D2): block a linked expense that would overdraw the fund
@@ -277,13 +296,15 @@ export async function updateExpense(
     data.pettyCashFundId !== undefined ? data.pettyCashFundId : oldFundId;
   let effectiveAccountId =
     data.paymentAccountId !== undefined ? data.paymentAccountId : oldAccountId;
+  let effectiveFundCategories: string[] | null = null;
 
   if (effectiveFundId) {
     const fund = await prisma.pettyCashFund.findFirst({
       where: { id: effectiveFundId, tenantId },
-      select: { paymentAccountId: true },
+      select: { paymentAccountId: true, activeCategories: true },
     });
     if (!fund) throw new Error('Petty cash fund not found');
+    effectiveFundCategories = fund.activeCategories;
     effectiveAccountId = fund.paymentAccountId
       ? fund.paymentAccountId
       : (
@@ -296,16 +317,32 @@ export async function updateExpense(
   } else if (effectiveAccountId) {
     const account = await prisma.paymentAccount.findFirst({
       where: { id: effectiveAccountId, tenantId },
-      include: { pettyCashFund: { select: { id: true } } },
+      include: {
+        pettyCashFund: { select: { id: true, activeCategories: true } },
+      },
     });
     if (!account) throw new Error('Payment account not found');
-    if (account.pettyCashFund) effectiveFundId = account.pettyCashFund.id;
+    if (account.pettyCashFund) {
+      effectiveFundId = account.pettyCashFund.id;
+      effectiveFundCategories = account.pettyCashFund.activeCategories;
+    }
   }
 
   const newFundId = effectiveFundId;
   const newAccountId = effectiveAccountId;
   const newAmount = data.amount !== undefined ? data.amount : oldAmount;
   const sameFund = oldFundId !== null && newFundId === oldFundId;
+
+  // ARGUS #407: enforce the fund allow-list when the update writes a category
+  // or moves the expense onto a fund. An untouched category on an existing
+  // legacy row stays editable so disabled historical data can still be fixed.
+  if (newFundId && (data.category !== undefined || newFundId !== oldFundId)) {
+    const nextCategory = data.category ?? existing.category;
+    const denial = categoryDenialReason(nextCategory, effectiveFundCategories);
+    if (denial) {
+      throw new ApiError(422, 'CATEGORY_NOT_ENABLED', denial);
+    }
+  }
 
   // M19-01 (D2): an edit that increases or re-links a fund-backed spend is
   // guarded exactly like a create. When the fund is unchanged the old amount is

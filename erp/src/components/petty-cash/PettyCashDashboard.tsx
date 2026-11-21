@@ -296,7 +296,7 @@ export default function PettyCashDashboard() {
             <ArrowDownToLine className="mr-2 h-4 w-4" />
             Add Cash In
           </Button>
-          <Link href="/expenses">
+          <Link href={fund ? `/expenses?fundId=${encodeURIComponent(fund.id)}` : '/expenses'}>
             <Button variant="outline" className="border-mist text-espresso">
               Add Expense <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
