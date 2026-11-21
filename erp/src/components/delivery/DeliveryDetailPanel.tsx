@@ -5,6 +5,11 @@ import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatRupee } from '@/lib/format';
 import { collectableCodAmount } from '@/lib/delivery/cod';
+import {
+  deliveryLinesTotal,
+  toDeliveryLineRows,
+  toLineInputs,
+} from './deliveryLineItems';
 import { useCancelDelivery, useShipmentTracking } from '@/hooks/delivery';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
@@ -68,6 +73,69 @@ function OrderInfoCard({ delivery }: { delivery: DeliveryDetail }) {
             </div>
           ))}
         </dl>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DeliveryItemsCard({ delivery }: { delivery: DeliveryDetail }) {
+  const lines = toLineInputs(delivery.lines);
+  const rows = toDeliveryLineRows(lines);
+  const lineTotal = deliveryLinesTotal(lines);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-espresso">Items</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {rows.length === 0 ? (
+          <p className="text-sm text-espresso/50">
+            No item lines were recorded for this delivery.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-espresso/10 text-left text-xs text-espresso/50">
+                  <th className="py-2 pr-3 font-medium">Product</th>
+                  <th className="py-2 pr-3 font-medium">SKU</th>
+                  <th className="py-2 pr-3 text-right font-medium">Qty</th>
+                  <th className="py-2 pr-3 text-right font-medium">Unit price</th>
+                  <th className="py-2 text-right font-medium">Line total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((line, index) => (
+                  <tr
+                    key={line.id ?? `${line.sku}-${index}`}
+                    className="border-b border-espresso/5 last:border-0"
+                  >
+                    <td className="py-2 pr-3 text-espresso">{line.productName}</td>
+                    <td className="py-2 pr-3 text-espresso/60">{line.sku}</td>
+                    <td className="py-2 pr-3 text-right text-espresso/60">{line.quantity}</td>
+                    <td className="py-2 pr-3 text-right text-espresso/60">
+                      {formatRupee(line.unitPrice)}
+                    </td>
+                    <td className="py-2 text-right text-espresso">
+                      {formatRupee(line.lineTotal)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={4} className="pt-2 text-right text-xs text-espresso/50">
+                    Recorded line total
+                  </td>
+                  <td className="pt-2 text-right text-sm font-medium text-espresso">
+                    {formatRupee(lineTotal)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -176,6 +244,7 @@ export function DeliveryDetailPanel({ delivery }: DeliveryDetailPanelProps) {
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="space-y-6">
         <OrderInfoCard delivery={delivery} />
+        <DeliveryItemsCard delivery={delivery} />
         <ShipmentStatusCard delivery={delivery} tracking={tracking} summary={summary} />
       </div>
 
