@@ -17,3 +17,28 @@ export function auditDetailMode(
   if (hasBefore) return 'deleted';
   return 'none';
 }
+
+export interface AuditSnapshotRow {
+  field: string;
+  value: string;
+}
+
+function snapshotValue(value: unknown): string {
+  if (value === null || value === undefined) return '-';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+/**
+ * Rows for a created or deleted snapshot. Keeps the before-only path (a
+ * deletion row) rendering its recorded values instead of the "no detail"
+ * message (ARGUS #454/#458).
+ */
+export function auditSnapshotRows(
+  snapshot: Record<string, unknown> | null | undefined,
+): AuditSnapshotRow[] {
+  if (!snapshot) return [];
+  return Object.entries(snapshot)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([field, value]) => ({ field, value: snapshotValue(value) }));
+}

@@ -8,6 +8,17 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { auditListMode } from '@/lib/audit/auditList.core';
 import {
+  auditChangeSummary,
+  formatAuditActionLabel,
+  formatAuditDateTime,
+  formatAuditRoleLabel,
+} from '@/lib/audit/auditPresentation.core';
+import {
+  AUDIT_PAGE_SIZES,
+  DEFAULT_AUDIT_PAGE_SIZE,
+  normalizeAuditPageSize,
+} from '@/lib/audit/auditFilterState.core';
+import {
   Table,
   TableBody,
   TableCell,
@@ -45,32 +56,12 @@ interface AuditLogResponse {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 50;
-
 const ENTITY_TYPE_COLORS: Record<string, string> = {
   Sale: 'bg-terracotta text-pearl',
   Return: 'bg-sand text-espresso',
   Staff: 'bg-espresso text-pearl',
   Settings: 'bg-mist text-espresso',
 };
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatActionName(action: string): string {
-  return action
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = d.toLocaleString('en-GB', { month: 'short' });
-  const year = d.getFullYear();
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  return `${day} ${month} ${year}, ${hours}:${minutes}`;
-}
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -82,6 +73,7 @@ interface AuditLogTableProps {
 
 export default function AuditLogTable({ filters }: AuditLogTableProps) {
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_AUDIT_PAGE_SIZE);
   const [selectedEntry, setSelectedEntry] = useState<AuditLogEntry | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
@@ -92,13 +84,14 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
     if (filters.startDate) p.set('startDate', filters.startDate);
     if (filters.endDate) p.set('endDate', filters.endDate);
     if (filters.userId) p.set('userId', filters.userId);
+    if (filters.search) p.set('search', filters.search);
     p.set('page', String(page));
-    p.set('pageSize', String(PAGE_SIZE));
+    p.set('pageSize', String(pageSize));
     return p.toString();
-  }, [filters, page]);
+  }, [filters, page, pageSize]);
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery<AuditLogResponse>({
-    queryKey: ['auditLogs', filters.entityType, filters.action, filters.startDate, filters.endDate, filters.userId, page],
+    queryKey: ['auditLogs', filters.entityType, filters.action, filters.startDate, filters.endDate, filters.userId, filters.search, page, pageSize],
     // M35-02 (OBS-75): react-query hands us an AbortSignal — pass it through so
     // a superseded request is cancelled instead of racing the newer one. Without
     // this, rapid filter changes could resolve out of order and flash stale rows
@@ -112,7 +105,7 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
         data: json.data as AuditLogEntry[],
         total: json.meta?.total ?? 0,
         page: json.meta?.page ?? 1,
-        pageSize: json.meta?.limit ?? PAGE_SIZE,
+        pageSize: json.meta?.limit ?? pageSize,
       };
     },
   });
@@ -121,19 +114,29 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
   const rangeStart = data ? (data.page - 1) * data.pageSize + 1 : 0;
   const rangeEnd = data ? Math.min(data.page * data.pageSize, data.total) : 0;
 
-  // Reset page when filters change
+  // Reset page when filters or the page size change
   useEffect(() => {
     setPage(1);
-  }, [filters.entityType, filters.action, filters.startDate, filters.endDate, filters.userId]);
+  }, [
+    filters.entityType,
+    filters.action,
+    filters.startDate,
+    filters.endDate,
+    filters.userId,
+    filters.search,
+    pageSize,
+  ]);
 
   async function handleExport() {
     if (isExporting) return;
     setIsExporting(true);
     try {
+      // The CSV endpoint exports the complete filtered set (ARGUS #453), so
+      // paging params are irrelevant here.
       const params = new URLSearchParams(buildParams());
       params.set('format', 'csv');
       params.delete('page');
-      params.set('pageSize', '100');
+      params.delete('pageSize');
 
       const response = await fetch(`/api/audit-logs?${params.toString()}`);
       if (!response.ok) {
@@ -203,7 +206,21 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
 
   return (
     <>
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        <label className="flex items-center gap-2 font-body text-sm text-sand-ink">
+          Rows per page
+          <select
+            className="h-9 rounded-md border border-mist bg-white px-2 text-sm text-espresso"
+            value={pageSize}
+            onChange={(event) => setPageSize(normalizeAuditPageSize(Number(event.target.value)))}
+          >
+            {AUDIT_PAGE_SIZES.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
         <Button
           variant="outline"
           size="sm"
@@ -214,13 +231,16 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
           {isExporting ? 'Exporting...' : 'Export filtered CSV'}
         </Button>
       </div>
-      <div className="rounded-lg border border-mist">
+      <div className="overflow-x-auto rounded-lg border border-mist">
         <Table>
           <TableHeader>
             <TableRow className="bg-linen/40">
               <TableHead className="text-espresso">Entity Type</TableHead>
+              <TableHead className="text-espresso">Entity ID</TableHead>
               <TableHead className="text-espresso">Action</TableHead>
               <TableHead className="text-espresso">User</TableHead>
+              <TableHead className="text-espresso">IP</TableHead>
+              <TableHead className="text-espresso">Change</TableHead>
               <TableHead className="text-espresso">Date</TableHead>
             </TableRow>
           </TableHeader>
@@ -238,17 +258,32 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
                     {entry.entityType.replace(/([a-z])([A-Z])/g, '$1 $2')}
                   </Badge>
                 </TableCell>
+                <TableCell
+                  className="max-w-[10rem] truncate font-mono text-xs text-sand-ink"
+                  title={entry.entityId}
+                >
+                  {entry.entityId}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-sm text-espresso">
+                  {formatAuditActionLabel(entry.action)}
+                </TableCell>
                 <TableCell className="text-sm text-espresso">
-                  {formatActionName(entry.action)}
+                  <div>{entry.actorName}</div>
+                  <div className="text-xs text-sand-ink">
+                    {formatAuditRoleLabel(entry.actorRole)}
+                  </div>
+                </TableCell>
+                <TableCell className="font-mono text-xs text-sand-ink">
+                  {entry.ipAddress ?? '-'}
                 </TableCell>
                 <TableCell
-                  className="text-sm text-espresso"
-                  title={entry.actorId ? `Actor ID: ${entry.actorId}` : undefined}
+                  className="max-w-[16rem] text-xs text-sand-ink"
+                  title={auditChangeSummary(entry.before, entry.after, 20)}
                 >
-                  {entry.actorName}
+                  {auditChangeSummary(entry.before, entry.after)}
                 </TableCell>
-                <TableCell className="text-sm text-sand-ink">
-                  {formatDate(entry.createdAt)}
+                <TableCell className="whitespace-nowrap text-sm text-sand-ink">
+                  {formatAuditDateTime(entry.createdAt)}
                 </TableCell>
               </TableRow>
             ))}

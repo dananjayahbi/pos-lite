@@ -28,9 +28,10 @@ One refresh refetches every active dashboard key together:
 | Query key | Surface |
 | --- | --- |
 | `raw-material-stats` | KPI cards |
-| `raw-materials` | low-stock list |
-| `raw-material-alerts` | raw-material alerts panel |
+| `raw-materials` | raw-material list (shared cache) |
+| `raw-material-alerts` | low-stock list + alert summary + Low/Out KPIs |
 | `production-logs` | production history panel |
+| `factory-output-stats` | production-run, units-produced and finished-goods KPIs |
 
 The key list is shared with the dashboard's query module
 (`src/lib/factory/factoryQueries.ts`) and the helpers live in

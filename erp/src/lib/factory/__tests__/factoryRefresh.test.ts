@@ -95,6 +95,7 @@ describe('factoryRefresh - refetchFactoryDashboard', () => {
       { queryKey: ['raw-materials'], type: 'active' },
       { queryKey: ['raw-material-alerts'], type: 'active' },
       { queryKey: ['production-logs'], type: 'active' },
+      { queryKey: ['factory-output-stats'], type: 'active' },
     ]);
   });
 });

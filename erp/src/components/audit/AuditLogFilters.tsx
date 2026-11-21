@@ -4,6 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { formatAuditActionLabel } from '@/lib/audit/auditPresentation.core';
+import {
+  DEFAULT_AUDIT_FILTERS,
+  MAX_AUDIT_SEARCH_LENGTH,
+  type AuditLogFilterStateLike,
+} from '@/lib/audit/auditFilterState.core';
 import {
   Select,
   SelectContent,
@@ -14,13 +20,7 @@ import {
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export interface AuditLogFilterState {
-  entityType: string;
-  action: string;
-  startDate: string;
-  endDate: string;
-  userId: string;
-}
+export type AuditLogFilterState = AuditLogFilterStateLike;
 
 interface AuditLogFiltersProps {
   value: AuditLogFilterState;
@@ -97,7 +97,24 @@ export default function AuditLogFilters({
   }, [local, onFilterChange]);
 
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+    <div className="flex flex-col gap-4">
+      {/* Free-text / entity-id investigation search (ARGUS #457). */}
+      <div className="w-full sm:max-w-md">
+        <Label htmlFor="audit-search" className="text-sm text-sand-ink">
+          Search
+        </Label>
+        <Input
+          id="audit-search"
+          type="search"
+          placeholder="Entity ID, entity type, action, IP or user agent"
+          value={local.search}
+          maxLength={MAX_AUDIT_SEARCH_LENGTH}
+          onChange={(event) => setLocal((s) => ({ ...s, search: event.target.value }))}
+          className="border-mist"
+        />
+      </div>
+
+      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
       {/* Entity Type */}
       <div className="w-full sm:w-48">
         <Label className="text-sm text-sand-ink">Entity Type</Label>
@@ -133,7 +150,8 @@ export default function AuditLogFilters({
             <SelectItem value="ALL">All Actions</SelectItem>
             {actionOptions.map((option) => (
               <SelectItem key={option.value} value={option.value}>
-                {option.value.replace(/_/g, ' ')}
+                {/* Same title case as the table and detail modal (ARGUS #457). */}
+                {formatAuditActionLabel(option.value)}
                 {option.count > 0 ? ` (${option.count})` : ''}
               </SelectItem>
             ))}
@@ -182,10 +200,11 @@ export default function AuditLogFilters({
         type="button"
         variant="outline"
         className="sm:mb-0"
-        onClick={() => setLocal({ entityType: 'ALL', action: 'ALL', startDate: '', endDate: '', userId: '' })}
+        onClick={() => setLocal({ ...DEFAULT_AUDIT_FILTERS })}
       >
         Clear Filters
       </Button>
+      </div>
     </div>
   );
 }

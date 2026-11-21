@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { auditDetailMode } from '@/lib/audit/auditDetail.core';
+import { auditDetailMode, auditSnapshotRows } from '@/lib/audit/auditDetail.core';
 
 /** ARGUS #454: deletion rows must render a Deleted values section. */
 describe('auditDetailMode', () => {
@@ -21,5 +21,23 @@ describe('auditDetailMode', () => {
   it('reports no detail when both are empty', () => {
     expect(auditDetailMode(null, null)).toBe('none');
     expect(auditDetailMode({}, {})).toBe('none');
+  });
+});
+
+/** ARGUS #458: a before-only (deletion) snapshot must render real rows. */
+describe('auditSnapshotRows', () => {
+  it('renders before-only values instead of the no-detail message', () => {
+    expect(auditSnapshotRows({ amount: 1200, reason: 'damage' })).toEqual([
+      { field: 'amount', value: '1200' },
+      { field: 'reason', value: 'damage' },
+    ]);
+  });
+
+  it('renders object values as JSON and keeps empty snapshots empty', () => {
+    expect(auditSnapshotRows({ meta: { a: 1 } })).toEqual([
+      { field: 'meta', value: '{"a":1}' },
+    ]);
+    expect(auditSnapshotRows(null)).toEqual([]);
+    expect(auditSnapshotRows({})).toEqual([]);
   });
 });

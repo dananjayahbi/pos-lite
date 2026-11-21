@@ -1,10 +1,15 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import AuditLogFilters from '@/components/audit/AuditLogFilters';
 import AuditLogTable from '@/components/audit/AuditLogTable';
 import type { AuditLogFilterState } from '@/components/audit/AuditLogFilters';
+import {
+  auditFiltersFromParams,
+  auditFiltersToQuery,
+} from '@/lib/audit/auditFilterState.core';
 
 interface FacetOption {
   value: string;
@@ -16,16 +21,14 @@ interface AuditFacetsResponse {
   data: { entityTypes: FacetOption[]; actions: FacetOption[] };
 }
 
-const DEFAULT_FILTERS: AuditLogFilterState = {
-  entityType: 'ALL',
-  action: 'ALL',
-  startDate: '',
-  endDate: '',
-  userId: '',
-};
-
 export default function AuditLogPageClient() {
-  const [filters, setFilters] = useState<AuditLogFilterState>(DEFAULT_FILTERS);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // ARGUS #457 - a filtered investigation is bookmarkable/shareable.
+  const [filters, setFilters] = useState<AuditLogFilterState>(() =>
+    auditFiltersFromParams(new URLSearchParams(searchParams.toString())),
+  );
 
   // Populate the filter menus from the ledger's actual vocabulary (ARGUS #451).
   const { data: facetsData } = useQuery<AuditFacetsResponse>({
@@ -38,9 +41,14 @@ export default function AuditLogPageClient() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const handleFilterChange = useCallback((next: AuditLogFilterState) => {
-    setFilters(next);
-  }, []);
+  const handleFilterChange = useCallback(
+    (next: AuditLogFilterState) => {
+      setFilters(next);
+      const query = auditFiltersToQuery(next);
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [pathname, router],
+  );
 
   return (
     <div className="space-y-6 p-6">

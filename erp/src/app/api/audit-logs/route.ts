@@ -57,6 +57,18 @@ export async function GET(request: NextRequest) {
     const entityType = searchParams.get('entityType') ?? undefined;
     const action = searchParams.get('action') ?? undefined;
     const userId = searchParams.get('userId') ?? undefined;
+    // ARGUS #457 - free-text/entity-id search for forensic investigations.
+    const searchRaw = searchParams.get('search')?.trim() ?? '';
+    if (searchRaw.length > 200) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'BAD_REQUEST', message: 'Query parameter "search" is too long (max 200)' },
+        },
+        { status: 400 },
+      );
+    }
+    const search = searchRaw === '' ? undefined : searchRaw;
     // XC-01 + XC-02: dates validated (garbage → 400, not Invalid Date in a
     // Prisma filter); pagination clamped.
     const startDate = parseQueryDate(searchParams, 'startDate');
@@ -72,6 +84,7 @@ export async function GET(request: NextRequest) {
           startDate,
           endDate,
           userId,
+          search,
           page,
           pageSize,
         })
@@ -81,6 +94,7 @@ export async function GET(request: NextRequest) {
           startDate,
           endDate,
           userId,
+          search,
           page,
           pageSize,
         });
@@ -93,7 +107,7 @@ export async function GET(request: NextRequest) {
       // include the change evidence the detail modal shows.
       const exportRows = await getAuditLogsForExport(
         isSuperAdmin ? (searchParams.get('tenantId') ?? undefined) : (tenantId as string),
-        { entityType, action, startDate, endDate, userId },
+        { entityType, action, startDate, endDate, userId, search },
       );
       const exportEntries = await attachAuditActorNames(exportRows, actorTenantScope);
 
@@ -157,6 +171,7 @@ interface CrossTenantFilters {
   startDate?: Date | undefined;
   endDate?: Date | undefined;
   userId?: string | undefined;
+  search?: string | undefined;
   page?: number | undefined;
   pageSize?: number | undefined;
 }
@@ -180,6 +195,16 @@ async function getCrossTenantAuditLogs(
   if (filters.entityType !== undefined) where.entityType = filters.entityType;
   if (filters.action !== undefined) where.action = filters.action;
   if (filters.userId !== undefined) where.actorId = filters.userId;
+  if (filters.search !== undefined && filters.search.trim() !== '') {
+    const term = filters.search.trim();
+    where.OR = [
+      { entityId: { contains: term, mode: 'insensitive' } },
+      { entityType: { contains: term, mode: 'insensitive' } },
+      { action: { contains: term, mode: 'insensitive' } },
+      { ipAddress: { contains: term, mode: 'insensitive' } },
+      { userAgent: { contains: term, mode: 'insensitive' } },
+    ];
+  }
   if (filters.startDate !== undefined || filters.endDate !== undefined) {
     where.createdAt = {
       ...(filters.startDate !== undefined ? { gte: filters.startDate } : {}),

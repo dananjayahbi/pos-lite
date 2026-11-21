@@ -191,6 +191,11 @@ export const AUDIT_ACTIONS = {
   RAW_MATERIAL_UNIT_CREATED: 'RAW_MATERIAL_UNIT_CREATED',
   RAW_MATERIAL_UNIT_UPDATED: 'RAW_MATERIAL_UNIT_UPDATED',
   RAW_MATERIAL_UNIT_DELETED: 'RAW_MATERIAL_UNIT_DELETED',
+  // Saved reports (ARGUS #448)
+  SAVED_REPORT_CREATED: 'SAVED_REPORT_CREATED',
+  SAVED_REPORT_RENAMED: 'SAVED_REPORT_RENAMED',
+  SAVED_REPORT_DELETED: 'SAVED_REPORT_DELETED',
+  SAVED_REPORT_DOWNLOADED: 'SAVED_REPORT_DOWNLOADED',
   // Bill of Materials & Production (Factory)
   BOM_CREATED: 'BOM_CREATED',
   BOM_RESTORED: 'BOM_RESTORED',
@@ -367,8 +372,25 @@ interface GetAuditLogsFilters {
   startDate?: Date | undefined;
   endDate?: Date | undefined;
   userId?: string | undefined;
+  /** Free-text/entity-id search across the forensic fields (ARGUS #457). */
+  search?: string | undefined;
   page?: number | undefined;
   pageSize?: number | undefined;
+}
+
+/** OR-of-contains search used by the list and full export. */
+function auditSearchClause(search: string | undefined): Prisma.AuditLogWhereInput | null {
+  const term = search?.trim();
+  if (!term) return null;
+  return {
+    OR: [
+      { entityId: { contains: term, mode: 'insensitive' } },
+      { entityType: { contains: term, mode: 'insensitive' } },
+      { action: { contains: term, mode: 'insensitive' } },
+      { ipAddress: { contains: term, mode: 'insensitive' } },
+      { userAgent: { contains: term, mode: 'insensitive' } },
+    ],
+  };
 }
 
 export async function getAuditLogs(tenantId: string, filters: GetAuditLogsFilters = {}) {
@@ -387,6 +409,8 @@ export async function getAuditLogs(tenantId: string, filters: GetAuditLogsFilter
   if (filters.userId !== undefined) {
     where.actorId = filters.userId;
   }
+  const search = auditSearchClause(filters.search);
+  if (search) Object.assign(where, search);
   if (filters.startDate !== undefined || filters.endDate !== undefined) {
     where.createdAt = {
       ...(filters.startDate !== undefined ? { gte: filters.startDate } : {}),
@@ -423,6 +447,8 @@ export async function getAuditLogsForExport(
   if (filters.entityType !== undefined) where.entityType = filters.entityType;
   if (filters.action !== undefined) where.action = filters.action;
   if (filters.userId !== undefined) where.actorId = filters.userId;
+  const search = auditSearchClause(filters.search);
+  if (search) Object.assign(where, search);
   if (filters.startDate !== undefined || filters.endDate !== undefined) {
     where.createdAt = {
       ...(filters.startDate !== undefined ? { gte: filters.startDate } : {}),

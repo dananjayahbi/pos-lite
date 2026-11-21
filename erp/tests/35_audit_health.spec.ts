@@ -148,16 +148,35 @@ test.describe('§1 Functional & Business Logic', () => {
     for (const entry of data) expect(entry.action).toBe(chosen);
   });
 
-  test('F5 — date-range filter (startDate/endDate) accepted and applied', async ({ page }) => {
+  test('F5 — To date is inclusive of the whole selected day (same-day rows)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     const today = new Date().toISOString().slice(0, 10);
-    const res = await page.request.get(`${AUDIT_API}?startDate=2020-01-01&endDate=${today}&pageSize=50`);
+
+    // Wide range: every returned row must be inside the end-of-day bound.
+    const res = await page.request.get(`${AUDIT_API}?startDate=2020-01-01&endDate=${today}&pageSize=100`);
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
+    const endOfDay = new Date(`${today}T23:59:59.999Z`).getTime();
     for (const entry of body.data) {
-      const created = new Date(entry.createdAt).getTime();
-      expect(created).toBeLessThanOrEqual(new Date(`${today}T23:59:59.999Z`).getTime());
+      expect(new Date(entry.createdAt).getTime()).toBeLessThanOrEqual(endOfDay);
+    }
+
+    // ARGUS #458: the old assertion only checked `<= end of day`, so it passed
+    // while date-only To was parsed as MIDNIGHT and same-day entries vanished.
+    // Assert the opposite direction too: a same-day From/To window contains
+    // today's rows when the feed has any.
+    const all = await (await page.request.get(`${AUDIT_API}?pageSize=100`)).json();
+    const hasToday = (all.data ?? []).some(
+      (entry: { createdAt: string }) => entry.createdAt.slice(0, 10) === today,
+    );
+    if (hasToday) {
+      const sameDay = await page.request.get(
+        `${AUDIT_API}?startDate=${today}&endDate=${today}&pageSize=100`,
+      );
+      expect(sameDay.status()).toBe(200);
+      const sameDayBody = await sameDay.json();
+      expect(sameDayBody.data.length).toBeGreaterThan(0);
     }
   });
 
@@ -189,8 +208,9 @@ test.describe('§1 Functional & Business Logic', () => {
     // which emits the header row UNQUOTED and quotes data cells only when they
     // contain a separator/quote/newline. Previously every cell — header
     // included — was wrapped in quotes.
+    // ARGUS #453/#458: the export now carries the detail evidence too.
     expect(headerLine, 'BUG-79 fixed: bare header row').toBe(
-      'createdAt,entityType,entityId,action,actorName,actorId,actorRole,ipAddress',
+      'createdAt,entityType,entityId,action,actorName,actorId,actorRole,ipAddress,userAgent,before,after',
     );
     expect(headerLine).not.toContain('"');
 
@@ -199,8 +219,47 @@ test.describe('§1 Functional & Business Logic', () => {
     const lines = text.split('\n').filter((l) => l.trim().length > 0);
     expect(lines.length).toBeGreaterThan(1);
     for (const line of lines) {
-      expect(csvColumnCount(line.replace(/\r$/, ''))).toBe(8);
+      expect(csvColumnCount(line.replace(/\r$/, ''))).toBe(11);
     }
+  });
+
+  test('F7b — CSV export is the complete filtered set, not a 100-row page (ARGUS #458)', async ({ page }) => {
+    await login(page, OWNER.email, OWNER.password);
+
+    // The paginated list reports the true total; the export must match it even
+    // when it is larger than the old UI pageSize=100 cap.
+    const list = await (await page.request.get(`${AUDIT_API}?pageSize=1`)).json();
+    const total = list.meta.total as number;
+    expect(total).toBeGreaterThan(0);
+
+    const res = await page.request.get(`${AUDIT_API}?format=csv`);
+    expect(res.status()).toBe(200);
+    expect(Number(res.headers()['x-total-rows'])).toBe(total);
+
+    const lines = (await res.text()).split('\n').filter((l) => l.trim().length > 0);
+    expect(lines.length - 1).toBe(total);
+    if (total > 100) {
+      // Non-vacuity for the old cap: more than one page was exported.
+      expect(lines.length - 1).toBeGreaterThan(100);
+    }
+  });
+
+  test('F16 — filter facets come from the live ledger, not the hardcoded subset (ARGUS #458)', async ({ page }) => {
+    await login(page, OWNER.email, OWNER.password);
+    const res = await page.request.get(`${AUDIT_API}/facets`);
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.data.entityTypes)).toBe(true);
+    expect(Array.isArray(body.data.actions)).toBe(true);
+
+    // The old menu hardcoded 9 entity types / 16 actions and omitted
+    // LOGIN_SUCCESS + User, which dominate the real feed (ARGUS #451).
+    expect(body.data.entityTypes.length).toBeGreaterThan(9);
+    expect(body.data.actions.length).toBeGreaterThan(16);
+    expect(body.data.actions.some((a: { value: string }) => a.value === 'LOGIN_SUCCESS')).toBe(
+      true,
+    );
+    expect(body.data.entityTypes.some((e: { value: string }) => e.value === 'User')).toBe(true);
   });
 
   test('F8 — audit-log settings page renders for OWNER (UI)', async ({ page }) => {
@@ -220,26 +279,74 @@ test.describe('§1 Functional & Business Logic', () => {
     expect(bodyText).not.toMatch(/application error|unhandled|500/i);
   });
 
-  test('F9b — audit-log table shows a resolved User column instead of raw IDs', async ({ page }) => {
+  test('F9b — audit-log table shows a resolved display name instead of raw IDs', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
 
-    // API contract: actorId is preserved but a human-readable actorName is added.
+    // ARGUS #458: the live API returns display names ("Owner", "Cashier 1")
+    // from staffDisplayName(), "System" for no actor and "Unknown" for a
+    // deleted/foreign actor. The old assertion required "@" or the literal
+    // "Unknown user", so it could never pass against the real contract.
     const api = await page.request.get(`${AUDIT_API}?pageSize=10`);
     expect(api.status()).toBe(200);
     const payload = await api.json();
     expect(Array.isArray(payload.data)).toBe(true);
     for (const row of payload.data) {
       expect(typeof row.actorName).toBe('string');
-      expect(row.actorName.length).toBeGreaterThan(0);
-      if (!row.actorId) expect(row.actorName).toBe('System');
-      else expect(row.actorName === 'Unknown user' || row.actorName.includes('@')).toBe(true);
+      expect(row.actorName.trim().length).toBeGreaterThan(0);
+      if (!row.actorId) {
+        expect(row.actorName).toBe('System');
+      } else {
+        expect(row.actorName).not.toBe(row.actorId);
+        expect(row.actorName).not.toBe('Unknown user');
+        expect(
+          row.actorName === 'Unknown' || /^[A-Z]/.test(row.actorName),
+          `resolved display name expected, got "${row.actorName}"`,
+        ).toBe(true);
+      }
     }
 
     await page.goto(AUDIT_PAGE);
     await expect(page.getByRole('heading', { name: /audit log/i })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('columnheader', { name: 'User' })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Entity ID' })).toHaveCount(0);
+    // ARGUS #457 reintroduced Entity ID in the table; Performed By stayed gone.
+    await expect(page.getByRole('columnheader', { name: 'Entity ID' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Role' })).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: 'IP' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Change' })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Performed By' })).toHaveCount(0);
+  });
+
+  test('F9c — row detail exposes identity/change context (ARGUS #457/#458)', async ({ page }) => {
+    await login(page, OWNER.email, OWNER.password);
+    const api = await (await page.request.get(`${AUDIT_API}?pageSize=5`)).json();
+    test.skip((api.data ?? []).length === 0, 'No audit rows to open');
+    test.skip(!api.data[0].actorId, 'First row has no actor to resolve');
+
+    await page.goto(AUDIT_PAGE);
+    await expect(page.getByRole('columnheader', { name: 'Entity ID' })).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.locator('tbody tr').first().click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('Entity ID:')).toBeVisible();
+    await expect(dialog.getByText('Actor ID:')).toBeVisible();
+    await expect(dialog.getByText('User agent:')).toBeVisible();
+    // Full timestamp carries seconds and a timezone label.
+    await expect(dialog.getByText(/\d{2}:\d{2}:\d{2}\s+\S/)).toBeVisible();
+  });
+
+  test('F9d — bookmarked filter hydrates from the URL and shows the empty state', async ({ page }) => {
+    await login(page, OWNER.email, OWNER.password);
+    await page.goto(`${AUDIT_PAGE}?entityType=__qa_none__`);
+
+    await expect(page.getByText('No audit log entries found.')).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText('Audit log could not be loaded.')).toHaveCount(0);
+    // The bookmarkable state survives the mount (ARGUS #457).
+    expect(new URL(page.url()).searchParams.get('entityType')).toBe('__qa_none__');
   });
 
   test('F10 — health endpoint returns ok + latency + timestamp', async ({ page }) => {
@@ -381,7 +488,7 @@ test.describe('§2 Financial & Calculation Precision', () => {
     // The header is bare, and every line still has the same 8 columns.
     expect(lines[0].replace(/\r$/, '')).not.toContain('"');
     for (const line of lines) {
-      expect(csvColumnCount(line.replace(/\r$/, ''))).toBe(8);
+      expect(csvColumnCount(line.replace(/\r$/, ''))).toBe(11);
     }
   });
 });
@@ -597,7 +704,12 @@ test.describe('§7 Network Resilience', () => {
       route.fulfill({ status: 500, contentType: 'application/json', body: '{"success":false}' }),
     );
     await page.goto(AUDIT_PAGE);
-    await page.waitForTimeout(2000);
+    // ARGUS #458: the page's empty/error states must be distinguishable.
+    await expect(page.getByText('Audit log could not be loaded.')).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText('The request failed; this is not an empty result.')).toBeVisible();
+    await expect(page.getByText('No audit log entries found.')).toHaveCount(0);
     const bodyText = await page.locator('body').innerText();
     expect(bodyText).not.toMatch(/application error/i);
   });
@@ -780,7 +892,7 @@ test.describe('§9 Boundary Inputs & Chaos Data', () => {
     await login(page, OWNER.email, OWNER.password);
     const res = await page.request.get(`${AUDIT_API}?format=csv&pageSize=100`);
     const text = await res.text();
-    // Header must be intact and first data row must have 7 quoted fields.
+    // Header must be intact and every data row must keep 11 RFC-4180 columns.
     const lines = text.split('\n').filter((l) => l.trim());
     expect(lines[0]).toContain('createdAt');
     // Balanced-quote invariant across all rows (RFC 4180).

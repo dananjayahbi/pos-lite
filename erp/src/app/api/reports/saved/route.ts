@@ -17,6 +17,8 @@ import { buildSavedReportKey } from '@/lib/reports/saved-report-storage';
 import type { ReportColumn } from '@/lib/reports/export';
 import { zSafeShortText } from '@/lib/validators/shared';
 import { uploadFile } from '@/lib/storage';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { getClientIp } from '@/lib/utils/request';
 
 /**
  * M34-01 (BUG-78): `reportType` used to be any non-empty string, and it is
@@ -198,6 +200,25 @@ export async function POST(request: NextRequest) {
         fileUrl: uploadResult.url,
       },
     });
+
+    // ARGUS #448 - saved-report create/rename/delete/download now leave an
+    // audit trail (they previously wrote nothing).
+    void createAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      actorRole: session.user.role,
+      entityType: 'SavedReport',
+      entityId: report.id,
+      action: AUDIT_ACTIONS.SAVED_REPORT_CREATED,
+      after: {
+        name: report.name,
+        reportType: report.reportType,
+        format: report.format,
+        rowCount: data.rows.length,
+      },
+      ipAddress: getClientIp(request),
+      userAgent: request.headers.get('user-agent') ?? undefined,
+    }).catch(() => {});
 
     return NextResponse.json({ success: true, data: report }, { status: 201 });
   } catch (error) {
