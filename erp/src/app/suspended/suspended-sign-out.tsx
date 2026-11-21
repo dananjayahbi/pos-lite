@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { signOut } from 'next-auth/react';
 import { postLogoutAudit } from '@/lib/auth/logout-audit';
+import { clearCartOnSignOut } from '@/lib/pos/cartSession';
 
 /**
  * M08-01 (BUG-35): sign-out control for the (server-rendered) /suspended
@@ -15,6 +16,7 @@ export function SuspendedSignOut() {
   const handleSignOut = async () => {
     setLoading(true);
     await postLogoutAudit();
+    await clearCartOnSignOut();
     // window.location.origin keeps the redirect correct on any deployment.
     await signOut({ callbackUrl: `${window.location.origin}/login` });
   };
