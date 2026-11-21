@@ -106,6 +106,19 @@ export function getUnitShortLabel(unit: string): string {
 
 export type RawMaterialStockStatus = 'OUT' | 'LOW' | 'OK';
 
+/** Every status the list filter accepts, in display order. */
+export const RAW_MATERIAL_STOCK_STATUSES: readonly RawMaterialStockStatus[] = ['OK', 'LOW', 'OUT'];
+
+/**
+ * Normalize a `?stockStatus=` value. Unknown/missing values are ignored (the
+ * route keeps its historical lenient behaviour instead of 400-ing).
+ */
+export function parseRawMaterialStockStatus(
+  value: string | null | undefined,
+): RawMaterialStockStatus | undefined {
+  return value === 'OK' || value === 'LOW' || value === 'OUT' ? value : undefined;
+}
+
 /**
  * Determine stock status for a raw material.
  * - `OUT` when quantity <= 0
@@ -127,6 +140,19 @@ export function getRawMaterialStockStatus(
 
 export function isRawMaterialLowStock(quantity: number, lowStockThreshold: number): boolean {
   return getRawMaterialStockStatus(quantity, lowStockThreshold) !== 'OK';
+}
+
+/**
+ * ARGUS #242: the list filter and the status badge must share one rule. The
+ * list uses this predicate to pick matching ids BEFORE pagination, so `total`,
+ * `totalPages` and the page rows all describe the filtered set.
+ */
+export function matchesRawMaterialStockStatus(
+  quantity: number,
+  lowStockThreshold: number,
+  status: RawMaterialStockStatus,
+): boolean {
+  return getRawMaterialStockStatus(quantity, lowStockThreshold) === status;
 }
 
 /**

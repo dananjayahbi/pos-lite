@@ -30,7 +30,10 @@ import { useRawMaterials } from '@/hooks/useRawMaterials';
 import type { RawMaterialItem } from '@/hooks/useRawMaterials';
 import { useRawMaterialCategories } from '@/hooks/useRawMaterialCategories';
 import { RawMaterialCategoryManagerDialog } from '@/components/raw-materials/RawMaterialCategoryManagerDialog';
-import type { RawMaterialStockStatus } from '@/lib/services/rawMaterial.core';
+import {
+  parseRawMaterialStockStatus,
+  type RawMaterialStockStatus,
+} from '@/lib/services/rawMaterial.core';
 
 interface RawMaterialListClientProps {
   permissions: string[];
@@ -48,11 +51,9 @@ export function RawMaterialListClient({ permissions }: RawMaterialListClientProp
   const category = categoryRaw ?? undefined;
   const { data: categoriesData } = useRawMaterialCategories();
   const categories = categoriesData?.data ?? [];
-  const stockStatusRaw = searchParams.get('stockStatus');
-  const stockStatus: RawMaterialStockStatus | undefined =
-    stockStatusRaw === 'OK' || stockStatusRaw === 'LOW' || stockStatusRaw === 'OUT'
-      ? stockStatusRaw
-      : undefined;
+  const stockStatus: RawMaterialStockStatus | undefined = parseRawMaterialStockStatus(
+    searchParams.get('stockStatus'),
+  );
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<RawMaterialItem | null>(null);

@@ -11,6 +11,7 @@ import {
   applyQuantityDelta,
   getRawMaterialCategoryLabel,
   getRawMaterialStockStatus,
+  matchesRawMaterialStockStatus,
   type RawMaterialStockStatus,
 } from '@/lib/services/rawMaterial.core';
 import {
@@ -100,6 +101,30 @@ export async function listRawMaterials(
     where.category = category;
   }
 
+  if (stockStatus) {
+    // ARGUS #242: Prisma cannot compare two columns, so the shared stock-state
+    // rule is evaluated over the tenant's live materials and the matching ids
+    // are pushed into the query BEFORE pagination. This keeps `total`,
+    // `totalPages` and the page rows describing the filtered set, instead of
+    // paging first and filtering the page in memory.
+    const candidates = await prisma.rawMaterial.findMany({
+      where,
+      select: { id: true, quantity: true, lowStockThreshold: true },
+    });
+
+    where.id = {
+      in: candidates
+        .filter((row) =>
+          matchesRawMaterialStockStatus(
+            row.quantity.toNumber(),
+            row.lowStockThreshold.toNumber(),
+            stockStatus,
+          ),
+        )
+        .map((row) => row.id),
+    };
+  }
+
   const skip = (page - 1) * limit;
 
   const [rows, total, categoryNames, unitMap] = await Promise.all([
@@ -114,13 +139,9 @@ export async function listRawMaterials(
     getRawMaterialUnitMap(tenantId),
   ]);
 
-  let items = rows.map((row) =>
+  const items = rows.map((row) =>
     toRawMaterialItem(row, categoryNames.get(row.category), unitMap.get(row.unit)),
   );
-
-  if (stockStatus) {
-    items = items.filter((item) => item.stockStatus === stockStatus);
-  }
 
   return { items, total };
 }
