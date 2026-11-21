@@ -248,6 +248,10 @@ const managerExcluded = new Set<PermissionKey>([
   PERMISSIONS.PRODUCT.deleteProduct,
   PERMISSIONS.SETTINGS.manageSettings,
   PERMISSIONS.SETTINGS.manageUsers,
+  // ARGUS #468: tax rates are owner-only (VAT/SSCL drive every sale). Removing
+  // it from the MANAGER defaults hides the hub/nav entry; the API additionally
+  // checks the role so a per-user override cannot bypass the policy.
+  PERMISSIONS.SETTINGS.manageTax,
   PERMISSIONS.SUPPLIER.approvePurchaseOrder,
   PERMISSIONS.PROMOTION.deletePromotion,
   PERMISSIONS.BILLING.manageBilling,

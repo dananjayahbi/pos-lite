@@ -51,6 +51,7 @@ export default async function StoreProfileSettingsPage() {
         <h1 className="font-display text-2xl font-bold text-espresso">Store profile</h1>
         <p className="mt-1 text-sm text-sand-ink">
           Manage the store name, logo, address and receipt footer used across POS and customer touchpoints.
+          Changes are recorded in the audit log.
         </p>
       </div>
       <StoreProfileSettingsForm initialValues={initialValues} />
