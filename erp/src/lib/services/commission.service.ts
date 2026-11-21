@@ -9,7 +9,9 @@ import {
   summarizeOpenCommission,
 } from '@/lib/services/commission-allocation';
 import { describeCommissionBalance } from '@/lib/services/commissionSummary.core';
-import { PaymentEntrySource } from '@/generated/prisma/client';
+import { planCommissionReversal } from '@/lib/services/commissionClawback.core';
+import type { TxClient } from '@/lib/services/inventory.service';
+import { PaymentEntrySource, ReturnStatus } from '@/generated/prisma/client';
 import Decimal from 'decimal.js';
 
 type CommissionPayoutMetadata = {
@@ -88,42 +90,116 @@ export async function createCommissionRecord(input: {
   });
 }
 
-export async function createNegativeCommissionRecord(returnId: string, tenantId: string) {
-  const returnRecord = await prisma.return.findUnique({
-    where: { id: returnId },
-    select: {
-      refundAmount: true,
-      originalSaleId: true,
-      originalSale: {
-        select: { cashierId: true },
-      },
+export interface ReconcileCommissionForSaleInput {
+  tenantId: string;
+  saleId: string;
+  /** True when the sale was voided: the whole commission is reversed. */
+  voided?: boolean | undefined;
+  /** Actor for the audit row (void actor, return initiator, or SYSTEM). */
+  actorId?: string | null | undefined;
+  /** Optional transaction so the clawback commits with the void/return. */
+  tx?: TxClient | undefined;
+}
+
+/**
+ * Reconcile commission for one sale to its post-return/void target (ARGUS #361).
+ *
+ * The original positive records are never mutated — a partially or fully paid
+ * payout stays truthful. A new negative `CommissionRecord` (paidAmount 0,
+ * isPaid false) is written for the shortfall, so the next payout nets it via
+ * the #337 paidAmount/payout model. Re-running is idempotent because the plan
+ * compares the target base with the signed base already on the ledger.
+ *
+ * Returns the adjustment row, or null when there is no commission, no shortfall
+ * (already reconciled), or the sale has no positive commission basis.
+ */
+export async function reconcileCommissionForSale(input: ReconcileCommissionForSaleInput) {
+  const client = input.tx ?? prisma;
+
+  const records = await client.commissionRecord.findMany({
+    where: { tenantId: input.tenantId, saleId: input.saleId },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (records.length === 0) return null;
+
+  const positive = records.filter(
+    (record) => new Decimal(record.baseAmount.toString()).gt(0),
+  );
+  if (positive.length === 0) return null;
+
+  const originalBase = positive.reduce(
+    (sum, record) => sum.plus(record.baseAmount.toString()),
+    new Decimal(0),
+  );
+  const originalEarned = positive.reduce(
+    (sum, record) => sum.plus(record.earnedAmount.toString()),
+    new Decimal(0),
+  );
+  if (originalBase.lte(0) || originalEarned.lte(0)) return null;
+
+  // Preserve the rate that actually earned the commission. With duplicate or
+  // mixed-rate records the weighted average keeps earned/base proportional.
+  const effectiveRate = originalEarned
+    .div(originalBase)
+    .mul(100)
+    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+  const refunded = await client.return.aggregate({
+    where: {
+      tenantId: input.tenantId,
+      originalSaleId: input.saleId,
+      status: ReturnStatus.COMPLETED,
     },
+    _sum: { refundAmount: true },
   });
 
-  if (!returnRecord?.originalSale?.cashierId) return null;
+  const existingBase = records.reduce(
+    (sum, record) => sum.plus(record.baseAmount.toString()),
+    new Decimal(0),
+  );
 
-  const user = await prisma.user.findUnique({
-    where: { id: returnRecord.originalSale.cashierId },
-    select: { commissionRate: true },
+  const plan = planCommissionReversal({
+    originalBase,
+    commissionRate: effectiveRate,
+    returnedBase: refunded._sum.refundAmount?.toString() ?? '0',
+    voided: input.voided === true,
+    existingBase,
   });
 
-  if (!user?.commissionRate) return null;
+  if (plan.noop) return null;
 
-  const rate = new Decimal(user.commissionRate.toString());
-  const refund = new Decimal(returnRecord.refundAmount.toString());
-  const negativeEarned = refund.mul(rate).div(100).neg();
-
-  return prisma.commissionRecord.create({
+  const adjustment = await client.commissionRecord.create({
     data: {
-      tenantId,
-      saleId: returnRecord.originalSaleId,
-      userId: returnRecord.originalSale.cashierId,
-      baseAmount: refund.neg(),
-      commissionRate: rate,
-      earnedAmount: negativeEarned,
+      tenantId: input.tenantId,
+      saleId: input.saleId,
+      userId: positive[0]!.userId,
+      baseAmount: plan.adjustmentBase,
+      commissionRate: effectiveRate,
+      earnedAmount: plan.adjustmentEarned,
       isPaid: false,
     },
   });
+
+  void createAuditLog({
+    tenantId: input.tenantId,
+    actorId: input.actorId ?? null,
+    actorRole: input.actorId ? 'UNKNOWN' : 'SYSTEM',
+    entityType: 'CommissionRecord',
+    entityId: adjustment.id,
+    action: 'COMMISSION_CLAWED_BACK',
+    after: {
+      saleId: input.saleId,
+      voided: input.voided === true,
+      originalBase: originalBase.toFixed(2),
+      returnedBase: refunded._sum.refundAmount?.toString() ?? '0',
+      targetBase: plan.targetBase.toFixed(2),
+      adjustmentBase: plan.adjustmentBase.toFixed(2),
+      adjustmentEarned: plan.adjustmentEarned.toFixed(2),
+      outstanding: true,
+    },
+  }).catch(() => {});
+
+  return adjustment;
 }
 
 export async function getCommissionsForUser(

@@ -19,6 +19,7 @@ import {
 } from '@/lib/services/saleAccounts';
 import { resolveSaleIdByReference } from '@/lib/services/returnReference';
 import { issueCredit } from '@/lib/services/customer.service';
+import { reconcileCommissionForSale } from '@/lib/services/commission.service';
 
 const RETURN_WINDOW_DAYS = 30;
 
@@ -283,6 +284,17 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
         lineTaxAmount: cl.lineTaxAmount.toFixed(2),
         isRestocked: false,
       })),
+    });
+
+    // 4b. Claw back the returned share of the sale's commission (ARGUS #361).
+    // Runs in the same transaction as the return so the refund and the negative
+    // commission record either both commit or both roll back. The original
+    // (possibly paid) commission row is never mutated.
+    await reconcileCommissionForSale({
+      tenantId,
+      saleId: input.originalSaleId,
+      actorId: input.initiatedById,
+      tx,
     });
 
     // 5. Restock if enabled
