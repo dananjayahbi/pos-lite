@@ -14,7 +14,9 @@ export default async function PaymentAccountsPage() {
   const session = await auth();
   if (!session?.user?.tenantId) redirect(denialRouteFor(session?.user));
 
-  requirePagePermission(session.user, PERMISSIONS.PAYMENT_ACCOUNT.viewPaymentAccount);
+  // The management page exposes every balance and ledger entry. Operational
+  // roles keep `viewPaymentAccount` for destination pickers only (ARGUS #427).
+  requirePagePermission(session.user, PERMISSIONS.PAYMENT_ACCOUNT.managePaymentAccount);
 
   return (
     <ErrorBoundary>

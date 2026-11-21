@@ -11,7 +11,7 @@ interface RouteParams {
 }
 
 export async function GET(_request: Request, { params }: RouteParams) {
-  const guard = await requirePaymentAccountAuth(PERMISSIONS.PAYMENT_ACCOUNT.viewPaymentAccount);
+  const guard = await requirePaymentAccountAuth(PERMISSIONS.PAYMENT_ACCOUNT.managePaymentAccount);
   if (!guard.ok) return guard.response;
 
   try {

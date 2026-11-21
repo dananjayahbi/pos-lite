@@ -6,7 +6,7 @@ import { requirePaymentAccountAuth } from '@/lib/api/payment-account-guard';
 import { getCashFlow } from '@/lib/services/paymentAccount.service';
 
 export async function GET(request: Request) {
-  const guard = await requirePaymentAccountAuth(PERMISSIONS.PAYMENT_ACCOUNT.viewPaymentAccount);
+  const guard = await requirePaymentAccountAuth(PERMISSIONS.PAYMENT_ACCOUNT.managePaymentAccount);
   if (!guard.ok) return guard.response;
 
   try {

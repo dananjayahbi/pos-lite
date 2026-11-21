@@ -353,7 +353,7 @@ export const storeNavGroups: NavGroup[] = [
         name: 'Payment Accounts',
         href: '/payment-accounts',
         roles: ['OWNER', 'MANAGER'],
-        permission: PERMISSIONS.PAYMENT_ACCOUNT.viewPaymentAccount,
+        permission: PERMISSIONS.PAYMENT_ACCOUNT.managePaymentAccount,
       },
       {
         name: 'Courier Reconciliation',

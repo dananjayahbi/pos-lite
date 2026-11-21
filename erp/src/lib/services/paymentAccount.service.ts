@@ -255,6 +255,27 @@ export async function listPaymentAccounts(
   };
 }
 
+/**
+ * Destination picker for operational roles (ARGUS #427).
+ *
+ * Returns only id/name/type so a cashier can choose where a POS/expense
+ * payment lands without exposing balances, ledger history or the management
+ * page. Petty-cash accounts are excluded because sale routing cannot use them.
+ */
+export async function listPaymentAccountDestinations(tenantId: string) {
+  const accounts = await prisma.paymentAccount.findMany({
+    where: {
+      tenantId,
+      status: PaymentAccountStatus.ACTIVE,
+      pettyCashFund: null,
+    },
+    select: { id: true, name: true, type: true, status: true },
+    orderBy: { name: 'asc' },
+  });
+
+  return { accounts };
+}
+
 export async function getPaymentAccount(tenantId: string, accountId: string) {
   const account = await prisma.paymentAccount.findFirst({
     where: { id: accountId, tenantId },
