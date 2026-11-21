@@ -47,6 +47,25 @@ A closure recorded before this fix may still hold stale totals in
 make clear it is the historical snapshot, while the detail page shows the
 payment-leg recomputation as the authoritative figure (ARGUS #107).
 
+## Recomputing historical closures (ARGUS #108)
+
+Closures written before tender totals came from payment legs and before refunds /
+petty cash were included can disagree with the Z-report (e.g. 0 returns recorded
+while the Z-report shows four and a refund). `computeShiftClosureFigures()` in
+`shiftCash.core.ts` derives the full closure snapshot from the same primitives
+the live report uses.
+
+Run the repair CLI from `erp/`:
+
+```bash
+npx tsx scripts/recompute-shift-closures.ts            # dry run, prints every diff
+npx tsx scripts/recompute-shift-closures.ts --apply    # writes corrected closures
+```
+
+It updates cash/card/QR totals, return count/amount, expected cash and the cash
+difference; `totalSalesAmount` and the count stay untouched. Nothing is modified
+without `--apply`.
+
 ## Verification
 
 `src/lib/services/__tests__/shiftCash.core.test.ts` covers split cash legs,

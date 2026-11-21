@@ -1,5 +1,8 @@
 import Decimal from 'decimal.js';
 
+import { sumPaymentBreakdown } from '@/lib/services/paymentBreakdown';
+import type { PaymentLegMethod } from '@/generated/prisma/client';
+
 type Decimalish = Decimal | { toString(): string } | number | string;
 
 export interface ShiftRefundRow {
@@ -65,3 +68,57 @@ export function sumShiftCashMovements(movements: ShiftCashMovementRow[]): {
   }
   return { deposited, pettyOut };
 }
+
+export interface ShiftClosureFigures {
+  totalCash: Decimal;
+  totalCard: Decimal;
+  totalQr: Decimal;
+  totalReturns: Decimal;
+  totalReturnsCount: number;
+  cashRefunds: Decimal;
+  cashDeposited: Decimal;
+  pettyOut: Decimal;
+  expectedCash: Decimal;
+}
+
+/**
+ * Every figure a shift closure stores, derived from the same payment legs,
+ * refunds and cash movements. Used by `closeShift` and the historical
+ * recomputation script so a stored closure can always be reproduced
+ * (ARGUS #108).
+ */
+export function computeShiftClosureFigures(input: {
+  payments: Array<{ method: PaymentLegMethod; amount: Decimalish }>;
+  returns: ShiftRefundRow[];
+  cashMovements: ShiftCashMovementRow[];
+  openingFloat: Decimalish;
+}): ShiftClosureFigures {
+  const breakdown = sumPaymentBreakdown(
+    input.payments.map((payment) => ({
+      method: payment.method,
+      amount: new Decimal(payment.amount.toString()),
+    })),
+  );
+  const refunds = sumShiftRefunds(input.returns);
+  const { deposited, pettyOut } = sumShiftCashMovements(input.cashMovements);
+  const expectedCash = computeExpectedCash({
+    openingFloat: input.openingFloat,
+    cashSales: breakdown.cash,
+    cashRefunds: refunds.cash,
+    cashDeposited: deposited,
+    pettyCashOut: pettyOut,
+  });
+
+  return {
+    totalCash: breakdown.cash,
+    totalCard: breakdown.card,
+    totalQr: breakdown.lankaqr,
+    totalReturns: refunds.total,
+    totalReturnsCount: input.returns.length,
+    cashRefunds: refunds.cash,
+    cashDeposited: deposited,
+    pettyOut,
+    expectedCash,
+  };
+}
+

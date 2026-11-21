@@ -3,6 +3,7 @@ import Decimal from 'decimal.js';
 
 import {
   computeExpectedCash,
+  computeShiftClosureFigures,
   sumShiftCashMovements,
   sumShiftRefunds,
 } from '@/lib/services/shiftCash.core';
@@ -120,5 +121,37 @@ describe('shift cash reconciliation', () => {
     });
 
     expect(expected.toNumber()).toBe(0.01);
+  });
+});
+
+describe('computeShiftClosureFigures', () => {
+  it('derives every stored closure figure from legs, refunds and movements', () => {
+    const figures = computeShiftClosureFigures({
+      payments: [
+        { method: 'CASH', amount: new Decimal('7235.31') },
+        { method: 'CARD', amount: new Decimal(1000) },
+        { method: 'LANKAQR', amount: new Decimal(50) },
+        { method: 'STORE_CREDIT', amount: new Decimal(200) },
+      ],
+      returns: [
+        { refundAmount: '500', refundMethod: 'CASH' },
+        { refundAmount: '35', refundMethod: 'STORE_CREDIT' },
+      ],
+      cashMovements: [
+        { amount: '100', type: 'MANUAL_IN' },
+        { amount: '35', type: 'PETTY_CASH_OUT' },
+      ],
+      openingFloat: 6400,
+    });
+
+    expect(figures.totalCash.toNumber()).toBe(7235.31);
+    expect(figures.totalCard.toNumber()).toBe(1000);
+    expect(figures.totalQr.toNumber()).toBe(50);
+    expect(figures.totalReturns.toNumber()).toBe(535);
+    expect(figures.totalReturnsCount).toBe(2);
+    expect(figures.cashRefunds.toNumber()).toBe(500);
+    expect(figures.cashDeposited.toNumber()).toBe(100);
+    expect(figures.pettyOut.toNumber()).toBe(35);
+    expect(figures.expectedCash.toNumber()).toBe(13200.31);
   });
 });
