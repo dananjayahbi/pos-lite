@@ -306,23 +306,60 @@ export function evaluateProductDiscounts(
 
 // ── Evaluate BOGO / Mix & Match ──────────────────────────────────────────────
 
+/**
+ * ARGUS #324 — buy-N-get-free on the targeted lines only.
+ *
+ * Contract (no schema change):
+ *  - `minQuantity` = buy N on a single line.
+ *  - `value` = maximum LKR value of one free unit.
+ *  - Free units = floor(line.quantity / N), evaluated PER LINE (documented
+ *    choice; the form preview says the same). The discount is
+ *    min(unitPrice, cap) × free units.
+ *  - A promotion with no target product/category, or a non-positive cap, is
+ *    skipped with a reason — never applied to the whole cart.
+ */
 export function evaluateBOGO(
   cartLines: CartLine[],
   promos: PromotionRow[],
   alreadyDiscounted: Set<string>,
+  productByVariantId: ReadonlyMap<string, string> = new Map(),
 ): { applied: AppliedDiscount[]; skipped: SkippedPromotion[] } {
   const applied: AppliedDiscount[] = [];
   const skipped: SkippedPromotion[] = [];
 
   for (const promo of promos) {
+    if (!promo.targetProductId && !promo.targetCategoryId) {
+      skipped.push({ promotionId: promo.id, reason: 'No target product or category set' });
+      continue;
+    }
+
+    const cap = new Decimal(promo.value.toString());
+    if (cap.lessThanOrEqualTo(0)) {
+      skipped.push({ promotionId: promo.id, reason: 'Item value cap must be greater than zero' });
+      continue;
+    }
+
     const minQty = promo.minQuantity ?? 2;
 
+    const matchesTarget = (line: CartLine): boolean => {
+      const productMatch = promo.targetProductId
+        ? productByVariantId.get(line.variantId) === promo.targetProductId
+        : true;
+      const categoryMatch = promo.targetCategoryId
+        ? line.categoryId === promo.targetCategoryId
+        : true;
+      return productMatch && categoryMatch;
+    };
+
     const eligibleLines = cartLines.filter(
-      (l) => !alreadyDiscounted.has(l.variantId) && l.quantity >= minQty,
+      (l) => !alreadyDiscounted.has(l.variantId) && l.quantity >= minQty && matchesTarget(l),
     );
 
     if (eligibleLines.length === 0) {
-      skipped.push({ promotionId: promo.id, reason: `No items meet min quantity of ${minQty}` });
+      skipped.push({
+        promotionId: promo.id,
+        reason: `No targeted items meet the buy quantity of ${minQty}`,
+      });
       continue;
     }
 
@@ -330,12 +367,14 @@ export function evaluateBOGO(
     const affectedLines: string[] = [];
 
     for (const line of eligibleLines) {
-      // Free units = floor(quantity / minQty)
       const freeUnits = Math.floor(line.quantity / minQty);
       if (freeUnits <= 0) continue;
 
+      // Cap the value of each free unit; a Rs 2500 cap on a Rs 500 item still
+      // gives the full Rs 500 unit away.
       const unitPrice = new Decimal(line.unitPrice);
-      const disc = unitPrice.times(freeUnits).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      const perFreeUnit = Decimal.min(unitPrice, cap);
+      const disc = perFreeUnit.times(freeUnits).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
       totalDiscount = totalDiscount.plus(disc);
       affectedLines.push(line.variantId);
       alreadyDiscounted.add(line.variantId);
@@ -344,7 +383,7 @@ export function evaluateBOGO(
     if (affectedLines.length > 0) {
       applied.push({
         promotionId: promo.id,
-        label: promo.name,
+        label: `${promo.name} - Buy ${minQty}, get floor(qty/${minQty}) free (up to ${cap.toFixed(2)} each)`,
         discountAmount: totalDiscount.toString(),
         promotionType: promo.type,
         affectedLines,
@@ -516,7 +555,12 @@ export async function evaluatePromotions(
   skippedPromotions.push(...catResult.skipped);
 
   // 5. BOGO / Mix & Match
-  const bogoResult = evaluateBOGO(resolvedCartLines, [...grouped.BOGO, ...grouped.MIX_AND_MATCH], alreadyDiscounted);
+  const bogoResult = evaluateBOGO(
+    resolvedCartLines,
+    [...grouped.BOGO, ...grouped.MIX_AND_MATCH],
+    alreadyDiscounted,
+    productByVariantId,
+  );
   appliedDiscounts.push(...bogoResult.applied);
   skippedPromotions.push(...bogoResult.skipped);
 

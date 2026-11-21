@@ -18,21 +18,19 @@ import { z } from 'zod';
  *  - `CART_FIXED` / `PRODUCT_FIXED` are LKR amounts stored in
  *    `Promotion.value Decimal(12,2)` → cap at the column ceiling and require
  *    ≤ 2 decimal places.
- *  - `BOGO` / `MIX_AND_MATCH` carry a whole free-item quantity (the "item value
- *    cap" the promotions form labels it) → require a safe integer in 0..100000.
+ *  - `BOGO` / `MIX_AND_MATCH` carry an item value cap in LKR (the most a
+ *    single free unit can be worth) → same money ceiling as fixed amounts.
  */
 
 /** `Promotion.value` is `Decimal @db.Decimal(12, 2)` in prisma/schema.prisma. */
 const MAX_PROMOTION_MONEY = 9999999999.99;
 /** A discount above 100% would pay the customer to take the cart. */
 const MAX_PROMOTION_PERCENT = 100;
-/** Free-item/bundle quantity ceiling (well inside the Int column, bounds the loop). */
-const MAX_FREE_ITEM_QTY = 100000;
 /** `minQuantity` ceiling: keeps the Int column and `evaluateBOGO`'s division sane. */
 const MAX_MIN_QUANTITY = 1_000_000;
 
 const PERCENTAGE_TYPES = ['CART_PERCENTAGE', 'CATEGORY_PERCENTAGE', 'PRODUCT_PERCENTAGE', 'PROMO_CODE'] as const;
-const ITEM_QUANTITY_TYPES = ['BOGO', 'MIX_AND_MATCH'] as const;
+const FREE_ITEM_TYPES = ['BOGO', 'MIX_AND_MATCH'] as const;
 
 /** At most 2 decimal places, tolerant of binary-float representation error. */
 function hasAtMostTwoDecimals(value: number): boolean {
@@ -87,12 +85,21 @@ function assertValueBounds(
     return;
   }
 
-  if ((ITEM_QUANTITY_TYPES as readonly string[]).includes(type)) {
-    if (!Number.isSafeInteger(value) || value > MAX_FREE_ITEM_QTY) {
+  if ((FREE_ITEM_TYPES as readonly string[]).includes(type)) {
+    // ARGUS #324: value is the LKR cap per free unit, not a free-item count.
+    if (value > MAX_PROMOTION_MONEY) {
       ctx.addIssue({
         code: 'custom',
         path: ['value'],
-        message: `Value must be a whole number between 0 and ${MAX_FREE_ITEM_QTY} for a free-item promotion`,
+        message: `Item value cap cannot exceed ${MAX_PROMOTION_MONEY.toFixed(2)}`,
+      });
+      return;
+    }
+    if (!hasAtMostTwoDecimals(value)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['value'],
+        message: 'Item value cap supports at most 2 decimal places',
       });
     }
     return;
@@ -132,7 +139,27 @@ const PromotionBaseSchema = z.object({
   description: z.string().max(500).optional(),
 });
 
-export const CreatePromotionSchema = PromotionBaseSchema.superRefine(assertValueBounds);
+/**
+ * ARGUS #324: a free-item promotion must name what it applies to. Without a
+ * target the evaluator skips it rather than giving a free unit on every line.
+ */
+function assertFreeItemTarget(
+  data: { type?: string | undefined; targetProductId?: string | undefined; targetCategoryId?: string | undefined },
+  ctx: z.RefinementCtx,
+): void {
+  if (data.type !== 'BOGO' && data.type !== 'MIX_AND_MATCH') return;
+  if (data.targetProductId || data.targetCategoryId) return;
+  ctx.addIssue({
+    code: 'custom',
+    path: ['targetProductId'],
+    message: 'Select a target product or category for a free-item promotion',
+  });
+}
+
+export const CreatePromotionSchema = PromotionBaseSchema.superRefine((data, ctx) => {
+  assertValueBounds(data, ctx);
+  assertFreeItemTarget(data, ctx);
+});
 
 /**
  * PATCH contract: same field shapes, every field optional, and the value bounds
