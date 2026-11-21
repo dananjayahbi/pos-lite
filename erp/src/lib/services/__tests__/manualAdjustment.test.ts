@@ -5,6 +5,8 @@ import {
   isManualAdjustmentReason,
   isManualReasonDirectionValid,
   manualAdjustmentDirectionError,
+  manualAdjustmentSideEffectSummaries,
+  manualAdjustmentSideEffectSummary,
   validManualReasonsForDirection,
 } from '@/lib/services/manualAdjustment.core';
 
@@ -98,5 +100,48 @@ describe('manual adjustment reason direction (ARGUS #193)', () => {
       );
       expect(directions.length, reason).toBeGreaterThan(0);
     }
+  });
+});
+
+/**
+ * ARGUS #186 - the audit/StockMovement payload is normalized in one place so
+ * the single route, bulk route and service emit the same shape.
+ */
+describe('manual adjustment side-effect payload', () => {
+  it('normalizes a manual adjustment and converts a missing note to null', () => {
+    expect(
+      manualAdjustmentSideEffectSummary({ quantityDelta: -3, reason: 'DAMAGED' }),
+    ).toEqual({ quantityDelta: -3, reason: 'DAMAGED', note: null });
+  });
+
+  it('keeps a supplied note and signed delta', () => {
+    expect(
+      manualAdjustmentSideEffectSummary({
+        quantityDelta: 7,
+        reason: 'FOUND',
+        note: 'shelf count',
+      }),
+    ).toEqual({ quantityDelta: 7, reason: 'FOUND', note: 'shelf count' });
+  });
+
+  it('skips system-owned reasons, which own their own audit trail', () => {
+    for (const reason of ['SALE', 'VOID_REVERSAL', 'PURCHASE_RECEIVED', 'MANUFACTURED']) {
+      expect(manualAdjustmentSideEffectSummary({ quantityDelta: 1, reason })).toBeNull();
+    }
+  });
+
+  it('builds one summary per applied manual row in request order', () => {
+    const summaries = manualAdjustmentSideEffectSummaries([
+      { variantId: 'v1', quantityDelta: 2, reason: 'FOUND' },
+      { variantId: 'v2', quantityDelta: 1, reason: 'SALE' },
+      { variantId: 'v3', quantityDelta: -1, reason: 'DAMAGED', note: 'broken' },
+      { variantId: 'v1', quantityDelta: 1, reason: 'DATA_ERROR' },
+    ]);
+
+    expect(summaries).toEqual([
+      { variantId: 'v1', quantityDelta: 2, reason: 'FOUND', note: null },
+      { variantId: 'v3', quantityDelta: -1, reason: 'DAMAGED', note: 'broken' },
+      { variantId: 'v1', quantityDelta: 1, reason: 'DATA_ERROR', note: null },
+    ]);
   });
 });

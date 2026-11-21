@@ -14,7 +14,7 @@ import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { computeStockTakeApprovalPlan } from '@/lib/services/stockTakeApproval.core';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 import { lockForUpdate } from '@/lib/api/race-guard';
-import { isManualAdjustmentReason } from '@/lib/services/manualAdjustment.core';
+import { manualAdjustmentSideEffectSummary } from '@/lib/services/manualAdjustment.core';
 
 // ── Transaction Client Type ──────────────────────────────────────────────────
 
@@ -148,44 +148,58 @@ export async function adjustStock(input: AdjustStockInput) {
     return adjustStockInTx(tx, input.tenantId, input.variantId, input.actorId, input.options);
   });
 
-  recordManualAdjustmentSideEffects(input);
+  await recordManualAdjustmentSideEffects(input);
 
   return result;
 }
 
 /**
- * ARGUS #181 — audit + webhook for a manual adjustment.
+ * ARGUS #181 / #186 - audit + webhook for a manual adjustment.
  *
- * Extracted so the adjust API route (which owns its low-stock notification
- * transaction) records the same audit trail as `adjustStock` instead of
+ * Extracted so the adjust API routes (which own their low-stock notification
+ * transactions) record the same audit trail as `adjustStock` instead of
  * silently bypassing it. System-only reasons are ignored: their originating
  * flows own the audit story.
+ *
+ * ARGUS #186: this is awaited by every caller. The previous fire-and-forget
+ * version could be frozen when a serverless request returned, dropping the
+ * STOCK_ADJUSTED row and the `stock.adjusted` delivery without any trace.
+ * Both writes stay best-effort (audit swallows its own errors; the webhook
+ * dispatch failure is logged) so a committed stock movement is never turned
+ * into a 500 by a side-effect outage.
  */
-export function recordManualAdjustmentSideEffects(input: AdjustStockInput): void {
-  if (!isManualAdjustmentReason(input.options.reason)) return;
+export async function recordManualAdjustmentSideEffects(input: AdjustStockInput): Promise<void> {
+  const summary = manualAdjustmentSideEffectSummary(input.options);
+  if (!summary) return;
 
-  void createAuditLog({
+  await createAuditLog({
     tenantId: input.tenantId,
     actorId: input.actorId,
     actorRole: 'USER',
     entityType: 'Stock',
     entityId: input.variantId,
     action: AUDIT_ACTIONS.STOCK_ADJUSTED,
-    after: { quantityDelta: input.options.quantityDelta, reason: input.options.reason, note: input.options.note },
-  }).catch(() => {});
-
-  void dispatchWebhooks(input.tenantId, 'stock.adjusted', {
-    variantId: input.variantId,
-    quantityDelta: input.options.quantityDelta,
-    reason: input.options.reason,
-    note: input.options.note ?? null,
+    after: {
+      quantityDelta: summary.quantityDelta,
+      reason: summary.reason,
+      note: summary.note,
+    },
   });
+
+  try {
+    await dispatchWebhooks(input.tenantId, 'stock.adjusted', {
+      variantId: input.variantId,
+      ...summary,
+    });
+  } catch (error) {
+    console.error('stock.adjusted webhook dispatch failed:', error);
+  }
 }
 
 // ── Step 3: bulkAdjustStock ──────────────────────────────────────────────────
 
 export async function bulkAdjustStock(input: BulkAdjustStockInput) {
-  return prisma.$transaction(async (tx) => {
+  const results = await prisma.$transaction(async (tx) => {
     // ARGUS #192: same stable lock order as the bulk route so overlapping
     // batches cannot deadlock; adjustStockInTx then serializes per row.
     const variantIds = [...new Set(input.adjustments.map((a) => a.variantId))].sort();
@@ -211,6 +225,21 @@ export async function bulkAdjustStock(input: BulkAdjustStockInput) {
     }
     return results;
   });
+
+  // ARGUS #186: the service path emits the same per-row audit/webhook side
+  // effects as the bulk API route, so a future caller cannot bypass them.
+  await Promise.all(
+    input.adjustments.map((adj) =>
+      recordManualAdjustmentSideEffects({
+        tenantId: input.tenantId,
+        variantId: adj.variantId,
+        actorId: input.actorId,
+        options: adj,
+      }),
+    ),
+  );
+
+  return results;
 }
 
 // ── Step 4: getStockMovements ────────────────────────────────────────────────
