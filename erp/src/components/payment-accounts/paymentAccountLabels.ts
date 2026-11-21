@@ -1,4 +1,4 @@
-import type { PaymentAccountType, PaymentEntrySource } from './paymentAccountTypes';
+import type { LedgerEntrySource, PaymentAccountType } from './paymentAccountTypes';
 
 /** Human labels for the six account types. */
 export const ACCOUNT_TYPE_LABELS: Record<PaymentAccountType, string> = {
@@ -11,10 +11,11 @@ export const ACCOUNT_TYPE_LABELS: Record<PaymentAccountType, string> = {
 };
 
 /** Human labels for every ledger source. */
-export const ENTRY_SOURCE_LABELS: Record<PaymentEntrySource, string> = {
+export const ENTRY_SOURCE_LABELS: Record<LedgerEntrySource, string> = {
   OPENING_BALANCE: 'Opening Balance',
   SALE: 'Sale',
   SALE_REFUND: 'Sale Refund',
+  SALE_VOID: 'Sale Void / Reversal',
   PURCHASE_ORDER_PAYMENT: 'Purchase Order Payment',
   EXPENSE: 'Expense',
   DEPOSIT: 'Deposit',
