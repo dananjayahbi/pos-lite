@@ -7,7 +7,7 @@ import { setSentryTenantContext } from '@/lib/sentry/context';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { cancelDelivery } from '@/lib/services/delivery.service';
 import { estimateWebsiteShippingFee } from '@/lib/services/shipping-fee.service';
-import { collectableCodAmount } from '@/lib/delivery/cod';
+import { ensureDeliveredCodEntry } from '@/lib/services/reconciliation-cod.service';
 import { bulkStatusRejection } from '@/lib/services/dispatchStatus.core';
 import type {
   BulkStatusChangeInput,
@@ -290,6 +290,7 @@ export async function bulkChangeOrderStatus(
     where: { id: { in: input.deliveryIds }, tenantId, deletedAt: null },
     select: {
       id: true,
+      tenantId: true,
       orderRef: true,
       status: true,
       codAmount: true,
@@ -357,28 +358,13 @@ export async function bulkChangeOrderStatus(
         });
 
         if (input.status === 'DELIVERED') {
-          // ARGUS #288: the receivable is the collectable total (goods +
-          // shipping), not the goods value alone.
-          const expectedCod = collectableCodAmount(delivery);
-          if (
-            delivery.paymentMethod === 'COD' &&
-            delivery.paymentStatus !== 'PAID' &&
-            expectedCod.gt(0)
-          ) {
-            // The shipment is guaranteed by bulkStatusRejection, so the COD
-            // receivable always carries the real waybill (ARGUS #263).
-            await tx.reconciliationLedgerEntry.upsert({
-              where: { deliveryId: delivery.id },
-              create: {
-                tenantId,
-                deliveryId: delivery.id,
-                waybillId: shipment!.waybillId,
-                expectedCod,
-                status: 'PENDING_SETTLEMENT',
-              },
-              update: {},
-            });
-          }
+          // ARGUS #511: one ledger entry per delivered unpaid COD parcel,
+          // carrying the real waybill guaranteed by bulkStatusRejection.
+          await ensureDeliveredCodEntry(
+            tx,
+            { ...delivery, status: 'DELIVERED' },
+            shipment?.waybillId,
+          );
         }
       });
       results.push({ id: delivery.id, ok: true });
