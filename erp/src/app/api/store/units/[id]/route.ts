@@ -54,7 +54,7 @@ function errorResponse(error: unknown, fallback: string) {
             success: false,
             error: {
               code: 'BUILT_IN_UNIT',
-              message: 'Built-in units can be renamed but not deactivated',
+              message: 'Built-in units can be renamed but not deactivated or deleted',
             },
           },
           { status: 400 },

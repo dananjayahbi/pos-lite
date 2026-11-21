@@ -34,7 +34,9 @@ export interface RawMaterialUnitItem {
   shortLabel: string;
   isActive: boolean;
   usageCount: number;
-  /** Seeded default for every tenant; cannot be deactivated (ARGUS #479). */
+  /** Materials that reference the unit but are soft-deleted (ARGUS #483). */
+  archivedUsageCount: number;
+  /** Seeded default for every tenant; cannot be deactivated or deleted (ARGUS #479/#483). */
   isBuiltIn: boolean;
 }
 
@@ -45,6 +47,7 @@ export interface RawMaterialUnitOption {
 }
 
 const DEFAULT_KEYS = new Set<string>(DEFAULT_RAW_MATERIAL_UNITS.map((unit) => unit.key));
+const DEFAULT_UNIT_KEYS = DEFAULT_RAW_MATERIAL_UNITS.map((unit) => unit.key);
 
 /** Make sure every tenant has the built-in units. Idempotent. */
 export async function ensureDefaultRawMaterialUnits(tenantId: string): Promise<void> {
@@ -57,11 +60,29 @@ export async function ensureDefaultRawMaterialUnits(tenantId: string): Promise<v
     })),
     skipDuplicates: true,
   });
+
+  // ARGUS #483: the unique key is held even by a soft-deleted row, so
+  // `skipDuplicates` alone left a deleted built-in gone forever. Revive any
+  // built-in row that was soft-deleted; its current (possibly renamed) labels
+  // are kept, only the lifecycle flags change.
+  await prisma.rawMaterialUnit.updateMany({
+    where: {
+      tenantId,
+      key: { in: DEFAULT_UNIT_KEYS },
+      deletedAt: { not: null },
+    },
+    data: { deletedAt: null, isActive: true },
+  });
+}
+
+interface UnitUsage {
+  live: number;
+  archived: number;
 }
 
 function toItem(
   row: { id: string; key: string; name: string; shortLabel: string; isActive: boolean },
-  usageCount: number,
+  usage: UnitUsage,
 ): RawMaterialUnitItem {
   return {
     id: row.id,
@@ -69,18 +90,37 @@ function toItem(
     name: row.name,
     shortLabel: row.shortLabel,
     isActive: row.isActive,
-    usageCount,
+    usageCount: usage.live,
+    archivedUsageCount: usage.archived,
     isBuiltIn: DEFAULT_KEYS.has(row.key),
   };
 }
 
-async function usageByKey(tenantId: string): Promise<Map<string, number>> {
-  const grouped = await prisma.rawMaterial.groupBy({
-    by: ['unit'],
-    where: { tenantId, deletedAt: null },
-    _count: { _all: true },
-  });
-  return new Map(grouped.map((row) => [row.unit, row._count._all]));
+async function usageByKey(tenantId: string): Promise<Map<string, UnitUsage>> {
+  const [live, archived] = await Promise.all([
+    prisma.rawMaterial.groupBy({
+      by: ['unit'],
+      where: { tenantId, deletedAt: null },
+      _count: { _all: true },
+    }),
+    prisma.rawMaterial.groupBy({
+      by: ['unit'],
+      where: { tenantId, deletedAt: { not: null } },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const counts = new Map<string, UnitUsage>();
+  const bump = (rows: typeof live, key: 'live' | 'archived') => {
+    for (const row of rows) {
+      const current = counts.get(row.unit) ?? { live: 0, archived: 0 };
+      current[key] = row._count._all;
+      counts.set(row.unit, current);
+    }
+  };
+  bump(live, 'live');
+  bump(archived, 'archived');
+  return counts;
 }
 
 export async function listRawMaterialUnits(tenantId: string): Promise<RawMaterialUnitItem[]> {
@@ -94,7 +134,7 @@ export async function listRawMaterialUnits(tenantId: string): Promise<RawMateria
     usageByKey(tenantId),
   ]);
 
-  return rows.map((row) => toItem(row, usage.get(row.key) ?? 0));
+  return rows.map((row) => toItem(row, usage.get(row.key) ?? { live: 0, archived: 0 }));
 }
 
 /** Active units shaped for select inputs and label lookups. */
@@ -239,7 +279,7 @@ export async function createRawMaterialUnit(
     after: { key: row.key, name: row.name, shortLabel: row.shortLabel },
   }).catch(() => {});
 
-  return toItem(row, 0);
+  return toItem(row, { live: 0, archived: 0 });
 }
 
 async function findOwnedUnit(tenantId: string, id: string) {
@@ -322,10 +362,8 @@ export async function updateRawMaterialUnit(
     after: { key: row.key, name: row.name, shortLabel: row.shortLabel, isActive: row.isActive },
   }).catch(() => {});
 
-  const usage = await prisma.rawMaterial.count({
-    where: { tenantId, unit: row.key, deletedAt: null },
-  });
-  return toItem(row, usage);
+  const usage = await usageByKey(tenantId);
+  return toItem(row, usage.get(row.key) ?? { live: 0, archived: 0 });
 }
 
 export async function deleteRawMaterialUnit(
@@ -334,6 +372,13 @@ export async function deleteRawMaterialUnit(
   id: string,
 ): Promise<void> {
   const existing = await findOwnedUnit(tenantId, id);
+
+  // ARGUS #483: built-ins are the default choice set for new tenants; the
+  // deactivation guard alone let an unused built-in be soft-deleted, and the
+  // seeder could not recreate it while the deleted row owned the unique key.
+  if (DEFAULT_KEYS.has(existing.key)) {
+    throw new Error('BUILT_IN_UNIT');
+  }
 
   const usage = await prisma.rawMaterial.count({
     where: { tenantId, unit: existing.key, deletedAt: null },

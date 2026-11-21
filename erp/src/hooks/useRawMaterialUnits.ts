@@ -9,6 +9,7 @@ export interface RawMaterialUnitItem {
   shortLabel: string;
   isActive: boolean;
   usageCount: number;
+  archivedUsageCount: number;
   isBuiltIn: boolean;
 }
 

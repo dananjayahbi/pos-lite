@@ -36,6 +36,7 @@ import {
   unitDisplayChanged,
   unitRenameWarning,
 } from '@/lib/services/rawMaterialUnitRename.core';
+import { formatUnitUsage } from '@/lib/units/unitUsage.core';
 
 interface UnitsPageClientProps {
   canCreate: boolean;
@@ -140,8 +141,9 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
           <h1 className="font-display text-2xl font-bold text-espresso">Units</h1>
           <p className="mt-1 max-w-2xl font-body text-sm text-sand-ink">
             Units used across the system, including raw materials and bill-of-materials
-            quantities. Built-in units can be renamed but not deactivated. A unit used by
-            raw materials cannot be deleted until those materials are reassigned.
+            quantities. Built-in units can be renamed but not deactivated or deleted. A
+            unit used by raw materials cannot be deleted until those materials are
+            reassigned; archived references are shown in the Used by column.
           </p>
         </div>
         {canCreate && (
@@ -198,7 +200,7 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
                     {unit.shortLabel}
                   </TableCell>
                   <TableCell className="font-body text-sm text-sand-ink">
-                    {unit.usageCount} material{unit.usageCount === 1 ? '' : 's'}
+                    {formatUnitUsage(unit.usageCount, unit.archivedUsageCount)}
                   </TableCell>
                   <TableCell>
                     {unit.isActive ? (
