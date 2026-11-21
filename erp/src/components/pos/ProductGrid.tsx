@@ -54,6 +54,7 @@ export function ProductGrid() {
         quantity: 1,
         stockQuantity: variant.stockQuantity,
         taxRule: product.taxRule ?? 'STANDARD_VAT',
+        ...(product.category?.id ? { categoryId: product.category.id } : {}),
       });
       if (result.limited) {
         toast.warning(`Only ${variant.stockQuantity} in stock for ${product.name}`);

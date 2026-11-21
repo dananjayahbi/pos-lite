@@ -150,10 +150,15 @@ function formatDateRange(startsAt: string | null, endsAt: string | null): string
 function getValueLabel(type: PromotionTypeValue): string {
   if (type === 'CART_PERCENTAGE' || type === 'CATEGORY_PERCENTAGE' || type === 'PRODUCT_PERCENTAGE' || type === 'PROMO_CODE') return 'Discount %';
   if (type === 'CART_FIXED' || type === 'PRODUCT_FIXED') return 'Discount Amount';
-  return 'Item Value Cap';
+  return 'Item Value Cap (Rs per free item)';
 }
 
-function getPreviewText(name: string, type: PromotionTypeValue, value: number): string {
+function getPreviewText(
+  name: string,
+  type: PromotionTypeValue,
+  value: number,
+  minQuantity?: number | undefined,
+): string {
   if (!name || value <= 0) return '';
   if (type === 'CART_PERCENTAGE' || type === 'CATEGORY_PERCENTAGE' || type === 'PRODUCT_PERCENTAGE' || type === 'PROMO_CODE') {
     return `${name} - ${value}% off${
@@ -168,7 +173,10 @@ function getPreviewText(name: string, type: PromotionTypeValue, value: number): 
   }
   if (type === 'CART_FIXED') return `${name} - ${formatRupee(value)} off your cart`;
   if (type === 'PRODUCT_FIXED') return `${name} - ${formatRupee(value)} off the selected product`;
-  return `${name} - Buy ${value}+ get one free`;
+  // ARGUS #324: describe the real rule (buy N per targeted line, free units
+  // capped per item), not "Buy 2500+".
+  const buy = minQuantity && minQuantity > 0 ? minQuantity : 2;
+  return `${name} - Buy ${buy}, get floor(qty/${buy}) free on the selected target, up to ${formatRupee(value)} per item`;
 }
 
 // ── Create / Edit Form ───────────────────────────────────────────────────────
@@ -196,8 +204,9 @@ function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmit
   const watchedType = watch('type') as PromotionTypeValue;
   const watchedName = watch('name');
   const watchedValue = watch('value');
+  const watchedMinQuantity = watch('minQuantity');
 
-  const preview = getPreviewText(watchedName, watchedType, watchedValue ?? 0);
+  const preview = getPreviewText(watchedName, watchedType, watchedValue ?? 0, watchedMinQuantity);
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -214,10 +223,17 @@ function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmit
           onValueChange={(v) => {
             const next = v as PromotionTypeValue;
             setValue('type', next);
-            if (next !== 'PRODUCT_PERCENTAGE' && next !== 'PRODUCT_FIXED') {
-              setValue('targetProductId', undefined);
-            }
-            if (next !== 'CATEGORY_PERCENTAGE') setValue('targetCategoryId', undefined);
+            const keepsProductTarget =
+              next === 'PRODUCT_PERCENTAGE' ||
+              next === 'PRODUCT_FIXED' ||
+              next === 'BOGO' ||
+              next === 'MIX_AND_MATCH';
+            const keepsCategoryTarget =
+              next === 'CATEGORY_PERCENTAGE' ||
+              next === 'BOGO' ||
+              next === 'MIX_AND_MATCH';
+            if (!keepsProductTarget) setValue('targetProductId', undefined);
+            if (!keepsCategoryTarget) setValue('targetCategoryId', undefined);
           }}
         >
           <SelectTrigger className="font-body">
@@ -296,15 +312,75 @@ function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmit
       )}
 
       {(watchedType === 'BOGO' || watchedType === 'MIX_AND_MATCH') && (
+        <div className="space-y-3 rounded-lg border border-mist/60 p-3">
+          <p className="font-body text-xs text-mist-ink">
+            Target — choose one product or category. Free units apply per matching
+            cart line.
+          </p>
+          <div className="space-y-1.5">
+            <Label htmlFor="bogoTargetCategoryId" className="font-body text-sm text-espresso">Category</Label>
+            <Select
+              value={watch('targetCategoryId') ?? ''}
+              onValueChange={(v) => {
+                setValue('targetCategoryId', v);
+                setValue('targetProductId', undefined);
+              }}
+            >
+              <SelectTrigger className="font-body">
+                <SelectValue placeholder="Whole category" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={c.id} className="font-body">
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="bogoTargetProductId" className="font-body text-sm text-espresso">Product</Label>
+            <Select
+              value={watch('targetProductId') ?? ''}
+              onValueChange={(v) => {
+                setValue('targetProductId', v);
+                setValue('targetCategoryId', undefined);
+              }}
+            >
+              <SelectTrigger className="font-body">
+                <SelectValue placeholder="Single product" />
+              </SelectTrigger>
+              <SelectContent>
+                {products.map((p) => (
+                  <SelectItem key={p.id} value={p.id} className="font-body">
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {errors.targetProductId && (
+            <p className="text-xs text-[#9B2226]">{errors.targetProductId.message}</p>
+          )}
+        </div>
+      )}
+
+      {(watchedType === 'BOGO' || watchedType === 'MIX_AND_MATCH') && (
         <div className="space-y-1.5">
-          <Label htmlFor="minQuantity" className="font-body text-sm text-espresso">Min Quantity</Label>
+          <Label htmlFor="minQuantity" className="font-body text-sm text-espresso">Buy Quantity (N)</Label>
           <Input
             id="minQuantity"
             type="number"
+            min={1}
             {...register('minQuantity', { valueAsNumber: true })}
             placeholder="2"
             className="font-body"
           />
+          <p className="font-body text-[11px] text-mist-ink">
+            Free units = floor(line quantity / N). The item value cap limits each
+            free unit&apos;s value.
+          </p>
+          {errors.minQuantity && <p className="text-xs text-[#9B2226]">{errors.minQuantity.message}</p>}
         </div>
       )}
 
@@ -565,10 +641,10 @@ export default function PromotionsPage() {
                     <TableRow key={promo.id} className="hover:bg-linen/30">
                       <TableCell className="font-body text-sm text-espresso font-medium">
                         <div>{promo.name}</div>
-                        {(promo.type === 'PRODUCT_PERCENTAGE' || promo.type === 'PRODUCT_FIXED') && promo.targetProduct && (
+                        {(promo.type === 'PRODUCT_PERCENTAGE' || promo.type === 'PRODUCT_FIXED' || promo.type === 'BOGO' || promo.type === 'MIX_AND_MATCH') && promo.targetProduct && (
                           <div className="mt-0.5 text-xs font-normal text-mist-ink">Product: {promo.targetProduct.name}</div>
                         )}
-                        {promo.type === 'CATEGORY_PERCENTAGE' && promo.targetCategory && (
+                        {(promo.type === 'CATEGORY_PERCENTAGE' || promo.type === 'BOGO' || promo.type === 'MIX_AND_MATCH') && promo.targetCategory && (
                           <div className="mt-0.5 text-xs font-normal text-mist-ink">Category: {promo.targetCategory.name}</div>
                         )}
                       </TableCell>

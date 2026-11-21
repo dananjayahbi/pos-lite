@@ -212,6 +212,7 @@ export function CartPanel({
       variantId: item.variantId,
       quantity: item.quantity,
       discountPercent: Number(item.discountPercent),
+      ...(item.categoryId ? { categoryId: item.categoryId } : {}),
     })),
     // ISSUE 7: promotions are a real discount, and the API only knows one
     // discount field. Sending the cart discount alone persisted a promotion-

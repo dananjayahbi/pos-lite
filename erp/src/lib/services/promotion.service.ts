@@ -178,6 +178,22 @@ export async function evaluateCustomerPricing(
 
 // ── Evaluate Category Discounts ──────────────────────────────────────────────
 
+/**
+ * ARGUS #323 — replace every client-supplied category with the category the
+ * variant really belongs to. A cart payload can claim any categoryId; only the
+ * server-resolved map is trusted. Unknown/foreign variants get `undefined`, so
+ * they cannot claim a category promotion.
+ */
+export function applyResolvedCategories(
+  cartLines: CartLine[],
+  categoryByVariantId: ReadonlyMap<string, string | null | undefined>,
+): CartLine[] {
+  return cartLines.map((line) => ({
+    ...line,
+    categoryId: categoryByVariantId.get(line.variantId) ?? undefined,
+  }));
+}
+
 export function evaluateCategoryDiscounts(
   cartLines: CartLine[],
   promos: PromotionRow[],
@@ -295,23 +311,60 @@ export function evaluateProductDiscounts(
 
 // ── Evaluate BOGO / Mix & Match ──────────────────────────────────────────────
 
+/**
+ * ARGUS #324 — buy-N-get-free on the targeted lines only.
+ *
+ * Contract (no schema change):
+ *  - `minQuantity` = buy N on a single line.
+ *  - `value` = maximum LKR value of one free unit.
+ *  - Free units = floor(line.quantity / N), evaluated PER LINE (documented
+ *    choice; the form preview says the same). The discount is
+ *    min(unitPrice, cap) × free units.
+ *  - A promotion with no target product/category, or a non-positive cap, is
+ *    skipped with a reason — never applied to the whole cart.
+ */
 export function evaluateBOGO(
   cartLines: CartLine[],
   promos: PromotionRow[],
   alreadyDiscounted: Set<string>,
+  productByVariantId: ReadonlyMap<string, string> = new Map(),
 ): { applied: AppliedDiscount[]; skipped: SkippedPromotion[] } {
   const applied: AppliedDiscount[] = [];
   const skipped: SkippedPromotion[] = [];
 
   for (const promo of promos) {
+    if (!promo.targetProductId && !promo.targetCategoryId) {
+      skipped.push({ promotionId: promo.id, reason: 'No target product or category set' });
+      continue;
+    }
+
+    const cap = new Decimal(promo.value.toString());
+    if (cap.lessThanOrEqualTo(0)) {
+      skipped.push({ promotionId: promo.id, reason: 'Item value cap must be greater than zero' });
+      continue;
+    }
+
     const minQty = promo.minQuantity ?? 2;
 
+    const matchesTarget = (line: CartLine): boolean => {
+      const productMatch = promo.targetProductId
+        ? productByVariantId.get(line.variantId) === promo.targetProductId
+        : true;
+      const categoryMatch = promo.targetCategoryId
+        ? line.categoryId === promo.targetCategoryId
+        : true;
+      return productMatch && categoryMatch;
+    };
+
     const eligibleLines = cartLines.filter(
-      (l) => !alreadyDiscounted.has(l.variantId) && l.quantity >= minQty,
+      (l) => !alreadyDiscounted.has(l.variantId) && l.quantity >= minQty && matchesTarget(l),
     );
 
     if (eligibleLines.length === 0) {
-      skipped.push({ promotionId: promo.id, reason: `No items meet min quantity of ${minQty}` });
+      skipped.push({
+        promotionId: promo.id,
+        reason: `No targeted items meet the buy quantity of ${minQty}`,
+      });
       continue;
     }
 
@@ -319,12 +372,14 @@ export function evaluateBOGO(
     const affectedLines: string[] = [];
 
     for (const line of eligibleLines) {
-      // Free units = floor(quantity / minQty)
       const freeUnits = Math.floor(line.quantity / minQty);
       if (freeUnits <= 0) continue;
 
+      // Cap the value of each free unit; a Rs 2500 cap on a Rs 500 item still
+      // gives the full Rs 500 unit away.
       const unitPrice = new Decimal(line.unitPrice);
-      const disc = unitPrice.times(freeUnits).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      const perFreeUnit = Decimal.min(unitPrice, cap);
+      const disc = perFreeUnit.times(freeUnits).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
       totalDiscount = totalDiscount.plus(disc);
       affectedLines.push(line.variantId);
       alreadyDiscounted.add(line.variantId);
@@ -333,7 +388,7 @@ export function evaluateBOGO(
     if (affectedLines.length > 0) {
       applied.push({
         promotionId: promo.id,
-        label: promo.name,
+        label: `${promo.name} - Buy ${minQty}, get floor(qty/${minQty}) free (up to ${cap.toFixed(2)} each)`,
         discountAmount: totalDiscount.toString(),
         promotionType: promo.type,
         affectedLines,
@@ -476,6 +531,19 @@ export async function evaluatePromotions(
   // 2. Fetch automatic promotions
   const grouped = await fetchActivePromotions(tenantId);
 
+  // ARGUS #323: resolve product/category from the database once. The client's
+  // categoryId is never trusted — a spoofed category cannot claim a promotion.
+  const variantIds = [...new Set(cartLines.map((line) => line.variantId))];
+  const variants = await prisma.productVariant.findMany({
+    where: { id: { in: variantIds }, product: { tenantId } },
+    select: { id: true, productId: true, product: { select: { categoryId: true } } },
+  });
+  const productByVariantId = new Map(variants.map((variant) => [variant.id, variant.productId]));
+  const categoryByVariantId = new Map(
+    variants.map((variant) => [variant.id, variant.product.categoryId]),
+  );
+  const resolvedCartLines = applyResolvedCategories(cartLines, categoryByVariantId);
+
   // 3. Product discounts (most specific first: product beats category/cart).
   // Percentage and fixed product promotions share the same target-product
   // contract and precedence; the newer fixed type wins its target first because
@@ -485,15 +553,8 @@ export async function evaluatePromotions(
     ...grouped.PRODUCT_FIXED,
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   if (productPromotions.length > 0) {
-    const variantIds = [...new Set(cartLines.map((line) => line.variantId))];
-    const variants = await prisma.productVariant.findMany({
-      where: { id: { in: variantIds }, product: { tenantId } },
-      select: { id: true, productId: true },
-    });
-    const productByVariantId = new Map(variants.map((variant) => [variant.id, variant.productId]));
-
     const productResult = evaluateProductDiscounts(
-      cartLines,
+      resolvedCartLines,
       productPromotions,
       alreadyDiscounted,
       productByVariantId,
@@ -503,18 +564,23 @@ export async function evaluatePromotions(
   }
 
   // 4. Category discounts
-  const catResult = evaluateCategoryDiscounts(cartLines, grouped.CATEGORY_PERCENTAGE, alreadyDiscounted);
+  const catResult = evaluateCategoryDiscounts(resolvedCartLines, grouped.CATEGORY_PERCENTAGE, alreadyDiscounted);
   appliedDiscounts.push(...catResult.applied);
   skippedPromotions.push(...catResult.skipped);
 
   // 5. BOGO / Mix & Match
-  const bogoResult = evaluateBOGO(cartLines, [...grouped.BOGO, ...grouped.MIX_AND_MATCH], alreadyDiscounted);
+  const bogoResult = evaluateBOGO(
+    resolvedCartLines,
+    [...grouped.BOGO, ...grouped.MIX_AND_MATCH],
+    alreadyDiscounted,
+    productByVariantId,
+  );
   appliedDiscounts.push(...bogoResult.applied);
   skippedPromotions.push(...bogoResult.skipped);
 
   // 6. Cart-level promotions run on what is left after the line-level
   // discounts, not the original subtotal (ARGUS #322).
-  const subtotal = cartLines.reduce((sum, l) => {
+  const subtotal = resolvedCartLines.reduce((sum, l) => {
     const lineTotal = new Decimal(l.unitPrice).times(l.quantity);
     const manualDisc = l.manualDiscountAmount ? new Decimal(l.manualDiscountAmount) : new Decimal(0);
     return sum.plus(lineTotal.minus(manualDisc));
@@ -527,7 +593,7 @@ export async function evaluatePromotions(
   let remaining = remainingAfterDiscounts(subtotal.toNumber(), [lineDiscountTotal]);
 
   const cartResult = evaluateCartPromotions(
-    cartLines,
+    resolvedCartLines,
     new Decimal(remaining),
     [...grouped.CART_PERCENTAGE, ...grouped.CART_FIXED],
   );
@@ -541,7 +607,7 @@ export async function evaluatePromotions(
 
   // 7. Promo code applies to the remainder only.
   if (promoCode) {
-    const codeResult = await validatePromoCode(tenantId, promoCode, cartLines, remaining);
+    const codeResult = await validatePromoCode(tenantId, promoCode, resolvedCartLines, remaining);
     if ('error' in codeResult) {
       skippedPromotions.push({ promotionId: 'promo_code', reason: codeResult.error.message });
     } else {

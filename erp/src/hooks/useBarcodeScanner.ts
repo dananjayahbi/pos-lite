@@ -27,6 +27,7 @@ interface BarcodeScanResult {
   retailPrice: number;
   stockQuantity: number;
   productName: string;
+  categoryId?: string | null;
   taxRule?: TaxRuleValue | null;
 }
 
@@ -97,6 +98,7 @@ export function useBarcodeScanToCart(onScan?: (productName: string, variantDescr
           quantity: 1,
           stockQuantity: data.stockQuantity,
           taxRule: data.taxRule ?? 'STANDARD_VAT',
+          ...(data.categoryId ? { categoryId: data.categoryId } : {}),
         });
         if (addResult.limited) {
           toast.warning(
