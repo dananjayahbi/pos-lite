@@ -79,7 +79,9 @@ export async function GET(request: NextRequest) {
     const relatedSales = saleIds.length
       ? await prisma.sale.findMany({
           where: { tenantId, id: { in: saleIds } },
-          select: { id: true, status: true, totalAmount: true },
+          // ARGUS #58: zero-value alerts also need the reason that was
+          // persisted on the sale, so the row can say more than `Rs. 0.00`.
+          select: { id: true, status: true, totalAmount: true, zeroValueReason: true },
         })
       : [];
     const saleById = new Map(relatedSales.map((sale) => [sale.id, sale]));

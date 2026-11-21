@@ -23,6 +23,15 @@ Stored bodies are historical text, so display code passes every body through
 `formatSignedRupee()` uses the same grouping for the generated sale-alert copy,
 so new rows are correct at write time and old rows are corrected at read time.
 
+## Zero-value reasons (ARGUS #58)
+
+A zero or negative total now appends the persisted reason, e.g.
+`Sale #A1B2C3D4 completed for Rs. 0.00. Reason: Bank payment.` The API joins
+`Sale.zeroValueReason` with the other sale fields, so historical rows get the
+reason without a rewrite; new rows are written with it. Labels are
+`Bank payment`, `Replacement`, and `Complimentary`; when a legacy row has no
+reason the copy says `Reason: not recorded` rather than guessing.
+
 ## Verification
 
 `src/lib/notifications/__tests__/notification-time.test.ts` pins the relative

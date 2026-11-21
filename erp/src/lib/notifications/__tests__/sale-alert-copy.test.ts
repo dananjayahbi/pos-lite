@@ -7,6 +7,7 @@ import {
   buildSaleVoidedCopy,
   isVoidedSaleAlert,
   saleShortId,
+  zeroValueReasonLabel,
 } from '@/lib/notifications/sale-alert-copy';
 
 /** ARGUS #52: sale alerts must clearly identify a voided sale. */
@@ -54,5 +55,40 @@ describe('sale alert completed copy', () => {
   it('groups thousands and leads with the minus sign', () => {
     expect(buildSaleCompletedCopy('sale', 2476.58).body).toContain('Rs. 2,476.58.');
     expect(buildSaleCompletedCopy('sale', '-1156.70').body).toContain('-Rs. 1,156.70.');
+  });
+});
+
+/** ARGUS #58: a zero-value alert must say why the total was zero. */
+describe('sale alert zero-value reason', () => {
+  it('labels the persisted zero-value reasons', () => {
+    expect(zeroValueReasonLabel('BANK_PAYMENT')).toBe('Bank payment');
+    expect(zeroValueReasonLabel('PRODUCT_REPLACEMENT')).toBe('Replacement');
+    expect(zeroValueReasonLabel('COMPLIMENTARY_GIFT')).toBe('Complimentary');
+    expect(zeroValueReasonLabel(null)).toBeNull();
+    expect(zeroValueReasonLabel('SOMETHING_ELSE')).toBeNull();
+  });
+
+  it('appends the reason to a zero-total completed alert', () => {
+    expect(
+      buildSaleCompletedCopy('sale', 0, { zeroValueReason: 'BANK_PAYMENT' }).body,
+    ).toBe('Sale #SALE completed for Rs. 0.00. Reason: Bank payment.');
+    expect(
+      buildSaleCompletedCopy('sale', 0, { zeroValueReason: 'PRODUCT_REPLACEMENT' }).body,
+    ).toContain('Reason: Replacement.');
+    expect(
+      buildSaleCompletedCopy('sale', 0, { zeroValueReason: 'COMPLIMENTARY_GIFT' }).body,
+    ).toContain('Reason: Complimentary.');
+  });
+
+  it('says the reason was not recorded instead of guessing', () => {
+    expect(buildSaleCompletedCopy('sale', 0).body).toBe(
+      'Sale #SALE completed for Rs. 0.00. Reason: not recorded.',
+    );
+  });
+
+  it('does not add a reason to a paid sale', () => {
+    expect(
+      buildSaleCompletedCopy('sale', 500, { zeroValueReason: 'BANK_PAYMENT' }).body,
+    ).toBe('Sale #SALE completed for Rs. 500.00.');
   });
 });

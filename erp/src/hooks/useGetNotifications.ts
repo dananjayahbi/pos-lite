@@ -15,6 +15,8 @@ interface NotificationData {
     id: string;
     status: string;
     totalAmount: number | string;
+    /** ARGUS #58: why a zero/negative total was recorded. */
+    zeroValueReason?: string | null;
   } | null;
 }
 

@@ -154,6 +154,7 @@ export default function NotificationsPage() {
                   ? buildSaleCompletedCopy(
                       notification.relatedEntityId ?? '',
                       notification.relatedSale.totalAmount,
+                      { zeroValueReason: notification.relatedSale.zeroValueReason },
                     )
                   : null;
               const Icon = isVoidedSale ? XCircle : getNotificationIcon(notification.type);

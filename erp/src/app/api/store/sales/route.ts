@@ -14,7 +14,7 @@ import {
   resolveSaleHistoryScope,
 } from '@/lib/sales/sale-history-scope';
 import { parseSalePaymentMethod, parseSaleStatus } from '@/lib/sales/sale-list-filters';
-import { formatSignedRupee } from '@/lib/format';
+import { buildSaleCompletedCopy } from '@/lib/notifications/sale-alert-copy';
 
 export async function GET(request: NextRequest) {
   try {
@@ -219,14 +219,16 @@ export async function POST(request: Request) {
         select: { id: true },
       });
       if (recipients.length > 0) {
-        const shortId = sale.id.slice(0, 8).toUpperCase();
+        const { title, body } = buildSaleCompletedCopy(sale.id, sale.totalAmount.toString(), {
+          zeroValueReason: sale.zeroValueReason,
+        });
         await prisma.notificationRecord.createMany({
           data: recipients.map((r) => ({
             tenantId,
             recipientId: r.id,
             type: 'SALE_COMPLETED' as const,
-            title: 'Sale Completed',
-            body: `Sale #${shortId} completed for ${formatSignedRupee(Number(sale.totalAmount))}.`,
+            title,
+            body,
             relatedEntityType: 'Sale',
             relatedEntityId: sale.id,
           })),

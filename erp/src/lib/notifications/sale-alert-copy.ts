@@ -15,6 +15,20 @@ export const SALE_VOIDED_TITLE = 'Sale Voided';
 export interface RelatedSaleAlert {
   status: string;
   totalAmount: number | string;
+  zeroValueReason?: string | null;
+}
+
+/** Why a sale completed with a zero (or negative) total. */
+const ZERO_VALUE_REASON_LABELS: Record<string, string> = {
+  BANK_PAYMENT: 'Bank payment',
+  PRODUCT_REPLACEMENT: 'Replacement',
+  COMPLIMENTARY_GIFT: 'Complimentary',
+};
+
+/** Human label for `Sale.zeroValueReason`, or null when unavailable. */
+export function zeroValueReasonLabel(reason?: string | null): string | null {
+  if (!reason) return null;
+  return ZERO_VALUE_REASON_LABELS[reason] ?? null;
 }
 
 /** `Sale #A1B2C3D4` — the same short id used by the notification producers. */
@@ -34,20 +48,33 @@ export function buildSaleVoidedCopy(
 
 export const SALE_COMPLETED_TITLE = 'Sale Completed';
 
+export interface SaleCompletedContext {
+  /** Persisted `Sale.zeroValueReason`; explains a zero/negative total (ARGUS #58). */
+  zeroValueReason?: string | null | undefined;
+}
+
 /**
  * Re-render a completed alert from the sale's CURRENT total (ARGUS #53).
  *
  * Some alerts were written before the final delivery charge was applied, so the
  * stored body showed an old amount. The API already joins the linked sale; the
- * UI uses this copy instead of the stale stored body.
+ * UI uses this copy instead of the stale stored body. A zero-value sale also
+ * names its reason instead of only saying `Rs. 0.00` (ARGUS #58).
  */
 export function buildSaleCompletedCopy(
   saleId: string,
   totalAmount: number | string,
+  context: SaleCompletedContext = {},
 ): { title: string; body: string } {
+  const amount = Number(totalAmount);
+  const reasonSuffix =
+    Number.isFinite(amount) && amount <= 0
+      ? ` Reason: ${zeroValueReasonLabel(context.zeroValueReason) ?? 'not recorded'}.`
+      : '';
+
   return {
     title: SALE_COMPLETED_TITLE,
-    body: `Sale #${saleShortId(saleId)} completed for ${formatSignedRupee(totalAmount)}.`,
+    body: `Sale #${saleShortId(saleId)} completed for ${formatSignedRupee(totalAmount)}.${reasonSuffix}`,
   };
 }
 
