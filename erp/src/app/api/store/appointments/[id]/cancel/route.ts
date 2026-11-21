@@ -36,9 +36,30 @@ export async function POST(
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
     const parsed = CancelAppointmentSchema.safeParse(body);
-    const reason = parsed.success ? parsed.data.reason : undefined;
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'A cancellation reason is required',
+            details: parsed.error.issues.map((issue) => ({
+              path: issue.path.join('.'),
+              message: issue.message,
+            })),
+          },
+        },
+        { status: 400 },
+      );
+    }
 
-    const appointment = await cancelAppointment(tenantId, id, session.user.id, reason, session.user.role);
+    const appointment = await cancelAppointment(
+      tenantId,
+      id,
+      session.user.id,
+      parsed.data.reason,
+      session.user.role,
+    );
 
     return NextResponse.json({ success: true, data: appointment });
   } catch (error) {

@@ -22,6 +22,14 @@ import {
 } from '@/lib/appointments/appointmentSettings.core';
 import { getAppointmentSettings } from '@/lib/services/appointment-settings.service';
 import { APPOINTMENT_BACKDATE_GRACE_MINUTES } from '@/lib/constants/appointments';
+import {
+  APPOINTMENT_OVERDUE_STATUSES,
+  appointmentOverdueCutoff,
+} from '@/lib/appointments/appointmentOverdue.core';
+import {
+  appointmentActionBlockReason,
+  type AppointmentLifecycleAction,
+} from '@/lib/appointments/appointmentLifecycle.core';
 import type {
   CreateAppointmentInput,
   UpdateAppointmentInput,
@@ -36,6 +44,23 @@ async function assertAppointmentBelongsToTenant(tenantId: string, appointmentId:
   });
   if (!appointment) throw new Error('APPOINTMENT_NOT_FOUND');
   return appointment;
+}
+
+/**
+ * ARGUS #125: every action endpoint walks the same lifecycle map as the generic
+ * PATCH. Without this, a direct POST could skip confirmation/check-in or
+ * resurrect a terminal row.
+ */
+async function assertAppointmentActionAllowed(
+  tenantId: string,
+  appointmentId: string,
+  action: AppointmentLifecycleAction,
+) {
+  const existing = await assertAppointmentBelongsToTenant(tenantId, appointmentId);
+  const settings = await getAppointmentSettings(tenantId);
+  const blockReason = appointmentActionBlockReason(existing.status, action, settings);
+  if (blockReason) throw new Error(blockReason);
+  return existing;
 }
 
 /**
@@ -75,20 +100,29 @@ export async function getAppointments(tenantId: string, filters: Partial<Appoint
     limit = 50,
   } = filters as AppointmentFilters;
 
+  const startTimeFilter: { gte?: Date; lte?: Date } = {};
+  if (dateFrom) startTimeFilter.gte = new Date(dateFrom);
+  if (dateTo) startTimeFilter.lte = new Date(dateTo);
+  if (status === 'OVERDUE') {
+    // ARGUS #126: derived filter — active rows whose start is past the grace
+    // window. This only restricts the query; it never writes status.
+    const cutoff = appointmentOverdueCutoff();
+    if (!startTimeFilter.lte || startTimeFilter.lte > cutoff) {
+      startTimeFilter.lte = cutoff;
+    }
+  }
+
   const where: Prisma.AppointmentWhereInput = {
     tenantId,
-    ...(status && { status }),
+    ...(status === 'OVERDUE'
+      ? { status: { in: [...APPOINTMENT_OVERDUE_STATUSES] } }
+      : status
+        ? { status }
+        : {}),
     ...(staffId && { staffId }),
     ...(serviceId && { serviceId }),
     ...(customerId && { customerId }),
-    ...(dateFrom || dateTo
-      ? {
-          startTime: {
-            ...(dateFrom && { gte: new Date(dateFrom) }),
-            ...(dateTo && { lte: new Date(dateTo) }),
-          },
-        }
-      : {}),
+    ...(Object.keys(startTimeFilter).length > 0 ? { startTime: startTimeFilter } : {}),
   };
 
   const [appointments, total] = await Promise.all([
@@ -368,7 +402,7 @@ export async function cancelAppointment(
 // ── Check In ─────────────────────────────────────────────────────────────────
 
 export async function checkInAppointment(tenantId: string, id: string, userId: string) {
-  await assertAppointmentBelongsToTenant(tenantId, id);
+  await assertAppointmentActionAllowed(tenantId, id, 'check_in');
 
   return prisma.appointment.update({
     where: { id },
@@ -384,7 +418,7 @@ export async function checkInAppointment(tenantId: string, id: string, userId: s
 // ── Mark In Progress ─────────────────────────────────────────────────────────
 
 export async function markInProgress(tenantId: string, id: string) {
-  await assertAppointmentBelongsToTenant(tenantId, id);
+  await assertAppointmentActionAllowed(tenantId, id, 'start');
 
   return prisma.appointment.update({
     where: { id },
@@ -396,7 +430,7 @@ export async function markInProgress(tenantId: string, id: string) {
 // ── Complete ─────────────────────────────────────────────────────────────────
 
 export async function completeAppointment(tenantId: string, id: string) {
-  await assertAppointmentBelongsToTenant(tenantId, id);
+  await assertAppointmentActionAllowed(tenantId, id, 'complete');
 
   return prisma.appointment.update({
     where: { id },
@@ -411,7 +445,7 @@ export async function completeAppointment(tenantId: string, id: string) {
 // ── Mark No Show ─────────────────────────────────────────────────────────────
 
 export async function markNoShow(tenantId: string, id: string) {
-  await assertAppointmentBelongsToTenant(tenantId, id);
+  await assertAppointmentActionAllowed(tenantId, id, 'no_show');
 
   const appointment = await prisma.appointment.update({
     where: { id },
@@ -433,7 +467,8 @@ export async function markNoShow(tenantId: string, id: string) {
 // ── Confirm ──────────────────────────────────────────────────────────────────
 
 export async function confirmAppointment(tenantId: string, id: string) {
-  await assertAppointmentBelongsToTenant(tenantId, id);
+  await assertAppointmentActionAllowed(tenantId, id, 'confirm');
+
   return prisma.appointment.update({
     where: { id },
     data: { status: 'CONFIRMED' },

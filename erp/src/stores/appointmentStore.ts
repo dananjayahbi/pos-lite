@@ -21,7 +21,9 @@ interface AppointmentStore {
   isFormOpen: boolean;
   isDetailOpen: boolean;
   editingAppointmentId: string | null;
-  openCreateForm: () => void;
+  /** Prefill for a NEW booking (e.g. Rebook from a NO_SHOW row). */
+  formInitialData: Record<string, unknown> | null;
+  openCreateForm: (initialData?: Record<string, unknown>) => void;
   openEditForm: (id: string) => void;
   openDetail: (id: string) => void;
   closeForm: () => void;
@@ -37,13 +39,6 @@ function addDays(date: Date, days: number): Date {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
-}
-
-function getStartOfWeek(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  d.setDate(d.getDate() - day);
-  return d;
 }
 
 export const useAppointmentStore = create<AppointmentStore>((set, get) => ({
@@ -62,10 +57,23 @@ export const useAppointmentStore = create<AppointmentStore>((set, get) => ({
   isFormOpen: false,
   isDetailOpen: false,
   editingAppointmentId: null,
-  openCreateForm: () => set({ isFormOpen: true, editingAppointmentId: null, isDetailOpen: false }),
-  openEditForm: (id) => set({ isFormOpen: true, editingAppointmentId: id, isDetailOpen: false }),
+  formInitialData: null,
+  openCreateForm: (initialData) =>
+    set({
+      isFormOpen: true,
+      editingAppointmentId: null,
+      formInitialData: initialData ?? null,
+      isDetailOpen: false,
+    }),
+  openEditForm: (id) =>
+    set({
+      isFormOpen: true,
+      editingAppointmentId: id,
+      formInitialData: null,
+      isDetailOpen: false,
+    }),
   openDetail: (id) => set({ isDetailOpen: true, selectedAppointmentId: id, isFormOpen: false }),
-  closeForm: () => set({ isFormOpen: false, editingAppointmentId: null }),
+  closeForm: () => set({ isFormOpen: false, editingAppointmentId: null, formInitialData: null }),
   closeDetail: () => set({ isDetailOpen: false, selectedAppointmentId: null }),
 
   next: () => {

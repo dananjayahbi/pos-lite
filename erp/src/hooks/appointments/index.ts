@@ -7,6 +7,8 @@ export { useCreateAppointment } from './useCreateAppointment';
 export { useUpdateAppointment } from './useUpdateAppointment';
 export { useCancelAppointment } from './useCancelAppointment';
 export { useCheckInAppointment } from './useCheckInAppointment';
+export { useConfirmAppointment } from './useConfirmAppointment';
+export { useStartAppointment } from './useStartAppointment';
 export { useCompleteAppointment } from './useCompleteAppointment';
 export { useMarkNoShow } from './useMarkNoShow';
 export { useConvertToSale } from './useConvertToSale';

@@ -50,6 +50,19 @@ export async function POST(
       );
     }
 
+    if (message === 'INVALID_STATUS_TRANSITION') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_STATUS_TRANSITION',
+            message: 'That status change is not allowed from the appointment\'s current state',
+          },
+        },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message } },
       { status: 500 },

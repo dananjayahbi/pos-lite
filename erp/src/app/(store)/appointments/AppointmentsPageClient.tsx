@@ -11,6 +11,7 @@ export function AppointmentsPageClient() {
   const isDetailOpen = useAppointmentStore((s) => s.isDetailOpen);
   const selectedAppointmentId = useAppointmentStore((s) => s.selectedAppointmentId);
   const editingAppointmentId = useAppointmentStore((s) => s.editingAppointmentId);
+  const formInitialData = useAppointmentStore((s) => s.formInitialData);
   const closeForm = useAppointmentStore((s) => s.closeForm);
   const closeDetail = useAppointmentStore((s) => s.closeDetail);
   const openCreateForm = useAppointmentStore((s) => s.openCreateForm);
@@ -35,6 +36,7 @@ export function AppointmentsPageClient() {
         onClose={closeForm}
         editingId={editingAppointmentId}
         defaultDate={currentDate}
+        initialData={formInitialData ?? undefined}
       />
 
       <AppointmentDetailPanel

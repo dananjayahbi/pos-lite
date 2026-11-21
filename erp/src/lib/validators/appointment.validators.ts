@@ -81,7 +81,11 @@ export const UpdateAppointmentSchema = z
 // ── Cancel Appointment ───────────────────────────────────────────────────────
 
 export const CancelAppointmentSchema = z.object({
-  reason: z.string().max(500).optional(),
+  reason: z
+    .string()
+    .trim()
+    .min(1, 'A cancellation reason is required')
+    .max(500, 'Reason must be 500 characters or fewer'),
 });
 
 // ── Appointment Settings ─────────────────────────────────────────────────────
@@ -134,7 +138,11 @@ export const SlotGenerationSchema = z.object({
 // ── Appointment Filters ──────────────────────────────────────────────────────
 
 export const AppointmentFiltersSchema = z.object({
-  status: z.enum(['SCHEDULED', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS', 'COMPLETED', 'NO_SHOW', 'CANCELLED']).optional(),
+  /**
+   * ARGUS #126: OVERDUE is a derived filter (SCHEDULED/CONFIRMED past the grace
+   * window). It is not a stored AppointmentStatus.
+   */
+  status: z.enum(['SCHEDULED', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS', 'COMPLETED', 'NO_SHOW', 'CANCELLED', 'OVERDUE']).optional(),
   staffId: z.string().optional(),
   serviceId: z.string().optional(),
   customerId: z.string().optional(),
