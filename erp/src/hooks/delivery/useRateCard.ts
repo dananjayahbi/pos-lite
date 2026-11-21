@@ -2,6 +2,17 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import {
+  EMPTY_RATE_CARD_META,
+  type RateCardMeta,
+} from '@/lib/delivery/rateCardMeta.core';
+
+interface RateCardResponse {
+  success?: boolean;
+  data?: unknown;
+  error?: { message?: string };
+  meta?: { rateCardMeta?: RateCardMeta };
+}
 
 export function useRateCard() {
   const queryClient = useQueryClient();
@@ -10,11 +21,7 @@ export function useRateCard() {
     queryKey: ['ratecard'],
     queryFn: async () => {
       const res = await fetch('/api/store/delivery/ratecard');
-      const json = (await res.json().catch(() => null)) as {
-        success?: boolean;
-        data?: unknown;
-        error?: { message?: string };
-      } | null;
+      const json = (await res.json().catch(() => null)) as RateCardResponse | null;
 
       // ARGUS #289: the API intentionally returns `200 { data: null }` when a
       // tenant has no card. A 404 therefore means the route/deployment is
@@ -25,7 +32,10 @@ export function useRateCard() {
       if (!res.ok || !json?.success) {
         throw new Error(json?.error?.message ?? 'Failed to fetch rate card');
       }
-      return json.data ?? null;
+      return {
+        card: json.data ?? null,
+        meta: json.meta?.rateCardMeta ?? EMPTY_RATE_CARD_META,
+      };
     },
     // One retry smooths a transient blip without hiding a hard failure behind
     // a long retry backoff; the page also offers an explicit Retry.
@@ -74,7 +84,8 @@ export function useRateCard() {
   });
 
   return {
-    data: query.data,
+    data: query.data?.card ?? null,
+    meta: query.data?.meta ?? EMPTY_RATE_CARD_META,
     isLoading: query.isLoading,
     isError: query.isError,
     error: query.error,

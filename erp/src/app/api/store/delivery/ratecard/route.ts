@@ -4,6 +4,7 @@ import { requireDeliveryAuth, validationError, internalError, mapDeliveryError }
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { getRateCardMeta, recordRateCardMeta } from '@/lib/services/rate-card-meta.service';
 import { UpsertRateCardSchema } from '@/lib/validators/ratecard.validators';
 import type { UpsertRateCardInput } from '@/lib/validators/ratecard.validators';
 
@@ -16,7 +17,13 @@ export async function GET() {
     include: { entries: true },
     orderBy: { updatedAt: 'desc' },
   });
-  return NextResponse.json({ success: true, data: card ?? null });
+  const rateCardMeta = await getRateCardMeta(guard.tenantId);
+  return NextResponse.json({
+    success: true,
+    data: card ?? null,
+    // ARGUS #295: last change provenance for the financial master record.
+    meta: { rateCardMeta },
+  });
 }
 
 export async function PUT(request: Request) {
@@ -38,6 +45,17 @@ export async function PUT(request: Request) {
   try {
     const input = parsed.data as UpsertRateCardInput;
     let card = await prisma.rateCard.findFirst({ where: { tenantId: guard.tenantId, isActive: true } });
+    // ARGUS #295: snapshot the values being replaced for the audit trail.
+    const before = card
+      ? {
+          name: card.name,
+          baseRate: card.baseRate.toString(),
+          extraKgRate: card.extraKgRate.toString(),
+          freeBaseWeightKg: card.freeBaseWeightKg.toString(),
+          coddCommissionPct: card.coddCommissionPct?.toString() ?? null,
+          vatRatePct: card.vatRatePct?.toString() ?? null,
+        }
+      : null;
 
     if (!card) {
       card = await prisma.rateCard.create({
@@ -66,14 +84,28 @@ export async function PUT(request: Request) {
       });
     }
 
-    void createAuditLog({
+    await recordRateCardMeta(
+      guard.tenantId,
+      { id: guard.userId, email: guard.email, role: guard.role },
+      'card',
+    );
+
+    await createAuditLog({
       tenantId: guard.tenantId,
       actorId: guard.userId,
-      actorRole: 'UNKNOWN',
+      actorRole: guard.role,
       entityType: 'RateCard',
       entityId: card.id,
       action: AUDIT_ACTIONS.RATE_CARD_UPDATED,
-      after: input,
+      before,
+      after: {
+        name: card.name,
+        baseRate: card.baseRate.toString(),
+        extraKgRate: card.extraKgRate.toString(),
+        freeBaseWeightKg: card.freeBaseWeightKg.toString(),
+        coddCommissionPct: card.coddCommissionPct?.toString() ?? null,
+        vatRatePct: card.vatRatePct?.toString() ?? null,
+      },
     });
 
     const full = await prisma.rateCard.findUnique({ where: { id: card.id }, include: { entries: true } });

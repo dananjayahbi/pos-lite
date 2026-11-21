@@ -19,6 +19,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RateMatrixTable } from '@/components/delivery/rate-card/RateMatrixTable';
 import { rateCardLoadState } from '@/components/delivery/rate-card/rateCardLoadState';
+import { rateCardMetaSummary } from '@/lib/delivery/rateCardMeta.core';
 
 interface RateEntry {
   id?: string;
@@ -99,7 +100,7 @@ const RateCardFormSchema = UpsertRateCardSchema.extend({
 export function RateCardPageClient() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const canManage = hasPermission(PERMISSIONS.DELIVERY.manageRateCard);
-  const { data, isLoading, isError, error, isFetching, refetch, save, saveEntries } =
+  const { data, meta, isLoading, isError, error, isFetching, refetch, save, saveEntries } =
     useRateCard();
   const { data: locations } = useLocations();
   const districts = locations?.districts ?? [];
@@ -197,6 +198,9 @@ export function RateCardPageClient() {
         <h1 className="font-display text-2xl font-bold text-espresso">Delivery Rate Card</h1>
         <p className="text-sm text-espresso/60">
           Base Trans Express pricing and zone-level overrides for COD deliveries.
+        </p>
+        <p className="mt-1 text-xs text-espresso/50" data-testid="rate-card-meta">
+          {rateCardMetaSummary(meta)}
         </p>
       </div>
 
