@@ -10,6 +10,7 @@ import {
   YAxis,
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatDashboardDay } from '@/lib/dashboard/dateFormat';
 import { formatRupee } from '@/lib/format';
 import type { DailyRevenue } from './types';
 
@@ -17,21 +18,10 @@ interface RevenueTrendChartProps {
   data: DailyRevenue[];
 }
 
-// `date` is a local calendar day (YYYY-MM-DD). Parse the parts directly so the
-// label cannot slip a day in timezones behind UTC the way `new Date(str)` can.
-function formatDayLabel(date: string): string {
-  const [year, month, day] = date.split('-').map(Number);
-  return new Date(year!, month! - 1, day!).toLocaleDateString('en-LK', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
 export function RevenueTrendChart({ data }: RevenueTrendChartProps) {
   const formatted = data.map((d) => ({
     ...d,
-    label: formatDayLabel(d.date),
+    label: formatDashboardDay(d.date),
   }));
 
   return (

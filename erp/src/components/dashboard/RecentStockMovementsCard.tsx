@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRecentMovements } from '@/hooks/useRecentMovements';
 import { stockActorLabel } from '@/lib/stock/actor-label';
+import { formatDashboardDateTime } from '@/lib/dashboard/dateFormat';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -28,14 +29,7 @@ const REASON_BADGE: Record<string, { label: string; className: string }> = {
 };
 
 function formatDateTime(value: string) {
-  const date = new Date(value);
-  return `${date.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-  })} · ${date.toLocaleTimeString('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })}`;
+  return formatDashboardDateTime(value);
 }
 
 export function RecentStockMovementsCard() {

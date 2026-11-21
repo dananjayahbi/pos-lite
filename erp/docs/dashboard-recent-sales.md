@@ -1,18 +1,16 @@
 # Dashboard recent sales
 
-## Date and time (ARGUS #40)
+## Date and time (ARGUS #40, updated by #44)
 
-Rows outside today show the calendar day, so a list spanning two days no longer
-looks out of order:
+Rows always carry the calendar day, so a list spanning two days no longer looks
+out of order. The dashboard-wide style from #44 is day-first with 24-hour time:
 
-- today → `Today, 11:06 PM`
-- yesterday → `Yesterday, 10:08 PM`
-- older → `15 Nov, 10:08 PM`
+- `15 Nov 2026, 23:07`
 
 `formatRecentSaleTimestamp()` in
-`src/components/dashboard/recentSaleTime.ts` keeps the existing `en-LK` clock
-format and compares local calendar days. Ordering and the 8-row limit are
-unchanged.
+`src/components/dashboard/recentSaleTime.ts` is now a thin alias of
+`formatDashboardDateTime()` (`src/lib/dashboard/dateFormat.ts`). Ordering and
+the 8-row limit are unchanged.
 
 ## Payment label (ARGUS #41)
 
