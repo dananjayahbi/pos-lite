@@ -1,6 +1,11 @@
 import Decimal from 'decimal.js';
 import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
+import {
+  applyFixedToRemaining,
+  applyPercentageToRemaining,
+  remainingAfterDiscounts,
+} from '@/lib/services/promotionStacking.core';
 import type { PromotionType } from '@/generated/prisma/client';
 import type { CreatePromotionInput, UpdatePromotionInput } from '@/lib/validators/promotion.validators';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
@@ -360,10 +365,12 @@ export function evaluateCartPromotions(
     let disc: Decimal;
 
     if (promo.type === 'CART_PERCENTAGE') {
-      disc = subtotal.times(value).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      disc = new Decimal(
+        applyPercentageToRemaining(subtotal.toNumber(), value.toNumber()),
+      );
     } else {
       // CART_FIXED
-      disc = Decimal.min(value, subtotal).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      disc = new Decimal(applyFixedToRemaining(subtotal.toNumber(), value.toNumber()));
     }
 
     if (disc.greaterThan(bestDiscount)) {
@@ -398,6 +405,7 @@ export async function validatePromoCode(
   tenantId: string,
   code: string,
   cartLines: CartLine[],
+  remainingSubtotal?: number,
 ): Promise<AppliedDiscount | { error: { code: string; message: string } }> {
   const now = new Date();
   const promo = await prisma.promotion.findFirst({
@@ -421,13 +429,19 @@ export async function validatePromoCode(
   }
 
   const value = new Decimal(promo.value.toString());
-  const subtotal = cartLines.reduce((sum, l) => {
+  const eligibleSubtotal = cartLines.reduce((sum, l) => {
     const lineTotal = new Decimal(l.unitPrice).times(l.quantity);
     const manualDisc = l.manualDiscountAmount ? new Decimal(l.manualDiscountAmount) : new Decimal(0);
     return sum.plus(lineTotal.minus(manualDisc));
   }, new Decimal(0));
 
-  const disc = subtotal.times(value).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  // The code applies after the line/cart promotions: never on the original
+  // subtotal, and never more than what is left (ARGUS #322).
+  const base = remainingSubtotal !== undefined
+    ? Decimal.min(eligibleSubtotal, new Decimal(Math.max(0, remainingSubtotal)))
+    : eligibleSubtotal;
+
+  const disc = new Decimal(applyPercentageToRemaining(base.toNumber(), value.toNumber()));
 
   return {
     promotionId: promo.id,
@@ -498,20 +512,36 @@ export async function evaluatePromotions(
   appliedDiscounts.push(...bogoResult.applied);
   skippedPromotions.push(...bogoResult.skipped);
 
-  // 6. Cart-level promotions
+  // 6. Cart-level promotions run on what is left after the line-level
+  // discounts, not the original subtotal (ARGUS #322).
   const subtotal = cartLines.reduce((sum, l) => {
     const lineTotal = new Decimal(l.unitPrice).times(l.quantity);
     const manualDisc = l.manualDiscountAmount ? new Decimal(l.manualDiscountAmount) : new Decimal(0);
     return sum.plus(lineTotal.minus(manualDisc));
   }, new Decimal(0));
 
-  const cartResult = evaluateCartPromotions(cartLines, subtotal, [...grouped.CART_PERCENTAGE, ...grouped.CART_FIXED]);
+  const lineDiscountTotal = appliedDiscounts.reduce(
+    (sum, discount) => sum + Number(discount.discountAmount),
+    0,
+  );
+  let remaining = remainingAfterDiscounts(subtotal.toNumber(), [lineDiscountTotal]);
+
+  const cartResult = evaluateCartPromotions(
+    cartLines,
+    new Decimal(remaining),
+    [...grouped.CART_PERCENTAGE, ...grouped.CART_FIXED],
+  );
   appliedDiscounts.push(...cartResult.applied);
   skippedPromotions.push(...cartResult.skipped);
 
-  // 7. Promo code
+  remaining = remainingAfterDiscounts(
+    remaining,
+    cartResult.applied.map((discount) => Number(discount.discountAmount)),
+  );
+
+  // 7. Promo code applies to the remainder only.
   if (promoCode) {
-    const codeResult = await validatePromoCode(tenantId, promoCode, cartLines);
+    const codeResult = await validatePromoCode(tenantId, promoCode, cartLines, remaining);
     if ('error' in codeResult) {
       skippedPromotions.push({ promotionId: 'promo_code', reason: codeResult.error.message });
     } else {
@@ -519,8 +549,13 @@ export async function evaluatePromotions(
     }
   }
 
-  const totalDiscountAmount = appliedDiscounts
+  const rawDiscountAmount = appliedDiscounts
     .reduce((sum, d) => sum.plus(new Decimal(d.discountAmount)), new Decimal(0))
+    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+  // Hard cap: the combined promotions can never discount more than the cart is
+  // worth, even if a rule was misconfigured.
+  const totalDiscountAmount = Decimal.min(rawDiscountAmount, subtotal)
     .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
     .toString();
 

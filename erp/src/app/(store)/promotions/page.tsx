@@ -476,6 +476,11 @@ export default function PromotionsPage() {
           <p className="font-body text-sm text-mist-ink">
             {activeCount} active promotion{activeCount !== 1 ? 's' : ''}
           </p>
+          <p className="mt-1 max-w-2xl font-body text-xs text-mist-ink">
+            Stacking: product/category/BOGO promotions apply first (one per line), then the
+            best cart promotion on the remainder, then a promo code on what is left. The
+            combined discount can never exceed the cart subtotal.
+          </p>
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
