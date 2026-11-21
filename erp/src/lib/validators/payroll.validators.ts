@@ -17,6 +17,8 @@ export const GeneratePayrollSchema = z.object({
   overrides: z.array(PayrollOverrideSchema).max(500).default([]),
   /** ARGUS #375: acknowledge a zero-net or unsalaried run before generating. */
   confirmZeroPayRun: z.boolean().optional(),
+  /** ARGUS #376: acknowledge missing attendance records for the month. */
+  confirmIncompleteAttendance: z.boolean().optional(),
 });
 
 /** Mark a generated run paid. */

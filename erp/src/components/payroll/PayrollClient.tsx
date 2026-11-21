@@ -73,6 +73,7 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
     Record<string, { noPayDays?: number; advanceDeduction?: number }>
   >({});
   const [confirmWarnings, setConfirmWarnings] = useState(false);
+  const [confirmAttendance, setConfirmAttendance] = useState(false);
 
   const previewQuery = useQuery<PayrollPreview>({
     queryKey: ['payroll-preview', month],
@@ -163,6 +164,9 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
           month,
           notes: notes.trim() || undefined,
           confirmZeroPayRun: readiness.requiresConfirmation ? confirmWarnings : undefined,
+          confirmIncompleteAttendance: preview?.attendanceSummary.requiresConfirmation
+            ? confirmAttendance
+            : undefined,
           overrides: rows.map((row) => ({
             userId: row.userId,
             noPayDays: Number(row.noPayDays),
@@ -185,6 +189,7 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
       setNotes('');
       setOverrides({});
       setConfirmWarnings(false);
+      setConfirmAttendance(false);
       void queryClient.invalidateQueries({ queryKey: ['payroll-preview'] });
       void queryClient.invalidateQueries({ queryKey: ['payroll-runs'] });
     },
@@ -296,6 +301,7 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                   setMonth(event.target.value);
                   setOverrides({});
                   setConfirmWarnings(false);
+                  setConfirmAttendance(false);
                 }
               }}
               className="w-48"
@@ -438,6 +444,13 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                           className="ml-auto h-8 w-20 text-right font-mono text-xs"
                           aria-label={`No-pay days for ${row.staffName}`}
                         />
+                        {row.attendanceCompleteness.status !== 'COMPLETE' && (
+                          <p className="mt-1 text-[10px] text-[#B7791F]">
+                            {row.attendanceCompleteness.status === 'NOT_SCHEDULED'
+                              ? 'no scheduled days'
+                              : `${row.attendanceCompleteness.missingDays} unrecorded`}
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <Input
@@ -465,6 +478,27 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+
+          {preview && !preview.alreadyGenerated && canRun && preview.attendanceSummary.message && (
+            <div className="mt-3 rounded-lg border border-[#9B2226]/30 bg-[#FBECEC] p-4">
+              <p className="text-espresso text-sm font-semibold">Attendance check</p>
+              <p className="text-sand-ink mt-2 text-xs">{preview.attendanceSummary.message}</p>
+              {preview.attendanceSummary.requiresConfirmation && (
+                <label className="text-espresso mt-3 flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={confirmAttendance}
+                    onChange={(event) => setConfirmAttendance(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-[#9B2226]"
+                  />
+                  <span>
+                    I reviewed attendance for this month and still want to generate payroll with
+                    these records.
+                  </span>
+                </label>
+              )}
             </div>
           )}
 
@@ -518,7 +552,8 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                 onClick={() => generateMutation.mutate()}
                 disabled={
                   generateMutation.isPending ||
-                  (readiness.requiresConfirmation && !confirmWarnings)
+                  (readiness.requiresConfirmation && !confirmWarnings) ||
+                  (preview?.attendanceSummary.requiresConfirmation && !confirmAttendance)
                 }
                 className="bg-espresso text-pearl hover:bg-espresso/90"
               >

@@ -30,6 +30,10 @@ import {
 } from '@/lib/payroll/payroll-settings';
 import { parseAttendanceCalendar } from '@/lib/attendance/attendanceCalendar.core';
 import { assessPayrollRunReadiness } from '@/lib/payroll/run-readiness';
+import {
+  assessAttendanceCompleteness,
+  summarizeAttendanceCompleteness,
+} from '@/lib/payroll/attendance-completeness.core';
 import type {
   PayrollPreview,
   PayrollPreviewRow,
@@ -123,6 +127,27 @@ export async function buildPayrollPreview(
       const basicSalary = member.basicSalary ?? new Decimal(0);
       const allowances = member.allowances ?? new Decimal(0);
 
+      // ARGUS #376: a scheduled working day without a punch is ABSENT in the
+      // shared calendar; this measures whether the month has any attendance
+      // evidence at all, so an empty month is not silently treated as normal.
+      const scheduledStatuses = new Set([
+        'PRESENT',
+        'ABSENT',
+        'INSUFFICIENT',
+        'LEAVE',
+        'HALF_DAY',
+      ]);
+      const expectedWorkingDays = attendance.rows.filter((day) =>
+        scheduledStatuses.has(day.status),
+      ).length;
+      const recordedDays = attendance.rows.filter(
+        (day) => day.punches > 0 || day.status === 'LEAVE',
+      ).length;
+      const attendanceCompleteness = assessAttendanceCompleteness({
+        expectedWorkingDays,
+        recordedDays,
+      });
+
       const computed = calculatePayroll({
         basicSalary,
         allowances,
@@ -154,6 +179,7 @@ export async function buildPayrollPreview(
         hasSalaryConfig:
           (member.basicSalary !== null && member.basicSalary.greaterThan(0)) ||
           (member.allowances !== null && member.allowances.greaterThan(0)),
+        attendanceCompleteness,
       };
     }),
   );
@@ -187,6 +213,15 @@ export async function buildPayrollPreview(
     },
   );
 
+  const attendanceSummary = summarizeAttendanceCompleteness(
+    rows.map((row) => ({
+      userId: row.userId,
+      staffName: row.staffName,
+      netSalary: row.netSalary,
+      completeness: row.attendanceCompleteness,
+    })),
+  );
+
   return {
     month: range.month,
     label: range.label,
@@ -212,6 +247,7 @@ export async function buildPayrollPreview(
       net: moneyString(totals.net),
       companyCost: moneyString(totals.companyCost),
     },
+    attendanceSummary,
   };
 }
 
@@ -232,6 +268,8 @@ export interface GeneratePayrollInput {
   notes?: string | undefined;
   /** ARGUS #375: explicit acknowledgement of zero/unsalaried rows. */
   confirmZeroPayRun?: boolean | undefined;
+  /** ARGUS #376: explicit acknowledgement of missing attendance records. */
+  confirmIncompleteAttendance?: boolean | undefined;
 }
 
 export async function generatePayrollRun(input: GeneratePayrollInput) {
@@ -257,6 +295,24 @@ export async function generatePayrollRun(input: GeneratePayrollInput) {
       'PAYROLL_CONFIRMATION_REQUIRED',
       readiness.confirmationMessage ?? 'Confirm the payroll warnings before generating',
       { warnings: readiness.warnings },
+    );
+  }
+
+  // ARGUS #376: an empty attendance month must be a deliberate choice.
+  if (
+    preview.attendanceSummary.requiresConfirmation &&
+    !input.confirmIncompleteAttendance
+  ) {
+    throw new ApiError(
+      422,
+      'INCOMPLETE_ATTENDANCE',
+      preview.attendanceSummary.message ??
+        'Attendance is incomplete for this month; review it before generating payroll',
+      {
+        staffWithNoData: preview.attendanceSummary.staffWithNoData,
+        staffNotScheduled: preview.attendanceSummary.staffNotScheduled,
+        missingDays: preview.attendanceSummary.missingDays,
+      },
     );
   }
 
