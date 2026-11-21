@@ -10,6 +10,7 @@ import { parseQueryInt, parseQueryDate } from '@/lib/api/query-params';
 import { resolveInclusiveDateRange } from '@/lib/api/inclusive-date-range';
 import { toCsvLines } from '@/lib/export';
 import { stockMovementReasonLabel } from '@/lib/constants/stock-movement';
+import { resolveStockMovementSource } from '@/lib/stock/movement-source';
 
 const VALID_REASONS = new Set(Object.values(StockMovementReason));
 
@@ -132,21 +133,37 @@ export async function GET(request: NextRequest) {
           'After',
           'Actor',
           'Note',
+          // ARGUS #199: tie each row back to the document that produced it.
+          'Source Type',
+          'Source ID',
+          'Sale ID',
+          'Purchase Order ID',
+          'Stock Take Session ID',
+          'Batch ID',
         ],
-        movements.map((m) => [
-          m.createdAt.toISOString(),
-          m.variant.product.name,
-          m.variant.sku,
-          m.variant.form ?? '',
-          m.variant.packSize ?? '',
-          m.reason,
-          stockMovementReasonLabel(m.reason),
-          m.quantityDelta > 0 ? `+${m.quantityDelta}` : String(m.quantityDelta),
-          String(m.quantityBefore),
-          String(m.quantityAfter),
-          m.actor?.email ?? 'system',
-          m.note ?? '',
-        ]),
+        movements.map((m) => {
+          const source = resolveStockMovementSource(m);
+          return [
+            m.createdAt.toISOString(),
+            m.variant.product.name,
+            m.variant.sku,
+            m.variant.form ?? '',
+            m.variant.packSize ?? '',
+            m.reason,
+            stockMovementReasonLabel(m.reason),
+            m.quantityDelta > 0 ? `+${m.quantityDelta}` : String(m.quantityDelta),
+            String(m.quantityBefore),
+            String(m.quantityAfter),
+            m.actor?.email ?? 'system',
+            m.note ?? '',
+            source?.label ?? '',
+            source?.id ?? '',
+            m.saleId ?? '',
+            m.purchaseOrderId ?? '',
+            m.stockTakeSessionId ?? '',
+            m.batchId ?? '',
+          ];
+        }),
       );
 
       // Use the caller's calendar labels, not `toISOString()` - a local

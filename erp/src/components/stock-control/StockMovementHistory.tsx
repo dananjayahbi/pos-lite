@@ -31,6 +31,7 @@ import { mergeSearchParams } from '@/lib/urlUtils';
 import { useGlobalStockMovements } from '@/hooks/useGlobalStockMovements';
 import { useStockActors } from '@/hooks/useStockActors';
 import { stockActorLabel } from '@/lib/stock/actor-label';
+import { resolveStockMovementSource } from '@/lib/stock/movement-source';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -498,6 +499,7 @@ function StockMovementHistoryInner() {
               <TableHead>Product</TableHead>
               <TableHead>Variant</TableHead>
               <TableHead>Reason</TableHead>
+              <TableHead>Source</TableHead>
               <TableHead className="text-right">Change</TableHead>
               <TableHead className="text-right">Before</TableHead>
               <TableHead className="text-right">After</TableHead>
@@ -509,7 +511,7 @@ function StockMovementHistoryInner() {
             {isLoading
               ? Array.from({ length: 7 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 9 }).map((_, j) => (
+                    {Array.from({ length: 10 }).map((_, j) => (
                       <TableCell key={j}>
                         <Skeleton className="h-4 w-full" />
                       </TableCell>
@@ -519,7 +521,7 @@ function StockMovementHistoryInner() {
               : movements.length === 0
                 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="h-40">
+                      <TableCell colSpan={10} className="h-40">
                         <div className="flex flex-col items-center justify-center gap-2 text-mist-ink">
                           <PackageSearch className="h-10 w-10" />
                           <p className="text-sm">No stock movements found for the selected filters</p>
@@ -529,6 +531,7 @@ function StockMovementHistoryInner() {
                   )
                 : movements.map((m) => {
                     const isLow = m.quantityAfter <= m.variant.lowStockThreshold;
+                    const source = resolveStockMovementSource(m);
                     return (
                       <TableRow key={m.id}>
                         <TableCell className="whitespace-nowrap text-sm">
@@ -561,6 +564,31 @@ function StockMovementHistoryInner() {
                           >
                             {stockMovementReasonLabel(m.reason)}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {source ? (
+                            source.href ? (
+                              <Link
+                                href={source.href}
+                                title={source.id}
+                                className="text-espresso hover:underline"
+                              >
+                                {source.label}{' '}
+                                <span className="font-mono text-xs text-mist-ink">
+                                  {source.reference}
+                                </span>
+                              </Link>
+                            ) : (
+                              <span title={source.id}>
+                                {source.label}{' '}
+                                <span className="font-mono text-xs text-mist-ink">
+                                  {source.reference}
+                                </span>
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-mist-ink/50">-</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">
                           <span className={m.quantityDelta > 0 ? 'text-green-600' : 'text-red-600'}>
