@@ -1,15 +1,39 @@
 import { prisma } from '@/lib/prisma';
 import Decimal from 'decimal.js';
-import { reconcileCash, splitCashRefunds } from '@/lib/services/cashflow.core';
+import {
+  buildIncomeStatementBridge,
+  classifySaleRefundEntries,
+  reconcileCash,
+  splitCashRefunds,
+  summarizeAccountLedger,
+  type IncomeStatementBridge,
+  type LedgerBreakdownLine,
+  type SaleRefundLedgerEntry,
+} from '@/lib/services/cashflow.core';
 
 export interface PaymentAccountActivityRow {
   accountId: string;
   accountName: string;
   accountType: string;
   status: string;
+  /** Full ledger period debit, including opening balances and transfers. */
   debit: string;
+  /** Full ledger period credit, including opening balances and transfers. */
   credit: string;
+  /** Full ledger period movement (debit - credit). */
   net: string;
+  /** Period debit excluding opening balances and internal transfers. */
+  operatingDebit: string;
+  /** Period credit excluding opening balances and internal transfers. */
+  operatingCredit: string;
+  /** Net movement of transfers inside / between accounts. */
+  transfersNet: string;
+  /** Opening-balance entries in the window (one-off capital, not income). */
+  openingBalance: string;
+  /** Ledger period movement; explicitly not the all-time account balance. */
+  periodMovement: string;
+  returnRefundCredits: string;
+  voidReversalCredits: string;
   currentBalance: string;
 }
 
@@ -35,12 +59,28 @@ export interface CashFlowResult {
   netCashFlow: string;
   /** Net movement per ledger source in the window (debit - credit). */
   cashBridge: { source: string; debit: string; credit: string; net: string }[];
+  /**
+   * The same ledger window grouped by population: sales, return refunds, void
+   * reversals, opening balances, transfers, expenses, PO payments. This is what
+   * explains why ledger totals differ from the income statement (ARGUS #418).
+   */
+  ledgerBreakdown: LedgerBreakdownLine[];
+  /** Explicit variances between ledger sales/refunds and the income statement. */
+  ledgerBridge: IncomeStatementBridge;
   /** Ledger activity per payment account for the same window. */
   paymentAccountActivity: PaymentAccountActivityRow[];
   paymentAccountTotals: {
+    /** Full period debit (includes opening balances and transfers). */
     debit: string;
+    /** Full period credit (includes opening balances and transfers). */
     credit: string;
+    /** Full period movement, not an all-time balance. */
     net: string;
+    operatingDebit: string;
+    operatingCredit: string;
+    transfersNet: string;
+    openingBalance: string;
+    periodMovement: string;
     totalActiveBalance: string;
   };
 }
@@ -56,9 +96,10 @@ export async function getCashFlowStatement(
     expensesByCategory,
     cashMovements,
     paymentsByMethod,
-    accountEntryTotals,
+    accountLedgerBySource,
     openingLedger,
     ledgerBySource,
+    saleRefundEntries,
     accounts,
   ] = await Promise.all([
     prisma.sale.aggregate({
@@ -89,7 +130,7 @@ export async function getCashFlowStatement(
       _sum: { amount: true },
     }),
     prisma.paymentAccountEntry.groupBy({
-      by: ['accountId'],
+      by: ['accountId', 'source'],
       where: { tenantId, entryDate: { gte: dateFrom, lte: dateTo } },
       _sum: { debit: true, credit: true },
     }),
@@ -101,6 +142,14 @@ export async function getCashFlowStatement(
       by: ['source'],
       where: { tenantId, entryDate: { gte: dateFrom, lte: dateTo } },
       _sum: { debit: true, credit: true },
+    }),
+    prisma.paymentAccountEntry.findMany({
+      where: {
+        tenantId,
+        source: 'SALE_REFUND',
+        entryDate: { gte: dateFrom, lte: dateTo },
+      },
+      select: { accountId: true, sourceId: true, debit: true, credit: true },
     }),
     prisma.paymentAccount.findMany({
       where: { tenantId },
@@ -114,6 +163,45 @@ export async function getCashFlowStatement(
     }),
   ]);
 
+  // SALE_REFUND rows carry the originating document id. Resolve the ids that
+  // are returns vs sales so void reversals can be separated from return
+  // refunds (ARGUS #418). Both are bounded by the refund rows in the window.
+  const refundSourceIds = Array.from(
+    new Set(
+      saleRefundEntries
+        .map((entry) => entry.sourceId)
+        .filter((sourceId): sourceId is string => Boolean(sourceId)),
+    ),
+  );
+  const [refundReturnRows, refundSaleRows] =
+    refundSourceIds.length > 0
+      ? await Promise.all([
+          prisma.return.findMany({
+            where: { tenantId, id: { in: refundSourceIds } },
+            select: { id: true },
+          }),
+          prisma.sale.findMany({
+            where: { tenantId, id: { in: refundSourceIds } },
+            select: { id: true },
+          }),
+        ])
+      : [[], []];
+  const returnIds = new Set(refundReturnRows.map((row) => row.id));
+  const saleIds = new Set(refundSaleRows.map((row) => row.id));
+  const allRefundSplit = classifySaleRefundEntries(saleRefundEntries, {
+    returnIds,
+    saleIds,
+  });
+
+  const ledgerSummary = summarizeAccountLedger(
+    ledgerBySource.map((row) => ({
+      source: String(row.source),
+      debit: row._sum.debit?.toString() ?? '0',
+      credit: row._sum.credit?.toString() ?? '0',
+    })),
+    allRefundSplit,
+  );
+
   const grossIncome = new Decimal(salesResult._sum.totalAmount?.toString() ?? '0');
   const split = splitCashRefunds(
     returnsResult.map((row) => ({
@@ -126,6 +214,17 @@ export async function getCashFlowStatement(
   const cashRefunds = new Decimal(split.cash);
   const nonCashRefunds = new Decimal(split.nonCash);
   const totalIncome = grossIncome.minus(cashRefunds);
+
+  const ledgerBridge = buildIncomeStatementBridge({
+    ledgerSales: ledgerSummary.salesNet,
+    statementGrossSales: grossIncome.toFixed(2),
+    ledgerReturnRefundCredits: ledgerSummary.returnRefundCredits,
+    ledgerReturnCancellationDebits: ledgerSummary.returnCancellationDebits,
+    ledgerVoidReversalCredits: ledgerSummary.voidReversalCredits,
+    statementReturns: refunds.toFixed(2),
+    statementCashRefunds: cashRefunds.toFixed(2),
+    openingBalancesExcluded: ledgerSummary.openingBalance,
+  });
 
   const incomeByMethod = paymentsByMethod.map((p) => ({
     method: p.method,
@@ -177,37 +276,78 @@ export async function getCashFlowStatement(
   const cashBridge = reconciliation.bridge;
 
   const accountMap = new Map(accounts.map((account) => [account.id, account]));
-  const paymentAccountActivity: PaymentAccountActivityRow[] = accountEntryTotals
-    .map((row) => {
-      const account = accountMap.get(row.accountId);
+  const accountSources = new Map<string, Array<{ source: string; debit: string; credit: string }>>();
+  for (const row of accountLedgerBySource) {
+    const list = accountSources.get(row.accountId) ?? [];
+    list.push({
+      source: String(row.source),
+      debit: row._sum.debit?.toString() ?? '0',
+      credit: row._sum.credit?.toString() ?? '0',
+    });
+    accountSources.set(row.accountId, list);
+  }
+
+  const accountRefunds = new Map<string, SaleRefundLedgerEntry[]>();
+  for (const entry of saleRefundEntries) {
+    const list = accountRefunds.get(entry.accountId) ?? [];
+    list.push({
+      sourceId: entry.sourceId,
+      debit: entry.debit.toString(),
+      credit: entry.credit.toString(),
+    });
+    accountRefunds.set(entry.accountId, list);
+  }
+
+  const paymentAccountActivity: PaymentAccountActivityRow[] = Array.from(
+    accountSources.entries(),
+  )
+    .map(([accountId, sources]) => {
+      const account = accountMap.get(accountId);
       if (!account) return null;
-      const debit = new Decimal(row._sum.debit?.toString() ?? '0');
-      const credit = new Decimal(row._sum.credit?.toString() ?? '0');
+      const refundEntries = accountRefunds.get(accountId) ?? [];
+      const summary = summarizeAccountLedger(
+        sources,
+        refundEntries.length > 0
+          ? classifySaleRefundEntries(refundEntries, { returnIds, saleIds })
+          : undefined,
+      );
       return {
         accountId: account.id,
         accountName: account.name,
         accountType: String(account.type),
         status: String(account.status),
-        debit: debit.toFixed(2),
-        credit: credit.toFixed(2),
-        net: debit.minus(credit).toFixed(2),
+        debit: summary.periodDebit.toFixed(2),
+        credit: summary.periodCredit.toFixed(2),
+        net: summary.periodMovement.toFixed(2),
+        operatingDebit: summary.operatingDebit.toFixed(2),
+        operatingCredit: summary.operatingCredit.toFixed(2),
+        transfersNet: summary.transfersNet.toFixed(2),
+        openingBalance: summary.openingBalance.toFixed(2),
+        periodMovement: summary.periodMovement.toFixed(2),
+        returnRefundCredits: summary.returnRefundCredits.toFixed(2),
+        voidReversalCredits: summary.voidReversalCredits.toFixed(2),
         currentBalance: new Decimal(account.balance.toString()).toFixed(2),
       };
     })
     .filter((row): row is PaymentAccountActivityRow => row !== null)
-    .sort((a, b) => Math.abs(parseFloat(b.net)) - Math.abs(parseFloat(a.net)));
+    .sort(
+      (a, b) =>
+        Math.abs(parseFloat(b.periodMovement)) - Math.abs(parseFloat(a.periodMovement)),
+    );
 
-  const accountDebit = paymentAccountActivity.reduce(
-    (sum, row) => sum.plus(row.debit),
-    new Decimal(0),
-  );
-  const accountCredit = paymentAccountActivity.reduce(
-    (sum, row) => sum.plus(row.credit),
-    new Decimal(0),
-  );
   const totalActiveBalance = accounts
     .filter((account) => account.status === 'ACTIVE')
     .reduce((sum, account) => sum.plus(account.balance.toString()), new Decimal(0));
+  const sumRow = (
+    field:
+      | 'debit'
+      | 'credit'
+      | 'periodMovement'
+      | 'operatingDebit'
+      | 'operatingCredit'
+      | 'transfersNet'
+      | 'openingBalance',
+  ) => paymentAccountActivity.reduce((sum, row) => sum.plus(row[field]), new Decimal(0));
 
   return {
     grossIncome: grossIncome.toFixed(2),
@@ -225,11 +365,18 @@ export async function getCashFlowStatement(
     closingCash: closingCash.toFixed(2),
     netCashFlow: netCashFlow.toFixed(2),
     cashBridge,
+    ledgerBreakdown: ledgerSummary.breakdown,
+    ledgerBridge,
     paymentAccountActivity,
     paymentAccountTotals: {
-      debit: accountDebit.toFixed(2),
-      credit: accountCredit.toFixed(2),
-      net: accountDebit.minus(accountCredit).toFixed(2),
+      debit: sumRow('debit').toFixed(2),
+      credit: sumRow('credit').toFixed(2),
+      net: sumRow('periodMovement').toFixed(2),
+      operatingDebit: sumRow('operatingDebit').toFixed(2),
+      operatingCredit: sumRow('operatingCredit').toFixed(2),
+      transfersNet: sumRow('transfersNet').toFixed(2),
+      openingBalance: sumRow('openingBalance').toFixed(2),
+      periodMovement: sumRow('periodMovement').toFixed(2),
       totalActiveBalance: totalActiveBalance.toFixed(2),
     },
   };

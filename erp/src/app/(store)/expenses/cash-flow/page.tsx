@@ -52,6 +52,46 @@ const METHOD_LABELS: Record<string, string> = {
   CARD: 'Card',
 };
 
+const LEDGER_CATEGORY_LABELS: Record<string, string> = {
+  SALE: 'Sales receipts',
+  SALE_REFUND_RETURN: 'Return refunds',
+  SALE_REFUND_VOID: 'Void reversals',
+  SALE_REFUND_CANCELLATION: 'Cancelled-return reversals',
+  SALE_REFUND_UNMATCHED: 'Unmatched sale refunds',
+  SALE_REFUND: 'Sale refunds (unclassified)',
+  OPENING_BALANCE: 'Opening balances',
+  FUND_TRANSFER: 'Fund transfers',
+  DEPOSIT: 'Deposits',
+  WITHDRAWAL: 'Withdrawals',
+  CLOSING_TRANSFER: 'Closing transfers',
+  EXPENSE: 'Expenses',
+  PURCHASE_ORDER_PAYMENT: 'Purchase-order payments',
+  ADJUSTMENT: 'Adjustments',
+};
+
+const LEDGER_TREATMENT_LABELS: Record<string, string> = {
+  sale: 'Income',
+  return_refund: 'Refund',
+  return_cancellation: 'Refund reversal',
+  void_reversal: 'Void reversal',
+  opening: 'Opening - excluded',
+  transfer: 'Transfer - excluded',
+  expense: 'Expense',
+  purchase_order: 'Purchase',
+  adjustment: 'Adjustment',
+  unclassified: 'Unclassified',
+};
+
+function ledgerCategoryLabel(category: string) {
+  return (
+    LEDGER_CATEGORY_LABELS[category] ??
+    category
+      .replaceAll('_', ' ')
+      .toLowerCase()
+      .replace(/^\w/, (char) => char.toUpperCase())
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CashFlowPage() {
@@ -241,6 +281,152 @@ export default function CashFlowPage() {
             </CardContent>
           </Card>
 
+          {/* Ledger movement by population */}
+          {data.ledgerBreakdown.length > 0 && (
+            <Card className="border-mist">
+              <CardHeader>
+                <CardTitle className="font-display text-espresso">
+                  Ledger Movement by Source
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-linen/40">
+                      <TableHead className="text-espresso">Population</TableHead>
+                      <TableHead className="text-espresso">Treatment</TableHead>
+                      <TableHead className="text-right text-espresso">Debit</TableHead>
+                      <TableHead className="text-right text-espresso">Credit</TableHead>
+                      <TableHead className="text-right text-espresso">Net</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.ledgerBreakdown.map((line) => (
+                      <TableRow key={line.category}>
+                        <TableCell className="font-medium">
+                          {ledgerCategoryLabel(line.category)}
+                        </TableCell>
+                        <TableCell className="text-xs text-sand-ink">
+                          {LEDGER_TREATMENT_LABELS[line.treatment] ?? line.treatment}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {formatRupee(line.debit)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {formatRupee(line.credit)}
+                        </TableCell>
+                        <TableCell
+                          className={`text-right font-mono text-xs ${
+                            line.net >= 0 ? 'text-green-700' : 'text-terracotta'
+                          }`}
+                        >
+                          {formatRupee(line.net)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <p className="mt-2 text-xs text-sand-ink">
+                  Opening balances and internal transfers are shown as excluded populations. They
+                  move account balances but are not trading income or expense, so they are not
+                  folded into Money In / Money Out.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Ledger to income-statement bridge */}
+          <Card className="border-mist">
+            <CardHeader>
+              <CardTitle className="font-display text-espresso">
+                Ledger to Income Statement Bridge
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-sand-ink">Ledger sale debits</span>
+                <span className="font-mono text-espresso">
+                  {formatRupee(data.ledgerBridge.sales.ledger)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-sand-ink">Gross Sales (income statement)</span>
+                <span className="font-mono text-espresso">
+                  {formatRupee(data.ledgerBridge.sales.statement)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-sand-ink">Sales variance</span>
+                <span className="font-mono text-terracotta">
+                  {formatRupee(data.ledgerBridge.sales.variance)}
+                </span>
+              </div>
+              <div className="my-2 border-t border-mist" />
+              <div className="flex justify-between text-sm">
+                <span className="text-sand-ink">Ledger return refunds</span>
+                <span className="font-mono text-espresso">
+                  {formatRupee(data.ledgerBridge.refunds.returnCredits)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-sand-ink">Less cancelled-return reversals</span>
+                <span className="font-mono text-espresso">
+                  {formatRupee(data.ledgerBridge.refunds.returnCancellations)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-sand-ink">Void reversals (not returns)</span>
+                <span className="font-mono text-espresso">
+                  {formatRupee(data.ledgerBridge.refunds.voidReversals)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-sand-ink">Returns (income statement)</span>
+                <span className="font-mono text-espresso">
+                  {formatRupee(data.ledgerBridge.refunds.statementReturns)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-sand-ink">Cash refunds in income statement</span>
+                <span className="font-mono text-espresso">
+                  {formatRupee(data.ledgerBridge.refunds.statementCashRefunds)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-sand-ink">Non-cash refunds (no ledger entry)</span>
+                <span className="font-mono text-mist-ink">
+                  {formatRupee(data.ledgerBridge.refunds.nonCashStatementRefunds)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-sand-ink">Refund variance</span>
+                <span className="font-mono text-terracotta">
+                  {formatRupee(data.ledgerBridge.refunds.variance)}
+                </span>
+              </div>
+              <div className="my-2 border-t border-mist" />
+              <div className="flex justify-between text-sm">
+                <span className="text-sand-ink">Opening balances (excluded from income)</span>
+                <span className="font-mono text-mist-ink">
+                  {formatRupee(data.ledgerBridge.openingBalancesExcluded)}
+                </span>
+              </div>
+              {data.ledgerBridge.exceptions.length > 0 && (
+                <div className="mt-3 rounded-md border border-terracotta/30 bg-terracotta/10 px-3 py-2 text-xs text-terracotta">
+                  <p className="font-semibold">Reconciliation exceptions</p>
+                  {data.ledgerBridge.exceptions.map((exception) => (
+                    <p key={exception.code}>
+                      {exception.code === 'SALES_VARIANCE'
+                        ? 'Ledger sale debits do not equal Gross Sales'
+                        : 'Ledger return refunds do not equal cash refunds'}
+                      : {formatRupee(exception.amount)}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Income Section */}
           <Card className="border-mist">
             <CardHeader>
@@ -349,10 +535,14 @@ export default function CashFlowPage() {
                     <TableRow className="bg-linen/40">
                       <TableHead className="text-espresso">Account</TableHead>
                       <TableHead className="text-espresso">Type</TableHead>
-                      <TableHead className="text-right text-espresso">Money In</TableHead>
-                      <TableHead className="text-right text-espresso">Money Out</TableHead>
-                      <TableHead className="text-right text-espresso">Net</TableHead>
-                      <TableHead className="text-right text-espresso">Current Balance</TableHead>
+                      <TableHead className="text-right text-espresso">Operating In</TableHead>
+                      <TableHead className="text-right text-espresso">Operating Out</TableHead>
+                      <TableHead className="text-right text-espresso">Transfers Net</TableHead>
+                      <TableHead className="text-right text-espresso">Opening Balance</TableHead>
+                      <TableHead className="text-right text-espresso">Period Movement</TableHead>
+                      <TableHead className="text-right text-espresso">
+                        Current Balance (all time)
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -361,17 +551,25 @@ export default function CashFlowPage() {
                         <TableCell className="font-medium">{account.accountName}</TableCell>
                         <TableCell className="text-sand-ink">{account.accountType.replace(/_/g, ' ')}</TableCell>
                         <TableCell className="text-right font-mono text-green-700">
-                          {formatRupee(account.debit)}
+                          {formatRupee(account.operatingDebit)}
                         </TableCell>
                         <TableCell className="text-right font-mono text-terracotta">
-                          {formatRupee(account.credit)}
+                          {formatRupee(account.operatingCredit)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sand-ink">
+                          {formatRupee(account.transfersNet)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-mist-ink">
+                          {formatRupee(account.openingBalance)}
                         </TableCell>
                         <TableCell
                           className={`text-right font-mono ${
-                            parseFloat(account.net) >= 0 ? 'text-green-700' : 'text-terracotta'
+                            parseFloat(account.periodMovement) >= 0
+                              ? 'text-green-700'
+                              : 'text-terracotta'
                           }`}
                         >
-                          {formatRupee(account.net)}
+                          {formatRupee(account.periodMovement)}
                         </TableCell>
                         <TableCell className="text-right font-mono">
                           {formatRupee(account.currentBalance)}
@@ -381,13 +579,19 @@ export default function CashFlowPage() {
                     <TableRow className="bg-linen/40 font-semibold">
                       <TableCell colSpan={2}>Total</TableCell>
                       <TableCell className="text-right font-mono text-green-700">
-                        {formatRupee(data.paymentAccountTotals.debit)}
+                        {formatRupee(data.paymentAccountTotals.operatingDebit)}
                       </TableCell>
                       <TableCell className="text-right font-mono text-terracotta">
-                        {formatRupee(data.paymentAccountTotals.credit)}
+                        {formatRupee(data.paymentAccountTotals.operatingCredit)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sand-ink">
+                        {formatRupee(data.paymentAccountTotals.transfersNet)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-mist-ink">
+                        {formatRupee(data.paymentAccountTotals.openingBalance)}
                       </TableCell>
                       <TableCell className="text-right font-mono">
-                        {formatRupee(data.paymentAccountTotals.net)}
+                        {formatRupee(data.paymentAccountTotals.periodMovement)}
                       </TableCell>
                       <TableCell className="text-right font-mono">
                         {formatRupee(data.paymentAccountTotals.totalActiveBalance)}
@@ -396,8 +600,10 @@ export default function CashFlowPage() {
                   </TableBody>
                 </Table>
                 <p className="mt-2 text-xs text-sand-ink">
-                  Ledger totals include sales, refunds, expenses, deposits, withdrawals and internal
-                  transfers for the selected window. Internal transfers net to zero.
+                  Operating In / Out exclude opening balances and internal transfers. Transfers Net
+                  is the movement between accounts, and Opening Balance is a one-off capital entry
+                  in the window - neither is income. Period Movement is the window movement, not
+                  the all-time Current Balance.
                 </p>
               </CardContent>
             </Card>
