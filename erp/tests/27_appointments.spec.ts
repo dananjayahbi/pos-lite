@@ -311,7 +311,12 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     expect(conv.status()).toBe(201);
     const sale = (await conv.json()).data;
     expect(sale.id).toBeTruthy();
-    expect(Number(sale.totalAmount)).toBe(2500);
+    // ARGUS #119: conversion creates a real line item + tax + payment record.
+    expect(Number(sale.subtotal)).toBe(2500);
+    expect(Number(sale.totalAmount)).toBe(Number(sale.subtotal) + Number(sale.taxAmount));
+    expect(sale.lines.length).toBe(1);
+    expect(sale.lines[0].productNameSnapshot).toBeTruthy();
+    expect(sale.payments.length).toBeGreaterThan(0);
     if (activeShiftId) expect(sale.shiftId).toBe(activeShiftId);
     else expect(sale.shiftId == null).toBe(true);
 
@@ -323,6 +328,11 @@ test.describe.serial('Module 27 — Doctor Appointments & Clinic Management', ()
     const again = await page.request.post(`${APPTS_API}/${done.id}/convert-to-sale`);
     expect(again.status()).toBe(409);
     expect((await again.json()).error.code).toBe('CONFLICT');
+
+    // A converted appointment cannot be cancelled out from under its sale.
+    const cancelConverted = await page.request.post(`${APPTS_API}/${done.id}/cancel`, { data: {} });
+    expect(cancelConverted.status()).toBe(409);
+    expect((await cancelConverted.json()).error.code).toBe('APPOINTMENT_HAS_SALE');
   });
 
   test('F9 — service catalogue CRUD with duplicate + hex-color guards', async ({ page }) => {

@@ -232,6 +232,7 @@ export async function getPreferredCategories(
 
   const byCategory = new Map<string, PreferredCategory>();
   for (const line of lines) {
+    if (!line.variant) continue;
     const categoryId = line.variant.product.categoryId;
     const categoryName = line.variant.product.category.name;
     const lineTotal = new Decimal(line.lineTotalAfterDiscount.toString());

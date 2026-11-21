@@ -88,6 +88,14 @@ export async function validateReturnEligibility(
       );
     }
 
+    // Service/appointment lines have no product variant and no stock to
+    // restock; they cannot go through the product return flow.
+    if (!saleLine.variantId) {
+      throw new Error(
+        `RETURN_SERVICE_LINE_NOT_RETURNABLE: line ${line.saleLineId} is a service`,
+      );
+    }
+
     if (line.quantity <= 0) {
       throw new Error(`RETURN_QTY_INVALID: line ${line.saleLineId}`);
     }
@@ -133,7 +141,7 @@ export function computeLineRefundAmounts(
     discountAmount?: Decimal | { toString(): string } | number | null;
     lines: Array<{
       id: string;
-      variantId: string;
+      variantId: string | null;
       quantity: number;
       unitPrice: Decimal | { toString(): string };
       lineTotalAfterDiscount: Decimal | { toString(): string };
@@ -157,7 +165,7 @@ export function computeLineRefundAmounts(
     const saleLine = sale.lines.find((sl) => sl.id === line.saleLineId)!;
     return {
       saleLineId: line.saleLineId,
-      variantId: saleLine.variantId,
+      variantId: saleLine.variantId ?? '',
       quantity: line.quantity,
       unitPrice: new Decimal(saleLine.unitPrice.toString()),
       lineRefundAmount: line.lineRefundAmount,

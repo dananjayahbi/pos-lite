@@ -4,6 +4,11 @@ import { createAuditLog } from '@/lib/services/audit.service';
 import { getCurrentShift } from '@/lib/services/shift.service';
 import { scheduleReminders } from '@/lib/services/appointment-reminder.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
+import { createPayment } from '@/lib/services/payment.service';
+import { addToSpendTotal } from '@/lib/services/customer.service';
+import { buildSaleAccountLegs, postSaleToAccounts } from '@/lib/services/saleAccounts';
+import { extractTenantRates } from '@/lib/services/sale.service';
+import { computeAppointmentSalePricing } from '@/lib/appointments/appointmentSale.core';
 import {
   APPOINTMENT_BACKDATE_GRACE_MINUTES,
   isAppointmentStatusTransitionAllowed,
@@ -262,7 +267,14 @@ export async function cancelAppointment(
   reason?: string,
   actorRole = 'UNKNOWN',
 ) {
-  await assertAppointmentBelongsToTenant(tenantId, id);
+  const existing = await assertAppointmentBelongsToTenant(tenantId, id);
+
+  // A converted appointment has a completed Sale; cancelling it would leave
+  // paid revenue attached to a cancelled booking (ARGUS #119). Void the sale
+  // through its own flow instead.
+  if (existing.saleId) {
+    throw new Error('APPOINTMENT_HAS_SALE');
+  }
 
   const appointment = await prisma.appointment.update({
     where: { id },
@@ -549,35 +561,99 @@ export async function convertAppointmentToSale(
     throw new Error('ALREADY_CONVERTED');
   }
 
-  // M27-01/BUG-85: `shiftId: ''` is neither NULL nor a valid id, so every
-  // convert attempt died on the Shift FK. Resolve the acting cashier's OPEN
-  // shift (same lookup POS checkout uses); when there is none we link the sale
-  // shift-lessly (Sale.shiftId is nullable) so an owner-initiated conversion
-  // still works outside POS hours.
+  // M27-01/BUG-85: resolve the acting cashier's OPEN shift (same lookup POS
+  // checkout uses); when there is none we link the sale shift-lessly.
   const activeShift = await getCurrentShift(tenantId, userId);
 
-  // Create the sale
-  const sale = await prisma.sale.create({
-    data: {
-      tenantId,
-      ...(activeShift ? { shiftId: activeShift.id } : {}),
-      customerId: appointment.customerId,
-      cashierId: userId,
-      subtotal: appointment.price,
-      discountAmount: 0,
-      taxAmount: 0,
-      totalAmount: appointment.price,
-      status: 'COMPLETED',
-      completedAt: new Date(),
-      paymentMethod: 'CASH',
-    },
+  // Price the service like a sale: the tenant VAT rate applies to the
+  // appointment price, so the persisted sale carries a tax amount and a line
+  // item instead of a bare total (ARGUS #119).
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { settings: true },
   });
+  const { vatRate } = extractTenantRates(tenant?.settings);
+  // The service price is the subtotal; the appointment's deposit is money
+  // already collected at booking.
+  const pricing = computeAppointmentSalePricing({
+    price: appointment.price,
+    vatRate,
+    deposit: appointment.depositAmount,
+  });
+  const { subtotal, taxAmount: lineTax, totalAmount, depositApplied, balanceDue } = pricing;
 
-  // Link appointment to sale
-  await prisma.appointment.update({
-    where: { id: appointmentId },
-    data: { saleId: sale.id },
-  });
+  // The sale is dated at the appointment, not at conversion time.
+  const saleDate = appointment.completedAt ?? appointment.startTime;
+
+  const sale = await prisma.$transaction(async (tx) => {
+    const created = await tx.sale.create({
+      data: {
+        tenant: { connect: { id: tenantId } },
+        ...(activeShift ? { shift: { connect: { id: activeShift.id } } } : {}),
+        ...(appointment.customerId
+          ? { customer: { connect: { id: appointment.customerId } } }
+          : {}),
+        cashier: { connect: { id: userId } },
+        subtotal: subtotal.toNumber(),
+        discountAmount: 0,
+        taxAmount: lineTax.toNumber(),
+        totalAmount: totalAmount.toNumber(),
+        deliveryCharge: 0,
+        paymentMethod: 'CASH',
+        status: 'COMPLETED',
+        saleDate,
+        completedAt: new Date(),
+        lines: {
+          create: [
+            {
+              // Service lines have no product variant (and no stock movement).
+              productNameSnapshot: appointment.title || 'Appointment',
+              variantDescriptionSnapshot: 'Service',
+              sku: `SVC-${appointment.id.slice(-6).toUpperCase()}`,
+              unitPrice: subtotal.toNumber(),
+              costPriceSnapshot: 0,
+              quantity: 1,
+              discountPercent: 0,
+              discountAmount: 0,
+              lineTotalBeforeDiscount: subtotal.toNumber(),
+              lineTotalAfterDiscount: subtotal.toNumber(),
+              lineTax: lineTax.toNumber(),
+            },
+          ],
+        },
+      },
+    });
+
+    if (depositApplied.greaterThan(0)) {
+      await createPayment({ saleId: created.id, method: 'CASH', amount: depositApplied }, tx);
+    }
+    if (balanceDue.greaterThan(0)) {
+      await createPayment({ saleId: created.id, method: 'CASH', amount: balanceDue }, tx);
+    }
+
+    if (appointment.customerId) {
+      await addToSpendTotal(tenantId, appointment.customerId, totalAmount, tx);
+    }
+
+    await postSaleToAccounts(
+      tx,
+      tenantId,
+      userId,
+      created.id,
+      created.id.slice(0, 8).toUpperCase(),
+      buildSaleAccountLegs({ paymentMethod: 'CASH', totalAmount }),
+    );
+
+    await tx.appointment.update({
+      where: { id: appointmentId },
+      data: { saleId: created.id, isPaid: true },
+    });
+
+    return tx.sale.findUniqueOrThrow({
+      where: { id: created.id },
+      include: { lines: true, payments: true },
+    });
+  }, { maxWait: 10_000, timeout: 30_000 });
 
   await createAuditLog({
     tenantId,
@@ -586,6 +662,12 @@ export async function convertAppointmentToSale(
     entityType: 'Appointment',
     entityId: appointmentId,
     action: 'CONVERT_TO_SALE',
+    after: {
+      saleId: sale.id,
+      totalAmount: sale.totalAmount.toString(),
+      taxAmount: sale.taxAmount.toString(),
+      depositApplied: depositApplied.toString(),
+    },
   });
 
   return sale;

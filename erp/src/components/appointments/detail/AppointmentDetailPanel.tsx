@@ -112,7 +112,11 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
               )}
             </div>
 
-            <AppointmentActions appointmentId={appointment.id} status={appointment.status} />
+            <AppointmentActions
+              appointmentId={appointment.id}
+              status={appointment.status}
+              saleId={appointment.saleId ?? null}
+            />
           </div>
         )}
       </SheetContent>

@@ -82,6 +82,7 @@ const RULES: Rule[] = [
   { match: token('RETURN_QTY_INVALID'), status: 422, code: 'UNPROCESSABLE', message: 'Return quantity must be greater than zero.' },
   { match: token('RETURN_QTY_EXCEEDS_RETURNABLE'), status: 422, code: 'UNPROCESSABLE', message: 'The requested quantity exceeds the remaining returnable quantity for this line.' },
   { match: token('RETURN_STORE_CREDIT_REQUIRES_CUSTOMER'), status: 422, code: 'UNPROCESSABLE', message: 'Store credit can only be issued for a sale linked to a customer.' },
+  { match: token('RETURN_SERVICE_LINE_NOT_RETURNABLE'), status: 422, code: 'UNPROCESSABLE', message: 'Service lines cannot be returned to stock.' },
 
   // ── Prose messages from the older product/customer services ────────────
   // Status + code are preserved exactly as the routes returned them; only the

@@ -36,7 +36,7 @@ function getTaxRate(taxRule: TaxRule, vatRate: number, ssclRate: number): Decima
   }
 }
 
-function extractTenantRates(settings: unknown): { vatRate: number; ssclRate: number } {
+export function extractTenantRates(settings: unknown): { vatRate: number; ssclRate: number } {
   const s = settings as Record<string, unknown>;
   const vatRate = typeof s.vatRate === 'number' ? s.vatRate : 0;
   const ssclRate = typeof s.ssclRate === 'number' ? s.ssclRate : 0;
@@ -1009,6 +1009,7 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
 
     // Reverse stock for each line
     for (const line of sale.lines) {
+      if (!line.variantId) continue;
       await adjustStockInTx(tx, tenantId, line.variantId, actorId, {
         quantityDelta: line.quantity,
         reason: 'VOID_REVERSAL',

@@ -17,7 +17,7 @@ import Decimal from 'decimal.js';
 
 interface SaleLineWithReturned {
   id: string;
-  variantId: string;
+  variantId: string | null;
   productNameSnapshot: string;
   variantDescriptionSnapshot: string;
   unitPrice: number;
@@ -45,6 +45,8 @@ export function ReturnItemSelectionStep({
   restockItems,
   onChange,
 }: ReturnItemSelectionStepProps) {
+  const returnableLines = sale.lines.filter((line) => line.variantId);
+
   const getReturnQty = (lineId: string): number => {
     return value.find((v) => v.saleLineId === lineId)?.quantity ?? 0;
   };
@@ -56,7 +58,7 @@ export function ReturnItemSelectionStep({
 
     const updated = value.filter((v) => v.saleLineId !== line.id);
     if (next > 0) {
-      updated.push({ saleLineId: line.id, variantId: line.variantId, quantity: next });
+      updated.push({ saleLineId: line.id, variantId: line.variantId!, quantity: next });
     }
     onChange(updated, restockItems);
   };
@@ -93,7 +95,7 @@ export function ReturnItemSelectionStep({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sale.lines.map((line) => {
+          {returnableLines.map((line) => {
             const returnable = line.quantity - line.returnedQuantity;
             const currentQty = getReturnQty(line.id);
             const isDisabled = returnable <= 0;

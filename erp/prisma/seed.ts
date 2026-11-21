@@ -1221,6 +1221,7 @@ async function seedDemoSales() {
   });
 
   for (const { variantId } of soldVariantIds) {
+    if (!variantId) continue;
     await prisma.productVariant.update({
       where: { id: variantId },
       data: { stockQuantity: 50 },
@@ -1317,7 +1318,7 @@ async function seedDemoReturns() {
     data: {
       returnId: returnA.id,
       originalSaleLineId: lineA.id,
-      variantId: lineA.variantId,
+      variantId: lineA.variantId!,
       productNameSnapshot: lineA.productNameSnapshot,
       variantDescriptionSnapshot: lineA.variantDescriptionSnapshot,
       quantity: 1,
@@ -1328,7 +1329,7 @@ async function seedDemoReturns() {
   });
 
   await prisma.productVariant.update({
-    where: { id: lineA.variantId },
+    where: { id: lineA.variantId! },
     data: { stockQuantity: { increment: 1 } },
   });
 
@@ -1363,7 +1364,7 @@ async function seedDemoReturns() {
     data: {
       returnId: returnB.id,
       originalSaleLineId: lineB.id,
-      variantId: lineB.variantId,
+      variantId: lineB.variantId!,
       productNameSnapshot: lineB.productNameSnapshot,
       variantDescriptionSnapshot: lineB.variantDescriptionSnapshot,
       quantity: lineB.quantity,
@@ -1409,7 +1410,7 @@ async function seedDemoReturns() {
     data: {
       returnId: returnC.id,
       originalSaleLineId: lineC.id,
-      variantId: lineC.variantId,
+      variantId: lineC.variantId!,
       productNameSnapshot: lineC.productNameSnapshot,
       variantDescriptionSnapshot: lineC.variantDescriptionSnapshot,
       quantity: 1,
@@ -1420,7 +1421,7 @@ async function seedDemoReturns() {
   });
 
   await prisma.productVariant.update({
-    where: { id: lineC.variantId },
+    where: { id: lineC.variantId! },
     data: { stockQuantity: { increment: 1 } },
   });
 
@@ -1455,7 +1456,7 @@ async function seedDemoReturns() {
     data: {
       returnId: returnD.id,
       originalSaleLineId: lineD.id,
-      variantId: lineD.variantId,
+      variantId: lineD.variantId!,
       productNameSnapshot: lineD.productNameSnapshot,
       variantDescriptionSnapshot: lineD.variantDescriptionSnapshot,
       quantity: lineD.quantity,
@@ -1466,7 +1467,7 @@ async function seedDemoReturns() {
   });
 
   await prisma.productVariant.update({
-    where: { id: lineD.variantId },
+    where: { id: lineD.variantId! },
     data: { stockQuantity: { increment: lineD.quantity } },
   });
 

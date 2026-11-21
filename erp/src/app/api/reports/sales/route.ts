@@ -142,6 +142,7 @@ export async function GET(request: NextRequest) {
       const shares = allocateCartDiscountShares(lineTotals, cartDiscount);
 
       lines.forEach((line, index) => {
+        if (!line.variantId) return; // service lines have no variant
         const netLine = lineTotals[index]!.minus(shares[index]!);
         const entry = salesByVariant.get(line.variantId) ?? {
           unitsSold: 0,

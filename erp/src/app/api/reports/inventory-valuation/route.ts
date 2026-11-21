@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
     const lastSaleMap = new Map<string, Date>();
     for (const row of lastSaleByVariant) {
       const d = row._max.createdAt;
-      if (d) lastSaleMap.set(row.variantId, d);
+      if (d && row.variantId) lastSaleMap.set(row.variantId, d);
     }
 
     // ── 3. Build full list with computed fields ──────────────────

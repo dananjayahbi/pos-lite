@@ -1187,8 +1187,9 @@ model SaleLine {
   id                         String         @id @default(cuid())
   saleId                     String
   sale                       Sale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  variantId                  String
-  variant                    ProductVariant @relation(fields: [variantId], references: [id])
+  // Optional: appointment/service sales have no product variant (no stock).
+  variantId                  String?
+  variant                    ProductVariant? @relation(fields: [variantId], references: [id])
   productNameSnapshot        String
   variantDescriptionSnapshot String
   sku                        String

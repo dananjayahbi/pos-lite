@@ -287,6 +287,7 @@ export async function permanentlyCancelDelivery(
     // reserved line items for website orders (which have no Sale row).
     if (existing.sale?.lines.length) {
       for (const line of existing.sale.lines) {
+        if (!line.variantId) continue;
         await adjustStockInTx(tx, tenantId, line.variantId, staffId, {
           quantityDelta: line.quantity,
           reason: 'VOID_REVERSAL',

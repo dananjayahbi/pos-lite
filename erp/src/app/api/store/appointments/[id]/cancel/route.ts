@@ -52,6 +52,19 @@ export async function POST(
       );
     }
 
+    if (message === 'APPOINTMENT_HAS_SALE') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'APPOINTMENT_HAS_SALE',
+            message: 'This appointment was converted to a sale - void the sale instead of cancelling',
+          },
+        },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message } },
       { status: 500 },

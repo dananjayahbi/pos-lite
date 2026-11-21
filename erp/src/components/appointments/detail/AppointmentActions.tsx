@@ -7,9 +7,11 @@ import type { AppointmentStatus } from '@/generated/prisma/client';
 interface AppointmentActionsProps {
   appointmentId: string;
   status: string;
+  /** When set, the appointment already has a recorded sale. */
+  saleId?: string | null;
 }
 
-export function AppointmentActions({ appointmentId, status }: AppointmentActionsProps) {
+export function AppointmentActions({ appointmentId, status, saleId }: AppointmentActionsProps) {
   const checkIn = useCheckInAppointment();
   const complete = useCompleteAppointment();
   const noShow = useMarkNoShow();
@@ -44,9 +46,13 @@ export function AppointmentActions({ appointmentId, status }: AppointmentActions
         </Button>
       )}
       {status === 'COMPLETED' && (
-        <Button size="sm" variant="outline" onClick={() => convertToSale.mutate(appointmentId)} disabled={convertToSale.isPending}>
-          Convert to Sale
-        </Button>
+        saleId ? (
+          <span className="text-xs text-espresso/60 py-2">Sale recorded</span>
+        ) : (
+          <Button size="sm" variant="outline" onClick={() => convertToSale.mutate(appointmentId)} disabled={convertToSale.isPending}>
+            Convert to Sale
+          </Button>
+        )
       )}
       {status === 'NO_SHOW' && (
         <Button size="sm" variant="outline" onClick={() => checkIn.mutate(appointmentId)} disabled={checkIn.isPending}>
