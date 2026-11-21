@@ -117,12 +117,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const po = await createPO(tenantId, session.user.id, {
-      ...parsed.data,
-      ...(parsed.data.discountType !== undefined
-        ? { discountType: parsed.data.discountType }
-        : {}),
-    });
+    const po = await createPO(
+      tenantId,
+      session.user.id,
+      {
+        ...parsed.data,
+        ...(parsed.data.discountType !== undefined
+          ? { discountType: parsed.data.discountType }
+          : {}),
+      },
+      session.user.role,
+    );
 
     return NextResponse.json({ success: true, data: po }, { status: 201 });
   } catch (error) {

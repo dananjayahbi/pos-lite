@@ -15,6 +15,8 @@ import {
   generatePurchaseOrderReference,
   isPurchaseOrderReferenceTaken,
 } from '@/lib/services/purchaseOrderReference';
+import { purchaseOrderAuditSnapshot } from '@/lib/services/purchaseOrderAudit.core';
+import { AUDIT_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
 // ── Private Helpers ──────────────────────────────────────────────────────────
 
 function buildVariantDescription(variant: {
@@ -59,7 +61,12 @@ interface CreatePOInput {
 
 const MAX_REFERENCE_ATTEMPTS = 5;
 
-export async function createPO(tenantId: string, createdById: string, input: CreatePOInput) {
+export async function createPO(
+  tenantId: string,
+  createdById: string,
+  input: CreatePOInput,
+  actorRole = 'USER',
+) {
   if (input.lines.length === 0) {
     throw new Error('At least one line is required');
   }
@@ -131,7 +138,7 @@ export async function createPO(tenantId: string, createdById: string, input: Cre
     }
 
     try {
-      return await prisma.purchaseOrder.create({
+      const created = await prisma.purchaseOrder.create({
         data: {
           tenantId,
           referenceNo,
@@ -161,6 +168,18 @@ export async function createPO(tenantId: string, createdById: string, input: Cre
           supplier: true,
         },
       });
+
+      await createAuditLog({
+        tenantId,
+        actorId: createdById,
+        actorRole,
+        entityType: 'PurchaseOrder',
+        entityId: created.id,
+        action: AUDIT_ACTIONS.PURCHASE_ORDER_CREATED,
+        after: purchaseOrderAuditSnapshot(created),
+      });
+
+      return created;
     } catch (error) {
       const isReferenceCollision =
         !customReference &&
@@ -325,7 +344,13 @@ export async function getPOs(tenantId: string, options: GetPOsOptions) {
 
 // ── Update PO Status ─────────────────────────────────────────────────────────
 
-export async function updatePOStatus(tenantId: string, poId: string, newStatus: POStatus) {
+export async function updatePOStatus(
+  tenantId: string,
+  poId: string,
+  newStatus: POStatus,
+  actorId?: string | undefined,
+  actorRole = 'USER',
+) {
   const po = await prisma.purchaseOrder.findFirst({
     where: { id: poId, tenantId },
   });
@@ -339,10 +364,25 @@ export async function updatePOStatus(tenantId: string, poId: string, newStatus: 
     throw new Error(`Cannot transition from ${po.status} to ${newStatus}`);
   }
 
-  return prisma.purchaseOrder.update({
+  const updated = await prisma.purchaseOrder.update({
     where: { id: poId },
     data: { status: newStatus },
   });
+
+  // Sending (DRAFT -> SENT) and any future transition are one lifecycle event
+  // type: PO_STATUS_CHANGED (ARGUS #229).
+  await createAuditLog({
+    tenantId,
+    actorId: actorId ?? null,
+    actorRole,
+    entityType: 'PurchaseOrder',
+    entityId: poId,
+    action: AUDIT_ACTIONS.PO_STATUS_CHANGED,
+    before: { status: po.status },
+    after: { status: updated.status, referenceNo: updated.referenceNo },
+  });
+
+  return updated;
 }
 
 // ── Update PO (draft / sent only) ────────────────────────────────────────────
@@ -368,6 +408,8 @@ export async function updatePO(
     paymentAccountId?: string | null | undefined;
     lines?: Array<{ variantId: string; orderedQty: number; expectedCostPrice: number }> | undefined;
   },
+  actorId?: string | undefined,
+  actorRole = 'USER',
 ) {
   const po = await prisma.purchaseOrder.findFirst({
     where: { id: poId, tenantId },
@@ -491,7 +533,7 @@ export async function updatePO(
     { discountType: discountType ?? null, discountValue },
   );
 
-  return prisma.purchaseOrder.update({
+  const updated = await prisma.purchaseOrder.update({
     where: { id: poId },
     data: {
       ...(input.referenceNo !== undefined ? { referenceNo: input.referenceNo } : {}),
@@ -519,11 +561,29 @@ export async function updatePO(
     },
     include: { lines: true, supplier: true },
   });
+
+  await createAuditLog({
+    tenantId,
+    actorId: actorId ?? null,
+    actorRole,
+    entityType: 'PurchaseOrder',
+    entityId: poId,
+    action: AUDIT_ACTIONS.PURCHASE_ORDER_UPDATED,
+    before: purchaseOrderAuditSnapshot(po),
+    after: purchaseOrderAuditSnapshot(updated),
+  });
+
+  return updated;
 }
 
 // ── Cancel PO ────────────────────────────────────────────────────────────────
 
-export async function cancelPO(tenantId: string, poId: string) {
+export async function cancelPO(
+  tenantId: string,
+  poId: string,
+  actorId?: string | undefined,
+  actorRole = 'USER',
+) {
   const po = await prisma.purchaseOrder.findFirst({
     where: { id: poId, tenantId },
   });
@@ -550,10 +610,23 @@ export async function cancelPO(tenantId: string, poId: string) {
     );
   }
 
-  return prisma.purchaseOrder.update({
+  const cancelled = await prisma.purchaseOrder.update({
     where: { id: poId },
     data: { status: POStatus.CANCELLED },
   });
+
+  await createAuditLog({
+    tenantId,
+    actorId: actorId ?? null,
+    actorRole,
+    entityType: 'PurchaseOrder',
+    entityId: poId,
+    action: AUDIT_ACTIONS.PURCHASE_ORDER_CANCELLED,
+    before: { status: po.status, referenceNo: po.referenceNo },
+    after: { status: cancelled.status, referenceNo: cancelled.referenceNo },
+  });
+
+  return cancelled;
 }
 
 // ── Receive PO Lines ─────────────────────────────────────────────────────────
@@ -594,8 +667,9 @@ export async function receivePOLines(
   poId: string,
   input: ReceivePOLinesInput,
   actorId: string,
+  actorRole = 'USER',
 ) {
-  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const po = await tx.purchaseOrder.findFirst({
       where: { id: poId, tenantId },
       include: { lines: true },
@@ -822,8 +896,32 @@ export async function receivePOLines(
       },
       costPricesChanged,
       costPriceChangedCount: costPricesChanged.length,
+      /** Audit-only; stripped before the response is returned. */
+      previousStatus: po.status,
     };
   }, { timeout: 30000 });
+
+  const { previousStatus, ...response } = result;
+
+  await createAuditLog({
+    tenantId,
+    actorId,
+    actorRole,
+    entityType: 'PurchaseOrder',
+    entityId: poId,
+    action: AUDIT_ACTIONS.PO_STATUS_CHANGED,
+    before: { status: previousStatus },
+    after: {
+      status: result.updatedPO.status,
+      referenceNo: result.updatedPO.referenceNo,
+      receivedLines: input.receivedLines.map((line) => ({
+        lineId: line.lineId,
+        receivedQty: line.receivedQty,
+      })),
+    },
+  });
+
+  return response;
 }
 
 // ── Format PO for WhatsApp ───────────────────────────────────────────────────
