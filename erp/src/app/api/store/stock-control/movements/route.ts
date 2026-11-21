@@ -8,8 +8,13 @@ import { StockMovementReason } from '@/generated/prisma/client';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { parseQueryInt, parseQueryDate } from '@/lib/api/query-params';
 import { resolveInclusiveDateRange } from '@/lib/api/inclusive-date-range';
-import { toCsvLines } from '@/lib/export';
+import { neutralizeCsvFormula, toCsvLines } from '@/lib/export';
 import { stockMovementReasonLabel } from '@/lib/constants/stock-movement';
+import { resolveStockMovementSource } from '@/lib/stock/movement-source';
+import {
+  formatStockMovementTimestamp,
+  stockMovementDisplayTimeZone,
+} from '@/lib/stock/movement-timestamp';
 
 const VALID_REASONS = new Set(Object.values(StockMovementReason));
 
@@ -110,11 +115,23 @@ export async function GET(request: NextRequest) {
 
     // CSV export
     if (format === 'csv') {
-      const movements = await prisma.stockMovement.findMany({
-        where,
-        orderBy: { createdAt: sortOrder },
-        include,
-      });
+      const [movements, tenant] = await Promise.all([
+        prisma.stockMovement.findMany({
+          where,
+          orderBy: { createdAt: sortOrder },
+          include,
+        }),
+        prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { settings: true },
+        }),
+      ]);
+
+      // ARGUS #200: render the same local timestamp the page shows. Use the
+      // tenant's configured zone when present, otherwise the server zone; the
+      // raw UTC instant stays available in its own column.
+      const settings = (tenant?.settings ?? {}) as { timezone?: string };
+      const displayTimeZone = stockMovementDisplayTimeZone(settings.timezone);
 
       // M35-01 (BUG-79): shared writer + unquoted header. The local `escapeCSV`
       // helper is gone so this route cannot drift from the other exports.
@@ -132,21 +149,41 @@ export async function GET(request: NextRequest) {
           'After',
           'Actor',
           'Note',
+          // ARGUS #199: tie each row back to the document that produced it.
+          'Source Type',
+          'Source ID',
+          'Sale ID',
+          'Purchase Order ID',
+          'Stock Take Session ID',
+          'Batch ID',
+          'Timestamp (UTC)',
         ],
-        movements.map((m) => [
-          m.createdAt.toISOString(),
-          m.variant.product.name,
-          m.variant.sku,
-          m.variant.form ?? '',
-          m.variant.packSize ?? '',
-          m.reason,
-          stockMovementReasonLabel(m.reason),
-          m.quantityDelta > 0 ? `+${m.quantityDelta}` : String(m.quantityDelta),
-          String(m.quantityBefore),
-          String(m.quantityAfter),
-          m.actor?.email ?? 'system',
-          m.note ?? '',
-        ]),
+        movements.map((m) => {
+          const source = resolveStockMovementSource(m);
+          return [
+            formatStockMovementTimestamp(m.createdAt, displayTimeZone),
+            // ARGUS #201: product name, SKU, variant text, actor and note are
+            // user-entered. A leading = + - @ must not become a formula.
+            neutralizeCsvFormula(m.variant.product.name),
+            neutralizeCsvFormula(m.variant.sku),
+            neutralizeCsvFormula(m.variant.form ?? ''),
+            neutralizeCsvFormula(m.variant.packSize ?? ''),
+            m.reason,
+            stockMovementReasonLabel(m.reason),
+            m.quantityDelta > 0 ? `+${m.quantityDelta}` : String(m.quantityDelta),
+            String(m.quantityBefore),
+            String(m.quantityAfter),
+            neutralizeCsvFormula(m.actor?.email ?? 'system'),
+            neutralizeCsvFormula(m.note ?? ''),
+            source?.label ?? '',
+            source?.id ?? '',
+            m.saleId ?? '',
+            m.purchaseOrderId ?? '',
+            m.stockTakeSessionId ?? '',
+            m.batchId ?? '',
+            m.createdAt.toISOString(),
+          ];
+        }),
       );
 
       // Use the caller's calendar labels, not `toISOString()` - a local

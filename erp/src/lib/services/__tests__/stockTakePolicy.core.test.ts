@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canApproveStockTake,
   canCancelStockTake,
   canCompleteStockTake,
   canEditStockTake,
   cancelDisposition,
+  invalidCountedQuantityRows,
+  isCountedQuantityValid,
 } from '@/lib/services/stockTakePolicy.core';
 
 const base = {
@@ -66,5 +69,56 @@ describe('stock-take policy (ARGUS #205/#206)', () => {
     expect(cancelDisposition('discard')).toBe('discard');
     expect(cancelDisposition('none')).toBe('discard');
     expect(cancelDisposition(undefined)).toBe('discard');
+  });
+});
+
+describe('stock-take maker-checker approval (ARGUS #187 / BUG-43)', () => {
+  const pending = {
+    status: 'PENDING_APPROVAL',
+    userId: 'approver',
+    initiatedById: 'initiator',
+    canConduct: true,
+    canApprove: true,
+  };
+
+  it('allows a different user with the approve permission', () => {
+    expect(canApproveStockTake(pending)).toBe(true);
+  });
+
+  it('blocks the initiator even when they hold stock:take:approve', () => {
+    expect(canApproveStockTake({ ...pending, userId: 'initiator' })).toBe(false);
+  });
+
+  it('requires both the approve permission and a pending session', () => {
+    expect(canApproveStockTake({ ...pending, canApprove: false })).toBe(false);
+    expect(canApproveStockTake({ ...pending, status: 'IN_PROGRESS' })).toBe(false);
+    expect(canApproveStockTake({ ...pending, status: 'APPROVED' })).toBe(false);
+  });
+});
+
+describe('stock-take counted quantity validation (ARGUS #187 / BUG-42)', () => {
+  it('accepts null (uncounted) and non-negative integers', () => {
+    expect(isCountedQuantityValid(null)).toBe(true);
+    expect(isCountedQuantityValid(undefined)).toBe(true);
+    expect(isCountedQuantityValid(0)).toBe(true);
+    expect(isCountedQuantityValid(42)).toBe(true);
+  });
+
+  it('rejects negative, fractional, NaN and infinite counts', () => {
+    for (const value of [-1, -0.5, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(isCountedQuantityValid(value), String(value)).toBe(false);
+    }
+  });
+
+  it('reports every invalid row without flagging valid or uncounted rows', () => {
+    const invalid = invalidCountedQuantityRows([
+      { variantId: 'v1', countedQuantity: 4 },
+      { variantId: 'v2', countedQuantity: -3 },
+      { variantId: 'v3', countedQuantity: null },
+      { variantId: 'v4', countedQuantity: 2.5 },
+    ]);
+
+    expect(invalid.map((row) => row.variantId)).toEqual(['v2', 'v4']);
+    expect(invalid.map((row) => row.label)).toEqual(['v2=-3', 'v4=2.5']);
   });
 });

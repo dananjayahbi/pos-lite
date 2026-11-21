@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useVariantPrefill } from '@/hooks/useVariantPrefill';
+import { useInvalidateStockQueries } from '@/hooks/useInvalidateStockQueries';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -164,6 +165,8 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
   const [selectedVariant, setSelectedVariant] = useState<VariantData | null>(null);
   const [isLoadingVariants, setIsLoadingVariants] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // ARGUS #194: refresh every cache a successful adjustment touches.
+  const invalidateStockQueries = useInvalidateStockQueries();
 
   // Resolve variantId query param → product + variant (from Low Stock record)
   const {
@@ -406,6 +409,17 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
             duration: 8000,
           },
         );
+      }
+
+      // ARGUS #194: product, low-stock, summary, valuation and movement
+      // screens all cache this figure. Invalidate before resetting so the
+      // Low Stock action target (and the current page's widgets) refetch
+      // instead of showing pre-adjustment numbers for 30 s - 5 min.
+      try {
+        await invalidateStockQueries();
+      } catch {
+        // The adjustment is already committed; a cache refresh failure must
+        // not turn success into a network-error toast.
       }
 
       // Reset form
