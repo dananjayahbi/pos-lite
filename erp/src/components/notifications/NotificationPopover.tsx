@@ -11,34 +11,17 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
+import { normalizeRupeeText } from '@/lib/format';
 import { useGetNotifications, useInvalidateNotifications } from '@/hooks/useGetNotifications';
 import { getNotificationIcon } from '@/lib/constants/notification-types';
 import { getNotificationHref } from '@/lib/notifications/notification-href';
+import { formatNotificationTime } from '@/lib/notifications/notification-time';
 import {
   SALE_VOIDED_TITLE,
   buildSaleCompletedCopy,
   buildSaleVoidedCopy,
   isVoidedSaleAlert,
 } from '@/lib/notifications/sale-alert-copy';
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatRelativeTime(dateStr: string): string {
-  const now = Date.now();
-  const date = new Date(dateStr).getTime();
-  const diff = now - date;
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString();
-}
-
-// ── Component ────────────────────────────────────────────────────────────────
 
 export function NotificationPopover() {
   const router = useRouter();
@@ -107,16 +90,21 @@ export function NotificationPopover() {
               const isVoidedSale = isVoidedSaleAlert(n.type, n.relatedSale);
               const completedCopy =
                 !isVoidedSale && n.type === 'SALE_COMPLETED' && n.relatedSale
-                  ? buildSaleCompletedCopy(n.relatedEntityId ?? '', n.relatedSale.totalAmount)
+                  ? buildSaleCompletedCopy(n.relatedEntityId ?? '', n.relatedSale.totalAmount, {
+                      zeroValueReason: n.relatedSale.zeroValueReason,
+                      customerName: n.relatedSale.customerName,
+                      productName: n.relatedSale.productName,
+                    })
                   : null;
               const Icon = isVoidedSale ? XCircle : getNotificationIcon(n.type);
               const title = isVoidedSale
                 ? SALE_VOIDED_TITLE
                 : (completedCopy?.title ?? n.title);
-              const body =
+              const body = normalizeRupeeText(
                 isVoidedSale && n.relatedSale
                   ? buildSaleVoidedCopy(n.relatedEntityId ?? '', n.relatedSale.totalAmount).body
-                  : (completedCopy?.body ?? n.body);
+                  : (completedCopy?.body ?? n.body),
+              );
 
               const href = getNotificationHref({
                 type: n.type,
@@ -148,7 +136,7 @@ export function NotificationPopover() {
                       {body}
                     </p>
                     <p className="mt-1 font-mono text-[10px] text-mist-ink/70">
-                      {formatRelativeTime(n.createdAt)}
+                      {formatNotificationTime(n.createdAt)}
                     </p>
                   </div>
                   {!n.isRead && (

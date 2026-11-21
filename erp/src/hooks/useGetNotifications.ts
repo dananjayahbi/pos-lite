@@ -15,6 +15,11 @@ interface NotificationData {
     id: string;
     status: string;
     totalAmount: number | string;
+    /** ARGUS #58: why a zero/negative total was recorded. */
+    zeroValueReason?: string | null;
+    /** ARGUS #59: title summary (buyer first, then first product). */
+    customerName?: string | null;
+    productName?: string | null;
   } | null;
 }
 

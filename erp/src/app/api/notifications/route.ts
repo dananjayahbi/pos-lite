@@ -79,10 +79,36 @@ export async function GET(request: NextRequest) {
     const relatedSales = saleIds.length
       ? await prisma.sale.findMany({
           where: { tenantId, id: { in: saleIds } },
-          select: { id: true, status: true, totalAmount: true },
+          // ARGUS #58: zero-value alerts also need the reason that was
+          // persisted on the sale, so the row can say more than `Rs. 0.00`.
+          // ARGUS #59: the buyer/product identifies the alert's title.
+          select: {
+            id: true,
+            status: true,
+            totalAmount: true,
+            zeroValueReason: true,
+            customer: { select: { name: true } },
+            lines: {
+              take: 1,
+              orderBy: { createdAt: 'asc' },
+              select: { productNameSnapshot: true },
+            },
+          },
         })
       : [];
-    const saleById = new Map(relatedSales.map((sale) => [sale.id, sale]));
+    const saleById = new Map(
+      relatedSales.map((sale) => [
+        sale.id,
+        {
+          id: sale.id,
+          status: sale.status,
+          totalAmount: sale.totalAmount,
+          zeroValueReason: sale.zeroValueReason,
+          customerName: sale.customer?.name ?? null,
+          productName: sale.lines[0]?.productNameSnapshot ?? null,
+        },
+      ]),
+    );
 
     const enrichedNotifications = notifications.map((notification) => ({
       ...notification,
