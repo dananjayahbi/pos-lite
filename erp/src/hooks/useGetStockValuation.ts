@@ -5,11 +5,18 @@ interface CategoryBreakdown {
   categoryName: string;
   variantCount: number;
   retailValue: number;
+  taxAmount: number;
+  retailValueInclTax: number;
   costValue: number;
 }
 
 interface StockValuationData {
   retailValue: number;
+  vatAmount: number;
+  ssclAmount: number;
+  taxAmount: number;
+  retailValueInclTax: number;
+  taxRates: { vatRate: number; ssclRate: number };
   costValue: number;
   /** Raw-material stock value (ARGUS #243). */
   rawMaterialValue: number;
