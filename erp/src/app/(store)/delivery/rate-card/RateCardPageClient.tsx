@@ -314,12 +314,15 @@ export function RateCardPageClient() {
                     {...register('coddCommissionPct', { valueAsNumber: true })}
                     placeholder="0.00"
                   />
+                  <p className="text-espresso/50 text-xs">
+                    Charged on the cash collected (gross COD).
+                  </p>
                   {errors.coddCommissionPct && (
                     <p className="text-sm text-terracotta">{errors.coddCommissionPct.message}</p>
                   )}
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="rate-vat">VAT Rate (%)</Label>
+                  <Label htmlFor="rate-vat">VAT on Service Fees (%)</Label>
                   <Input
                     id="rate-vat"
                     type="number"
@@ -328,6 +331,9 @@ export function RateCardPageClient() {
                     {...register('vatRatePct', { valueAsNumber: true })}
                     placeholder="0.00"
                   />
+                  <p className="text-espresso/50 text-xs">
+                    Applied to the delivery fee + COD commission, not to the cash collected.
+                  </p>
                   {errors.vatRatePct && (
                     <p className="text-sm text-terracotta">{errors.vatRatePct.message}</p>
                   )}
