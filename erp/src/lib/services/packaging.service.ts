@@ -16,6 +16,10 @@ import {
 } from '@/lib/services/packaging.core';
 import { assertPackagingItemDeletable } from '@/lib/services/packagingGuards.core';
 import {
+  toPackagingHistoryRow,
+  type PackagingHistoryRow,
+} from '@/lib/packaging/packagingHistory.core';
+import {
   changePackagingStock,
   type DeductionResult,
 } from '@/lib/services/packagingDeduction.service';
@@ -72,6 +76,64 @@ export async function getPackagingItems(tenantId: string): Promise<PackagingItem
     .slice()
     .sort(comparePackagingItems)
     .map((item) => toPackagingItemDto(item, categoryNames));
+}
+
+/**
+ * Newest-first packaging consumption ledger (ARGUS #281). Paginated and
+ * optionally scoped to one item. Reads the same `PackagingConsumption` rows
+ * that reconciliation relies on, including consumptions of soft-deleted items
+ * (the delete dialog promises that history is kept).
+ */
+export async function getPackagingConsumptionHistory(
+  tenantId: string,
+  input: {
+    page?: number | undefined;
+    pageSize?: number | undefined;
+    itemId?: string | undefined;
+  } = {},
+): Promise<{
+  rows: PackagingHistoryRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}> {
+  const page = Math.max(1, Math.floor(input.page ?? 1));
+  const pageSize = Math.min(Math.max(1, Math.floor(input.pageSize ?? 25)), 100);
+  const where = {
+    tenantId,
+    ...(input.itemId ? { packagingItemId: input.itemId } : {}),
+  };
+
+  const [consumptions, total] = await Promise.all([
+    prisma.packagingConsumption.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        packagingItem: { select: { id: true, name: true, sku: true, unit: true } },
+        delivery: { select: { id: true, orderRef: true, saleId: true } },
+      },
+    }),
+    prisma.packagingConsumption.count({ where }),
+  ]);
+
+  const rows = consumptions.map((consumption) =>
+    toPackagingHistoryRow({
+      id: consumption.id,
+      deliveryId: consumption.deliveryId,
+      orderRef: consumption.delivery.orderRef,
+      saleId: consumption.delivery.saleId,
+      packagingItemId: consumption.packagingItemId,
+      itemName: consumption.packagingItem.name,
+      itemSku: consumption.packagingItem.sku,
+      unit: consumption.packagingItem.unit,
+      quantity: consumption.quantity.toString(),
+      createdAt: consumption.createdAt,
+    }),
+  );
+
+  return { rows, total, page, pageSize };
 }
 
 /**

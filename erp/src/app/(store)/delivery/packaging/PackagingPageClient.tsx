@@ -22,6 +22,7 @@ import { PackagingStockTable } from '@/components/delivery/packaging/PackagingSt
 import { PackagingItemFormDialog } from '@/components/delivery/packaging/PackagingItemFormDialog';
 import { PackagingAdjustDialog } from '@/components/delivery/packaging/PackagingAdjustDialog';
 import { PackagingCategoryManagerDialog } from '@/components/delivery/packaging/PackagingCategoryManagerDialog';
+import { PackagingConsumptionHistory } from '@/components/delivery/packaging/PackagingConsumptionHistory';
 
 export function PackagingPageClient() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
@@ -110,6 +111,8 @@ export function PackagingPageClient() {
           )}
         </CardContent>
       </Card>
+
+      <PackagingConsumptionHistory items={items} />
 
       <PackagingItemFormDialog
         open={formOpen}

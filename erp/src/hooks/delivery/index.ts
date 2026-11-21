@@ -8,12 +8,17 @@ export { useRateCard } from './useRateCard';
 export { useRatePreview } from './useRatePreview';
 export {
   usePackaging,
+  usePackagingHistory,
   usePackagingCategories,
   useCreatePackagingCategory,
   useUpdatePackagingCategory,
   useDeletePackagingCategory,
 } from './usePackaging';
-export type { PackagingItemRow, PackagingCategoryItem } from './usePackaging';
+export type {
+  PackagingItemRow,
+  PackagingCategoryItem,
+  PackagingHistoryPage,
+} from './usePackaging';
 export { useReconciliation } from './useReconciliation';
 export { useCourierSettings } from './useCourierSettings';
 export { useLabelTemplate } from './useLabelTemplate';
