@@ -63,7 +63,14 @@ interface ShiftRow {
 interface ShiftListResponse {
   success: boolean;
   data: ShiftRow[];
-  meta: { page: number; limit: number; total: number; totalPages: number };
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    /** ARGUS #116: counts across every filtered row, not just this page. */
+    statusCounts?: { open: number; closed: number };
+  };
 }
 
 function formatDateTime(value: string | null): string {
@@ -161,8 +168,12 @@ export default function StaffShiftsPage() {
 
   const shifts = data?.data ?? [];
   const meta = data?.meta ?? { page: 1, limit, total: 0, totalPages: 1 };
-  const openCount = shifts.filter((shift) => shift.status === 'OPEN').length;
-  const closedCount = shifts.filter((shift) => shift.status === 'CLOSED').length;
+  // ARGUS #116: prefer the API's filtered status counts. The page-local counts
+  // remain only as a fallback for an older API payload.
+  const openCount =
+    meta.statusCounts?.open ?? shifts.filter((shift) => shift.status === 'OPEN').length;
+  const closedCount =
+    meta.statusCounts?.closed ?? shifts.filter((shift) => shift.status === 'CLOSED').length;
   const currentShift = currentShiftData?.data ?? null;
   const staff = staffData?.data ?? [];
   // ARGUS #115: a shift left open past the tolerance is a reconciliation risk.

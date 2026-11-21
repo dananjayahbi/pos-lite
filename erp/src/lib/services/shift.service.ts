@@ -17,6 +17,7 @@ import {
   groupShiftSalesByShift,
 } from '@/lib/shifts/shift-sales-count';
 import { buildZReportTopItems } from '@/lib/shifts/z-report-top-items';
+import { toShiftStatusCounts } from '@/lib/shifts/shift-status-counts';
 
 // ── Open Shift ───────────────────────────────────────────────────────────────
 
@@ -382,7 +383,7 @@ export async function getShifts(tenantId: string, filters?: GetShiftsFilters) {
     where.openedAt = openedAt;
   }
 
-  const [shifts, total] = await Promise.all([
+  const [shifts, total, statusGroups] = await Promise.all([
     prisma.shift.findMany({
       where,
       include: {
@@ -394,7 +395,22 @@ export async function getShifts(tenantId: string, filters?: GetShiftsFilters) {
       take: limit,
     }),
     prisma.shift.count({ where }),
+    // ARGUS #116: the summary cards must count the filtered result set, not
+    // only the rows on this page. Same `where` as the list and total, so the
+    // two counters always add up to the filtered total.
+    prisma.shift.groupBy({
+      by: ['status'],
+      where,
+      _count: { _all: true },
+    }),
   ]);
+
+  const statusCounts = toShiftStatusCounts(
+    statusGroups.map((group) => ({
+      status: group.status,
+      count: group._count._all,
+    })),
+  );
 
   // ARGUS #110: `_count.sales` included OPEN (held) and VOIDED rows, so the list
   // labelled voided transactions as "Sales" and disagreed with the closure/
@@ -422,6 +438,7 @@ export async function getShifts(tenantId: string, filters?: GetShiftsFilters) {
       salesCounts: salesByShift.get(shift.id) ?? emptyShiftSales(),
     })),
     total,
+    statusCounts,
   };
 }
 
