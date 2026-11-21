@@ -14,6 +14,7 @@ import { setSentryTenantContext } from '@/lib/sentry/context';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
 import { buildSaleTenderLegs } from '@/lib/services/saleTender.core';
+import { resolveCashTender } from '@/lib/services/saleCashTender.core';
 import { assertSaleVoidable } from '@/lib/services/saleVoid.core';
 import {
   assertDiscountsAuthorized,
@@ -578,7 +579,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     // Create Payment records. The credit leg settles whatever the customer's
     // balance covers; the chosen tender settles only the remaining payable.
     if (input.paymentMethod === 'SPLIT' && payableAmount.greaterThan(0)) {
-      const digitalAmt = new Decimal(input.cardAmount!);
+      const digitalAmt = new Decimal(input.cardAmount ?? 0);
       if (digitalAmt.greaterThan(payableAmount)) {
         throw new ApiError(
           400,
@@ -610,32 +611,33 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       );
     }
 
-    // Compute and save change given for CASH / SPLIT (on the cash portion of
-    // the payable amount, never on the credit-covered part).
-    if (
-      (input.paymentMethod === 'CASH' || input.paymentMethod === 'SPLIT') &&
-      payableAmount.greaterThan(0)
-    ) {
-      const cashPortionAmount =
-        input.paymentMethod === 'CASH'
-          ? payableAmount
-          : payableAmount.minus(new Decimal(input.cardAmount!));
-      const cashReceivedDec = new Decimal(input.cashReceived!);
-      if (cashReceivedDec.lessThan(cashPortionAmount)) {
-        throw new ApiError(
-          400,
-          'INSUFFICIENT_CASH',
-          'Cash received is less than the amount due after discounts, credit and change',
-          { path: ['cashReceived'] },
-        );
-      }
-      const changeGiven = cashReceivedDec.minus(cashPortionAmount);
-      if (changeGiven.greaterThan(0)) {
-        await tx.sale.update({
-          where: { id: sale.id },
-          data: { changeGiven: changeGiven.toNumber() },
-        });
-      }
+    // ── Cash tender (ARGUS #62) ─────────────────────────────────────────
+    // Short cash must never be persisted as a fully-paid sale. The server, not
+    // the terminal, owns the cash portion: for CASH it is the whole payable
+    // amount, for SPLIT only the remainder after the card/QR leg. Payable is
+    // already net of discounts, store credit and exchange credit. Overpayment
+    // is recorded as change; an exact tender stores no change. A missing or
+    // malformed `cashReceived` counts as zero tendered rather than crashing.
+    // See docs/pos-cash-tender.md.
+    const cashTender = resolveCashTender({
+      paymentMethod: input.paymentMethod,
+      payableAmount,
+      cardAmount: input.cardAmount,
+      cashReceived: input.cashReceived,
+    });
+    if (cashTender.status === 'SHORT') {
+      throw new ApiError(
+        400,
+        'INSUFFICIENT_CASH',
+        `Cash received (${cashTender.cashReceived.toFixed(2)}) is less than the cash due (${cashTender.cashDue.toFixed(2)}) after discounts and credit`,
+        { path: ['cashReceived'] },
+      );
+    }
+    if (cashTender.status === 'SETTLED' && cashTender.changeGiven.greaterThan(0)) {
+      await tx.sale.update({
+        where: { id: sale.id },
+        data: { changeGiven: cashTender.changeGiven.toNumber() },
+      });
     }
 
     // Customer credit redemption and spend tracking. Guest sales never reach
