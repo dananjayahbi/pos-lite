@@ -316,7 +316,7 @@ function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmit
       {(watchedType === 'BOGO' || watchedType === 'MIX_AND_MATCH') && (
         <div className="space-y-3 rounded-lg border border-mist/60 p-3">
           <p className="font-body text-xs text-mist-ink">
-            Target — choose one product or category. Free units apply per matching
+            Target - choose one product or category. Free units apply per matching
             cart line.
           </p>
           <div className="space-y-1.5">
