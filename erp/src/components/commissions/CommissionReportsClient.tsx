@@ -72,6 +72,12 @@ interface CommissionPayoutHistoryRecord {
   paymentAccountId: string | null;
   paymentAccountName: string | null;
   proofReference: string | null;
+  allocation: {
+    recordCount: number;
+    grossAllocated: string;
+    adjustmentsSettled: string;
+    netAllocated: string;
+  } | null;
 }
 
 const ROLE_COLORS: Record<string, string> = {
@@ -614,6 +620,24 @@ export default function CommissionReportsClient() {
                     <p className="mt-2 text-espresso">{new Date(selectedHistory.paidAt).toLocaleString()}</p>
                   </div>
                 </div>
+                {selectedHistory.allocation && (
+                  <div className="rounded-lg border border-[#2D6A4F]/30 bg-[#E8F3ED] p-4 text-xs text-sand-ink">
+                    <p className="font-medium text-espresso">Allocation reconciliation</p>
+                    <p className="mt-1">
+                      Gross commission settled:{' '}
+                      {formatRupee(selectedHistory.allocation.grossAllocated)}
+                    </p>
+                    <p>
+                      Less return adjustments:{' '}
+                      {formatRupee(selectedHistory.allocation.adjustmentsSettled)}
+                    </p>
+                    <p className="font-semibold text-espresso">
+                      Net paid: {formatRupee(selectedHistory.allocation.netAllocated)} across{' '}
+                      {selectedHistory.allocation.recordCount} record
+                      {selectedHistory.allocation.recordCount === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                )}
                 <div className="rounded-lg border border-mist p-4 text-sand-ink">
                   <p><span className="font-medium text-espresso">Commission window:</span> {new Date(selectedHistory.periodStart).toLocaleDateString()} → {new Date(selectedHistory.periodEnd).toLocaleDateString()}</p>
                   <p><span className="font-medium text-espresso">Payment account:</span> {selectedHistory.paymentAccountName ?? selectedHistory.paymentMethod ?? 'Manual / not specified'}</p>

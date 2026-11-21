@@ -6,6 +6,7 @@ import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/payment
 import { adjustFundBalance, assertFundCanSpend } from '@/lib/services/petty-cash.service';
 import {
   allocateCommissionPayment,
+  summarizeCommissionAllocation,
   summarizeOpenCommission,
 } from '@/lib/services/commission-allocation';
 import { describeCommissionBalance } from '@/lib/services/commissionSummary.core';
@@ -23,10 +24,22 @@ type CommissionPayoutMetadata = {
   note?: string;
   paymentMethod?: string;
   proofReference?: string;
+  /** ARGUS #366: per-payout net allocation summary for the receipt. */
+  allocation?: {
+    recordCount: number;
+    grossAllocated: string;
+    adjustmentsSettled: string;
+    netAllocated: string;
+  };
 };
 
 function serializePayoutNotes(metadata: CommissionPayoutMetadata): string | undefined {
-  if (!metadata.note && !metadata.paymentMethod && !metadata.proofReference) {
+  if (
+    !metadata.note &&
+    !metadata.paymentMethod &&
+    !metadata.proofReference &&
+    !metadata.allocation
+  ) {
     return undefined;
   }
 
@@ -34,6 +47,7 @@ function serializePayoutNotes(metadata: CommissionPayoutMetadata): string | unde
     ...(metadata.note ? { note: metadata.note } : {}),
     ...(metadata.paymentMethod ? { paymentMethod: metadata.paymentMethod } : {}),
     ...(metadata.proofReference ? { proofReference: metadata.proofReference } : {}),
+    ...(metadata.allocation ? { allocation: metadata.allocation } : {}),
   });
 }
 
@@ -41,11 +55,20 @@ function buildPayoutMetadata(input: {
   note?: string | undefined;
   paymentMethod?: string | undefined;
   proofReference?: string | undefined;
+  allocation?:
+    | {
+        recordCount: number;
+        grossAllocated: string;
+        adjustmentsSettled: string;
+        netAllocated: string;
+      }
+    | undefined;
 }): CommissionPayoutMetadata {
   return {
     ...(input.note ? { note: input.note } : {}),
     ...(input.paymentMethod ? { paymentMethod: input.paymentMethod } : {}),
     ...(input.proofReference ? { proofReference: input.proofReference } : {}),
+    ...(input.allocation ? { allocation: input.allocation } : {}),
   };
 }
 
@@ -417,6 +440,11 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
 
     const amount = requested.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
+    // ARGUS #366: allocate before writing the payout so the receipt can store
+    // the gross/adjustment/net reconciliation derived from the same math.
+    const allocations = allocateCommissionPayment(openRecords, amount);
+    const allocationSummary = summarizeCommissionAllocation(openRecords, allocations);
+
     const account = await tx.paymentAccount.findFirst({
       where: { id: paymentAccountId, tenantId: input.tenantId },
       include: { pettyCashFund: { select: { id: true } } },
@@ -438,6 +466,7 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
         note: input.notes,
         paymentMethod: account.name,
         proofReference: input.proofReference,
+        allocation: allocationSummary,
       }),
     );
 
@@ -492,7 +521,6 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
       { allowPettyCashAccount: true },
     );
 
-    const allocations = allocateCommissionPayment(openRecords, amount);
     for (const allocation of allocations) {
       await tx.commissionRecord.update({
         where: { id: allocation.id },
@@ -504,7 +532,7 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
       });
     }
 
-    return { payout, pettyCashFundId, amount, accountName: account.name, staffName, expenseId: expense.id };
+    return { payout, pettyCashFundId, amount, accountName: account.name, staffName, expenseId: expense.id, allocation: allocationSummary };
   });
 
   // A linked petty-cash payout also reduces the fund's running balance. Kept
@@ -534,6 +562,12 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
       paymentAccount: transactionResult.accountName,
       expenseId: transactionResult.expenseId,
       proofReference: input.proofReference ?? null,
+      allocation: {
+        recordCount: transactionResult.allocation.recordCount,
+        grossAllocated: transactionResult.allocation.grossAllocated,
+        adjustmentsSettled: transactionResult.allocation.adjustmentsSettled,
+        netAllocated: transactionResult.allocation.netAllocated,
+      },
     },
   });
 
@@ -610,6 +644,7 @@ export async function getCommissionPayouts(
         authorizedByName: record.authorizedBy.fullName?.trim() || null,
         note: metadata.note ?? null,
         paymentMethod: metadata.paymentMethod ?? null,
+        allocation: metadata.allocation ?? null,
         paymentAccountId: record.paymentAccountId,
         paymentAccountName: record.paymentAccountName ?? record.paymentAccount?.name ?? null,
         expenseId: record.expenseId,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   allocateCommissionPayment,
+  summarizeCommissionAllocation,
   summarizeOpenCommission,
 } from '@/lib/services/commission-allocation';
 
@@ -85,5 +86,55 @@ describe('allocateCommissionPayment', () => {
       { id: 'a', newPaid: '10.00', isPaid: true },
       { id: 'b', newPaid: '5.00', isPaid: false },
     ]);
+  });
+
+  it('nets negative return adjustments during a partial payout', () => {
+    const { netOutstanding, records } = summarizeOpenCommission([
+      { id: 'sale', earnedAmount: '1000.00', paidAmount: '0.00', createdAt: jan1 },
+      { id: 'return', earnedAmount: '-100.00', paidAmount: '0.00', createdAt: jan2 },
+    ]);
+    expect(netOutstanding.toFixed(2)).toBe('900.00');
+
+    const allocations = allocateCommissionPayment(records, '500.00');
+    expect(allocations).toEqual([
+      { id: 'sale', newPaid: '600.00', isPaid: false },
+      { id: 'return', newPaid: '-100.00', isPaid: true },
+    ]);
+
+    const summary = summarizeCommissionAllocation(records, allocations);
+    expect(summary).toEqual({
+      recordCount: 2,
+      grossAllocated: '600.00',
+      adjustmentsSettled: '100.00',
+      netAllocated: '500.00',
+    });
+
+    const after = summarizeOpenCommission([
+      { id: 'sale', earnedAmount: '1000.00', paidAmount: '600.00', createdAt: jan1 },
+      { id: 'return', earnedAmount: '-100.00', paidAmount: '-100.00', createdAt: jan2 },
+    ]);
+    expect(after.netOutstanding.toFixed(2)).toBe('400.00');
+  });
+
+  it('nets negatives and settles everything on a full payout', () => {
+    const { records } = summarizeOpenCommission([
+      { id: 'sale', earnedAmount: '1000.00', paidAmount: '0.00', createdAt: jan1 },
+      { id: 'return', earnedAmount: '-100.00', paidAmount: '0.00', createdAt: jan2 },
+    ]);
+    const allocations = allocateCommissionPayment(records, '900.00');
+    expect(allocations).toEqual([
+      { id: 'sale', newPaid: '1000.00', isPaid: true },
+      { id: 'return', newPaid: '-100.00', isPaid: true },
+    ]);
+    expect(summarizeCommissionAllocation(records, allocations).netAllocated).toBe('900.00');
+  });
+
+  it('refuses to allocate when negative adjustments consume the balance', () => {
+    const { netOutstanding, records } = summarizeOpenCommission([
+      { id: 'sale', earnedAmount: '50.00', paidAmount: '0.00', createdAt: jan1 },
+      { id: 'return', earnedAmount: '-50.00', paidAmount: '0.00', createdAt: jan2 },
+    ]);
+    expect(netOutstanding.toFixed(2)).toBe('0.00');
+    expect(allocateCommissionPayment(records, '10.00')).toEqual([]);
   });
 });
