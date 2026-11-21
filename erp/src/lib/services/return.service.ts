@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { ApiError } from '@/lib/api/errors';
 import { ReturnRefundMethod, ReturnStatus } from '@/generated/prisma/client';
 import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
@@ -8,6 +9,15 @@ import Decimal from 'decimal.js';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 import { computeReturnRefund } from '@/lib/services/returnRefund.core';
+import {
+  collectedTenderMethods,
+  refundMethodTenderMismatchReason,
+} from '@/lib/services/returnTender.core';
+import {
+  buildReturnAccountLegs,
+  postReturnRefundToAccounts,
+} from '@/lib/services/saleAccounts';
+import { resolveSaleIdByReference } from '@/lib/services/returnReference';
 import { issueCredit } from '@/lib/services/customer.service';
 
 const RETURN_WINDOW_DAYS = 30;
@@ -44,7 +54,7 @@ export async function validateReturnEligibility(
 ) {
   const sale = await tx.sale.findUnique({
     where: { id: originalSaleId },
-    include: { lines: true },
+    include: { lines: true, payments: true },
   });
 
   if (!sale) {
@@ -211,6 +221,23 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
       tx,
     );
 
+    // ARGUS #96: the refund must leave through a tender the sale actually
+    // collected. Manager/owner authorization alone is not an override — that
+    // would let a card reversal be recorded against a cash sale and desync the
+    // drawer. Store credit/exchange stay available on every tender.
+    const tenderMismatch = refundMethodTenderMismatchReason(
+      input.refundMethod,
+      sale,
+    );
+    if (tenderMismatch) {
+      const collected = [...collectedTenderMethods(sale)];
+      throw new ApiError(
+        422,
+        'REFUND_METHOD_MISMATCH',
+        `${tenderMismatch} Original tender: ${collected.length > 0 ? collected.join(', ') : 'none recorded'}.`,
+      );
+    }
+
     // 2. Compute refunds (goods + the tax actually collected)
     const {
       lines: computedLines,
@@ -289,7 +316,28 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
       );
     }
 
-    // 7. Return fully loaded record
+    // 7. Post the refund leg so account balances and cash flow reconcile
+    // (ARGUS #97). Cash leaves the cash account, a card reversal credits the
+    // card/gateway account the sale landed in, and store credit/exchange move
+    // no account money. Skipped when the tenant has no eligible account.
+    const returnReference = returnRecord.id.slice(0, 8).toUpperCase();
+    const refundAccountLegs = buildReturnAccountLegs({
+      refundMethod: input.refundMethod,
+      refundAmount: totalRefund,
+      originalTenders: collectedTenderMethods(sale),
+    });
+    if (refundAccountLegs.length > 0) {
+      await postReturnRefundToAccounts(
+        tx,
+        tenantId,
+        input.initiatedById,
+        returnRecord.id,
+        returnReference,
+        refundAccountLegs,
+      );
+    }
+
+    // 8. Return fully loaded record
     return tx.return.findUniqueOrThrow({
       where: { id: returnRecord.id },
       include: {
@@ -404,8 +452,13 @@ export async function getReturns(tenantId: string, filters: GetReturnsFilters = 
 
   const where: Record<string, unknown> = { tenantId };
 
-  if (filters.originalSaleId !== undefined) {
-    where.originalSaleId = filters.originalSaleId;
+  if (filters.originalSaleId !== undefined && filters.originalSaleId.trim() !== '') {
+    // ARGUS #98: the filter accepts the printed 8-char reference, not only the
+    // full cuid. Ambiguous prefixes fail with a typed 409 (tenant-scoped).
+    where.originalSaleId = await resolveSaleIdByReference(
+      tenantId,
+      filters.originalSaleId,
+    );
   }
   if (filters.initiatedById !== undefined) {
     where.initiatedById = filters.initiatedById;

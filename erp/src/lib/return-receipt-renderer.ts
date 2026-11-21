@@ -160,7 +160,9 @@ export function buildReturnReceiptHtml(
     refundNote = 'Cash was handed back to the customer at the counter.';
   } else if (refundMethod === 'CARD_REVERSAL') {
     refundMethodLabel = 'Card Reversal';
-    refundNote = 'The refund is reversed to the original card used for the sale.';
+    // ARGUS #96: a reversal is only allowed against a card/QR tender, so the
+    // note must not claim a physical card when the sale was paid by QR.
+    refundNote = 'The refund is reversed through the original card/QR payment channel.';
   } else if (refundMethod === 'STORE_CREDIT') {
     refundMethodLabel = 'Store Credit';
     refundNote = 'A credit note was issued and can be redeemed on a future purchase.';

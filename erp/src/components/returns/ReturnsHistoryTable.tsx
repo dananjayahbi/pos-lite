@@ -148,7 +148,7 @@ export function ReturnsHistoryTable() {
     return params.toString();
   }, [debouncedSaleId, filters.refundMethod, filters.from, filters.to, filters.page]);
 
-  const { data, isLoading } = useQuery<{
+  const { data, isLoading, error } = useQuery<{
     success: boolean;
     data: ReturnRecord[];
     pagination: { total: number; page: number; limit: number; totalPages: number };
@@ -156,8 +156,18 @@ export function ReturnsHistoryTable() {
     queryKey: ['returns', debouncedSaleId, filters.refundMethod, filters.from, filters.to, filters.page],
     queryFn: async () => {
       const res = await fetch(`/api/store/returns?${buildParams()}`);
-      if (!res.ok) throw new Error('Failed to fetch returns');
-      return res.json();
+      const json = (await res.json().catch(() => null)) as {
+        success: boolean;
+        data: ReturnRecord[];
+        pagination: { total: number; page: number; limit: number; totalPages: number };
+        error?: { message?: string };
+      } | null;
+      // ARGUS #98: surface the server's clear "reference matches more than one
+      // sale" message instead of a generic failure.
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? 'Failed to fetch returns');
+      }
+      return json;
     },
     staleTime: 30_000,
   });
@@ -213,9 +223,9 @@ export function ReturnsHistoryTable() {
           </Select>
         </div>
         <div className="space-y-1">
-          <label className="font-body text-xs text-mist-ink">Sale ID</label>
+          <label className="font-body text-xs text-mist-ink">Sale Ref</label>
           <Input
-            placeholder="Search by sale IDâ€¦"
+            placeholder="Search by sale reference..."
             value={filters.originalSaleId}
             onChange={(e) => setFilters((prev) => ({ ...prev, originalSaleId: e.target.value }))}
             className="h-9 w-50 font-body text-sm"
@@ -234,6 +244,17 @@ export function ReturnsHistoryTable() {
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-12 rounded bg-linen" />
           ))}
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center space-y-2 py-16">
+          <p className="max-w-md text-center font-body text-sm text-[#9B2226]">
+            {error instanceof Error ? error.message : 'Failed to load returns'}
+          </p>
+          {hasFilters && (
+            <Button variant="outline" size="sm" onClick={clearFilters}>
+              Clear Filters
+            </Button>
+          )}
         </div>
       ) : returns.length === 0 ? (
         <div className="flex flex-col items-center justify-center space-y-2 py-16">

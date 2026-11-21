@@ -15,6 +15,11 @@ interface ReturnRefundOptionsStepProps {
   reason: string;
   /** Store credit needs a customer to hold the balance (guest sales cannot). */
   storeCreditAvailable: boolean;
+  /**
+   * Reasons a tender-based method cannot be used on this sale (ARGUS #96).
+   * Methods without an entry are selectable.
+   */
+  tenderMismatchReasons?: Partial<Record<ReturnRefundMethod, string>> | undefined;
   onChange: (patch: Partial<{ refundMethod: ReturnRefundMethod; cardReversalReference: string; reason: string }>) => void;
 }
 
@@ -36,6 +41,7 @@ export function ReturnRefundOptionsStep({
   cardReversalReference,
   reason,
   storeCreditAvailable,
+  tenderMismatchReasons,
   onChange,
 }: ReturnRefundOptionsStepProps) {
   return (
@@ -63,7 +69,11 @@ export function ReturnRefundOptionsStep({
         {METHODS.map((method) => {
           const Icon = method.icon;
           const isSelected = refundMethod === method.value;
-          const unavailable = method.value === 'STORE_CREDIT' && !storeCreditAvailable;
+          const unavailableReason =
+            method.value === 'STORE_CREDIT' && !storeCreditAvailable
+              ? 'Not available: the original sale is not linked to a customer.'
+              : tenderMismatchReasons?.[method.value];
+          const unavailable = unavailableReason !== undefined;
 
           return (
             <div key={method.value}>
@@ -91,9 +101,7 @@ export function ReturnRefundOptionsStep({
                     {method.label}
                   </p>
                   <p className="font-body text-xs text-mist-ink mt-0.5">
-                    {unavailable
-                      ? 'Not available: the original sale is not linked to a customer.'
-                      : method.description}
+                    {unavailableReason ?? method.description}
                   </p>
                 </div>
                 <div
