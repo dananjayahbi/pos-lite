@@ -141,9 +141,13 @@ For each agent commit:
   #131 (appointment service tax rule), #132 (appointment sale attribution and
   commission).
 - Checkpoint: full suite green at 1,634 tests (190 files).
-- DB still unreachable at 140.238.145.221:5432 (P1001); migrations
-  20261121160000_raw_material_costing, 20261121170000_return_cancellation and
-  20261121180000_appointment_service_tax are pending deployment.
+- DB reachable again; the three pending migrations were applied as raw SQL with
+  `prisma db execute` and verified (`RawMaterial.unitCost`,
+  `ProductionLog.materialCost`, `ReturnStatus.CANCELLED`,
+  `AppointmentService.taxRule`). `prisma migrate deploy` still fails **P3005**
+  because the production database has a schema but no `_prisma_migrations`
+  history (it was provisioned outside migrate); baselining is a separate
+  infrastructure task, proposed on the board.
 - Worktrees are reset with `git -C <wt> reset --hard argus_qa` between batches;
   their old commits are already merged, so this is safe.
 - Every agent task must call `log_task_progress` before `submit_for_review`
