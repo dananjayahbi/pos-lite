@@ -237,11 +237,13 @@ function ReportLayoutInner({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { reportData } = useReportContext();
+  const { reportData, reportStatus } = useReportContext();
   const { hasPermission } = usePermissions();
   // ARGUS #438: exporting/saving a generated artifact is report:export,
   // separate from merely viewing the report.
   const canExport = hasPermission(PERMISSIONS.REPORT.exportReport);
+  // ARGUS #442: a failed report must not offer Export/Save for a blank shell.
+  const reportFailed = reportStatus === "error";
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveFormat, setSaveFormat] = useState<ReportFormat>("pdf");
@@ -505,7 +507,7 @@ function ReportLayoutInner({
 
             <div className="ml-auto flex items-center gap-2">
               {/* Export popover */}
-              {canExport && (
+              {canExport && !reportFailed && (
               <Popover open={exportOpen} onOpenChange={setExportOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -548,7 +550,7 @@ function ReportLayoutInner({
               )}
 
               {/* Save report dialog */}
-              {canExport && (
+              {canExport && !reportFailed && (
               <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
                 <DialogTrigger asChild>
                   <Button

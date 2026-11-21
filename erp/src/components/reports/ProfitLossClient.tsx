@@ -3,11 +3,14 @@
 import { useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReportContext } from "@/lib/reports/ReportContext";
 import { formatRupee } from "@/lib/format";
 import { expenseCategoryLabel, reportMonthLabel } from "@/lib/reports/labels";
+import { resolveReportErrorMessage } from "@/lib/reports/reportError";
 import { buildProfitLossExportRows } from "@/lib/reports/reportRows";
 import { paymentMethodLabel } from "@/lib/sales/payment-method-label";
 
@@ -113,9 +116,7 @@ async function fetchPL(from: string, to: string): Promise<PLData> {
   // "Failed to fetch report".
   const json = (await res.json().catch(() => null)) as PLResponse | null;
   if (!res.ok) {
-    throw new Error(
-      json?.error?.message ?? `Failed to fetch report (HTTP ${res.status})`,
-    );
+    throw new Error(resolveReportErrorMessage(res.status, json));
   }
   if (!json?.success) {
     throw new Error(json?.error?.message ?? "Unknown error");
@@ -129,9 +130,9 @@ export default function ProfitLossClient() {
   const searchParams = useSearchParams();
   const from = searchParams.get("from") ?? defaultFrom();
   const to = searchParams.get("to") ?? defaultTo();
-  const { setReportData } = useReportContext();
+  const { setReportData, setReportStatus } = useReportContext();
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["profit-loss", from, to],
     queryFn: () => fetchPL(from, to),
   });
@@ -143,12 +144,28 @@ export default function ProfitLossClient() {
     setReportData(buildProfitLossExportRows(data));
   }, [data, setReportData]);
 
+  // ARGUS #442: hide the layout's Export/Save controls while the report failed.
+  useEffect(() => {
+    if (error) setReportStatus("error");
+    else if (isLoading) setReportStatus("loading");
+  }, [error, isLoading, setReportStatus]);
+
   if (isLoading) return <LoadingSkeleton />;
 
   if (error) {
     return (
-      <div className="p-6 text-center text-red-600">
-        Failed to load report: {error.message}
+      <div className="mx-auto max-w-xl p-6 text-center">
+        <p className="text-red-600">Failed to load report: {error.message}</p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => {
+            void refetch();
+          }}
+        >
+          <RefreshCw className="mr-1 h-4 w-4" />
+          Retry
+        </Button>
       </div>
     );
   }

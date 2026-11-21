@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -16,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReportContext } from "@/lib/reports/ReportContext";
 import { formatRupee } from "@/lib/format";
+import { resolveReportErrorMessage } from "@/lib/reports/reportError";
 import { buildSalesExportRows } from "@/lib/reports/reportRows";
 import { salesProductLabel, topRevenueProducts } from "@/lib/reports/sales-report";
 
@@ -85,9 +88,11 @@ async function fetchSales(from: string, to: string): Promise<SalesData> {
   const res = await fetch(
     `/api/reports/sales?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
   );
-  if (!res.ok) throw new Error("Failed to fetch report");
-  const json: SalesResponse = await res.json();
-  if (!json.success) throw new Error(json.error?.message ?? "Unknown error");
+  // ARGUS #442: read the envelope on non-2xx too, so a typed 403/500 message is
+  // shown instead of a generic "Failed to fetch report".
+  const json = (await res.json().catch(() => null)) as SalesResponse | null;
+  if (!res.ok) throw new Error(resolveReportErrorMessage(res.status, json));
+  if (!json?.success) throw new Error(json?.error?.message ?? "Unknown error");
   return json.data;
 }
 
@@ -119,12 +124,12 @@ export default function SalesReportClient() {
   const searchParams = useSearchParams();
   const from = searchParams.get("from") ?? defaultFrom();
   const to = searchParams.get("to") ?? defaultTo();
-  const { setReportData } = useReportContext();
+  const { setReportData, setReportStatus } = useReportContext();
 
   const [sortKey, setSortKey] = useState<SortKey>("netRevenue");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["sales-report", from, to],
     queryFn: () => fetchSales(from, to),
   });
@@ -157,6 +162,13 @@ export default function SalesReportClient() {
     setReportData(buildSalesExportRows(data));
   }, [data, setReportData]);
 
+  // ARGUS #442: a failed request hides the layout's Export/Save controls; a
+  // retry puts them back when rows arrive.
+  useEffect(() => {
+    if (error) setReportStatus("error");
+    else if (isLoading) setReportStatus("loading");
+  }, [error, isLoading, setReportStatus]);
+
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -175,8 +187,18 @@ export default function SalesReportClient() {
 
   if (error) {
     return (
-      <div className="p-6 text-center text-red-600">
-        Failed to load report: {error.message}
+      <div className="mx-auto max-w-xl p-6 text-center">
+        <p className="text-red-600">Failed to load report: {error.message}</p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => {
+            void refetch();
+          }}
+        >
+          <RefreshCw className="mr-1 h-4 w-4" />
+          Retry
+        </Button>
       </div>
     );
   }
