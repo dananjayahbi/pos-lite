@@ -4,7 +4,9 @@ import Barcode from 'react-barcode';
 import type { ReactNode } from 'react';
 import { renderPrintOverlay } from '@/lib/print-overlay';
 import {
+  buildWaybillAddress,
   buildWaybillDescription,
+  dedupeLocality,
   formatWaybillAmount,
   formatWaybillDate,
   isDraftWaybill,
@@ -104,26 +106,11 @@ function SectionTitle({ children }: { children: ReactNode }) {
  * one A4 landscape sheet (see `printShippingLabels`).
  */
 export function ShippingLabel({ template, address, delivery, waybillId }: ShippingLabelProps) {
-  const fullAddress = [
-    address.addressLine1,
-    address.addressLine2,
-    [address.cityName, address.districtName].filter(Boolean).join(', '),
-    address.postalCode,
-  ]
-    .filter(Boolean)
-    .join(', ');
+  const fullAddress = buildWaybillAddress(address);
 
   const barcodeValue = waybillBarcodeValue({ waybillId });
   const draft = isDraftWaybill(waybillId);
-  const branchParts = [address.cityName, address.districtName].filter(
-    (part): part is string => Boolean(part),
-  );
-  const branch =
-    branchParts.length > 0
-      ? branchParts.every((part) => part === branchParts[0])
-        ? branchParts[0]!
-        : branchParts.join(' / ')
-      : '';
+  const branch = dedupeLocality(address.cityName, address.districtName, ' / ');
   const contact = [address.phone, address.phone2].filter(Boolean).join(' / ');
   const description = buildWaybillDescription({
     itemCount: delivery.itemCount,

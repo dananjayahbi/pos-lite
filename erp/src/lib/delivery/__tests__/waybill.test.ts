@@ -1,11 +1,57 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildWaybillAddress,
   buildWaybillDescription,
+  dedupeLocality,
   formatWaybillAmount,
   formatWaybillDate,
   isDraftWaybill,
   waybillBarcodeValue,
 } from '@/lib/delivery/waybill';
+
+describe('buildWaybillAddress (ARGUS #302)', () => {
+  it('prints one locality when city and district match', () => {
+    expect(
+      buildWaybillAddress({
+        addressLine1: '123 Main Street',
+        addressLine2: 'Colombo 3',
+        cityName: 'Colombo',
+        districtName: 'Colombo',
+        postalCode: '00100',
+      }),
+    ).toBe('123 Main Street, Colombo 3, Colombo, 00100');
+
+    expect(
+      buildWaybillAddress({
+        addressLine1: 'Main Road',
+        cityName: 'Deiyandara',
+        districtName: 'Deiyandara',
+        postalCode: '81320',
+      }),
+    ).toBe('Main Road, Deiyandara, 81320');
+  });
+
+  it('keeps both names when the city and district differ', () => {
+    expect(dedupeLocality('Moratuwa', 'Colombo')).toBe('Moratuwa, Colombo');
+    expect(dedupeLocality('Deiyandara', 'deiyandara')).toBe('Deiyandara');
+  });
+
+  it('collapses an address line that already repeats the city', () => {
+    expect(
+      buildWaybillAddress({
+        addressLine1: '45 Temple Road',
+        addressLine2: 'Kandy',
+        cityName: 'Kandy',
+        districtName: 'Kandy',
+      }),
+    ).toBe('45 Temple Road, Kandy');
+  });
+
+  it('omits missing parts without leaving stray commas', () => {
+    expect(buildWaybillAddress({ addressLine1: '  Main Street ' })).toBe('Main Street');
+    expect(buildWaybillAddress({ cityName: null, districtName: 'Galle' })).toBe('Galle');
+  });
+});
 
 describe('formatWaybillDate', () => {
   it('prints DD/MM/YYYY like the courier sheet', () => {
