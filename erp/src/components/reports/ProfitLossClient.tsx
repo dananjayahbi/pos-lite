@@ -354,7 +354,7 @@ export default function ProfitLossClient() {
         <Card>
           <CardContent className="p-4">
             <h3 className="mb-4 text-sm font-semibold text-espresso">
-              Monthly Gross Profit (Last 12 Months)
+              Monthly Gross Profit (Selected Period)
             </h3>
             <MonthlyChart months={data.monthlyData} />
 

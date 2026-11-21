@@ -7,6 +7,7 @@ import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { saleAccountingDateWhere, netRefundAmount } from '@/lib/reports/accounting';
 import { summarizeCogsSource } from '@/lib/reports/cogsSource';
+import { filterMonthKeysInPeriod } from '@/lib/reports/monthlyPeriod';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -234,7 +235,8 @@ export async function GET(request: NextRequest) {
         AND EXISTS (
           SELECT 1 FROM sale_lines sl WHERE sl."saleId" = sales."id"
         )
-        AND COALESCE("saleDate", "createdAt") >= NOW() - INTERVAL '12 months'
+        AND COALESCE("saleDate", "createdAt") >= ${from}
+        AND COALESCE("saleDate", "createdAt") <= ${to}
       GROUP BY DATE_TRUNC('month', COALESCE("saleDate", "createdAt"))
       ORDER BY month
     `);
@@ -249,7 +251,8 @@ export async function GET(request: NextRequest) {
       JOIN product_variants pv ON sl."variantId" = pv."id"
       WHERE s."tenantId" = ${tenantId}
         AND s."status" = 'COMPLETED'
-        AND COALESCE(s."saleDate", s."createdAt") >= NOW() - INTERVAL '12 months'
+        AND COALESCE(s."saleDate", s."createdAt") >= ${from}
+        AND COALESCE(s."saleDate", s."createdAt") <= ${to}
       GROUP BY DATE_TRUNC('month', COALESCE(s."saleDate", s."createdAt"))
       ORDER BY month
     `);
@@ -268,7 +271,8 @@ export async function GET(request: NextRequest) {
       JOIN sales s ON s."id" = r."originalSaleId"
       WHERE r."tenantId" = ${tenantId}
         AND r."status" = 'COMPLETED'
-        AND r."createdAt" >= NOW() - INTERVAL '12 months'
+        AND r."createdAt" >= ${from}
+        AND r."createdAt" <= ${to}
       GROUP BY DATE_TRUNC('month', r."createdAt")
       ORDER BY month
     `);
@@ -284,7 +288,8 @@ export async function GET(request: NextRequest) {
       JOIN product_variants pv ON rl."variantId" = pv."id"
       WHERE r."tenantId" = ${tenantId}
         AND r."status" = 'COMPLETED'
-        AND r."createdAt" >= NOW() - INTERVAL '12 months'
+        AND r."createdAt" >= ${from}
+        AND r."createdAt" <= ${to}
       GROUP BY DATE_TRUNC('month', r."createdAt")
       ORDER BY month
     `);
@@ -296,7 +301,8 @@ export async function GET(request: NextRequest) {
              COALESCE(SUM("amount"), 0) AS expenses
       FROM expenses
       WHERE "tenantId" = ${tenantId}
-        AND "expenseDate" >= NOW() - INTERVAL '12 months'
+        AND "expenseDate" >= ${from}
+        AND "expenseDate" <= ${to}
       GROUP BY DATE_TRUNC('month', "expenseDate")
       ORDER BY month
     `);
@@ -359,23 +365,25 @@ export async function GET(request: NextRequest) {
       monthMap.set(key, entry);
     }
 
-    const monthlyData = Array.from(monthMap.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, d]) => {
-        const netRevenue = d.revenue.minus(d.returns);
-        const netCogs = d.cogs.minus(d.returnedCogs);
-        const grossProfit = netRevenue.minus(netCogs);
-        const netProfit = grossProfit.minus(d.expenses);
-        return {
-          month,
-          revenue: netRevenue.toFixed(2),
-          cogs: netCogs.toFixed(2),
-          grossProfit: grossProfit.toFixed(2),
-          expenses: d.expenses.toFixed(2),
-          netProfit: netProfit.toFixed(2),
-          saleCount: d.saleCount,
-        };
-      });
+    // Keep the monthly detail inside the selected From/To period. The SQL
+    // already filters, but this guard prevents a stale/NOW-based row from
+    // leaking back in as an unrelated trend (ARGUS #437).
+    const monthlyData = filterMonthKeysInPeriod(monthMap.keys(), from, to).map((month) => {
+      const d = monthMap.get(month) ?? emptyMonth();
+      const netRevenue = d.revenue.minus(d.returns);
+      const netCogs = d.cogs.minus(d.returnedCogs);
+      const grossProfit = netRevenue.minus(netCogs);
+      const netProfit = grossProfit.minus(d.expenses);
+      return {
+        month,
+        revenue: netRevenue.toFixed(2),
+        cogs: netCogs.toFixed(2),
+        grossProfit: grossProfit.toFixed(2),
+        expenses: d.expenses.toFixed(2),
+        netProfit: netProfit.toFixed(2),
+        saleCount: d.saleCount,
+      };
+    });
 
     // ── Computed totals ──────────────────────────────────────────
     const netRevenue = grossRevenue.minus(totalReturns);
