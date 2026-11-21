@@ -14,7 +14,7 @@ export function computeRecoveryRate(
 }
 
 export function formatRecoveryRate(rate: number | null | undefined): string {
-  if (rate === null || rate === undefined || !Number.isFinite(rate)) return '—';
+  if (rate === null || rate === undefined || !Number.isFinite(rate)) return '-';
   return `${rate}%`;
 }
 
