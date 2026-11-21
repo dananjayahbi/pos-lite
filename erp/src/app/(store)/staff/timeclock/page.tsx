@@ -39,6 +39,7 @@ interface AttendanceRecord {
   notes: string | null;
   durationMinutes: number;
   isOpen: boolean;
+  needsReview: boolean;
 }
 
 interface AttendanceRow {
@@ -52,6 +53,7 @@ interface AttendanceRow {
   totalMinutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
+  needsReview: boolean;
   records: AttendanceRecord[];
   attendance: { id: string; status: AttendanceStatusValue; notes: string | null } | null;
 }
@@ -59,6 +61,7 @@ interface AttendanceRow {
 interface AttendanceResponse {
   date: string;
   standardWorkdayMinutes: number;
+  maxShiftMinutes: number;
   isWorkingDay: boolean;
   isHoliday: boolean;
   isFuture: boolean;
@@ -210,6 +213,7 @@ export default function TimeclockPage() {
       },
     );
   }, [rows]);
+  const reviewCount = rows.filter((row) => row.needsReview).length;
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['attendance'] });
@@ -280,6 +284,13 @@ export default function TimeclockPage() {
       {dayInfo?.isFuture && (
         <p className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-700">
           Future date — absences are not recorded until the day has passed.
+        </p>
+      )}
+      {reviewCount > 0 && (
+        <p className="rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-sm text-orange-800">
+          {reviewCount} staff member{reviewCount === 1 ? '' : 's'} have an open punch longer than
+          the maximum shift ({Math.round((dayInfo?.maxShiftMinutes ?? 960) / 60)}h). The duration
+          is capped — use Adjust to set the real clock-out.
         </p>
       )}
 
@@ -399,6 +410,11 @@ export default function TimeclockPage() {
                                 Active
                               </Badge>
                             )}
+                            {row.needsReview && (
+                              <Badge className="ml-1 border border-orange-300 bg-orange-100 text-xs text-orange-800">
+                                Needs review
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell className="font-mono text-sm">
                             {row.clockInAt ? formatTime(row.clockInAt) : '-'}
@@ -507,6 +523,7 @@ function AttendanceCalendarCard({
   const [holidaysText, setHolidaysText] = useState(calendar.holidays.join('\n'));
   const [fullDayMinutes, setFullDayMinutes] = useState(String(calendar.fullDayMinutes));
   const [halfDayMinutes, setHalfDayMinutes] = useState(String(calendar.halfDayMinutes));
+  const [maxShiftMinutes, setMaxShiftMinutes] = useState(String(calendar.maxShiftMinutes));
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
@@ -523,6 +540,7 @@ function AttendanceCalendarCard({
           holidays,
           fullDayMinutes: Number(fullDayMinutes),
           halfDayMinutes: Number(halfDayMinutes),
+          maxShiftMinutes: Number(maxShiftMinutes),
         }),
       });
       const json = await res.json();
@@ -610,6 +628,25 @@ function AttendanceCalendarCard({
             />
             <p className="text-xs text-sand-ink">
               Below this a punched day reads “Insufficient hours” (default 4h).
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="attendance-max-shift">Maximum shift (hours)</Label>
+            <Input
+              id="attendance-max-shift"
+              type="number"
+              min={1}
+              max={24}
+              step={0.5}
+              value={maxShiftMinutes === '' ? '' : Number(maxShiftMinutes) / 60}
+              onChange={(event) => {
+                const hours = Number.parseFloat(event.target.value);
+                setMaxShiftMinutes(Number.isFinite(hours) ? String(Math.round(hours * 60)) : '');
+              }}
+              className="w-32 border-mist"
+            />
+            <p className="text-xs text-sand-ink">
+              A forgotten clock-out is capped here and flagged for review (default 16h).
             </p>
           </div>
         </div>

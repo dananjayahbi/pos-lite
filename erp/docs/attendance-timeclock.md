@@ -57,7 +57,8 @@ Stored in the tenant settings JSON (no migration):
     "workingDays": [1, 2, 3, 4, 5],
     "holidays": ["2026-12-25"],
     "fullDayMinutes": 480,
-    "halfDayMinutes": 240
+    "halfDayMinutes": 240,
+    "maxShiftMinutes": 960
   }
 }
 ```
@@ -78,9 +79,29 @@ overtimeMinutes = max(0, workedMinutes − 480)
 regularMinutes  = workedMinutes − overtimeMinutes
 ```
 
-Open punches count up to the current time; the table shows them with an
-**Active** badge until they are closed. Multiple punches in one day are summed
-before the OT split.
+Open punches count up to the current time, capped at the tenant's
+`maxShiftMinutes` (default 16h). The table shows them with an **Active** badge;
+an open punch beyond the cap is displayed at the cap with a **Needs review**
+badge. Multiple punches in one day are summed before the OT split.
+
+## Forgotten clock-out (ARGUS #351)
+
+- An open punch is capped at `maxShiftMinutes` for every duration display
+  (header widget, daily table, monthly CSV, payslip inputs, time-clock
+  summary), so it can never grow unbounded.
+- Clocking out after the cap stores the clock-out at the cap (not at "now")
+  and writes an `ATTENDANCE_PUNCH_AUTO_CAPPED` audit row.
+- Clocking in while a punch from a **previous local day** is still open returns
+  `409 OPEN_PUNCH_FROM_PREVIOUS_DAY` with
+  `{ punchId, clockedInAt, cappedEndAt, maxShiftMinutes, suggestedCloseAt }`.
+  The header widget opens a dialog to close that punch at a real time; the
+  confirmation is sent back to the same endpoint as
+  `{ closePreviousPunchAt: "<ISO>" }`, which closes the old punch and starts the
+  new shift in one transaction (audited `ATTENDANCE_ADJUSTED`, reason
+  `CLOSED_BEFORE_NEXT_CLOCK_IN`). A same-day open punch still returns
+  `409 ALREADY_CLOCKED_IN`.
+- The daily page shows a warning banner + per-row **Needs review** badge; the
+  monthly CSV adds a `Needs Review` column. The real fix is Adjust clock times.
 
 ## Adjust clock times
 
@@ -148,3 +169,11 @@ without forcing a re-login.
 calendar: weekends/holidays are never absent, future days stay scheduled,
 overrides win, hour-based Present/Half Day/Insufficient grading (including
 zero-minute punches) and the payroll no-pay consistency.
+
+`src/lib/attendance/__tests__/openPunch.core.test.ts` covers the forgotten
+clock-out rules: cap at the maximum shift, overdue detection, previous-day
+detection and the suggested close time.
+
+`src/lib/attendance/__tests__/punchTimes.core.test.ts` covers manual
+punch/overlap validation. `timeclock-attendance.test.ts` also pins the
+overdue-open-punch cap (16h → 480 regular + 480 OT).

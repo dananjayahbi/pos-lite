@@ -47,6 +47,8 @@ export interface AttendanceCalendarSettings {
   fullDayMinutes: number;
   /** Worked minutes required for a Half Day (below it = Insufficient hours). */
   halfDayMinutes: number;
+  /** Maximum shift length before an open punch is capped/flagged (ARGUS #351). */
+  maxShiftMinutes: number;
 }
 
 export const DEFAULT_ATTENDANCE_CALENDAR: AttendanceCalendarSettings = {
@@ -54,6 +56,7 @@ export const DEFAULT_ATTENDANCE_CALENDAR: AttendanceCalendarSettings = {
   holidays: [],
   fullDayMinutes: DEFAULT_FULL_DAY_MINUTES,
   halfDayMinutes: DEFAULT_HALF_DAY_MINUTES,
+  maxShiftMinutes: 16 * 60,
 };
 
 const YMD_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -117,6 +120,12 @@ export function parseAttendanceCalendar(settings: unknown): AttendanceCalendarSe
       halfDayMinutesRaw < fullDayMinutes
         ? halfDayMinutesRaw
         : Math.max(30, Math.floor(fullDayMinutes / 2)),
+    maxShiftMinutes: normalizeThreshold(
+      attendance.maxShiftMinutes,
+      DEFAULT_ATTENDANCE_CALENDAR.maxShiftMinutes,
+      60,
+      1440,
+    ),
   };
 }
 
@@ -126,6 +135,7 @@ export interface AttendanceCalendarUpdate {
   holidays?: string[] | undefined;
   fullDayMinutes?: number | undefined;
   halfDayMinutes?: number | undefined;
+  maxShiftMinutes?: number | undefined;
 }
 
 /** Clamp a submitted calendar into the storable full shape. */

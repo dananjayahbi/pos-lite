@@ -72,6 +72,8 @@ export const AUDIT_ACTIONS = {
   ATTENDANCE_STATUS_SET: 'ATTENDANCE_STATUS_SET',
   // ARGUS #349: a manually added clock punch.
   ATTENDANCE_PUNCH_ADDED: 'ATTENDANCE_PUNCH_ADDED',
+  // ARGUS #351: an open punch closed at the maximum-shift cap.
+  ATTENDANCE_PUNCH_AUTO_CAPPED: 'ATTENDANCE_PUNCH_AUTO_CAPPED',
   // ARGUS #348: working-week/holiday calendar in Tenant.settings.attendance.
   ATTENDANCE_CALENDAR_UPDATED: 'ATTENDANCE_CALENDAR_UPDATED',
   // M03-08 (GAP-2): admin set-password on a staff account.

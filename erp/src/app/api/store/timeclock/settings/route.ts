@@ -25,6 +25,8 @@ const AttendanceCalendarSchema = z
     fullDayMinutes: z.number().int().min(60).max(1440).optional(),
     /** Worked minutes required for a Half Day. */
     halfDayMinutes: z.number().int().min(30).max(1439).optional(),
+    /** Maximum shift length before an open punch is capped (ARGUS #351). */
+    maxShiftMinutes: z.number().int().min(60).max(1440).optional(),
   })
   .refine(
     (value) =>

@@ -29,6 +29,7 @@ const MON_FRI: AttendanceCalendarSettings = {
   holidays: [],
   fullDayMinutes: 480,
   halfDayMinutes: 240,
+  maxShiftMinutes: 960,
 };
 
 function status(
@@ -70,15 +71,31 @@ describe('parseAttendanceCalendar', () => {
       holidays: ['2026-04-13', '2026-12-25'],
       fullDayMinutes: 480,
       halfDayMinutes: 240,
+      maxShiftMinutes: 960,
     });
   });
 
-  it('reads configurable full/half-day thresholds', () => {
+  it('reads configurable full/half-day thresholds and maximum shift', () => {
     expect(
       parseAttendanceCalendar({
-        attendance: { workingDays: [1], holidays: [], fullDayMinutes: 420, halfDayMinutes: 180 },
+        attendance: {
+          workingDays: [1],
+          holidays: [],
+          fullDayMinutes: 420,
+          halfDayMinutes: 180,
+          maxShiftMinutes: 720,
+        },
       }),
-    ).toMatchObject({ fullDayMinutes: 420, halfDayMinutes: 180 });
+    ).toMatchObject({ fullDayMinutes: 420, halfDayMinutes: 180, maxShiftMinutes: 720 });
+  });
+
+  it('clamps the maximum shift to a sane window', () => {
+    expect(
+      parseAttendanceCalendar({ attendance: { maxShiftMinutes: 5 } }).maxShiftMinutes,
+    ).toBe(60);
+    expect(
+      parseAttendanceCalendar({ attendance: { maxShiftMinutes: 5000 } }).maxShiftMinutes,
+    ).toBe(1440);
   });
 
   it('keeps the half-day threshold below the full-day threshold', () => {
