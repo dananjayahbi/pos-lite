@@ -59,7 +59,14 @@ export interface ProductListItem {
 interface ProductListResponse {
   success: boolean;
   data: ProductListItem[];
-  meta: { page: number; limit: number; total: number; totalPages: number };
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    /** Live variant rows matching the same filters (ARGUS #158). */
+    variantTotal?: number;
+    totalPages: number;
+  };
 }
 
 export function useProducts(filters: ProductFilters = {}) {

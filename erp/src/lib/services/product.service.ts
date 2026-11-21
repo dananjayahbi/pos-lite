@@ -268,7 +268,7 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
     };
   }
 
-  const [products, total] = await Promise.all([
+  const [products, total, variantTotal] = await Promise.all([
     prisma.product.findMany({
       where,
       include: {
@@ -315,9 +315,19 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
       take: limit,
     }),
     prisma.product.count({ where }),
+    // Variant rows are what lists and label printing actually show, so expose a
+    // faithful variant total for the same product filter (ARGUS #158). The
+    // relation filter reuses `where`, keeping the two totals consistent.
+    prisma.productVariant.count({
+      where: {
+        tenantId,
+        deletedAt: includeDeleted ? { not: null } : null,
+        product: where,
+      },
+    }),
   ]);
 
-  return { products, total };
+  return { products, total, variantTotal };
 }
 
 export async function getProductById(tenantId: string, productId: string) {

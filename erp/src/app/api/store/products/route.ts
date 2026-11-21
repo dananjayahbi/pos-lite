@@ -97,7 +97,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: filteredProducts,
-      meta: { page, limit, total: result.total, totalPages },
+      meta: {
+        page,
+        limit,
+        total: result.total,
+        variantTotal: result.variantTotal,
+        totalPages,
+      },
     });
   } catch (error) {
     // INF-02: one-line error mapping — Prisma P2002/P2025 and service

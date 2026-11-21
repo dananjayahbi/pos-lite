@@ -33,9 +33,20 @@ layout, field set and page count.
 - `fill the last sheet` only applies to the A4 template; the thermal roll prints
   exactly the queued copies.
 
+## Product vs variant range
+
+The picker paginates by product (10 per page) but every row and every label is a
+variant. The range therefore states both facts, for example
+`Products 1-10 of 12 · 17 of 23 variants`, and the pagination reads
+`Products page 1 of 2`. The variant total comes from the products API
+(`meta.variantTotal`), counted with the same product filter as the page, so it
+includes multi-variant products without loading them all into the browser
+(ARGUS #158). Headings now say "Add variants" / "Selected variants".
+
 ## Verification
 
 `barcode-label-templates.core.test.ts` asserts the two template ids, the A4
 24-up grid, the thermal 40 x 60 mm roll, the per-template field sets, the
 summary text and unknown-template rejection. `barcode-sheet.core.test.ts` still
-covers the pagination maths.
+covers the pagination maths, and `barcode-printing.core.test.ts` covers the
+product/variant range labels.

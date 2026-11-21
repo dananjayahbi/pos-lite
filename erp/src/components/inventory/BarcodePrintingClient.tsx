@@ -34,6 +34,10 @@ import {
   type BarcodeLabelTemplateId,
 } from '@/lib/barcode-label-templates.core';
 import {
+  formatBarcodeProductPage,
+  formatBarcodeVariantRange,
+} from '@/lib/barcode-printing.core';
+import {
   BARCODE_LABELS_PER_SHEET,
   countBarcodeLabels,
   paginateBarcodeSheet,
@@ -93,6 +97,7 @@ export function BarcodePrintingClient() {
   });
 
   const totalProducts = data?.meta?.total ?? 0;
+  const variantTotal = data?.meta?.variantTotal ?? 0;
   const totalPages = Math.max(1, data?.meta?.totalPages ?? 1);
   const firstOnPage = totalProducts === 0 ? 0 : (page - 1) * PRODUCTS_PER_PAGE + 1;
   const lastOnPage = Math.min(page * PRODUCTS_PER_PAGE, totalProducts);
@@ -269,10 +274,10 @@ export function BarcodePrintingClient() {
           </div>
           <h1 className="font-display text-3xl text-espresso">Barcode Printing</h1>
           <p className="mt-1 max-w-2xl font-body text-sm text-mist-ink">
-            Add products to the queue, then choose a label template and print.
-            Both the A4 24-up sheet and the thermal 4 x 6 cm roll use one shared
-            specification, so a product prints the same fields at every entry
-            point.
+            Add product variants to the queue, then choose a label template and
+            print. Both the A4 24-up sheet and the thermal 4 x 6 cm roll use one
+            shared specification, so a variant prints the same fields at every
+            entry point.
           </p>
         </div>
 
@@ -336,7 +341,7 @@ export function BarcodePrintingClient() {
                 htmlFor="barcode-product-search"
                 className="mb-1.5 block font-body text-xs font-medium text-espresso"
               >
-                Add products
+                Add variants
               </label>
               <div className="relative">
                 <Search className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-mist-ink" />
@@ -421,9 +426,13 @@ export function BarcodePrintingClient() {
                 data-testid="barcode-products-range"
                 className="font-body text-xs text-mist-ink"
               >
-                {totalProducts === 0
-                  ? 'No products'
-                  : `${firstOnPage}–${lastOnPage} of ${totalProducts}`}
+                {formatBarcodeVariantRange({
+                  firstProduct: firstOnPage,
+                  lastProduct: lastOnPage,
+                  totalProducts,
+                  variantsOnPage: options.length,
+                  totalVariants: variantTotal,
+                })}
               </span>
               <div className="flex items-center gap-1">
                 <Button
@@ -442,7 +451,7 @@ export function BarcodePrintingClient() {
                   aria-live="polite"
                   className="min-w-[72px] text-center font-body text-xs text-mist-ink"
                 >
-                  Page {page} of {totalPages}
+                  {formatBarcodeProductPage(page, totalPages)}
                 </span>
                 <Button
                   type="button"
@@ -462,7 +471,7 @@ export function BarcodePrintingClient() {
           <section className="rounded-lg border border-sand/40 bg-pearl">
             <div className="flex items-center justify-between border-b border-sand/40 px-3 py-2.5">
               <span className="font-body text-sm font-medium text-espresso">
-                Selected products
+                Selected variants
               </span>
               <Button
                 type="button"
