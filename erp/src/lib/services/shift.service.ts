@@ -12,6 +12,10 @@ import {
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import {
+  emptyShiftSales,
+  groupShiftSalesByShift,
+} from '@/lib/shifts/shift-sales-count';
 
 // ── Open Shift ───────────────────────────────────────────────────────────────
 
@@ -375,7 +379,6 @@ export async function getShifts(tenantId: string, filters?: GetShiftsFilters) {
       include: {
         cashier: { select: { id: true, email: true, role: true } },
         closure: true,
-        _count: { select: { sales: true } },
       },
       orderBy: { openedAt: 'desc' },
       skip,
@@ -384,7 +387,33 @@ export async function getShifts(tenantId: string, filters?: GetShiftsFilters) {
     prisma.shift.count({ where }),
   ]);
 
-  return { shifts, total };
+  // ARGUS #110: `_count.sales` included OPEN (held) and VOIDED rows, so the list
+  // labelled voided transactions as "Sales" and disagreed with the closure/
+  // Z-report (COMPLETED only). Count by status for the page's shifts, keeping
+  // the same tenant scope as the shift query.
+  const shiftIds = shifts.map((shift) => shift.id);
+  const groupedSales = shiftIds.length
+    ? await prisma.sale.groupBy({
+        by: ['shiftId', 'status'],
+        where: { tenantId, shiftId: { in: shiftIds } },
+        _count: { _all: true },
+      })
+    : [];
+  const salesByShift = groupShiftSalesByShift(
+    groupedSales.map((row) => ({
+      shiftId: row.shiftId,
+      status: row.status,
+      count: row._count._all,
+    })),
+  );
+
+  return {
+    shifts: shifts.map((shift) => ({
+      ...shift,
+      salesCounts: salesByShift.get(shift.id) ?? emptyShiftSales(),
+    })),
+    total,
+  };
 }
 
 // ── Z-Report Data ────────────────────────────────────────────────────────────
