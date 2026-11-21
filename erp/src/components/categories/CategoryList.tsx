@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Pencil } from 'lucide-react';
 import { ResourceDeleteButton, productsAssignedReason } from '@/components/shared/ResourceDeleteButton';
 import { CategoryIcon } from '@/components/categories/CategoryIcon';
+import { shouldHandleRowKey } from '@/lib/categories/categoryListKeyboard.core';
 
 interface CategoryListProps {
   categories: Category[];
@@ -45,7 +46,9 @@ export function CategoryList({
             tabIndex={0}
             onClick={() => onSelect?.(cat)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
+              // Keys pressed on the edit/delete buttons bubble here; only keys
+              // that originate on the row itself may select it (ARGUS #171).
+              if (shouldHandleRowKey(e.key, e.target === e.currentTarget)) {
                 e.preventDefault();
                 onSelect?.(cat);
               }
