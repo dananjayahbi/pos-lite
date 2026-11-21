@@ -152,10 +152,10 @@ export function POSTerminalShell({
             <RotateCcw className="h-5 w-5" />
           </Link>
           <Link
-            href="/pos/history"
+            href="/staff/shifts"
             className="inline-flex h-11 w-11 items-center justify-center rounded-md text-terracotta transition-colors hover:text-pearl focus:outline-none focus-visible:ring-2 focus-visible:ring-pearl/60"
             aria-label="Shift history"
-            title="Shift history"
+            title="Shift history - open and closed shift ledger"
           >
             <Clock className="h-5 w-5" />
           </Link>
