@@ -65,7 +65,7 @@ export function DeliveryPageClient() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search orders, customers, waybills..."
+            placeholder="Search orders, customers, phone, waybills..."
             className="w-full sm:w-64"
           />
           <Select

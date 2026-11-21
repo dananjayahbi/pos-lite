@@ -14,6 +14,7 @@ import { setSentryTenantContext } from '@/lib/sentry/context';
 import type { TxClient } from '@/lib/services/inventory.service';
 import { calculateShippingFee } from '@/lib/services/rate-engine.service';
 import { resolveShippingChargeDecision } from '@/lib/delivery/shippingConfig.core';
+import { phoneSearchVariants } from '@/lib/delivery/search.core';
 import { createShipment } from '@/lib/services/shipment.service';
 import { autoDeductPackaging, assertPackagingAvailableForDispatch, notifyLowStock } from '@/lib/services/packaging.service';
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
@@ -73,11 +74,21 @@ export async function getDeliveries(tenantId: string, filters: DeliveryFilters) 
   if (status) where.status = status;
   if (source) where.source = source;
   if (search) {
+    // ARGUS #268: a dispatch lookup is usually a phone number. Match the
+    // recipient/alternate phone, the linked customer's phone and name, plus the
+    // common phone spellings from `phoneSearchVariants`.
+    const phoneMatches = phoneSearchVariants(search).flatMap((term) => [
+      { address: { phone: { contains: term, mode: 'insensitive' as const } } },
+      { address: { phone2: { contains: term, mode: 'insensitive' as const } } },
+      { customer: { phone: { contains: term, mode: 'insensitive' as const } } },
+    ]);
     where.OR = [
       { orderRef: { contains: search, mode: 'insensitive' } },
       { courierOrderRef: { contains: search, mode: 'insensitive' } },
       { address: { fullName: { contains: search, mode: 'insensitive' } } },
+      { customer: { name: { contains: search, mode: 'insensitive' } } },
       { shipments: { some: { waybillId: { contains: search, mode: 'insensitive' } } } },
+      ...phoneMatches,
     ];
   }
   if (dateFrom || dateTo) {

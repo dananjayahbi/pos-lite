@@ -29,7 +29,7 @@ export function OrderFilters({
       <Input
         value={search}
         onChange={(e) => onSearchChange(e.target.value)}
-        placeholder="Search orders, customers..."
+        placeholder="Search orders, customers, phone, waybills..."
         className="w-72"
       />
       <Select
