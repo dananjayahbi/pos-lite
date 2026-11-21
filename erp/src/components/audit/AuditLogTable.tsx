@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { DownloadIcon } from 'lucide-react';
+import { DownloadIcon, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { auditListMode } from '@/lib/audit/auditList.core';
 import {
   Table,
   TableBody,
@@ -81,6 +83,7 @@ interface AuditLogTableProps {
 export default function AuditLogTable({ filters }: AuditLogTableProps) {
   const [page, setPage] = useState(1);
   const [selectedEntry, setSelectedEntry] = useState<AuditLogEntry | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const buildParams = useCallback(() => {
     const p = new URLSearchParams();
@@ -94,7 +97,7 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
     return p.toString();
   }, [filters, page]);
 
-  const { data, isLoading } = useQuery<AuditLogResponse>({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery<AuditLogResponse>({
     queryKey: ['auditLogs', filters.entityType, filters.action, filters.startDate, filters.endDate, filters.userId, page],
     // M35-02 (OBS-75): react-query hands us an AbortSignal — pass it through so
     // a superseded request is cancelled instead of racing the newer one. Without
@@ -124,27 +127,37 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
   }, [filters.entityType, filters.action, filters.startDate, filters.endDate, filters.userId]);
 
   async function handleExport() {
-    const params = new URLSearchParams(buildParams());
-    params.set('format', 'csv');
-    params.delete('page');
-    params.set('pageSize', '100');
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams(buildParams());
+      params.set('format', 'csv');
+      params.delete('page');
+      params.set('pageSize', '100');
 
-    const response = await fetch(`/api/audit-logs?${params.toString()}`);
-    if (!response.ok) {
-      throw new Error('Failed to export audit logs');
+      const response = await fetch(`/api/audit-logs?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error('Failed to export audit logs');
+      }
+
+      const blob = await response.blob();
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = href;
+      anchor.download = 'audit-log-export.csv';
+      anchor.click();
+      URL.revokeObjectURL(href);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to export audit logs');
+    } finally {
+      setIsExporting(false);
     }
-
-    const blob = await response.blob();
-    const href = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = href;
-    anchor.download = 'audit-log-export.csv';
-    anchor.click();
-    URL.revokeObjectURL(href);
   }
 
+  const mode = auditListMode({ isLoading, isError, count: data?.data?.length ?? 0 });
+
   // ── Loading State ──
-  if (isLoading) {
+  if (mode === 'loading') {
     return (
       <div className="space-y-3">
         {Array.from({ length: 8 }).map((_, i) => (
@@ -154,10 +167,32 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
     );
   }
 
+  // ── Error State ──
+  if (mode === 'error') {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-lg border border-red-200 bg-red-50 py-16">
+        <p className="font-medium text-red-700">Audit log could not be loaded.</p>
+        <p className="mt-1 text-sm text-red-600">
+          The request failed; this is not an empty result.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-4 border-red-300 text-red-700 hover:bg-red-100"
+          onClick={() => void refetch()}
+          disabled={isFetching}
+        >
+          <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
   const entries = data?.data ?? [];
 
   // ── Empty State ──
-  if (entries.length === 0) {
+  if (mode === 'empty') {
     return (
       <div className="flex flex-col items-center justify-center rounded-lg border border-mist bg-pearl/50 py-16">
         <p className="text-sand-ink">No audit log entries found.</p>
@@ -169,9 +204,14 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
   return (
     <>
       <div className="flex justify-end">
-        <Button variant="outline" size="sm" onClick={() => void handleExport()}>
-          <DownloadIcon className="mr-2 h-4 w-4" />
-          Export filtered CSV
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void handleExport()}
+          disabled={isExporting}
+        >
+          <DownloadIcon className={`mr-2 h-4 w-4 ${isExporting ? 'animate-pulse' : ''}`} />
+          {isExporting ? 'Exporting...' : 'Export filtered CSV'}
         </Button>
       </div>
       <div className="rounded-lg border border-mist">
