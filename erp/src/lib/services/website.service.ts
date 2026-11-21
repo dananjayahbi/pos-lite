@@ -7,7 +7,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/lib/api/errors';
-import { createAuditLog } from '@/lib/services/audit.service';
+import { AUDIT_ACTIONS, writeAuditLog } from '@/lib/services/audit.service';
 import { deleteFile } from '@/lib/storage';
 import { extractTenantAssetPath } from '@/lib/storage/asset-paths';
 import {
@@ -16,6 +16,10 @@ import {
   websiteResetSummary,
   type WebsiteResetSummary,
 } from '@/lib/website/reset.core';
+import {
+  websiteAuditRecord,
+  type WebsiteAuditActor,
+} from '@/lib/website/websiteAudit.core';
 import type { Prisma } from '@/generated/prisma/client';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -98,8 +102,10 @@ export async function getWebsiteConfig(tenantId: string) {
 export async function upsertWebsiteConfig(
   tenantId: string,
   data: Record<string, unknown>,
-  actorId?: string,
+  actor: WebsiteAuditActor,
 ) {
+  const before = await prisma.websiteConfig.findUnique({ where: { tenantId } });
+
   const config = await prisma.websiteConfig.upsert({
     where: { tenantId },
     create: {
@@ -109,17 +115,17 @@ export async function upsertWebsiteConfig(
     update: data as unknown as Prisma.WebsiteConfigUpdateInput,
   });
 
-  if (actorId) {
-    await createAuditLog({
+  await writeAuditLog(
+    websiteAuditRecord({
       tenantId,
-      actorId,
-      actorRole: 'OWNER',
+      actor,
       entityType: 'WebsiteConfig',
       entityId: config.id,
-      action: 'UPSERT',
-      after: JSON.parse(JSON.stringify(data)),
-    });
-  }
+      action: AUDIT_ACTIONS.WEBSITE_CONFIG_UPDATED,
+      before,
+      after: config,
+    }),
+  );
 
   return config;
 }
@@ -137,33 +143,87 @@ export async function createHeroSlide(
   tenantId: string,
   configId: string,
   data: Record<string, unknown>,
+  actor: WebsiteAuditActor,
 ) {
-  return prisma.websiteHeroSlide.create({
+  const slide = await prisma.websiteHeroSlide.create({
     data: {
       tenantId,
       configId,
       ...pruneEmptyStrings(data as Record<string, unknown>),
     } as unknown as Prisma.WebsiteHeroSlideCreateInput,
   });
+
+  await writeAuditLog(
+    websiteAuditRecord({
+      tenantId,
+      actor,
+      entityType: 'WebsiteHeroSlide',
+      entityId: slide.id,
+      action: AUDIT_ACTIONS.WEBSITE_HERO_SLIDE_CREATED,
+      before: null,
+      after: slide,
+    }),
+  );
+
+  return slide;
 }
 
 export async function updateHeroSlide(
   tenantId: string,
   slideId: string,
   data: Record<string, unknown>,
+  actor: WebsiteAuditActor,
 ) {
   // M29-01/BUG-68: slideId is a client-controlled route param — resolve it
   // inside the caller's tenant before writing (404 on a foreign/missing id).
   await assertWebsiteChildBelongsToTenant(tenantId, 'heroSlide', slideId);
-  return prisma.websiteHeroSlide.update({
+  const before = await prisma.websiteHeroSlide.findUniqueOrThrow({
+    where: { id: slideId },
+  });
+  const slide = await prisma.websiteHeroSlide.update({
     where: { id: slideId },
     data: pruneEmptyStrings(data) as unknown as Prisma.WebsiteHeroSlideUpdateInput,
   });
+
+  await writeAuditLog(
+    websiteAuditRecord({
+      tenantId,
+      actor,
+      entityType: 'WebsiteHeroSlide',
+      entityId: slideId,
+      action: AUDIT_ACTIONS.WEBSITE_HERO_SLIDE_UPDATED,
+      before,
+      after: slide,
+    }),
+  );
+
+  return slide;
 }
 
-export async function deleteHeroSlide(tenantId: string, slideId: string) {
+export async function deleteHeroSlide(
+  tenantId: string,
+  slideId: string,
+  actor: WebsiteAuditActor,
+) {
   await assertWebsiteChildBelongsToTenant(tenantId, 'heroSlide', slideId);
-  return prisma.websiteHeroSlide.delete({ where: { id: slideId } });
+  const before = await prisma.websiteHeroSlide.findUniqueOrThrow({
+    where: { id: slideId },
+  });
+  const deleted = await prisma.websiteHeroSlide.delete({ where: { id: slideId } });
+
+  await writeAuditLog(
+    websiteAuditRecord({
+      tenantId,
+      actor,
+      entityType: 'WebsiteHeroSlide',
+      entityId: slideId,
+      action: AUDIT_ACTIONS.WEBSITE_HERO_SLIDE_DELETED,
+      before,
+      after: null,
+    }),
+  );
+
+  return deleted;
 }
 
 export async function reorderHeroSlides(
@@ -220,9 +280,10 @@ export async function createAd(
   tenantId: string,
   configId: string,
   data: Record<string, unknown>,
+  actor: WebsiteAuditActor,
 ) {
   const cleanData = pruneEmptyStrings({ ...data } as Record<string, unknown>);
-  return prisma.websiteAd.create({
+  const ad = await prisma.websiteAd.create({
     data: {
       tenantId,
       configId,
@@ -231,15 +292,31 @@ export async function createAd(
       endsAt: toNullableDate(data.endsAt),
     } as unknown as Prisma.WebsiteAdCreateInput,
   });
+
+  await writeAuditLog(
+    websiteAuditRecord({
+      tenantId,
+      actor,
+      entityType: 'WebsiteAd',
+      entityId: ad.id,
+      action: AUDIT_ACTIONS.WEBSITE_AD_CREATED,
+      before: null,
+      after: ad,
+    }),
+  );
+
+  return ad;
 }
 
 export async function updateAd(
   tenantId: string,
   adId: string,
   data: Record<string, unknown>,
+  actor: WebsiteAuditActor,
 ) {
   // M29-01/BUG-68: same row-level gate as updateHeroSlide.
   await assertWebsiteChildBelongsToTenant(tenantId, 'ad', adId);
+  const before = await prisma.websiteAd.findUniqueOrThrow({ where: { id: adId } });
   const cleanData = pruneEmptyStrings({ ...data } as Record<string, unknown>);
   const updateData: Record<string, unknown> = { ...cleanData };
   if ('startsAt' in data) {
@@ -248,15 +325,48 @@ export async function updateAd(
   if ('endsAt' in data) {
     updateData.endsAt = toNullableDate(data.endsAt);
   }
-  return prisma.websiteAd.update({
+  const ad = await prisma.websiteAd.update({
     where: { id: adId },
     data: updateData as Prisma.WebsiteAdUpdateInput,
   });
+
+  await writeAuditLog(
+    websiteAuditRecord({
+      tenantId,
+      actor,
+      entityType: 'WebsiteAd',
+      entityId: adId,
+      action: AUDIT_ACTIONS.WEBSITE_AD_UPDATED,
+      before,
+      after: ad,
+    }),
+  );
+
+  return ad;
 }
 
-export async function deleteAd(tenantId: string, adId: string) {
+export async function deleteAd(
+  tenantId: string,
+  adId: string,
+  actor: WebsiteAuditActor,
+) {
   await assertWebsiteChildBelongsToTenant(tenantId, 'ad', adId);
-  return prisma.websiteAd.delete({ where: { id: adId } });
+  const before = await prisma.websiteAd.findUniqueOrThrow({ where: { id: adId } });
+  const deleted = await prisma.websiteAd.delete({ where: { id: adId } });
+
+  await writeAuditLog(
+    websiteAuditRecord({
+      tenantId,
+      actor,
+      entityType: 'WebsiteAd',
+      entityId: adId,
+      action: AUDIT_ACTIONS.WEBSITE_AD_DELETED,
+      before,
+      after: null,
+    }),
+  );
+
+  return deleted;
 }
 
 // ── Full reconciliation (single source of truth) ─────────────────────────────
@@ -281,7 +391,13 @@ export async function replaceHeroSlides(
     isActive?: boolean;
     sortOrder?: number;
   }[],
+  actor: WebsiteAuditActor,
 ) {
+  const before = await prisma.websiteHeroSlide.findMany({
+    where: { configId, tenantId },
+    orderBy: { sortOrder: 'asc' },
+  });
+
   await prisma.$transaction([
     // M29-01/BUG-68: configId already comes from the caller's own config, but
     // tenantId is kept in the predicate so the wipe can never cross tenants.
@@ -305,6 +421,23 @@ export async function replaceHeroSlides(
       }),
     ),
   ]);
+
+  const after = await prisma.websiteHeroSlide.findMany({
+    where: { configId, tenantId },
+    orderBy: { sortOrder: 'asc' },
+  });
+
+  await writeAuditLog(
+    websiteAuditRecord({
+      tenantId,
+      actor,
+      entityType: 'WebsiteHeroSlide',
+      entityId: configId,
+      action: AUDIT_ACTIONS.WEBSITE_HERO_SLIDES_REPLACED,
+      before: { count: before.length, slides: before },
+      after: { count: after.length, slides: after },
+    }),
+  );
 }
 
 export async function replaceAds(
@@ -322,7 +455,13 @@ export async function replaceAds(
     endsAt?: string | Date | null | undefined;
     isActive?: boolean;
   }[],
+  actor: WebsiteAuditActor,
 ) {
+  const before = await prisma.websiteAd.findMany({
+    where: { configId, tenantId },
+    orderBy: { createdAt: 'desc' },
+  });
+
   await prisma.$transaction([
     // M29-01/BUG-68: tenantId in the predicate — see replaceHeroSlides.
     prisma.websiteAd.deleteMany({ where: { configId, tenantId } }),
@@ -345,6 +484,23 @@ export async function replaceAds(
       }),
     ),
   ]);
+
+  const after = await prisma.websiteAd.findMany({
+    where: { configId, tenantId },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  await writeAuditLog(
+    websiteAuditRecord({
+      tenantId,
+      actor,
+      entityType: 'WebsiteAd',
+      entityId: configId,
+      action: AUDIT_ACTIONS.WEBSITE_ADS_REPLACED,
+      before: { count: before.length, ads: before },
+      after: { count: after.length, ads: after },
+    }),
+  );
 }
 
 /**
@@ -354,7 +510,10 @@ export async function replaceAds(
  * slides and ads, and best-effort deletes the tenant's uploaded website assets.
  * Returns a summary so the UI can report exactly what was removed (ARGUS #497).
  */
-export async function resetWebsiteConfig(tenantId: string): Promise<WebsiteResetSummary> {
+export async function resetWebsiteConfig(
+  tenantId: string,
+  actor: WebsiteAuditActor,
+): Promise<WebsiteResetSummary> {
   const existing = await prisma.websiteConfig.findUnique({
     where: { tenantId },
     include: {
@@ -396,12 +555,31 @@ export async function resetWebsiteConfig(tenantId: string): Promise<WebsiteReset
   const deletedAssets = results.filter((result) => result.status === 'fulfilled').length;
   const failedAssets = results.filter((result) => result.status === 'rejected').length;
 
-  return websiteResetSummary({
+  const summary = websiteResetSummary({
     reset: true,
     deletedAssets,
     failedAssets,
     skippedAssets,
   });
+
+  await writeAuditLog(
+    websiteAuditRecord({
+      tenantId,
+      actor,
+      entityType: 'WebsiteConfig',
+      entityId: existing.id,
+      action: AUDIT_ACTIONS.WEBSITE_CONFIG_RESET,
+      before: existing,
+      after: {
+        config: WEBSITE_RESET_CONFIG_DATA,
+        heroSlides: [],
+        ads: [],
+        ...summary,
+      },
+    }),
+  );
+
+  return summary;
 }
 
 // ── Public helpers (for customer-facing website) ─────────────────────────────

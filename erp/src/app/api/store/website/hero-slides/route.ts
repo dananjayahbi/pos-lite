@@ -52,7 +52,10 @@ export async function POST(request: Request) {
     // Ensure config exists
     let existingConfig = await getWebsiteConfig(session.user.tenantId);
     if (!existingConfig) {
-      await upsertWebsiteConfig(session.user.tenantId, {}, session.user.id);
+      await upsertWebsiteConfig(session.user.tenantId, {}, {
+        id: session.user.id,
+        role: session.user.role,
+      });
       existingConfig = await getWebsiteConfig(session.user.tenantId);
     }
     if (!existingConfig) {
@@ -79,6 +82,7 @@ export async function POST(request: Request) {
       session.user.tenantId,
       existingConfig.id,
       parsed.data as unknown as Record<string, unknown>,
+      { id: session.user.id, role: session.user.role },
     );
 
     // Revalidate the storefront config so the new hero slide appears immediately.
