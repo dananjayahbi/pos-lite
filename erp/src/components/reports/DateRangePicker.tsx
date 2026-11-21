@@ -9,17 +9,9 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { CalendarIcon } from "lucide-react";
+import { formatReportDateRange } from "@/lib/reports/labels";
 
 // ── Date helpers ────────────────────────────────────────────────
-
-function formatDateDisplay(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 function toYMD(d: Date): string {
   const y = d.getFullYear();
@@ -134,7 +126,7 @@ export default function DateRangePicker({
     }
   }
 
-  const displayText = `${formatDateDisplay(from)} – ${formatDateDisplay(to)}`;
+  const displayText = formatReportDateRange(from, to);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

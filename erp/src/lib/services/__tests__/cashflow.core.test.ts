@@ -246,3 +246,76 @@ describe('buildIncomeStatementBridge', () => {
     expect(bridge.exceptions).toEqual([]);
   });
 });
+
+/**
+ * ARGUS #424: the suite asserted shapes only. These cases pin the arithmetic and
+ * boundaries the cash-flow page depends on.
+ */
+describe('cash-flow coverage boundaries (ARGUS #424)', () => {
+  it('nets Gross Sales to Net Cash Income using cash refunds only', () => {
+    const grossSales = 138_834.03;
+    const refunds = splitCashRefunds([
+      { method: 'CASH', total: '2584.00' },
+      { method: 'CARD_REVERSAL', total: '2976.80' },
+      { method: 'STORE_CREDIT', total: '738.40' },
+      { method: 'EXCHANGE', total: '1240.40' },
+    ]);
+
+    const netCashIncome = grossSales - refunds.cash;
+    expect(refunds.cash).toBe(5560.8);
+    expect(Math.round(netCashIncome * 100) / 100).toBe(133_273.23);
+  });
+
+  it('balances an empty sales window', () => {
+    const result = reconcilePaymentMethods('0.00', []);
+    expect(result.allocated).toBe(0);
+    expect(result.unallocated).toBe(0);
+    expect(result.status).toBe('BALANCED');
+  });
+
+  it('splits unmatched and void refund entries', () => {
+    const split = classifySaleRefundEntries(
+      [
+        { sourceId: null, debit: 20, credit: 0 },
+        { sourceId: 'sale-2', debit: 5, credit: 0 },
+        { sourceId: 'return-cancel:return-9', debit: 0, credit: 7 },
+      ],
+      { returnIds: [], saleIds: ['sale-2'] },
+    );
+
+    expect(split.unmatchedDebit).toBe(20);
+    expect(split.voidDebit).toBe(5);
+    expect(split.returnCredit).toBe(7);
+  });
+
+  it('keeps purchase-order payments and adjustments in the ledger populations', () => {
+    const summary = summarizeAccountLedger([
+      { source: 'PURCHASE_ORDER_PAYMENT', debit: 0, credit: 1000 },
+      { source: 'ADJUSTMENT', debit: 0, credit: 50 },
+      { source: 'SALE', debit: 2000, credit: 0 },
+    ]);
+
+    expect(summary.purchaseOrderPaymentsNet).toBe(-1000);
+    expect(summary.adjustmentsNet).toBe(-50);
+    expect(summary.operatingMovement).toBe(950);
+    expect(summary.periodMovement).toBe(950);
+  });
+
+  it('closes below opening cash when the window is a net outflow', () => {
+    const result = reconcileCash('160039.81', [
+      { source: 'EXPENSE', debit: 0, credit: 1000 },
+    ]);
+    expect(result.netMovement).toBe('-1000.00');
+    expect(result.closingCash).toBe(159_039.81);
+  });
+
+  it('counts only petty cash in a shift summary without float', () => {
+    const result = summarizeShiftCashMovements([
+      { type: 'PETTY_CASH_OUT', count: 2, total: '70.00' },
+    ]);
+    expect(result.recordedNet).toBe(-70);
+    expect(result.operatingNet).toBe(-70);
+    expect(result.openingFloatTransfer).toBe(0);
+  });
+});
+

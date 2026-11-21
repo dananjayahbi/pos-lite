@@ -55,6 +55,7 @@ import {
   resolveReportTitle,
   type ReportFormat,
 } from "@/lib/reports/report-config";
+import { formatReportDateRange } from "@/lib/reports/labels";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PERMISSIONS, type PermissionKey } from "@/lib/constants/permissions";
 import {
@@ -241,11 +242,13 @@ function ReportLayoutInner({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { reportData } = useReportContext();
+  const { reportData, reportStatus } = useReportContext();
   const { hasPermission } = usePermissions();
   // ARGUS #438: exporting/saving a generated artifact is report:export,
   // separate from merely viewing the report.
   const canExport = hasPermission(PERMISSIONS.REPORT.exportReport);
+  // ARGUS #442: a failed report must not offer Export/Save for a blank shell.
+  const reportFailed = reportStatus === "error";
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveFormat, setSaveFormat] = useState<ReportFormat>("pdf");
@@ -317,7 +320,7 @@ function ReportLayoutInner({
     setExportOpen(false);
 
     const title = currentReportTitle;
-    const dateRange = `${from} to ${to}`;
+    const dateRange = formatReportDateRange(from, to);
     const safeName = title.replace(/\s+/g, "_");
 
     try {
@@ -478,9 +481,14 @@ function ReportLayoutInner({
             </Sheet>
           </div>
 
-          <h1 className="font-display text-lg font-bold text-espresso xl:hidden">
-            Reports
-          </h1>
+          <div className="min-w-0">
+            <p className="font-body text-[11px] uppercase tracking-wide text-mist-ink xl:hidden">
+              Reports
+            </p>
+            <h1 className="truncate font-display text-base font-bold text-espresso sm:text-lg">
+              {currentReportTitle}
+            </h1>
+          </div>
 
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 md:gap-3">
             {!isSavedReportsPage && (
@@ -493,7 +501,7 @@ function ReportLayoutInner({
 
             <div className="ml-auto flex items-center gap-2">
               {/* Export popover */}
-              {canExport && !isSavedReportsPage && (
+              {canExport && !isSavedReportsPage && !reportFailed && (
               <Popover open={exportOpen} onOpenChange={setExportOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -536,7 +544,7 @@ function ReportLayoutInner({
               )}
 
               {/* Save report dialog */}
-              {canExport && !isSavedReportsPage && (
+              {canExport && !isSavedReportsPage && !reportFailed && (
               <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
                 <DialogTrigger asChild>
                   <Button

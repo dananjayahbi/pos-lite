@@ -23,6 +23,14 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { formatLocalDateInput } from '@/lib/dates/inclusiveRange';
 import { formatRupee } from '@/lib/format';
 import { resolveCashFlowReportState } from '@/lib/reports/cashflowReportState';
+import { validateCashFlowRange } from '@/lib/reports/cashflowRange';
+import {
+  accountStatusLabel,
+  accountTypeLabel,
+  expenseCategoryLabel,
+  shareOfTotalPercent,
+} from '@/lib/reports/labels';
+import { paymentMethodLabel } from '@/lib/sales/payment-method-label';
 import type { CashFlowResult } from '@/lib/services/cashflow.service';
 
 class CashFlowRequestError extends Error {
@@ -58,11 +66,6 @@ const MOVEMENT_COLORS: Record<string, string> = {
   MANUAL_IN: 'text-green-700',
   PETTY_CASH_OUT: 'text-terracotta',
   MANUAL_OUT: 'text-terracotta',
-};
-
-const METHOD_LABELS: Record<string, string> = {
-  CASH: 'Cash',
-  CARD: 'Card',
 };
 
 const LEDGER_CATEGORY_LABELS: Record<string, string> = {
@@ -147,6 +150,7 @@ export default function CashFlowPage() {
   });
 
   function handleGenerate() {
+    if (!rangeValidation.ok) return;
     setQueryDates({ from: dateFrom, to: dateTo });
     setRunId((current) => current + 1);
   }
@@ -175,12 +179,12 @@ export default function CashFlowPage() {
 
   const netCashFlowNum = data ? parseFloat(data.netCashFlow) : 0;
 
-  // Expense bar widths
-  const maxExpense =
-    data?.expensesByCategory.reduce(
-      (max, e) => Math.max(max, parseFloat(e.total)),
-      0,
-    ) ?? 1;
+  // ARGUS #422: a reversed or incomplete range is a validation error, not an
+  // empty statement.
+  const rangeValidation = validateCashFlowRange(dateFrom, dateTo);
+
+  // Expense bar widths: share of total expenses, not of the largest category.
+  const totalExpenseValue = data ? parseFloat(data.totalExpenses) : 0;
 
   return (
     <div className="space-y-6 p-6">
@@ -216,12 +220,18 @@ export default function CashFlowPage() {
         </div>
         <Button
           onClick={handleGenerate}
-          disabled={!reportState.canGenerate}
+          disabled={!reportState.canGenerate || !rangeValidation.ok}
           className="bg-espresso text-pearl hover:bg-espresso/90"
         >
           Generate Report
         </Button>
       </div>
+
+      {!rangeValidation.ok && dateFrom && dateTo && (
+        <p role="alert" className="font-body text-sm text-terracotta">
+          {rangeValidation.message}
+        </p>
+      )}
 
       {/* Checking session / permission */}
       {reportState.mode === 'permission-loading' && (
@@ -307,7 +317,7 @@ export default function CashFlowPage() {
           <div className="grid gap-4 md:grid-cols-3">
             <Card className="border-green-200 bg-green-50">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-normal text-green-700">Total Income</CardTitle>
+                <CardTitle className="text-sm font-normal text-green-700">Net Cash Income</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="font-display text-2xl font-bold text-green-800">
@@ -590,7 +600,7 @@ export default function CashFlowPage() {
               )}
               <div className="my-2 border-t border-mist" />
               <div className="flex justify-between font-semibold">
-                <span className="text-espresso">Net cash income</span>
+                <span className="text-espresso">Net Cash Income</span>
                 <span className="font-mono text-espresso">{formatRupee(data.totalIncome)}</span>
               </div>
               {(data.incomeByMethod.length > 0 ||
@@ -601,7 +611,7 @@ export default function CashFlowPage() {
                   </p>
                   {data.incomeByMethod.map((m) => (
                     <div key={m.method} className="flex justify-between text-sm">
-                      <span className="text-sand-ink">{METHOD_LABELS[m.method] ?? m.method}</span>
+                      <span className="text-sand-ink">{paymentMethodLabel(m.method)}</span>
                       <span className="font-mono text-espresso">{formatRupee(m.total)}</span>
                     </div>
                   ))}
@@ -640,7 +650,7 @@ export default function CashFlowPage() {
               {data.refundsByMethod.length > 0 && (
                 <p className="mt-1 text-sm text-sand-ink">
                   Refunds: {data.refundsByMethod
-                    .map((m) => `${METHOD_LABELS[m.method] ?? m.method}: ${formatRupee(m.total)}`)
+                    .map((m) => `${paymentMethodLabel(m.method)}: ${formatRupee(m.total)}`)
                     .join(' · ')}
                 </p>
               )}
@@ -659,27 +669,29 @@ export default function CashFlowPage() {
                     <TableRow className="bg-linen/40">
                       <TableHead className="text-espresso">Category</TableHead>
                       <TableHead className="text-right text-espresso">Total</TableHead>
-                      <TableHead className="text-espresso" />
+                      <TableHead className="text-espresso">Share of total</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {data.expensesByCategory.map((e) => {
-                      const pct =
-                        maxExpense > 0 ? (parseFloat(e.total) / maxExpense) * 100 : 0;
+                      const pct = shareOfTotalPercent(e.total, data.totalExpenses);
                       return (
                         <TableRow key={e.category}>
-                          <TableCell>
-                            {e.category.charAt(0) + e.category.slice(1).toLowerCase()}
-                          </TableCell>
+                          <TableCell>{expenseCategoryLabel(e.category)}</TableCell>
                           <TableCell className="text-right font-mono">
                             {formatRupee(e.total)}
                           </TableCell>
-                          <TableCell className="w-40">
-                            <div className="h-3 w-full rounded bg-mist/30">
-                              <div
-                                className="h-3 rounded bg-sand"
-                                style={{ width: `${pct}%` }}
-                              />
+                          <TableCell className="w-44">
+                            <div className="flex items-center gap-2">
+                              <div className="h-3 flex-1 rounded bg-mist/30">
+                                <div
+                                  className="h-3 rounded bg-sand"
+                                  style={{ width: `${Math.min(pct, 100)}%` }}
+                                />
+                              </div>
+                              <span className="w-14 text-right font-mono text-xs text-espresso">
+                                {pct.toFixed(1)}%
+                              </span>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -690,7 +702,9 @@ export default function CashFlowPage() {
                       <TableCell className="text-right font-mono">
                         {formatRupee(data.totalExpenses)}
                       </TableCell>
-                      <TableCell />
+                      <TableCell className="text-right font-mono text-xs">
+                        {totalExpenseValue > 0 ? '100.0%' : '0.0%'}
+                      </TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -713,6 +727,7 @@ export default function CashFlowPage() {
                     <TableRow className="bg-linen/40">
                       <TableHead className="text-espresso">Account</TableHead>
                       <TableHead className="text-espresso">Type</TableHead>
+                      <TableHead className="text-espresso">Status</TableHead>
                       <TableHead className="text-right text-espresso">Operating In</TableHead>
                       <TableHead className="text-right text-espresso">Operating Out</TableHead>
                       <TableHead className="text-right text-espresso">Transfers Net</TableHead>
@@ -727,7 +742,19 @@ export default function CashFlowPage() {
                     {data.paymentAccountActivity.map((account) => (
                       <TableRow key={account.accountId}>
                         <TableCell className="font-medium">{account.accountName}</TableCell>
-                        <TableCell className="text-sand-ink">{account.accountType.replace(/_/g, ' ')}</TableCell>
+                        <TableCell className="text-sand-ink">{accountTypeLabel(account.accountType)}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={
+                              account.status === 'CLOSED'
+                                ? 'border-mist text-mist-ink'
+                                : 'border-green-300 text-green-700'
+                            }
+                          >
+                            {accountStatusLabel(account.status)}
+                          </Badge>
+                        </TableCell>
                         <TableCell className="text-right font-mono text-green-700">
                           {formatRupee(account.operatingDebit)}
                         </TableCell>
@@ -755,7 +782,7 @@ export default function CashFlowPage() {
                       </TableRow>
                     ))}
                     <TableRow className="bg-linen/40 font-semibold">
-                      <TableCell colSpan={2}>Total</TableCell>
+                      <TableCell colSpan={3}>Total</TableCell>
                       <TableCell className="text-right font-mono text-green-700">
                         {formatRupee(data.paymentAccountTotals.operatingDebit)}
                       </TableCell>
@@ -781,7 +808,8 @@ export default function CashFlowPage() {
                   Operating In / Out exclude opening balances and internal transfers. Transfers Net
                   is the movement between accounts, and Opening Balance is a one-off capital entry
                   in the window - neither is income. Period Movement is the window movement, not
-                  the all-time Current Balance.
+                  the all-time Current Balance. Closed accounts keep their period flows in this
+                  table (they happened) but are excluded from the active balance total.
                 </p>
               </CardContent>
             </Card>

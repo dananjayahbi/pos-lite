@@ -5,6 +5,7 @@ import Decimal from "decimal.js";
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { isLowStockVariant } from '@/lib/inventory/lowStockPredicate';
+import { STOCK_SCOPE_PRISMA_WHERE } from '@/lib/inventory/stockScope';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -35,8 +36,7 @@ export async function GET(request: NextRequest) {
     const variants = await prisma.productVariant.findMany({
       where: {
         tenantId,
-        deletedAt: null,
-        product: { deletedAt: null, isArchived: false },
+        ...STOCK_SCOPE_PRISMA_WHERE,
       },
       include: {
         product: {

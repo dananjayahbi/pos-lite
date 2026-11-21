@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -15,7 +17,10 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReportContext } from "@/lib/reports/ReportContext";
-import { salesProductLabel } from "@/lib/reports/sales-report";
+import { formatRupee } from "@/lib/format";
+import { resolveReportErrorMessage } from "@/lib/reports/reportError";
+import { buildSalesExportRows } from "@/lib/reports/reportRows";
+import { salesProductLabel, topRevenueProducts } from "@/lib/reports/sales-report";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -37,12 +42,7 @@ function toYMD(d: Date): string {
 }
 
 function fmtCurrency(val: string | number): string {
-  const num = typeof val === "number" ? val : parseFloat(val);
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "LKR",
-    minimumFractionDigits: 2,
-  }).format(num);
+  return formatRupee(val);
 }
 
 // ── Types ────────────────────────────────────────────────────────
@@ -67,6 +67,8 @@ interface SalesTotals {
   grossRevenue: string;
   totalReturns: string;
   netRevenue: string;
+  /** Sum of the displayed row percentages (ARGUS #439). */
+  pctOfTotal?: string;
 }
 
 interface SalesData {
@@ -86,9 +88,11 @@ async function fetchSales(from: string, to: string): Promise<SalesData> {
   const res = await fetch(
     `/api/reports/sales?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
   );
-  if (!res.ok) throw new Error("Failed to fetch report");
-  const json: SalesResponse = await res.json();
-  if (!json.success) throw new Error(json.error?.message ?? "Unknown error");
+  // ARGUS #442: read the envelope on non-2xx too, so a typed 403/500 message is
+  // shown instead of a generic "Failed to fetch report".
+  const json = (await res.json().catch(() => null)) as SalesResponse | null;
+  if (!res.ok) throw new Error(resolveReportErrorMessage(res.status, json));
+  if (!json?.success) throw new Error(json?.error?.message ?? "Unknown error");
   return json.data;
 }
 
@@ -120,12 +124,12 @@ export default function SalesReportClient() {
   const searchParams = useSearchParams();
   const from = searchParams.get("from") ?? defaultFrom();
   const to = searchParams.get("to") ?? defaultTo();
-  const { setReportData } = useReportContext();
+  const { setReportData, setReportStatus } = useReportContext();
 
   const [sortKey, setSortKey] = useState<SortKey>("netRevenue");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["sales-report", from, to],
     queryFn: () => fetchSales(from, to),
   });
@@ -135,28 +139,35 @@ export default function SalesReportClient() {
     return sortProducts(data.products, sortKey, sortDir);
   }, [data, sortKey, sortDir]);
 
-  const top10 = useMemo(() => sorted.slice(0, 10), [sorted]);
+  // ARGUS #439: chart only products with positive revenue, so a zero-value
+  // variant cannot render as a 0-width "top" bar.
+  const top10 = useMemo(() => topRevenueProducts(sorted, 10), [sorted]);
   const maxBar = useMemo(() => {
     if (top10.length === 0) return 1;
     return Math.max(...top10.map((p) => parseFloat(p.netRevenue)), 1);
   }, [top10]);
 
+  const totalPct = useMemo(() => {
+    if (data?.totals.pctOfTotal) return data.totals.pctOfTotal;
+    return data
+      ? data.products
+          .reduce((sum, p) => sum + (parseFloat(p.pctOfTotal) || 0), 0)
+          .toFixed(2)
+      : "0.00";
+  }, [data]);
+
   // Push data to ReportContext for export
   useEffect(() => {
     if (!data) return;
-    const rows: Record<string, unknown>[] = data.products.map((p) => ({
-      Product: p.productName,
-      Variant: p.variantDescription,
-      "Units Sold": p.unitsSold,
-      "Returned Qty": p.returnedUnits,
-      "Net Units": p.netUnits,
-      "Gross Revenue": p.grossRevenue,
-      Returns: p.returns,
-      "Net Revenue": p.netRevenue,
-      "% of Total": p.pctOfTotal,
-    }));
-    setReportData(rows);
+    setReportData(buildSalesExportRows(data));
   }, [data, setReportData]);
+
+  // ARGUS #442: a failed request hides the layout's Export/Save controls; a
+  // retry puts them back when rows arrive.
+  useEffect(() => {
+    if (error) setReportStatus("error");
+    else if (isLoading) setReportStatus("loading");
+  }, [error, isLoading, setReportStatus]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -176,8 +187,18 @@ export default function SalesReportClient() {
 
   if (error) {
     return (
-      <div className="p-6 text-center text-red-600">
-        Failed to load report: {error.message}
+      <div className="mx-auto max-w-xl p-6 text-center">
+        <p className="text-red-600">Failed to load report: {error.message}</p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => {
+            void refetch();
+          }}
+        >
+          <RefreshCw className="mr-1 h-4 w-4" />
+          Retry
+        </Button>
       </div>
     );
   }
@@ -338,7 +359,7 @@ export default function SalesReportClient() {
                   <TableCell className="text-right font-mono">
                     {fmtCurrency(data.totals.netRevenue)}
                   </TableCell>
-                  <TableCell className="text-right font-mono">100%</TableCell>
+                  <TableCell className="text-right font-mono">{totalPct}%</TableCell>
                 </TableRow>
               </TableFooter>
             </Table>

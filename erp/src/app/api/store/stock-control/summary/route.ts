@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
 import { LOW_STOCK_PRODUCT_SCOPE_SQL, LOW_STOCK_SQL_PREDICATE } from '@/lib/inventory/lowStockPredicate';
+import { STOCK_SCOPE_SQL } from '@/lib/inventory/stockScope';
 
 export async function GET() {
   try {
@@ -48,10 +49,11 @@ export async function GET() {
         }),
 
         prisma.$queryRaw<[{ total: string | null }]>`
-          SELECT SUM("stockQuantity" * "retailPrice") as total
-          FROM product_variants
-          WHERE "tenantId" = ${tenantId}
-            AND "deletedAt" IS NULL
+          SELECT SUM(pv."stockQuantity" * pv."retailPrice") as total
+          FROM product_variants pv
+          JOIN products p ON pv."productId" = p."id"
+          WHERE pv."tenantId" = ${tenantId}
+            AND ${Prisma.raw(STOCK_SCOPE_SQL)}
         `,
       ]);
 

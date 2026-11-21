@@ -5,6 +5,8 @@ interface CategoryBreakdown {
   categoryName: string;
   variantCount: number;
   retailValue: number;
+  vatAmount?: number;
+  ssclAmount?: number;
   taxAmount: number;
   retailValueInclTax: number;
   costValue: number;
