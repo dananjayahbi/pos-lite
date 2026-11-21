@@ -214,7 +214,7 @@ export function OrderInvoice({ data }: { data: OrderInvoiceData }) {
               <span>{formatRupee(data.shippingFee!)}</span>
             </div>
           )}
-          {data.codAmount > 0 && (
+          {data.codAmount > 0 && data.paymentMethod !== 'CARD' && data.paymentStatus !== 'PAID' && (
             <div className="flex justify-between">
               <span className="text-espresso/60">COD Amount</span>
               <span>{formatRupee(data.codAmount)}</span>

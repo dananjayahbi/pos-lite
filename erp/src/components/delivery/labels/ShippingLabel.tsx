@@ -10,6 +10,7 @@ import {
   waybillBarcodeValue,
 } from '@/lib/delivery/waybill';
 import type { DeliveryLabelTemplate } from '@/types/delivery-label';
+import { collectableCodAmount, isPrepaidOrder } from '@/lib/delivery/cod';
 import { buildSampleLabelProps, buildSampleSheetProps } from './sampleLabel';
 
 interface Address {
@@ -26,6 +27,7 @@ interface Address {
 interface DeliveryLike {
   orderRef: string;
   codAmount: string | number;
+  paymentStatus?: string | null | undefined;
   itemCount?: number | undefined;
   totalWeightKg?: string | number | null | undefined;
   deliveredAt?: string | null | undefined;
@@ -47,6 +49,7 @@ interface ShippingLabelProps {
 interface LabelDeliveryLike {
   orderRef: string;
   codAmount?: string | number | null;
+  paymentStatus?: string | null;
   itemCount?: number | null;
   totalWeightKg?: string | number | null;
   waybill?: string | null;
@@ -174,7 +177,14 @@ export function ShippingLabel({ template, address, delivery, waybillId }: Shippi
         <WaybillRow label="Address" value={fullAddress || '-'} />
         <WaybillRow label="Branch" value={branch || '-'} />
         <WaybillRow label="Contact" value={contact || '-'} />
-        <WaybillRow label="COD" value={formatWaybillAmount(delivery.codAmount)} />
+        <WaybillRow
+          label="COD"
+          value={
+            isPrepaidOrder(delivery)
+              ? 'PREPAID'
+              : formatWaybillAmount(collectableCodAmount(delivery).toNumber())
+          }
+        />
       </div>
 
       <div className="mt-[3.5mm] flex items-start justify-between gap-[4mm] border-b border-black pb-[1.7mm]">
@@ -215,6 +225,7 @@ export function toLabelProps(delivery: LabelDeliveryLike): {
     delivery: {
       orderRef: delivery.orderRef ?? '',
       codAmount: delivery.codAmount ?? 0,
+      paymentStatus: delivery.paymentStatus ?? null,
       itemCount: delivery.itemCount ?? 1,
       totalWeightKg: delivery.totalWeightKg,
       deliveredAt: delivery.deliveredAt ?? null,

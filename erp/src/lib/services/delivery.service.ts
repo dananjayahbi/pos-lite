@@ -472,7 +472,7 @@ export async function dispatchDelivery(
       cityName: existing.address.cityName,
       districtId: existing.address.districtId,
     },
-    { orderRef: existing.orderRef, codAmount: existing.codAmount, notes: existing.notes, itemCount: existing.itemCount },
+    { orderRef: existing.orderRef, codAmount: existing.codAmount, paymentStatus: existing.paymentStatus, notes: existing.notes, itemCount: existing.itemCount },
     { waybillId: input.waybillMode === 'MANUAL' ? input.manualWaybillId : undefined },
   );
 

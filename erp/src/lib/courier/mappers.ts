@@ -1,7 +1,7 @@
 import "server-only";
 
-import Decimal from "decimal.js";
 import { formatPhoneNumber } from "@/lib/whatsapp";
+import { collectableCodAmount } from "@/lib/delivery/cod";
 import type { CourierOrderPayload } from "@/lib/courier/types";
 
 /**
@@ -27,6 +27,8 @@ interface MapperAddress {
 interface MapperDelivery {
   orderRef: string;
   codAmount: { toString(): string };
+  /** PAID orders are prepaid and must reach the courier with COD 0. */
+  paymentStatus?: string | null | undefined;
   notes?: string | null | undefined;
   itemCount?: number | undefined;
 }
@@ -59,7 +61,7 @@ export function toCourierOrderPayload(
     address: street,
     phone: normalizePhone(address.phone),
     phone2: address.phone2 ? normalizePhone(address.phone2) : undefined,
-    cod: Number(new Decimal(delivery.codAmount.toString()).toFixed(2)),
+    cod: collectableCodAmount(delivery).toNumber(),
     cityId: address.cityId ?? undefined,
     cityText: address.cityId ? undefined : (address.cityName ?? undefined),
     districtId: address.districtId ?? undefined,
