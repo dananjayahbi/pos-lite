@@ -118,9 +118,18 @@ For each agent commit:
   inclusive To, complete export), #468 (owner-only tax + audited settings),
   #487 (storefront brand notice), #511 (COD reconciliation ledger/backfill),
   plus the void-credit restoration follow-up.
-- Batch 6 in flight: #54 (notification Open links), #65 (negative discount
-  total), #66 (cart after logout), #67 queued (discount summary).
-- Checkpoint after batch 5: full suite green at 1,466 tests.
+- Batch 6 merged: #54 (notification Open links), #65 (no negative stacked
+  discount), #66 (cart scoped/cleared on logout), #67 (discount summary),
+  #68 (promo hygiene), #77 (server payment filter), #78 (sales history RBAC),
+  #79 (invalid filter 400), #80 (pagination cap), #99/#100 (refund preview,
+  returns ledger RBAC).
+- In flight: #101 (return receipt transparency) and #110 (shift sales count);
+  #102 (return reversal) and #111 (shift data RBAC) are held to avoid
+  return/shift-service conflicts while those run.
+- DB migration `20261121160000_raw_material_costing` is committed but the remote
+  Postgres host (140.238.145.221:5432) is unreachable (P1001); deploy with
+  `cd erp && npx prisma migrate deploy` when it is back.
+- Checkpoint after batch 6: full suite green at 1,518 tests.
 - Worktrees are reset with `git -C <wt> reset --hard argus_qa` between batches;
   their old commits are already merged, so this is safe.
 - Every agent task must call `log_task_progress` before `submit_for_review`
