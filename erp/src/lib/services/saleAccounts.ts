@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
 
 import { PaymentEntrySource } from '@/generated/prisma/client';
+import type { PaymentLegMethod, ReturnRefundMethod } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import { postLedgerEntries } from '@/lib/services/paymentAccount.service';
 import type { TxClient } from '@/lib/services/inventory.service';
@@ -239,4 +240,98 @@ export function buildSaleAccountLegs(input: {
     default:
       return [];
   }
+}
+
+// ── Return refunds ───────────────────────────────────────────────────────────
+
+/**
+ * ARGUS #97 — which account leg a refund should credit.
+ *
+ * Sale money is debited into the account for its tender; a refund moves it the
+ * other way, so the leg is credited. Cash refunds credit Cash; a card reversal
+ * credits the card/gateway account that took the original digital tender.
+ * Store credit and exchange move no account money (a customer balance / the
+ * replacement sale settles them).
+ */
+export function buildReturnAccountLegs(input: {
+  refundMethod: ReturnRefundMethod;
+  refundAmount: Decimal | number | string;
+  /** Tenders collected on the original sale (`Payment` legs). */
+  originalTenders: Iterable<PaymentLegMethod>;
+}): SaleAccountLeg[] {
+  const amount = new Decimal(input.refundAmount);
+  if (amount.lessThanOrEqualTo(0)) return [];
+
+  if (input.refundMethod === 'STORE_CREDIT' || input.refundMethod === 'EXCHANGE') {
+    return [];
+  }
+
+  const tenders = new Set(input.originalTenders);
+
+  if (input.refundMethod === 'CASH') {
+    // Guarded by ARGUS #96 in the service; returning [] here keeps the ledger
+    // truthful for historical records that bypassed the rule.
+    return tenders.has('CASH') ? [{ method: 'CASH', amount }] : [];
+  }
+
+  // CARD_REVERSAL — return through the digital account the sale actually used.
+  const digitalTender: TenderMethod | null = tenders.has('CARD')
+    ? 'CARD'
+    : tenders.has('LANKAQR')
+      ? 'LANKAQR'
+      : null;
+
+  return digitalTender ? [{ method: digitalTender, amount }] : [];
+}
+
+/**
+ * Post the refund leg for a completed return.
+ *
+ * Must be called inside the return's transaction so the return row and the
+ * money movement commit together. When the tenant has no eligible account the
+ * entry is skipped, mirroring sales — accounting must never block a refund.
+ */
+export async function postReturnRefundToAccounts(
+  tx: TxClient,
+  tenantId: string,
+  actorId: string,
+  returnId: string,
+  returnReference: string,
+  legs: SaleAccountLeg[],
+): Promise<number> {
+  const lines: Array<{
+    accountId: string;
+    source: PaymentEntrySource;
+    sourceId: string;
+    description: string;
+    credit: number;
+  }> = [];
+
+  const resolved = new Map<TenderMethod, string | null>();
+
+  for (const leg of legs) {
+    const amount = new Decimal(leg.amount);
+    if (amount.lessThanOrEqualTo(0)) continue;
+
+    let accountId = resolved.get(leg.method) ?? null;
+    if (!resolved.has(leg.method)) {
+      accountId = await resolveSaleAccountId({ tenantId, method: leg.method });
+      resolved.set(leg.method, accountId);
+    }
+
+    if (!accountId) continue;
+
+    lines.push({
+      accountId,
+      source: PaymentEntrySource.SALE_REFUND,
+      sourceId: returnId,
+      description: `Refund ${returnReference} (${leg.method})`,
+      credit: amount.toDecimalPlaces(2).toNumber(),
+    });
+  }
+
+  if (lines.length === 0) return 0;
+
+  await postLedgerEntries(tx, tenantId, actorId, lines);
+  return lines.length;
 }

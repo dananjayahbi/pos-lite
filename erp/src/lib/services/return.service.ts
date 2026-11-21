@@ -13,6 +13,10 @@ import {
   collectedTenderMethods,
   refundMethodTenderMismatchReason,
 } from '@/lib/services/returnTender.core';
+import {
+  buildReturnAccountLegs,
+  postReturnRefundToAccounts,
+} from '@/lib/services/saleAccounts';
 import { issueCredit } from '@/lib/services/customer.service';
 
 const RETURN_WINDOW_DAYS = 30;
@@ -311,7 +315,28 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
       );
     }
 
-    // 7. Return fully loaded record
+    // 7. Post the refund leg so account balances and cash flow reconcile
+    // (ARGUS #97). Cash leaves the cash account, a card reversal credits the
+    // card/gateway account the sale landed in, and store credit/exchange move
+    // no account money. Skipped when the tenant has no eligible account.
+    const returnReference = returnRecord.id.slice(0, 8).toUpperCase();
+    const refundAccountLegs = buildReturnAccountLegs({
+      refundMethod: input.refundMethod,
+      refundAmount: totalRefund,
+      originalTenders: collectedTenderMethods(sale),
+    });
+    if (refundAccountLegs.length > 0) {
+      await postReturnRefundToAccounts(
+        tx,
+        tenantId,
+        input.initiatedById,
+        returnRecord.id,
+        returnReference,
+        refundAccountLegs,
+      );
+    }
+
+    // 8. Return fully loaded record
     return tx.return.findUniqueOrThrow({
       where: { id: returnRecord.id },
       include: {
