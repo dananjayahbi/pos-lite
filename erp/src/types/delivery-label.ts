@@ -47,3 +47,15 @@ export const EMPTY_LABEL_TEMPLATE_META: LabelTemplateMeta = {
   updatedByRole: null,
   action: null,
 };
+
+/** One reviewable label-template audit row (ARGUS #306). */
+export interface LabelTemplateHistoryEntry {
+  id: string;
+  createdAt: string;
+  actorId: string | null;
+  actorEmail: string | null;
+  actorRole: string;
+  action: string;
+  before: unknown;
+  after: unknown;
+}

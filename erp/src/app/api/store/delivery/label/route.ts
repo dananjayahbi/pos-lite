@@ -8,6 +8,7 @@ import {
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import {
   getLabelTemplateBundle,
+  getLabelTemplateHistory,
   saveLabelTemplate,
   resetLabelTemplate,
 } from '@/lib/services/label.service';
@@ -21,13 +22,22 @@ export async function GET() {
   if (!guard.ok) return guard.response;
 
   try {
-    const bundle = await getLabelTemplateBundle(guard.tenantId);
+    const [bundle, history] = await Promise.all([
+      getLabelTemplateBundle(guard.tenantId),
+      getLabelTemplateHistory(guard.tenantId),
+    ]);
     return NextResponse.json({
       success: true,
       data: bundle.template,
       // The client needs the tenant identity to fill an empty sender even
       // before anything is saved (ARGUS #298).
-      meta: { branding: bundle.branding, saved: bundle.saved, templateMeta: bundle.meta },
+      meta: {
+        branding: bundle.branding,
+        saved: bundle.saved,
+        templateMeta: bundle.meta,
+        // ARGUS #306: reviewable before/after change trail.
+        history,
+      },
     });
   } catch (error) {
     console.error('GET /api/store/delivery/label error:', error);
@@ -52,18 +62,31 @@ export async function PUT(request: Request) {
   }
 
   try {
+    // ARGUS #306: capture the sender values that are being replaced, not just
+    // the fact that an update happened.
+    const before = await getLabelTemplateBundle(guard.tenantId);
     const template = await saveLabelTemplate(guard.tenantId, parsed.data, {
       id: guard.userId,
       email: guard.email,
       role: guard.role,
     });
-    void createAuditLog({
+    await createAuditLog({
       tenantId: guard.tenantId,
       actorId: guard.userId,
-      actorRole: 'UNKNOWN',
+      actorRole: guard.role,
       entityType: 'LabelTemplate',
       entityId: guard.tenantId,
       action: AUDIT_ACTIONS.LABEL_TEMPLATE_UPDATED,
+      before: {
+        brandName: before.template.brandName,
+        fromContact: before.template.fromContact,
+        pickupAddress: before.template.pickupAddress ?? '',
+      },
+      after: {
+        brandName: template.brandName,
+        fromContact: template.fromContact,
+        pickupAddress: template.pickupAddress ?? '',
+      },
     });
     return NextResponse.json({ success: true, data: template });
   } catch (error) {
@@ -77,18 +100,26 @@ export async function POST() {
   if (!guard.ok) return guard.response;
 
   try {
+    const before = await getLabelTemplateBundle(guard.tenantId);
     const template = await resetLabelTemplate(guard.tenantId, {
       id: guard.userId,
       email: guard.email,
       role: guard.role,
     });
-    void createAuditLog({
+    await createAuditLog({
       tenantId: guard.tenantId,
       actorId: guard.userId,
-      actorRole: 'UNKNOWN',
+      actorRole: guard.role,
       entityType: 'LabelTemplate',
       entityId: guard.tenantId,
       action: AUDIT_ACTIONS.LABEL_TEMPLATE_UPDATED,
+      before: {
+        brandName: before.template.brandName,
+        fromContact: before.template.fromContact,
+        pickupAddress: before.template.pickupAddress ?? '',
+      },
+      // A reset removes the saved override; the Store Profile sender remains.
+      after: null,
     });
     return NextResponse.json({ success: true, data: template });
   } catch (error) {

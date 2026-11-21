@@ -7,6 +7,7 @@ import {
   EMPTY_LABEL_TEMPLATE_META,
   type DeliveryLabelTemplate,
   type LabelBranding,
+  type LabelTemplateHistoryEntry,
   type LabelTemplateMeta,
 } from '@/types/delivery-label';
 import type { LabelTemplateInput } from '@/lib/validators/label.validators';
@@ -188,4 +189,50 @@ export async function resetLabelTemplate(
   });
 
   return getLabelTemplate(tenantId);
+}
+
+/**
+ * ARGUS #306: the recent label-template audit rows, resolved with the acting
+ * user's email so the designer can show a reviewable before/after history.
+ */export async function getLabelTemplateHistory(
+  tenantId: string,
+  limit = 5,
+): Promise<LabelTemplateHistoryEntry[]> {
+  const rows = await prisma.auditLog.findMany({
+    where: { tenantId, entityType: 'LabelTemplate' },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    select: {
+      id: true,
+      createdAt: true,
+      actorId: true,
+      actorRole: true,
+      action: true,
+      before: true,
+      after: true,
+    },
+  });
+
+  const actorIds = [
+    ...new Set(rows.map((row) => row.actorId).filter((id): id is string => Boolean(id))),
+  ];
+  const actors =
+    actorIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: actorIds }, tenantId },
+          select: { id: true, email: true },
+        })
+      : [];
+  const emailById = new Map(actors.map((actor) => [actor.id, actor.email]));
+
+  return rows.map((row) => ({
+    id: row.id,
+    createdAt: row.createdAt.toISOString(),
+    actorId: row.actorId,
+    actorEmail: row.actorId ? emailById.get(row.actorId) ?? null : null,
+    actorRole: row.actorRole,
+    action: row.action,
+    before: row.before,
+    after: row.after,
+  }));
 }

@@ -8,6 +8,7 @@ import type {
   LabelTemplateMeta,
 } from '@/types/delivery-label';
 import { EMPTY_LABEL_TEMPLATE_META } from '@/types/delivery-label';
+import type { LabelTemplateHistoryEntry } from '@/types/delivery-label';
 import type { LabelTemplateInput } from '@/lib/validators/label.validators';
 
 interface LabelTemplatePayload {
@@ -15,6 +16,7 @@ interface LabelTemplatePayload {
   branding: LabelBranding;
   saved: boolean;
   meta: LabelTemplateMeta;
+  history: LabelTemplateHistoryEntry[];
 }
 
 /**
@@ -43,6 +45,7 @@ export function useLabelTemplate() {
         }) as LabelBranding,
         saved: Boolean(json.meta?.saved),
         meta: (json.meta?.templateMeta ?? EMPTY_LABEL_TEMPLATE_META) as LabelTemplateMeta,
+        history: (json.meta?.history ?? []) as LabelTemplateHistoryEntry[],
       };
     },
     staleTime: 60_000,
@@ -95,6 +98,7 @@ export function useLabelTemplate() {
     branding: query.data?.branding ?? null,
     saved: query.data?.saved ?? false,
     meta: query.data?.meta ?? EMPTY_LABEL_TEMPLATE_META,
+    history: query.data?.history ?? [],
     isLoading: query.isLoading,
     isError: query.isError,
     error: query.error,

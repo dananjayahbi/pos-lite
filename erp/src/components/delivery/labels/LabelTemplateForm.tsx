@@ -12,11 +12,20 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { labelTemplateProvenance } from './labelTemplateState';
-import type { DeliveryLabelTemplate, LabelTemplateMeta } from '@/types/delivery-label';
+import { labelSenderChanges, toLabelSenderSnapshot } from '@/lib/delivery/labelAudit.core';
+import { formatShortDateTime } from '@/lib/format';
+import { staffDisplayName } from '@/lib/utils/staff-name';
+import type {
+  DeliveryLabelTemplate,
+  LabelTemplateHistoryEntry,
+  LabelTemplateMeta,
+} from '@/types/delivery-label';
 
 interface LabelTemplateFormProps {
   template: DeliveryLabelTemplate;
   meta?: LabelTemplateMeta | null;
+  /** Recent audit rows, newest first (ARGUS #306). */
+  history?: LabelTemplateHistoryEntry[];
   /** True when a saved override exists that a reset would discard. */
   canReset?: boolean;
   isResetting?: boolean;
@@ -46,6 +55,7 @@ function SenderValue({ label, value }: { label: string; value: string }) {
 export function LabelTemplateForm({
   template,
   meta,
+  history = [],
   canReset = false,
   isResetting = false,
   onReset,
@@ -134,6 +144,61 @@ export function LabelTemplateForm({
                 </Button>
               </div>
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-mist">
+        <CardHeader>
+          <CardTitle className="font-display text-espresso">Recent changes</CardTitle>
+          <CardDescription>
+            Sender values recorded by each save or reset, newest first.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {history.length === 0 ? (
+            <p className="text-sm text-espresso/50">
+              No waybill template changes have been recorded yet.
+            </p>
+          ) : (
+            <ol className="space-y-3">
+              {history.map((entry) => {
+                const before = toLabelSenderSnapshot(entry.before);
+                const changes = labelSenderChanges(before, toLabelSenderSnapshot(entry.after));
+                const isReset = before !== null && entry.after === null;
+                return (
+                  <li
+                    key={entry.id}
+                    className="rounded-md border border-mist/60 bg-linen/30 px-3 py-2"
+                  >
+                    <p className="text-sm text-espresso">
+                      {isReset ? 'Reset to defaults' : 'Saved'} ·{' '}
+                      {formatShortDateTime(entry.createdAt)}
+                    </p>
+                    <p className="text-xs text-sand-ink">
+                      {entry.actorEmail ? staffDisplayName(entry.actorEmail) : 'Unknown user'}
+                      {entry.actorRole && entry.actorRole !== 'UNKNOWN'
+                        ? ` · ${entry.actorRole.replace(/_/g, ' ').toLowerCase()}`
+                        : ''}
+                    </p>
+                    {changes.length === 0 ? (
+                      <p className="mt-1 text-xs text-sand-ink">
+                        {isReset ? 'Saved override removed.' : 'No sender value changed.'}
+                      </p>
+                    ) : (
+                      <ul className="mt-1 space-y-0.5 text-xs text-espresso/70">
+                        {changes.map((change) => (
+                          <li key={change.field}>
+                            {change.field}: {change.from || '(blank)'} →{' '}
+                            {change.to || '(cleared)'}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
           )}
         </CardContent>
       </Card>

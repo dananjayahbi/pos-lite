@@ -20,6 +20,7 @@ export function LabelDesignerClient() {
     branding,
     saved,
     meta,
+    history,
     isLoading,
     isError,
     error,
@@ -102,6 +103,7 @@ export function LabelDesignerClient() {
         <LabelTemplateForm
           template={template}
           meta={meta}
+          history={history}
           canReset={canManage && saved}
           isResetting={reset.isPending}
           onReset={() => reset.mutate()}
