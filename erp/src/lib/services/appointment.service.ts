@@ -27,6 +27,7 @@ import {
   appointmentOverdueCutoff,
 } from '@/lib/appointments/appointmentOverdue.core';
 import { appointmentAvailabilityIssue } from '@/lib/appointments/appointmentAvailability.core';
+import { APPOINTMENT_OPEN_STATUSES } from '@/lib/appointments/appointmentList.core';
 import {
   appointmentActionBlockReason,
   type AppointmentLifecycleAction,
@@ -173,16 +174,64 @@ export async function getAppointments(tenantId: string, filters: Partial<Appoint
     ...(Object.keys(startTimeFilter).length > 0 ? { startTime: startTimeFilter } : {}),
   };
 
-  const [appointments, total] = await Promise.all([
-    prisma.appointment.findMany({
+  // ARGUS #129: upcoming active rows first (nearest first), then past/terminal
+  // rows (most recent first). Pagination is applied across that global order,
+  // so cancelled QA rows cannot occupy page 1 ahead of upcoming bookings.
+  const now = new Date();
+  const upcomingWhere: Prisma.AppointmentWhereInput = {
+    AND: [
       where,
-      include: appointmentInclude,
-      orderBy: { startTime: 'asc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
+      { status: { in: [...APPOINTMENT_OPEN_STATUSES] } },
+      { startTime: { gte: now } },
+    ],
+  };
+  const pastWhere: Prisma.AppointmentWhereInput = {
+    AND: [
+      where,
+      {
+        OR: [
+          { status: { notIn: [...APPOINTMENT_OPEN_STATUSES] } },
+          { startTime: { lt: now } },
+        ],
+      },
+    ],
+  };
+
+  const skip = (page - 1) * limit;
+  const [total, upcomingCount] = await Promise.all([
     prisma.appointment.count({ where }),
+    prisma.appointment.count({ where: upcomingWhere }),
   ]);
+
+  let appointments;
+  if (skip < upcomingCount) {
+    const fromUpcoming = await prisma.appointment.findMany({
+      where: upcomingWhere,
+      include: appointmentInclude,
+      orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
+      skip,
+      take: limit,
+    });
+    const remaining = limit - fromUpcoming.length;
+    const fromPast =
+      remaining > 0
+        ? await prisma.appointment.findMany({
+            where: pastWhere,
+            include: appointmentInclude,
+            orderBy: [{ startTime: 'desc' }, { id: 'asc' }],
+            take: remaining,
+          })
+        : [];
+    appointments = [...fromUpcoming, ...fromPast];
+  } else {
+    appointments = await prisma.appointment.findMany({
+      where: pastWhere,
+      include: appointmentInclude,
+      orderBy: [{ startTime: 'desc' }, { id: 'asc' }],
+      skip: skip - upcomingCount,
+      take: limit,
+    });
+  }
 
   return { appointments, total, page, limit };
 }

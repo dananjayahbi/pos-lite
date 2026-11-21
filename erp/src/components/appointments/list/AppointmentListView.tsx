@@ -5,6 +5,10 @@ import { useAppointments, useMarkNoShow } from '@/hooks/appointments';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { appointmentDisplayStatus } from '@/lib/appointments/appointmentOverdue.core';
+import {
+  compareAppointmentsUpcomingFirst,
+  formatAppointmentListDate,
+} from '@/lib/appointments/appointmentList.core';
 import type { AppointmentStatus } from '@/generated/prisma/client';
 import { StatusBadge } from '../shared/StatusBadge';
 import { AppointmentFilters } from './AppointmentFilters';
@@ -85,7 +89,14 @@ export function AppointmentListView({ onAppointmentClick, onNewClick }: Appointm
   };
 
   const { data, isLoading } = useAppointments(filters);
-  const appointments = (data?.appointments ?? []) as AppointmentListRow[];
+  const appointments = ((data?.appointments ?? []) as AppointmentListRow[])
+    .slice()
+    .sort((a, b) =>
+      compareAppointmentsUpcomingFirst(
+        { ...a, status: a.status as AppointmentStatus },
+        { ...b, status: b.status as AppointmentStatus },
+      ),
+    );
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / 20);
 
@@ -148,9 +159,7 @@ export function AppointmentListView({ onAppointmentClick, onNewClick }: Appointm
                     <td className="px-4 py-3">
                       <div className="text-sm font-medium text-espresso">{appt.title}</div>
                       <div className="text-xs text-espresso/40">
-                        {new Date(appt.startTime).toLocaleString('en-US', {
-                          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-                        })}
+                        {formatAppointmentListDate(appt.startTime)}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-espresso">
