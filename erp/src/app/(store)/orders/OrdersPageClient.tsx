@@ -24,6 +24,7 @@ import { OrdersTable } from '@/components/orders/OrdersTable';
 import { BulkActionBar } from '@/components/orders/BulkActionBar';
 import { BulkStatusDialog } from '@/components/orders/BulkStatusDialog';
 import { paginationSummary } from '@/components/orders/pagination';
+import { commonBulkStatusTargets } from '@/lib/services/dispatchStatus.core';
 import type { DeliveryListItem } from '@/types/delivery';
 import type { DeliveryStatus } from '@/generated/prisma/client';
 
@@ -90,6 +91,16 @@ export function OrdersPageClient() {
     });
 
   const selectedOrders = orders.filter((o) => selectedIds.has(o.id));
+
+  // ARGUS #263: only offer statuses legal for every selected order. A mixed
+  // pre-dispatch/dispatched selection gets an empty list instead of a menu
+  // that would silently bypass dispatch or recovery controls.
+  const allowedBulkStatuses = commonBulkStatusTargets(
+    selectedOrders.map((order) => ({
+      status: order.status,
+      hasShipment: Boolean(order.shipments?.[0]),
+    })),
+  );
 
   const handleStatusChange = (newStatus: DeliveryStatus) => {
     const ids = Array.from(selectedIds);
@@ -249,6 +260,7 @@ export function OrdersPageClient() {
       {statusDialogOpen && (
         <BulkStatusDialog
           count={selectedIds.size}
+          allowedStatuses={allowedBulkStatuses}
           onCancel={() => setStatusDialogOpen(false)}
           onConfirm={handleStatusChange}
           isPending={bulkStatus.isPending}

@@ -69,7 +69,18 @@ export function useBulkStatusChange() {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['deliveries'] });
       const ok = results.filter((r) => r.ok).length;
-      toast.success(`Updated ${ok} order(s)`);
+      const rejected = results.filter((r) => !r.ok);
+      if (rejected.length === 0) {
+        toast.success(`Updated ${ok} order(s)`);
+      } else if (ok === 0) {
+        toast.error(rejected[0]?.message ?? 'No orders were updated');
+      } else {
+        // ARGUS #263: a mixed selection reports the rejected rows instead of
+        // pretending the whole batch succeeded.
+        toast.warning(
+          `Updated ${ok} order(s); ${rejected.length} rejected: ${rejected[0]?.message ?? 'see details'}`,
+        );
+      }
     },
     onError: (error: Error) => {
       toast.error(error.message);
