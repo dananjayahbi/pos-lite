@@ -22,12 +22,14 @@ import { printShippingLabel } from './labels/ShippingLabel';
 import { printOrderInvoice } from './invoices/printOrderInvoice';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useLabelTemplate } from '@/hooks/delivery';
+import { useBulkCreateDelivery } from '@/hooks/orders';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import {
   canPrintWaybill,
   resolveLabelTemplate,
   resolveLabelTemplateViewState,
 } from './labels/labelTemplateState';
+import { canPrepareDelivery } from './prepareDelivery';
 import type { DeliveryListItem } from '@/types/delivery';
 
 interface DeliveryTableProps {
@@ -67,6 +69,8 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
 
   const [dispatchTarget, setDispatchTarget] = useState<DeliveryListItem | null>(null);
   const [cancelTarget, setCancelTarget] = useState<DeliveryListItem | null>(null);
+  const [preparingId, setPreparingId] = useState<string | null>(null);
+  const prepare = useBulkCreateDelivery();
   /** Active print key (`waybill:<id>` / `invoice:<id>`) for row spinners. */
   const [printing, setPrinting] = useState<string | null>(null);
 
@@ -98,6 +102,11 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
 
   const handlePrintInvoice = (delivery: DeliveryListItem) => {
     void runPrint('invoice', delivery, () => printOrderInvoice(delivery.id));
+  };
+
+  const handlePrepare = (delivery: DeliveryListItem) => {
+    setPreparingId(delivery.id);
+    prepare.mutate([delivery.id], { onSettled: () => setPreparingId(null) });
   };
 
   return (
@@ -215,6 +224,24 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                         ) : null}
                         {invoicePrint.isActive ? 'Preparing...' : 'Invoice'}
                       </Button>
+                      {canDispatch && canPrepareDelivery(d.status) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handlePrepare(d)}
+                          disabled={prepare.isPending}
+                          aria-busy={preparingId === d.id}
+                          data-testid={`delivery-prepare-${d.id}`}
+                        >
+                          {preparingId === d.id ? (
+                            <Loader2
+                              className="mr-1.5 h-3.5 w-3.5 animate-spin"
+                              data-testid="loading-spinner"
+                            />
+                          ) : null}
+                          {preparingId === d.id ? 'Preparing...' : 'Prepare'}
+                        </Button>
+                      )}
                       {canDispatch && d.status === 'PENDING_DISPATCH' && (
                         <Button size="sm" variant="outline" onClick={() => setDispatchTarget(d)}>
                           Dispatch

@@ -5,11 +5,13 @@ import { useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDelivery, useLabelTemplate } from '@/hooks/delivery';
+import { useBulkCreateDelivery } from '@/hooks/orders';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StatusBadge } from '@/components/delivery/StatusBadge';
 import { DeliveryDetailPanel } from '@/components/delivery/DeliveryDetailPanel';
 import { DispatchSheet } from '@/components/delivery/DispatchSheet';
+import { canPrepareDelivery } from '@/components/delivery/prepareDelivery';
 import { printShippingLabel } from '@/components/delivery/labels/ShippingLabel';
 import {
   canPrintWaybill,
@@ -51,6 +53,7 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
   } = useLabelTemplate();
   const { hasPermission } = usePermissions();
   const canDispatch = hasPermission(PERMISSIONS.DELIVERY.dispatchDelivery);
+  const prepare = useBulkCreateDelivery();
 
   const templateState = resolveLabelTemplateViewState({
     isError: templateError,
@@ -155,6 +158,20 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
               ) : null}
               {printing === 'invoice' ? 'Preparing invoice…' : 'Print Invoice'}
             </Button>
+            {canDispatch && canPrepareDelivery(delivery.status) && (
+              <Button
+                variant="outline"
+                onClick={() => prepare.mutate([delivery.id])}
+                disabled={prepare.isPending}
+                aria-busy={prepare.isPending}
+                data-testid="delivery-prepare-button"
+              >
+                {prepare.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" data-testid="loading-spinner" />
+                ) : null}
+                {prepare.isPending ? 'Preparing...' : 'Prepare for delivery'}
+              </Button>
+            )}
             {canDispatch && delivery.status === 'PENDING_DISPATCH' && (
               <Button onClick={() => setDispatchOpen(true)} data-testid="delivery-dispatch-button">
                 Dispatch
