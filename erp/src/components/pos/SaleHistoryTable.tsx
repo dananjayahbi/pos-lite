@@ -35,6 +35,7 @@ import { ReturnWizardSheet } from '@/components/pos/ReturnWizardSheet';
 import { SaleEditSheet, type EditableSale } from '@/components/sales/SaleEditSheet';
 import { saleEmptyState, saleLineCount, saleUnitCount } from '@/components/sales/saleDisplay';
 import { isReturnWindowExpired } from '@/lib/sales/return-window';
+import { paymentMethodLabel } from '@/lib/sales/payment-method-label';
 import { SALES_QUERY_KEY } from '@/components/sales/saleQueryKey';
 
 interface SaleLine {
@@ -116,14 +117,12 @@ function PaymentBadge({ method }: { method: string | null }) {
     SPLIT: 'bg-terracotta text-white',
     STORE_CREDIT: 'bg-[#7C5E10] text-white',
     EXCHANGE_CREDIT: 'bg-[#2D6A4F] text-white',
-  };
-  const labels: Record<string, string> = {
-    STORE_CREDIT: 'Store Credit',
-    EXCHANGE_CREDIT: 'Exchange Credit',
-    NONE: 'None',
+    NONE: 'bg-[#6B7280] text-white',
   };
   return (
-    <Badge className={`text-[10px] ${colors[method] ?? ''}`}>{labels[method] ?? method}</Badge>
+    <Badge className={`text-[10px] ${colors[method] ?? ''}`}>
+      {paymentMethodLabel(method)}
+    </Badge>
   );
 }
 
@@ -282,6 +281,7 @@ export function SaleHistoryTable() {
           <option value="SPLIT">Split</option>
           <option value="STORE_CREDIT">Store Credit</option>
           <option value="EXCHANGE_CREDIT">Exchange Credit</option>
+          <option value="NONE">None</option>
         </select>
         <DateRangeFilter
           value={dateRange}

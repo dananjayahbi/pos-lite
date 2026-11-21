@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Printer } from 'lucide-react';
 import { CopyableText } from '@/components/shared/CopyableText';
 import { saleBreakdown } from '@/lib/pos/saleBreakdown';
+import { paymentMethodLabel } from '@/lib/sales/payment-method-label';
 
 interface SaleLine {
   id: string;
@@ -112,11 +113,7 @@ export function SaleDetailModal({
           )}
           {sale.paymentMethod && (
             <Badge variant="secondary" className="text-[10px]">
-              {sale.paymentMethod === 'STORE_CREDIT'
-                ? 'Store Credit'
-                : sale.paymentMethod === 'EXCHANGE_CREDIT'
-                  ? 'Exchange Credit'
-                  : sale.paymentMethod}
+              {paymentMethodLabel(sale.paymentMethod)}
             </Badge>
           )}
         </div>
