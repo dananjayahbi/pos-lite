@@ -77,6 +77,38 @@ export function hasInsufficientIngredients(plan: ConsumptionLine[]): boolean {
 }
 
 /**
+ * ARGUS #249 - the same raw material must not appear on two ingredient rows.
+ *
+ * The database enforces this with `@@unique([bomId, rawMaterialId])`, but a
+ * duplicate submitted through the form used to reach that constraint and
+ * surface as an unmapped P2002 500. This helper is shared by the Zod schema,
+ * the service and the form so every layer rejects it with the same message.
+ *
+ * Blank ids (empty form rows) are ignored; they are rejected separately by the
+ * required-field validation.
+ */
+export const INGREDIENT_DUPLICATE_MESSAGE =
+  'Ingredient already added - each raw material can appear only once.';
+
+/** Ids that occur more than once, in first-duplicate order. */
+export function findDuplicateRawMaterialIds(
+  ingredients: readonly { rawMaterialId: string }[],
+): string[] {
+  const seen = new Set<string>();
+  const duplicates: string[] = [];
+  for (const ingredient of ingredients) {
+    const id = ingredient.rawMaterialId;
+    if (!id) continue;
+    if (seen.has(id)) {
+      if (!duplicates.includes(id)) duplicates.push(id);
+      continue;
+    }
+    seen.add(id);
+  }
+  return duplicates;
+}
+
+/**
  * Pick only the insufficient lines, sorted by shortfall (largest gap first).
  * Used for helpful error messages / UI surfacing before commit.
  */
@@ -113,6 +145,49 @@ export type ProductSourceValue = 'MANUFACTURED' | 'TRADED';
  */
 export function isSourceEligibleForProduction(source: ProductSourceValue): boolean {
   return source === 'MANUFACTURED';
+}
+
+/**
+ * ARGUS #250 - the New BOM picker offered every variant, including traded goods
+ * and variants that already own a BOM, so Save failed with 409/422 after the
+ * operator had filled in the ingredients.
+ */
+export type BomVariantIneligibilityReason = 'NOT_MANUFACTURED' | 'BOM_EXISTS';
+
+export interface BomVariantEligibilityInput {
+  productSource: ProductSourceValue;
+  /** True when a BOM row exists for the variant (including a soft-deleted one). */
+  hasExistingBom: boolean;
+}
+
+/** The reason this variant cannot receive a new BOM, or null when eligible. */
+export function bomVariantIneligibilityReason(
+  input: BomVariantEligibilityInput,
+): BomVariantIneligibilityReason | null {
+  if (!isSourceEligibleForProduction(input.productSource)) return 'NOT_MANUFACTURED';
+  if (input.hasExistingBom) return 'BOM_EXISTS';
+  return null;
+}
+
+/** True when the variant may be offered in the New BOM picker. */
+export function isVariantEligibleForBom(input: BomVariantEligibilityInput): boolean {
+  return bomVariantIneligibilityReason(input) === null;
+}
+
+/**
+ * ARGUS #248 - a BOM is immutable once production has used it.
+ *
+ * Editing the ingredient rows after a run would rewrite the recipe behind
+ * every past production log, and a soft delete would leave those runs without
+ * a viewable recipe. Both operations are refused from the first logged run.
+ */
+export const BOM_LOCKED_MESSAGE =
+  'This bill of materials has production runs recorded, so its recipe can no longer be edited or deleted.';
+
+/** True while a BOM has never been used in production (and may be changed). */
+export function canModifyBom(productionLogCount: number): boolean {
+  if (!Number.isFinite(productionLogCount)) return false;
+  return productionLogCount <= 0;
 }
 
 /**

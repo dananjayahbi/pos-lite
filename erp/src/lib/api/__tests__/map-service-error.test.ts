@@ -10,6 +10,8 @@ describe('INF-02 mapServiceError', () => {
     ['BELOW_ZERO', 400],
     ['DELTA_ZERO', 400],
     ['BOM_EXISTS', 409],
+    ['BOM_LOCKED', 409],
+    ['INGREDIENT_DUPLICATE', 400],
     ['ALREADY_DISPUTED', 409],
     ['SERVICE_NAME_EXISTS', 409],
     ['TRADED_NOT_MANUFACTURED', 400],

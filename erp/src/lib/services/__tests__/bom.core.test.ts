@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
+  bomVariantIneligibilityReason,
   buildProductionBatchNumber,
+  canModifyBom,
   computeConsumptionPlan,
   computeIngredientRequirement,
+  findDuplicateRawMaterialIds,
   getInsufficientIngredients,
   hasInsufficientIngredients,
   isSourceEligibleForProduction,
+  isVariantEligibleForBom,
   toBomIngredient,
   type BomIngredient,
 } from '@/lib/services/bom.core';
@@ -143,5 +147,104 @@ describe('bom.core - isSourceEligibleForProduction', () => {
 
   it('returns false for traded goods', () => {
     expect(isSourceEligibleForProduction('TRADED')).toBe(false);
+  });
+});
+
+describe('bom.core - isVariantEligibleForBom', () => {
+  it('accepts a manufactured variant with no BOM', () => {
+    expect(
+      isVariantEligibleForBom({ productSource: 'MANUFACTURED', hasExistingBom: false }),
+    ).toBe(true);
+    expect(
+      bomVariantIneligibilityReason({
+        productSource: 'MANUFACTURED',
+        hasExistingBom: false,
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects traded goods', () => {
+    expect(
+      isVariantEligibleForBom({ productSource: 'TRADED', hasExistingBom: false }),
+    ).toBe(false);
+    expect(
+      bomVariantIneligibilityReason({ productSource: 'TRADED', hasExistingBom: false }),
+    ).toBe('NOT_MANUFACTURED');
+  });
+
+  it('rejects a variant that already owns a BOM', () => {
+    expect(
+      isVariantEligibleForBom({ productSource: 'MANUFACTURED', hasExistingBom: true }),
+    ).toBe(false);
+    expect(
+      bomVariantIneligibilityReason({
+        productSource: 'MANUFACTURED',
+        hasExistingBom: true,
+      }),
+    ).toBe('BOM_EXISTS');
+  });
+
+  it('reports the source reason before the existing-BOM reason', () => {
+    expect(
+      bomVariantIneligibilityReason({ productSource: 'TRADED', hasExistingBom: true }),
+    ).toBe('NOT_MANUFACTURED');
+  });
+});
+
+describe('bom.core - canModifyBom', () => {
+  it('allows edits while no production run references the recipe', () => {
+    expect(canModifyBom(0)).toBe(true);
+  });
+
+  it('locks the recipe from the first recorded production run', () => {
+    expect(canModifyBom(1)).toBe(false);
+    expect(canModifyBom(4)).toBe(false);
+    expect(canModifyBom(1000)).toBe(false);
+  });
+
+  it('fails closed when the count is not a finite number', () => {
+    expect(canModifyBom(Number.NaN)).toBe(false);
+    expect(canModifyBom(Number.POSITIVE_INFINITY)).toBe(false);
+  });
+});
+
+describe('bom.core - findDuplicateRawMaterialIds', () => {
+  it('returns nothing when every material is used once', () => {
+    expect(findDuplicateRawMaterialIds([])).toEqual([]);
+    expect(
+      findDuplicateRawMaterialIds([{ rawMaterialId: 'a' }, { rawMaterialId: 'b' }]),
+    ).toEqual([]);
+  });
+
+  it('reports a repeated material once', () => {
+    expect(
+      findDuplicateRawMaterialIds([
+        { rawMaterialId: 'a' },
+        { rawMaterialId: 'a' },
+        { rawMaterialId: 'a' },
+        { rawMaterialId: 'b' },
+      ]),
+    ).toEqual(['a']);
+  });
+
+  it('reports each duplicated material in first-duplicate order', () => {
+    expect(
+      findDuplicateRawMaterialIds([
+        { rawMaterialId: 'a' },
+        { rawMaterialId: 'b' },
+        { rawMaterialId: 'b' },
+        { rawMaterialId: 'a' },
+      ]),
+    ).toEqual(['b', 'a']);
+  });
+
+  it('ignores empty placeholder rows', () => {
+    expect(
+      findDuplicateRawMaterialIds([
+        { rawMaterialId: '' },
+        { rawMaterialId: '' },
+        { rawMaterialId: 'a' },
+      ]),
+    ).toEqual([]);
   });
 });

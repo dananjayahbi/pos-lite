@@ -15,10 +15,13 @@ import type {
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
   buildProductionBatchNumber,
+  canModifyBom,
   computeConsumptionPlan,
+  findDuplicateRawMaterialIds,
   getInsufficientIngredients,
   hasInsufficientIngredients,
   isSourceEligibleForProduction,
+  isVariantEligibleForBom,
   toBomIngredient,
   type ConsumptionLine,
 } from '@/lib/services/bom.core';
@@ -38,6 +41,8 @@ export interface BomItemView {
   isActive: boolean;
   notes: string | null;
   rawMaterialCount: number;
+  /** Production runs recorded against this recipe (ARGUS #248). */
+  productionLogCount: number;
   ingredients: { rawMaterialId: string; name: string; quantityPerUnit: number }[];
   createdAt: Date;
   updatedAt: Date;
@@ -61,6 +66,8 @@ export interface BomDetailView {
   isActive: boolean;
   notes: string | null;
   ingredients: BomIngredientView[];
+  /** Production runs recorded against this recipe (ARGUS #248). */
+  productionLogCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -72,6 +79,7 @@ type BomWithItems = BillOfMaterials & {
   items: (BillOfMaterialsItem & {
     rawMaterial: Pick<RawMaterial, 'id' | 'name' | 'unit' | 'quantity' | 'unitCost'>;
   })[];
+  _count: { productionLogs: number };
 };
 
 function toBomItemView(bom: BomWithItems): BomItemView {
@@ -84,6 +92,7 @@ function toBomItemView(bom: BomWithItems): BomItemView {
     isActive: bom.isActive,
     notes: bom.notes,
     rawMaterialCount: bom.items.length,
+    productionLogCount: bom._count.productionLogs,
     ingredients: bom.items.map((item) => ({
       rawMaterialId: item.rawMaterialId,
       name: item.rawMaterial.name,
@@ -111,6 +120,7 @@ function toBomDetailView(bom: BomWithItems): BomDetailView {
       quantityPerUnit: item.quantityPerUnit.toNumber(),
       available: item.rawMaterial.quantity.toNumber(),
     })),
+    productionLogCount: bom._count.productionLogs,
     createdAt: bom.createdAt,
     updatedAt: bom.updatedAt,
   };
@@ -131,6 +141,7 @@ const bomInclude = {
       },
     },
   },
+  _count: { select: { productionLogs: true } },
 } as const;
 
 type TxClient = Omit<
@@ -185,6 +196,51 @@ export async function listBoms(tenantId: string, filters: ListBomsFilters = {}) 
   return { items: rows.map(toBomItemView), total };
 }
 
+// ── Eligible variants (New BOM picker) ───────────────────────────────────────
+
+export interface BomEligibleVariantView {
+  id: string;
+  sku: string;
+  productName: string;
+}
+
+/**
+ * ARGUS #250 - variants that can actually receive a new BOM: live
+ * MANUFACTURED variants with no BOM row yet. The same rules are enforced again
+ * by `createBom`, so a stale picker can never save an ineligible variant.
+ */
+export async function listBomEligibleVariants(
+  tenantId: string,
+): Promise<BomEligibleVariantView[]> {
+  const variants = await prisma.productVariant.findMany({
+    where: {
+      tenantId,
+      deletedAt: null,
+      product: { tenantId, deletedAt: null },
+    },
+    select: {
+      id: true,
+      sku: true,
+      product: { select: { name: true, productSource: true } },
+      _count: { select: { billOfMaterials: true } },
+    },
+    orderBy: [{ sku: 'asc' }],
+  });
+
+  return variants
+    .filter((variant) =>
+      isVariantEligibleForBom({
+        productSource: variant.product.productSource,
+        hasExistingBom: variant._count.billOfMaterials > 0,
+      }),
+    )
+    .map((variant) => ({
+      id: variant.id,
+      sku: variant.sku,
+      productName: variant.product.name,
+    }));
+}
+
 // ── Get by id ────────────────────────────────────────────────────────────────
 
 export async function getBomById(tenantId: string, id: string) {
@@ -206,6 +262,16 @@ export interface CreateBomInput {
   ingredients: BomIngredientInput[];
 }
 
+/**
+ * ARGUS #249 - the same raw material twice would hit the DB composite unique
+ * constraint and surface as a 500. Reject it as a typed 400 instead.
+ */
+function assertNoDuplicateIngredients(ingredients: BomIngredientInput[]): void {
+  if (findDuplicateRawMaterialIds(ingredients).length > 0) {
+    throw new Error('INGREDIENT_DUPLICATE');
+  }
+}
+
 export async function createBom(
   tenantId: string,
   actorId: string,
@@ -214,6 +280,7 @@ export async function createBom(
   if (input.ingredients.length === 0) {
     throw new Error('NO_INGREDIENTS');
   }
+  assertNoDuplicateIngredients(input.ingredients);
 
   return prisma.$transaction(async (tx) => {
     const variant = await tx.productVariant.findUnique({
@@ -234,8 +301,11 @@ export async function createBom(
 
     const existing = await tx.billOfMaterials.findUnique({
       where: { tenantId_variantId: { tenantId, variantId: input.variantId } },
+      select: { id: true },
     });
-    if (existing && !existing.deletedAt) throw new Error('BOM_EXISTS');
+    // A soft-deleted row still occupies the `[tenantId, variantId]` unique key,
+    // so treat it as existing instead of letting the create hit P2002.
+    if (existing) throw new Error('BOM_EXISTS');
 
     const rawMaterialIds = [...new Set(input.ingredients.map((i) => i.rawMaterialId))];
     const ownedMaterials = await tx.rawMaterial.findMany({
@@ -299,6 +369,15 @@ export async function updateBom(
   return prisma.$transaction(async (tx) => {
     await findOwnedBom(tx, tenantId, id);
 
+    // ARGUS #248: once a production run references this recipe it must stay
+    // frozen, otherwise past runs silently point at a different ingredient list.
+    const productionLogCount = await tx.productionLog.count({ where: { bomId: id } });
+    if (!canModifyBom(productionLogCount)) throw new Error('BOM_LOCKED');
+
+    if (input.ingredients !== undefined) {
+      assertNoDuplicateIngredients(input.ingredients);
+    }
+
     const bom = await tx.billOfMaterials.update({
       where: { id },
       data: {
@@ -344,6 +423,12 @@ export async function updateBom(
 export async function deleteBom(tenantId: string, actorId: string, id: string) {
   return prisma.$transaction(async (tx) => {
     await findOwnedBom(tx, tenantId, id);
+
+    // ARGUS #248: deleting a used recipe would leave its production runs with
+    // no viewable BOM, so it is refused while any run references it.
+    const productionLogCount = await tx.productionLog.count({ where: { bomId: id } });
+    if (!canModifyBom(productionLogCount)) throw new Error('BOM_LOCKED');
+
     await tx.billOfMaterials.update({
       where: { id },
       data: { deletedAt: new Date(), isActive: false },
