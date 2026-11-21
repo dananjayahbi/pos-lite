@@ -18,6 +18,7 @@ import { useRecentMovements } from '@/hooks/useRecentMovements';
 import { stockActorLabel } from '@/lib/stock/actor-label';
 import { formatRupee } from '@/lib/format';
 import { LowStockAlertBadge } from '@/components/stock/LowStockAlertBadge';
+import { stockMovementReasonLabel } from '@/lib/constants/stock-movement';
 
 interface StockControlDashboardProps {
   permissions: string[];
@@ -252,7 +253,7 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
               ) : (
                 movements.map((m) => {
                   const badge = REASON_BADGE[m.reason] ?? {
-                    label: m.reason,
+                    label: stockMovementReasonLabel(m.reason),
                     className: 'bg-gray-100 text-gray-800 hover:bg-gray-100',
                   };
                   const isPositive = m.quantityDelta > 0;

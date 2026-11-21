@@ -8,18 +8,7 @@ import { StockMovementReason } from '@/generated/prisma/client';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { parseQueryInt, parseQueryDate } from '@/lib/api/query-params';
 import { toCsvLines } from '@/lib/export';
-
-const REASON_LABELS: Record<string, string> = {
-  FOUND: 'Found',
-  DAMAGED: 'Damaged',
-  STOLEN: 'Stolen or Lost',
-  DATA_ERROR: 'Data Entry Correction',
-  RETURNED_TO_SUPPLIER: 'Returned to Supplier',
-  INITIAL_STOCK: 'Initial Stock Entry',
-  SALE_RETURN: 'Customer Return',
-  PURCHASE_RECEIVED: 'Received from Purchase',
-  STOCK_TAKE_ADJUSTMENT: 'Stock Take Adjustment',
-};
+import { stockMovementReasonLabel } from '@/lib/constants/stock-movement';
 
 const VALID_REASONS = new Set(Object.values(StockMovementReason));
 
@@ -144,7 +133,7 @@ export async function GET(request: NextRequest) {
           m.variant.form ?? '',
           m.variant.packSize ?? '',
           m.reason,
-          REASON_LABELS[m.reason] ?? m.reason,
+          stockMovementReasonLabel(m.reason),
           m.quantityDelta > 0 ? `+${m.quantityDelta}` : String(m.quantityDelta),
           String(m.quantityBefore),
           String(m.quantityAfter),
