@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { CategoryImageUpload } from '@/components/categories/CategoryImageUpload';
+import { validateCategoryForm, CATEGORY_DESCRIPTION_MAX, CATEGORY_SORT_ORDER_MAX } from '@/lib/categories/categoryForm.core';
 
 interface CategoryEditDialogProps {
   open: boolean;
@@ -71,14 +72,14 @@ function CategoryEditForm({
       if (isEdit && !category) throw new Error('Category is required');
       const url = isEdit ? `/api/store/categories/${category!.id}` : '/api/store/categories';
       const method = isEdit ? 'PATCH' : 'POST';
-      const body: Record<string, unknown> = {
-        name: name.trim(),
-        sortOrder: Number.parseInt(sortOrder, 10) || 0,
-        imageUrl: imageUrl ?? '',
-        // Always send the description: an empty textarea clears the stored text
-        // instead of leaving the old description untouched (ARGUS #166).
-        description: description.trim() ? description.trim() : null,
-      };
+      // Same payload in create and edit mode, so every field the edit dialog
+      // exposes is also available when creating (ARGUS #169).
+      const body = validateCategoryForm({
+        name,
+        description,
+        sortOrder,
+        imageUrl,
+      }).payload;
 
       const res = await fetch(url, {
         method,
@@ -98,13 +99,8 @@ function CategoryEditForm({
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const trimmedName = name.trim();
-  const parsedSort = Number.parseInt(sortOrder, 10);
-  const isValid =
-    trimmedName.length >= 2 &&
-    trimmedName.length <= 60 &&
-    !Number.isNaN(parsedSort) &&
-    parsedSort >= 0;
+  const validation = validateCategoryForm({ name, description, sortOrder, imageUrl });
+  const isValid = validation.valid;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -153,16 +149,35 @@ function CategoryEditForm({
             id="cat-sort"
             type="number"
             min={0}
+            max={CATEGORY_SORT_ORDER_MAX}
+            step={1}
             value={sortOrder}
             onChange={(e) => setSortOrder(e.target.value)}
             className="bg-pearl"
+            aria-invalid={Boolean(validation.errors.sortOrder)}
+            aria-describedby={
+              validation.errors.sortOrder ? 'cat-sort-error' : undefined
+            }
           />
+          {validation.errors.sortOrder && (
+            <p id="cat-sort-error" className="text-xs text-red-700">
+              {validation.errors.sortOrder}
+            </p>
+          )}
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="cat-description" className="text-xs text-mist-ink">
-            Description
-          </Label>
+          <div className="flex items-baseline justify-between gap-2">
+            <Label htmlFor="cat-description" className="text-xs text-mist-ink">
+              Description
+            </Label>
+            <span
+              className="text-[11px] tabular-nums text-mist-ink"
+              aria-live="polite"
+            >
+              {description.length}/{CATEGORY_DESCRIPTION_MAX}
+            </span>
+          </div>
           <Textarea
             id="cat-description"
             value={description}
@@ -170,7 +185,17 @@ function CategoryEditForm({
             placeholder="Optional category description"
             className="bg-pearl resize-none"
             rows={3}
+            maxLength={CATEGORY_DESCRIPTION_MAX}
+            aria-invalid={Boolean(validation.errors.description)}
+            aria-describedby={
+              validation.errors.description ? 'cat-description-error' : undefined
+            }
           />
+          {validation.errors.description && (
+            <p id="cat-description-error" className="text-xs text-red-700">
+              {validation.errors.description}
+            </p>
+          )}
         </div>
 
         <DialogFooter className="-mx-4 -mb-4">

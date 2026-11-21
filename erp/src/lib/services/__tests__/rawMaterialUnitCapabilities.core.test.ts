@@ -22,9 +22,17 @@ describe('unitCapabilities', () => {
     const cap = unitCapabilities({ isBuiltIn: true, usageCount: 0, isActive: true });
     expect(cap.canDeactivate).toBe(false);
     expect(cap.canActivate).toBe(false);
-    expect(cap.canDelete).toBe(true);
+    expect(cap.canDelete).toBe(false);
     expect(cap.deactivateBlockedReason).toContain('Built-in units');
+    expect(cap.deleteBlockedReason).toContain('cannot be deleted');
     expect(cap.canEdit).toBe(true);
+  });
+
+  /** ARGUS #483: the built-in guard covers deletion, not only deactivation. */
+  it('never offers deletion for a built-in, even when unused', () => {
+    const cap = unitCapabilities({ isBuiltIn: true, usageCount: 0, isActive: true });
+    expect(cap.canDelete).toBe(false);
+    expect(cap.deleteBlockedReason).not.toContain('raw material');
   });
 
   it('disables deletion while the unit is in use and explains what to do', () => {

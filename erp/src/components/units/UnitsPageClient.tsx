@@ -36,6 +36,8 @@ import {
   unitDisplayChanged,
   unitRenameWarning,
 } from '@/lib/services/rawMaterialUnitRename.core';
+import { formatUnitUsage } from '@/lib/units/unitUsage.core';
+import { deriveUnitShortLabel } from '@/lib/units/unitValidation.core';
 
 interface UnitsPageClientProps {
   canCreate: boolean;
@@ -64,11 +66,16 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
   const [renameConfirmed, setRenameConfirmed] = useState(false);
 
   const units = data?.data ?? [];
+  const derivedShortLabel = deriveUnitShortLabel(form.name);
+  const nextDisplay = {
+    name: form.name,
+    shortLabel: form.shortLabel.trim() || derivedShortLabel,
+  };
   const renameNeedsConfirmation =
     editing !== null &&
     unitDisplayChanged(
       { name: editing.name, shortLabel: editing.shortLabel },
-      form,
+      nextDisplay,
     );
 
   const openCreate = () => {
@@ -96,7 +103,9 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
         await updateMutation.mutateAsync({
           id: editing.id,
           name,
-          ...(shortLabel ? { shortLabel } : {}),
+          // Always send the field so a cleared label is honoured: null derives
+          // a complete label from the (possibly renamed) name (ARGUS #486).
+          shortLabel: shortLabel || null,
         });
         toast.success('Unit updated');
       } else {
@@ -140,8 +149,9 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
           <h1 className="font-display text-2xl font-bold text-espresso">Units</h1>
           <p className="mt-1 max-w-2xl font-body text-sm text-sand-ink">
             Units used across the system, including raw materials and bill-of-materials
-            quantities. Built-in units can be renamed but not deactivated. A unit used by
-            raw materials cannot be deleted until those materials are reassigned.
+            quantities. Built-in units can be renamed but not deactivated or deleted. A
+            unit used by raw materials cannot be deleted until those materials are
+            reassigned; archived references are shown in the Used by column.
           </p>
         </div>
         {canCreate && (
@@ -198,7 +208,7 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
                     {unit.shortLabel}
                   </TableCell>
                   <TableCell className="font-body text-sm text-sand-ink">
-                    {unit.usageCount} material{unit.usageCount === 1 ? '' : 's'}
+                    {formatUnitUsage(unit.usageCount, unit.archivedUsageCount)}
                   </TableCell>
                   <TableCell>
                     {unit.isActive ? (
@@ -311,7 +321,12 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
                 }}
                 placeholder="e.g. bottle"
                 maxLength={20}
+                aria-describedby="unit-short-label-hint"
               />
+              <p id="unit-short-label-hint" className="text-[11px] text-mist-ink">
+                Leave blank to derive a label from the name
+                {form.shortLabel.trim() ? '.' : ` (${derivedShortLabel}).`}
+              </p>
             </div>
             {renameNeedsConfirmation && editing && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">

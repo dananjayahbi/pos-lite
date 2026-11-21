@@ -9,6 +9,7 @@ export interface RawMaterialUnitItem {
   shortLabel: string;
   isActive: boolean;
   usageCount: number;
+  archivedUsageCount: number;
   isBuiltIn: boolean;
 }
 
@@ -62,7 +63,7 @@ export function useUpdateRawMaterialUnit() {
     }: {
       id: string;
       name?: string;
-      shortLabel?: string;
+      shortLabel?: string | null;
       isActive?: boolean;
     }) => {
       const res = await fetch(`/api/store/units/${id}`, {

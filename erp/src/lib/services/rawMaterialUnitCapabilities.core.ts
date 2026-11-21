@@ -30,7 +30,9 @@ export interface UnitCapabilities {
 export function unitCapabilities(input: UnitCapabilityInput): UnitCapabilities {
   const canDeactivate = !input.isBuiltIn && input.isActive;
   const canActivate = !input.isActive;
-  const canDelete = input.usageCount <= 0;
+  // ARGUS #483: built-ins are protected from deletion too, not only from
+  // deactivation; otherwise an unused "Liters" could disappear.
+  const canDelete = !input.isBuiltIn && input.usageCount <= 0;
 
   return {
     canEdit: true,
@@ -42,6 +44,8 @@ export function unitCapabilities(input: UnitCapabilityInput): UnitCapabilities {
       : null,
     deleteBlockedReason: canDelete
       ? null
-      : `Used by ${input.usageCount} raw material${input.usageCount === 1 ? '' : 's'}. Remove or reassign them before deleting this unit.`,
+      : input.isBuiltIn
+        ? 'Built-in units are the default choices for new tenants and cannot be deleted.'
+        : `Used by ${input.usageCount} raw material${input.usageCount === 1 ? '' : 's'}. Remove or reassign them before deleting this unit.`,
   };
 }

@@ -9,14 +9,21 @@ export interface Category {
   description: string | null;
   sortOrder: number;
   imageUrl: string | null;
+  deletedAt?: string | null;
   _count: { products: number };
 }
 
-export function useCategories() {
+/**
+ * Active categories by default. `deleted` switches to the soft-deleted set
+ * used by the Deleted view and restore action (ARGUS #172).
+ */
+export function useCategories(deleted = false) {
   return useQuery<{ success: boolean; data: Category[] }>({
-    queryKey: ['categories'],
+    queryKey: ['categories', deleted ? 'deleted' : 'active'],
     queryFn: async () => {
-      const res = await fetch('/api/store/categories');
+      const res = await fetch(
+        deleted ? '/api/store/categories?deleted=true' : '/api/store/categories',
+      );
       if (!res.ok) throw new Error('Failed to fetch categories');
       return res.json();
     },

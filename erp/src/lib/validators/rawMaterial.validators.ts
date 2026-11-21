@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { RAW_MATERIAL_ADJUSTMENT_REASONS } from '@/lib/services/rawMaterialAdjustment.core';
+import { hasAlphanumeric } from '@/lib/units/unitValidation.core';
 
 /**
  * Category and unit keys are tenant-defined strings. Built-in keys
@@ -62,16 +63,29 @@ export const UpdateRawMaterialCategorySchema = z
     message: 'Nothing to update',
   });
 
+// ARGUS #482: a unit name with no letters/digits used to collapse to the hidden
+// "CATEGORY" key, so the API rejects it explicitly.
+const rawMaterialUnitName = z
+  .string()
+  .trim()
+  .min(1, 'Name is required')
+  .max(80)
+  .refine(hasAlphanumeric, {
+    message: 'Unit name must include at least one letter or number',
+  });
+
 export const CreateRawMaterialUnitSchema = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(80),
+  name: rawMaterialUnitName,
   // Optional compact suffix shown next to quantities (e.g. "kg", "L").
   shortLabel: z.string().trim().min(1).max(20).optional(),
 });
 
 export const UpdateRawMaterialUnitSchema = z
   .object({
-    name: z.string().trim().min(1, 'Name is required').max(80).optional(),
-    shortLabel: z.string().trim().min(1).max(20).optional(),
+    name: rawMaterialUnitName.optional(),
+    // ARGUS #486: `null` means "clear and derive from the name" instead of the
+    // old silent no-op where omitting the field kept the stale label.
+    shortLabel: z.string().trim().min(1).max(20).nullable().optional(),
     isActive: z.boolean().optional(),
   })
   .refine(

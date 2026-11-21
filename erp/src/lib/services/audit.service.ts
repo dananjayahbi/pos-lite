@@ -199,6 +199,8 @@ export const AUDIT_ACTIONS = {
   PRODUCTION_LOGGED: 'PRODUCTION_LOGGED',
   // Product lifecycle (M02-03 — soft-delete recovery)
   PRODUCT_RESTORED: 'PRODUCT_RESTORED',
+  // Category lifecycle (ARGUS #172 — soft-delete recovery)
+  CATEGORY_RESTORED: 'CATEGORY_RESTORED',
   // Supplier lifecycle (M06-05 — archive recovery). Append-only.
   SUPPLIER_UNARCHIVED: 'SUPPLIER_UNARCHIVED',
   // ARGUS #237: create/edit/archive were never audited, leaving the Supplier

@@ -18,6 +18,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { BrandLogoUpload } from '@/components/brands/BrandLogoUpload';
+import {
+  BRAND_DESCRIPTION_MAX,
+  validateBrandForm,
+} from '@/lib/brands/brandForm.core';
 
 interface BrandEditDialogProps {
   open: boolean;
@@ -70,14 +74,7 @@ function BrandEditForm({
       if (isEdit && !brand) throw new Error('Brand is required');
       const url = isEdit ? `/api/store/brands/${brand!.id}` : '/api/store/brands';
       const method = isEdit ? 'PATCH' : 'POST';
-      const body: Record<string, string | null> = {
-        name: name.trim(),
-        // Always send the description: an empty textarea clears the stored text
-        // instead of leaving the old description untouched (ARGUS #174).
-        description: description.trim() ? description.trim() : null,
-        // Always send logoUrl so explicit removals (null) persist.
-        logoUrl,
-      };
+      const body = validateBrandForm({ name, description, logoUrl }).payload;
 
       const res = await fetch(url, {
         method,
@@ -97,8 +94,8 @@ function BrandEditForm({
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const trimmedName = name.trim();
-  const isValid = trimmedName.length >= 2 && trimmedName.length <= 60;
+  const validation = validateBrandForm({ name, description, logoUrl });
+  const isValid = validation.valid;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -135,9 +132,17 @@ function BrandEditForm({
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="brand-description" className="text-xs text-mist-ink">
-            Description
-          </Label>
+          <div className="flex items-baseline justify-between gap-2">
+            <Label htmlFor="brand-description" className="text-xs text-mist-ink">
+              Description
+            </Label>
+            <span
+              className="text-[11px] tabular-nums text-mist-ink"
+              aria-live="polite"
+            >
+              {description.length}/{BRAND_DESCRIPTION_MAX}
+            </span>
+          </div>
           <Textarea
             id="brand-description"
             value={description}
@@ -145,7 +150,17 @@ function BrandEditForm({
             placeholder="Optional brand description"
             className="bg-pearl resize-none"
             rows={3}
+            maxLength={BRAND_DESCRIPTION_MAX}
+            aria-invalid={Boolean(validation.errors.description)}
+            aria-describedby={
+              validation.errors.description ? 'brand-description-error' : undefined
+            }
           />
+          {validation.errors.description && (
+            <p id="brand-description-error" className="text-xs text-red-700">
+              {validation.errors.description}
+            </p>
+          )}
         </div>
 
         <div className="space-y-1.5">
