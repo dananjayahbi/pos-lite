@@ -53,11 +53,19 @@ function liveStateClasses(state: PromotionLiveState): string {
 
 interface CustomerPricingRowProps {
   rule: CustomerPricingRuleRow;
+  canEdit?: boolean;
+  onEdit?: (rule: CustomerPricingRuleRow) => void;
   onDeactivate: (id: string) => void;
   isDeactivating: boolean;
 }
 
-export function CustomerPricingRow({ rule, onDeactivate, isDeactivating }: CustomerPricingRowProps) {
+export function CustomerPricingRow({
+  rule,
+  canEdit = true,
+  onEdit,
+  onDeactivate,
+  isDeactivating,
+}: CustomerPricingRowProps) {
   const liveState = getPromotionLiveState(rule);
   const variantLabel = rule.variant
     ? `${rule.variant.product.name} - ${rule.variant.sku}`
@@ -98,16 +106,31 @@ export function CustomerPricingRow({ rule, onDeactivate, isDeactivating }: Custo
         </Badge>
       </TableCell>
       <TableCell>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-terracotta hover:text-espresso"
-          disabled={!rule.isActive || isDeactivating}
-          onClick={() => onDeactivate(rule.id)}
-          aria-label={`Deactivate pricing rule for ${rule.customerTag} on ${variantLabel}`}
-        >
-          Deactivate
-        </Button>
+        {canEdit && (
+          <div className="flex items-center gap-1">
+            {onEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-terracotta hover:text-espresso"
+                onClick={() => onEdit(rule)}
+                aria-label={`Edit pricing rule for ${rule.customerTag} on ${variantLabel}`}
+              >
+                Edit
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-terracotta hover:text-espresso"
+              disabled={!rule.isActive || isDeactivating}
+              onClick={() => onDeactivate(rule.id)}
+              aria-label={`Deactivate pricing rule for ${rule.customerTag} on ${variantLabel}`}
+            >
+              Deactivate
+            </Button>
+          </div>
+        )}
       </TableCell>
     </TableRow>
   );

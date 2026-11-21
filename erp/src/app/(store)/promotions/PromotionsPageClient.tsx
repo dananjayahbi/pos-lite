@@ -108,6 +108,8 @@ interface PromotionRow {
   endsAt: string | null;
   isActive: boolean;
   description: string | null;
+  /** ARGUS #331: derived from Sale.appliedPromotions (read-only). */
+  usageCount?: number;
 }
 
 interface CategoryOption {
@@ -465,7 +467,19 @@ function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmit
 
 // ── Page Component ───────────────────────────────────────────────────────────
 
-export default function PromotionsPage() {
+interface PromotionsPageClientProps {
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canManageCustomerPricing: boolean;
+}
+
+export default function PromotionsPage({
+  canCreate,
+  canEdit,
+  canDelete,
+  canManageCustomerPricing,
+}: PromotionsPageClientProps) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editPromo, setEditPromo] = useState<PromotionRow | null>(null);
@@ -473,11 +487,14 @@ export default function PromotionsPage() {
   const [statusChange, setStatusChange] = useState<{ active: boolean } | null>(null);
 
   // Fetch promotions
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['promotions'],
     queryFn: async () => {
       const res = await fetch('/api/store/promotions');
-      if (!res.ok) throw new Error('Failed to fetch');
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message ?? `Failed to fetch promotions (${res.status})`);
+      }
       const json = await res.json();
       return json.data as PromotionRow[];
     },
@@ -568,11 +585,17 @@ export default function PromotionsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive }),
       });
-      if (!res.ok) throw new Error('Failed to toggle');
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error?.message ?? 'Failed to update status');
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['promotions'] });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message);
     },
   });
 
@@ -646,26 +669,28 @@ export default function PromotionsPage() {
             </div>
           )}
         </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-espresso text-pearl hover:bg-espresso/90 font-body gap-1.5">
-              <Plus className="h-4 w-4" />
-              New Promotion
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="font-display text-lg text-espresso">Create Promotion</DialogTitle>
-            </DialogHeader>
-            <PromotionForm
-              categories={categories}
-              products={products}
-              onSubmit={(data) => createMutation.mutate(data)}
-              isSubmitting={createMutation.isPending}
-              submitLabel="Create Promotion"
-            />
-          </DialogContent>
-        </Dialog>
+        {canCreate && (
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-espresso text-pearl hover:bg-espresso/90 font-body gap-1.5">
+                <Plus className="h-4 w-4" />
+                New Promotion
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="font-display text-lg text-espresso">Create Promotion</DialogTitle>
+              </DialogHeader>
+              <PromotionForm
+                categories={categories}
+                products={products}
+                onSubmit={(data) => createMutation.mutate(data)}
+                isSubmitting={createMutation.isPending}
+                submitLabel="Create Promotion"
+              />
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       {/* M15-01 (BUG-46): the customer pricing tab sits beside the promotion
@@ -675,9 +700,11 @@ export default function PromotionsPage() {
           <TabsTrigger value="promotions" className="font-body px-3">
             Promotions
           </TabsTrigger>
-          <TabsTrigger value="customer-pricing" className="font-body px-3">
-            Customer Pricing
-          </TabsTrigger>
+          {canManageCustomerPricing && (
+            <TabsTrigger value="customer-pricing" className="font-body px-3">
+              Customer Pricing
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="promotions" className="space-y-6">
@@ -706,6 +733,20 @@ export default function PromotionsPage() {
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
+          ) : isError ? (
+            <div className="rounded-lg border border-[#9B2226]/30 bg-[#9B2226]/5 p-6">
+              <p className="font-body text-sm text-[#9B2226]">
+                Promotions could not be loaded. {error instanceof Error ? error.message : 'Try again.'}
+              </p>
+              <Button
+                variant="outline"
+                className="mt-3 font-body"
+                onClick={() => refetch()}
+                disabled={isFetching}
+              >
+                {isFetching ? 'Retrying...' : 'Retry'}
+              </Button>
+            </div>
           ) : promotions.length === 0 ? (
             <div className="text-center py-16">
               <p className="font-body text-mist-ink">No promotions yet. Create one to get started.</p>
@@ -721,6 +762,7 @@ export default function PromotionsPage() {
                     <TableHead className="font-body text-xs text-mist-ink font-medium">Promo Code</TableHead>
                     <TableHead className="font-body text-xs text-mist-ink font-medium">Status</TableHead>
                     <TableHead className="font-body text-xs text-mist-ink font-medium">Valid Window</TableHead>
+                    <TableHead className="font-body text-xs text-mist-ink font-medium">Usage</TableHead>
                     <TableHead className="font-body text-xs text-mist-ink font-medium">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -751,12 +793,14 @@ export default function PromotionsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-2">
-                          <Switch
-                            checked={promo.isActive}
-                            onCheckedChange={(checked) =>
-                              toggleMutation.mutate({ id: promo.id, isActive: checked })
-                            }
-                          />
+                          {canEdit && (
+                            <Switch
+                              checked={promo.isActive}
+                              onCheckedChange={(checked) =>
+                                toggleMutation.mutate({ id: promo.id, isActive: checked })
+                              }
+                            />
+                          )}
                           <Badge
                             variant="secondary"
                             className={`font-body text-xs ${getLiveStateBadgeClasses(liveState)}`}
@@ -768,16 +812,23 @@ export default function PromotionsPage() {
                       <TableCell className="font-body text-xs text-mist-ink">
                         {formatDateRange(promo.startsAt, promo.endsAt)}
                       </TableCell>
+                      <TableCell className="font-body text-xs text-mist-ink">
+                        {promo.usageCount ?? 0} sale{(promo.usageCount ?? 0) === 1 ? '' : 's'}
+                      </TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setEditPromo(promo)}
-                          className="text-terracotta hover:text-espresso gap-1"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                          Edit
-                        </Button>
+                        {canEdit ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditPromo(promo)}
+                            className="text-terracotta hover:text-espresso gap-1"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit
+                          </Button>
+                        ) : (
+                          <span className="font-body text-xs text-mist-ink">View only</span>
+                        )}
                       </TableCell>
                     </TableRow>
                     );
@@ -817,14 +868,16 @@ export default function PromotionsPage() {
                   />
                   <div className="border-t border-mist/30 pt-4">
                     {editPromo.isActive ? (
-                      <Button
-                        variant="ghost"
-                        className="w-full text-[#9B2226] hover:text-[#9B2226]/80 hover:bg-[#9B2226]/5 font-body"
-                        onClick={() => setStatusChange({ active: false })}
-                      >
-                        Deactivate Promotion
-                      </Button>
-                    ) : (
+                      canDelete ? (
+                        <Button
+                          variant="ghost"
+                          className="w-full text-[#9B2226] hover:text-[#9B2226]/80 hover:bg-[#9B2226]/5 font-body"
+                          onClick={() => setStatusChange({ active: false })}
+                        >
+                          Deactivate Promotion
+                        </Button>
+                      ) : null
+                    ) : canEdit ? (
                       <Button
                         variant="ghost"
                         className="w-full text-green-700 hover:text-green-800 hover:bg-green-50 font-body"
@@ -832,7 +885,7 @@ export default function PromotionsPage() {
                       >
                         Activate Promotion
                       </Button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -885,7 +938,7 @@ export default function PromotionsPage() {
         </TabsContent>
 
         <TabsContent value="customer-pricing">
-          <CustomerPricingTab />
+          <CustomerPricingTab canCreate={canCreate} canEdit={canEdit} />
         </TabsContent>
       </Tabs>
     </div>
