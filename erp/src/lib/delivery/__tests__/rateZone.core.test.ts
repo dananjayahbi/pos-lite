@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  BLANK_ZONE_MESSAGE,
+  DUPLICATE_ZONE_MESSAGE,
   ORIGIN_NOT_SUPPORTED_MESSAGE,
   isOriginSpecificZone,
   originSpecificEntryCount,
@@ -38,15 +40,37 @@ describe('rate zone origin handling', () => {
 describe('validateRateZoneEntries destination existence', () => {
   const context = { districtIds: [1, 2], cityIds: [201, 202] };
 
-  it('accepts known destination ids and a global fallback row', () => {
+  it('accepts known destination ids and a deliberate global fallback row', () => {
     expect(
       validateRateZoneEntries(
         [
           { destinationDistrictId: 1, destinationCityId: 201 },
-          { destinationDistrictId: null, destinationCityId: null },
+          { destinationDistrictId: null, destinationCityId: null, baseRate: 500 },
         ],
         context,
       ),
+    ).toEqual([]);
+  });
+
+  it('rejects a blank row and a duplicate destination (ARGUS #294)', () => {
+    expect(
+      validateRateZoneEntries([
+        { destinationDistrictId: 1, destinationCityId: 201, baseRate: 400 },
+        { destinationDistrictId: 1, destinationCityId: 201, baseRate: 450 },
+        { destinationDistrictId: null, destinationCityId: null },
+      ]),
+    ).toEqual([
+      { index: 1, field: 'destinationCityId', message: DUPLICATE_ZONE_MESSAGE },
+      { index: 2, field: 'destinationCityId', message: BLANK_ZONE_MESSAGE },
+    ]);
+  });
+
+  it('treats an empty district with a city as its own destination', () => {
+    expect(
+      validateRateZoneEntries([
+        { destinationDistrictId: null, destinationCityId: 201, baseRate: 400 },
+        { destinationDistrictId: 1, destinationCityId: 201, baseRate: 450 },
+      ]),
     ).toEqual([]);
   });
 

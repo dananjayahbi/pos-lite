@@ -8,7 +8,7 @@ import { AlertTriangle } from 'lucide-react';
 import { useRateCard, useLocations } from '@/hooks/delivery';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { originSpecificEntryCount, withoutOriginSpecificEntries } from '@/lib/delivery/rateZone.core';
+import { originSpecificEntryCount, withoutOriginSpecificEntries, validateRateZoneEntries } from '@/lib/delivery/rateZone.core';
 import {
   UpsertRateCardSchema,
 } from '@/lib/validators/ratecard.validators';
@@ -113,6 +113,8 @@ export function RateCardPageClient() {
 
   const [entries, setEntries] = useState<RateEntry[]>(initialEntries);
   const originSpecificCount = originSpecificEntryCount(entries);
+  const zoneErrors = validateRateZoneEntries(entries);
+  const hasZoneErrors = zoneErrors.length > 0;
 
   // Hydrate the zone matrix once from the loaded rate card.
   useEffect(() => {
@@ -183,6 +185,7 @@ export function RateCardPageClient() {
 
   const onSaveEntries = () => {
     if (loadState !== 'ready') return;
+    if (hasZoneErrors) return;
     if (submittingRef.current) return;
     submittingRef.current = true;
     saveEntries.mutate(entries, { onSettled: () => { submittingRef.current = false; } });
@@ -363,6 +366,22 @@ export function RateCardPageClient() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {hasZoneErrors ? (
+              <div
+                role="alert"
+                className="mb-4 rounded-lg border border-terracotta/30 bg-terracotta/5 p-3 text-sm text-terracotta"
+                data-testid="rate-zone-errors"
+              >
+                <p className="font-medium">Fix these zone rows before saving</p>
+                <ul className="mt-1 space-y-0.5 text-xs">
+                  {zoneErrors.map((error) => (
+                    <li key={`${error.index}-${error.field}-${error.message}`}>
+                      Row {error.index + 1}: {error.message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {originSpecificCount > 0 ? (
               <div
                 role="alert"
@@ -407,7 +426,7 @@ export function RateCardPageClient() {
             <div className="mt-4 flex justify-end">
               <Button
                 onClick={onSaveEntries}
-                disabled={saveEntries.isPending || originSpecificCount > 0}
+                disabled={saveEntries.isPending || originSpecificCount > 0 || hasZoneErrors}
               >
                 {saveEntries.isPending ? 'Saving...' : 'Save Zone Overrides'}
               </Button>

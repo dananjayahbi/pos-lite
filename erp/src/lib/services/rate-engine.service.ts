@@ -87,6 +87,8 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
               originDistrictId: null,
               destinationCityId: input.destinationCityId,
             },
+            // ARGUS #294: legacy duplicate rows must resolve deterministically.
+            orderBy: { id: 'asc' },
           })
         : null) ??
       (input.destinationDistrictId
@@ -98,6 +100,7 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
               destinationCityId: null,
               destinationDistrictId: input.destinationDistrictId,
             },
+            orderBy: { id: 'asc' },
           })
         : null) ??
       (await prisma.rateCardEntry.findFirst({
@@ -108,6 +111,7 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
           destinationCityId: null,
           destinationDistrictId: null,
         },
+        orderBy: { id: 'asc' },
       }));
 
     if (override) {
