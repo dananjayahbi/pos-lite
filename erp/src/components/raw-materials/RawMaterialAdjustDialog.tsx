@@ -27,6 +27,7 @@ import {
   RAW_MATERIAL_ADJUSTMENT_REASONS,
 } from '@/lib/services/rawMaterialAdjustment.core';
 import type { RawMaterialItem } from '@/hooks/useRawMaterials';
+import { invalidateRawMaterialSurfaces } from '@/lib/factory/factoryQueries';
 
 interface RawMaterialAdjustDialogProps {
   open: boolean;
@@ -65,8 +66,7 @@ export function RawMaterialAdjustDialog({
     },
     onSuccess: () => {
       toast.success('Stock adjusted');
-      queryClient.invalidateQueries({ queryKey: ['raw-materials'] });
-      queryClient.invalidateQueries({ queryKey: ['raw-material-stats'] });
+      void invalidateRawMaterialSurfaces(queryClient);
       onOpenChange(false);
     },
     onError: (err: Error) => {

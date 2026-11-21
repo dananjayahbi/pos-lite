@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/select';
 import type { RawMaterialItem } from '@/hooks/useRawMaterials';
 import { RawMaterialCategoryManagerDialog } from '@/components/raw-materials/RawMaterialCategoryManagerDialog';
+import { invalidateRawMaterialSurfaces } from '@/lib/factory/factoryQueries';
 import {
   useCreateRawMaterialCategory,
   useRawMaterialCategories,
@@ -227,8 +228,7 @@ export function RawMaterialFormDialog({
     },
     onSuccess: () => {
       toast.success(isEdit ? 'Raw material updated' : 'Raw material created');
-      queryClient.invalidateQueries({ queryKey: ['raw-materials'] });
-      queryClient.invalidateQueries({ queryKey: ['raw-material-stats'] });
+      void invalidateRawMaterialSurfaces(queryClient);
       onOpenChange(false);
     },
     onError: (err: Error) => {
