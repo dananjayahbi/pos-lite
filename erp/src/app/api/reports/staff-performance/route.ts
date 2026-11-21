@@ -120,16 +120,16 @@ export async function GET(request: NextRequest) {
           _sum: { earnedAmount: true },
         }),
 
-        // d. Commission paid grouped by userId
+        // d. Commission paid grouped by userId — recorded payout allocations
+        // only (ARGUS #337: an `isPaid` flag without money is not paid).
         prisma.commissionRecord.groupBy({
           by: ["userId"],
           where: {
             tenantId,
-            isPaid: true,
             sale: saleAccountingDateWhere(from, to),
             ...(userIdFilter ? { userId: userIdFilter } : {}),
           },
-          _sum: { earnedAmount: true },
+          _sum: { paidAmount: true },
         }),
       ]);
 
@@ -190,7 +190,7 @@ export async function GET(request: NextRequest) {
     const commPaidMap = new Map(
       commissionPaidGroups.map((c) => [
         c.userId,
-        new Decimal(c._sum.earnedAmount?.toString() ?? "0"),
+        new Decimal(c._sum.paidAmount?.toString() ?? "0"),
       ]),
     );
 

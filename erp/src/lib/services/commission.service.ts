@@ -8,6 +8,7 @@ import {
   allocateCommissionPayment,
   summarizeOpenCommission,
 } from '@/lib/services/commission-allocation';
+import { describeCommissionBalance } from '@/lib/services/commissionSummary.core';
 import { PaymentEntrySource } from '@/generated/prisma/client';
 import Decimal from 'decimal.js';
 
@@ -131,9 +132,10 @@ export async function getCommissionsForUser(
   page: number,
   pageSize: number,
 ) {
-  const [records, total] = await Promise.all([
+  const where = { tenantId, userId };
+  const [records, total, earnedAgg, paidAgg, lastPayout] = await Promise.all([
     prisma.commissionRecord.findMany({
-      where: { tenantId, userId },
+      where,
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
@@ -142,30 +144,45 @@ export async function getCommissionsForUser(
         payout: { select: { id: true, paidAt: true } },
       },
     }),
-    prisma.commissionRecord.count({ where: { tenantId, userId } }),
+    prisma.commissionRecord.count({ where }),
+    prisma.commissionRecord.aggregate({ where, _sum: { earnedAmount: true } }),
+    prisma.commissionRecord.aggregate({ where, _sum: { paidAmount: true } }),
+    prisma.commissionPayout.findFirst({
+      where,
+      orderBy: { paidAt: 'desc' },
+      select: { id: true, paidAt: true, totalEarned: true },
+    }),
   ]);
 
-  return { records, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+  // ARGUS #337: the badges describe the FULL ledger, not the current page.
+  // Only `paidAmount` counts as paid; `isPaid` alone is not money.
+  const summary = describeCommissionBalance({
+    totalEarned: earnedAgg._sum.earnedAmount,
+    totalPaid: paidAgg._sum.paidAmount,
+  });
+
+  return {
+    records,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+    summary: { ...summary, lastPayout },
+  };
 }
 
 export async function getUnpaidTotal(tenantId: string, userId: string) {
-  const [earned, paid, legacyPaid] = await Promise.all([
-    prisma.commissionRecord.aggregate({
-      where: { tenantId, userId },
-      _sum: { earnedAmount: true },
-    }),
-    prisma.commissionRecord.aggregate({
-      where: { tenantId, userId },
-      _sum: { paidAmount: true },
-    }),
-    prisma.commissionRecord.aggregate({
-      where: { tenantId, userId, isPaid: true, paidAmount: 0 },
-      _sum: { earnedAmount: true },
-    }),
+  const where = { tenantId, userId };
+  const [earned, paid] = await Promise.all([
+    prisma.commissionRecord.aggregate({ where, _sum: { earnedAmount: true } }),
+    prisma.commissionRecord.aggregate({ where, _sum: { paidAmount: true } }),
   ]);
-  return (earned._sum.earnedAmount ?? new Decimal(0)).minus(
-    (paid._sum.paidAmount ?? new Decimal(0)).plus(legacyPaid._sum.earnedAmount ?? new Decimal(0)),
-  );
+
+  const { unpaid } = describeCommissionBalance({
+    totalEarned: earned._sum.earnedAmount,
+    totalPaid: paid._sum.paidAmount,
+  });
+  return new Decimal(unpaid);
 }
 
 /** Commission totals for one staff member over a date range (payslip). */
@@ -175,44 +192,24 @@ export async function getCommissionSummaryForUser(
   periodStart: Date,
   periodEnd: Date,
 ) {
-  const [earnedAgg, paidAgg, legacyPaidAgg] = await Promise.all([
-    prisma.commissionRecord.aggregate({
-      where: {
-        tenantId,
-        userId,
-        createdAt: { gte: periodStart, lte: periodEnd },
-      },
-      _sum: { earnedAmount: true },
-    }),
-    prisma.commissionRecord.aggregate({
-      where: {
-        tenantId,
-        userId,
-        createdAt: { gte: periodStart, lte: periodEnd },
-      },
-      _sum: { paidAmount: true },
-    }),
-    prisma.commissionRecord.aggregate({
-      where: {
-        tenantId,
-        userId,
-        isPaid: true,
-        paidAmount: 0,
-        createdAt: { gte: periodStart, lte: periodEnd },
-      },
-      _sum: { earnedAmount: true },
-    }),
+  const where = {
+    tenantId,
+    userId,
+    createdAt: { gte: periodStart, lte: periodEnd },
+  };
+
+  const [earnedAgg, paidAgg] = await Promise.all([
+    prisma.commissionRecord.aggregate({ where, _sum: { earnedAmount: true } }),
+    prisma.commissionRecord.aggregate({ where, _sum: { paidAmount: true } }),
   ]);
 
-  const earned = earnedAgg._sum.earnedAmount ?? new Decimal(0);
-  const paid = (paidAgg._sum.paidAmount ?? new Decimal(0)).plus(
-    legacyPaidAgg._sum.earnedAmount ?? new Decimal(0),
-  );
-  return {
-    earned: earned.toString(),
-    paid: paid.toString(),
-    unpaid: earned.minus(paid).toString(),
-  };
+  // ARGUS #337: paid is recorded payout money only — legacy `isPaid` rows with
+  // `paidAmount = 0` stay outstanding.
+  const balance = describeCommissionBalance({
+    totalEarned: earnedAgg._sum.earnedAmount,
+    totalPaid: paidAgg._sum.paidAmount,
+  });
+  return { earned: balance.totalEarned, paid: balance.totalPaid, unpaid: balance.unpaid };
 }
 
 export interface CreateCommissionPayoutInput {
@@ -250,11 +247,13 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
     });
     if (!staff) throw ApiError.notFound('Staff member not found');
 
+    // ARGUS #337: openness is determined by money, not the derived `isPaid`
+    // flag — legacy rows carry `isPaid = true` with `paidAmount = 0` and are
+    // still payable. `summarizeOpenCommission` drops fully settled records.
     const unpaidRecords = await tx.commissionRecord.findMany({
       where: {
         tenantId: input.tenantId,
         userId: input.userId,
-        isPaid: false,
         createdAt: { gte: input.periodStart, lte: input.periodEnd },
       },
       select: { id: true, earnedAmount: true, paidAmount: true, createdAt: true },
@@ -489,54 +488,36 @@ export async function getCommissionSummaryForTenant(
 
   const summaries = await Promise.all(
     users.map(async (user) => {
-      const [earned, paid, legacyPaid] = await Promise.all([
-        prisma.commissionRecord.aggregate({
-          where: {
-            tenantId,
-            userId: user.id,
-            createdAt: { gte: periodStart, lte: periodEnd },
-          },
-          _sum: { earnedAmount: true },
-        }),
-        prisma.commissionRecord.aggregate({
-          where: {
-            tenantId,
-            userId: user.id,
-            createdAt: { gte: periodStart, lte: periodEnd },
-          },
-          _sum: { paidAmount: true },
-        }),
-        prisma.commissionRecord.aggregate({
-          where: {
-            tenantId,
-            userId: user.id,
-            isPaid: true,
-            paidAmount: 0,
-            createdAt: { gte: periodStart, lte: periodEnd },
-          },
-          _sum: { earnedAmount: true },
-        }),
+      const where = {
+        tenantId,
+        userId: user.id,
+        createdAt: { gte: periodStart, lte: periodEnd },
+      };
+      const [earned, paid] = await Promise.all([
+        prisma.commissionRecord.aggregate({ where, _sum: { earnedAmount: true } }),
+        prisma.commissionRecord.aggregate({ where, _sum: { paidAmount: true } }),
       ]);
 
-      const totalEarned = earned._sum.earnedAmount ?? new Decimal(0);
-      const totalPaid = (paid._sum.paidAmount ?? new Decimal(0)).plus(
-        legacyPaid._sum.earnedAmount ?? new Decimal(0),
-      );
-      const unpaid = new Decimal(totalEarned.toString()).sub(new Decimal(totalPaid.toString()));
+      // ARGUS #337: Total Paid is recorded payout money; an `isPaid` flag with
+      // paidAmount 0 (legacy) must not reduce the open liability.
+      const balance = describeCommissionBalance({
+        totalEarned: earned._sum.earnedAmount,
+        totalPaid: paid._sum.paidAmount,
+      });
 
       return {
         userId: user.id,
         email: user.email,
         fullName: user.fullName?.trim() || null,
         role: user.role,
-        totalEarned: totalEarned.toString(),
-        totalPaid: totalPaid.toString(),
-        unpaid: unpaid.toString(),
+        totalEarned: balance.totalEarned,
+        totalPaid: balance.totalPaid,
+        unpaid: balance.unpaid,
       };
     }),
   );
 
   return summaries.filter(
-    (s) => s.totalEarned !== '0' || s.totalPaid !== '0',
+    (s) => s.totalEarned !== '0.00' || s.totalPaid !== '0.00',
   );
 }
