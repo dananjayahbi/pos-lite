@@ -40,6 +40,7 @@ import {
   describePayrollRunStatus,
   type PayrollRunPaymentInfo,
 } from '@/lib/payroll/payroll-run-status';
+import { PAYROLL_EXPORT_PROVENANCE_CAVEAT } from '@/lib/payroll/export-provenance';
 import { formatRupee } from '@/lib/format';
 
 interface PayrollRunSummary {
@@ -635,6 +636,8 @@ function ExportCard({
             profiles, then reload to download a clean file.
           </p>
         )}
+
+        <p className="text-mist-ink text-[10px]">{PAYROLL_EXPORT_PROVENANCE_CAVEAT}</p>
       </CardContent>
     </Card>
   );

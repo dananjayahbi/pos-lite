@@ -64,6 +64,7 @@ export async function GET(
       generatedAt: context.generatedAt,
       status: context.run.status,
       payment: context.payment,
+      provenanceNote: context.provenance.caveat,
     };
     const rows = toBankSheetRows(context);
 

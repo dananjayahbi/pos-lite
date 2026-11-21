@@ -239,6 +239,38 @@ describe('payroll documents', () => {
     expect(String(paidRows[2]?.[0])).toContain('Nimal Silva');
   });
 
+  it('stamps regenerated exports with the current-profile caveat', () => {
+    const rows = [
+      {
+        staffName: item.staffName,
+        role: item.role,
+        basicSalary: item.basicSalary,
+        allowances: item.allowances,
+        overtimeAmount: item.overtimeAmount,
+        commissionAmount: item.commissionAmount,
+        grossSalary: item.grossSalary,
+        totalDeductions: item.totalDeductions,
+        employeeEpf: item.employeeEpf,
+        netSalary: item.netSalary,
+      },
+    ];
+    const caveat =
+      'Company name and employer EPF/ETF numbers are read from the current company profile. This document was regenerated at download time and may differ from the originally issued copy.';
+    const workbook = XLSX.read(
+      generateSummaryReportXlsx({ ...meta, provenanceNote: caveat }, summaryTotals, rows),
+      { type: 'buffer' },
+    );
+    const summaryRows = XLSX.utils.sheet_to_json(workbook.Sheets['Summary']!, {
+      header: 1,
+    }) as unknown[][];
+    expect(summaryRows.some((row) => String(row[0]).includes('current company profile'))).toBe(
+      true,
+    );
+    expect(summaryRows.some((row) => String(row[0]).includes('regenerated at download time'))).toBe(
+      true,
+    );
+  });
+
   it('reconciles gross to net through labelled no-pay/advances and EPF', () => {
     const rows = [
       {

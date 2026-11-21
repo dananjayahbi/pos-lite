@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { ok, toErrorResponse, unauthorized } from '@/lib/api/error-envelope';
-import { getPayrollRun, getPayrollRunDetail, voidPayrollRun } from '@/lib/services/payroll.service';
+import { getPayrollRunDetail, voidPayrollRun } from '@/lib/services/payroll.service';
 
 /**
  * GET /api/store/payroll/runs/[id] - one generated run (ARGUS #377 keeps the

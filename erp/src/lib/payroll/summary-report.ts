@@ -46,6 +46,8 @@ export interface SummaryReportMeta {
   /** ARGUS #385: never label the net amount "paid" before the run is PAID. */
   status?: string;
   payment?: PayrollRunPaymentInfo | null;
+  /** ARGUS #387: explicit current-profile caveat for regenerated exports. */
+  provenanceNote?: string;
 }
 
 function num(value: string): number {
@@ -107,6 +109,7 @@ export function generateSummaryReportXlsx(
     [`${meta.companyName} - Monthly Payroll Summary`],
     [`Period: ${meta.periodLabel}`, `Generated: ${meta.generatedAt.toLocaleString('en-GB')}`],
     [`Status: ${status.exportMarker}`],
+    ...(meta.provenanceNote ? [[meta.provenanceNote]] : []),
     [],
     ['Item', 'Amount (LKR)'],
     ...rows.map(([label, key]) => [
@@ -166,12 +169,16 @@ export function generateSummaryReportPdf(
   doc.text(`Headcount: ${totals.headcount}`, pageWidth - 40, 60, { align: 'right' });
   doc.setFontSize(8);
   doc.text(`Status: ${status.exportMarker}`, 40, 73);
+  if (meta.provenanceNote) {
+    doc.setFontSize(7);
+    doc.text(meta.provenanceNote, 40, 84, { maxWidth: pageWidth - 80 });
+  }
   doc.setDrawColor(200, 149, 108);
   doc.setLineWidth(1.5);
-  doc.line(40, 84, pageWidth - 40, 84);
+  doc.line(40, meta.provenanceNote ? 96 : 84, pageWidth - 40, meta.provenanceNote ? 96 : 84);
 
   autoTable(doc, {
-    startY: 96,
+    startY: meta.provenanceNote ? 106 : 96,
     head: [['Company cost breakdown', 'Amount (LKR)']],
     body: rows.map(([label, key]) => [
       label,

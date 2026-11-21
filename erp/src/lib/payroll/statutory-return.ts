@@ -30,6 +30,8 @@ export interface StatutoryMeta {
   /** ARGUS #385: the return is generated from an unpaid run until marked paid. */
   status?: string;
   payment?: PayrollRunPaymentInfo | null;
+  /** ARGUS #387: explicit current-profile caveat for regenerated exports. */
+  provenanceNote?: string;
 }
 
 function num(value: string): number {
@@ -68,6 +70,7 @@ function epfSheet(meta: StatutoryMeta, rows: StatutoryRow[]): XLSX.WorkSheet {
     ['Employer EPF Number', meta.employerEpfNumber || '-'],
     ['Month', meta.periodLabel],
     [`Status: ${status.exportMarker}`],
+    ...(meta.provenanceNote ? [[meta.provenanceNote]] : []),
     [],
     [
       'No.',
@@ -122,6 +125,7 @@ function etfSheet(meta: StatutoryMeta, rows: StatutoryRow[]): XLSX.WorkSheet {
     ['Employer ETF Number', meta.employerEtfNumber || '-'],
     ['Month', meta.periodLabel],
     [`Status: ${status.exportMarker}`],
+    ...(meta.provenanceNote ? [[meta.provenanceNote]] : []),
     [],
     [
       'No.',
@@ -189,9 +193,13 @@ export function generateStatutoryReturnPdf(
   );
   doc.setFontSize(8);
   doc.text(`Status: ${status.exportMarker}`, 40, 72);
+  if (meta.provenanceNote) {
+    doc.setFontSize(7);
+    doc.text(meta.provenanceNote, 40, 82, { maxWidth: pageWidth - 80 });
+  }
 
   autoTable(doc, {
-    startY: 84,
+    startY: meta.provenanceNote ? 94 : 84,
     margin: { left: 40, right: 40, top: 40, bottom: 40 },
     head: [
       [
@@ -237,9 +245,13 @@ export function generateStatutoryReturnPdf(
   );
   doc.setFontSize(8);
   doc.text(`Status: ${status.exportMarker}`, 40, 72);
+  if (meta.provenanceNote) {
+    doc.setFontSize(7);
+    doc.text(meta.provenanceNote, 40, 82, { maxWidth: pageWidth - 80 });
+  }
 
   autoTable(doc, {
-    startY: 84,
+    startY: meta.provenanceNote ? 94 : 84,
     margin: { left: 40, right: 40, top: 40, bottom: 40 },
     head: [
       [

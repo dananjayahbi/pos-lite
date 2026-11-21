@@ -24,6 +24,8 @@ export interface BankSheetMeta {
   /** ARGUS #385: generated runs are unpaid; never imply a completed payment. */
   status?: string;
   payment?: PayrollRunPaymentInfo | null;
+  /** ARGUS #387: explicit current-profile caveat for regenerated exports. */
+  provenanceNote?: string;
 }
 
 /** Honest naming - this is not a bank-specific batch/upload format. */
@@ -58,6 +60,7 @@ export function generateBankSheetXlsx(meta: BankSheetMeta, rows: BankSheetRow[])
     [`${meta.companyName} - ${BANK_WORKSHEET_TITLE}`],
     [`Period: ${meta.periodLabel}`, `Generated: ${meta.generatedAt.toLocaleString('en-GB')}`],
     [`Status: ${status.exportMarker}`],
+    ...(meta.provenanceNote ? [[meta.provenanceNote]] : []),
     [BANK_WORKSHEET_DISCLAIMER],
     [],
     WORKSHEET_HEAD,
@@ -112,20 +115,26 @@ export function generateBankSheetPdf(meta: BankSheetMeta, rows: BankSheetRow[]):
   });
   doc.setFontSize(8);
   doc.text(`Status: ${status.exportMarker}`, 40, 73);
+  let cursorY = 84;
+  if (meta.provenanceNote) {
+    doc.setFontSize(7);
+    doc.text(meta.provenanceNote, 40, cursorY, { maxWidth: pageWidth - 80 });
+    cursorY += 13;
+  }
   doc.setFontSize(7.5);
   doc.text(
     'Worksheet for manual bank upload - not a bank batch file. Confirm branch/account codes, account type, debit account, payment date, narration and transaction code with your bank.',
     40,
-    85,
+    cursorY,
     { maxWidth: pageWidth - 80 },
   );
 
   doc.setDrawColor(200, 149, 108);
   doc.setLineWidth(1.5);
-  doc.line(40, 100, pageWidth - 40, 100);
+  doc.line(40, cursorY + 14, pageWidth - 40, cursorY + 14);
 
   autoTable(doc, {
-    startY: 110,
+    startY: cursorY + 24,
     margin: { left: 40, right: 40, top: 40, bottom: 40 },
     head: [WORKSHEET_HEAD],
     body: rows.map((row, index) => [
