@@ -84,3 +84,42 @@ describe('resolveCashFlowReportState', () => {
     expect(state.showReport).toBe(true);
   });
 });
+
+/** ARGUS #424: RBAC and the blank-error state. */
+describe('resolveCashFlowReportState boundaries (ARGUS #424)', () => {
+  it('treats a 401 like a 403 and hides the report', () => {
+    const state = resolveCashFlowReportState({
+      ...base,
+      error: { status: 401 },
+    });
+
+    expect(state.mode).toBe('denied');
+    expect(state.showReport).toBe(false);
+    expect(state.canRetry).toBe(false);
+    expect(state.message).toContain('permission');
+  });
+
+  it('shows a default message instead of a blank error card', () => {
+    const state = resolveCashFlowReportState({
+      ...base,
+      error: { status: 500 },
+    });
+
+    expect(state.mode).toBe('error');
+    expect(state.showReport).toBe(false);
+    expect(state.canRetry).toBe(true);
+    expect(state.message).toBe('Could not generate the cash flow report.');
+  });
+
+  it('keeps the report hidden while permission is loading even after an error', () => {
+    const state = resolveCashFlowReportState({
+      ...base,
+      isPermissionLoading: true,
+      error: { status: 500, message: 'boom' },
+    });
+
+    expect(state.mode).toBe('permission-loading');
+    expect(state.showReport).toBe(false);
+    expect(state.message).toBeNull();
+  });
+});
