@@ -26,6 +26,7 @@ import { toast } from 'sonner';
 import { EXPENSE_CATEGORIES } from '@/lib/validators/expense.validators';
 import { formatRupee } from '@/lib/format';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { isCategorySelectionDirty } from '@/lib/petty-cash/fund-settings';
 import {
   buildRunningLedger,
   ledgerDisclosure,
@@ -181,6 +182,11 @@ export default function PettyCashDashboard({
 
   const fund = response?.fund ?? null;
   const toggleCategories = categoryEdits ?? fund?.activeCategories ?? [];
+  // ARGUS #411: Save is disabled until a toggle actually changes the set.
+  const categoriesDirty = isCategorySelectionDirty(
+    fund?.activeCategories ?? [],
+    categoryEdits,
+  );
 
   // Active source accounts for "Add Cash In". The fund's own account is
   // excluded by the dialog.
@@ -509,7 +515,7 @@ export default function PettyCashDashboard({
                 {canManage && (
                   <Button
                     onClick={() => categoriesMutation.mutate(toggleCategories)}
-                    disabled={categoriesMutation.isPending}
+                    disabled={categoriesMutation.isPending || !categoriesDirty}
                     variant="outline"
                     className="border-mist text-espresso"
                   >
