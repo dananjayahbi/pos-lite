@@ -51,9 +51,6 @@ interface BarcodeLabelDialogProps {
   variants: LabelVariant[];
 }
 
-const toNum = (v: number | string): number =>
-  typeof v === 'string' ? parseFloat(v) : v;
-
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function BarcodeLabelDialog({
@@ -74,6 +71,10 @@ export function BarcodeLabelDialog({
   const [quantities, setQuantities] = useState<Record<string, number>>(() =>
     Object.fromEntries(variants.map((v) => [v.id, 1])),
   );
+  const [previewVariantId, setPreviewVariantId] = useState<string | null>(
+    variants[0]?.id ?? null,
+  );
+  const [a4PageIndex, setA4PageIndex] = useState(0);
 
   // Callers mount this dialog per selection, so the initializer above is
   // enough; a missing id falls back to a quantity of 1.
@@ -198,16 +199,20 @@ export function BarcodeLabelDialog({
     onClose();
   }, [isA4, template, a4SheetPages, printLabels, onClose, vatRate, ssclRate]);
 
-  const firstVariant = variants[0];
-  const firstVariantPrice = firstVariant
-    ? labelPriceDisplay({
-        retailPrice: firstVariant.retailPrice,
-        taxRule: firstVariant.taxRule,
-        vatRate,
-        ssclRate,
-      })
-    : null;
-  const firstA4Page = a4SheetPages[0];
+  const priceFor = (variant: LabelVariant) =>
+    labelPriceDisplay({
+      retailPrice: variant.retailPrice,
+      taxRule: variant.taxRule,
+      vatRate,
+      ssclRate,
+    });
+
+  const previewVariant =
+    variants.find((variant) => variant.id === previewVariantId) ?? variants[0];
+  const previewVariantPrice = previewVariant ? priceFor(previewVariant) : null;
+  const a4PageCount = a4SheetPages.length;
+  const safeA4PageIndex = Math.min(a4PageIndex, Math.max(0, a4PageCount - 1));
+  const previewA4Page = a4SheetPages[safeA4PageIndex] ?? null;
 
   return (
     <>
@@ -221,37 +226,94 @@ export function BarcodeLabelDialog({
 
           <div className="grid grid-cols-[1fr_300px] gap-6">
             {/* LEFT — Label preview */}
-            <div className="flex items-start justify-center overflow-hidden rounded-lg border border-sand/30 bg-sand/10 p-6">
-              {isA4 ? (
-                firstA4Page ? (
-                  <div className="w-full max-w-[360px]">
-                    <div className="mb-2 flex items-center justify-between font-body text-xs text-mist-ink">
-                      <span>A4 preview · page 1</span>
-                      <span>
-                        {a4SheetPages.length} page
-                        {a4SheetPages.length === 1 ? '' : 's'}
-                      </span>
+            <div className="flex flex-col gap-3 overflow-hidden rounded-lg border border-sand/30 bg-sand/10 p-4">
+              {variants.length > 1 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {variants.map((variant) => (
+                    <button
+                      key={variant.id}
+                      type="button"
+                      aria-pressed={variant.id === previewVariant?.id}
+                      data-testid="barcode-preview-variant"
+                      onClick={() => setPreviewVariantId(variant.id)}
+                      className={`rounded-md px-2 py-1 font-body text-xs transition-colors ${
+                        variant.id === previewVariant?.id
+                          ? 'bg-espresso text-pearl'
+                          : 'border border-sand bg-pearl text-espresso hover:bg-sand/20'
+                      }`}
+                    >
+                      {[variant.form, variant.packSize].filter(Boolean).join(' ') ||
+                        variant.sku}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="flex min-h-[280px] items-start justify-center">
+                {isA4 ? (
+                  previewA4Page ? (
+                    <div className="w-full max-w-[360px]">
+                      <div className="mb-2 flex items-center justify-between font-body text-xs text-mist-ink">
+                        <span>
+                          A4 preview · page {safeA4PageIndex + 1} of {a4PageCount}
+                        </span>
+                        <span>
+                          {previewA4Page.length} label
+                          {previewA4Page.length === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      <BarcodeSheetPage labels={previewA4Page} scale={0.4} />
+                      {a4PageCount > 1 ? (
+                        <div className="mt-2 flex items-center justify-between">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 border-sand px-2 text-xs"
+                            disabled={safeA4PageIndex <= 0}
+                            onClick={() =>
+                              setA4PageIndex(Math.max(0, safeA4PageIndex - 1))
+                            }
+                          >
+                            Previous page
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 border-sand px-2 text-xs"
+                            disabled={safeA4PageIndex >= a4PageCount - 1}
+                            onClick={() =>
+                              setA4PageIndex(
+                                Math.min(a4PageCount - 1, safeA4PageIndex + 1),
+                              )
+                            }
+                          >
+                            Next page
+                          </Button>
+                        </div>
+                      ) : null}
                     </div>
-                    <BarcodeSheetPage labels={firstA4Page} scale={0.4} />
-                  </div>
-                ) : null
-              ) : (
-                firstVariant && (
-                  <BarcodeLabel
-                    brandName={firstVariant.brandName}
-                    productName={firstVariant.productName}
-                    sku={firstVariant.sku}
-                    barcode={firstVariant.barcode}
-                    form={firstVariant.form}
-                    packSize={firstVariant.packSize}
-                    retailPrice={firstVariantPrice?.amount ?? toNum(firstVariant.retailPrice)}
-                    priceQualifier={firstVariantPrice?.qualifier ?? null}
-                    stockQuantity={firstVariant.stockQuantity}
-                    lowStockThreshold={firstVariant.lowStockThreshold}
-                    isPreview
-                  />
-                )
-              )}
+                  ) : null
+                ) : (
+                  previewVariant &&
+                  previewVariantPrice && (
+                    <BarcodeLabel
+                      brandName={previewVariant.brandName}
+                      productName={previewVariant.productName}
+                      sku={previewVariant.sku}
+                      barcode={previewVariant.barcode}
+                      form={previewVariant.form}
+                      packSize={previewVariant.packSize}
+                      retailPrice={previewVariantPrice.amount}
+                      priceQualifier={previewVariantPrice.qualifier}
+                      stockQuantity={previewVariant.stockQuantity}
+                      lowStockThreshold={previewVariant.lowStockThreshold}
+                      isPreview
+                    />
+                  )
+                )}
+              </div>
             </div>
 
             {/* RIGHT — Settings */}
@@ -288,6 +350,45 @@ export function BarcodeLabelDialog({
                     {BARCODE_LABELS_PER_SHEET} labels per sheet.
                   </p>
                 ) : null}
+              </div>
+
+              {/* Label contents per queued variant */}
+              <div>
+                <span className="font-body text-xs font-medium text-espresso mb-1.5 block">
+                  Label contents
+                </span>
+                <ul className="max-h-[120px] space-y-1 overflow-y-auto pr-1">
+                  {variants.map((variant) => {
+                    const price = priceFor(variant);
+                    return (
+                      <li
+                        key={variant.id}
+                        className="flex items-center justify-between gap-2 rounded border border-sand/30 bg-pearl px-2 py-1 font-body text-xs"
+                      >
+                        <span className="min-w-0 truncate text-espresso">
+                          {variant.sku}
+                          {(variant.form || variant.packSize) && (
+                            <span className="text-mist-ink">
+                              {' · '}
+                              {[variant.form, variant.packSize]
+                                .filter(Boolean)
+                                .join(' ')}
+                            </span>
+                          )}
+                        </span>
+                        <span className="shrink-0 text-right text-espresso">
+                          Rs. {price.amount.toLocaleString('en-LK', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                          <span className="ml-1 text-mist-ink">
+                            ({price.qualifier})
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
 
               {/* Quantity stepper list */}

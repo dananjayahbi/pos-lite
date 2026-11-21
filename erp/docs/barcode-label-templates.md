@@ -73,6 +73,14 @@ product detail tab) and is priced by `pricing/label-price.core.ts` with the
 tenant rates from `/api/settings/taxes`, so the A4 sheet, the thermal label and
 the previews agree.
 
+## Dialog previews
+
+The Print Labels dialog no longer previews only the first queued variant. It
+shows a chip per variant so any pack can be inspected, lists every variant's SKU,
+form/pack and tax-inclusive price under **Label contents**, and the A4 mode has
+page navigation plus the total page count (`Page 2 of 3`). The thermal preview
+switches to the selected variant (ARGUS #161).
+
 ## Verification
 
 `barcode-label-templates.core.test.ts` asserts the two template ids, the A4
