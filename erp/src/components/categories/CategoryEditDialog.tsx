@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { CategoryImageUpload } from '@/components/categories/CategoryImageUpload';
+import { validateCategoryForm } from '@/lib/categories/categoryForm.core';
 
 interface CategoryEditDialogProps {
   open: boolean;
@@ -71,14 +72,14 @@ function CategoryEditForm({
       if (isEdit && !category) throw new Error('Category is required');
       const url = isEdit ? `/api/store/categories/${category!.id}` : '/api/store/categories';
       const method = isEdit ? 'PATCH' : 'POST';
-      const body: Record<string, unknown> = {
-        name: name.trim(),
-        sortOrder: Number.parseInt(sortOrder, 10) || 0,
-        imageUrl: imageUrl ?? '',
-        // Always send the description: an empty textarea clears the stored text
-        // instead of leaving the old description untouched (ARGUS #166).
-        description: description.trim() ? description.trim() : null,
-      };
+      // Same payload in create and edit mode, so every field the edit dialog
+      // exposes is also available when creating (ARGUS #169).
+      const body = validateCategoryForm({
+        name,
+        description,
+        sortOrder,
+        imageUrl,
+      }).payload;
 
       const res = await fetch(url, {
         method,
@@ -98,13 +99,8 @@ function CategoryEditForm({
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const trimmedName = name.trim();
-  const parsedSort = Number.parseInt(sortOrder, 10);
-  const isValid =
-    trimmedName.length >= 2 &&
-    trimmedName.length <= 60 &&
-    !Number.isNaN(parsedSort) &&
-    parsedSort >= 0;
+  const validation = validateCategoryForm({ name, description, sortOrder, imageUrl });
+  const isValid = validation.valid;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

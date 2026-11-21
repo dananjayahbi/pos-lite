@@ -7,7 +7,6 @@ import { useCategories } from '@/hooks/useCategories';
 import { CategoryList } from '@/components/categories/CategoryList';
 import { CategoryDetailPanel } from '@/components/categories/CategoryDetailPanel';
 import { CategoryEditDialog } from '@/components/categories/CategoryEditDialog';
-import { InlineCategoryForm } from '@/components/categories/InlineCategoryForm';
 import { DeleteConfirmDialog } from '@/components/shared/DeleteConfirmDialog';
 import { PageSkeleton } from '@/components/skeletons';
 import { Button } from '@/components/ui/button';
@@ -20,7 +19,7 @@ interface CategoriesPageClientProps {
 export function CategoriesPageClient({ permissions }: CategoriesPageClientProps) {
   const { data, isLoading, isError } = useCategories();
   const queryClient = useQueryClient();
-  const [showForm, setShowForm] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editTargetId, setEditTargetId] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -80,14 +79,15 @@ export function CategoriesPageClient({ permissions }: CategoriesPageClientProps)
           <Button
             size="sm"
             className="bg-espresso text-pearl hover:bg-espresso/90"
-            onClick={() => setShowForm(true)}
+            onClick={() => {
+              setEditTargetId(null);
+              setCreateOpen(true);
+            }}
           >
             <Plus className="mr-1 h-4 w-4" />
             New Category
           </Button>
         </div>
-
-        {showForm && <InlineCategoryForm onClose={() => setShowForm(false)} />}
 
         <CategoryList
           categories={categories}
@@ -117,10 +117,15 @@ export function CategoriesPageClient({ permissions }: CategoriesPageClientProps)
         )}
       </div>
 
-      {/* Edit dialog */}
+      {/* Create / edit dialog: both modes render the full field set. */}
       <CategoryEditDialog
-        open={!!editTarget}
-        onOpenChange={(open) => !open && setEditTargetId(null)}
+        open={createOpen || !!editTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCreateOpen(false);
+            setEditTargetId(null);
+          }
+        }}
         category={editTarget}
       />
 
