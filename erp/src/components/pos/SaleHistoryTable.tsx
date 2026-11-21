@@ -33,6 +33,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { SaleDetailModal } from '@/components/pos/SaleDetailModal';
 import { ReturnWizardSheet } from '@/components/pos/ReturnWizardSheet';
 import { SaleEditSheet, type EditableSale } from '@/components/sales/SaleEditSheet';
+import { saleUnitCount } from '@/components/sales/saleDisplay';
 import { SALES_QUERY_KEY } from '@/components/sales/saleQueryKey';
 
 interface SaleLine {
@@ -390,8 +391,11 @@ export function SaleHistoryTable() {
                   )}
                 </TableCell>
                 <TableCell className="text-center">
-                  <span className="inline-flex items-center justify-center bg-mist/30 text-espresso font-body text-xs px-2 py-0.5 rounded-full">
-                    {sale.lines.length}
+                  <span
+                    className="inline-flex items-center justify-center bg-mist/30 text-espresso font-body text-xs px-2 py-0.5 rounded-full"
+                    title={`${sale.lines.length} line${sale.lines.length === 1 ? '' : 's'}`}
+                  >
+                    {saleUnitCount(sale.lines)}
                   </span>
                 </TableCell>
                 <TableCell className="text-right font-mono text-sm font-bold text-espresso">
