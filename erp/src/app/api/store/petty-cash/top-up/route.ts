@@ -66,6 +66,7 @@ export async function POST(request: Request) {
         balance,
         amount: result.amount,
         description: result.description,
+        sourceType: result.sourceType,
         sourceAccountId: result.sourceAccountId,
       },
     });

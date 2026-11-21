@@ -74,24 +74,73 @@ describe('TopUpPettyCashSchema - Add Cash In', () => {
   it('accepts a numeric amount and optional source / date / note', () => {
     const parsed = TopUpPettyCashSchema.safeParse({
       amount: 10000,
+      sourceType: 'ACCOUNT',
       sourceAccountId: 'cmaccount0000000000000000',
       description: 'Monthly float top-up',
-      entryDate: '2026-11-06',
+      entryDate: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
     });
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.amount).toBe(10000);
+      expect(parsed.data.sourceType).toBe('ACCOUNT');
       expect(parsed.data.entryDate).toBeInstanceOf(Date);
     }
   });
 
-  it('coerces numeric strings and allows an external (no source) top-up', () => {
-    const parsed = TopUpPettyCashSchema.safeParse({ amount: '2500.50' });
+  it('accepts external cash without a source account', () => {
+    const parsed = TopUpPettyCashSchema.safeParse({
+      amount: '2500.50',
+      sourceType: 'EXTERNAL',
+    });
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.amount).toBe(2500.5);
+      expect(parsed.data.sourceType).toBe('EXTERNAL');
       expect(parsed.data.sourceAccountId).toBeUndefined();
     }
+  });
+
+  it('requires a source account for a transfer path', () => {
+    const parsed = TopUpPettyCashSchema.safeParse({
+      amount: 100,
+      sourceType: 'ACCOUNT',
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('rejects a source account on the external-cash path', () => {
+    const parsed = TopUpPettyCashSchema.safeParse({
+      amount: 100,
+      sourceType: 'EXTERNAL',
+      sourceAccountId: 'cmaccount0000000000000000',
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('infers the source type for older callers', () => {
+    const external = TopUpPettyCashSchema.safeParse({ amount: 10 });
+    expect(external.success).toBe(true);
+    if (external.success) expect(external.data.sourceType).toBe('EXTERNAL');
+
+    const transfer = TopUpPettyCashSchema.safeParse({
+      amount: 10,
+      sourceAccountId: 'cmaccount0000000000000000',
+    });
+    expect(transfer.success).toBe(true);
+    if (transfer.success) expect(transfer.data.sourceType).toBe('ACCOUNT');
+  });
+
+  it('rejects a future-dated posting', () => {
+    const future = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    const parsed = TopUpPettyCashSchema.safeParse({ amount: 100, entryDate: future });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('accepts a current or backdated posting', () => {
+    const today = new Date().toISOString();
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    expect(TopUpPettyCashSchema.safeParse({ amount: 100, entryDate: today }).success).toBe(true);
+    expect(TopUpPettyCashSchema.safeParse({ amount: 100, entryDate: past }).success).toBe(true);
   });
 
   it('rejects zero, negative, and non-numeric amounts', () => {

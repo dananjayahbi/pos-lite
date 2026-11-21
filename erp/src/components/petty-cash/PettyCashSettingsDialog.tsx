@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { DialogSubmitRow } from '@/components/payment-accounts/DialogSubmitRow';
 import { parseMoney } from '@/components/payment-accounts/paymentAccountLabels';
+import { isFundSettingsDraftDirty } from '@/lib/petty-cash/fund-settings';
 
 export interface PettyCashSettingsPayload {
   name: string;
@@ -76,7 +77,16 @@ function SettingsForm({
   const nameValid = trimmedName.length > 0 && trimmedName.length <= 80;
   const thresholdValue = threshold.trim() === '' ? null : parseMoney(threshold);
   const thresholdValid = threshold.trim() === '' || (thresholdValue !== null && thresholdValue >= 0);
-  const canSubmit = nameValid && thresholdValid && !isSubmitting;
+  // ARGUS #411: a no-op save writes nothing and is not offered.
+  const initialThresholdValue =
+    initialThreshold === null || initialThreshold.trim() === ''
+      ? null
+      : parseMoney(initialThreshold);
+  const dirty = isFundSettingsDraftDirty(
+    { name: initialName, lowBalanceThreshold: initialThresholdValue },
+    { name: trimmedName, lowBalanceThreshold: thresholdValue },
+  );
+  const canSubmit = nameValid && thresholdValid && dirty && !isSubmitting;
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();

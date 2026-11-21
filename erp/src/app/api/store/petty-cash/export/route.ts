@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { buildPettyCashExportData } from '@/lib/services/petty-cash.service';
 import { toCsv, csvDownloadResponse, type CsvColumn } from '@/lib/export';
 import { toErrorResponse } from '@/lib/api/error-envelope';
+import { buildPettyCashCashInCsv } from '@/lib/petty-cash/export-cash-in';
 
 const CATEGORY_LABEL: Record<string, string> = {
   RENT: 'Rent',
@@ -89,7 +90,7 @@ export async function GET(request: Request) {
       `Basis: ${data.period.label}`,
       ...(data.period.categoryFiltered
         ? [
-            'The balance statement covers the whole fund; the category filter applies only to the expenses and category totals below.',
+            'The balance statement and cash-in rows cover the whole fund; the category filter applies only to the expenses and category totals below.',
           ]
         : []),
     ];
@@ -110,6 +111,7 @@ export async function GET(request: Request) {
       { header: 'Total', value: (r) => r.total.toFixed(2) },
     ];
     const categoriesCsv = toCsv(categoryColumns, data.byCategory);
+    const cashInCsv = buildPettyCashCashInCsv(data.topUps);
 
     const sections = [
       `${data.fund.name} - Petty Cash Audit Trail`,
@@ -118,6 +120,9 @@ export async function GET(request: Request) {
       '',
       'BALANCE STATEMENT',
       statementCsv,
+      '',
+      'CASH IN (TOP-UPS)',
+      cashInCsv,
       '',
       'EXPENSES',
       expensesCsv,

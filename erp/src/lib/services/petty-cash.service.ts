@@ -14,6 +14,7 @@ import { parseRangeEnd, parseRangeStart } from '@/lib/dates/inclusiveRange';
 import { computePettyCashPeriodStatement } from '@/lib/services/pettyCashReport.core';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { decideFundDelta } from '@/lib/petty-cash/fund-balance';
+import { diffFundSettings, fundSettingsSnapshot } from '@/lib/petty-cash/fund-settings';
 import type { TopUpPettyCashInput } from '@/lib/validators/petty-cash.validators';
 import {
   multiplePettyCashFundsMessage,
@@ -83,6 +84,15 @@ export interface PettyCashExportData {
     amount: number;
     receiptImageUrl: string | null;
     recordedByEmail: string;
+  }[];
+  /** Individual cash-in transactions in the same period as the statement. */
+  topUps: {
+    id: string;
+    entryDate: string;
+    source: string;
+    description: string;
+    amount: number;
+    recordedByEmail: string | null;
   }[];
   byCategory: ExpenseCategoryTotal[];
 }
@@ -791,11 +801,31 @@ export async function topUpPettyCash(
   const amount = new Decimal(input.amount);
   const groupId = `pc_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
   const entryDate = input.entryDate;
+  const sourceType =
+    input.sourceType ?? (input.sourceAccountId ? 'ACCOUNT' : 'EXTERNAL');
+
+  // Defense in depth: the validator already enforces the split, but a service
+  // caller must not be able to label an account transfer as external cash (or
+  // record external cash against a bank account).
+  if (sourceType === 'ACCOUNT' && !input.sourceAccountId) {
+    throw new ApiError(
+      422,
+      'VALIDATION_ERROR',
+      'Select the account the transfer came from',
+    );
+  }
+  if (sourceType === 'EXTERNAL' && input.sourceAccountId) {
+    throw new ApiError(
+      422,
+      'VALIDATION_ERROR',
+      'External cash cannot name a source account',
+    );
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     let sourceName: string | null = null;
 
-    if (input.sourceAccountId) {
+    if (sourceType === 'ACCOUNT' && input.sourceAccountId) {
       const source = await tx.paymentAccount.findFirst({
         where: { id: input.sourceAccountId, tenantId },
         include: { pettyCashFund: { select: { id: true } } },
@@ -881,6 +911,7 @@ export async function topUpPettyCash(
         action: AUDIT_ACTIONS.PETTY_CASH_TOP_UP,
         after: {
           amount: amount.toNumber(),
+          sourceType,
           sourceAccountId: input.sourceAccountId ?? null,
           description: buildTopUpDescription(sourceName, input.description),
           entryDate: (entryDate ?? new Date()).toISOString(),
@@ -893,6 +924,7 @@ export async function topUpPettyCash(
       fund: updated,
       amount: amount.toNumber(),
       description: buildTopUpDescription(sourceName, input.description),
+      sourceType,
       sourceAccountId: input.sourceAccountId ?? null,
     };
   });
@@ -1131,6 +1163,93 @@ export async function buildPettyCashExportData(
     expensesInPeriod: periodExpensesAgg._sum.amount ?? 0,
   });
 
+  // ARGUS #412: the export used to show cash-in only as an aggregate. List the
+  // individual period top-ups with their source, note and operator.
+  const topUpEntries = topUpBase
+    ? await prisma.paymentAccountEntry.findMany({
+        where: {
+          ...topUpBase,
+          ...(periodFiltered
+            ? {
+                entryDate: {
+                  ...(start ? { gte: start } : {}),
+                  ...(end ? { lte: end } : {}),
+                },
+              }
+            : {}),
+        },
+        orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+        select: {
+          id: true,
+          entryDate: true,
+          description: true,
+          debit: true,
+          createdById: true,
+          source: true,
+          sourceId: true,
+          transferGroupId: true,
+        },
+      })
+    : [];
+
+  const transferKeys = Array.from(
+    new Set(
+      topUpEntries
+        .filter((entry) => entry.source !== PaymentEntrySource.DEPOSIT)
+        .map((entry) => entry.transferGroupId ?? entry.sourceId)
+        .filter((key): key is string => Boolean(key)),
+    ),
+  );
+  const sourceEntries =
+    transferKeys.length > 0 && accountId
+      ? await prisma.paymentAccountEntry.findMany({
+          where: {
+            tenantId,
+            credit: { gt: 0 },
+            accountId: { not: accountId },
+            OR: [
+              { transferGroupId: { in: transferKeys } },
+              { sourceId: { in: transferKeys } },
+            ],
+          },
+          select: {
+            transferGroupId: true,
+            sourceId: true,
+            account: { select: { name: true } },
+          },
+        })
+      : [];
+  const sourceNameByKey = new Map<string, string>();
+  for (const entry of sourceEntries) {
+    const key = entry.transferGroupId ?? entry.sourceId;
+    if (key) sourceNameByKey.set(key, entry.account.name);
+  }
+
+  const topUpActorIds = Array.from(new Set(topUpEntries.map((entry) => entry.createdById)));
+  const topUpActors =
+    topUpActorIds.length > 0
+      ? await prisma.user.findMany({
+          where: { tenantId, id: { in: topUpActorIds } },
+          select: { id: true, email: true },
+        })
+      : [];
+  const topUpEmailById = new Map(topUpActors.map((actor) => [actor.id, actor.email]));
+
+  const exportTopUps = topUpEntries.map((entry) => {
+    const key = entry.transferGroupId ?? entry.sourceId;
+    return {
+      id: entry.id,
+      entryDate: entry.entryDate.toISOString(),
+      source:
+        entry.source === PaymentEntrySource.DEPOSIT
+          ? 'External cash'
+          : (key ? sourceNameByKey.get(key) : undefined) ?? 'Account transfer',
+      description: entry.description,
+      amount: entry.debit.toNumber(),
+      recordedByEmail: topUpEmailById.get(entry.createdById) ?? null,
+    };
+  });
+
   return {
     fund: {
       id: fund.id,
@@ -1169,6 +1288,7 @@ export async function buildPettyCashExportData(
       receiptImageUrl: e.receiptImageUrl,
       recordedByEmail: e.recordedBy.email,
     })),
+    topUps: exportTopUps,
     byCategory,
   };
 }
@@ -1299,13 +1419,41 @@ export async function updateFund(
     throw new ApiError(404, 'NOT_FOUND', 'Petty cash fund not found');
   }
 
-  if (data.name !== undefined && existing.paymentAccountId) {
+  // ARGUS #411: compare every setting (not just name/opening/isActive) and
+  // write nothing for a no-op save. Category order is irrelevant.
+  const before = fundSettingsSnapshot({
+    name: existing.name,
+    openingBalance: existing.openingBalance,
+    lowBalanceThreshold: existing.lowBalanceThreshold,
+    isActive: existing.isActive,
+    activeCategories: existing.activeCategories,
+  });
+  const after = fundSettingsSnapshot({
+    name: data.name !== undefined ? data.name : existing.name,
+    openingBalance:
+      data.openingBalance !== undefined ? data.openingBalance : existing.openingBalance,
+    lowBalanceThreshold:
+      data.lowBalanceThreshold !== undefined
+        ? data.lowBalanceThreshold
+        : existing.lowBalanceThreshold,
+    isActive: data.isActive !== undefined ? data.isActive : existing.isActive,
+    activeCategories:
+      data.activeCategories !== undefined
+        ? data.activeCategories
+        : existing.activeCategories,
+  });
+  const diff = diffFundSettings(before, after);
+  if (!diff.changed) {
+    return getFund(tenantId, fundId);
+  }
+
+  if (diff.changedFields.includes('name') && existing.paymentAccountId) {
     const clash = await prisma.paymentAccount.findFirst({
-      where: { tenantId, name: data.name, id: { not: existing.paymentAccountId } },
+      where: { tenantId, name: after.name, id: { not: existing.paymentAccountId } },
       select: { id: true },
     });
     if (clash) {
-      throw new ApiError(409, 'CONFLICT', `A payment account named "${data.name}" already exists`);
+      throw new ApiError(409, 'CONFLICT', `A payment account named "${after.name}" already exists`);
     }
   }
 
@@ -1318,25 +1466,40 @@ export async function updateFund(
   if (data.isActive !== undefined) patch.isActive = data.isActive;
   if (data.activeCategories !== undefined) patch.activeCategories = data.activeCategories;
 
-  // Keep the linked payment account name aligned with the fund name.
-  const updated = await prisma.$transaction(async (tx) => {
-    const next = await tx.pettyCashFund.update({
+  // Keep the linked payment account name aligned with the fund name, and write
+  // the full before/after audit in the same transaction as the fund update.
+  await prisma.$transaction(async (tx) => {
+    await tx.pettyCashFund.update({
       where: { id: fundId },
       data: patch,
     });
-    if (data.name !== undefined && existing.paymentAccountId) {
+    if (diff.changedFields.includes('name') && existing.paymentAccountId) {
       await tx.paymentAccount.update({
         where: { id: existing.paymentAccountId },
-        data: { name: data.name },
+        data: { name: after.name },
       });
     }
-    return next;
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        actorId,
+        actorRole: 'USER',
+        entityType: 'PettyCashFund',
+        entityId: fundId,
+        action: AUDIT_ACTIONS.PETTY_CASH_FUND_UPDATED,
+        before: diff.before as unknown as Prisma.InputJsonValue,
+        after: {
+          ...diff.after,
+          changedFields: diff.changedFields,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
   });
 
   // Recompute the running balance whenever the opening allocation changes.
   // The legacy openingBalance path is no longer exposed in the UI, but if an
   // owner calls it we keep the linked account in step with the new allocation.
-  if (data.openingBalance !== undefined) {
+  if (diff.changedFields.includes('openingBalance')) {
     const beforeCurrent = new Decimal(existing.currentBalance.toString());
     await recomputeCurrentBalance(tenantId, fundId);
     const afterFund = await prisma.pettyCashFund.findFirst({
@@ -1364,30 +1527,9 @@ export async function updateFund(
       });
     }
     await checkFundLowBalance(tenantId, fundId);
-  } else if (data.lowBalanceThreshold !== undefined) {
+  } else if (diff.changedFields.includes('lowBalanceThreshold')) {
     await checkFundLowBalance(tenantId, fundId);
   }
 
-  void createAuditLog({
-    tenantId,
-    actorId,
-    actorRole: 'USER',
-    entityType: 'PettyCashFund',
-    entityId: fundId,
-    action: AUDIT_ACTIONS.PETTY_CASH_FUND_UPDATED,
-    before: {
-      name: existing.name,
-      openingBalance: existing.openingBalance.toNumber(),
-      isActive: existing.isActive,
-    },
-    after: { name: updated.name, openingBalance: updated.openingBalance.toNumber() },
-  }).catch(() => {});
-
-  return prisma.pettyCashFund.findFirst({
-    where: { id: fundId, tenantId },
-    include: {
-      expenses: { orderBy: { expenseDate: 'desc' } },
-      paymentAccount: true,
-    },
-  });
+  return getFund(tenantId, fundId);
 }
