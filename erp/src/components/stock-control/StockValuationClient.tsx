@@ -11,6 +11,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -402,8 +403,42 @@ export function StockValuationClient() {
                     ))
                   )}
                 </TableBody>
+                {sortedCategories.length > 0 && valuation && (
+                  <TableFooter>
+                    <TableRow className="bg-linen/60 font-semibold">
+                      <TableCell className="font-body text-sm text-espresso">
+                        Total
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-espresso">
+                        {valuation.variantCount}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-espresso">
+                        {formatRupee(valuation.retailValue)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-espresso">
+                        {formatRupee(valuation.taxAmount)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-espresso">
+                        {formatRupee(valuation.retailValueInclTax)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-espresso">
+                        {formatRupee(valuation.costValue)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-espresso">
+                        {valuation.estimatedMarginPercent.toFixed(2)}%
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-espresso">
+                        {valuation.retailValue > 0 ? '100.00%' : '0.00%'}
+                      </TableCell>
+                    </TableRow>
+                  </TableFooter>
+                )}
               </Table>
             </div>
+            <p className="mt-2 font-body text-xs text-mist-ink">
+              The KPI cards and this totals row are column sums of the same
+              category snapshot, so the table and cards cannot disagree.
+            </p>
           </div>
         </>
       ) : null}
