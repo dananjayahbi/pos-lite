@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Decimal from 'decimal.js';
-import { CalendarDays, CheckCircle2, FileBarChart, Loader2, Play, Users } from 'lucide-react';
+import { CalendarDays, CheckCircle2, FileBarChart, Loader2, Play, RotateCcw, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageContainer } from '@/components/shared/PageContainer';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,8 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { formatRupee } from '@/lib/format';
 import { calculatePayroll } from '@/lib/payroll/calculations';
+import { fetchPayrollEnvelope, resolvePayrollLoadState } from '@/lib/payroll/api-load-state';
+import { assessPayrollRunReadiness, listStaffNames } from '@/lib/payroll/run-readiness';
 import type { PayrollPreview, PayrollPreviewRow } from '@/lib/payroll/types';
 
 interface PayrollRunSummary {
@@ -71,43 +73,35 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
   const [overrides, setOverrides] = useState<
     Record<string, { noPayDays?: number; advanceDeduction?: number }>
   >({});
+  const [confirmWarnings, setConfirmWarnings] = useState(false);
+  const [confirmAttendance, setConfirmAttendance] = useState(false);
 
   const previewQuery = useQuery<PayrollPreview>({
     queryKey: ['payroll-preview', month],
-    queryFn: async () => {
-      const res = await fetch(`/api/store/payroll/preview?month=${encodeURIComponent(month)}`);
-      const json = (await res.json()) as {
-        success: boolean;
-        data?: PayrollPreview;
-        error?: { message: string };
-      };
-      if (!res.ok || !json.success || !json.data) {
-        throw new Error(json.error?.message ?? 'Failed to load payroll preview');
-      }
-      return json.data;
-    },
+    queryFn: () =>
+      fetchPayrollEnvelope<PayrollPreview>(
+        `/api/store/payroll/preview?month=${encodeURIComponent(month)}`,
+      ),
   });
 
   const runsQuery = useQuery<PayrollRunSummary[]>({
     queryKey: ['payroll-runs'],
-    queryFn: async () => {
-      const res = await fetch('/api/store/payroll/runs?limit=12');
-      const json = (await res.json()) as { success: boolean; data?: PayrollRunSummary[] };
-      return json.data ?? [];
-    },
+    queryFn: () =>
+      fetchPayrollEnvelope<PayrollRunSummary[]>('/api/store/payroll/runs?limit=12'),
   });
 
   const [payRun, setPayRun] = useState<PayrollRunSummary | null>(null);
   const [payAccountId, setPayAccountId] = useState('');
+  const [voidRun, setVoidRun] = useState<PayrollRunSummary | null>(null);
 
   const accountsQuery = useQuery<{ id: string; name: string }[]>({
     queryKey: ['payroll-payment-accounts'],
     enabled: canRun,
     queryFn: async () => {
-      const res = await fetch('/api/store/payment-accounts?status=ACTIVE');
-      if (!res.ok) return [];
-      const json = (await res.json()) as { data?: { id: string; name: string }[] };
-      return (json.data ?? []).filter((account) => !('pettyCashFund' in account));
+      const accounts = await fetchPayrollEnvelope<{ id: string; name: string }[]>(
+        '/api/store/payment-accounts?status=ACTIVE',
+      );
+      return accounts.filter((account) => !('pettyCashFund' in account));
     },
   });
 
@@ -147,6 +141,17 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
     };
   }, [rows]);
 
+  // ARGUS #375: zero/unsalaried runs need an explicit acknowledgement; no
+  // staff is a hard refusal on the server and here.
+  const readiness = useMemo(() => assessPayrollRunReadiness(rows), [rows]);
+
+  // ARGUS #377: a failed list request is an error, never "no payroll yet".
+  const runsState = resolvePayrollLoadState({
+    isLoading: runsQuery.isLoading,
+    isError: runsQuery.isError,
+    hasData: (runsQuery.data?.length ?? 0) > 0,
+  });
+
   const generateMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch('/api/store/payroll/runs', {
@@ -155,6 +160,10 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
         body: JSON.stringify({
           month,
           notes: notes.trim() || undefined,
+          confirmZeroPayRun: readiness.requiresConfirmation ? confirmWarnings : undefined,
+          confirmIncompleteAttendance: preview?.attendanceSummary.requiresConfirmation
+            ? confirmAttendance
+            : undefined,
           overrides: rows.map((row) => ({
             userId: row.userId,
             noPayDays: Number(row.noPayDays),
@@ -176,6 +185,8 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
       toast.success(`Payroll generated for ${data?.periodMonth ?? month}`);
       setNotes('');
       setOverrides({});
+      setConfirmWarnings(false);
+      setConfirmAttendance(false);
       void queryClient.invalidateQueries({ queryKey: ['payroll-preview'] });
       void queryClient.invalidateQueries({ queryKey: ['payroll-runs'] });
     },
@@ -190,6 +201,27 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
       [userId]: { ...previous[userId], ...patch },
     }));
   }
+
+  // ARGUS #375: remove an unpaid run so the month can be generated again.
+  const voidMutation = useMutation({
+    mutationFn: async (runId: string) => {
+      const res = await fetch(`/api/store/payroll/runs/${runId}`, { method: 'DELETE' });
+      const json = (await res.json()) as { success: boolean; error?: { message: string } };
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message ?? 'Failed to void payroll run');
+      }
+      return json;
+    },
+    onSuccess: () => {
+      toast.success('Payroll run voided; the month can be generated again');
+      setVoidRun(null);
+      void queryClient.invalidateQueries({ queryKey: ['payroll-runs'] });
+      void queryClient.invalidateQueries({ queryKey: ['payroll-preview'] });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to void payroll run');
+    },
+  });
 
   // ARGUS #372: settle the run only when salary is actually paid.
   const markPaidMutation = useMutation({
@@ -265,6 +297,8 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                 if (event.target.value) {
                   setMonth(event.target.value);
                   setOverrides({});
+                  setConfirmWarnings(false);
+                  setConfirmAttendance(false);
                 }
               }}
               className="w-48"
@@ -290,6 +324,7 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                 Reports & bank sheets
               </Link>
               . A generated month cannot be regenerated, so issued payslips stay immutable.
+              Void the run in Recent payroll runs if it was generated by mistake.
             </p>
           </div>
         </div>
@@ -406,6 +441,13 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                           className="ml-auto h-8 w-20 text-right font-mono text-xs"
                           aria-label={`No-pay days for ${row.staffName}`}
                         />
+                        {row.attendanceCompleteness.status !== 'COMPLETE' && (
+                          <p className="mt-1 text-[10px] text-[#B7791F]">
+                            {row.attendanceCompleteness.status === 'NOT_SCHEDULED'
+                              ? 'no scheduled days'
+                              : `${row.attendanceCompleteness.missingDays} unrecorded`}
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <Input
@@ -436,6 +478,55 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
             </div>
           )}
 
+          {preview && !preview.alreadyGenerated && canRun && preview.attendanceSummary.message && (
+            <div className="mt-3 rounded-lg border border-[#9B2226]/30 bg-[#FBECEC] p-4">
+              <p className="text-espresso text-sm font-semibold">Attendance check</p>
+              <p className="text-sand-ink mt-2 text-xs">{preview.attendanceSummary.message}</p>
+              {preview.attendanceSummary.requiresConfirmation && (
+                <label className="text-espresso mt-3 flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={confirmAttendance}
+                    onChange={(event) => setConfirmAttendance(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-[#9B2226]"
+                  />
+                  <span>
+                    I reviewed attendance for this month and still want to generate payroll with
+                    these records.
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
+
+          {preview && !preview.alreadyGenerated && canRun && readiness.warnings.length > 0 && (
+            <div className="mt-5 rounded-lg border border-[#B7791F]/40 bg-[#FDF6E7] p-4">
+              <p className="text-espresso text-sm font-semibold">Review before generating</p>
+              <ul className="text-sand-ink mt-2 list-disc space-y-1 pl-5 text-xs">
+                {readiness.warnings.map((warning) => (
+                  <li key={warning.code}>{warning.message}</li>
+                ))}
+              </ul>
+              {readiness.unsalariedStaff.length > 0 && (
+                <p className="text-sand-ink mt-2 text-xs">
+                  No salary configured: {listStaffNames(readiness.unsalariedStaff, 5)}
+                </p>
+              )}
+              <label className="text-espresso mt-3 flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={confirmWarnings}
+                  onChange={(event) => setConfirmWarnings(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-[#B7791F]"
+                />
+                <span>
+                  I understand these employees will be included at Rs 0.00 and I still want to
+                  generate this run.
+                </span>
+              </label>
+            </div>
+          )}
+
           {preview && !preview.alreadyGenerated && canRun && rows.length > 0 && (
             <div className="border-mist mt-5 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-end sm:justify-between">
               <div className="w-full sm:max-w-md">
@@ -456,7 +547,11 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
               </div>
               <Button
                 onClick={() => generateMutation.mutate()}
-                disabled={generateMutation.isPending}
+                disabled={
+                  generateMutation.isPending ||
+                  (readiness.requiresConfirmation && !confirmWarnings) ||
+                  (preview?.attendanceSummary.requiresConfirmation && !confirmAttendance)
+                }
                 className="bg-espresso text-pearl hover:bg-espresso/90"
               >
                 {generateMutation.isPending ? (
@@ -467,6 +562,11 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                 Generate payroll - {formatRupee(totals.net)} net
               </Button>
             </div>
+          )}
+          {preview && !preview.alreadyGenerated && canRun && rows.length === 0 && (
+            <p className="mt-5 border-t border-mist pt-4 text-xs text-sand-ink">
+              Generation is blocked until at least one active staff member exists.
+            </p>
           )}
         </CardContent>
       </Card>
@@ -481,9 +581,25 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {runsQuery.isLoading ? (
+          {runsState === 'loading' ? (
             <Skeleton className="bg-linen h-24 rounded" />
-          ) : (runsQuery.data ?? []).length === 0 ? (
+          ) : runsState === 'error' ? (
+            <div className="py-6 text-center text-sm">
+              <p className="text-sand-ink">
+                Could not load payroll runs:{' '}
+                {runsQuery.error instanceof Error
+                  ? runsQuery.error.message
+                  : 'the request failed'}
+              </p>
+              <Button
+                variant="outline"
+                className="mt-3"
+                onClick={() => void runsQuery.refetch()}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : runsState === 'empty' ? (
             <p className="text-sand-ink py-6 text-center text-sm">
               No payroll has been generated yet.
             </p>
@@ -531,6 +647,16 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                               Mark paid
                             </Button>
                           )}
+                          {run.status === 'GENERATED' && canRun && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setVoidRun(run)}
+                              disabled={voidMutation.isPending}
+                            >
+                              Void
+                            </Button>
+                          )}
                           <Link
                             href={`/payroll/reports?month=${run.periodMonth}`}
                             className="text-terracotta text-xs underline"
@@ -547,6 +673,44 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={voidRun !== null}
+        onOpenChange={(open) => {
+          if (!open) setVoidRun(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-espresso">Void payroll run</DialogTitle>
+            <DialogDescription className="font-body text-sand-ink">
+              Voiding {voidRun?.periodMonth ?? ''} deletes the generated run and its payslip
+              snapshots and releases the commission reserved for it. The month can then be
+              generated again. A paid run cannot be voided.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVoidRun(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-espresso text-pearl hover:bg-espresso/90"
+              disabled={voidMutation.isPending || !voidRun}
+              onClick={() => {
+                if (!voidRun) return;
+                voidMutation.mutate(voidRun.id);
+              }}
+            >
+              {voidMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RotateCcw className="mr-2 h-4 w-4" />
+              )}
+              Void run
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={payRun !== null}

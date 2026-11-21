@@ -58,6 +58,8 @@ export async function POST(request: NextRequest) {
       generatedByRole: session.user.role ?? 'UNKNOWN',
       overrides: parsed.data.overrides,
       notes: parsed.data.notes,
+      confirmZeroPayRun: parsed.data.confirmZeroPayRun,
+      confirmIncompleteAttendance: parsed.data.confirmIncompleteAttendance,
     });
 
     return ok(run, { status: 201 });

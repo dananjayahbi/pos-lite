@@ -1,5 +1,9 @@
 /** Pure payroll shapes shared by the server service and client pages. */
 import type { PayrollSettings } from '@/lib/payroll/payroll-settings';
+import type {
+  AttendanceCompleteness,
+  AttendanceCompletenessSummary,
+} from '@/lib/payroll/attendance-completeness.core';
 
 export interface PayrollRowOverride {
   userId: string;
@@ -34,6 +38,8 @@ export interface PayrollPreviewRow {
   netSalary: string;
   totalCompanyCost: string;
   hasSalaryConfig: boolean;
+  /** ARGUS #376: how much of the month's attendance actually has a record. */
+  attendanceCompleteness: AttendanceCompleteness;
 }
 
 export interface PayrollPreviewTotals {
@@ -67,4 +73,6 @@ export interface PayrollPreview {
   settings: PayrollSettings;
   rows: PayrollPreviewRow[];
   totals: PayrollPreviewTotals;
+  /** ARGUS #376: incomplete/absent attendance records across the run. */
+  attendanceSummary: AttendanceCompletenessSummary;
 }

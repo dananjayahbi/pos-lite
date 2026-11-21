@@ -4,6 +4,8 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { toErrorResponse, unauthorized } from '@/lib/api/error-envelope';
 import {
+  allowsIncompleteExport,
+  buildPayrollExportPreflight,
   formatExtension,
   getPayrollExportContext,
   periodLabel,
@@ -34,6 +36,27 @@ export async function GET(
 
     const { id } = await params;
     const context = await getPayrollExportContext(tenantId, id);
+
+    // ARGUS #378: NIC, EPF/ETF staff numbers and employer numbers are required
+    // for a usable C-form / ETF return; never emit blank fallbacks silently.
+    const preflight = buildPayrollExportPreflight(context, 'statutory');
+    if (
+      !preflight.complete &&
+      !allowsIncompleteExport(request.nextUrl.searchParams.get('allowIncomplete'))
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'EXPORT_INCOMPLETE',
+            message: preflight.message ?? 'Statutory return is missing staff details',
+            details: preflight,
+          },
+        },
+        { status: 422 },
+      );
+    }
+
     const extension = formatExtension(request.nextUrl.searchParams.get('format'));
     const meta = {
       companyName: context.companyName,

@@ -30,6 +30,11 @@ import {
 } from '@/components/ui/table';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { fetchPayrollEnvelope, resolvePayrollLoadState } from '@/lib/payroll/api-load-state';
+import type {
+  PayrollExportKind,
+  PayrollExportPreflight,
+} from '@/lib/payroll/export-preflight';
 import { formatRupee } from '@/lib/format';
 
 interface PayrollRunSummary {
@@ -123,30 +128,23 @@ function PayrollReportsContent() {
 
   const runsQuery = useQuery<PayrollRunSummary[]>({
     queryKey: ['payroll-runs'],
-    queryFn: async () => {
-      const res = await fetch('/api/store/payroll/runs?limit=60');
-      const json = (await res.json()) as { success: boolean; data?: PayrollRunSummary[] };
-      return json.data ?? [];
-    },
+    queryFn: () =>
+      fetchPayrollEnvelope<PayrollRunSummary[]>('/api/store/payroll/runs?limit=60'),
   });
 
   const summary = (runsQuery.data ?? []).find((run) => run.periodMonth === month);
 
   const runQuery = useQuery<PayrollRunDetail>({
     queryKey: ['payroll-run', summary?.id],
-    queryFn: async () => {
-      const res = await fetch(`/api/store/payroll/runs/${summary!.id}`);
-      const json = (await res.json()) as {
-        success: boolean;
-        data?: PayrollRunDetail;
-        error?: { message: string };
-      };
-      if (!res.ok || !json.success || !json.data) {
-        throw new Error(json.error?.message ?? 'Failed to load payroll run');
-      }
-      return json.data;
-    },
+    queryFn: () =>
+      fetchPayrollEnvelope<PayrollRunDetail>(`/api/store/payroll/runs/${summary!.id}`),
     enabled: Boolean(summary?.id),
+  });
+
+  const runsState = resolvePayrollLoadState({
+    isLoading: runsQuery.isLoading,
+    isError: runsQuery.isError,
+    hasData: (runsQuery.data?.length ?? 0) > 0,
   });
 
   const emailMutation = useMutation({
@@ -180,6 +178,16 @@ function PayrollReportsContent() {
   });
 
   const run = runQuery.data;
+
+  // ARGUS #378: completeness gate for the bank sheet and statutory exports.
+  const preflightQuery = useQuery<Record<PayrollExportKind, PayrollExportPreflight>>({
+    queryKey: ['payroll-export-preflight', run?.id],
+    queryFn: () =>
+      fetchPayrollEnvelope<Record<PayrollExportKind, PayrollExportPreflight>>(
+        `/api/store/payroll/runs/${run!.id}/exports/preflight`,
+      ),
+    enabled: Boolean(run?.id),
+  });
 
   return (
     <PageContainer className="space-y-6">
@@ -220,7 +228,42 @@ function PayrollReportsContent() {
         </div>
       </div>
 
-      {runsQuery.isLoading || runQuery.isLoading ? (
+      {runsState === 'error' ? (
+        <Card className="border-mist">
+          <CardContent className="text-sand-ink py-10 text-center text-sm">
+            <p>
+              Could not load payroll runs:{' '}
+              {runsQuery.error instanceof Error
+                ? runsQuery.error.message
+                : 'the request failed'}
+            </p>
+            <Button variant="outline" className="mt-4" onClick={() => void runsQuery.refetch()}>
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ) : summary && runQuery.isError ? (
+        <Card className="border-mist">
+          <CardContent className="text-sand-ink py-10 text-center text-sm">
+            <p>
+              Could not load the {month} payroll run:{' '}
+              {runQuery.error instanceof Error
+                ? runQuery.error.message
+                : 'the request failed'}
+            </p>
+            <Button
+              variant="outline"
+              className="mt-4"
+              onClick={() => {
+                void runsQuery.refetch();
+                void runQuery.refetch();
+              }}
+            >
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ) : runsState === 'loading' || (summary && runQuery.isLoading) ? (
         <Skeleton className="bg-linen h-48 rounded" />
       ) : !summary ? (
         <Card className="border-mist">
@@ -276,6 +319,10 @@ function PayrollReportsContent() {
                 { href: downloadUrl(run.id, 'bank-sheet', 'xlsx'), label: 'Excel' },
                 { href: downloadUrl(run.id, 'bank-sheet', 'pdf'), label: 'PDF' },
               ]}
+              preflight={preflightQuery.data?.['bank-sheet']}
+              preflightLoading={preflightQuery.isLoading}
+              preflightError={preflightQuery.isError}
+              onRetryPreflight={() => void preflightQuery.refetch()}
             />
             <ExportCard
               icon={<FileText className="h-5 w-5 text-[#1D4E89]" />}
@@ -285,6 +332,10 @@ function PayrollReportsContent() {
                 { href: downloadUrl(run.id, 'statutory', 'xlsx'), label: 'Excel' },
                 { href: downloadUrl(run.id, 'statutory', 'pdf'), label: 'PDF' },
               ]}
+              preflight={preflightQuery.data?.statutory}
+              preflightLoading={preflightQuery.isLoading}
+              preflightError={preflightQuery.isError}
+              onRetryPreflight={() => void preflightQuery.refetch()}
             />
             <ExportCard
               icon={<Download className="text-terracotta h-5 w-5" />}
@@ -294,6 +345,10 @@ function PayrollReportsContent() {
                 { href: downloadUrl(run.id, 'summary', 'pdf'), label: 'PDF' },
                 { href: downloadUrl(run.id, 'summary', 'xlsx'), label: 'Excel' },
               ]}
+              preflight={preflightQuery.data?.summary}
+              preflightLoading={preflightQuery.isLoading}
+              preflightError={preflightQuery.isError}
+              onRetryPreflight={() => void preflightQuery.refetch()}
             />
           </div>
 
@@ -404,6 +459,17 @@ function PayrollReportsContent() {
         <Card className="border-mist">
           <CardContent className="text-sand-ink py-10 text-center text-sm">
             Could not load this payroll run.
+            <div className="mt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  void runsQuery.refetch();
+                  void runQuery.refetch();
+                }}
+              >
+                Retry
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -438,12 +504,22 @@ function ExportCard({
   title,
   description,
   links,
+  preflight,
+  preflightLoading,
+  preflightError,
+  onRetryPreflight,
 }: {
   icon: React.ReactNode;
   title: string;
   description: string;
   links: Array<{ href: string; label: string }>;
+  preflight?: PayrollExportPreflight | undefined;
+  preflightLoading?: boolean | undefined;
+  preflightError?: boolean | undefined;
+  onRetryPreflight?: (() => void) | undefined;
 }) {
+  const incomplete = preflight ? !preflight.complete : false;
+
   return (
     <Card className="border-mist">
       <CardContent className="space-y-3 p-4">
@@ -452,16 +528,70 @@ function ExportCard({
           <h2 className="font-display text-espresso text-sm font-semibold">{title}</h2>
         </div>
         <p className="text-sand-ink text-xs">{description}</p>
-        <div className="flex flex-wrap gap-2">
-          {links.map((link) => (
-            <Button key={link.href} size="sm" variant="outline" asChild>
-              <a href={link.href} download>
-                <Download className="mr-1.5 h-3.5 w-3.5" />
-                {link.label}
-              </a>
+
+        {preflightError ? (
+          <div className="rounded-md border border-[#9B2226]/30 bg-[#FBECEC] p-2 text-xs">
+            <p className="text-espresso font-semibold">Completeness check failed</p>
+            <p className="text-sand-ink mt-1">
+              Downloads are blocked until the check succeeds.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              onClick={onRetryPreflight}
+            >
+              Retry check
             </Button>
-          ))}
+          </div>
+        ) : incomplete && preflight ? (
+          <div className="rounded-md border border-[#B7791F]/40 bg-[#FDF6E7] p-2 text-xs">
+            <p className="text-espresso font-semibold">
+              {preflight.affectedStaffCount > 0
+                ? `Incomplete details - ${preflight.affectedStaffCount} of ${preflight.staffCount} employees`
+                : 'Incomplete details - employer settings'}
+            </p>
+            <p className="text-sand-ink mt-1">{preflight.message}</p>
+            {preflight.affectedStaff.length > 0 && (
+              <ul className="text-sand-ink mt-1.5 list-disc space-y-0.5 pl-4">
+                {preflight.affectedStaff.slice(0, 5).map((member) => (
+                  <li key={member.staffName}>
+                    {member.staffName}: {member.missingFields.join(', ')}
+                  </li>
+                ))}
+                {preflight.affectedStaff.length > 5 && (
+                  <li>and {preflight.affectedStaff.length - 5} more</li>
+                )}
+              </ul>
+            )}
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2">
+          {preflightLoading && !preflightError ? (
+            <p className="text-mist-ink text-xs">Checking required details...</p>
+          ) : (
+            !preflightError &&
+            links.map((link) => (
+              <Button key={link.href} size="sm" variant="outline" asChild>
+                <a
+                  href={incomplete ? `${link.href}&allowIncomplete=1` : link.href}
+                  download
+                >
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  {incomplete ? `${link.label} anyway` : link.label}
+                </a>
+              </Button>
+            ))
+          )}
         </div>
+
+        {incomplete && (
+          <p className="text-mist-ink text-[10px]">
+            A flagged download includes blank cells for the listed staff. Complete their
+            profiles, then reload to download a clean file.
+          </p>
+        )}
       </CardContent>
     </Card>
   );
