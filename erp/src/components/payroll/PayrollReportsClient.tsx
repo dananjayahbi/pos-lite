@@ -42,6 +42,7 @@ import {
 } from '@/lib/payroll/payroll-run-status';
 import { PAYROLL_EXPORT_PROVENANCE_CAVEAT } from '@/lib/payroll/export-provenance';
 import { summarizePayrollHeadcount } from '@/lib/payroll/export-eligibility.core';
+import { PAYROLL_TAX_NOT_CONFIGURED_MESSAGE } from '@/lib/payroll/tax-disclosure.core';
 import { formatRupee } from '@/lib/format';
 
 interface PayrollRunSummary {
@@ -307,6 +308,11 @@ function PayrollReportsContent() {
               <p className="text-sand-ink mt-1 text-xs">{runStatus.statusDetail}</p>
             </div>
           )}
+
+          <div className="rounded-lg border border-[#B7791F]/40 bg-[#FDF6E7] p-4">
+            <p className="text-espresso text-sm font-semibold">PAYE/APIT not configured</p>
+            <p className="text-sand-ink mt-1 text-xs">{PAYROLL_TAX_NOT_CONFIGURED_MESSAGE}</p>
+          </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat

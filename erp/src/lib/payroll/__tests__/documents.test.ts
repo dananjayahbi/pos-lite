@@ -190,6 +190,16 @@ describe('payroll documents', () => {
     ];
     expect(isZip(generateSummaryReportXlsx(meta, summaryTotals, rows))).toBe(true);
     expect(isPdf(generateSummaryReportPdf(meta, summaryTotals, rows))).toBe(true);
+
+    const workbook = XLSX.read(generateSummaryReportXlsx(meta, summaryTotals, rows), {
+      type: 'buffer',
+    });
+    const summaryRows = XLSX.utils.sheet_to_json(workbook.Sheets['Summary']!, {
+      header: 1,
+    }) as unknown[][];
+    expect(
+      summaryRows.some((row) => String(row[0]).includes('PAYE/APIT income tax is not configured')),
+    ).toBe(true);
   });
 
   it('labels the net amount as payable until the run is paid', () => {

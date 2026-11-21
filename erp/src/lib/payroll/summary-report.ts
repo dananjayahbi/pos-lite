@@ -6,6 +6,7 @@ import {
   resolveNetLabel,
   type PayrollRunPaymentInfo,
 } from '@/lib/payroll/payroll-run-status';
+import { PAYROLL_TAX_NOT_CONFIGURED_MESSAGE } from '@/lib/payroll/tax-disclosure.core';
 
 export interface SummaryReportTotals {
   headcount: number;
@@ -110,6 +111,7 @@ export function generateSummaryReportXlsx(
     [`Period: ${meta.periodLabel}`, `Generated: ${meta.generatedAt.toLocaleString('en-GB')}`],
     [`Status: ${status.exportMarker}`],
     ...(meta.provenanceNote ? [[meta.provenanceNote]] : []),
+    [PAYROLL_TAX_NOT_CONFIGURED_MESSAGE],
     [],
     ['Item', 'Amount (LKR)'],
     ...rows.map(([label, key]) => [
@@ -169,16 +171,23 @@ export function generateSummaryReportPdf(
   doc.text(`Headcount: ${totals.headcount}`, pageWidth - 40, 60, { align: 'right' });
   doc.setFontSize(8);
   doc.text(`Status: ${status.exportMarker}`, 40, 73);
+  let taxY = 84;
   if (meta.provenanceNote) {
     doc.setFontSize(7);
-    doc.text(meta.provenanceNote, 40, 84, { maxWidth: pageWidth - 80 });
+    doc.text(meta.provenanceNote, 40, taxY, { maxWidth: pageWidth - 80 });
+    taxY += 11;
   }
+  doc.setFontSize(7);
+  doc.text(PAYROLL_TAX_NOT_CONFIGURED_MESSAGE, 40, taxY, {
+    maxWidth: pageWidth - 80,
+  });
+  const headerBottom = taxY + 20;
   doc.setDrawColor(200, 149, 108);
   doc.setLineWidth(1.5);
-  doc.line(40, meta.provenanceNote ? 96 : 84, pageWidth - 40, meta.provenanceNote ? 96 : 84);
+  doc.line(40, headerBottom, pageWidth - 40, headerBottom);
 
   autoTable(doc, {
-    startY: meta.provenanceNote ? 106 : 96,
+    startY: headerBottom + 12,
     head: [['Company cost breakdown', 'Amount (LKR)']],
     body: rows.map(([label, key]) => [
       label,
