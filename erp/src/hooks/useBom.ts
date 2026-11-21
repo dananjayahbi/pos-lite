@@ -50,6 +50,8 @@ export interface ConsumptionLine {
   required: number;
   available: number;
   unit: string;
+  unitName: string;
+  unitShortLabel: string;
   insufficient: boolean;
 }
 

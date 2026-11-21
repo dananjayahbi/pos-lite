@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useRawMaterialAlerts } from '@/hooks/useRawMaterialAlerts';
-import { getUnitShortLabel } from '@/lib/services/rawMaterial.core';
 import {
   factoryFeedErrorMessage,
   resolveFactoryFeedState,
@@ -92,8 +91,8 @@ export function RawMaterialAlertsPanel({ permissions }: RawMaterialAlertsPanelPr
                   <div>
                     <p className="text-sm font-medium text-espresso">{alert.name}</p>
                     <p className="text-xs text-mist-ink">
-                      {alert.quantity} {getUnitShortLabel(alert.unit as 'LITERS' | 'KILOGRAMS')} on
-                      hand · threshold {alert.lowStockThreshold}
+                      {alert.quantity} {alert.unitShortLabel} on hand · threshold{' '}
+                      {alert.lowStockThreshold}
                     </p>
                   </div>
                   <span

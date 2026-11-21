@@ -9,6 +9,8 @@ export interface RawMaterialAlert {
   name: string;
   category: string;
   unit: string;
+  unitName: string;
+  unitShortLabel: string;
   quantity: number;
   lowStockThreshold: number;
   severity: RawMaterialAlertSeverity;

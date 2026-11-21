@@ -16,6 +16,10 @@ import {
   humanizeUnitKey,
   slugifyRawMaterialCategoryKey,
 } from '@/lib/services/rawMaterial.core';
+import {
+  buildRawMaterialUnitCatalog,
+  type RawMaterialUnitCatalog,
+} from '@/lib/services/rawMaterialUnitCatalog.core';
 
 export interface RawMaterialUnitItem {
   id: string;
@@ -24,6 +28,8 @@ export interface RawMaterialUnitItem {
   shortLabel: string;
   isActive: boolean;
   usageCount: number;
+  /** Seeded default for every tenant; cannot be deactivated (ARGUS #479). */
+  isBuiltIn: boolean;
 }
 
 export interface RawMaterialUnitOption {
@@ -58,6 +64,7 @@ function toItem(
     shortLabel: row.shortLabel,
     isActive: row.isActive,
     usageCount,
+    isBuiltIn: DEFAULT_KEYS.has(row.key),
   };
 }
 
@@ -97,8 +104,33 @@ export async function listRawMaterialUnitOptions(
 export async function getRawMaterialUnitMap(
   tenantId: string,
 ): Promise<Map<string, RawMaterialUnitOption>> {
-  const options = await listRawMaterialUnitOptions(tenantId);
-  return new Map(options.map((option) => [option.key, option]));
+  const catalog = await listRawMaterialUnitCatalog(tenantId);
+  return new Map(
+    [...catalog.values()].map((unit) => [
+      unit.key,
+      { key: unit.key, name: unit.name, shortLabel: unit.shortLabel },
+    ]),
+  );
+}
+
+/**
+ * Tenant unit catalog for label resolution (ARGUS #481).
+ *
+ * Includes inactive and soft-deleted rows so a material (or historical log)
+ * that still references a key keeps its tenant-defined label instead of
+ * falling back to the raw key. Selection inputs must keep using
+ * `listRawMaterialUnitOptions`, which filters to active rows.
+ */
+export async function listRawMaterialUnitCatalog(
+  tenantId: string,
+): Promise<RawMaterialUnitCatalog> {
+  await ensureDefaultRawMaterialUnits(tenantId);
+  const rows = await prisma.rawMaterialUnit.findMany({
+    where: { tenantId },
+    select: { key: true, name: true, shortLabel: true, isActive: true, deletedAt: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  return buildRawMaterialUnitCatalog(rows);
 }
 
 /** Throws `UNIT_NOT_FOUND` when the key does not exist for the tenant. */
@@ -196,6 +228,9 @@ export async function updateRawMaterialUnit(
 ): Promise<RawMaterialUnitItem> {
   const existing = await findOwnedUnit(tenantId, id);
 
+  // ARGUS #480: a rename changes display labels only. The stable `key` on raw
+  // materials and BOM lines is never rewritten and quantities are not
+  // converted; the UI requires an explicit acknowledgement before sending one.
   const name = input.name !== undefined ? input.name.trim() : undefined;
   const shortLabel = input.shortLabel !== undefined ? input.shortLabel.trim() : undefined;
   if (name !== undefined && !name) {
@@ -226,8 +261,8 @@ export async function updateRawMaterialUnit(
     entityType: 'RawMaterialUnit',
     entityId: id,
     action: AUDIT_ACTIONS.RAW_MATERIAL_UNIT_UPDATED,
-    before: { name: existing.name, shortLabel: existing.shortLabel, isActive: existing.isActive },
-    after: { name: row.name, shortLabel: row.shortLabel, isActive: row.isActive },
+    before: { key: existing.key, name: existing.name, shortLabel: existing.shortLabel, isActive: existing.isActive },
+    after: { key: row.key, name: row.name, shortLabel: row.shortLabel, isActive: row.isActive },
   }).catch(() => {});
 
   const usage = await prisma.rawMaterial.count({

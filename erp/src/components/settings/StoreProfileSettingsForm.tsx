@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +16,11 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { storeProfileRefreshPlan } from '@/lib/settings/storeProfileRefresh.core';
+import {
+  resolveStoreProfileSaveState,
+  storeProfileControlsLocked,
+} from '@/lib/settings/storeProfileSave.core';
 
 type StoreProfileValues = {
   storeName: string;
@@ -28,8 +35,11 @@ type Props = {
 };
 
 export default function StoreProfileSettingsForm({ initialValues }: Props) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const [values, setValues] = useState<StoreProfileValues>(initialValues);
   const [saving, setSaving] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
 
   const update = useCallback(<K extends keyof StoreProfileValues>(key: K, value: StoreProfileValues[K]) => {
     setValues((previous) => ({ ...previous, [key]: value }));
@@ -42,9 +52,17 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
     values.phoneNumber !== initialValues.phoneNumber ||
     values.receiptFooter !== initialValues.receiptFooter;
 
-  const canSave = values.storeName.trim().length >= 2 && !saving && isDirty;
+  const canSave = resolveStoreProfileSaveState({
+    saving,
+    logoUploading,
+    isDirty,
+    storeName: values.storeName,
+  }).canSave;
 
   async function handleSave() {
+    // Blocked while a replacement logo is uploading: PATCHing now would save
+    // the previous URL and leave the completed upload unsaved (ARGUS #489).
+    if (!canSave) return;
     setSaving(true);
     try {
       const res = await fetch('/api/settings/store', {
@@ -66,6 +84,15 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
       toast.success('Store profile saved');
       Object.assign(initialValues, values);
       setValues({ ...values });
+
+      // ARGUS #488: the server layout passes the business name/logo to the
+      // sidebar and headers. Refresh it, and any cached payload that embeds
+      // branding, so the shell does not keep showing the previous identity.
+      const refresh = storeProfileRefreshPlan();
+      for (const queryKey of refresh.brandingQueryKeys) {
+        void queryClient.invalidateQueries({ queryKey: [...queryKey] });
+      }
+      if (refresh.refreshShell) router.refresh();
     } catch {
       toast.error('Network error - could not save store profile');
     } finally {
@@ -98,8 +125,10 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
             <LogoUploadField
               logoUrl={values.logoUrl || null}
               onChange={(url) => update('logoUrl', url ?? '')}
+              onUploadingChange={setLogoUploading}
               uploadUrl="/api/settings/store/logo"
               alt="Store logo"
+              disabled={storeProfileControlsLocked({ saving })}
               hint={
                 <>
                   JPEG / PNG / WebP / SVG
@@ -152,8 +181,13 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
             disabled={!canSave}
             className="w-full bg-espresso text-white hover:bg-espresso/90"
           >
-            {saving ? 'Saving…' : 'Save Store Profile'}
+            {saving ? 'Saving...' : logoUploading ? 'Uploading logo...' : 'Save Store Profile'}
           </Button>
+          {logoUploading && (
+            <p className="text-center text-xs text-sand-ink">
+              Save is disabled until the logo upload finishes.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

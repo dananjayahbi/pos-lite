@@ -10,6 +10,7 @@ import {
 } from '@/lib/services/rawMaterial.service';
 import { UpdateRawMaterialSchema } from '@/lib/validators/rawMaterial.validators';
 import { getRawMaterialCategoryNameMap } from '@/lib/services/rawMaterialCategory.service';
+import { getRawMaterialUnitMap } from '@/lib/services/rawMaterialUnit.service';
 import { isApiError } from '@/lib/api/errors';
 import { envelopeError } from '@/lib/api/error-envelope';
 
@@ -192,9 +193,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       );
     }
     const categoryNames = await getRawMaterialCategoryNameMap(tenantId);
+    const unitMap = await getRawMaterialUnitMap(tenantId);
     return NextResponse.json({
       success: true,
-      data: toRawMaterialItem(material, categoryNames.get(material.category)),
+      data: toRawMaterialItem(
+        material,
+        categoryNames.get(material.category),
+        unitMap.get(material.unit),
+      ),
     });
   } catch (error) {
     console.error('GET /api/store/raw-materials/[id] error:', error);

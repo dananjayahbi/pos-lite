@@ -6,7 +6,9 @@
  */
 import { prisma } from '@/lib/prisma';
 import type { RawMaterial, UserRole } from '@/generated/prisma/client';
-import { getRawMaterialStockStatus, getUnitShortLabel } from '@/lib/services/rawMaterial.core';
+import { getRawMaterialStockStatus } from '@/lib/services/rawMaterial.core';
+import { listRawMaterialUnitCatalog } from '@/lib/services/rawMaterialUnit.service';
+import { resolveRawMaterialUnitLabels } from '@/lib/services/rawMaterialUnitCatalog.core';
 
 export type RawMaterialAlertSeverity = 'LOW' | 'CRITICAL';
 
@@ -15,6 +17,9 @@ export interface RawMaterialAlert {
   name: string;
   category: string;
   unit: string;
+  /** Tenant-defined labels, including for inactive units (ARGUS #481). */
+  unitName: string;
+  unitShortLabel: string;
   quantity: number;
   lowStockThreshold: number;
   /** LOW = at/below threshold but above zero; CRITICAL = out of stock. */
@@ -69,7 +74,7 @@ export async function notifyRawMaterialAlert(
         title: isCritical
           ? 'Critical: raw material out of stock'
           : 'Raw material low stock',
-        body: `${alert.name} is at ${alert.quantity} ${getUnitShortLabel(alert.unit)} (threshold ${alert.lowStockThreshold})`,
+        body: `${alert.name} is at ${alert.quantity} ${alert.unitShortLabel} (threshold ${alert.lowStockThreshold})`,
         relatedEntityType: 'RawMaterial',
         relatedEntityId: alert.rawMaterialId,
       })),
@@ -81,27 +86,33 @@ export async function notifyRawMaterialAlert(
 
 /** Current alert state for a tenant — material rows currently flagged. */
 export async function listRawMaterialAlerts(tenantId: string): Promise<RawMaterialAlert[]> {
-  const rows = await prisma.rawMaterial.findMany({
-    where: { tenantId, deletedAt: null, isActive: true },
-    select: {
-      id: true,
-      name: true,
-      category: true,
-      unit: true,
-      quantity: true,
-      lowStockThreshold: true,
-    },
-  });
+  const [rows, unitCatalog] = await Promise.all([
+    prisma.rawMaterial.findMany({
+      where: { tenantId, deletedAt: null, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        unit: true,
+        quantity: true,
+        lowStockThreshold: true,
+      },
+    }),
+    listRawMaterialUnitCatalog(tenantId),
+  ]);
 
   const alerts: RawMaterialAlert[] = [];
   for (const row of rows) {
     const severity = evaluateRawMaterialAlert(row);
     if (!severity) continue;
+    const unitLabels = resolveRawMaterialUnitLabels(unitCatalog, row.unit);
     alerts.push({
       rawMaterialId: row.id,
       name: row.name,
       category: row.category,
       unit: row.unit,
+      unitName: unitLabels.name,
+      unitShortLabel: unitLabels.shortLabel,
       quantity: row.quantity.toNumber(),
       lowStockThreshold: row.lowStockThreshold.toNumber(),
       severity,
