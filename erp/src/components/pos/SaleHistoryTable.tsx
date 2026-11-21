@@ -34,6 +34,7 @@ import { SaleDetailModal } from '@/components/pos/SaleDetailModal';
 import { ReturnWizardSheet } from '@/components/pos/ReturnWizardSheet';
 import { SaleEditSheet, type EditableSale } from '@/components/sales/SaleEditSheet';
 import { saleEmptyState, saleLineCount, saleUnitCount } from '@/components/sales/saleDisplay';
+import { isReturnWindowExpired } from '@/lib/sales/return-window';
 import { SALES_QUERY_KEY } from '@/components/sales/saleQueryKey';
 
 interface SaleLine {
@@ -439,11 +440,9 @@ export function SaleHistoryTable() {
                       </button>
                     )}
                     {sale.status === 'COMPLETED' && (() => {
-                      const RETURN_WINDOW_DAYS = 30;
-                      const saleDate = new Date(sale.createdAt);
-                      const expiryDate = new Date(saleDate);
-                      expiryDate.setDate(expiryDate.getDate() + RETURN_WINDOW_DAYS);
-                      const returnWindowExpired = new Date() > expiryDate;
+                      // ARGUS #87: the same 30-day rule as the return service,
+                      // measured from the recorded selling date.
+                      const returnWindowExpired = isReturnWindowExpired(sale);
                       const fullyReturned = sale.lines.every(l => (l.returnedQuantity ?? 0) >= l.quantity);
 
                       if (returnWindowExpired) {

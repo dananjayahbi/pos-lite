@@ -22,8 +22,10 @@ import { issueCredit } from '@/lib/services/customer.service';
 import { postLedgerEntries } from '@/lib/services/paymentAccount.service';
 import { reconcileCommissionForSale } from '@/lib/services/commission.service';
 import { validateReturnCancellation } from '@/lib/services/returnCancellation.core';
-
-const RETURN_WINDOW_DAYS = 30;
+import {
+  saleReturnWindowEnd,
+  saleReturnWindowStart,
+} from '@/lib/sales/return-window';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -79,10 +81,11 @@ export async function validateReturnEligibility(
     );
   }
 
-  // Check return window
-  const saleDate = new Date(sale.createdAt);
-  const expiryDate = new Date(saleDate);
-  expiryDate.setDate(expiryDate.getDate() + RETURN_WINDOW_DAYS);
+  // Check return window. ARGUS #87: measured from the recorded selling date
+  // (the accounting date), not from the row's createdAt, so a backdated sale
+  // is not returnable for longer than the 30-day policy.
+  const saleDate = saleReturnWindowStart(sale);
+  const expiryDate = saleReturnWindowEnd(sale);
   const now = new Date();
 
   if (now > expiryDate) {
