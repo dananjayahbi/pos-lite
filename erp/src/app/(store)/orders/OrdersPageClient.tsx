@@ -37,6 +37,7 @@ import {
   visibleSelectedIds,
 } from '@/components/orders/selection';
 import { commonBulkStatusTargets } from '@/lib/services/dispatchStatus.core';
+import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
 import type { DeliveryListItem } from '@/types/delivery';
 import type { DeliveryStatus } from '@/generated/prisma/client';
 
@@ -191,6 +192,22 @@ export function OrdersPageClient() {
   const handlePrint = () => {
     if (selectedOrders.length === 0) return;
     if (!ensureWaybillTemplate()) return;
+    const blocked = selectedOrders
+      .map((order) => ({ order, decision: waybillRecipientPrintDecision(order.address) }))
+      .filter(({ decision }) => !decision.canPrint);
+    if (blocked.length > 0) {
+      const details = blocked
+        .slice(0, 3)
+        .map(
+          ({ order, decision }) =>
+            `${order.orderRef} (${decision.missing.join(', ')})`,
+        )
+        .join('; ');
+      toast.error(
+        `Waybill printing blocked for ${blocked.length} selected order(s): ${details}${blocked.length > 3 ? `; +${blocked.length - 3} more` : ''}`,
+      );
+      return;
+    }
     void runPrint('bulk-waybills', async () => {
       printShippingLabels(selectedOrders, template);
       await waitForPrintOverlayToClose();
@@ -208,6 +225,11 @@ export function OrdersPageClient() {
 
   const handlePrintSingleWaybill = (order: DeliveryListItem) => {
     if (!ensureWaybillTemplate()) return;
+    const decision = waybillRecipientPrintDecision(order.address);
+    if (!decision.canPrint) {
+      toast.error(`${order.orderRef}: ${decision.reason}`);
+      return;
+    }
     void runPrint(`waybill:${order.id}`, async () => {
       printShippingLabels([order], template);
       await waitForPrintOverlayToClose();

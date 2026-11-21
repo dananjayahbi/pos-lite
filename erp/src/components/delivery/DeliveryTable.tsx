@@ -13,6 +13,7 @@ import { FailureReasonTag } from './FailureReasonTag';
 import { DispatchSheet } from './DispatchSheet';
 import { CancelDeliveryDialog } from './CancelDeliveryDialog';
 import { canCancelDelivery } from './cancelDelivery';
+import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
 import {
   deliveryPrintButtonState,
   deliveryPrintKey,
@@ -95,6 +96,11 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
       toast.error('Waybill template is not loaded');
       return;
     }
+    const decision = waybillRecipientPrintDecision(delivery.address);
+    if (!decision.canPrint) {
+      toast.error(decision.reason ?? 'Recipient address is incomplete');
+      return;
+    }
     void runPrint('waybill', delivery, async () => {
       printShippingLabel(delivery, waybillTemplate);
     });
@@ -150,6 +156,7 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
               const isPending = canCancelDelivery(d.status);
               const waybillPrint = deliveryPrintButtonState(printing, 'waybill', d.id);
               const invoicePrint = deliveryPrintButtonState(printing, 'invoice', d.id);
+              const recipientDecision = waybillRecipientPrintDecision(d.address);
               return (
                 <tr
                   key={d.id}
@@ -174,7 +181,12 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                       {d.status === 'FAILED' && <FailureReasonTag reason={d.failureReason} />}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-espresso/60">{waybill ?? '-'}</td>
+                  <td className="px-4 py-3 text-sm text-espresso/60">
+                    {waybill ?? '-'}
+                    {!recipientDecision.canPrint && (
+                      <p className="mt-0.5 text-xs text-red-600">{recipientDecision.reason}</p>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm text-espresso/60">
                     {formatDate(d.dispatchedAt)}
                   </td>
@@ -191,12 +203,12 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                         size="sm"
                         variant="outline"
                         onClick={() => handlePrint(d)}
-                        disabled={!canPrintWaybillNow || waybillPrint.isBusy}
+                        disabled={!canPrintWaybillNow || !recipientDecision.canPrint || waybillPrint.isBusy}
                         aria-busy={waybillPrint.isActive}
                         title={
                           !canPrintWaybillNow
                             ? 'Waybill template is not loaded'
-                            : undefined
+                            : recipientDecision.reason ?? undefined
                         }
                         data-testid={`delivery-waybill-${d.id}`}
                       >

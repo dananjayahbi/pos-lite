@@ -11,6 +11,7 @@ import {
 } from '@/lib/delivery/waybill';
 import type { DeliveryLabelTemplate } from '@/types/delivery-label';
 import { collectableCodAmount, isPrepaidOrder } from '@/lib/delivery/cod';
+import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
 import { buildSampleLabelProps, buildSampleSheetProps } from './sampleLabel';
 
 interface Address {
@@ -252,6 +253,18 @@ const WAYBILL_SHEET_CSS = `@page { size: A4 landscape; margin: 0; }
 }`;
 
 /**
+ * ARGUS #300: never render a courier-facing waybill with a blank recipient
+ * block. The UI disables the buttons and lists the missing fields; this throw
+ * protects every remaining caller.
+ */
+function assertWaybillRecipient(delivery: LabelDeliveryLike): void {
+  const decision = waybillRecipientPrintDecision(delivery.address);
+  if (!decision.canPrint) {
+    throw new Error(`Waybill cannot be printed for ${delivery.orderRef || 'this order'} - ${decision.reason}`);
+  }
+}
+
+/**
  * Renders a real delivery's label into a print overlay. Only the label is
  * printed; the rest of the app is hidden via injected print CSS.
  */
@@ -259,6 +272,7 @@ export function printShippingLabel(delivery: LabelDeliveryLike, template: Delive
   if (!template.brandName?.trim()) {
     throw new Error('Waybill template is not loaded - the sender identity is missing');
   }
+  assertWaybillRecipient(delivery);
   renderPrintOverlay(
     <div className="waybill-sheet">
       <div className="waybill-page">
@@ -309,6 +323,27 @@ export function printShippingLabels(
   if (!template.brandName?.trim()) {
     throw new Error('Waybill template is not loaded - the sender identity is missing');
   }
+
+  const blocked = deliveries
+    .map((delivery) => ({
+      delivery,
+      decision: waybillRecipientPrintDecision(delivery.address),
+    }))
+    .filter(({ decision }) => !decision.canPrint);
+  if (blocked.length > 0) {
+    const details = blocked
+      .slice(0, 3)
+      .map(
+        ({ delivery, decision }) =>
+          `${delivery.orderRef || 'order'} (${decision.missing.join(', ')})`,
+      )
+      .join('; ');
+    const more = blocked.length > 3 ? `; +${blocked.length - 3} more` : '';
+    throw new Error(
+      `Waybill printing blocked for ${blocked.length} order(s): ${details}${more}`,
+    );
+  }
+
   renderPrintOverlay(
     <div className="waybill-sheet">
       {deliveries.map((delivery, index) => (
