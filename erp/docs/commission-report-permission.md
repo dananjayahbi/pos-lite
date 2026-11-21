@@ -14,6 +14,10 @@ There was no permission notice or redirect even though both APIs require
 
 ## Rule
 
+> Superseded by ARGUS #368: commission reports now require `payroll:view`, not
+> the staff-directory permissions described below. See
+> `commission-report-payroll-permission.md`.
+
 `src/lib/services/commission-report-access.core.ts` is pure and unit tested:
 
 ```ts

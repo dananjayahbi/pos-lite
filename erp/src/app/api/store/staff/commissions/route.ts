@@ -22,10 +22,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (
-      !hasPermission(session.user, PERMISSIONS.STAFF.viewStaff) &&
-      !hasPermission(session.user, PERMISSIONS.STAFF.manageStaff)
-    ) {
+    if (!hasPermission(session.user, PERMISSIONS.PAYROLL.viewPayroll)) {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },

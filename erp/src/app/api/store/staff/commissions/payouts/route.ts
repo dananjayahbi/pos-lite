@@ -25,9 +25,11 @@ export async function GET(request: NextRequest) {
     }
 
     // M20-01 (XC-03): permission-key gate instead of a hard-coded role list.
-    if (!hasPermission(session.user, PERMISSIONS.STAFF.manageStaff)) {
+    // ARGUS #368: payout history exposes every cashier's commission, so it is
+    // payroll data and requires payroll:view.
+    if (!hasPermission(session.user, PERMISSIONS.PAYROLL.viewPayroll)) {
       return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Only managers and owners can view payouts' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
       );
     }

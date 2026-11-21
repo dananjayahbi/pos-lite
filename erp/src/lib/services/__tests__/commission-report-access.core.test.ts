@@ -12,11 +12,20 @@ describe('canViewCommissionReports', () => {
     expect(canViewCommissionReports({ role: 'CASHIER' })).toBe(false);
   });
 
-  it('honours explicit staff permission overrides', () => {
+  it('denies staff-only viewers even when they can see the staff directory', () => {
     expect(
       canViewCommissionReports({
         role: 'CASHIER',
         permissions: [PERMISSIONS.STAFF.viewStaff],
+      }),
+    ).toBe(false);
+  });
+
+  it('honours an explicit payroll:view grant', () => {
+    expect(
+      canViewCommissionReports({
+        role: 'CASHIER',
+        permissions: [PERMISSIONS.PAYROLL.viewPayroll],
       }),
     ).toBe(true);
   });

@@ -309,7 +309,7 @@ export const storeNavGroups: NavGroup[] = [
         name: 'Staff Commissions',
         href: '/staff/commissions',
         roles: ['OWNER', 'MANAGER'],
-        permission: PERMISSIONS.STAFF.viewStaff,
+        permission: PERMISSIONS.PAYROLL.viewPayroll,
       },
       {
         name: 'Run Payroll',
