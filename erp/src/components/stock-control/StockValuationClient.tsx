@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/table';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useGetStockValuation, useInvalidateStockValuation } from '@/hooks/useGetStockValuation';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { formatRupee } from '@/lib/format';
 
 type SortColumn = 'categoryName' | 'variantCount' | 'retailValue' | 'costValue' | 'marginPercent' | 'share';
@@ -61,7 +62,11 @@ export function StockValuationClient() {
     );
   }
 
-  if (!hasPermission('product:view_cost_price')) {
+  // ARGUS #185: the valuation API is governed by stock:valuation:view, so the
+  // page must use the same gate. product:view_cost_price is a narrower
+  // product-editing key (STOCK_CLERK holds it) and let the page render KPI
+  // cards that then failed with the API's 403.
+  if (!hasPermission(PERMISSIONS.STOCK.viewStockValuation)) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center p-6">
         <Card className="w-full max-w-md text-center">

@@ -19,6 +19,7 @@ import { stockActorLabel } from '@/lib/stock/actor-label';
 import { formatRupee } from '@/lib/format';
 import { LowStockAlertBadge } from '@/components/stock/LowStockAlertBadge';
 import { stockMovementReasonLabel } from '@/lib/constants/stock-movement';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 interface StockControlDashboardProps {
   permissions: string[];
@@ -59,7 +60,9 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
   const canAdjust = permissions.includes('stock:adjust');
   const canViewStock = permissions.includes('stock:view');
   const canManageStockTakes = permissions.includes('stock:take');
-  const canViewStockValue = permissions.includes('product:view_cost_price');
+  // ARGUS #185: gate the card on the same key as the valuation page and API,
+  // not the narrower product cost-price key.
+  const canViewStockValue = permissions.includes(PERMISSIONS.STOCK.viewStockValuation);
 
   return (
     <div className="space-y-6 p-6 md:p-8">
