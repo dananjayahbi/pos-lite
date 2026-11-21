@@ -137,6 +137,48 @@ describe('tax-inclusive reversal base (ARGUS #345)', () => {
     expect(plan.targetBase.toNumber()).toBe(0);
     expect(plan.adjustmentBase.toNumber()).toBe(-1000);
   });
+
+  it('reverses the delivery share on a full goods return (ARGUS #103)', () => {
+    // Sale: 1000 goods + 100 VAT + 50 delivery = 1150; the refund excludes
+    // delivery, so 1100 is a full goods return.
+    const plan = planCommissionReversal({
+      originalBase: 1150,
+      commissionRate: 10,
+      saleBase: 1150,
+      deliveryChargeBase: 50,
+      returnedBase: 1100,
+      existingBase: 1150,
+    });
+    expect(plan.targetBase.toNumber()).toBe(0);
+    expect(plan.adjustmentBase.toNumber()).toBe(-1150);
+    expect(plan.adjustmentEarned.toNumber()).toBe(-115);
+  });
+
+  it('reverses a proportional share of goods when delivery is included', () => {
+    const plan = planCommissionReversal({
+      originalBase: 1150,
+      commissionRate: 10,
+      saleBase: 1150,
+      deliveryChargeBase: 50,
+      returnedBase: 550, // half of the 1100 refundable goods+VAT
+      existingBase: 1150,
+    });
+    expect(plan.targetBase.toNumber()).toBe(575);
+    expect(plan.adjustmentBase.toNumber()).toBe(-575);
+    expect(plan.adjustmentEarned.toNumber()).toBe(-57.5);
+  });
+
+  it('treats a delivery-free sale exactly as before', () => {
+    const plan = planCommissionReversal({
+      originalBase: 1100,
+      commissionRate: 10,
+      saleBase: 1100,
+      deliveryChargeBase: 0,
+      returnedBase: 550,
+      existingBase: 1100,
+    });
+    expect(plan.targetBase.toNumber()).toBe(550);
+  });
 });
 
 describe('original commission basis (ARGUS #345)', () => {

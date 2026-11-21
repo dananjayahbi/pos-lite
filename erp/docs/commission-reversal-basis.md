@@ -10,9 +10,12 @@ share behind.
 
 - Earning base: `Sale.totalAmount` (stored on `CommissionRecord.baseAmount`).
 - Reversal input: the sum of completed `Return.refundAmount` values.
-- The refund is scaled by `originalBase / saleBase` so legacy records whose
-  stored base differs from the current sale total still reverse to exactly zero
-  on a full return.
+- The refund is scaled by `originalBase / refundableBase`, where
+  `refundableBase = Sale.totalAmount - Sale.deliveryCharge`. Delivery is never
+  refunded, so this makes a full goods return reverse the whole commission -
+  including the part earned on delivery - instead of leaving it behind
+  (ARGUS #103). Legacy records whose stored base differs from the current sale
+  total still reverse to exactly zero on a full return.
 - The reversing row uses the **original commission rate**, never the staff
   member's current rate:
   - one positive original record -> its stored `commissionRate`;
@@ -36,6 +39,7 @@ The pure decisions live in
 ## Verification
 
 `src/lib/services/__tests__/commissionClawback.core.test.ts` covers a full
-VAT-inclusive refund, a partial tax-inclusive refund, a legacy base that differs
-from the sale total, historical single/mixed rate selection, positive-base
-summing, and sale-date selection.
+VAT-inclusive refund, a partial tax-inclusive refund, a delivery-bearing sale
+(full and partial goods returns), a legacy base that differs from the sale
+total, historical single/mixed rate selection, positive-base summing, and
+sale-date selection.

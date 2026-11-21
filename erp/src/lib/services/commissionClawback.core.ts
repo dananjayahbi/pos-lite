@@ -25,6 +25,12 @@ export interface CommissionReversalPlanInput {
    * so a mixed/legacy original base still reverses proportionally.
    */
   saleBase?: Decimalish | undefined;
+  /**
+   * Delivery charge included in `saleBase`. Delivery is never refunded, so it
+   * is removed from the denominator: a full goods return still reverses the
+   * whole commission, including the part earned on delivery (ARGUS #103).
+   */
+  deliveryChargeBase?: Decimalish | undefined;
   /** Sum of completed return refunds for the sale (goods + tax). */
   returnedBase?: Decimalish | undefined;
   /** A voided sale has no remaining commissionable base. */
@@ -128,11 +134,18 @@ export function planCommissionReversal(
   const existingBase = toDecimal(input.existingBase);
 
   // One base both ways: the original ledger was earned on the tax-inclusive
-  // sale total, and the return's tax-inclusive refund is the same unit. Scaling
-  // by originalBase/saleBase keeps historical rows (whose stored base may not
-  // equal the current sale total) reversible to exactly zero on a full return.
-  const returnedAgainstLedger = saleBase.gt(0)
-    ? Decimal.min(originalBase, originalBase.mul(returnedBase).div(saleBase))
+  // sale total, and the return's tax-inclusive refund is the same unit. The
+  // delivery charge is not refundable, so it is excluded from the denominator;
+  // otherwise a full goods return leaves commission on the delivery fee
+  // behind. Scaling by originalBase/refundableBase keeps historical rows
+  // (whose stored base may not equal the current sale total) reversible to
+  // exactly zero on a full return.
+  const refundableBase = Decimal.max(
+    saleBase.minus(Decimal.max(toDecimal(input.deliveryChargeBase), 0)),
+    0,
+  );
+  const returnedAgainstLedger = refundableBase.gt(0)
+    ? Decimal.min(originalBase, originalBase.mul(returnedBase).div(refundableBase))
     : returnedBase;
 
   const targetBase = input.voided
