@@ -53,8 +53,8 @@ describe('resolveLowStockViewState', () => {
 });
 
 describe('lowStockBadgeLabel', () => {
-  it('uses a neutral dash — not 0 — on error', () => {
-    expect(lowStockBadgeLabel('error', 0)).toBe('—');
+  it('uses a neutral dash (not 0) on error', () => {
+    expect(lowStockBadgeLabel('error', 0)).toBe('-');
   });
 
   it('hides the badge while loading or without permission', () => {

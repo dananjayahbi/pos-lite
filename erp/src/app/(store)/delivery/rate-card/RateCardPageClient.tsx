@@ -246,7 +246,7 @@ export function RateCardPageClient() {
               {isCreate && (
                 <div className="rounded-lg border border-sand bg-linen/60 px-3 py-2 font-body text-sm text-espresso/70">
                   This will create the tenant&apos;s first delivery rate card. Numeric fields are
-                  required — an empty field will not be saved as 0.
+                  required - an empty field will not be saved as 0.
                 </div>
               )}
               <div className="grid gap-4 sm:grid-cols-2">

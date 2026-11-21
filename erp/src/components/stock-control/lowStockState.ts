@@ -38,7 +38,7 @@ export function lowStockBadgeLabel(state: LowStockViewState, total: number): str
     case 'loading':
       return null;
     case 'error':
-      return '—';
+      return '-';
     case 'empty':
       return '0';
     case 'list':
