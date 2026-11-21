@@ -10,6 +10,10 @@ import { isApiError } from '@/lib/api/errors';
 import { prisma } from '@/lib/prisma';
 import { PaymentMethod } from '@/generated/prisma/client';
 import type { SaleStatus } from '@/generated/prisma/client';
+import {
+  applySaleHistoryScope,
+  resolveSaleHistoryScope,
+} from '@/lib/sales/sale-history-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,7 +33,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!hasPermission(session.user, PERMISSIONS.SALE.viewSale)) {
+    const canViewSale = hasPermission(session.user, PERMISSIONS.SALE.viewSale);
+    if (!canViewSale) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
+      );
+    }
+
+    // ARGUS #78: the /sales page requires sale:view_history. Without it the
+    // endpoint still serves the POS (held sales / shift close) but only the
+    // caller's own records — never the tenant-wide ledger.
+    const scope = resolveSaleHistoryScope({
+      canViewSale,
+      canViewSaleHistory: hasPermission(session.user, PERMISSIONS.SALE.viewSaleHistory),
+      userId: session.user.id,
+    });
+    if (scope.kind === 'forbidden') {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
@@ -53,16 +73,22 @@ export async function GET(request: NextRequest) {
     const to = parseQueryDate(url.searchParams, 'to');
     const { page, limit } = parsePagination(url.searchParams);
 
-    const result = await getSales(tenantId, {
-      shiftId,
-      cashierId,
-      status,
-      paymentMethod,
-      from,
-      to,
-      page,
-      limit,
-    });
+    const result = await getSales(
+      tenantId,
+      applySaleHistoryScope(
+        {
+          shiftId,
+          cashierId,
+          status,
+          paymentMethod,
+          from,
+          to,
+          page,
+          limit,
+        },
+        scope,
+      ),
+    );
 
     return NextResponse.json({
       success: true,
