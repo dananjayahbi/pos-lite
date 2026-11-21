@@ -43,10 +43,24 @@ variant. The range therefore states both facts, for example
 includes multi-variant products without loading them all into the browser
 (ARGUS #158). Headings now say "Add variants" / "Selected variants".
 
+## Variant-level search
+
+The API searches at product level, so an exact barcode used to return the
+matching product with every sibling pack (same product name, different barcodes
+and prices). A scan-and-reprint could then print the wrong label. The picker now
+filters the fetched rows through `barcode-printing-search.core.ts`:
+
+- an exact barcode or SKU match is shown alone;
+- a partial SKU/barcode match keeps only the matching variants;
+- a product-name match still shows all of that product's variants;
+- the range switches to "N matching variants" while a search is active
+  (ARGUS #159).
+
 ## Verification
 
 `barcode-label-templates.core.test.ts` asserts the two template ids, the A4
 24-up grid, the thermal 40 x 60 mm roll, the per-template field sets, the
 summary text and unknown-template rejection. `barcode-sheet.core.test.ts` still
-covers the pagination maths, and `barcode-printing.core.test.ts` covers the
-product/variant range labels.
+covers the pagination maths, `barcode-printing.core.test.ts` covers the
+product/variant range labels, and `barcode-printing-search.core.test.ts` covers
+exact/partial search narrowing.

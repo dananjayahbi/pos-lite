@@ -37,6 +37,7 @@ import {
   formatBarcodeProductPage,
   formatBarcodeVariantRange,
 } from '@/lib/barcode-printing.core';
+import { selectBarcodeSearchRows } from '@/lib/barcode-printing-search.core';
 import {
   BARCODE_LABELS_PER_SHEET,
   countBarcodeLabels,
@@ -102,6 +103,8 @@ export function BarcodePrintingClient() {
   const firstOnPage = totalProducts === 0 ? 0 : (page - 1) * PRODUCTS_PER_PAGE + 1;
   const lastOnPage = Math.min(page * PRODUCTS_PER_PAGE, totalProducts);
 
+  const searchTerm = deferredSearch.trim();
+
   const options = useMemo<VariantOption[]>(() => {
     const rows: VariantOption[] = [];
     for (const product of data?.data ?? []) {
@@ -129,8 +132,10 @@ export function BarcodePrintingClient() {
         });
       }
     }
-    return rows;
-  }, [data]);
+    // The API matches products, so filter the rows here: an exact barcode/SKU
+    // wins alone instead of listing every sibling pack (ARGUS #159).
+    return selectBarcodeSearchRows(rows, searchTerm).map((entry) => entry.row);
+  }, [data, searchTerm]);
 
   const addVariant = useCallback((option: VariantOption) => {
     setQueue((current) => {
@@ -368,7 +373,7 @@ export function BarcodePrintingClient() {
                 </div>
               ) : options.length === 0 ? (
                 <p className="p-4 font-body text-sm text-mist-ink">
-                  No products match “{search.trim()}”.
+                  No variants match "{search.trim()}".
                 </p>
               ) : (
                 <ul className="divide-y divide-sand/30">
@@ -432,6 +437,7 @@ export function BarcodePrintingClient() {
                   totalProducts,
                   variantsOnPage: options.length,
                   totalVariants: variantTotal,
+                  narrowed: searchTerm.length > 0,
                 })}
               </span>
               <div className="flex items-center gap-1">

@@ -13,6 +13,8 @@ export interface BarcodeVariantRangeInput {
   totalProducts: number;
   variantsOnPage: number;
   totalVariants: number;
+  /** True when a search narrows the rows, so "of N variants" would overstate. */
+  narrowed?: boolean;
 }
 
 export function formatBarcodeVariantRange(input: BarcodeVariantRangeInput): string {
@@ -22,9 +24,9 @@ export function formatBarcodeVariantRange(input: BarcodeVariantRangeInput): stri
 
   const products = `Products ${firstProduct}-${lastProduct} of ${totalProducts}`;
   const variants =
-    totalVariants > 0
-      ? `${variantsOnPage} of ${totalVariants} variants`
-      : `${variantsOnPage} variant${variantsOnPage === 1 ? '' : 's'}`;
+    input.narrowed || totalVariants <= 0
+      ? `${variantsOnPage} matching variant${variantsOnPage === 1 ? '' : 's'}`
+      : `${variantsOnPage} of ${totalVariants} variants`;
 
   return `${products} · ${variants}`;
 }

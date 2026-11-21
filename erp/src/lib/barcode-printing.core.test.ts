@@ -31,7 +31,7 @@ describe('barcode printing range labels', () => {
     ).toBe('Products 11-12 of 12 · 6 of 23 variants');
   });
 
-  it('falls back when the API has no variant total', () => {
+  it('falls back to matching variants when the API has no variant total', () => {
     expect(
       formatBarcodeVariantRange({
         firstProduct: 1,
@@ -40,7 +40,7 @@ describe('barcode printing range labels', () => {
         variantsOnPage: 5,
         totalVariants: 0,
       }),
-    ).toBe('Products 1-3 of 3 · 5 variants');
+    ).toBe('Products 1-3 of 3 · 5 matching variants');
 
     expect(
       formatBarcodeVariantRange({
@@ -51,6 +51,19 @@ describe('barcode printing range labels', () => {
         totalVariants: 1,
       }),
     ).toBe('Products 1-1 of 1 · 1 of 1 variants');
+  });
+
+  it('reports matching variants while a search narrows the rows (ARGUS #159)', () => {
+    expect(
+      formatBarcodeVariantRange({
+        firstProduct: 1,
+        lastProduct: 1,
+        totalProducts: 1,
+        variantsOnPage: 1,
+        totalVariants: 3,
+        narrowed: true,
+      }),
+    ).toBe('Products 1-1 of 1 · 1 matching variant');
   });
 
   it('reports an empty catalogue', () => {
