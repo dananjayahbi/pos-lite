@@ -50,7 +50,6 @@ import {
   type ReportRow,
 } from "@/lib/reports/export";
 import {
-  buildReportHref,
   normalizeReportType,
   resolveReportColumns,
   resolveReportTitle,
@@ -58,6 +57,11 @@ import {
 } from "@/lib/reports/report-config";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PERMISSIONS, type PermissionKey } from "@/lib/constants/permissions";
+import {
+  buildSavedReportHref,
+  savedReportDownloadHref,
+} from "@/lib/reports/savedReportLink.core";
+import { buildSavedReportRequest } from "@/lib/reports/savedReportPayload.core";
 
 // ── Date helper ─────────────────────────────────────────────────
 
@@ -359,20 +363,28 @@ function ReportLayoutInner({
       filters[key] = value;
     });
 
+    // ARGUS #450 - build the request through the tested pure builder so the UI
+    // always sends a canonical slug (never `/reports/...` or `//evil.com`).
+    const request = buildSavedReportRequest({
+      name: data.name,
+      reportType: reportType ?? pathname,
+      filters,
+      format: saveFormat,
+      rows,
+      columns: resolvedColumns ?? [],
+      title: currentReportTitle,
+      dateRange: `${from} to ${to}`,
+    });
+    if (!request.ok) {
+      toast.error(request.message);
+      return;
+    }
+
     try {
       const res = await fetch("/api/reports/saved", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: data.name,
-          reportType: canonicalReportType,
-          filters,
-          format: saveFormat,
-          rows,
-          columns: resolvedColumns,
-          title: currentReportTitle,
-          dateRange: `${from} to ${to}`,
-        }),
+        body: JSON.stringify(request.payload),
       });
 
       const json = await res.json();
@@ -410,31 +422,6 @@ function ReportLayoutInner({
     } finally {
       setSavedReportsLoading(false);
     }
-  }
-
-  function buildSavedReportHref(savedReport: SavedReportRecord): string | null {
-    // Stored rows may predate the allowlist; normalize to the canonical slug
-    // and never trust a path/protocol-relative value.
-    const slug = normalizeReportType(savedReport.reportType);
-    if (!slug) return null;
-
-    const route = buildReportHref(slug);
-    const params = new URLSearchParams();
-
-    Object.entries(savedReport.filters ?? {}).forEach(([key, value]) => {
-      if (typeof value === "string") {
-        params.set(key, value);
-      } else if (Array.isArray(value)) {
-        value.forEach((item) => {
-          if (typeof item === "string") {
-            params.append(key, item);
-          }
-        });
-      }
-    });
-
-    const query = params.toString();
-    return query ? `${route}?${query}` : route;
   }
 
   async function handleDeleteSavedReport(reportId: string) {
@@ -714,7 +701,7 @@ function ReportLayoutInner({
                                   asChild
                                 >
                                   <a
-                                    href={`/api/reports/saved/${savedReport.id}/download?view=1`}
+                                    href={savedReportDownloadHref(savedReport.id, true)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                   >
@@ -744,7 +731,7 @@ function ReportLayoutInner({
                                   className="gap-1"
                                   asChild
                                 >
-                                  <a href={`/api/reports/saved/${savedReport.id}/download`}>
+                                  <a href={savedReportDownloadHref(savedReport.id)}>
                                     <DownloadIcon className="h-3.5 w-3.5" />
                                     Download
                                   </a>

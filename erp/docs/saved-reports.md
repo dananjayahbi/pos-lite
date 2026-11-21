@@ -53,3 +53,22 @@ Pure normalizer/tests:
 Helpers live in `src/lib/reports/savedReportsList.core.ts` and
 `src/lib/reports/reportArtifactMeta.core.ts`; their tests cover chips, search,
 pagination and metadata line construction.
+
+## UI coverage (ARGUS #450)
+
+The API-only suite allowed the primary UI action to regress. The UI request and
+link builders are now pure and tested:
+
+- `buildSavedReportRequest()` (`savedReportPayload.core.ts`) pins the Save
+  Report body: canonical slug (a path is normalized, `//evil.com` is refused),
+  trimmed 1–100-char name, format, rows, columns and date range.
+- `buildSavedReportHref()` / `savedReportDownloadHref()`
+  (`savedReportLink.core.ts`) pin legacy-row fallback: a stored path is
+  re-composed from its slug, unknown/protocol-relative rows return `null`, and
+  download/view URLs encode the id.
+- The same rules are asserted against the live app in
+  `tests/34_reports_analytics.spec.ts`: F10 UI save payload, F11 artifact
+  existence/download, F12 legacy-row fallback, F13 page error state and F14
+  delete confirmation. Per-type authorization is covered by
+  `savedReportAccess.core.test.ts` (a sales-only permission cannot read P&L,
+  stock or zero-value presets).

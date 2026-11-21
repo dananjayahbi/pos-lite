@@ -221,6 +221,180 @@ test.describe('§1 Functional & business logic', () => {
     // Live DB has 0 zero-value sales — the report must still return a well-formed body.
     expect(json.data).toBeTruthy();
   });
+
+  // ARGUS #450 — the API-only suite could not see the UI save payload,
+  // artifact link, legacy-row fallback, page error state or delete guard.
+  test('F10: Save Report dialog posts a canonical slug (UI payload contract)', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    await page.goto(REPORTS_PAGE_URL);
+
+    const name = `${RUN_TAG} ui-save`;
+    await page.getByRole('button', { name: /save report/i }).first().click();
+    await page.fill('#report-name', name);
+
+    const [request, response] = await Promise.all([
+      page.waitForRequest(
+        (req) => req.url().endsWith('/api/reports/saved') && req.method() === 'POST',
+      ),
+      page.waitForResponse(
+        (res) => res.url().endsWith('/api/reports/saved') && res.request().method() === 'POST',
+      ),
+      page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }).click(),
+    ]);
+
+    expect(response.status()).toBe(201);
+    const body = request.postDataJSON() as {
+      name: string;
+      reportType: string;
+      format: string;
+      filters: Record<string, unknown>;
+      columns: unknown[];
+    };
+    expect(body.name).toBe(name);
+    expect(body.reportType).toBe('sales');
+    expect(JSON.stringify(body)).not.toContain('/reports/');
+    expect(body.columns.length).toBeGreaterThan(0);
+
+    const created = await response.json();
+    createdSavedIds.push(created.data.id);
+  });
+
+  test('F11: saved artifact exists and downloads through the API', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    const name = `${RUN_TAG} artifact`;
+    const create = await page.request.post(SAVED_URL, {
+      data: {
+        name,
+        reportType: 'sales',
+        filters: { from: '2026-01-01', to: '2026-01-31' },
+        format: 'pdf',
+        rows: [{ Product: 'QA probe', 'Units Sold': 1 }],
+        columns: [
+          { key: 'Product', header: 'Product' },
+          { key: 'Units Sold', header: 'Units Sold' },
+        ],
+        title: 'QA Sales',
+        dateRange: '2026-01-01 to 2026-01-31',
+      },
+    });
+    expect(create.status()).toBe(201);
+    const created = (await create.json()).data;
+    createdSavedIds.push(created.id);
+    expect(created.storageKey ?? created.fileUrl).toBeTruthy();
+
+    const download = await page.request.get(`${SAVED_URL}/${created.id}/download`);
+    expect(download.status()).toBe(200);
+    expect(download.headers()['content-type']).toContain('application/pdf');
+    expect(download.headers()['content-disposition']).toContain('attachment');
+    expect((await download.body()).byteLength).toBeGreaterThan(0);
+
+    const view = await page.request.get(`${SAVED_URL}/${created.id}/download?view=1`);
+    expect(view.status()).toBe(200);
+    expect(view.headers()['content-disposition']).toContain('inline');
+  });
+
+  test('F12: legacy report rows fall back safely instead of rendering a stored path/URL', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    await page.route('**/api/reports/saved', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: [
+            {
+              id: 'legacy-path-row',
+              name: `${RUN_TAG} legacy path`,
+              reportType: '/reports/sales',
+              filters: { from: '2026-01-01' },
+              format: 'pdf',
+              storageKey: 'saved_reports/x/y/legacy.pdf',
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+            {
+              id: 'legacy-evil-row',
+              name: `${RUN_TAG} legacy evil`,
+              reportType: '//evil.com/x',
+              filters: {},
+              format: 'pdf',
+              storageKey: null,
+              fileUrl: null,
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.goto(SAVED_PAGE_URL);
+    await expect(page.getByText(`${RUN_TAG} legacy path`)).toBeVisible();
+    await expect(page.locator('a[href*="evil.com"]')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Unknown report' })).toBeDisabled();
+    await expect(page.getByRole('link', { name: 'Open in App' })).toHaveAttribute(
+      'href',
+      /^\/reports\/sales\?from=2026-01-01$/,
+    );
+  });
+
+  test('F13: saved-reports page error state is explicit, never an empty library', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    await page.route('**/api/reports/saved', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: false }),
+      });
+    });
+
+    await page.goto(SAVED_PAGE_URL);
+    await expect(page.getByText('Saved reports could not be loaded.')).toBeVisible();
+    await expect(page.getByText('This is a load failure, not an empty library.')).toBeVisible();
+    await expect(page.getByText('No saved reports yet.')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
+  });
+
+  test('F14: delete asks for confirmation and cancel keeps the preset', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    const name = `${RUN_TAG} delete-guard`;
+    const create = await page.request.post(SAVED_URL, {
+      data: { name, reportType: 'sales', filters: {} },
+    });
+    expect(create.status()).toBe(201);
+    const id = (await create.json()).data.id;
+    createdSavedIds.push(id);
+
+    await page.goto(SAVED_PAGE_URL);
+    const card = page
+      .getByText(name, { exact: true })
+      .locator('xpath=ancestor::div[contains(@class,"rounded-lg")][1]');
+
+    await card.getByRole('button', { name: 'Delete' }).click();
+    await expect(page.getByRole('heading', { name: 'Delete saved report?' })).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByText(name, { exact: true })).toBeVisible();
+    expect((await page.request.get(`${SAVED_URL}/${id}`)).status()).toBe(200);
+
+    await card.getByRole('button', { name: 'Delete' }).click();
+    const [del] = await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().endsWith(`/api/reports/saved/${id}`) && res.request().method() === 'DELETE',
+      ),
+      page.getByRole('button', { name: 'Delete report' }).click(),
+    ]);
+    expect(del.status()).toBe(200);
+    await expect(page.getByText(name, { exact: true })).toHaveCount(0);
+    createdSavedIds.splice(createdSavedIds.indexOf(id), 1);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

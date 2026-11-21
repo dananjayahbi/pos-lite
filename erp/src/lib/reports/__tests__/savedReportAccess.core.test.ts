@@ -7,6 +7,7 @@ import {
   SAVED_REPORT_SNAPSHOT_KEY,
 } from '@/lib/reports/savedReportAccess.core';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { hasPermission } from '@/lib/utils/permissions';
 
 /** ARGUS #446: saved reports are authorized per report type, not one broad key. */
 describe('savedReportPermission', () => {
@@ -27,6 +28,19 @@ describe('savedReportPermission', () => {
   it('falls back to the sales report permission for unknown types', () => {
     expect(savedReportPermission('not-a-report')).toBe(PERMISSIONS.REPORT.viewSalesReport);
     expect(savedReportPermission(null)).toBe(PERMISSIONS.REPORT.viewSalesReport);
+  });
+
+  it('does not let a sales-only permission read another report type (ARGUS #450)', () => {
+    // Per-user override: only the sales-report key, no stock/profit/customer.
+    const salesOnly = {
+      role: 'CASHIER' as const,
+      permissions: [PERMISSIONS.REPORT.viewSalesReport],
+    };
+
+    expect(hasPermission(salesOnly, savedReportPermission('sales'))).toBe(true);
+    expect(hasPermission(salesOnly, savedReportPermission('profit-loss'))).toBe(false);
+    expect(hasPermission(salesOnly, savedReportPermission('inventory-valuation'))).toBe(false);
+    expect(hasPermission(salesOnly, savedReportPermission('zero-value-sales'))).toBe(false);
   });
 });
 

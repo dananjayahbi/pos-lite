@@ -27,6 +27,10 @@ import { formatShortDateTime } from '@/lib/format';
 import { hasSavedReportArtifact } from '@/lib/reports/savedReportArtifact.core';
 import { savedReportSnapshotMeta } from '@/lib/reports/savedReportAccess.core';
 import {
+  buildSavedReportHref,
+  savedReportDownloadHref,
+} from '@/lib/reports/savedReportLink.core';
+import {
   buildReportHref,
   normalizeReportType,
   resolveReportTitle,
@@ -48,39 +52,6 @@ function formatReportType(reportType: string) {
   const slug = normalizeReportType(reportType);
   if (!slug) return 'Unknown report';
   return resolveReportTitle(buildReportHref(slug));
-}
-
-/**
- * M34-01 (BUG-78): the href is ALWAYS composed from a known slug.
- *
- * The old builder walked `reportType.startsWith('/') ? reportType : ...`,
- * which turned a persisted `//evil.com/x` into a protocol-relative href
- * (confirmed reachable today, since it passes the `startsWith('/')` test)
- * — one click navigated off-site. Even with the new server-side allowlist,
- * the client never trusts the stored string.
- */
-function buildSavedReportHref(savedReport: SavedReportRecord) {
-  const slug = normalizeReportType(savedReport.reportType);
-  const route = slug ? buildReportHref(slug) : null;
-
-  if (!route) return null;
-
-  const params = new URLSearchParams();
-
-  Object.entries(savedReport.filters ?? {}).forEach(([key, value]) => {
-    if (typeof value === 'string') {
-      params.set(key, value);
-    } else if (Array.isArray(value)) {
-      value.forEach((item) => {
-        if (typeof item === 'string') {
-          params.append(key, item);
-        }
-      });
-    }
-  });
-
-  const query = params.toString();
-  return query ? `${route}?${query}` : route;
 }
 
 export default function SavedReportsPage() {
@@ -279,7 +250,7 @@ export default function SavedReportsPage() {
                         <>
                           <Button variant="outline" asChild>
                             <a
-                              href={`/api/reports/saved/${report.id}/download?view=1`}
+                              href={savedReportDownloadHref(report.id, true)}
                               target="_blank"
                               rel="noopener noreferrer"
                             >
@@ -287,7 +258,7 @@ export default function SavedReportsPage() {
                             </a>
                           </Button>
                           <Button variant="outline" asChild>
-                            <a href={`/api/reports/saved/${report.id}/download`}>Download</a>
+                            <a href={savedReportDownloadHref(report.id)}>Download</a>
                           </Button>
                         </>
                       ) : (
