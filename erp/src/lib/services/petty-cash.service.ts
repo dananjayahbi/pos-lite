@@ -17,6 +17,7 @@ import {
   multiplePettyCashFundsMessage,
   resolvePettyCashReadiness,
 } from '@/lib/petty-cash/setup-state';
+import { PETTY_CASH_LEDGER_LIMIT } from '@/lib/petty-cash/ledger';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -411,7 +412,11 @@ async function loadFundWithLedger(tenantId: string, fundId: string) {
   return prisma.pettyCashFund.findFirst({
     where: { id: fundId, tenantId },
     include: {
-      expenses: { orderBy: { expenseDate: 'desc' }, take: 20 },
+      expenses: {
+        orderBy: { expenseDate: 'desc' },
+        take: PETTY_CASH_LEDGER_LIMIT,
+        include: { recordedBy: { select: { email: true } } },
+      },
       paymentAccount: true,
     },
   });
@@ -657,18 +662,22 @@ export async function getBalanceEquation(
 export interface PettyCashTopUpRow {
   id: string;
   entryDate: string;
+  createdAt: string;
   description: string;
   amount: string;
+  recordedByEmail: string | null;
 }
 
 /**
- * List the ledger debits that represent top-ups into the petty-cash account.
- * The ledger is the transaction record, so no extra table is needed: every
- * Add Cash In call writes one of these rows.
+ * List the latest ledger debits that represent top-ups into the petty-cash
+ * account. The list is intentionally capped, and the caller discloses
+ * "latest N of total" while the balance equation keeps using full totals
+ * (ARGUS #410).
  */
 export async function getPettyCashTopUps(
   tenantId: string,
   fund: { paymentAccountId: string | null },
+  limit: number = PETTY_CASH_LEDGER_LIMIT,
 ): Promise<PettyCashTopUpRow[]> {
   if (!fund.paymentAccountId) return [];
 
@@ -680,16 +689,80 @@ export async function getPettyCashTopUps(
       debit: { gt: 0 },
     },
     orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
-    take: 50,
-    select: { id: true, entryDate: true, description: true, debit: true },
+    take: limit,
+    select: {
+      id: true,
+      entryDate: true,
+      createdAt: true,
+      description: true,
+      debit: true,
+      createdById: true,
+    },
   });
+
+  const actorIds = Array.from(new Set(entries.map((entry) => entry.createdById)));
+  const actors = actorIds.length
+    ? await prisma.user.findMany({
+        where: { tenantId, id: { in: actorIds } },
+        select: { id: true, email: true },
+      })
+    : [];
+  const emailById = new Map(actors.map((actor) => [actor.id, actor.email]));
 
   return entries.map((entry) => ({
     id: entry.id,
     entryDate: entry.entryDate.toISOString(),
+    createdAt: entry.createdAt.toISOString(),
     description: entry.description,
     amount: entry.debit.toFixed(2),
+    recordedByEmail: emailById.get(entry.createdById) ?? null,
   }));
+}
+
+export interface PettyCashLedgerTotals {
+  expenseCount: number;
+  expenseTotal: number;
+  topUpCount: number;
+  topUpTotal: number;
+  limit: number;
+}
+
+/**
+ * Full totals for the linked-expense ledger, independent of the displayed
+ * page. These must agree with the balance equation: it sums every expense and
+ * every top-up, not just the visible rows.
+ */
+export async function getPettyCashLedgerTotals(
+  tenantId: string,
+  fund: { id: string; paymentAccountId: string | null },
+): Promise<PettyCashLedgerTotals> {
+  const [expenses, topUps] = await Promise.all([
+    prisma.expense.aggregate({
+      where: { tenantId, pettyCashFundId: fund.id },
+      _count: { _all: true },
+      _sum: { amount: true },
+    }),
+    fund.paymentAccountId
+      ? prisma.paymentAccountEntry.aggregate({
+          where: {
+            tenantId,
+            accountId: fund.paymentAccountId,
+            source: { in: [...TOP_UP_SOURCES] },
+            debit: { gt: 0 },
+          },
+          _count: { _all: true },
+          _sum: { debit: true },
+        })
+      : Promise.resolve({ _count: { _all: 0 }, _sum: { debit: null } }),
+  ]);
+
+  return {
+    expenseCount: expenses._count._all,
+    expenseTotal: expenses._sum.amount?.toNumber() ?? 0,
+    topUpCount: topUps._count._all,
+    topUpTotal: topUps._sum.debit?.toNumber() ?? 0,
+    limit: PETTY_CASH_LEDGER_LIMIT,
+  };
 }
 
 /**

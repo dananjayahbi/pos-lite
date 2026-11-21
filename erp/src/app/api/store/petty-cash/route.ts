@@ -7,6 +7,7 @@ import {
   updateFund,
   getBalanceEquation,
   getPettyCashTopUps,
+  getPettyCashLedgerTotals,
 } from '@/lib/services/petty-cash.service';
 import { UpdatePettyCashFundSchema } from '@/lib/validators/petty-cash.validators';
 import { toErrorResponse } from '@/lib/api/error-envelope';
@@ -67,11 +68,17 @@ export async function GET() {
 
     const balance = await getBalanceEquation(tenantId, state.fund.id);
     const topUps = await getPettyCashTopUps(tenantId, state.fund);
+    const totals = await getPettyCashLedgerTotals(tenantId, state.fund);
     return NextResponse.json({
       success: true,
       data: state.fund,
       balance,
       topUps,
+      ledger: {
+        ...totals,
+        expenseShown: state.fund.expenses.length,
+        topUpShown: topUps.length,
+      },
       setupRequired: false,
       multipleFunds: false,
     });

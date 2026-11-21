@@ -25,6 +25,13 @@ import { Loader2, ArrowRight, ArrowDownToLine, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { EXPENSE_CATEGORIES } from '@/lib/validators/expense.validators';
 import { formatRupee } from '@/lib/format';
+import { staffDisplayName } from '@/lib/utils/staff-name';
+import {
+  buildRunningLedger,
+  ledgerDisclosure,
+  type PettyCashLedgerInput,
+  type PettyCashLedgerRow,
+} from '@/lib/petty-cash/ledger';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { PettyCashBalanceEquation } from '@/components/petty-cash/PettyCashBalanceEquation';
 import { PettyCashExportButton } from '@/components/petty-cash/PettyCashExportButton';
@@ -57,8 +64,10 @@ interface FundPaymentAccount {
 interface PettyCashTopUp {
   id: string;
   entryDate: string;
+  createdAt: string;
   description: string;
   amount: string;
+  recordedByEmail: string | null;
 }
 
 interface PettyCashFund {
@@ -81,33 +90,31 @@ interface BalanceEquation {
   currentBalance: number;
 }
 
+interface LedgerMeta {
+  expenseShown: number;
+  expenseCount: number;
+  expenseTotal: number;
+  topUpShown: number;
+  topUpCount: number;
+  topUpTotal: number;
+  limit: number;
+}
+
 interface FundResponse {
   fund: PettyCashFund | null;
   balance: BalanceEquation | null;
   topUps: PettyCashTopUp[];
+  ledger?: LedgerMeta | null;
   setupRequired: boolean;
   multipleFunds: boolean;
   fundCount?: number;
   message?: string;
 }
 
-type LedgerRow =
-  | {
-      kind: 'expense';
-      id: string;
-      date: string;
-      category: string;
-      description: string;
-      amount: string;
-      receiptImageUrl: string | null;
-    }
-  | {
-      kind: 'topup';
-      id: string;
-      date: string;
-      description: string;
-      amount: string;
-    };
+type LedgerRow = PettyCashLedgerRow & {
+  category?: string | null | undefined;
+  receiptImageUrl?: string | null | undefined;
+};
 
 function formatShortDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-GB', {
@@ -163,6 +170,7 @@ export default function PettyCashDashboard({
         fund: json.data as PettyCashFund | null,
         balance: (json.balance ?? null) as BalanceEquation | null,
         topUps: (json.topUps ?? []) as PettyCashTopUp[],
+        ledger: (json.ledger ?? null) as LedgerMeta | null,
         setupRequired: Boolean(json.setupRequired),
         multipleFunds: Boolean(json.multipleFunds),
         ...(typeof json.fundCount === 'number' ? { fundCount: json.fundCount } : {}),
@@ -279,27 +287,45 @@ export default function PettyCashDashboard({
     });
   };
 
-  const ledgerRows = useMemo<LedgerRow[]>(() => {
-    const expenseRows: LedgerRow[] = (fund?.expenses ?? []).map((expense) => ({
-      kind: 'expense',
-      id: expense.id,
-      date: expense.expenseDate,
-      category: expense.category,
-      description: expense.description,
-      amount: expense.amount,
-      receiptImageUrl: expense.receiptImageUrl,
-    }));
-    const topUpRows: LedgerRow[] = (response?.topUps ?? []).map((topUp) => ({
-      kind: 'topup',
-      id: topUp.id,
-      date: topUp.entryDate,
-      description: topUp.description,
-      amount: topUp.amount,
-    }));
-    return [...expenseRows, ...topUpRows].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-    );
-  }, [fund?.expenses, response?.topUps]);
+  const ledgerView = useMemo(() => {
+    const inputs: PettyCashLedgerInput[] = [
+      ...(fund?.expenses ?? []).map((expense) => ({
+        id: expense.id,
+        kind: 'expense' as const,
+        date: expense.expenseDate,
+        createdAt: null,
+        category: expense.category,
+        description: expense.description,
+        amount: expense.amount,
+        receiptImageUrl: expense.receiptImageUrl,
+        recordedByEmail: expense.recordedBy?.email ?? null,
+      })),
+      ...(response?.topUps ?? []).map((topUp) => ({
+        id: topUp.id,
+        kind: 'topup' as const,
+        date: topUp.entryDate,
+        createdAt: topUp.createdAt,
+        category: null,
+        description: topUp.description,
+        amount: topUp.amount,
+        receiptImageUrl: null,
+        recordedByEmail: topUp.recordedByEmail ?? null,
+      })),
+    ];
+    return buildRunningLedger(inputs, response?.balance?.currentBalance ?? 0);
+  }, [fund?.expenses, response?.topUps, response?.balance?.currentBalance]);
+
+  const ledgerRows: LedgerRow[] = ledgerView.rows;
+  const expenseDisclosure = ledgerDisclosure(
+    response?.ledger?.expenseShown ?? 0,
+    response?.ledger?.expenseCount ?? 0,
+    response?.ledger?.limit,
+  );
+  const topUpDisclosure = ledgerDisclosure(
+    response?.ledger?.topUpShown ?? 0,
+    response?.ledger?.topUpCount ?? 0,
+    response?.ledger?.limit,
+  );
 
   return (
     <div className="space-y-6 p-6">
@@ -501,8 +527,21 @@ export default function PettyCashDashboard({
               <div className="border-b border-mist bg-linen/40 px-4 py-3">
                 <h2 className="font-display font-semibold text-espresso">Linked Expenses</h2>
                 <p className="text-xs text-sand-ink">
-                  Expenses and Cash In top-ups, newest first.
+                  Expenses and Cash In top-ups, newest first. The running balance
+                  column ends at the live fund balance.
                 </p>
+                {response?.ledger && (
+                  <p className="mt-1 text-xs text-sand-ink">
+                    Showing latest {expenseDisclosure.shown} of {expenseDisclosure.total} expenses
+                    ({formatRupee(response.ledger.expenseTotal)} total) and latest{' '}
+                    {topUpDisclosure.shown} of {topUpDisclosure.total} cash-in rows
+                    ({formatRupee(response.ledger.topUpTotal)} total). The balance equation
+                    above uses all rows.
+                    {expenseDisclosure.truncated || topUpDisclosure.truncated
+                      ? ' Older rows are not listed here; use Export for the full audit trail.'
+                      : ''}
+                  </p>
+                )}
               </div>
               <Table>
                 <TableHeader>
@@ -510,14 +549,16 @@ export default function PettyCashDashboard({
                     <TableHead className="text-espresso">Date</TableHead>
                     <TableHead className="text-espresso">Category</TableHead>
                     <TableHead className="text-espresso">Description</TableHead>
+                    <TableHead className="text-espresso">Recorded By</TableHead>
                     <TableHead className="text-right text-espresso">Amount</TableHead>
+                    <TableHead className="text-right text-espresso">Running Balance</TableHead>
                     <TableHead className="text-espresso">Receipt</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {ledgerRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="py-8 text-center text-sand-ink">
+                      <TableCell colSpan={7} className="py-8 text-center text-sand-ink">
                         No expenses or top-ups linked to this fund yet. Use Add Cash In or the
                         Expenses page.
                       </TableCell>
@@ -535,12 +576,17 @@ export default function PettyCashDashboard({
                             </Badge>
                           ) : (
                             <Badge className="bg-linen text-espresso">
-                              {CATEGORY_LABEL[row.category] ?? row.category}
+                              {CATEGORY_LABEL[row.category ?? ''] ?? row.category ?? '-'}
                             </Badge>
                           )}
                         </TableCell>
                         <TableCell className="max-w-[260px] truncate">
                           {row.description}
+                        </TableCell>
+                        <TableCell className="text-sm text-sand-ink">
+                          {row.recordedByEmail
+                            ? staffDisplayName(row.recordedByEmail)
+                            : '-'}
                         </TableCell>
                         <TableCell
                           className={`text-right font-mono ${
@@ -550,6 +596,9 @@ export default function PettyCashDashboard({
                           {row.kind === 'topup'
                             ? `+${formatRupee(row.amount)}`
                             : `-${formatRupee(row.amount)}`}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-espresso">
+                          {formatRupee(row.runningBalance)}
                         </TableCell>
                         <TableCell>
                           {row.kind === 'expense' && row.receiptImageUrl ? (
