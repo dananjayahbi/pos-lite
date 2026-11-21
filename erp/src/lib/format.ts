@@ -13,6 +13,42 @@ export function formatLKR(amount: number | { toNumber(): number }): string {
   }).format(value);
 }
 
+const LEDGER_DATE_OPTIONS: Intl.DateTimeFormatOptions = {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+};
+
+/**
+ * Day-first date used by every ledger/detail surface: `28 Oct 2026`.
+ *
+ * ARGUS #83: the sales list, modal and detail page each had their own
+ * formatter (`28 Oct 2026`, `28 Oct 2026, 20:45`, `Oct 28, 2026, 8:45 PM`).
+ * One helper keeps the accounting date identical everywhere.
+ */
+export function formatShortDate(value: string | Date | null | undefined): string {
+  if (value === null || value === undefined) return '-';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('en-GB', LEDGER_DATE_OPTIONS);
+}
+
+/** 24-hour clock time used alongside `formatShortDate`: `20:45`. */
+export function formatShortTime(value: string | Date | null | undefined): string {
+  if (value === null || value === undefined) return '-';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** `28 Oct 2026, 20:45`. */
+export function formatShortDateTime(value: string | Date | null | undefined): string {
+  if (value === null || value === undefined) return '-';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return `${formatShortDate(date)}, ${formatShortTime(date)}`;
+}
+
 /**
  * Format a date relative to "now" for quick recency reading, e.g. "2 days ago",
  * "3 weeks ago", or an absolute date for older values. Returns null for null input.

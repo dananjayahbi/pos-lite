@@ -55,7 +55,7 @@ export function saleBreakdown(input: SaleBreakdownInput): SaleBreakdown {
   const rows: SaleBreakdownRow[] = [
     {
       key: 'subtotal',
-      label: 'Sub-total',
+      label: 'Subtotal',
       amount: round2(toAmount(input.subtotal)),
       sign: 1,
     },

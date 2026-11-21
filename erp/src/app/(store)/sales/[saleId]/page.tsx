@@ -14,14 +14,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { formatRupee } from '@/lib/format';
+import { formatRupee, formatShortDateTime } from '@/lib/format';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDateTime(date: Date | string | null): string {
   if (!date) return '-';
-  return new Date(date).toLocaleString('en-LK', { dateStyle: 'medium', timeStyle: 'short' });
+  return formatShortDateTime(date);
 }
 
 function SaleStatusBadge({ status }: { status: string }) {

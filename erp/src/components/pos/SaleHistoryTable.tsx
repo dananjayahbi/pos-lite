@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, Ban, ChevronLeft, ChevronRight, RotateCcw, Copy, Check, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatRupee } from '@/lib/format';
+import { formatRupee, formatShortDate, formatShortTime } from '@/lib/format';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { defaultDateRange, type DateRangeFilterValue } from '@/lib/date-range';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -88,20 +88,12 @@ export function getShortId(id: string): string {
 
 /** `dd MMM yyyy` in the operator's local timezone. */
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
+  return formatShortDate(dateStr);
 }
 
 /** `HH:mm` in the operator's local timezone. */
 function formatTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  return formatShortTime(dateStr);
 }
 
 /** Guest sales have no customer record â€” never render a blank or "null". */

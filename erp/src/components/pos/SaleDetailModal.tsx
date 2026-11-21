@@ -1,6 +1,6 @@
 'use client';
 
-import { formatRupee } from '@/lib/format';
+import { formatRupee, formatShortDateTime, formatShortTime } from '@/lib/format';
 import {
   Dialog,
   DialogContent,
@@ -57,16 +57,7 @@ interface SaleDetailModalProps {
 }
 
 function formatDateTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  return (
-    d.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    }) +
-    ', ' +
-    d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-  );
+  return formatShortDateTime(dateStr);
 }
 
 export function SaleDetailModal({
@@ -77,7 +68,7 @@ export function SaleDetailModal({
   if (!sale) return null;
 
   const shortId = sale.id.slice(0, 8).toUpperCase();
-  // Sub-total is already net of line discounts, so the breakdown shows only the
+  // Subtotal is already net of line discounts, so the breakdown shows only the
   // cart discount, tax and delivery — the same rows as the sale detail page.
   const breakdown = saleBreakdown({
     subtotal: sale.subtotal,
@@ -104,10 +95,7 @@ export function SaleDetailModal({
             {formatDateTime(sale.saleDate ?? sale.createdAt)}
           </p>
           <p className="font-body text-[11px] text-mist-ink">
-            Entered {new Date(sale.createdAt).toLocaleTimeString('en-GB', {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
+            Entered {formatShortTime(sale.createdAt)}
           </p>
           <CopyableText value={sale.id} label="Sale ID" className="text-xs text-espresso" />
         </DialogHeader>
