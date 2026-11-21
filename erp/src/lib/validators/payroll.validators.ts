@@ -15,6 +15,8 @@ export const GeneratePayrollSchema = z.object({
   month: PayrollMonthSchema,
   notes: z.string().trim().max(500).optional(),
   overrides: z.array(PayrollOverrideSchema).max(500).default([]),
+  /** ARGUS #375: acknowledge a zero-net or unsalaried run before generating. */
+  confirmZeroPayRun: z.boolean().optional(),
 });
 
 /** Mark a generated run paid. */

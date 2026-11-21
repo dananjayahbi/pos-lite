@@ -29,6 +29,7 @@ import {
   type PayrollSettings,
 } from '@/lib/payroll/payroll-settings';
 import { parseAttendanceCalendar } from '@/lib/attendance/attendanceCalendar.core';
+import { assessPayrollRunReadiness } from '@/lib/payroll/run-readiness';
 import type {
   PayrollPreview,
   PayrollPreviewRow,
@@ -229,6 +230,8 @@ export interface GeneratePayrollInput {
   generatedByRole: string;
   overrides?: PayrollRowOverride[] | undefined;
   notes?: string | undefined;
+  /** ARGUS #375: explicit acknowledgement of zero/unsalaried rows. */
+  confirmZeroPayRun?: boolean | undefined;
 }
 
 export async function generatePayrollRun(input: GeneratePayrollInput) {
@@ -238,8 +241,23 @@ export async function generatePayrollRun(input: GeneratePayrollInput) {
   if (preview.alreadyGenerated) {
     throw ApiError.conflict(`Payroll for ${preview.label} has already been generated`);
   }
-  if (preview.rows.length === 0) {
-    throw ApiError.validation('No active staff members to pay');
+
+  // ARGUS #375: a zero/unconfigured preview must not silently consume the
+  // tenant/month uniqueness lock. No staff is a hard refusal; zero pay or
+  // unsalaried staff need an explicit acknowledgement.
+  const readiness = assessPayrollRunReadiness(preview.rows);
+  if (readiness.blocking) {
+    throw ApiError.validation(readiness.blocking.message, {
+      code: readiness.blocking.code,
+    });
+  }
+  if (readiness.requiresConfirmation && !input.confirmZeroPayRun) {
+    throw new ApiError(
+      422,
+      'PAYROLL_CONFIRMATION_REQUIRED',
+      readiness.confirmationMessage ?? 'Confirm the payroll warnings before generating',
+      { warnings: readiness.warnings },
+    );
   }
 
   const costs = preview.rows.reduce(
@@ -558,6 +576,75 @@ export async function markPayrollRunPaid(input: MarkPayrollPaidInput) {
   });
 
   return getPayrollRun(input.tenantId, run.id);
+}
+
+/**
+ * ARGUS #375 - undo a generated (but unpaid) run.
+ *
+ * Generation reserves the staff's open commission with a pending payout that
+ * is not a real expense yet. Voiding releases those reservations and deletes
+ * the run + item snapshots so the month can be generated again. A PAID run is
+ * never touched because its expenses and ledger entries already exist.
+ */
+export async function voidPayrollRun(input: {
+  tenantId: string;
+  runId: string;
+  actorId: string;
+  actorRole: string;
+}) {
+  const run = await prisma.payrollRun.findFirst({
+    where: { id: input.runId, tenantId: input.tenantId },
+    select: { id: true, periodMonth: true, status: true, totalNet: true },
+  });
+  if (!run) throw ApiError.notFound('Payroll run not found');
+  if (run.status === 'PAID') {
+    throw ApiError.conflict(
+      'A paid payroll run cannot be voided because its expenses are already posted',
+    );
+  }
+  if (run.status !== 'GENERATED') {
+    throw ApiError.conflict('Only a generated payroll run can be voided');
+  }
+
+  const marker = payrollPendingMarker(run.id);
+
+  await prisma.$transaction(async (tx) => {
+    const payouts = await tx.commissionPayout.findMany({
+      where: { tenantId: input.tenantId, paymentAccountName: marker },
+      select: { id: true },
+    });
+
+    if (payouts.length > 0) {
+      const payoutIds = payouts.map((payout) => payout.id);
+      await tx.commissionRecord.updateMany({
+        where: { tenantId: input.tenantId, payoutId: { in: payoutIds } },
+        data: { payoutId: null },
+      });
+      await tx.commissionPayout.deleteMany({
+        where: { tenantId: input.tenantId, id: { in: payoutIds } },
+      });
+    }
+
+    // PayrollItem rows cascade with the run.
+    await tx.payrollRun.delete({ where: { id: run.id } });
+  });
+
+  await createAuditLog({
+    tenantId: input.tenantId,
+    actorId: input.actorId,
+    actorRole: input.actorRole,
+    entityType: 'PayrollRun',
+    entityId: run.id,
+    action: AUDIT_ACTIONS.PAYROLL_RUN_VOIDED,
+    before: {
+      runId: run.id,
+      periodMonth: run.periodMonth,
+      status: run.status,
+      totalNet: run.totalNet.toString(),
+    },
+  });
+
+  return { id: run.id, periodMonth: run.periodMonth };
 }
 
 export async function getPayrollRun(tenantId: string, runId: string) {  const run = await prisma.payrollRun.findFirst({
