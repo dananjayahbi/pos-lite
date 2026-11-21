@@ -47,6 +47,32 @@ A closure recorded before this fix may still hold stale totals in
 make clear it is the historical snapshot, while the detail page shows the
 payment-leg recomputation as the authoritative figure (ARGUS #107).
 
+## Return attribution (ARGUS #109)
+
+Refunds are attributed by **the shift that recorded the original sale**
+(`Return.originalSaleId -> Sale.shiftId`), not by the return's `createdAt`
+window. Two overlapping shifts (e.g. Cashier 1 and Cashier 2, both 13-17 Sep)
+used to count the same four returns, inflating one drawer's refund total and
+cash difference while the cash only left one drawer.
+
+`resolveReturnShiftId()` / `filterReturnsForShift()` in `shiftCash.core.ts`
+own the rule:
+
+- original sale has a shift -> that shift owns the return, even if another
+  overlapping (or later) shift processed it;
+- original sale is shiftless (legacy) -> the return initiator's shift covering
+  `createdAt` owns it; if several of that cashier's shifts cover it (historical
+  overlap), the latest `openedAt` wins and the shift id breaks ties, so exactly
+  one shift counts it;
+- no initiator shift covers it -> no shift counts it (never guessed onto
+  another cashier's shift).
+
+`closeShift`, `getShiftById`, `buildZReportData` and
+`scripts/recompute-shift-closures.ts` all use the same rule, so a recomputed
+stored closure matches the live Z-report for the same data. After deploying
+this rule, run the recompute script (dry run, then `--apply`) so historical
+closures stop carrying refunds that belonged to an overlapping shift.
+
 ## Recomputing historical closures (ARGUS #108)
 
 Closures written before tender totals came from payment legs and before refunds /
@@ -69,5 +95,6 @@ without `--apply`.
 ## Verification
 
 `src/lib/services/__tests__/shiftCash.core.test.ts` covers split cash legs,
-refund separation, cash movements, the close/Z-report identity and rounding;
-`paymentBreakdown.test.ts` covers the leg summation itself.
+refund separation, cash movements, the close/Z-report identity, rounding and
+return attribution across overlapping shifts; `paymentBreakdown.test.ts` covers
+the leg summation itself.

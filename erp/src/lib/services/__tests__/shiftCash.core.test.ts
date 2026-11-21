@@ -4,6 +4,8 @@ import Decimal from 'decimal.js';
 import {
   computeExpectedCash,
   computeShiftClosureFigures,
+  filterReturnsForShift,
+  resolveReturnShiftId,
   sumShiftCashMovements,
   sumShiftRefunds,
 } from '@/lib/services/shiftCash.core';
@@ -121,6 +123,89 @@ describe('shift cash reconciliation', () => {
     });
 
     expect(expected.toNumber()).toBe(0.01);
+  });
+});
+
+describe('return shift attribution', () => {
+  const at = (iso: string) => new Date(iso);
+
+  // The two overlapping Sep 13-17 shifts from the report (ARGUS #109).
+  const shiftA = {
+    id: 'shift-a',
+    cashierId: 'cashier-1',
+    openedAt: at('2026-09-13T08:00:00Z'),
+    closedAt: at('2026-09-17T18:00:00Z'),
+  };
+  const shiftB = {
+    id: 'shift-b',
+    cashierId: 'cashier-2',
+    openedAt: at('2026-09-13T09:00:00Z'),
+    closedAt: at('2026-09-17T18:00:00Z'),
+  };
+
+  it('attributes a return to the shift that recorded the original sale', () => {
+    const ret = {
+      originalSaleShiftId: 'shift-a',
+      initiatedById: 'cashier-2',
+      createdAt: at('2026-09-15T12:00:00Z'),
+    };
+
+    expect(resolveReturnShiftId(ret, [shiftA, shiftB])).toBe('shift-a');
+    expect(filterReturnsForShift([ret], [shiftA, shiftB], 'shift-a')).toHaveLength(1);
+    expect(filterReturnsForShift([ret], [shiftA, shiftB], 'shift-b')).toHaveLength(0);
+  });
+
+  it('falls back to the initiator shift for a legacy shiftless sale', () => {
+    const ret = {
+      originalSaleShiftId: null,
+      initiatedById: 'cashier-1',
+      createdAt: at('2026-09-15T12:00:00Z'),
+    };
+
+    expect(resolveReturnShiftId(ret, [shiftA, shiftB])).toBe('shift-a');
+    expect(filterReturnsForShift([ret], [shiftA, shiftB], 'shift-b')).toHaveLength(0);
+  });
+
+  it('gives an overlapping same-cashier return exactly one owner', () => {
+    const later = {
+      id: 'shift-a-later',
+      cashierId: 'cashier-1',
+      openedAt: at('2026-09-14T08:00:00Z'),
+      closedAt: at('2026-09-16T18:00:00Z'),
+    };
+    const ret = {
+      originalSaleShiftId: null,
+      initiatedById: 'cashier-1',
+      createdAt: at('2026-09-15T12:00:00Z'),
+    };
+
+    expect(resolveReturnShiftId(ret, [shiftA, later])).toBe('shift-a-later');
+    expect(filterReturnsForShift([ret], [shiftA, later], 'shift-a')).toHaveLength(0);
+    expect(filterReturnsForShift([ret], [shiftA, later], 'shift-a-later')).toHaveLength(1);
+  });
+
+  it('breaks an openedAt tie deterministically by shift id', () => {
+    const first = { ...shiftA, id: 'shift-a' };
+    const second = { ...shiftA, id: 'shift-b' };
+    const ret = {
+      originalSaleShiftId: null,
+      initiatedById: 'cashier-1',
+      createdAt: at('2026-09-15T12:00:00Z'),
+    };
+
+    expect(resolveReturnShiftId(ret, [second, first])).toBe('shift-a');
+  });
+
+  it('never guesses a legacy return onto another cashier shift', () => {
+    const ret = {
+      originalSaleShiftId: null,
+      initiatedById: 'cashier-3',
+      createdAt: at('2026-09-15T12:00:00Z'),
+    };
+
+    expect(resolveReturnShiftId(ret, [shiftA, shiftB])).toBeNull();
+    expect(filterReturnsForShift([ret], [shiftA, shiftB], 'shift-a')).toHaveLength(0);
+    expect(filterReturnsForShift([ret], [shiftA, shiftB], 'shift-b')).toHaveLength(0);
   });
 });
 

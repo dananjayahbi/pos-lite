@@ -15,6 +15,70 @@ export interface ShiftCashMovementRow {
   type: string;
 }
 
+export interface ShiftAttributionWindow {
+  id: string;
+  cashierId: string;
+  openedAt: Date;
+  closedAt: Date | null;
+}
+
+export interface ReturnShiftAttribution {
+  /** Shift that recorded the sale being returned (null for legacy shiftless sales). */
+  originalSaleShiftId: string | null;
+  /** Cashier who processed the return. */
+  initiatedById: string;
+  createdAt: Date;
+}
+
+/**
+ * Which shift owns a return? (ARGUS #109)
+ *
+ * A return belongs to the shift that recorded the **original sale**: the money
+ * was taken in that drawer, so the refund must be reconciled there even if a
+ * different, overlapping shift (or a later shift) processes it. The old
+ * `Return.createdAt` window rule counted the same refund in every overlapping
+ * shift.
+ *
+ * Legacy returns whose original sale is shiftless fall back to the return
+ * initiator's shift covering `createdAt`. If that cashier has several covering
+ * shifts (historical overlap), the one with the latest `openedAt` wins, with
+ * the shift id as a deterministic tie-break — so exactly one shift can own the
+ * return and it is never guessed onto another cashier's shift.
+ */
+export function resolveReturnShiftId(
+  ret: ReturnShiftAttribution,
+  shifts: ShiftAttributionWindow[],
+): string | null {
+  if (ret.originalSaleShiftId) return ret.originalSaleShiftId;
+
+  const created = ret.createdAt.getTime();
+  let owner: ShiftAttributionWindow | null = null;
+  for (const shift of shifts) {
+    if (shift.cashierId !== ret.initiatedById) continue;
+    if (shift.openedAt.getTime() > created) continue;
+    if (shift.closedAt && shift.closedAt.getTime() < created) continue;
+
+    if (
+      !owner ||
+      shift.openedAt.getTime() > owner.openedAt.getTime() ||
+      (shift.openedAt.getTime() === owner.openedAt.getTime() && shift.id < owner.id)
+    ) {
+      owner = shift;
+    }
+  }
+  return owner?.id ?? null;
+}
+
+/** Keep the rows this shift owns; never double-count an overlapping shift's rows. */
+export function filterReturnsForShift<T extends ReturnShiftAttribution>(
+  returns: T[],
+  shifts: ShiftAttributionWindow[],
+  shiftId: string,
+): T[] {
+  return returns.filter((ret) => resolveReturnShiftId(ret, shifts) === shiftId);
+}
+
+
 /**
  * Expected cash in the drawer, shared by the close snapshot, the shift-detail
  * API and the Z-report so all three can never disagree (ARGUS #106).
