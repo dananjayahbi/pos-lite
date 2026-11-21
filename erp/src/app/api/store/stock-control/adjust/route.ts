@@ -7,8 +7,12 @@ import {
   StockAdjustmentSchema,
   MAX_STOCK_QUANTITY,
 } from '@/lib/validators/product.validators';
-import { isManualAdjustmentReason } from '@/lib/services/manualAdjustment.core';
+import {
+  isManualAdjustmentReason,
+  manualAdjustmentDirectionError,
+} from '@/lib/services/manualAdjustment.core';
 import { recordManualAdjustmentSideEffects } from '@/lib/services/inventory.service';
+import { lockForUpdate } from '@/lib/api/race-guard';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
 export async function POST(request: NextRequest) {
@@ -70,7 +74,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ARGUS #193: direction is part of the reason's meaning.
+    const directionError = manualAdjustmentDirectionError(reason, quantityDelta);
+    if (directionError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_ADJUSTMENT_DIRECTION',
+            message: directionError,
+            details: [{ path: 'reason', message: directionError }],
+          },
+        },
+        { status: 422 },
+      );
+    }
+
     const result = await prisma.$transaction(async (tx) => {
+      // ARGUS #192: lock the variant before reading its stock. The route keeps
+      // its own low-stock notification transaction instead of delegating to
+      // adjustStock, so it must take the same row lock itself; otherwise two
+      // concurrent removals both pass the below-zero check.
+      await lockForUpdate(tx, 'product_variants', '"id" = $1 AND "tenantId" = $2', [
+        variantId,
+        tenantId,
+      ]);
+
       const variant = await tx.productVariant.findFirst({
         where: { id: variantId, tenantId, deletedAt: null },
         include: { product: { select: { name: true } } },

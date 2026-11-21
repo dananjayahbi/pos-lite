@@ -9,8 +9,12 @@ import {
   MAX_STOCK_ADJUSTMENT_DELTA,
   MAX_STOCK_QUANTITY,
 } from '@/lib/validators/product.validators';
-import { isManualAdjustmentReason } from '@/lib/services/manualAdjustment.core';
+import {
+  isManualAdjustmentReason,
+  manualAdjustmentDirectionError,
+} from '@/lib/services/manualAdjustment.core';
 import { recordManualAdjustmentSideEffects } from '@/lib/services/inventory.service';
+import { lockForUpdate } from '@/lib/api/race-guard';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
 const BulkAdjustSchema = z.object({
@@ -101,6 +105,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ARGUS #193: each row's reason must agree with the sign of its delta.
+    const invalidDirectionIndex = adjustments.findIndex(
+      (adj) => manualAdjustmentDirectionError(adj.reason, adj.quantityDelta) !== null,
+    );
+    if (invalidDirectionIndex !== -1) {
+      const invalid = adjustments[invalidDirectionIndex]!;
+      const directionError = manualAdjustmentDirectionError(
+        invalid.reason,
+        invalid.quantityDelta,
+      );
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_ADJUSTMENT_DIRECTION',
+            message: directionError,
+            details: [
+              {
+                path: `adjustments.${invalidDirectionIndex}.reason`,
+                message: directionError,
+              },
+            ],
+          },
+        },
+        { status: 422 },
+      );
+    }
+
     const variantIds = [...new Set(adjustments.map((a) => a.variantId))];
 
     // Validate all variants belong to this tenant
@@ -126,6 +158,17 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      // ARGUS #192: lock all affected variants before reading their quantities
+      // (sorted ids keep a stable lock order so overlapping batches cannot
+      // deadlock). The fresh read below then sees committed values only, and
+      // each movement row records the true before/after.
+      for (const id of [...variantIds].sort()) {
+        await lockForUpdate(tx, 'product_variants', '"id" = $1 AND "tenantId" = $2', [
+          id,
+          tenantId,
+        ]);
+      }
+
       const movements: Array<{
         id: string;
         variantId: string;
