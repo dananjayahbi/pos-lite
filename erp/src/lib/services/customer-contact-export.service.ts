@@ -10,8 +10,9 @@
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { prisma } from '@/lib/prisma';
-import { createAuditLog } from '@/lib/services/audit.service';
+import { createAuditLog, writeAuditLog } from '@/lib/services/audit.service';
 import {
+  buildContactExportAuditAfter,
   buildContactRows,
   buildExportFilename,
   renderContactsCSV,
@@ -166,7 +167,8 @@ export async function runCustomerContactExport(
     entityType: CONTACT_EXPORT_ENTITY,
     entityId: `${options.tenantId}:${compiled.createdAt}`,
     action: CONTACT_EXPORT_ACTION,
-    after: {
+    after: buildContactExportAuditAfter({
+      trigger: 'SCHEDULED',
       scope: compiled.scope,
       format: compiled.format,
       totalCandidates: compiled.totalCandidates,
@@ -174,7 +176,7 @@ export async function runCustomerContactExport(
       excluded: compiled.excluded,
       destination: config.destination,
       deliveredTo,
-    },
+    }),
   });
 
   return {
@@ -189,6 +191,44 @@ export async function runCustomerContactExport(
     deliveredTo,
     createdAt: compiled.createdAt,
   };
+}
+
+/**
+ * Record one CONTACT_EXPORT_RUN row for an ad-hoc download (ARGUS #316).
+ *
+ * The download route only called `compileCustomerContactExport`, which queries
+ * and renders but deliberately delivers nothing - and therefore audited
+ * nothing. Bulk contact PII left the system with no actor, count or timestamp.
+ * The row uses the same entity/action and `after` shape as the scheduled run,
+ * with `trigger: ADHOC` and `destination: download`. Unlike the scheduled run's
+ * best-effort write, this uses the durable `writeAuditLog`: if the audit row
+ * cannot be written the download fails instead of leaking PII unaudited.
+ */
+export async function recordAdHocContactExportDownload(input: {
+  compiled: ContactExportCompiled;
+  actorId: string | null;
+  actorRole: string;
+}): Promise<void> {
+  const { compiled } = input;
+
+  await writeAuditLog({
+    tenantId: compiled.tenantId,
+    actorId: input.actorId,
+    actorRole: input.actorRole,
+    entityType: CONTACT_EXPORT_ENTITY,
+    entityId: `${compiled.tenantId}:${compiled.createdAt}:adhoc`,
+    action: CONTACT_EXPORT_ACTION,
+    after: buildContactExportAuditAfter({
+      trigger: 'ADHOC',
+      scope: compiled.scope,
+      format: compiled.format,
+      totalCandidates: compiled.totalCandidates,
+      included: compiled.included,
+      excluded: compiled.excluded,
+      destination: 'download',
+      deliveredTo: null,
+    }),
+  });
 }
 
 // ── Delivery ─────────────────────────────────────────────────────────────────

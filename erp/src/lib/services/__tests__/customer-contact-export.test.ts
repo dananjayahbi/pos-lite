@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  buildContactExportAuditAfter,
   buildContactRows,
   buildExportFilename,
   CONTACT_OPT_OUT_TAG,
@@ -169,6 +170,40 @@ describe('renderContactsCSV', () => {
     expect(lines[1]).toContain('c1');
     expect(lines[1]).toContain('Alice');
   });
+
+  it('leaves numeric columns unquoted and unprefixed', () => {
+    const { rows } = buildContactRows([makeCandidate()], { scope: 'ALL' });
+    const line = renderContactsCSV(rows).replace(/^\uFEFF/, '').split('\r\n')[1];
+    expect(line).toMatch(/,3,1250,Main Store$/);
+  });
+
+  /**
+   * ARGUS #316: a customer name/email/phone/store supplied by a user is data,
+   * never a spreadsheet formula. Every text column goes through the shared
+   * neutraliser before RFC-4180 quoting.
+   */
+  it('neutralises formula-leading text in every user-entered column', () => {
+    const { rows } = buildContactRows(
+      [
+        makeCandidate({
+          name: '=HYPERLINK("https://evil.example","click")',
+          phone: '+94712345678',
+          email: '@SUM(1+1)',
+          tenantName: '-cmd|calc',
+        }),
+      ],
+      { scope: 'ALL' },
+    );
+
+    const line = renderContactsCSV(rows).replace(/^\uFEFF/, '').split('\r\n')[1] ?? '';
+
+    expect(line).toContain(`'=HYPERLINK`);
+    expect(line).toContain(`'+94712345678`);
+    expect(line).toContain(`'@SUM(1+1)`);
+    expect(line).toContain(`'-cmd|calc`);
+    // The raw formula must not start a cell.
+    expect(line).not.toMatch(/(^|,)=HYPERLINK/);
+  });
 });
 
 describe('renderContactsXLSX', () => {
@@ -187,6 +222,34 @@ describe('buildExportFilename', () => {
     const now = new Date('2026-08-07T10:05:30.000Z');
     expect(buildExportFilename('csv', now)).toBe('contacts-20260807-100530.csv');
     expect(buildExportFilename('xlsx', now)).toBe('contacts-20260807-100530.xlsx');
+  });
+});
+
+// ── Audit payload ────────────────────────────────────────────────────────────
+
+describe('buildContactExportAuditAfter', () => {
+  it('records the trigger, scope, counts and destination', () => {
+    expect(
+      buildContactExportAuditAfter({
+        trigger: 'ADHOC',
+        scope: 'ACTIVE',
+        format: 'csv',
+        totalCandidates: 10,
+        included: 8,
+        excluded: 2,
+        destination: 'download',
+        deliveredTo: null,
+      }),
+    ).toEqual({
+      trigger: 'ADHOC',
+      scope: 'ACTIVE',
+      format: 'csv',
+      totalCandidates: 10,
+      included: 8,
+      excluded: 2,
+      destination: 'download',
+      deliveredTo: null,
+    });
   });
 });
 
