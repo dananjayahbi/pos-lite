@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import Decimal from 'decimal.js';
+import { Prisma } from '@/generated/prisma/client';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/utils/permissions';
@@ -15,6 +16,7 @@ import {
   VALUATION_COST_BASIS,
   VALUATION_COST_BASIS_NOTE,
 } from '@/lib/pricing/valuationBasis';
+import { STOCK_SCOPE_SQL } from '@/lib/inventory/stockScope';
 
 interface VariantValuationRow {
   category_id: string;
@@ -67,8 +69,7 @@ export async function GET(request: NextRequest) {
         JOIN products p ON pv."productId" = p.id
         JOIN categories c ON p."categoryId" = c.id
         WHERE pv."tenantId" = ${tenantId}
-          AND pv."deletedAt" IS NULL
-          AND p."isArchived" = false
+          AND ${Prisma.raw(STOCK_SCOPE_SQL)}
         ORDER BY c.name, pv.id
       `,
       prisma.tenant.findUnique({
