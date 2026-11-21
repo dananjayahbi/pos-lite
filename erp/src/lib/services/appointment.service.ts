@@ -17,9 +17,11 @@ import {
 } from '@/lib/appointments/appointmentCancellation.core';
 import { summarizeAppointmentRevenue } from '@/lib/appointments/appointmentRevenue.core';
 import {
-  APPOINTMENT_BACKDATE_GRACE_MINUTES,
-  isAppointmentStatusTransitionAllowed,
-} from '@/lib/constants/appointments';
+  isAppointmentTransitionAllowedBySettings,
+  resolveInitialAppointmentStatus,
+} from '@/lib/appointments/appointmentSettings.core';
+import { getAppointmentSettings } from '@/lib/services/appointment-settings.service';
+import { APPOINTMENT_BACKDATE_GRACE_MINUTES } from '@/lib/constants/appointments';
 import type {
   CreateAppointmentInput,
   UpdateAppointmentInput,
@@ -141,6 +143,11 @@ export async function createAppointment(
   // M27-04/OBS-79: reject far-past bookings unless the actor may manage settings.
   await assertBackdateAllowed(startTime, canManageSettings);
 
+  // ARGUS #124: the tenant decides whether new bookings arrive already
+  // confirmed; defaults keep the historical SCHEDULED behaviour.
+  const settings = await getAppointmentSettings(tenantId);
+  const initialStatus = resolveInitialAppointmentStatus(settings);
+
   // M27-06/BUG-92: the overlap check used to run OUTSIDE the transaction
   // (TOCTOU — 3 concurrent same-slot bookings all 201'd). It is now performed
   // inside the transaction after locking the staff member's row, so same-staff
@@ -179,6 +186,7 @@ export async function createAppointment(
           durationMins: input.durationMins,
           price: input.price,
           depositAmount: input.depositAmount ?? 0,
+          status: initialStatus,
           notes: input.notes ?? null,
           customerNotes: input.customerNotes ?? null,
           walkInName: input.walkInName ?? null,
@@ -229,7 +237,11 @@ export async function updateAppointment(
   // (SCHEDULED→COMPLETED skipping check-in, COMPLETED→CANCELLED erasing revenue).
   // Restrict to the legal lifecycle edges; terminal rows reject status edits.
   if (input.status !== undefined && input.status !== existing.status) {
-    if (!isAppointmentStatusTransitionAllowed(existing.status, input.status)) {
+    // ARGUS #124: the tenant's "require confirmation" toggle decides whether a
+    // SCHEDULED booking may skip straight to check-in/completion. With the
+    // default settings this is exactly the canonical lifecycle map.
+    const settings = await getAppointmentSettings(tenantId);
+    if (!isAppointmentTransitionAllowedBySettings(existing.status, input.status, settings)) {
       throw new Error('INVALID_STATUS_TRANSITION');
     }
     // ARGUS #120: cancellation carries bookkeeping the generic edit path cannot

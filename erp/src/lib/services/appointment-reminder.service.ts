@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/services/email.service';
 import { sendWhatsAppTextMessage } from '@/lib/whatsapp';
+import { getAppointmentSettings } from '@/lib/services/appointment-settings.service';
 
 interface ScheduleRemindersInput {
   appointmentId: string;
@@ -9,7 +10,8 @@ interface ScheduleRemindersInput {
 
 /**
  * Create reminder records for an appointment.
- * Default schedule: 24h before, 2h before
+ * Default schedule: 24h before, 2h before — each gated by the tenant's
+ * appointment settings (ARGUS #124); both default to enabled.
  */
 export async function scheduleReminders({ appointmentId, tenantId }: ScheduleRemindersInput) {
   const appointment = await prisma.appointment.findFirst({
@@ -18,12 +20,13 @@ export async function scheduleReminders({ appointmentId, tenantId }: ScheduleRem
 
   if (!appointment) throw new Error('APPOINTMENT_NOT_FOUND');
 
+  const settings = await getAppointmentSettings(tenantId);
   const reminders = [];
 
   // 24-hour reminder
   const reminder24h = new Date(appointment.startTime);
   reminder24h.setHours(reminder24h.getHours() - 24);
-  if (reminder24h > new Date()) {
+  if (settings.reminder24hEnabled && reminder24h > new Date()) {
     reminders.push({
       appointmentId,
       tenantId,
@@ -36,7 +39,7 @@ export async function scheduleReminders({ appointmentId, tenantId }: ScheduleRem
   // 2-hour reminder
   const reminder2h = new Date(appointment.startTime);
   reminder2h.setHours(reminder2h.getHours() - 2);
-  if (reminder2h > new Date()) {
+  if (settings.reminder2hEnabled && reminder2h > new Date()) {
     reminders.push({
       appointmentId,
       tenantId,

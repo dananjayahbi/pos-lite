@@ -15,3 +15,5 @@ export { useStaffTimeOff } from './useStaffTimeOff';
 export { useUpsertAvailability } from './useUpsertAvailability';
 export { useGenerateSlots } from './useGenerateSlots';
 export { useAppointmentStats } from './useAppointmentStats';
+export { useAppointmentSettings, APPOINTMENT_SETTINGS_QUERY_KEY } from './useAppointmentSettings';
+export { useUpdateAppointmentSettings } from './useUpdateAppointmentSettings';

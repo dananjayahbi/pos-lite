@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useStaffAvailability, useUpsertAvailability } from '@/hooks/appointments';
+import { useAppointmentSettings, useStaffAvailability, useUpsertAvailability } from '@/hooks/appointments';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -10,13 +10,12 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { DEFAULT_APPOINTMENT_SETTINGS } from '@/lib/appointments/appointmentSettings.core';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 type Entry = { startTime: string; endTime: string; isAvailable: boolean; slotDurationMins: number };
 type AvailabilityEntry = { dayOfWeek: number; startTime: string; endTime: string; isAvailable: boolean; slotDurationMins: number };
-
-const DEFAULT_ENTRY: Entry = { startTime: '09:00', endTime: '17:00', isAvailable: false, slotDurationMins: 15 };
 
 // Stable empty reference — a plain `[]` literal in the destructuring default
 // would be recreated on EVERY render, making `availability` a new reference
@@ -56,13 +55,26 @@ export function StaffAvailabilityManager() {
   const { data: availability = EMPTY_AVAILABILITY } = useStaffAvailability(selectedStaffId || undefined);
   const upsertMutation = useUpsertAvailability();
 
+  // ARGUS #124: a day without an explicit availability row inherits the
+  // tenant's configured slot duration instead of a hard-coded 15 minutes.
+  const { data: settings } = useAppointmentSettings();
+  const defaultSlotDuration =
+    settings?.slotDurationMins ?? DEFAULT_APPOINTMENT_SETTINGS.slotDurationMins;
+
+  const makeDefaultEntry = (dayOfWeek: number): Entry => ({
+    startTime: '09:00',
+    endTime: '17:00',
+    isAvailable: dayOfWeek !== 0,
+    slotDurationMins: defaultSlotDuration,
+  });
+
   const [entries, setEntries] = useState<Record<number, Entry>>(() => {
     const map: Record<number, Entry> = {};
     for (let i = 0; i < 7; i++) {
       const existing = availability.find((a: AvailabilityEntry) => a.dayOfWeek === i);
       map[i] = existing
         ? { startTime: existing.startTime, endTime: existing.endTime, isAvailable: existing.isAvailable, slotDurationMins: existing.slotDurationMins }
-        : { ...DEFAULT_ENTRY, isAvailable: i !== 0 };
+        : makeDefaultEntry(i);
     }
     return map;
   });
@@ -76,14 +88,16 @@ export function StaffAvailabilityManager() {
       const existing = availability.find((a: AvailabilityEntry) => a.dayOfWeek === i);
       next[i] = existing
         ? { startTime: existing.startTime, endTime: existing.endTime, isAvailable: existing.isAvailable, slotDurationMins: existing.slotDurationMins }
-        : { ...DEFAULT_ENTRY, isAvailable: i !== 0 };
+        : makeDefaultEntry(i);
     }
     setEntries((prev) => (entriesEqual(prev, next) ? prev : next));
-  }, [availability]);
+    // `makeDefaultEntry` only depends on defaultSlotDuration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availability, defaultSlotDuration]);
 
   const updateEntry = (i: number, patch: Partial<Entry>) => {
     setEntries((prev) => {
-      const current = prev[i] ?? DEFAULT_ENTRY;
+      const current = prev[i] ?? makeDefaultEntry(i);
       return { ...prev, [i]: { ...current, ...patch } };
     });
   };
@@ -151,8 +165,8 @@ export function StaffAvailabilityManager() {
                   <div>
                     <Input
                       type="number"
-                      value={entries[i]?.slotDurationMins ?? 15}
-                      onChange={(e) => updateEntry(i, { slotDurationMins: parseInt(e.target.value) || 15 })}
+                      value={entries[i]?.slotDurationMins ?? defaultSlotDuration}
+                      onChange={(e) => updateEntry(i, { slotDurationMins: parseInt(e.target.value) || defaultSlotDuration })}
                       min={5}
                       max={120}
                       disabled={!entries[i]?.isAvailable}
