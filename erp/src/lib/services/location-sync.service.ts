@@ -4,6 +4,11 @@ import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
+import {
+  hasCourierTestCredentials,
+  resolveCourierTestCredentials,
+  type CourierEnvironment,
+} from '@/lib/courier/settings.core';
 import { resolveCityId } from '@/lib/utils/courier';
 import type { CourierCity } from '@/lib/courier/types';
 
@@ -46,27 +51,42 @@ export async function resolveCityToId(tenantId: string, cityName?: string | null
   return resolveCityId(cities, cityName);
 }
 
-/** Pull the full hierarchy from Trans Express and cache it on the tenant. */
-export async function syncLocations(tenantId: string): Promise<LocationCache> {
+/**
+ * Pull the full hierarchy from Trans Express and cache it on the tenant.
+ *
+ * ARGUS #513: `draft` carries the unsaved form credentials so "Sync locations"
+ * can verify before saving. When omitted (cron, saved-account paths) the stored
+ * account is used.
+ */
+export async function syncLocations(
+  tenantId: string,
+  draft?: {
+    env?: CourierEnvironment | undefined;
+    email?: string | null | undefined;
+    password?: string | null | undefined;
+    apiKey?: string | null | undefined;
+  },
+): Promise<LocationCache> {
   setSentryTenantContext({ tenantId });
 
   // Locations are read-only master data and don't require the account to be
   // "active" for dispatch — just that a courier account exists with credentials.
   const account = await prisma.courierAccount.findFirst({ where: { tenantId } });
-  if (!account) throw new Error('COURIER_ACCOUNT_NOT_CONFIGURED');
-  if (!account.email && !account.apiKey) throw new Error('COURIER_CREDENTIALS_MISSING');
+  if (!account && !draft) throw new Error('COURIER_ACCOUNT_NOT_CONFIGURED');
 
-  const adapter = resolveAdapterForAccount(account);
+  const credentials = resolveCourierTestCredentials(draft ?? {}, account);
+  if (!hasCourierTestCredentials(credentials)) {
+    throw new Error('COURIER_CREDENTIALS_MISSING');
+  }
 
-  const auth = await adapter.authenticate({
-    email: account.email ?? undefined,
-    password: account.password ?? undefined,
-    apiKey: account.apiKey ?? undefined,
-    env: account.env,
+  const adapter = resolveAdapterForAccount({
+    provider: account?.provider ?? 'TRANSEXPRESS',
   });
+
+  const auth = await adapter.authenticate(credentials);
   if (!auth.ok) throw new Error(`COURIER_AUTH_FAILED:${auth.error.message}`);
 
-  const result = await adapter.syncLocations(account.env, auth.data);
+  const result = await adapter.syncLocations(credentials.env, auth.data);
   if (!result.ok) throw new Error(`LOCATION_SYNC_FAILED:${result.error.message}`);
 
   const cache: LocationCache = {
