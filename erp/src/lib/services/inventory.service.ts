@@ -394,9 +394,11 @@ export async function addStockTakeItem(
 export async function updateStockTakeItem(
   sessionId: string,
   itemId: string,
-  countedQuantity: number,
+  countedQuantity: number | null,
 ) {
-  if (countedQuantity < 0) {
+  // ARGUS #208: null clears the count (`not counted`); only a real number can
+  // be negative.
+  if (countedQuantity !== null && countedQuantity < 0) {
     throw new Error('Counted quantity cannot be negative');
   }
 
@@ -418,7 +420,8 @@ export async function updateStockTakeItem(
     throw new Error('Stock take session is not in progress');
   }
 
-  const discrepancy = countedQuantity - item.systemQuantity;
+  const discrepancy =
+    countedQuantity === null ? null : countedQuantity - item.systemQuantity;
 
   return prisma.stockTakeItem.update({
     where: { id: itemId },

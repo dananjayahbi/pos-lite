@@ -98,14 +98,20 @@ export async function PATCH(
     }
 
     const updateData: {
-      countedQuantity?: number;
-      discrepancy?: number;
+      countedQuantity?: number | null;
+      discrepancy?: number | null;
       isRecounted?: boolean;
     } = {};
 
     if (parsed.data.countedQuantity !== undefined) {
+      // ARGUS #208: null is the explicit "not counted" state. Clear both the
+      // count and its discrepancy so progress and completion see the row as
+      // uncounted again, exactly as the input UI now means.
       updateData.countedQuantity = parsed.data.countedQuantity;
-      updateData.discrepancy = parsed.data.countedQuantity - currentItem.systemQuantity;
+      updateData.discrepancy =
+        parsed.data.countedQuantity === null
+          ? null
+          : parsed.data.countedQuantity - currentItem.systemQuantity;
     }
 
     if (parsed.data.isRecounted !== undefined) {

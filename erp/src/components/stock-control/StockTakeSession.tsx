@@ -39,6 +39,7 @@ import {
 } from '@/components/ui/table';
 import { useStockTakeSession, type StockTakeItemDetail } from '@/hooks/useStockTakeSession';
 import { canCompleteStockTake, canEditStockTake } from '@/lib/services/stockTakePolicy.core';
+import { parseStockTakeCountInput } from '@/lib/services/stockTakeCount.core';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface StockTakeSessionProps {
@@ -172,9 +173,8 @@ export function StockTakeSession({ sessionId, permissions, userId }: StockTakeSe
   );
 
   const handleItemUpdate = useCallback(
-    async (item: StockTakeItemDetail, countedQuantity: number) => {
+    async (item: StockTakeItemDetail, countedQuantity: number | null) => {
       if (!canCount) return;
-      if (isNaN(countedQuantity) || countedQuantity < 0) return;
 
       try {
         const res = await fetch(
@@ -503,11 +503,22 @@ export function StockTakeSession({ sessionId, permissions, userId }: StockTakeSe
                         step={1}
                         defaultValue={item.countedQuantity ?? ''}
                         onBlur={(e) => {
-                          const val = e.target.value;
-                          if (val === '') return;
-                          const num = parseInt(val, 10);
-                          if (num !== item.countedQuantity) {
-                            handleItemUpdate(item, num);
+                          const parsedCount = parseStockTakeCountInput(e.target.value);
+                          if (parsedCount.kind === 'invalid') {
+                            // ARGUS #208: tell the operator instead of silently
+                            // dropping the entry and keeping the old count.
+                            toast.error(parsedCount.message);
+                            e.target.value = String(item.countedQuantity ?? '');
+                            return;
+                          }
+                          if (parsedCount.kind === 'clear') {
+                            if (item.countedQuantity !== null) {
+                              void handleItemUpdate(item, null);
+                            }
+                            return;
+                          }
+                          if (parsedCount.value !== item.countedQuantity) {
+                            void handleItemUpdate(item, parsedCount.value);
                           }
                         }}
                         className="mx-auto h-8 w-20 text-center font-mono text-sm border-sand focus-visible:ring-espresso"
