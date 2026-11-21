@@ -3,6 +3,7 @@ import Decimal from 'decimal.js';
 import type { AppliedDiscount, SkippedPromotion } from '@/lib/services/promotion.service';
 import type { CFDCartPayload } from '@/lib/cfdEmitter';
 import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
+import { clampPromotionDiscounts } from '@/lib/services/saleDiscountValidation.core';
 import { createCartPromotionSnapshot } from '@/stores/cartPromotions';
 import type { CartPromotionSnapshot } from '@/stores/cartPromotions';
 import type { TaxRuleValue } from '@/lib/constants/product-options';
@@ -393,10 +394,35 @@ export const useCartStore = create<CartState>((set, get) => ({
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => {
         if (json?.success && json.data) {
+          // ARGUS #65: do not display/claim promotion money beyond what the
+          // manual cart discount left. This keeps the preview, payload and
+          // persisted sale on the same clamped numbers.
+          const subtotal = getCartSubtotal(state.items);
+          const manualDiscount = Decimal.min(
+            Decimal.max(
+              getCartDiscountEffective(
+                subtotal,
+                state.cartDiscountPercent,
+                state.cartDiscountAmount,
+              ),
+              0,
+            ),
+            subtotal,
+          );
+          const promotionCapacity = Decimal.max(subtotal.minus(manualDiscount), 0);
+          const appliedPromotions = clampPromotionDiscounts(
+            json.data.appliedDiscounts as AppliedDiscount[],
+            promotionCapacity,
+          ).filter((promotion) => new Decimal(promotion.discountAmount).greaterThan(0));
+          const totalPromotionDiscount = appliedPromotions
+            .reduce((sum, promotion) => sum.plus(promotion.discountAmount), new Decimal(0))
+            .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+            .toFixed(2);
+
           set({
-            appliedPromotions: json.data.appliedDiscounts,
+            appliedPromotions,
             skippedPromotions: json.data.skippedPromotions,
-            totalPromotionDiscount: json.data.totalDiscountAmount,
+            totalPromotionDiscount,
             isEvaluatingPromotions: false,
           });
         } else {
@@ -478,9 +504,19 @@ export function getSaleDiscountAmount(
   cartDiscountEffective: Decimal | number | string,
   totalPromotionDiscount: Decimal | number | string,
 ): Decimal {
-  const subtotalDecimal = new Decimal(subtotal);
-  const combined = new Decimal(cartDiscountEffective).plus(new Decimal(totalPromotionDiscount));
-  return Decimal.min(combined, Decimal.max(subtotalDecimal, 0)).toDecimalPlaces(
+  const subtotalDecimal = Decimal.max(new Decimal(subtotal), 0);
+  const manualDiscount = Decimal.min(
+    Decimal.max(new Decimal(cartDiscountEffective), 0),
+    subtotalDecimal,
+  );
+  // ARGUS #65: promotions cannot consume more than the manual/line discounts
+  // left; a 100% manual discount therefore applies 0 promotion money.
+  const promotionCapacity = Decimal.max(subtotalDecimal.minus(manualDiscount), 0);
+  const promotionDiscount = Decimal.min(
+    Decimal.max(new Decimal(totalPromotionDiscount), 0),
+    promotionCapacity,
+  );
+  return manualDiscount.plus(promotionDiscount).toDecimalPlaces(
     2,
     Decimal.ROUND_HALF_UP,
   );
@@ -495,17 +531,30 @@ export function getCartTotal(
 ): {
   subtotal: Decimal;
   discountEffective: Decimal;
+  promotionDiscount: Decimal;
   saleDiscount: Decimal;
   taxAmount: Decimal;
   taxRatesApplied: number[];
   total: Decimal;
 } {
   const subtotal = getCartSubtotal(items);
-  const discountEffective = getCartDiscountEffective(subtotal, cartDiscountPercent, cartDiscountAmount);
+  const manualDiscount = Decimal.min(
+    Decimal.max(
+      getCartDiscountEffective(subtotal, cartDiscountPercent, cartDiscountAmount),
+      0,
+    ),
+    subtotal,
+  );
+  const promotionCapacity = Decimal.max(subtotal.minus(manualDiscount), 0);
+  const promotionDiscount = Decimal.min(
+    Decimal.max(new Decimal(totalPromotionDiscount), 0),
+    promotionCapacity,
+  ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  const discountEffective = manualDiscount.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
   // The sales API receives one combined discount (manual cart discount +
   // promotions) and apportions it across the lines before taxing them.
   // Mirrored here so the cart's tax and total match the saved sale.
-  const saleDiscount = getSaleDiscountAmount(subtotal, discountEffective, totalPromotionDiscount);
+  const saleDiscount = getSaleDiscountAmount(subtotal, discountEffective, promotionDiscount);
   const lineTotals = items.map(getLineTotalAfterDiscount);
   const discountShares = allocateCartDiscountShares(lineTotals, saleDiscount);
 
@@ -521,14 +570,16 @@ export function getCartTotal(
   });
   taxAmount = taxAmount.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
-  const total = subtotal
-    .minus(saleDiscount)
-    .plus(taxAmount)
-    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  // ARGUS #65: the sale total has a hard lower bound of zero.
+  const total = Decimal.max(
+    subtotal.minus(saleDiscount).plus(taxAmount),
+    0,
+  ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
   return {
     subtotal,
     discountEffective,
+    promotionDiscount,
     saleDiscount,
     taxAmount,
     taxRatesApplied: [...ratesApplied],

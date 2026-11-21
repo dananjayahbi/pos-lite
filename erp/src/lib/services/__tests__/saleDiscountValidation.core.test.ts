@@ -73,6 +73,43 @@ describe('reconcileSaleDiscount', () => {
     });
     expect(result.cartDiscount.toNumber()).toBe(500);
   });
+
+  it('applies no promotion money after a 100% manual cart discount (ARGUS #65)', () => {
+    const result = reconcileSaleDiscount({
+      subtotal: 95,
+      submittedDiscount: 95,
+      clientPromoTotal: 9.5,
+      serverPromoTotal: 9.5,
+      manualDiscount: 95,
+    });
+
+    expect(result.manualDiscount.toNumber()).toBe(95);
+    expect(result.appliedPromotionTotal.toNumber()).toBe(0);
+    expect(result.cartDiscount.toNumber()).toBe(95);
+  });
+
+  it('clamps a partial promotion to the remaining manual-discount capacity', () => {
+    // A stale/forged promo total is still rejected before clamping.
+    expect(() =>
+      reconcileSaleDiscount({
+        subtotal: 100,
+        submittedDiscount: 90,
+        clientPromoTotal: 10,
+        serverPromoTotal: 30,
+        manualDiscount: 80,
+      }),
+    ).toThrow(/PROMOTION_MISMATCH/);
+
+    const matched = reconcileSaleDiscount({
+      subtotal: 100,
+      submittedDiscount: 90,
+      clientPromoTotal: 20,
+      serverPromoTotal: 20,
+      manualDiscount: 80,
+    });
+    expect(matched.appliedPromotionTotal.toNumber()).toBe(20);
+    expect(matched.cartDiscount.toNumber()).toBe(100);
+  });
 });
 
 describe('assertDiscountsAuthorized', () => {

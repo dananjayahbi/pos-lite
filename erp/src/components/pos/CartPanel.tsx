@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Decimal from 'decimal.js';
 import { formatRupee } from '@/lib/format';
-import { useCartStore, getCartTotal, getSaleDiscountAmount } from '@/stores/cartStore';
+import { useCartStore, getCartTotal } from '@/stores/cartStore';
 import { createCartPromotionSnapshot } from '@/stores/cartPromotions';
 import { CartLineItems } from '@/components/pos/CartLineItems';
 import { CartDiscountControl } from '@/components/pos/CartDiscountControl';
@@ -92,7 +92,7 @@ export function CartPanel({
         : null,
   });
 
-  const { subtotal, discountEffective, taxAmount, taxRatesApplied, total } = getCartTotal(
+  const { subtotal, discountEffective, promotionDiscount, saleDiscount, taxAmount, taxRatesApplied, total } = getCartTotal(
     items,
     cartDiscountPercent,
     cartDiscountAmount,
@@ -167,7 +167,6 @@ export function CartPanel({
   const hasValidCustomer = isGuestSale || !!linkedCustomerPhone;
   const totalDiscount = discountEffective.toNumber();
   const appliedCreditDec = new Decimal(appliedStoreCredit);
-  const promoDiscountDec = new Decimal(totalPromotionDiscount);
   // Exchange credit from a linked return applies after store credit, mirroring
   // the API (which also issues any remainder as store credit).
   const exchangeCreditDec = new Decimal(exchangeCredit ?? 0);
@@ -218,11 +217,8 @@ export function CartPanel({
     // discount field. Sending the cart discount alone persisted a promotion-
     // discounted sale at full price and made a promotion-zeroed cart fail as a
     // non-zero NONE tender, so both are folded into `cartDiscountAmount`.
-    cartDiscountAmount: getSaleDiscountAmount(
-      subtotal,
-      discountEffective,
-      promoDiscountDec,
-    ).toNumber(),
+    cartDiscountAmount: saleDiscount.toNumber(),
+    manualCartDiscountAmount: discountEffective.toNumber(),
     ...(authorizingManagerId ? { authorizingManagerId } : {}),
     ...(linkedCustomerId ? { customerId: linkedCustomerId } : { isGuestSale: true }),
     ...(appliedCreditDec.greaterThan(0) ? { appliedStoreCredit } : {}),
@@ -613,11 +609,11 @@ export function CartPanel({
                 <span className="font-mono">-{formatRupee(totalDiscount)}</span>
               </div>
             )}
-            {promoDiscountDec.greaterThan(0) && (
+            {promotionDiscount.greaterThan(0) && (
               <div className="space-y-0.5">
                 <div className="flex justify-between font-body text-sm text-green-700">
                   <span>Promotions</span>
-                  <span className="font-mono">-{formatRupee(promoDiscountDec.toNumber())}</span>
+                  <span className="font-mono">-{formatRupee(promotionDiscount.toNumber())}</span>
                 </div>
                 {appliedPromotions.map((p) => (
                   <div key={p.promotionId} className="flex justify-between font-body text-xs text-green-600 pl-2">
