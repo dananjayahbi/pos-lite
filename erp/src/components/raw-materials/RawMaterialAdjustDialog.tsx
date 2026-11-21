@@ -14,7 +14,18 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { getUnitLabel } from '@/lib/services/rawMaterial.core';
+import {
+  RAW_MATERIAL_ADJUSTMENT_REASON_LABELS,
+  RAW_MATERIAL_ADJUSTMENT_REASONS,
+} from '@/lib/services/rawMaterialAdjustment.core';
 import type { RawMaterialItem } from '@/hooks/useRawMaterials';
 
 interface RawMaterialAdjustDialogProps {
@@ -46,10 +57,7 @@ export function RawMaterialAdjustDialog({
       const res = await fetch(`/api/store/raw-materials/${material?.id}/adjust`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          quantityDelta: delta,
-          ...(reason.trim() ? { reason: reason.trim() } : {}),
-        }),
+        body: JSON.stringify({ quantityDelta: delta, reason }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error?.message ?? 'Request failed');
@@ -69,6 +77,10 @@ export function RawMaterialAdjustDialog({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!reason) {
+      setError('Select an adjustment reason');
+      return;
+    }
     mutation.mutate();
   };
 
@@ -98,14 +110,22 @@ export function RawMaterialAdjustDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="rm-adjust-reason">Reason (optional)</Label>
-            <Input
-              id="rm-adjust-reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. production consumption, write-off, recount"
-              maxLength={200}
-            />
+            <Label htmlFor="rm-adjust-reason">Reason *</Label>
+            <Select value={reason} onValueChange={setReason}>
+              <SelectTrigger id="rm-adjust-reason">
+                <SelectValue placeholder="Select a reason" />
+              </SelectTrigger>
+              <SelectContent>
+                {RAW_MATERIAL_ADJUSTMENT_REASONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {RAW_MATERIAL_ADJUSTMENT_REASON_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Saved with the adjustment so it appears in this material&apos;s history.
+            </p>
           </div>
 
           {error ? <p className="text-sm text-red-600">{error}</p> : null}

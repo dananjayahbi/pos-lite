@@ -63,6 +63,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         { status: 403 },
       );
     }
+    if (error instanceof Error && error.message === 'INVALID_REASON') {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Select a valid adjustment reason' } },
+        { status: 400 },
+      );
+    }
     if (error instanceof Error && error.message === 'DELTA_ZERO') {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message: 'Quantity delta must not be zero' } },

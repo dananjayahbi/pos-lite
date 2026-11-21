@@ -25,7 +25,9 @@ import {
   toBomIngredient,
   type ConsumptionLine,
 } from '@/lib/services/bom.core';
+import { lockForUpdate } from '@/lib/api/race-guard';
 import { adjustStockInTx } from '@/lib/services/inventory.service';
+import { consumeRawMaterialQuantity } from '@/lib/services/rawMaterial.core';
 import { computeMaterialCost } from '@/lib/services/rawMaterialValuation.core';
 import { createBatchInTx } from '@/lib/services/batchTracking.service';
 import { staffDisplayName } from '@/lib/utils/staff-name';
@@ -504,6 +506,47 @@ export async function produceGoods(
       );
     }
 
+    // ARGUS #245: lock every consumed material in a stable order, then re-read
+    // the committed quantity and re-run the sufficiency check. Two concurrent
+    // production runs used to both pass the snapshot check and drive stock
+    // negative. Locking first makes the check + decrement atomic.
+    const consumedIds = [...new Set(consumption.map((line) => line.rawMaterialId))].sort();
+    for (const rawMaterialId of consumedIds) {
+      await lockForUpdate(tx, 'raw_materials', '"id" = $1 AND "tenantId" = $2', [
+        rawMaterialId,
+        tenantId,
+      ]);
+    }
+    const lockedMaterials = await tx.rawMaterial.findMany({
+      where: { tenantId, id: { in: consumedIds } },
+      select: { id: true, quantity: true },
+    });
+    if (lockedMaterials.length !== consumedIds.length) {
+      throw new Error('INGREDIENT_NOT_FOUND');
+    }
+    const lockedQuantityById = new Map(
+      lockedMaterials.map((row) => [row.id, row.quantity]),
+    );
+    const freshConsumption = computeConsumptionPlan(
+      bom.items.map((item) => {
+        const ingredient = toBomIngredient(item);
+        const locked = lockedQuantityById.get(item.rawMaterialId);
+        return {
+          ...ingredient,
+          available: locked ? locked.toNumber() : ingredient.available,
+        };
+      }),
+      quantity,
+    );
+    if (hasInsufficientIngredients(freshConsumption)) {
+      const short = getInsufficientIngredients(freshConsumption);
+      throw new Error(
+        `INSUFFICIENT_STOCK:${short
+          .map((s) => `${s.rawMaterialName}:${s.required}:${s.available}`)
+          .join('|')}`,
+      );
+    }
+
     // Value of the materials consumed, at the unit cost recorded on each raw
     // material (ARGUS #243). Stored with the log so finished-goods COGS can be
     // explained even after the material cost changes.
@@ -517,15 +560,18 @@ export async function produceGoods(
       })),
     );
 
-    // 1) Deduct each raw material within the same transaction.
-    for (const line of consumption) {
+    // 1) Deduct each raw material within the same transaction. The rows are
+    //    already locked, so the absolute Decimal result cannot race another
+    //    adjustment or production run.
+    for (const line of freshConsumption) {
+      const locked = lockedQuantityById.get(line.rawMaterialId);
+      if (!locked) {
+        throw new Error('INGREDIENT_NOT_FOUND');
+      }
+      const remaining = consumeRawMaterialQuantity(locked, line.required);
       await tx.rawMaterial.update({
         where: { id: line.rawMaterialId },
-        data: {
-          quantity: {
-            decrement: new Prisma.Decimal(line.required),
-          },
-        },
+        data: { quantity: remaining },
       });
     }
 

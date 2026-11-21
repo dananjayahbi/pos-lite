@@ -163,6 +163,11 @@ export const AUDIT_ACTIONS = {
   PRODUCT_RESTORED: 'PRODUCT_RESTORED',
   // Supplier lifecycle (M06-05 — archive recovery). Append-only.
   SUPPLIER_UNARCHIVED: 'SUPPLIER_UNARCHIVED',
+  // ARGUS #237: create/edit/archive were never audited, leaving the Supplier
+  // trail with restore events only.
+  SUPPLIER_CREATED: 'SUPPLIER_CREATED',
+  SUPPLIER_UPDATED: 'SUPPLIER_UPDATED',
+  SUPPLIER_ARCHIVED: 'SUPPLIER_ARCHIVED',
 } as const;
 
 export type AuthAction = (typeof AUTH_ACTIONS)[keyof typeof AUTH_ACTIONS];

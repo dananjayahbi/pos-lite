@@ -26,6 +26,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { RawMaterialTable } from '@/components/raw-materials/RawMaterialTable';
 import { RawMaterialFormDialog } from '@/components/raw-materials/RawMaterialFormDialog';
 import { RawMaterialAdjustDialog } from '@/components/raw-materials/RawMaterialAdjustDialog';
+import { RawMaterialHistoryDialog } from '@/components/raw-materials/RawMaterialHistoryDialog';
 import { useRawMaterials } from '@/hooks/useRawMaterials';
 import type { RawMaterialItem } from '@/hooks/useRawMaterials';
 import { useRawMaterialCategories } from '@/hooks/useRawMaterialCategories';
@@ -58,6 +59,7 @@ export function RawMaterialListClient({ permissions }: RawMaterialListClientProp
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<RawMaterialItem | null>(null);
   const [adjustTarget, setAdjustTarget] = useState<RawMaterialItem | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<RawMaterialItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RawMaterialItem | null>(null);
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
 
@@ -202,6 +204,7 @@ export function RawMaterialListClient({ permissions }: RawMaterialListClientProp
           }}
           onDelete={(m) => setDeleteTarget(m)}
           onAdjust={(m) => setAdjustTarget(m)}
+          onHistory={(m) => setHistoryTarget(m)}
         />
 
         {total > 0 && (
@@ -247,6 +250,11 @@ export function RawMaterialListClient({ permissions }: RawMaterialListClientProp
         open={adjustTarget !== null}
         onOpenChange={(open) => !open && setAdjustTarget(null)}
         material={adjustTarget}
+      />
+      <RawMaterialHistoryDialog
+        open={historyTarget !== null}
+        onOpenChange={(open) => !open && setHistoryTarget(null)}
+        material={historyTarget}
       />
 
       <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
