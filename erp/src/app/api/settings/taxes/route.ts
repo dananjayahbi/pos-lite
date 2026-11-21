@@ -4,21 +4,17 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import {
+  canManageTaxSettings,
+  readTaxRates,
+  taxSettingsAuditPayload,
+} from '@/lib/settings/settingsAudit.core';
 
 const taxSettingsSchema = z.object({
   vatRate: z.number().min(0, 'VAT rate must be at least 0').max(100, 'VAT rate cannot exceed 100'),
   ssclRate: z.number().min(0, 'SSCL rate must be at least 0').max(100, 'SSCL rate cannot exceed 100'),
 });
-
-function readTaxRates(settings: unknown): { vatRate: number; ssclRate: number } {
-  const s = typeof settings === 'object' && settings !== null
-    ? (settings as Record<string, unknown>)
-    : {};
-  return {
-    vatRate: typeof s.vatRate === 'number' ? s.vatRate : 0,
-    ssclRate: typeof s.ssclRate === 'number' ? s.ssclRate : 0,
-  };
-}
 
 /**
  * Read the tenant's store-wide tax rates.
@@ -78,9 +74,21 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    if (!hasPermission(session.user, PERMISSIONS.SETTINGS.manageTax)) {
+    // ARGUS #468 — tax rates are owner-only. A manager with an explicit
+    // per-user override still cannot pass: the role is checked, not just the
+    // permission key.
+    if (
+      !canManageTaxSettings(session.user.role) ||
+      !hasPermission(session.user, PERMISSIONS.SETTINGS.manageTax)
+    ) {
       return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Only the store owner can change tax rates',
+          },
+        },
         { status: 403 },
       );
     }
@@ -107,16 +115,40 @@ export async function PATCH(request: NextRequest) {
       ? (tenant.settings as Record<string, unknown>)
       : {};
 
-    const updated = await prisma.tenant.update({
-      where: { id: tenantId },
-      data: {
-        settings: {
-          ...currentSettings,
-          vatRate: parsed.data.vatRate,
-          ssclRate: parsed.data.ssclRate,
+    // Update + audit commit together: a changed tax rate without an audit row
+    // would be the exact defect this fixes.
+    const audit = taxSettingsAuditPayload(
+      readTaxRates(currentSettings),
+      { vatRate: parsed.data.vatRate, ssclRate: parsed.data.ssclRate },
+    );
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const next = await tx.tenant.update({
+        where: { id: tenantId },
+        data: {
+          settings: {
+            ...currentSettings,
+            vatRate: parsed.data.vatRate,
+            ssclRate: parsed.data.ssclRate,
+          },
         },
-      },
-      select: { settings: true },
+        select: { settings: true },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          actorId: session.user.id,
+          actorRole: session.user.role,
+          entityType: 'TenantSettings',
+          entityId: tenantId,
+          action: AUDIT_ACTIONS.SETTINGS_CHANGED,
+          before: { ...audit.before },
+          after: { ...audit.after },
+        },
+      });
+
+      return next;
     });
 
     return NextResponse.json({ success: true, data: updated.settings });

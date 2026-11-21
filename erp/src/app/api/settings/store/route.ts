@@ -4,6 +4,11 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import {
+  readStoreProfileSnapshot,
+  storeProfileAuditPayload,
+} from '@/lib/settings/settingsAudit.core';
 
 const storeProfileSchema = z.object({
   storeName: z.string().trim().min(2, 'Store name must be at least 2 characters').max(80),
@@ -49,7 +54,7 @@ export async function PATCH(request: NextRequest) {
 
     const tenant = await prisma.tenant.findUniqueOrThrow({
       where: { id: tenantId },
-      select: { settings: true },
+      select: { name: true, logoUrl: true, settings: true },
     });
 
     const currentSettings = typeof tenant.settings === 'object' && tenant.settings !== null
@@ -63,18 +68,52 @@ export async function PATCH(request: NextRequest) {
       receiptFooter: parsed.data.receiptFooter,
     };
 
-    const updated = await prisma.tenant.update({
-      where: { id: tenantId },
-      data: {
-        name: parsed.data.storeName,
+    // ARGUS #468: profile edits stay manager-editable, but every write carries
+    // an audit row with actor + the profile fields only (never other settings).
+    const audit = storeProfileAuditPayload(
+      readStoreProfileSnapshot({
+        name: tenant.name,
+        logoUrl: tenant.logoUrl,
+        settings: tenant.settings,
+      }),
+      {
+        storeName: parsed.data.storeName,
         logoUrl: parsed.data.logoUrl || null,
-        settings: updatedSettings,
+        address: parsed.data.address,
+        phoneNumber: parsed.data.phoneNumber,
+        receiptFooter: parsed.data.receiptFooter,
       },
-      select: {
-        name: true,
-        logoUrl: true,
-        settings: true,
-      },
+    );
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const next = await tx.tenant.update({
+        where: { id: tenantId },
+        data: {
+          name: parsed.data.storeName,
+          logoUrl: parsed.data.logoUrl || null,
+          settings: updatedSettings,
+        },
+        select: {
+          name: true,
+          logoUrl: true,
+          settings: true,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          actorId: session.user.id,
+          actorRole: session.user.role,
+          entityType: 'TenantSettings',
+          entityId: tenantId,
+          action: AUDIT_ACTIONS.SETTINGS_CHANGED,
+          before: { ...audit.before },
+          after: { ...audit.after },
+        },
+      });
+
+      return next;
     });
 
     return NextResponse.json({ success: true, data: updated });
