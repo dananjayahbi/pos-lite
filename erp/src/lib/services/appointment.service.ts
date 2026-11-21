@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import Decimal from 'decimal.js';
-import type { Prisma } from '@/generated/prisma/client';
+import type { Prisma, TaxRule } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
 import { getCurrentShift } from '@/lib/services/shift.service';
 import { scheduleReminders } from '@/lib/services/appointment-reminder.service';
@@ -626,6 +626,7 @@ export async function createAppointmentService(
     description?: string | null | undefined;
     durationMins: number;
     price: number;
+    taxRule?: TaxRule | undefined;
     color?: string | null | undefined;
     isActive?: boolean | undefined;
     sortOrder?: number | undefined;
@@ -646,6 +647,7 @@ export async function createAppointmentService(
       description: input.description ?? null,
       durationMins: input.durationMins,
       price: input.price,
+      taxRule: input.taxRule ?? 'STANDARD_VAT',
       color: input.color ?? null,
       isActive: input.isActive ?? true,
       sortOrder: input.sortOrder ?? 0,
@@ -661,6 +663,7 @@ export async function updateAppointmentService(
     description?: string | null | undefined;
     durationMins?: number | undefined;
     price?: number | undefined;
+    taxRule?: TaxRule | undefined;
     color?: string | null | undefined;
     isActive?: boolean | undefined;
     sortOrder?: number | undefined;
@@ -685,6 +688,7 @@ export async function updateAppointmentService(
       ...(input.description !== undefined && { description: input.description }),
       ...(input.durationMins !== undefined && { durationMins: input.durationMins }),
       ...(input.price !== undefined && { price: input.price }),
+      ...(input.taxRule !== undefined && { taxRule: input.taxRule }),
       ...(input.color !== undefined && { color: input.color }),
       ...(input.isActive !== undefined && { isActive: input.isActive }),
       ...(input.sortOrder !== undefined && { sortOrder: input.sortOrder }),
@@ -824,12 +828,25 @@ export async function convertAppointmentToSale(
     where: { id: tenantId },
     select: { settings: true },
   });
-  const { vatRate } = extractTenantRates(tenant?.settings);
+  const { vatRate, ssclRate } = extractTenantRates(tenant?.settings);
+  // The service's tax rule decides VAT/SSCL/exempt; an explicit exempt service
+  // is documented on the service rather than silently producing zero tax
+  // (ARGUS #131).
+  const serviceTaxRule = appointment.serviceId
+    ? (
+        await prisma.appointmentService.findFirst({
+          where: { id: appointment.serviceId, tenantId },
+          select: { taxRule: true },
+        })
+      )?.taxRule ?? 'STANDARD_VAT'
+    : 'STANDARD_VAT';
   // The service price is the subtotal; the appointment's deposit is money
   // already collected at booking.
   const pricing = computeAppointmentSalePricing({
     price: appointment.price,
     vatRate,
+    ssclRate,
+    taxRule: serviceTaxRule,
     deposit: appointment.depositAmount,
   });
   const { subtotal, taxAmount: lineTax, totalAmount, depositApplied, balanceDue } = pricing;

@@ -18,6 +18,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { AppointmentServiceSchema } from '@/lib/validators/appointment.validators';
 import { toServicePrice, type AppointmentServiceRecord } from '@/lib/appointments/service-catalog';
 
@@ -90,6 +97,9 @@ function ServiceForm({
   const [price, setPrice] = useState(
     service ? String(toServicePrice(service.price)) : '',
   );
+  const [taxRule, setTaxRule] = useState<'STANDARD_VAT' | 'SSCL' | 'EXEMPT'>(
+    service?.taxRule ?? 'STANDARD_VAT',
+  );
   const [color, setColor] = useState(service?.color ?? COLOR_SWATCHES[1] ?? '#A48374');
   const [isActive, setIsActive] = useState(service?.isActive ?? true);
   const [sortOrder, setSortOrder] = useState(String(service?.sortOrder ?? 0));
@@ -102,6 +112,7 @@ function ServiceForm({
         description: description.trim() ? description.trim() : null,
         durationMins: Number(durationMins),
         price: Number(price === '' ? 0 : price),
+        taxRule,
         color: color || null,
         isActive,
         sortOrder: Number(sortOrder === '' ? 0 : sortOrder),
@@ -239,6 +250,23 @@ function ServiceForm({
             </div>
             <p className="text-xs text-mist-ink">Charged when the appointment converts to a sale.</p>
           </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Tax rule</Label>
+          <Select value={taxRule} onValueChange={(v) => setTaxRule(v as typeof taxRule)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="STANDARD_VAT">Standard VAT</SelectItem>
+              <SelectItem value="SSCL">SSCL</SelectItem>
+              <SelectItem value="EXEMPT">VAT Exempt</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-mist-ink">
+            Applied to the converted sale; exempt services record zero tax explicitly.
+          </p>
         </div>
 
         <div className="space-y-2">

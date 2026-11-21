@@ -22,10 +22,21 @@ export interface AppointmentSalePricing {
 export function computeAppointmentSalePricing(input: {
   price: Decimalish;
   vatRate: number;
+  /** SSCL rate for SSCL services; ignored for VAT/exempt (ARGUS #131). */
+  ssclRate?: number;
+  /** TaxRule value: STANDARD_VAT (default), SSCL, EXEMPT. */
+  taxRule?: string | null;
   deposit?: Decimalish | null;
 }): AppointmentSalePricing {
   const subtotal = new Decimal(input.price.toString()).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-  const taxAmount = subtotal.mul(input.vatRate).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  const rule = input.taxRule ?? 'STANDARD_VAT';
+  const rate =
+    rule === 'EXEMPT'
+      ? 0
+      : rule === 'SSCL'
+        ? (input.ssclRate ?? 0)
+        : input.vatRate;
+  const taxAmount = subtotal.mul(rate).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
   const totalAmount = subtotal.plus(taxAmount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
   const deposit = new Decimal(input.deposit?.toString() ?? '0').toDecimalPlaces(

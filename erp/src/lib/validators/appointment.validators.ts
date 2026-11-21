@@ -9,6 +9,7 @@ export const AppointmentServiceSchema = z.object({
   description: z.string().max(500).optional().nullable(),
   durationMins: z.number().int().min(5, 'Minimum 5 minutes').max(480, 'Maximum 8 hours'),
   price: z.number().min(0, 'Price cannot be negative').max(99999999.99, 'Price exceeds the maximum supported amount'),
+  taxRule: z.enum(['STANDARD_VAT', 'SSCL', 'EXEMPT']).optional(),
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, 'Must be a valid hex color')

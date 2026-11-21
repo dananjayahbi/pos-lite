@@ -2122,6 +2122,9 @@ model AppointmentService {
   description  String?
   durationMins Int
   price        Decimal   @db.Decimal(10, 2)
+  // Tax treatment applied when the appointment is converted to a sale
+  // (ARGUS #131). EXEMPT services add no tax and are visibly documented.
+  taxRule      TaxRule   @default(STANDARD_VAT)
   color        String?
   isActive     Boolean   @default(true)
   sortOrder    Int       @default(0)

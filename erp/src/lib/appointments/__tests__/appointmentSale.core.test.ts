@@ -58,4 +58,23 @@ describe('computeAppointmentSalePricing', () => {
 
     expect(pricing.balanceDue.toNumber()).toBe(2649.5);
   });
+
+  it('applies the service tax rule (ARGUS #131)', () => {
+    expect(
+      computeAppointmentSalePricing({ price: 1000, vatRate: 18, taxRule: 'STANDARD_VAT' })
+        .taxAmount.toNumber(),
+    ).toBe(180);
+    expect(
+      computeAppointmentSalePricing({
+        price: 1000,
+        vatRate: 18,
+        ssclRate: 2.5,
+        taxRule: 'SSCL',
+      }).taxAmount.toNumber(),
+    ).toBe(25);
+    expect(
+      computeAppointmentSalePricing({ price: 1000, vatRate: 18, taxRule: 'EXEMPT' })
+        .taxAmount.toNumber(),
+    ).toBe(0);
+  });
 });
