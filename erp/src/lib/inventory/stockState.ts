@@ -48,3 +48,31 @@ export function matchesStockStatusFilter(
   const state = getProductStockState(variants);
   return status === 'low_stock' ? state === 'LOW_STOCK' : state === 'OUT_OF_STOCK';
 }
+
+export type ProductStatusBadgeKind =
+  | 'DELETED'
+  | 'ARCHIVED'
+  | 'OUT_OF_STOCK'
+  | 'LOW_STOCK'
+  | 'ACTIVE';
+
+/**
+ * Single rule for the inventory status badge (ARGUS #149).
+ *
+ * The Deleted view lists soft-deleted products, so those rows must never fall
+ * through to a stock badge. Lifecycle states win over quantities:
+ * deleted > archived > stock state.
+ */
+export function resolveProductStatusBadge(input: {
+  isDeleted?: boolean;
+  isArchived: boolean;
+  variants: StockStateVariant[];
+}): ProductStatusBadgeKind {
+  if (input.isDeleted) return 'DELETED';
+  if (input.isArchived) return 'ARCHIVED';
+
+  const state = getProductStockState(input.variants);
+  if (state === 'OUT_OF_STOCK') return 'OUT_OF_STOCK';
+  if (state === 'LOW_STOCK') return 'LOW_STOCK';
+  return 'ACTIVE';
+}
