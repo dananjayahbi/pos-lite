@@ -8,6 +8,9 @@ import {
   cancelDisposition,
   invalidCountedQuantityRows,
   isCountedQuantityValid,
+  parseStockTakeCategoryId,
+  stockTakeCategoryListWhere,
+  stockTakeCategoryLookupWhere,
 } from '@/lib/services/stockTakePolicy.core';
 
 const base = {
@@ -120,5 +123,36 @@ describe('stock-take counted quantity validation (ARGUS #187 / BUG-42)', () => {
 
     expect(invalid.map((row) => row.variantId)).toEqual(['v2', 'v4']);
     expect(invalid.map((row) => row.label)).toEqual(['v2=-3', 'v4=2.5']);
+  });
+});
+
+describe('stock-take category scoping (ARGUS #209)', () => {
+  it('treats missing, null and blank category ids as unfiltered', () => {
+    expect(parseStockTakeCategoryId(undefined)).toEqual({ ok: true, categoryId: null });
+    expect(parseStockTakeCategoryId(null)).toEqual({ ok: true, categoryId: null });
+    expect(parseStockTakeCategoryId('')).toEqual({ ok: true, categoryId: null });
+    expect(parseStockTakeCategoryId('   ')).toEqual({ ok: true, categoryId: null });
+  });
+
+  it('trims a string id and rejects non-string input', () => {
+    expect(parseStockTakeCategoryId(' cat-1 ')).toEqual({ ok: true, categoryId: 'cat-1' });
+    expect(parseStockTakeCategoryId(42)).toEqual({
+      ok: false,
+      message: 'categoryId must be a string',
+    });
+    expect(parseStockTakeCategoryId({ id: 'cat-1' }).ok).toBe(false);
+  });
+
+  it('always scopes the lookup and list query by tenant and live rows', () => {
+    expect(stockTakeCategoryLookupWhere('tenant-1', 'cat-1')).toEqual({
+      id: 'cat-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+    });
+    expect(stockTakeCategoryListWhere('tenant-1', ['cat-1', 'cat-2'])).toEqual({
+      id: { in: ['cat-1', 'cat-2'] },
+      tenantId: 'tenant-1',
+      deletedAt: null,
+    });
   });
 });

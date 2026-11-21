@@ -5,6 +5,11 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StockTakeStatus } from '@/generated/prisma/client';
 import { isStaleStockTake } from '@/lib/services/stockTakeAge.core';
+import {
+  parseStockTakeCategoryId,
+  stockTakeCategoryListWhere,
+  stockTakeCategoryLookupWhere,
+} from '@/lib/services/stockTakePolicy.core';
 
 export async function GET() {
   try {
@@ -52,7 +57,9 @@ export async function GET() {
     const categories =
       categoryIds.length > 0
         ? await prisma.category.findMany({
-            where: { id: { in: categoryIds } },
+            // ARGUS #209: a foreign/deleted category id must never resolve a
+            // name into this tenant's session list.
+            where: stockTakeCategoryListWhere(tenantId, categoryIds),
             select: { id: true, name: true },
           })
         : [];
@@ -111,8 +118,53 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = (await request.json()) as { categoryId?: string };
-    const categoryId = body.categoryId ?? null;
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid JSON body' } },
+        { status: 400 },
+      );
+    }
+
+    const parsedCategory = parseStockTakeCategoryId(
+      body && typeof body === 'object'
+        ? (body as { categoryId?: unknown }).categoryId
+        : undefined,
+    );
+    if (!parsedCategory.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: parsedCategory.message,
+            details: [{ path: 'categoryId', message: parsedCategory.message }],
+          },
+        },
+        { status: 400 },
+      );
+    }
+
+    const categoryId = parsedCategory.categoryId;
+
+    // ARGUS #209: the optional category must exist, be live and belong to this
+    // tenant. Reject before creating a session (a foreign id must not leak its
+    // name through the list, and an unknown id must not create an empty
+    // session).
+    if (categoryId) {
+      const category = await prisma.category.findFirst({
+        where: stockTakeCategoryLookupWhere(tenantId, categoryId),
+        select: { id: true },
+      });
+      if (!category) {
+        return NextResponse.json(
+          { success: false, error: { code: 'CATEGORY_NOT_FOUND', message: 'Category not found' } },
+          { status: 404 },
+        );
+      }
+    }
 
     // Check no IN_PROGRESS session exists
     const existing = await prisma.stockTakeSession.findFirst({
