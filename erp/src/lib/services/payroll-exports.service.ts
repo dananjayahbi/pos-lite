@@ -4,6 +4,12 @@ import { readPayrollSettingsFromTenantSettings } from '@/lib/payroll/payroll-set
 import type { BankSheetRow } from '@/lib/payroll/bank-sheet';
 import type { StatutoryRow } from '@/lib/payroll/statutory-return';
 import type { SummaryReportItem, SummaryReportTotals } from '@/lib/payroll/summary-report';
+import {
+  buildExportPreflight,
+  type PayrollExportKind,
+  type PayrollExportPreflight,
+  type PayrollExportStaffRow,
+} from '@/lib/payroll/export-preflight';
 
 export interface PayrollExportContext {
   run: Awaited<ReturnType<typeof getPayrollRun>>;
@@ -94,4 +100,49 @@ export function periodLabel(periodStart: Date): string {
 
 export function formatExtension(value: string | null): 'xlsx' | 'pdf' {
   return value === 'xlsx' ? 'xlsx' : 'pdf';
+}
+
+/** Staff details needed by the bank sheet / C-form / ETF return checks. */
+export function toPreflightStaff(context: PayrollExportContext): PayrollExportStaffRow[] {
+  return context.run.items.map((item) => ({
+    staffName: item.staffName,
+    bankName: item.bankName,
+    bankAccountNumber: item.bankAccountNumber,
+    nic: item.nic,
+    epfNumber: item.epfNumber,
+    etfNumber: item.etfNumber,
+  }));
+}
+
+/**
+ * ARGUS #378: completeness gate for one export. `summary` has no required
+ * staff identity fields, so it is always complete.
+ */
+export function buildPayrollExportPreflight(
+  context: PayrollExportContext,
+  kind: PayrollExportKind,
+): PayrollExportPreflight {
+  return buildExportPreflight({
+    kind,
+    staff: toPreflightStaff(context),
+    employerEpfNumber: context.payrollSettings.employerEpfNumber,
+    employerEtfNumber: context.payrollSettings.employerEtfNumber,
+  });
+}
+
+export type PayrollExportPreflights = Record<PayrollExportKind, PayrollExportPreflight>;
+
+export function buildPayrollExportPreflights(
+  context: PayrollExportContext,
+): PayrollExportPreflights {
+  return {
+    'bank-sheet': buildPayrollExportPreflight(context, 'bank-sheet'),
+    statutory: buildPayrollExportPreflight(context, 'statutory'),
+    summary: buildPayrollExportPreflight(context, 'summary'),
+  };
+}
+
+/** Download links may explicitly override a flagged (incomplete) export. */
+export function allowsIncompleteExport(value: string | null): boolean {
+  return value === '1' || value === 'true';
 }
