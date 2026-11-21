@@ -18,5 +18,13 @@ Now `src/lib/sales/sale-list-filters.ts` parses both against
 
 Valid statuses (`OPEN`, `COMPLETED`, `VOIDED`) and payment methods keep working
 unchanged, and the role scoping from ARGUS #78 is applied after validation.
+
+## Pagination cap (ARGUS #80)
+
+The route used `parsePagination`'s 200-row default while `getSales` caps `limit`
+at 100. A request for `limit=9999` therefore returned 100 rows with
+`meta.limit: 200` and `totalPages: 1`, so a client believed it had all 128 rows.
+The route now passes `maxLimit: 100`, matching the query layer: `meta.limit`,
+rows and `totalPages` describe the same reachable set (128 rows -> 2 pages).
 Filters are case-sensitive (the enums are uppercase) and surrounding whitespace
 is trimmed.

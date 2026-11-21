@@ -75,7 +75,10 @@ export async function GET(request: NextRequest) {
     // NaN into Prisma and surfacing as an unhandled 500.
     const from = parseQueryDate(url.searchParams, 'from');
     const to = parseQueryDate(url.searchParams, 'to');
-    const { page, limit } = parsePagination(url.searchParams);
+    // One cap shared with getSales (ARGUS #80): the route used to allow 200
+    // while the query layer capped at 100, so a client requesting 200 silently
+    // lost rows and got misleading totalPages.
+    const { page, limit } = parsePagination(url.searchParams, { maxLimit: 100 });
 
     const result = await getSales(
       tenantId,
