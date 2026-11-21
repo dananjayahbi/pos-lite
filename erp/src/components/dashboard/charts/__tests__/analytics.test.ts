@@ -3,6 +3,7 @@ import {
   buildDailyRevenue,
   buildPaymentBreakdown,
   buildTopProducts,
+  endOfLocalDay,
   localDateKey,
   startOfLocalDay,
 } from '@/components/dashboard/charts/analytics';
@@ -12,7 +13,8 @@ function sale(overrides: Partial<AnalyticsSale> = {}): AnalyticsSale {
   return {
     totalAmount: 0,
     paymentMethod: 'CASH',
-    completedAt: new Date(2026, 10, 20, 12, 0),
+    saleDate: null,
+    createdAt: new Date(2026, 10, 20, 12, 0),
     discountAmount: 0,
     lines: [],
     ...overrides,
@@ -45,6 +47,27 @@ describe('startOfLocalDay', () => {
   });
 });
 
+describe('endOfLocalDay', () => {
+  it('returns the last millisecond of the local day without mutating the input', () => {
+    const input = new Date(2026, 10, 20, 18, 45, 12, 500);
+    const end = endOfLocalDay(input);
+
+    expect(end.getDate()).toBe(20);
+    expect(end.getHours()).toBe(23);
+    expect(end.getMinutes()).toBe(59);
+    expect(end.getSeconds()).toBe(59);
+    expect(end.getMilliseconds()).toBe(999);
+    expect(input.getHours()).toBe(18);
+  });
+
+  it('handles the last day of a month', () => {
+    const end = endOfLocalDay(new Date(2026, 10, 30, 8, 0));
+    expect(end.getMonth()).toBe(10);
+    expect(end.getDate()).toBe(30);
+    expect(end.getMilliseconds()).toBe(999);
+  });
+});
+
 describe('buildDailyRevenue', () => {
   const now = new Date(2026, 10, 20, 15, 0);
 
@@ -65,7 +88,7 @@ describe('buildDailyRevenue', () => {
 
   it("counts a sale just after local midnight on today's bucket (ARGUS #38)", () => {
     const days = buildDailyRevenue(
-      [sale({ totalAmount: 1500, completedAt: new Date(2026, 10, 20, 0, 5) })],
+      [sale({ totalAmount: 1500, createdAt: new Date(2026, 10, 20, 0, 5) })],
       7,
       now,
     );
@@ -79,8 +102,8 @@ describe('buildDailyRevenue', () => {
   it('drops sales before the seven-day window', () => {
     const days = buildDailyRevenue(
       [
-        sale({ totalAmount: 999, completedAt: new Date(2026, 10, 13, 23, 59) }),
-        sale({ totalAmount: 10, completedAt: new Date(2026, 10, 14, 0, 1) }),
+        sale({ totalAmount: 999, createdAt: new Date(2026, 10, 13, 23, 59) }),
+        sale({ totalAmount: 10, createdAt: new Date(2026, 10, 14, 0, 1) }),
       ],
       7,
       now,
@@ -88,6 +111,56 @@ describe('buildDailyRevenue', () => {
 
     expect(days.reduce((sum, d) => sum + d.revenue, 0)).toBe(10);
     expect(days[0]!.date).toBe('2026-11-14');
+  });
+
+  it('buckets a backdated sale on its recorded sale date, not completion time (ARGUS #50)', () => {
+    const days = buildDailyRevenue(
+      [
+        sale({
+          totalAmount: 500,
+          createdAt: new Date(2026, 10, 20, 18, 0), // completed today
+          saleDate: new Date(2026, 10, 16, 12, 0), // recorded for the 16th
+        }),
+      ],
+      7,
+      now,
+    );
+
+    expect(days.find((d) => d.date === '2026-11-16')!.revenue).toBe(500);
+    expect(days.find((d) => d.date === '2026-11-20')!.revenue).toBe(0);
+  });
+
+  it('ignores a sale whose recorded date is outside the window even if completed today (ARGUS #50)', () => {
+    const days = buildDailyRevenue(
+      [
+        sale({
+          totalAmount: 500,
+          createdAt: new Date(2026, 10, 20, 18, 0),
+          saleDate: new Date(2026, 10, 1, 12, 0),
+        }),
+      ],
+      7,
+      now,
+    );
+
+    expect(days.reduce((sum, d) => sum + d.revenue, 0)).toBe(0);
+  });
+
+  it('prefers the recorded sale date when both dates fall in the window (ARGUS #50)', () => {
+    const days = buildDailyRevenue(
+      [
+        sale({
+          totalAmount: 250,
+          createdAt: new Date(2026, 10, 20, 18, 0),
+          saleDate: new Date(2026, 10, 18, 9, 0),
+        }),
+      ],
+      7,
+      now,
+    );
+
+    expect(days.find((d) => d.date === '2026-11-18')!.revenue).toBe(250);
+    expect(days.find((d) => d.date === '2026-11-20')!.revenue).toBe(0);
   });
 });
 

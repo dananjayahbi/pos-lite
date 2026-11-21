@@ -58,14 +58,14 @@ export function StockSummaryWidgets({ permissions }: StockSummaryWidgetsProps) {
     {
       label: 'Low Stock Variants',
       value: summary?.lowStockVariants ?? 0,
-      helper: 'Variants already below threshold',
+      helper: 'Variants at or below threshold',
       href: '/stock-control/low-stock',
       icon: <AlertTriangle className="h-6 w-6" />,
     },
     {
       label: 'Pending Stock Takes',
       value: summary?.pendingStockTakes ?? 0,
-      helper: 'Counts waiting for approval',
+      helper: 'Stock takes waiting for approval',
       href: '/stock-control/stock-takes',
       icon: <ClipboardList className="h-6 w-6" />,
     },

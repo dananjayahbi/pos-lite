@@ -5,8 +5,10 @@ import { auth } from '@/lib/auth';
 import { denialRouteFor } from '@/lib/auth/page-guards';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
-import { LOW_STOCK_SQL_PREDICATE } from '@/lib/inventory/lowStockPredicate';
+import { LOW_STOCK_PRODUCT_SCOPE_SQL, LOW_STOCK_SQL_PREDICATE } from '@/lib/inventory/lowStockPredicate';
 import { lowStockCardSubtitle } from '@/lib/dashboard/lowStockNote.core';
+import { formatRupee } from '@/lib/format';
+import { saleAccountingDateWhere } from '@/lib/reports/accounting';
 import { getDefaultRouteForRole } from '@/lib/utils/default-route';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -24,16 +26,12 @@ import { StockSummaryWidgets } from '@/components/dashboard/StockSummaryWidgets'
 import { RecentStockMovementsCard } from '@/components/dashboard/RecentStockMovementsCard';
 import { QuickNav } from '@/components/dashboard/QuickNav';
 import { AnalyticsSection } from '@/components/dashboard/AnalyticsSection';
+import { endOfLocalDay, startOfLocalDay } from '@/components/dashboard/charts/analytics';
 import { formatRecentSaleTimestamp } from '@/components/dashboard/recentSaleTime';
 import {
   resolveRecentSalePayment,
   type RecentSalePaymentTone,
 } from '@/components/dashboard/recentSalePayment';
-
-const lkr = new Intl.NumberFormat('en-LK', {
-  style: 'currency',
-  currency: 'LKR',
-});
 
 const PAYMENT_TONE_CLASS: Record<RecentSalePaymentTone, string> = {
   cash: 'bg-green-100 text-green-800',
@@ -92,15 +90,17 @@ function TableSkeleton() {
 }
 
 async function TodayStats({ tenantId }: { tenantId: string }) {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  const todayStart = startOfLocalDay(new Date());
+  const todayEnd = endOfLocalDay(todayStart);
 
   const [todaySales, totalCustomers, lowStockResult] = await Promise.all([
     prisma.sale.findMany({
       where: {
         tenantId,
         status: 'COMPLETED',
-        completedAt: { gte: todayStart },
+        // ARGUS #50: today's revenue follows the recorded sale date, so a
+        // backdated sale counted on its own day and not on completion time.
+        ...saleAccountingDateWhere(todayStart, todayEnd),
       },
       select: { totalAmount: true },
     }),
@@ -113,8 +113,7 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
         JOIN "products" p ON pv."productId" = p."id"
         WHERE pv."tenantId" = ${tenantId}
           AND pv."deletedAt" IS NULL
-          AND p."isArchived" = false
-          AND p."deletedAt" IS NULL
+          AND ${Prisma.raw(LOW_STOCK_PRODUCT_SCOPE_SQL)}
           AND ${Prisma.raw(LOW_STOCK_SQL_PREDICATE)}
       `,
   ]);
@@ -126,7 +125,7 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <StatCard
         label="Today's Revenue"
-        value={lkr.format(todayRevenue)}
+        value={formatRupee(todayRevenue)}
         icon={<TrendingUp className="h-6 w-6" />}
         sub={`${todaySales.length} transaction${todaySales.length !== 1 ? 's' : ''}`}
       />
@@ -195,7 +194,7 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
                 <Badge className={PAYMENT_TONE_CLASS[payment.tone]}>{payment.label}</Badge>
               </TableCell>
               <TableCell className="text-espresso font-medium">
-                {lkr.format(Number(sale.totalAmount))}
+                {formatRupee(Number(sale.totalAmount))}
               </TableCell>
               <TableCell className="text-sand-ink text-sm">
                 {sale.completedAt ? formatRecentSaleTimestamp(sale.completedAt) : '-'}
@@ -234,8 +233,7 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
     JOIN "products" p ON pv."productId" = p."id"
     WHERE pv."tenantId" = ${tenantId}
       AND pv."deletedAt" IS NULL
-      AND p."isArchived" = false
-      AND p."deletedAt" IS NULL
+      AND ${Prisma.raw(LOW_STOCK_PRODUCT_SCOPE_SQL)}
       AND ${Prisma.raw(LOW_STOCK_SQL_PREDICATE)}
     ORDER BY pv."stockQuantity" ASC
     LIMIT 8

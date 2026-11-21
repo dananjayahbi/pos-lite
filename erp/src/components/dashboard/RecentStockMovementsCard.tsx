@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useRecentMovements } from '@/hooks/useRecentMovements';
 import { stockActorLabel } from '@/lib/stock/actor-label';
+import { formatDashboardDateTime } from '@/lib/dashboard/dateFormat';
+import { movementReasonBadge } from './movementReasonBadge';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,27 +17,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-const REASON_BADGE: Record<string, { label: string; className: string }> = {
-  FOUND: { label: 'Found', className: 'bg-green-100 text-green-800 hover:bg-green-100' },
-  PURCHASE_RECEIVED: { label: 'Purchase Received', className: 'bg-green-100 text-green-800 hover:bg-green-100' },
-  INITIAL_STOCK: { label: 'Initial Stock', className: 'bg-green-100 text-green-800 hover:bg-green-100' },
-  SALE_RETURN: { label: 'Sale Return', className: 'bg-amber-100 text-amber-800 hover:bg-amber-100' },
-  RETURNED_TO_SUPPLIER: { label: 'Returned to Supplier', className: 'bg-amber-100 text-amber-800 hover:bg-amber-100' },
-  DAMAGED: { label: 'Damaged', className: 'bg-red-100 text-red-800 hover:bg-red-100' },
-  STOLEN: { label: 'Stolen', className: 'bg-red-100 text-red-800 hover:bg-red-100' },
-  DATA_ERROR: { label: 'Data Error', className: 'bg-blue-100 text-blue-800 hover:bg-blue-100' },
-  STOCK_TAKE_ADJUSTMENT: { label: 'Stock Take', className: 'bg-blue-100 text-blue-800 hover:bg-blue-100' },
-};
-
 function formatDateTime(value: string) {
-  const date = new Date(value);
-  return `${date.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-  })} · ${date.toLocaleTimeString('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })}`;
+  return formatDashboardDateTime(value);
 }
 
 export function RecentStockMovementsCard() {
@@ -84,10 +67,7 @@ export function RecentStockMovementsCard() {
                     </TableRow>
                   )
                 : movements.map((movement) => {
-                    const badge = REASON_BADGE[movement.reason] ?? {
-                      label: movement.reason,
-                      className: 'bg-gray-100 text-gray-800 hover:bg-gray-100',
-                    };
+                    const badge = movementReasonBadge(movement.reason);
                     const positive = movement.quantityDelta > 0;
 
                     return (

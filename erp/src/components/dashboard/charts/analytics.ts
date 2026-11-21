@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import { effectiveSaleDate } from '@/lib/reports/accounting';
 import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
 import type { DailyRevenue, PaymentBreakdown, TopProduct } from './types';
 
@@ -13,7 +14,10 @@ export interface AnalyticsSaleLine {
 export interface AnalyticsSale {
   totalAmount: Decimalish;
   paymentMethod: string | null;
-  completedAt: Date | null;
+  /** Accounting date entered for a backdated/missed sale, when present. */
+  saleDate: Date | null;
+  /** Fallback accounting date for rows created before `saleDate` existed. */
+  createdAt: Date;
   discountAmount: Decimalish;
   lines: AnalyticsSaleLine[];
 }
@@ -39,6 +43,14 @@ export function startOfLocalDay(date: Date): Date {
   return start;
 }
 
+/** Last millisecond of the given date's local day, for inclusive range ends. */
+export function endOfLocalDay(date: Date): Date {
+  const end = startOfLocalDay(date);
+  end.setDate(end.getDate() + 1);
+  end.setMilliseconds(-1);
+  return end;
+}
+
 /**
  * Last `days` local calendar days, ending with today (inclusive), so the
  * window always contains exactly `days` buckets and today is the last one.
@@ -56,8 +68,10 @@ export function buildDailyRevenue(
   }
 
   for (const sale of sales) {
-    if (!sale.completedAt) continue;
-    const bucket = buckets.get(localDateKey(new Date(sale.completedAt)));
+    // ARGUS #50: revenue belongs to the recorded sale date, not the moment the
+    // till finished the transaction. Backdated sales otherwise land in the
+    // wrong day bucket (or outside the 7-day window entirely).
+    const bucket = buckets.get(localDateKey(effectiveSaleDate(sale)));
     if (!bucket) continue;
     bucket.revenue += Number(sale.totalAmount);
     bucket.salesCount += 1;

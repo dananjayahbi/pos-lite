@@ -10,33 +10,18 @@ import {
   YAxis,
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatDashboardDay } from '@/lib/dashboard/dateFormat';
+import { formatRupee } from '@/lib/format';
 import type { DailyRevenue } from './types';
-
-const lkr = new Intl.NumberFormat('en-LK', {
-  style: 'currency',
-  currency: 'LKR',
-  maximumFractionDigits: 0,
-});
 
 interface RevenueTrendChartProps {
   data: DailyRevenue[];
 }
 
-// `date` is a local calendar day (YYYY-MM-DD). Parse the parts directly so the
-// label cannot slip a day in timezones behind UTC the way `new Date(str)` can.
-function formatDayLabel(date: string): string {
-  const [year, month, day] = date.split('-').map(Number);
-  return new Date(year!, month! - 1, day!).toLocaleDateString('en-LK', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
 export function RevenueTrendChart({ data }: RevenueTrendChartProps) {
   const formatted = data.map((d) => ({
     ...d,
-    label: formatDayLabel(d.date),
+    label: formatDashboardDay(d.date),
   }));
 
   return (
@@ -80,7 +65,7 @@ export function RevenueTrendChart({ data }: RevenueTrendChartProps) {
                   border: '1px solid #D1C7BD',
                   fontSize: 12,
                 }}
-                formatter={(value) => [lkr.format(Number(value)), 'Revenue']}
+                formatter={(value) => [formatRupee(Number(value)), 'Revenue']}
               />
               <Area
                 type="monotone"
