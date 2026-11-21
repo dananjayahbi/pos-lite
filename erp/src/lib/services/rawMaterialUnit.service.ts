@@ -26,6 +26,8 @@ import {
   hasAlphanumeric,
   type UnitLabelConflict,
 } from '@/lib/units/unitValidation.core';
+import { unitDeleteBlock } from '@/lib/units/unitDeleteGuard.core';
+import { builtInRowIdsToRevive } from '@/lib/units/unitSeed.core';
 
 export interface RawMaterialUnitItem {
   id: string;
@@ -65,14 +67,17 @@ export async function ensureDefaultRawMaterialUnits(tenantId: string): Promise<v
   // `skipDuplicates` alone left a deleted built-in gone forever. Revive any
   // built-in row that was soft-deleted; its current (possibly renamed) labels
   // are kept, only the lifecycle flags change.
-  await prisma.rawMaterialUnit.updateMany({
-    where: {
-      tenantId,
-      key: { in: DEFAULT_UNIT_KEYS },
-      deletedAt: { not: null },
-    },
-    data: { deletedAt: null, isActive: true },
+  const builtInRows = await prisma.rawMaterialUnit.findMany({
+    where: { tenantId, key: { in: DEFAULT_UNIT_KEYS } },
+    select: { id: true, key: true, deletedAt: true },
   });
+  const reviveIds = builtInRowIdsToRevive(builtInRows, DEFAULT_KEYS);
+  if (reviveIds.length > 0) {
+    await prisma.rawMaterialUnit.updateMany({
+      where: { tenantId, id: { in: reviveIds } },
+      data: { deletedAt: null, isActive: true },
+    });
+  }
 }
 
 interface UnitUsage {
@@ -373,25 +378,20 @@ export async function deleteRawMaterialUnit(
 ): Promise<void> {
   const existing = await findOwnedUnit(tenantId, id);
 
-  // ARGUS #483: built-ins are the default choice set for new tenants; the
-  // deactivation guard alone let an unused built-in be soft-deleted, and the
-  // seeder could not recreate it while the deleted row owned the unique key.
-  if (DEFAULT_KEYS.has(existing.key)) {
-    throw new Error('BUILT_IN_UNIT');
-  }
-
-  const usage = await prisma.rawMaterial.count({
+  const liveUsage = await prisma.rawMaterial.count({
     where: { tenantId, unit: existing.key, deletedAt: null },
   });
-  if (usage > 0) {
-    throw new Error('UNIT_IN_USE');
-  }
-
   const remaining = await prisma.rawMaterialUnit.count({
     where: { tenantId, id: { not: id }, deletedAt: null },
   });
-  if (remaining === 0) {
-    throw new Error('LAST_UNIT');
+  // ARGUS #485: one tested decision covers the three guards and their order.
+  const blocked = unitDeleteBlock({
+    isBuiltIn: DEFAULT_KEYS.has(existing.key),
+    liveUsage,
+    remainingLiveUnits: remaining,
+  });
+  if (blocked) {
+    throw new Error(blocked);
   }
 
   await prisma.rawMaterialUnit.update({
