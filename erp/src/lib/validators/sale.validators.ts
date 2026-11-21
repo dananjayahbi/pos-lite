@@ -53,6 +53,8 @@ export const CreateSaleSchema = z
     shiftId: z.string().min(1).optional(),
     lines: z.array(CreateSaleLineSchema).min(1),
     cartDiscountAmount: z.number().min(0).default(0),
+    /** ARGUS #65: manual cart discount before promotions (for the clamp). */
+    manualCartDiscountAmount: z.number().min(0).optional(),
     paymentMethod: z.nativeEnum(PaymentMethod, { error: 'Invalid payment method' }),
     authorizingManagerId: z.string().min(1).optional(),
     cashReceived: z.number().positive().optional(),

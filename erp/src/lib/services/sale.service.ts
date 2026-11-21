@@ -20,6 +20,7 @@ import { assertCompletedSaleShape } from '@/lib/services/saleCompleteness.core';
 import {
   assertDiscountsAuthorized,
   cartDiscountPercent,
+  clampPromotionDiscounts,
   reconcileSaleDiscount,
   sumClientPromotionDiscount,
 } from '@/lib/services/saleDiscountValidation.core';
@@ -298,9 +299,15 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
         submittedDiscount: input.cartDiscountAmount,
         clientPromoTotal: sumClientPromotionDiscount(input.appliedPromotions),
         serverPromoTotal: evaluation.totalDiscountAmount,
+        ...(input.manualCartDiscountAmount !== undefined
+          ? { manualDiscount: input.manualCartDiscountAmount }
+          : {}),
       });
       cartDiscount = reconciled.cartDiscount;
-      serverPromotions = evaluation.appliedDiscounts;
+      serverPromotions = clampPromotionDiscounts(
+        evaluation.appliedDiscounts,
+        reconciled.appliedPromotionTotal,
+      );
 
       assertDiscountsAuthorized({
         canOverride: canOverrideDiscounts,
@@ -355,11 +362,13 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       });
     }
 
-    const totalAmount = subtotal
-      .minus(cartDiscount)
-      .plus(totalTax)
-      .plus(deliveryCharge)
-      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const totalAmount = Decimal.max(
+      subtotal
+        .minus(cartDiscount)
+        .plus(totalTax)
+        .plus(deliveryCharge),
+      0,
+    ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
     // ── Store credit (ARGUS #61) ─────────────────────────────────────────
     // Credit is a tender, not a display-only deduction: it settles part (or

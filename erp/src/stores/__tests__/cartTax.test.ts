@@ -31,6 +31,35 @@ function item(overrides: Partial<CartItem> & Pick<CartItem, 'variantId'>): CartI
  * each line by its product tax rule.
  */
 describe('getCartTotal tax preview', () => {
+  it('never lets a promotion push a fully manual-discounted cart below zero (ARGUS #65)', () => {
+    const result = getCartTotal(
+      [item({ variantId: 'a', unitPrice: 95, quantity: 1, taxRule: 'EXEMPT' })],
+      100,
+      0,
+      TAX_RATES,
+      9.5,
+    );
+
+    expect(result.discountEffective.toNumber()).toBe(95);
+    expect(result.promotionDiscount.toNumber()).toBe(0);
+    expect(result.saleDiscount.toNumber()).toBe(95);
+    expect(result.total.toNumber()).toBe(0);
+  });
+
+  it('clamps a partial manual discount and promotion at the subtotal', () => {
+    const result = getCartTotal(
+      [item({ variantId: 'a', unitPrice: 100, quantity: 1, taxRule: 'EXEMPT' })],
+      0,
+      80,
+      TAX_RATES,
+      30,
+    );
+
+    expect(result.promotionDiscount.toNumber()).toBe(20);
+    expect(result.saleDiscount.toNumber()).toBe(100);
+    expect(result.total.toNumber()).toBe(0);
+  });
+
   it('adds standard VAT to the cart total', () => {
     const result = getCartTotal(
       [item({ variantId: 'a', unitPrice: 2100, quantity: 2 })],

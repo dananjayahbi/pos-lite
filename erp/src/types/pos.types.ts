@@ -11,6 +11,8 @@ export interface CreateSalePayload {
     categoryId?: string | undefined;
   }>;
   cartDiscountAmount: number;
+  /** Manual cart discount before promotions; lets the API clamp correctly. */
+  manualCartDiscountAmount?: number | undefined;
   authorizingManagerId?: string;
   customerId?: string | undefined;
   /**

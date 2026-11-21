@@ -22,6 +22,47 @@ export interface ReconciledSaleDiscount {
   manualDiscount: Decimal;
   clientPromoTotal: Decimal;
   serverPromoTotal: Decimal;
+  /** Promotion money actually applied after the manual-discount clamp. */
+  appliedPromotionTotal: Decimal;
+}
+
+/**
+ * Clamp promotion records to the remaining amount after manual discounts.
+ *
+ * A 100% manual cart discount leaves no capacity for a promotion; charging the
+ * promotion on top would make the sale negative. Amounts are scaled
+ * proportionally so the records still add up to the applied total.
+ */
+export function clampPromotionDiscounts<T extends { discountAmount: Decimalish }>(
+  promotions: readonly T[],
+  cap: Decimalish,
+): Array<T & { discountAmount: string }> {
+  const maxTotal = Decimal.max(new Decimal(cap.toString()), 0).toDecimalPlaces(
+    2,
+    Decimal.ROUND_HALF_UP,
+  );
+  const amounts = promotions.map((promotion) =>
+    Decimal.max(new Decimal(promotion.discountAmount.toString()), 0),
+  );
+  const total = amounts.reduce((sum, amount) => sum.plus(amount), new Decimal(0));
+
+  if (total.lessThanOrEqualTo(maxTotal) || total.isZero()) {
+    return promotions.map((promotion, index) => ({
+      ...promotion,
+      discountAmount: amounts[index]!.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2),
+    }));
+  }
+
+  const ratio = maxTotal.div(total);
+  let allocated = new Decimal(0);
+  return promotions.map((promotion, index) => {
+    const isLast = index === promotions.length - 1;
+    const share = isLast
+      ? maxTotal.minus(allocated)
+      : amounts[index]!.times(ratio).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    allocated = allocated.plus(share);
+    return { ...promotion, discountAmount: share.toFixed(2) };
+  });
 }
 
 /**
@@ -40,6 +81,11 @@ export function reconcileSaleDiscount(input: {
   submittedDiscount: Decimalish;
   clientPromoTotal: Decimalish;
   serverPromoTotal: Decimalish;
+  /**
+   * ARGUS #65: the POS sends its manual cart discount explicitly. Without it
+   * a fully-discounted cart cannot be distinguished from a 100% promotion.
+   */
+  manualDiscount?: Decimalish | undefined;
 }): ReconciledSaleDiscount {
   const subtotal = new Decimal(input.subtotal.toString());
   const submitted = Decimal.max(new Decimal(input.submittedDiscount.toString()), 0).toDecimalPlaces(
@@ -61,19 +107,32 @@ export function reconcileSaleDiscount(input: {
     );
   }
 
-  const manualDiscount = submitted.minus(clientPromoTotal);
+  const manualDiscount =
+    input.manualDiscount !== undefined
+      ? Decimal.min(
+          Decimal.max(new Decimal(input.manualDiscount.toString()), 0),
+          subtotal,
+        )
+      : submitted.minus(clientPromoTotal);
   if (manualDiscount.isNegative()) {
     throw new Error('INVALID_DISCOUNT: cart discount is smaller than its promotion total');
   }
 
+  // ARGUS #65: promotions may only consume what manual/line discounts left.
+  const promotionCapacity = Decimal.max(subtotal.minus(manualDiscount), 0);
+  const appliedPromotionTotal = Decimal.min(serverPromoTotal, promotionCapacity)
+    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  const cartDiscount = Decimal.min(
+    manualDiscount.plus(appliedPromotionTotal),
+    subtotal,
+  ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
   return {
-    cartDiscount: Decimal.min(manualDiscount.plus(serverPromoTotal), subtotal).toDecimalPlaces(
-      2,
-      Decimal.ROUND_HALF_UP,
-    ),
+    cartDiscount,
     manualDiscount: manualDiscount.toDecimalPlaces(2, Decimal.ROUND_HALF_UP),
     clientPromoTotal,
     serverPromoTotal,
+    appliedPromotionTotal,
   };
 }
 
