@@ -21,11 +21,12 @@ import {
 } from '@/lib/api/cors';
 import { isModuleEnabled } from '@/lib/feature-guard';
 import { estimateWebsiteShippingFee } from '@/lib/services/shipping-fee.service';
+import { MAX_RATE_WEIGHT_KG } from '@/lib/delivery/rateCardQuote.core';
 
 const QuoteSchema = z.object({
   cityName: z.string().min(1).max(120).optional(),
   districtName: z.string().max(120).optional(),
-  totalWeightKg: z.number().min(0).optional(),
+  totalWeightKg: z.number().min(0).max(MAX_RATE_WEIGHT_KG).optional(),
 });
 
 interface RouteContext {

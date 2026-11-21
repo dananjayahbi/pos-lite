@@ -94,6 +94,10 @@ export function mapDeliveryError(error: unknown): NextResponse | null {
       'Shipping is not configured for this store. Set an active rate card before creating orders or deliveries.',
     );
   }
+  // ARGUS #296: absurd parcel weight is a client input error, not a 500.
+  if (message === 'RATE_WEIGHT_EXCEEDED') {
+    return badRequest('Parcel weight exceeds the 500 kg limit');
+  }
 
   // M26-02/BUG-66: reconciliation-dispute sentinels. These were unmapped, so
   // routine client errors (unknown id, double-dispute, cross-tenant id) 500'd

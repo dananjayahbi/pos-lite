@@ -76,7 +76,7 @@ export function useRateCard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ratecard'] });
-      toast.success('Rate entries saved');
+      toast.success('Zone overrides saved');
     },
     onError: (error: Error) => {
       toast.error(error.message);
