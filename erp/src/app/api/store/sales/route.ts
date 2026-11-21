@@ -15,6 +15,10 @@ import {
 } from '@/lib/sales/sale-history-scope';
 import { parseSalePaymentMethod, parseSaleStatus } from '@/lib/sales/sale-list-filters';
 import { buildSaleCompletedCopy } from '@/lib/notifications/sale-alert-copy';
+import {
+  lankaQrTenderRejection,
+  readLankaQrSettingsFromTenantSettings,
+} from '@/lib/payments/lanka-qr-config';
 
 export async function GET(request: NextRequest) {
   try {
@@ -164,6 +168,29 @@ export async function POST(request: Request) {
         },
         { status: 400 },
       );
+    }
+
+    // ARGUS #72: a LankaQR tender is only valid when this tenant has a
+    // scannable merchant QR. Enforce it here, not only by hiding the option in
+    // the POS, so a direct/stale request cannot record an unpayable tender.
+    if (parsed.data.paymentMethod === 'LANKAQR' || parsed.data.splitLegMethod === 'LANKAQR') {
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { settings: true },
+      });
+      const lankaQrRejection = lankaQrTenderRejection(
+        parsed.data,
+        readLankaQrSettingsFromTenantSettings(tenant?.settings),
+      );
+      if (lankaQrRejection) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: { code: 'LANKAQR_NOT_CONFIGURED', message: lankaQrRejection },
+          },
+          { status: 422 },
+        );
+      }
     }
 
     // Sales created from the management page are intentionally shiftless. The

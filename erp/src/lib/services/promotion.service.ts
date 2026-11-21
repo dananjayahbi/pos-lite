@@ -510,6 +510,19 @@ export function evaluateBOGO(
   return { applied, skipped };
 }
 
+/**
+ * ARGUS #71: use the promotion's own name as its cart label.
+ *
+ * The label used to append the computed offer (`10% Off Everything - 10% off
+ * cart`), so a name that already states the discount repeated it. The discount
+ * amount is rendered separately next to the label, so the name alone is the
+ * one clear label.
+ */
+export function cartPromotionLabel(name: string): string {
+  const trimmed = name.trim();
+  return trimmed.length > 0 ? trimmed : 'Cart promotion';
+}
+
 // ── Evaluate Cart-Level Promotions ───────────────────────────────────────────
 
 export function evaluateCartPromotions(
@@ -548,7 +561,7 @@ export function evaluateCartPromotions(
   if (bestPromo && bestDiscount.greaterThan(0)) {
     applied.push({
       promotionId: bestPromo.id,
-      label: `${bestPromo.name} - ${bestPromo.type === 'CART_PERCENTAGE' ? `${new Decimal(bestPromo.value.toString())}% off cart` : `₹${new Decimal(bestPromo.value.toString())} off cart`}`,
+      label: cartPromotionLabel(bestPromo.name),
       discountAmount: bestDiscount.toString(),
       promotionType: bestPromo.type,
       affectedLines: cartLines.map((l) => l.variantId),

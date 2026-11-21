@@ -170,6 +170,17 @@ barcode box because that is the cashier's default focus.
 - Global `:focus-visible` outlines keep the active target visible for hybrid
   touch+keyboard devices.
 
+## Scan hint spacing (ARGUS #70)
+
+The hint under the barcode box is a single sentence with inline `<kbd>` keys:
+
+> Scanner ready - scan any time. `F2` refocuses, `Enter` adds, `?` shows all keys.
+
+The spaces around the keys come from explicit `{' '}` expressions, not from
+`ml-*` classes. JSX strips the newline between a text node and a following
+element, which used to render `refocuses,Enter adds` with no space in the
+accessible text.
+
 ## Verification
 
 - `src/lib/pos/__tests__/keyboard.test.ts` covers shortcut normalization,

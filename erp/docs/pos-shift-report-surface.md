@@ -51,7 +51,17 @@ Browser print/refresh is the same as any normal route: direct navigation and
 refresh re-fetch `/api/store/shifts/[id]/z-report` with the `shiftId` query
 parameter, so the report data and the Print button keep working.
 
-## Verification
+## Shift-history links (ARGUS #114)
+
+Both entry points labelled **Shift history** now open the real shift ledger at
+`/staff/shifts`, not `/pos/history` (which is Sale History):
+
+- the POS toolbar's clock icon (`POSTerminalShell`, `aria-label="Shift history"`);
+- the Z-report's back link and its "Go to Shift History" empty/error links.
+
+The ledger's own layout guard still redirects non-management users to `/pos`, so
+a cashier clicking the clock icon stays inside the terminal.
+
 
 - `npx tsc --noEmit`
 - Manual check: open `/pos/shift-report?shiftId=…` directly, refresh, print

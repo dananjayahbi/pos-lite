@@ -8,6 +8,8 @@ type Decimalish = Decimal | { toString(): string } | number | string;
 export interface ShiftRefundRow {
   refundAmount: Decimalish;
   refundMethod: string;
+  /** Tax component of `refundAmount`, when recorded (ARGUS #117). */
+  taxAmount?: Decimalish | undefined;
 }
 
 export interface ShiftCashMovementRow {

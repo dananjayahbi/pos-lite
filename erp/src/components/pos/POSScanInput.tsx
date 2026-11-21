@@ -179,8 +179,9 @@ export function POSScanInput({
         ) : null}
       </div>
       <p id="pos-scan-hint" className="mt-1 font-body text-[11px] text-mist-ink">
-        Scanner ready - scan any time. <kbd className="font-mono">F2</kbd> refocuses,
-        <kbd className="ml-1 font-mono">Enter</kbd> adds, <kbd className="ml-1 font-mono">?</kbd> shows all keys.
+        Scanner ready - scan any time. <kbd className="font-mono">F2</kbd> refocuses,{' '}
+        <kbd className="font-mono">Enter</kbd> adds,{' '}
+        <kbd className="font-mono">?</kbd> shows all keys.
       </p>
     </div>
   );

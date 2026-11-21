@@ -59,6 +59,15 @@ export function LankaQRPaymentModal({
 
   const handleSubmit = async () => {
     if (isSubmitting) return;
+    // ARGUS #72: never save a LankaQR sale without a scannable merchant QR.
+    // The warning is not enough — a cashier could still confirm with an
+    // optional reference and record a QR tender the customer never scanned.
+    if (!hasQrImage) {
+      toast.error(
+        'LankaQR cannot be confirmed until a QR image is configured in Settings → Payments',
+      );
+      return;
+    }
     if (settings.referenceRequired && !qrReferenceNumber.trim()) {
       toast.error('Enter the LankaQR transaction reference before confirming');
       return;
@@ -148,11 +157,11 @@ export function LankaQRPaymentModal({
               )}
             </div>
           ) : (
-            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-mist bg-linen p-4 text-center">
-              <QrCode className="h-12 w-12 text-mist-ink" aria-hidden="true" />
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-[#9B2226]/40 bg-[#9B2226]/5 p-4 text-center">
+              <QrCode className="h-12 w-12 text-[#9B2226]" aria-hidden="true" />
               <p className="font-body text-sm text-espresso">
-                No static QR image is configured. Ask a manager to add your bank-issued
-                LankaQR image in Settings → Payments.
+                No static QR image is configured, so LankaQR cannot be accepted. Ask a
+                manager to add your bank-issued LankaQR image in Settings → Payments.
               </p>
             </div>
           )}
@@ -191,9 +200,9 @@ export function LankaQRPaymentModal({
           {/* Submit */}
           <Button
             type="button"
-            disabled={isSubmitting}
+            disabled={isSubmitting || !hasQrImage}
             onClick={handleSubmit}
-            className="h-auto w-full py-3 bg-espresso text-pearl font-body text-base font-bold hover:bg-espresso/90"
+            className="h-auto w-full py-3 bg-espresso text-pearl font-body text-base font-bold hover:bg-espresso/90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {isSubmitting ? (
               <Loader2 className="h-5 w-5 animate-spin" />

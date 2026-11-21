@@ -57,7 +57,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: result.shifts,
-      meta: { page, limit, total: result.total, totalPages: Math.ceil(result.total / limit) },
+      meta: {
+        page,
+        limit,
+        total: result.total,
+        totalPages: Math.ceil(result.total / limit),
+        statusCounts: result.statusCounts,
+      },
     });
   } catch (error) {
     console.error('GET /api/store/shifts error:', error);
