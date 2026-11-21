@@ -87,7 +87,20 @@ export interface WaybillDescriptionInput {
   fallback?: string | null;
 }
 
-/** "2 items · 1.5 kg" — the Order Description row. */
+/**
+ * ARGUS #303: the same field printed as absent, `1 kg` and `1.5 kg`. The
+ * courier sheet uses one two-decimal form; a missing weight is explicit.
+ */
+export function formatWaybillWeight(
+  value: string | number | null | undefined,
+): string | null {
+  if (value === null || value === undefined || `${value}`.trim() === '') return null;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return null;
+  return num.toFixed(2);
+}
+
+/** "2 items · 1.50 kg" — the Order Description row. */
 export function buildWaybillDescription({
   itemCount,
   totalWeightKg,
@@ -98,8 +111,9 @@ export function buildWaybillDescription({
   const count = itemCount ?? 1;
   const parts: string[] = [];
   if (showItemCount) parts.push(`${count} item${count === 1 ? '' : 's'}`);
-  if (showWeight && totalWeightKg !== null && totalWeightKg !== undefined && `${totalWeightKg}` !== '') {
-    parts.push(`${totalWeightKg} kg`);
+  if (showWeight) {
+    const weight = formatWaybillWeight(totalWeightKg);
+    parts.push(weight ? `${weight} kg` : 'weight n/a');
   }
   const description = parts.join(' · ');
   if (description) return description;

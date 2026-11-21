@@ -5,6 +5,7 @@ import {
   dedupeLocality,
   formatWaybillAmount,
   formatWaybillDate,
+  formatWaybillWeight,
   isDraftWaybill,
   waybillBarcodeValue,
 } from '@/lib/delivery/waybill';
@@ -80,7 +81,7 @@ describe('formatWaybillAmount', () => {
 });
 
 describe('buildWaybillDescription', () => {
-  it('combines item count and weight', () => {
+  it('combines item count and a two-decimal weight', () => {
     expect(
       buildWaybillDescription({
         itemCount: 2,
@@ -88,7 +89,7 @@ describe('buildWaybillDescription', () => {
         showItemCount: true,
         showWeight: true,
       }),
-    ).toBe('2 items · 1.5 kg');
+    ).toBe('2 items · 1.50 kg');
   });
 
   it('singularizes one item and honours the field toggles', () => {
@@ -107,7 +108,23 @@ describe('buildWaybillDescription', () => {
         showItemCount: false,
         showWeight: true,
       }),
-    ).toBe('2 kg');
+    ).toBe('2.00 kg');
+  });
+
+  it('states an explicit missing weight instead of silently omitting it (ARGUS #303)', () => {
+    for (const totalWeightKg of [null, undefined, '', 'not-a-number']) {
+      expect(
+        buildWaybillDescription({
+          itemCount: 1,
+          totalWeightKg,
+          showItemCount: true,
+          showWeight: true,
+        }),
+      ).toBe('1 item · weight n/a');
+    }
+    expect(formatWaybillWeight(1)).toBe('1.00');
+    expect(formatWaybillWeight('1.567')).toBe('1.57');
+    expect(formatWaybillWeight(null)).toBeNull();
   });
 
   it('falls back to the order reference when all fields are hidden', () => {
