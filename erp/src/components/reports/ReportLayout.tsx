@@ -49,6 +49,8 @@ import {
   type ReportRow,
 } from "@/lib/reports/export";
 import {
+  buildReportHref,
+  normalizeReportType,
   resolveReportColumns,
   resolveReportTitle,
   type ReportFormat,
@@ -268,6 +270,8 @@ function ReportLayoutInner({
     (reportType ??
       navItems.find((item) => item.href === pathname)?.label ??
       "Report");
+  // ARGUS #444 — the API stores renderable slugs, never `/reports/...` paths.
+  const canonicalReportType = normalizeReportType(reportType ?? pathname);
 
   // ── Date range handler ──────────────────────────────────────
 
@@ -332,6 +336,11 @@ function ReportLayoutInner({
   });
 
   async function onSave(data: SaveReportForm) {
+    if (!canonicalReportType) {
+      toast.error("This page is not a savable report");
+      return;
+    }
+
     const filters: Record<string, string> = {};
     searchParams.forEach((value, key) => {
       filters[key] = value;
@@ -343,7 +352,7 @@ function ReportLayoutInner({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: data.name,
-          reportType: pathname,
+          reportType: canonicalReportType,
           filters,
           format: saveFormat,
           rows,
@@ -390,8 +399,13 @@ function ReportLayoutInner({
     }
   }
 
-  function buildSavedReportHref(savedReport: SavedReportRecord): string {
-    const route = savedReport.reportType.startsWith("/") ? savedReport.reportType : pathname;
+  function buildSavedReportHref(savedReport: SavedReportRecord): string | null {
+    // Stored rows may predate the allowlist; normalize to the canonical slug
+    // and never trust a path/protocol-relative value.
+    const slug = normalizeReportType(savedReport.reportType);
+    if (!slug) return null;
+
+    const route = buildReportHref(slug);
     const params = new URLSearchParams();
 
     Object.entries(savedReport.filters ?? {}).forEach(([key, value]) => {
@@ -524,6 +538,12 @@ function ReportLayoutInner({
                     variant="outline"
                     size="sm"
                     className="gap-1.5 border-mist bg-white font-body text-sm text-espresso"
+                    disabled={!canonicalReportType}
+                    title={
+                      !canonicalReportType
+                        ? "This page is not a report that can be saved"
+                        : undefined
+                    }
                   >
                     <BookmarkIcon className="h-4 w-4" />
                     <span className="hidden sm:inline">Save Report</span>
@@ -639,6 +659,7 @@ function ReportLayoutInner({
                       <div className="space-y-2">
                         {savedReports.map((savedReport) => {
                           const isDeleting = deletingReportId === savedReport.id;
+                          const openHref = buildSavedReportHref(savedReport);
 
                           return (
                             <div
@@ -682,12 +703,19 @@ function ReportLayoutInner({
                                 <Button
                                   size="sm"
                                   variant="outline"
+                                  disabled={!openHref}
+                                  title={
+                                    !openHref
+                                      ? "This report type is no longer available in the app"
+                                      : undefined
+                                  }
                                   onClick={() => {
+                                    if (!openHref) return;
                                     setSavedReportsOpen(false);
-                                    router.push(buildSavedReportHref(savedReport));
+                                    router.push(openHref);
                                   }}
                                 >
-                                  Open in App
+                                  {openHref ? "Open in App" : "Unknown report"}
                                 </Button>
                                 <Button
                                   size="sm"

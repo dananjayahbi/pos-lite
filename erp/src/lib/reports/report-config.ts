@@ -219,6 +219,37 @@ export function isKnownReportSlug(slug: string): boolean {
 }
 
 /**
+ * ARGUS #444 — canonical report slug from a route path or an already-stored
+ * slug.
+ *
+ * Report pages used to POST `pathname` (`/reports/profit-loss`), which the API
+ * correctly rejects because it stores renderable slugs (`profit-loss`). This
+ * accepts both shapes, strips the `/reports/` prefix and any query/hash, and
+ * returns `null` for anything that is not a known report (including
+ * protocol-relative/path-traversal input). The API schema stays strict.
+ */
+export function normalizeReportType(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  // `pathname` has no query/hash, but callers may pass a full href/location.
+  const withoutQuery = trimmed.split(/[?#]/, 1)[0] ?? "";
+  let candidate = withoutQuery;
+  if (candidate.startsWith("/reports/")) {
+    candidate = candidate.slice("/reports/".length);
+  } else if (candidate.startsWith("reports/")) {
+    candidate = candidate.slice("reports/".length);
+  }
+
+  candidate = candidate.replace(/^\/+|\/+$/g, "");
+  if (!candidate || candidate.includes("/")) return null;
+
+  return isKnownReportSlug(candidate) ? candidate : null;
+}
+
+/**
  * Build the in-app href for a saved report.
  *
  * M34-01 (BUG-78): this ALWAYS composes `/reports/<slug>`. It deliberately has
