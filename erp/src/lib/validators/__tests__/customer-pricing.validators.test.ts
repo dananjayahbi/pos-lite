@@ -57,4 +57,17 @@ describe('CreateCustomerPricingRuleSchema windows', () => {
       expect(parsed.data.endsAt).toBeUndefined();
     }
   });
+
+  it('canonicalizes the customer tag to upper-case', () => {
+    const parsed = CreateCustomerPricingRuleSchema.safeParse({
+      ...base,
+      customerTag: '  wholesale ',
+      price: 100,
+    });
+
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.customerTag).toBe('WHOLESALE');
+    }
+  });
 });

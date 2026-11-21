@@ -17,6 +17,7 @@ import {
   promotionTypeIssues,
 } from '@/lib/services/promotionValidation.core';
 import { toWindowDate, windowIssues } from '@/lib/services/promotionWindow.core';
+import { summarizePromotionUsage } from '@/lib/services/promotionUsage.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -123,6 +124,50 @@ async function assertPromoCodeAvailable(
   }
 }
 
+/** ARGUS #331: the signed-in route actor, never the old SYSTEM placeholder. */
+export interface PromotionActor {
+  id: string;
+  role: string;
+}
+
+type PromotionAuditRow = {
+  name: string;
+  type: string;
+  value: { toString(): string };
+  promoCode: string | null;
+  targetCategoryId: string | null;
+  targetProductId: string | null;
+  minQuantity: number | null;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  isActive: boolean;
+  description: string | null;
+};
+
+/** Stable before/after shape for promotion audit rows. */
+export function promotionAuditSnapshot(row: PromotionAuditRow): Record<string, unknown> {
+  return {
+    name: row.name,
+    type: row.type,
+    value: row.value.toString(),
+    promoCode: row.promoCode,
+    targetCategoryId: row.targetCategoryId,
+    targetProductId: row.targetProductId,
+    minQuantity: row.minQuantity,
+    startsAt: row.startsAt ? row.startsAt.toISOString() : null,
+    endsAt: row.endsAt ? row.endsAt.toISOString() : null,
+    isActive: row.isActive,
+    description: row.description,
+  };
+}
+
+/** Actor fields for createAuditLog; a missing actor stays SYSTEM. */
+function auditActor(actor: PromotionActor | undefined): { actorId: string | null; actorRole: string } {
+  return actor
+    ? { actorId: actor.id, actorRole: actor.role }
+    : { actorId: null, actorRole: 'SYSTEM' };
+}
+
 // ── Fetch Active Promotions ──────────────────────────────────────────────────
 
 export async function fetchActivePromotions(tenantId: string): Promise<GroupedPromotions> {
@@ -187,12 +232,21 @@ export async function evaluateCustomerPricing(
     where: {
       tenantId,
       isActive: true,
-      customerTag: { in: customer.tags },
-      OR: [
-        { variantId: { in: variantIds } },
-        { variantId: null },
-      ],
+      // ARGUS #333: rule tags are canonical upper-case, but customer tags may
+      // predate that convention; match case-insensitively so `Wholesale` on a
+      // customer still receives a `WHOLESALE` rule.
       AND: [
+        {
+          OR: customer.tags.map((tag) => ({
+            customerTag: { equals: tag, mode: 'insensitive' as const },
+          })),
+        },
+        {
+          OR: [
+            { variantId: { in: variantIds } },
+            { variantId: null },
+          ],
+        },
         { OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }] },
         { OR: [{ endsAt: null }, { endsAt: { gte: new Date() } }] },
       ],
@@ -688,17 +742,47 @@ export async function evaluatePromotions(
 // ── CRUD Functions ───────────────────────────────────────────────────────────
 
 export async function getPromotions(tenantId: string) {
-  return prisma.promotion.findMany({
-    where: { tenantId },
-    include: {
-      targetCategory: { select: { id: true, name: true } },
-      targetProduct: { select: { id: true, name: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  const [promotions, usage] = await Promise.all([
+    prisma.promotion.findMany({
+      where: { tenantId },
+      include: {
+        targetCategory: { select: { id: true, name: true } },
+        targetProduct: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+    getPromotionUsageCounts(tenantId),
+  ]);
+
+  // ARGUS #331: read-only usage count derived from Sale.appliedPromotions.
+  return promotions.map((promotion) => ({
+    ...promotion,
+    usageCount: usage.countByPromotionId[promotion.id] ?? 0,
+    usageDiscountTotal: usage.discountByPromotionId[promotion.id] ?? '0.00',
+  }));
 }
 
-export async function createPromotion(tenantId: string, data: CreatePromotionInput) {
+/**
+ * Read-only per-promotion usage from completed, non-voided sales.
+ * No schema counter; `Sale.appliedPromotions` already records what applied.
+ */
+export async function getPromotionUsageCounts(tenantId: string) {
+  const sales = await prisma.sale.findMany({
+    where: {
+      tenantId,
+      status: { not: 'VOIDED' },
+      appliedPromotions: { not: Prisma.DbNull },
+    },
+    select: { appliedPromotions: true },
+  });
+  return summarizePromotionUsage(sales);
+}
+
+export async function createPromotion(
+  tenantId: string,
+  data: CreatePromotionInput,
+  actor?: PromotionActor,
+) {
   assertPromotionRequirements(data);
 
   const promoCode = normalizePromoCode(data.promoCode);
@@ -731,19 +815,23 @@ export async function createPromotion(tenantId: string, data: CreatePromotionInp
 
   void createAuditLog({
     tenantId,
-    actorId: null,
-    actorRole: 'SYSTEM',
+    ...auditActor(actor),
     entityType: 'Promotion',
     entityId: promo.id,
     action: AUDIT_ACTIONS.PROMOTION_CREATED,
-    after: { name: promo.name, type: promo.type, value: promo.value.toString() },
+    after: promotionAuditSnapshot(promo) as Prisma.InputJsonValue,
   }).catch(() => {});
 
   return promo;
 }
 
-export async function updatePromotion(tenantId: string, id: string, data: UpdatePromotionInput) {
-  const updated = await lockingTx(async (tx) => {
+export async function updatePromotion(
+  tenantId: string,
+  id: string,
+  data: UpdatePromotionInput,
+  actor?: PromotionActor,
+) {
+  const result = await lockingTx(async (tx) => {
     // Serialize promotion writes per tenant so the check-then-write for promo
     // code uniqueness cannot race (ARGUS #330).
     await lockForUpdate(tx, 'tenants', '"id" = $1', [tenantId]);
@@ -792,7 +880,7 @@ export async function updatePromotion(tenantId: string, id: string, data: Update
       ? toWindowDate(data.endsAt, 'end')
       : undefined;
 
-    return tx.promotion.update({
+    const updated = await tx.promotion.update({
       where: { id },
       data: {
         ...(data.name !== undefined && { name: data.name }),
@@ -808,19 +896,20 @@ export async function updatePromotion(tenantId: string, id: string, data: Update
         ...(data.description !== undefined && { description: data.description }),
       },
     });
+    return { before: existing, updated };
   });
 
   void createAuditLog({
     tenantId,
-    actorId: null,
-    actorRole: 'SYSTEM',
+    ...auditActor(actor),
     entityType: 'Promotion',
     entityId: id,
     action: AUDIT_ACTIONS.PROMOTION_UPDATED,
-    after: data as Prisma.InputJsonValue,
+    before: promotionAuditSnapshot(result.before) as Prisma.InputJsonValue,
+    after: promotionAuditSnapshot(result.updated) as Prisma.InputJsonValue,
   }).catch(() => {});
 
-  return updated;
+  return result.updated;
 }
 
 export async function setPromotionActive(
@@ -828,6 +917,7 @@ export async function setPromotionActive(
   id: string,
   isActive: boolean,
   actorId?: string | undefined,
+  actorRole?: string | undefined,
 ) {
   const promo = await prisma.promotion.findFirst({ where: { id, tenantId } });
   if (!promo) throw ApiError.notFound('Promotion not found');
@@ -843,14 +933,14 @@ export async function setPromotionActive(
   void createAuditLog({
     tenantId,
     actorId: actorId ?? null,
-    actorRole: actorId ? 'USER' : 'SYSTEM',
+    actorRole: actorId ? (actorRole ?? 'USER') : 'SYSTEM',
     entityType: 'Promotion',
     entityId: id,
     action: plan.auditAction === 'PROMOTION_ACTIVATED'
       ? AUDIT_ACTIONS.PROMOTION_ACTIVATED
       : AUDIT_ACTIONS.PROMOTION_ARCHIVED,
-    before: { isActive: promo.isActive },
-    after: { isActive: plan.isActive },
+    before: promotionAuditSnapshot(promo) as Prisma.InputJsonValue,
+    after: promotionAuditSnapshot(updated) as Prisma.InputJsonValue,
   }).catch(() => {});
 
   return updated;
@@ -861,8 +951,9 @@ export async function deactivatePromotion(
   tenantId: string,
   id: string,
   actorId?: string | undefined,
+  actorRole?: string | undefined,
 ) {
-  return setPromotionActive(tenantId, id, false, actorId);
+  return setPromotionActive(tenantId, id, false, actorId, actorRole);
 }
 
 /** Explicit reactivation; never reachable through the Deactivate action. */
@@ -870,6 +961,7 @@ export async function activatePromotion(
   tenantId: string,
   id: string,
   actorId?: string | undefined,
+  actorRole?: string | undefined,
 ) {
-  return setPromotionActive(tenantId, id, true, actorId);
+  return setPromotionActive(tenantId, id, true, actorId, actorRole);
 }

@@ -53,11 +53,15 @@ export async function PATCH(
         id,
         parsed.data.isActive === true,
         session.user.id,
+        session.user.role,
       );
       return NextResponse.json({ success: true, data: promotion });
     }
 
-    const promotion = await updatePromotion(tenantId, id, parsed.data);
+    const promotion = await updatePromotion(tenantId, id, parsed.data, {
+      id: session.user.id,
+      role: session.user.role,
+    });
     return NextResponse.json({ success: true, data: promotion });
   } catch (error) {
     // ARGUS #328/#330: foreign/missing ids are 404 NOT_FOUND (not 500), and
@@ -95,7 +99,7 @@ export async function DELETE(
       );
     }
 
-    const promotion = await deactivatePromotion(tenantId, id, session.user.id);
+    const promotion = await deactivatePromotion(tenantId, id, session.user.id, session.user.role);
     return NextResponse.json({ success: true, data: promotion });
   } catch (error) {
     return toErrorResponse(error, 'DELETE /api/store/promotions/[id]');

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { zPrice, zSafeShortText } from '@/lib/validators/shared';
 import { windowIssues } from '@/lib/services/promotionWindow.core';
+import { canonicalCustomerTag } from '@/lib/services/customerTag.core';
 
 /**
  * M15-01 (BUG-46) — request validators for the `CustomerPricingRule` CRUD API
@@ -62,8 +63,9 @@ const RulePriceSchema = zPrice().refine(
 );
 
 const CustomerPricingRuleBaseSchema = z.object({
-  // Keys off the M05 tag model: exact match against a value in Customer.tags.
-  customerTag: zSafeShortText(60),
+  // ARGUS #333: keys off the M05 tag model, canonical upper-case so
+  // `wholesale` and `WHOLESALE` can never become two different rules.
+  customerTag: zSafeShortText(60).transform(canonicalCustomerTag),
   variantId: OptionalVariantSchema,
   price: RulePriceSchema,
   startsAt: OptionalWindowDateSchema,
@@ -72,7 +74,7 @@ const CustomerPricingRuleBaseSchema = z.object({
 });
 
 const CustomerPricingRuleUpdateBaseSchema = z.object({
-  customerTag: zSafeShortText(60).optional(),
+  customerTag: zSafeShortText(60).transform(canonicalCustomerTag).optional(),
   variantId: UpdateVariantSchema,
   price: RulePriceSchema.optional(),
   startsAt: UpdateWindowDateSchema,

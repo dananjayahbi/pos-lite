@@ -76,7 +76,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const promotion = await createPromotion(tenantId, parsed.data);
+    const promotion = await createPromotion(tenantId, parsed.data, {
+      id: session.user.id,
+      role: session.user.role,
+    });
     return NextResponse.json({ success: true, data: promotion }, { status: 201 });
   } catch (error) {
     // ARGUS #328/#330: validation, duplicate promo code and Prisma errors get
