@@ -9,6 +9,10 @@ export interface PayslipData {
   email: string;
   role: string;
   periodLabel: string;
+  /** Document heading — "Staff Payslip" or "Attendance & Commission Statement". */
+  title: string;
+  /** Closing note explaining the document and what is missing. */
+  footerNote: string;
   attendance: {
     daysPresent: number;
     daysAbsent: number;
@@ -26,7 +30,7 @@ export interface PayslipData {
   };
 }
 
-/** Server-side payslip PDF. Covers attendance + commission earnings. */
+/** Server-side attendance + commission statement PDF (no salary configured). */
 export function generatePayslipPdf(data: PayslipData): Buffer {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -36,7 +40,7 @@ export function generatePayslipPdf(data: PayslipData): Buffer {
   doc.text(data.businessName, 40, 44);
 
   doc.setFontSize(12);
-  doc.text('Staff Payslip', 40, 64);
+  doc.text(data.title, 40, 64);
   doc.setFontSize(10);
   doc.setTextColor(107, 91, 91);
   doc.text(data.periodLabel, 40, 80);
@@ -100,8 +104,8 @@ export function generatePayslipPdf(data: PayslipData): Buffer {
 
   autoTable(doc, {
     startY: afterCommission + 20,
-    head: [['Pay Summary', 'Amount']],
-    body: [['Total Payable (unpaid commission)', formatRupee(data.commission.unpaid)]],
+    head: [['Commission Balance', 'Amount']],
+    body: [['Commission Outstanding', formatRupee(data.commission.unpaid)]],
     styles: {
       font: 'helvetica',
       fontSize: 10,
@@ -116,12 +120,7 @@ export function generatePayslipPdf(data: PayslipData): Buffer {
     (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 520;
   doc.setFontSize(8);
   doc.setTextColor(120, 120, 120);
-  doc.text(
-    'This payslip covers attendance and commission earnings recorded in AyurPOS. No base salary is configured for this account.',
-    40,
-    afterSummary + 24,
-    { maxWidth: pageWidth - 80 },
-  );
+  doc.text(data.footerNote, 40, afterSummary + 24, { maxWidth: pageWidth - 80 });
   doc.text(
     `Generated: ${new Date().toLocaleString()}`,
     pageWidth - 40,

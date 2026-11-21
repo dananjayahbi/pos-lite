@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, use } from 'react';
+import { useState, useCallback, useEffect, use } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
@@ -37,9 +37,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Download, FileText, LogOut, Pencil } from 'lucide-react';
+import { ArrowLeft, Download, FileText, LogOut, Pencil, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { UpdateStaffSchema } from '@/lib/validators/staff.validators';
+import { PERMISSIONS } from '@/lib/constants/permissions';
+import { usePermissions } from '@/hooks/usePermissions';
+import { canResetStaffPassword } from '@/lib/auth/staff-authorization';
+import { validateStaffPassword } from '@/lib/staff/passwordValidation.core';
 import { formatRupee } from '@/lib/format';
 import { getCommissionRecordStatus } from '@/lib/services/commissionSummary.core';
 import { TimeClockHistoryPanel } from '@/components/staff/TimeClockHistoryPanel';
@@ -142,9 +146,11 @@ export default function StaffDetailPage({
   const { staffId } = use(params);
   const queryClient = useQueryClient();
   const { data: sessionData } = useSession();
+  const { hasPermission } = usePermissions();
 
   const [activeTab, setActiveTab] = useState<Tab>('profile');
   const [editOpen, setEditOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const [month, setMonth] = useState(currentMonth);
 
   const { data, isLoading } = useQuery<{ success: boolean; data: StaffDetail }>({
@@ -191,6 +197,11 @@ export default function StaffDetailPage({
 
   const sessionRole = (sessionData?.user?.role as string) ?? '';
   const sessionUserId = sessionData?.user?.id ?? '';
+  // ARGUS #339: same gate as the API (staff:manage) plus the role hierarchy —
+  // a manager must not reset an OWNER/manager above them.
+  const canSetPassword =
+    hasPermission(PERMISSIONS.STAFF.manageStaff) &&
+    canResetStaffPassword(sessionRole, staffMember.role);
 
   return (
     <div className="space-y-6 p-6 md:p-8">
@@ -220,6 +231,12 @@ export default function StaffDetailPage({
             className="w-40 border-mist"
             aria-label="Payslip and attendance month"
           />
+          {canSetPassword && (
+            <Button variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>
+              <KeyRound className="mr-1.5 h-3.5 w-3.5" />
+              Set Password
+            </Button>
+          )}
           <Button variant="outline" size="sm" asChild>
             <a
               href={`/api/store/staff/${staffMember.id}/attendance/export?month=${encodeURIComponent(month)}`}
@@ -277,7 +294,144 @@ export default function StaffDetailPage({
       {activeTab === 'timeclock' && (
         <TimeClockHistoryPanel staffId={staffId} title="Time Clock" />
       )}
+
+      <SetPasswordDialog
+        staffId={staffMember.id}
+        staffName={displayName(staffMember)}
+        open={passwordOpen}
+        onOpenChange={setPasswordOpen}
+      />
     </div>
+  );
+}
+
+// ── Set / Reset Password ─────────────────────────────────────────────────────
+
+/**
+ * ARGUS #339: the create form can leave an account with an unusable random
+ * password (e.g. the follow-up call fails). This dialog is the guaranteed,
+ * permission-gated path to give an existing staff member a usable password.
+ */
+function SetPasswordDialog({
+  staffId,
+  staffName,
+  open,
+  onOpenChange,
+}: {
+  staffId: string;
+  staffName: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setNewPassword('');
+      setConfirmPassword('');
+      setError(null);
+    }
+  }, [open]);
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/store/staff/${staffId}/password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword, confirmPassword }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error?.message ?? 'Failed to set the password');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success('Password updated. The staff member must sign in again.');
+      queryClient.invalidateQueries({ queryKey: ['staff-detail', staffId] });
+      queryClient.invalidateQueries({ queryKey: ['staff'] });
+      onOpenChange(false);
+    },
+    onError: (err: Error) => {
+      // The API message is safe to show; the password is never echoed.
+      setError(err.message);
+    },
+  });
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const validation = validateStaffPassword({ newPassword, confirmPassword });
+    if (!validation.ok) {
+      setError(validation.message);
+      return;
+    }
+    setError(null);
+    mutation.mutate();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display">Set password</DialogTitle>
+          <DialogDescription>
+            Set a new sign-in password for{' '}
+            <span className="font-medium text-espresso">{staffName}</span>. Any active sessions
+            for this account will be signed out. Use this when the account was created without a
+            usable password.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="staff-new-password">New password</Label>
+            <Input
+              id="staff-new-password"
+              type="password"
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              minLength={8}
+              required
+            />
+            <p className="text-xs text-sand-ink">At least 8 characters.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="staff-confirm-password">Confirm password</Label>
+            <Input
+              id="staff-confirm-password"
+              type="password"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              required
+            />
+          </div>
+
+          {error ? (
+            <p role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </p>
+          ) : null}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={mutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? 'Saving…' : 'Set password'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

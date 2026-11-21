@@ -6,7 +6,7 @@ type PayrollRunWithItems = Awaited<
   ReturnType<typeof import('@/lib/services/payroll.service').getPayrollRun>
 >;
 
-function tenantDetails(settings: unknown): { address: string; phone: string } {
+export function tenantDetails(settings: unknown): { address: string; phone: string } {
   const source =
     typeof settings === 'object' && settings !== null
       ? (settings as Record<string, unknown>)
