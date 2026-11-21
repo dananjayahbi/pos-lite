@@ -6,6 +6,10 @@ import { getExpenses, createExpense } from '@/lib/services/expense.service';
 import { CreateExpenseSchema } from '@/lib/validators/expense.validators';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { parseQueryInt } from '@/lib/api/query-params';
+import {
+  authorizeExpenseWrite,
+  resolveExpenseApprovalThreshold,
+} from '@/lib/expenses/approval-policy';
 
 export async function GET(request: Request) {
   try {
@@ -79,6 +83,22 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message: parsed.error?.issues?.[0]?.message ?? 'Validation failed' } },
         { status: 400 },
+      );
+    }
+
+    // ARGUS #397: creation above the configured threshold is an approval
+    // decision. Without a status/approved-by column this is the strongest
+    // control available: it decides WHO may record the spend up front.
+    const approval = authorizeExpenseWrite({
+      user: session.user,
+      action: 'create',
+      amount: parsed.data.amount,
+      threshold: resolveExpenseApprovalThreshold(),
+    });
+    if (!approval.allowed) {
+      return NextResponse.json(
+        { success: false, error: { code: 'APPROVAL_REQUIRED', message: approval.reason } },
+        { status: 403 },
       );
     }
 

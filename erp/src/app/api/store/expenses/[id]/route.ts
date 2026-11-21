@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getExpenseById, updateExpense, deleteExpense } from '@/lib/services/expense.service';
 import { UpdateExpenseSchema } from '@/lib/validators/expense.validators';
 import { toErrorResponse } from '@/lib/api/error-envelope';
+import { authorizeExpenseWrite } from '@/lib/expenses/approval-policy';
 
 export async function GET(
   _request: Request,
@@ -99,6 +100,21 @@ export async function PATCH(
       );
     }
 
+    // ARGUS #397: edits change an already-recorded spend, so they always
+    // require the approval permission (OWNER/MANAGER by role, or an explicit
+    // override). A create-only actor can no longer amend a booked expense.
+    const approval = authorizeExpenseWrite({
+      user: session.user,
+      action: 'update',
+      amount: parsed.data.amount ?? existing.amount.toNumber(),
+    });
+    if (!approval.allowed) {
+      return NextResponse.json(
+        { success: false, error: { code: 'APPROVAL_REQUIRED', message: approval.reason } },
+        { status: 403 },
+      );
+    }
+
     // M19-01 (D2): an overdraft override requires the expense-approval permission.
     const overdrawApproved = parsed.data.overdrawApproved === true;
     if (overdrawApproved && !hasPermission(session.user, PERMISSIONS.EXPENSE.approveExpense)) {
@@ -159,6 +175,15 @@ export async function DELETE(
     if (!hasPermission(session.user, PERMISSIONS.EXPENSE.createExpense)) {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
+      );
+    }
+
+    // ARGUS #397: deleting a booked spend is always an approval decision.
+    const approval = authorizeExpenseWrite({ user: session.user, action: 'delete' });
+    if (!approval.allowed) {
+      return NextResponse.json(
+        { success: false, error: { code: 'APPROVAL_REQUIRED', message: approval.reason } },
         { status: 403 },
       );
     }
