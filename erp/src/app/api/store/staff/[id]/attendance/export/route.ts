@@ -18,6 +18,8 @@ const STATUS_LABEL: Record<string, string> = {
   LEAVE: 'Leave',
   HALF_DAY: 'Half Day',
   HOLIDAY: 'Holiday',
+  OFF: 'Off',
+  SCHEDULED: 'Scheduled',
 };
 
 function timeLabel(iso: string | null): string {

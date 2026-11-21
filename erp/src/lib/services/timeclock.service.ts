@@ -1,7 +1,18 @@
 import { prisma } from '@/lib/prisma';
-import type { AttendanceStatus } from '@/generated/prisma/client';
+import type { AttendanceStatus, Prisma } from '@/generated/prisma/client';
 import { ApiError } from '@/lib/api/errors';
 import { AUDIT_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
+import {
+  buildAttendanceCalendarRows,
+  deriveAttendanceStatus,
+  isCalendarHoliday,
+  isWorkingDay,
+  normalizeAttendanceCalendar,
+  parseAttendanceCalendar,
+  todayAttendanceYmd,
+  type AttendanceCalendarSettings,
+  type AttendanceDisplayStatus,
+} from '@/lib/attendance/attendanceCalendar.core';
 
 /** A standard full day. Anything beyond this is overtime (OT). */
 export const STANDARD_WORKDAY_MINUTES = 8 * 60;
@@ -20,7 +31,7 @@ export interface DailyAttendanceRow {
   email: string;
   fullName: string | null;
   role: string;
-  status: AttendanceStatus;
+  status: AttendanceDisplayStatus;
   clockInAt: string | null;
   clockOutAt: string | null;
   totalMinutes: number;
@@ -37,6 +48,10 @@ export interface DailyAttendanceRow {
 export interface DailyAttendanceResult {
   date: string;
   standardWorkdayMinutes: number;
+  isWorkingDay: boolean;
+  isHoliday: boolean;
+  isFuture: boolean;
+  calendar: AttendanceCalendarSettings;
   staff: DailyAttendanceRow[];
 }
 
@@ -61,6 +76,67 @@ export function formatAttendanceDate(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+/** Tenant attendance calendar from `settings.attendance`. */
+export async function readAttendanceCalendar(tenantId: string): Promise<AttendanceCalendarSettings> {
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { settings: true },
+  });
+  return parseAttendanceCalendar(tenant?.settings);
+}
+
+/**
+ * Persist the tenant attendance calendar (working weekdays + holiday dates) in
+ * `Tenant.settings.attendance` — the shared source for the daily page, the
+ * monthly report and the payslip. Audited with before/after values.
+ */
+export async function saveAttendanceCalendar(
+  tenantId: string,
+  input: Partial<AttendanceCalendarSettings>,
+  actorId: string,
+  actorRole: string,
+): Promise<AttendanceCalendarSettings> {
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { settings: true },
+  });
+
+  const current =
+    tenant?.settings && typeof tenant.settings === 'object' && !Array.isArray(tenant.settings)
+      ? ({ ...(tenant.settings as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+  const currentAttendance =
+    current.attendance && typeof current.attendance === 'object' && !Array.isArray(current.attendance)
+      ? ({ ...(current.attendance as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+
+  const previous = parseAttendanceCalendar(current);
+  const next = normalizeAttendanceCalendar(input);
+
+  await prisma.tenant.update({
+    where: { id: tenantId },
+    data: {
+      settings: {
+        ...current,
+        attendance: { ...currentAttendance, ...next },
+      } as unknown as Prisma.InputJsonValue,
+    },
+  });
+
+  void createAuditLog({
+    tenantId,
+    actorId,
+    actorRole,
+    entityType: 'Tenant',
+    entityId: tenantId,
+    action: AUDIT_ACTIONS.ATTENDANCE_CALENDAR_UPDATED,
+    before: previous as unknown as Prisma.InputJsonValue,
+    after: next as unknown as Prisma.InputJsonValue,
+  }).catch(() => {});
+
+  return next;
 }
 
 /**
@@ -263,15 +339,23 @@ export async function getTimeClockSummary(tenantId: string, userId: string) {
 
 /**
  * All-staff daily attendance: every active staff member, their punches for the
- * selected date, derived/overridden status, and OT over the 8-hour standard.
+ * selected date, the shared calendar-derived status and OT over the 8-hour
+ * standard.
+ *
+ * ARGUS #348: weekends/holidays are never ABSENT, future days are SCHEDULED and
+ * explicit AttendanceDay overrides win — the same rule the monthly report uses.
  */
 export async function getDailyAttendance(
   tenantId: string,
   dateValue?: string | null,
+  options: { calendar?: AttendanceCalendarSettings } = {},
 ): Promise<DailyAttendanceResult> {
   const dayStart = parseAttendanceDate(dateValue);
   const dayEnd = new Date(dayStart);
   dayEnd.setHours(23, 59, 59, 999);
+  const dateKey = formatAttendanceDate(dayStart);
+  const today = todayAttendanceYmd();
+  const calendar = options.calendar ?? (await readAttendanceCalendar(tenantId));
 
   const [users, records, attendanceDays] = await Promise.all([
     prisma.user.findMany({
@@ -281,7 +365,7 @@ export async function getDailyAttendance(
         isActive: true,
         role: { not: 'SUPER_ADMIN' },
       },
-      select: { id: true, email: true, fullName: true, role: true },
+      select: { id: true, email: true, fullName: true, role: true, createdAt: true },
       orderBy: { email: 'asc' },
     }),
     prisma.timeClock.findMany({
@@ -314,10 +398,14 @@ export async function getDailyAttendance(
     const userRecords = recordsByUser.get(user.id) ?? [];
     const totals = computeAttendanceTotals(userRecords, now);
     const attendance = attendanceByUser.get(user.id) ?? null;
-    // Any punch (even one made seconds ago) means the person is present; the
-    // derived absent status is only for a day with no punches and no override.
-    const status: AttendanceStatus =
-      attendance?.status ?? (userRecords.length > 0 ? 'PRESENT' : 'ABSENT');
+    const status = deriveAttendanceStatus({
+      date: dateKey,
+      today,
+      hasPunches: userRecords.length > 0,
+      override: attendance?.status ?? null,
+      calendar,
+      employedFrom: formatAttendanceDate(user.createdAt),
+    });
 
     return {
       userId: user.id,
@@ -351,8 +439,12 @@ export async function getDailyAttendance(
   });
 
   return {
-    date: formatAttendanceDate(dayStart),
+    date: dateKey,
     standardWorkdayMinutes: STANDARD_WORKDAY_MINUTES,
+    isWorkingDay: isWorkingDay(dateKey, calendar),
+    isHoliday: isCalendarHoliday(dateKey, calendar),
+    isFuture: dateKey > today,
+    calendar,
     staff,
   };
 }
@@ -364,7 +456,7 @@ export interface StaffAttendanceReportRow {
   totalMinutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
-  status: AttendanceStatus;
+  status: AttendanceDisplayStatus;
   notes: string | null;
   punches: number;
 }
@@ -379,6 +471,8 @@ export interface StaffAttendanceReport {
   daysLeave: number;
   daysHalfDay: number;
   daysHoliday: number;
+  /** Weekend / not-employed days (never counted as absent). */
+  daysOff: number;
   totalMinutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
@@ -386,20 +480,26 @@ export interface StaffAttendanceReport {
 
 /**
  * Date-ranged attendance report for one staff member. Used by the attendance
- * CSV download and the payslip PDF. Only days with a punch or an explicit
- * AttendanceDay override are emitted.
+ * CSV download, the payslip and the payroll preview.
+ *
+ * ARGUS #348: the report now walks the shared calendar (working days, weekends,
+ * configured holidays, employment start) instead of emitting only days with a
+ * punch/override, so its absent count matches the daily all-staff view.
  */
 export async function getStaffAttendanceReport(
   tenantId: string,
   userId: string,
   fromValue: string,
   toValue: string,
+  options: { calendar?: AttendanceCalendarSettings } = {},
 ): Promise<StaffAttendanceReport> {
   const from = parseAttendanceDate(fromValue);
   const to = parseAttendanceDate(toValue);
   to.setHours(23, 59, 59, 999);
 
-  const [records, attendanceDays] = await Promise.all([
+  const calendar = options.calendar ?? (await readAttendanceCalendar(tenantId));
+
+  const [records, attendanceDays, user] = await Promise.all([
     prisma.timeClock.findMany({
       where: {
         tenantId,
@@ -415,6 +515,10 @@ export async function getStaffAttendanceReport(
         date: { gte: from, lte: to },
       },
     }),
+    prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { createdAt: true },
+    }),
   ]);
 
   const recordsByDate = new Map<string, typeof records>();
@@ -428,43 +532,48 @@ export async function getStaffAttendanceReport(
   const overrideByDate = new Map(
     attendanceDays.map((row) => [formatAttendanceDate(row.date), row]),
   );
-  const dates = Array.from(
-    new Set([...recordsByDate.keys(), ...overrideByDate.keys()]),
-  ).sort();
+
+  const calendarRows = buildAttendanceCalendarRows({
+    from: formatAttendanceDate(from),
+    to: formatAttendanceDate(to),
+    today: todayAttendanceYmd(),
+    calendar,
+    punchDates: new Set(recordsByDate.keys()),
+    overrides: new Map(
+      attendanceDays.map((row) => [formatAttendanceDate(row.date), row.status]),
+    ),
+    employedFrom: user ? formatAttendanceDate(user.createdAt) : null,
+  });
 
   const now = new Date();
-  const rows: StaffAttendanceReportRow[] = dates.map((dateKey) => {
-    const dayRecords = recordsByDate.get(dateKey) ?? [];
-    const override = overrideByDate.get(dateKey);
+  const rows: StaffAttendanceReportRow[] = calendarRows.rows.map((calendarRow) => {
+    const dayRecords = recordsByDate.get(calendarRow.date) ?? [];
+    const override = overrideByDate.get(calendarRow.date);
     const totals = computeAttendanceTotals(dayRecords, now);
-    const status: AttendanceStatus =
-      override?.status ?? (dayRecords.length > 0 ? 'PRESENT' : 'ABSENT');
     return {
-      date: dateKey,
+      date: calendarRow.date,
       clockInAt: totals.clockInAt?.toISOString() ?? null,
       clockOutAt: totals.clockOutAt?.toISOString() ?? null,
       totalMinutes: totals.totalMinutes,
       regularMinutes: totals.regularMinutes,
       overtimeMinutes: totals.overtimeMinutes,
-      status,
+      status: calendarRow.status,
       notes: override?.notes ?? null,
       punches: dayRecords.length,
     };
   });
-
-  const sum = (predicate: (row: StaffAttendanceReportRow) => boolean) =>
-    rows.filter(predicate).length;
 
   return {
     from: formatAttendanceDate(from),
     to: formatAttendanceDate(to),
     userId,
     rows,
-    daysPresent: sum((row) => row.status === 'PRESENT'),
-    daysAbsent: sum((row) => row.status === 'ABSENT'),
-    daysLeave: sum((row) => row.status === 'LEAVE'),
-    daysHalfDay: sum((row) => row.status === 'HALF_DAY'),
-    daysHoliday: sum((row) => row.status === 'HOLIDAY'),
+    daysPresent: calendarRows.counts.present,
+    daysAbsent: calendarRows.counts.absent,
+    daysLeave: calendarRows.counts.leave,
+    daysHalfDay: calendarRows.counts.halfDay,
+    daysHoliday: calendarRows.counts.holiday,
+    daysOff: calendarRows.counts.off,
     totalMinutes: rows.reduce((total, row) => total + row.totalMinutes, 0),
     regularMinutes: rows.reduce((total, row) => total + row.regularMinutes, 0),
     overtimeMinutes: rows.reduce((total, row) => total + row.overtimeMinutes, 0),

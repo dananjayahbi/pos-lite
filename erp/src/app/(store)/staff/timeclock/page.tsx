@@ -1,8 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Pencil, Settings2 } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { CalendarDays, CalendarPlus, Pencil, Settings2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,6 +22,10 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import {
+  type AttendanceCalendarSettings,
+  type AttendanceDisplayStatus,
+} from '@/lib/attendance/attendanceCalendar.core';
 import {
   AttendanceStatusDialog,
   type AttendanceStatusValue,
@@ -41,7 +46,7 @@ interface AttendanceRow {
   email: string;
   fullName: string | null;
   role: string;
-  status: AttendanceStatusValue;
+  status: AttendanceDisplayStatus;
   clockInAt: string | null;
   clockOutAt: string | null;
   totalMinutes: number;
@@ -54,23 +59,31 @@ interface AttendanceRow {
 interface AttendanceResponse {
   date: string;
   standardWorkdayMinutes: number;
+  isWorkingDay: boolean;
+  isHoliday: boolean;
+  isFuture: boolean;
+  calendar: AttendanceCalendarSettings;
   staff: AttendanceRow[];
 }
 
-const STATUS_LABEL: Record<AttendanceStatusValue, string> = {
+const STATUS_LABEL: Record<AttendanceDisplayStatus, string> = {
   PRESENT: 'Present',
   ABSENT: 'Absent',
   LEAVE: 'Leave',
   HALF_DAY: 'Half Day',
   HOLIDAY: 'Holiday',
+  OFF: 'Off',
+  SCHEDULED: 'Scheduled',
 };
 
-const STATUS_CLASS: Record<AttendanceStatusValue, string> = {
+const STATUS_CLASS: Record<AttendanceDisplayStatus, string> = {
   PRESENT: 'border border-green-200 bg-green-100 text-green-800',
   ABSENT: 'border border-red-200 bg-red-100 text-red-800',
   LEAVE: 'border border-amber-200 bg-amber-100 text-amber-800',
   HALF_DAY: 'border border-blue-200 bg-blue-100 text-blue-800',
   HOLIDAY: 'border border-slate-200 bg-slate-100 text-slate-700',
+  OFF: 'border border-slate-200 bg-slate-50 text-slate-600',
+  SCHEDULED: 'border border-sky-200 bg-sky-50 text-sky-700',
 };
 
 function todayYmd(): string {
@@ -128,6 +141,46 @@ export default function TimeclockPage() {
   });
 
   const rows = useMemo(() => data?.data?.staff ?? [], [data]);
+  const dayInfo = data?.data;
+  const canMarkHoliday = canManage && Boolean(dayInfo?.isWorkingDay) && !dayInfo?.isHoliday;
+
+  const { data: calendarData } = useQuery<{ success: boolean; data: AttendanceCalendarSettings }>({
+    queryKey: ['attendance-settings'],
+    queryFn: async () => {
+      const res = await fetch('/api/store/timeclock/settings');
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error?.message ?? 'Failed to load calendar');
+      return json;
+    },
+    enabled: canManage,
+  });
+
+  const markHolidayMutation = useMutation({
+    mutationFn: async (holidayDate: string) => {
+      const calendar = dayInfo?.calendar ?? calendarData?.data;
+      const holidays = new Set(calendar?.holidays ?? []);
+      holidays.add(holidayDate);
+      const res = await fetch('/api/store/timeclock/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workingDays: calendar?.workingDays ?? [1, 2, 3, 4, 5],
+          holidays: [...holidays].sort(),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message ?? 'Failed to mark the date as a holiday');
+      }
+      return json;
+    },
+    onSuccess: () => {
+      toast.success(`${date} is now a holiday — no absences were recorded.`);
+      queryClient.invalidateQueries({ queryKey: ['attendance'] });
+      queryClient.invalidateQueries({ queryKey: ['attendance-settings'] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
 
   const summary = useMemo(() => {
     return rows.reduce(
@@ -136,15 +189,17 @@ export default function TimeclockPage() {
         else if (row.status === 'ABSENT') acc.absent += 1;
         else if (row.status === 'LEAVE') acc.onLeave += 1;
         else if (row.status === 'HALF_DAY') acc.halfDay += 1;
+        else if (row.status === 'HOLIDAY' || row.status === 'OFF') acc.holidayOff += 1;
         acc.overtimeMinutes += row.overtimeMinutes;
         return acc;
       },
-      { present: 0, absent: 0, onLeave: 0, halfDay: 0, overtimeMinutes: 0 },
+      { present: 0, absent: 0, onLeave: 0, halfDay: 0, holidayOff: 0, overtimeMinutes: 0 },
     );
   }, [rows]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['attendance'] });
+    queryClient.invalidateQueries({ queryKey: ['attendance-settings'] });
     queryClient.invalidateQueries({ queryKey: ['timeclock-me'] });
   };
 
@@ -180,13 +235,41 @@ export default function TimeclockPage() {
             <CalendarDays className="mr-2 h-4 w-4" />
             Today
           </Button>
+          {canMarkHoliday && (
+            <Button
+              type="button"
+              variant="outline"
+              className="border-mist text-espresso"
+              onClick={() => markHolidayMutation.mutate(date)}
+              disabled={markHolidayMutation.isPending}
+            >
+              <CalendarPlus className="mr-2 h-4 w-4" />
+              {markHolidayMutation.isPending ? 'Marking…' : 'Mark as holiday'}
+            </Button>
+          )}
           <p className="pb-2 text-xs text-sand-ink">
             Standard workday: 8h. Time beyond 8h is shown separately as OT.
           </p>
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {dayInfo && !dayInfo.isWorkingDay && !dayInfo.isHoliday && (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
+          Weekend — non-working day. Nobody is marked absent.
+        </p>
+      )}
+      {dayInfo?.isHoliday && (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
+          Holiday — no absences are recorded for this date.
+        </p>
+      )}
+      {dayInfo?.isFuture && (
+        <p className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-700">
+          Future date — absences are not recorded until the day has passed.
+        </p>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-normal text-sand-ink">Present</CardTitle>
@@ -211,6 +294,14 @@ export default function TimeclockPage() {
             <p className="font-display text-3xl font-bold text-amber-700">
               {summary.onLeave + summary.halfDay}
             </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-normal text-sand-ink">Holiday / Off</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="font-display text-3xl font-bold text-slate-600">{summary.holidayOff}</p>
           </CardContent>
         </Card>
         <Card>
@@ -356,6 +447,10 @@ export default function TimeclockPage() {
         onSaved={invalidate}
       />
 
+      {canManage && calendarData ? (
+        <AttendanceCalendarCard calendar={calendarData.data} onSaved={invalidate} />
+      ) : null}
+
       <AttendanceStatusDialog
         open={statusRow !== null}
         onOpenChange={(open) => {
@@ -366,5 +461,124 @@ export default function TimeclockPage() {
         onSaved={invalidate}
       />
     </div>
+  );
+}
+
+const WEEKDAY_LABELS: { value: number; label: string }[] = [
+  { value: 1, label: 'Mon' },
+  { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' },
+  { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
+  { value: 7, label: 'Sun' },
+];
+
+/**
+ * Tenant attendance calendar (ARGUS #348): the working week and holiday list
+ * that the daily table, the monthly report/CSV and the payslip all share.
+ */
+function AttendanceCalendarCard({
+  calendar,
+  onSaved,
+}: {
+  calendar: AttendanceCalendarSettings;
+  onSaved: () => void;
+}) {
+  const [workingDays, setWorkingDays] = useState<number[]>(calendar.workingDays);
+  const [holidaysText, setHolidaysText] = useState(calendar.holidays.join('\n'));
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const holidays = holidaysText
+        .split(/[\s,]+/)
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const res = await fetch('/api/store/timeclock/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workingDays, holidays }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message ?? 'Failed to save the attendance calendar');
+      }
+      return json.data as AttendanceCalendarSettings;
+    },
+    onSuccess: () => {
+      toast.success('Attendance calendar saved');
+      setError(null);
+      onSaved();
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const toggleDay = (day: number) => {
+    setWorkingDays((prev) =>
+      prev.includes(day)
+        ? prev.filter((value) => value !== day)
+        : [...prev, day].sort((a, b) => a - b),
+    );
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="font-display text-espresso">Attendance calendar</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-sand-ink">
+          Working days decide who is marked absent. Weekends and holidays are never absent, and
+          future days are only scheduled — the daily view, monthly report, CSV and payslip all use
+          this calendar.
+        </p>
+
+        <div className="flex flex-wrap gap-4">
+          {WEEKDAY_LABELS.map(({ value, label }) => (
+            <label key={value} className="flex items-center gap-2 text-sm text-espresso">
+              <input
+                type="checkbox"
+                checked={workingDays.includes(value)}
+                onChange={() => toggleDay(value)}
+                className="h-4 w-4 accent-espresso"
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="attendance-holidays">Holidays (one YYYY-MM-DD per line)</Label>
+          <textarea
+            id="attendance-holidays"
+            value={holidaysText}
+            onChange={(event) => setHolidaysText(event.target.value)}
+            rows={4}
+            placeholder={'2026-12-25\n2027-01-01'}
+            className="w-full rounded-md border border-mist bg-white px-3 py-2 font-mono text-xs text-espresso focus:outline-none focus:ring-2 focus:ring-terracotta/40"
+          />
+          <p className="text-xs text-sand-ink">
+            Holidays are non-working days for everyone; explicit Leave/Half Day statuses still win.
+          </p>
+        </div>
+
+        {error ? <p className="text-sm text-[#9B2226]">{error}</p> : null}
+
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || workingDays.length === 0}
+            className="bg-espresso font-body text-pearl hover:bg-espresso/90"
+          >
+            {mutation.isPending ? 'Saving…' : 'Save calendar'}
+          </Button>
+          {workingDays.length === 0 ? (
+            <span className="text-xs text-[#9B2226]">Select at least one working day.</span>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
