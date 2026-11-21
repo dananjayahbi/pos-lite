@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  SALE_COMPLETED_TITLE,
   SALE_VOIDED_TITLE,
+  buildSaleCompletedCopy,
   buildSaleVoidedCopy,
   isVoidedSaleAlert,
   saleShortId,
@@ -29,5 +31,19 @@ describe('sale alert void copy', () => {
     expect(isVoidedSaleAlert('SALE_COMPLETED', { status: 'COMPLETED', totalAmount: 10 })).toBe(false);
     expect(isVoidedSaleAlert('SALE_COMPLETED', null)).toBe(false);
     expect(isVoidedSaleAlert('RETURN_PROCESSED', { status: 'VOIDED', totalAmount: 10 })).toBe(false);
+  });
+});
+
+/** ARGUS #53: a completed alert must show the sale's final total. */
+describe('sale alert completed copy', () => {
+  it('rebuilds the alert with the current total (delivery included)', () => {
+    const copy = buildSaleCompletedCopy('abcdef123456', '1891.76');
+    expect(copy.title).toBe(SALE_COMPLETED_TITLE);
+    expect(copy.body).toBe('Sale #ABCDEF12 completed for Rs. 1891.76.');
+  });
+
+  it('formats amounts consistently', () => {
+    expect(buildSaleCompletedCopy('sale', 1641.759).body).toContain('Rs. 1641.76.');
+    expect(buildSaleCompletedCopy('sale', 'nope').body).toContain('Rs. 0.00.');
   });
 });

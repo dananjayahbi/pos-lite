@@ -16,6 +16,7 @@ import { useGetNotifications, useInvalidateNotifications } from '@/hooks/useGetN
 import { getNotificationIcon } from '@/lib/constants/notification-types';
 import {
   SALE_VOIDED_TITLE,
+  buildSaleCompletedCopy,
   buildSaleVoidedCopy,
   isVoidedSaleAlert,
 } from '@/lib/notifications/sale-alert-copy';
@@ -183,16 +184,27 @@ export default function NotificationsPage() {
           ) : (
             notifications.map((notification) => {
               const isVoidedSale = isVoidedSaleAlert(notification.type, notification.relatedSale);
+              const completedCopy =
+                !isVoidedSale &&
+                notification.type === 'SALE_COMPLETED' &&
+                notification.relatedSale
+                  ? buildSaleCompletedCopy(
+                      notification.relatedEntityId ?? '',
+                      notification.relatedSale.totalAmount,
+                    )
+                  : null;
               const Icon = isVoidedSale ? XCircle : getNotificationIcon(notification.type);
               const href = getNotificationHref(notification.type, notification.relatedEntityId);
-              const title = isVoidedSale ? SALE_VOIDED_TITLE : notification.title;
+              const title = isVoidedSale
+                ? SALE_VOIDED_TITLE
+                : (completedCopy?.title ?? notification.title);
               const body =
                 isVoidedSale && notification.relatedSale
                   ? buildSaleVoidedCopy(
                       notification.relatedEntityId ?? '',
                       notification.relatedSale.totalAmount,
                     ).body
-                  : notification.body;
+                  : (completedCopy?.body ?? notification.body);
 
               return (
                 <div

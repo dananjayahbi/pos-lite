@@ -15,6 +15,7 @@ import { useGetNotifications, useInvalidateNotifications } from '@/hooks/useGetN
 import { getNotificationIcon } from '@/lib/constants/notification-types';
 import {
   SALE_VOIDED_TITLE,
+  buildSaleCompletedCopy,
   buildSaleVoidedCopy,
   isVoidedSaleAlert,
 } from '@/lib/notifications/sale-alert-copy';
@@ -129,12 +130,18 @@ export function NotificationPopover() {
           ) : (
             notifications.map((n) => {
               const isVoidedSale = isVoidedSaleAlert(n.type, n.relatedSale);
+              const completedCopy =
+                !isVoidedSale && n.type === 'SALE_COMPLETED' && n.relatedSale
+                  ? buildSaleCompletedCopy(n.relatedEntityId ?? '', n.relatedSale.totalAmount)
+                  : null;
               const Icon = isVoidedSale ? XCircle : getNotificationIcon(n.type);
-              const title = isVoidedSale ? SALE_VOIDED_TITLE : n.title;
+              const title = isVoidedSale
+                ? SALE_VOIDED_TITLE
+                : (completedCopy?.title ?? n.title);
               const body =
                 isVoidedSale && n.relatedSale
                   ? buildSaleVoidedCopy(n.relatedEntityId ?? '', n.relatedSale.totalAmount).body
-                  : n.body;
+                  : (completedCopy?.body ?? n.body);
 
               return (
                 <button
