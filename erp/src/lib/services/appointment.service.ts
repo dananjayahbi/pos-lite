@@ -23,6 +23,10 @@ import {
 import { getAppointmentSettings } from '@/lib/services/appointment-settings.service';
 import { APPOINTMENT_BACKDATE_GRACE_MINUTES } from '@/lib/constants/appointments';
 import {
+  APPOINTMENT_OVERDUE_STATUSES,
+  appointmentOverdueCutoff,
+} from '@/lib/appointments/appointmentOverdue.core';
+import {
   appointmentActionBlockReason,
   type AppointmentLifecycleAction,
 } from '@/lib/appointments/appointmentLifecycle.core';
@@ -96,20 +100,29 @@ export async function getAppointments(tenantId: string, filters: Partial<Appoint
     limit = 50,
   } = filters as AppointmentFilters;
 
+  const startTimeFilter: { gte?: Date; lte?: Date } = {};
+  if (dateFrom) startTimeFilter.gte = new Date(dateFrom);
+  if (dateTo) startTimeFilter.lte = new Date(dateTo);
+  if (status === 'OVERDUE') {
+    // ARGUS #126: derived filter — active rows whose start is past the grace
+    // window. This only restricts the query; it never writes status.
+    const cutoff = appointmentOverdueCutoff();
+    if (!startTimeFilter.lte || startTimeFilter.lte > cutoff) {
+      startTimeFilter.lte = cutoff;
+    }
+  }
+
   const where: Prisma.AppointmentWhereInput = {
     tenantId,
-    ...(status && { status }),
+    ...(status === 'OVERDUE'
+      ? { status: { in: [...APPOINTMENT_OVERDUE_STATUSES] } }
+      : status
+        ? { status }
+        : {}),
     ...(staffId && { staffId }),
     ...(serviceId && { serviceId }),
     ...(customerId && { customerId }),
-    ...(dateFrom || dateTo
-      ? {
-          startTime: {
-            ...(dateFrom && { gte: new Date(dateFrom) }),
-            ...(dateTo && { lte: new Date(dateTo) }),
-          },
-        }
-      : {}),
+    ...(Object.keys(startTimeFilter).length > 0 ? { startTime: startTimeFilter } : {}),
   };
 
   const [appointments, total] = await Promise.all([

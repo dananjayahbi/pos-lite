@@ -6,6 +6,11 @@ import { StatusBadge } from '../shared/StatusBadge';
 import { AppointmentStatusTimeline } from './AppointmentStatusTimeline';
 import { AppointmentActions } from './AppointmentActions';
 import { useAppointment } from '@/hooks/appointments';
+import {
+  APPOINTMENT_OVERDUE_GRACE_MINUTES,
+  appointmentDisplayStatus,
+} from '@/lib/appointments/appointmentOverdue.core';
+import type { AppointmentStatus } from '@/generated/prisma/client';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { formatRupee } from '@/lib/format';
 
@@ -17,6 +22,13 @@ interface AppointmentDetailPanelProps {
 
 export function AppointmentDetailPanel({ appointmentId, open, onClose }: AppointmentDetailPanelProps) {
   const { data: appointment, isLoading } = useAppointment(appointmentId);
+  const displayStatus = appointment
+    ? appointmentDisplayStatus({
+        status: appointment.status as AppointmentStatus,
+        startTime: appointment.startTime,
+      })
+    : null;
+  const overdue = displayStatus === 'OVERDUE';
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -37,8 +49,16 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
           <div className="mt-6 space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-espresso">{appointment.title}</h2>
-              <StatusBadge status={appointment.status} />
+              <StatusBadge status={displayStatus ?? appointment.status} />
             </div>
+
+            {overdue ? (
+              <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
+                This appointment is past its start time by more than{' '}
+                {APPOINTMENT_OVERDUE_GRACE_MINUTES} minutes. Mark it as a no-show, or check the
+                customer in as a late arrival.
+              </div>
+            ) : null}
 
             <AppointmentStatusTimeline status={appointment.status} />
 

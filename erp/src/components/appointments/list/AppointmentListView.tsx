@@ -1,7 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { useAppointments } from '@/hooks/appointments';
+import { useAppointments, useMarkNoShow } from '@/hooks/appointments';
+import { usePermissions } from '@/hooks/usePermissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
+import { appointmentDisplayStatus } from '@/lib/appointments/appointmentOverdue.core';
+import type { AppointmentStatus } from '@/generated/prisma/client';
 import { StatusBadge } from '../shared/StatusBadge';
 import { AppointmentFilters } from './AppointmentFilters';
 import { Button } from '@/components/ui/button';
@@ -68,9 +72,12 @@ export function AppointmentListView({ onAppointmentClick, onNewClick }: Appointm
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
+  const { hasPermission } = usePermissions();
+  const noShow = useMarkNoShow();
+  const canMarkNoShow = hasPermission(PERMISSIONS.APPOINTMENT.editAppointment);
 
   const filters = {
-    ...(status ? { status: status as 'SCHEDULED' | 'CONFIRMED' | 'CHECKED_IN' | 'IN_PROGRESS' | 'COMPLETED' | 'NO_SHOW' | 'CANCELLED' } : {}),
+    ...(status ? { status: status as 'SCHEDULED' | 'CONFIRMED' | 'CHECKED_IN' | 'IN_PROGRESS' | 'COMPLETED' | 'NO_SHOW' | 'CANCELLED' | 'OVERDUE' } : {}),
     ...(dateFrom ? { dateFrom: new Date(dateFrom).toISOString() } : {}),
     ...(dateTo ? { dateTo: new Date(dateTo + 'T23:59:59').toISOString() } : {}),
     page,
@@ -125,7 +132,14 @@ export function AppointmentListView({ onAppointmentClick, onNewClick }: Appointm
                 </tr>
               </thead>
               <tbody>
-                {appointments.map((appt) => (
+                {appointments.map((appt) => {
+                  const displayStatus = appointmentDisplayStatus({
+                    status: appt.status as AppointmentStatus,
+                    startTime: appt.startTime,
+                  });
+                  const overdue = displayStatus === 'OVERDUE';
+
+                  return (
                   <tr
                     key={appt.id}
                     className="border-b border-espresso/5 hover:bg-espresso/5 cursor-pointer transition-colors"
@@ -149,7 +163,27 @@ export function AppointmentListView({ onAppointmentClick, onNewClick }: Appointm
                       {appt.staff ? staffDisplayName(appt.staff.email) : '-'}
                     </td>
                     <td className="px-4 py-3">
-                      <StatusBadge status={appt.status} />
+                      <StatusBadge status={displayStatus} />
+                      {overdue && canMarkNoShow ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="mt-1 h-7 border-red-300 px-2 text-xs text-red-700 hover:bg-red-50 hover:text-red-800"
+                          disabled={noShow.isPending}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (
+                              window.confirm(
+                                'Mark this overdue appointment as a no-show? The customer will be recorded as not having attended.',
+                              )
+                            ) {
+                              noShow.mutate(appt.id);
+                            }
+                          }}
+                        >
+                          Mark no-show
+                        </Button>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 text-sm text-espresso">
                       {formatRupee(appt.price)}
@@ -158,7 +192,8 @@ export function AppointmentListView({ onAppointmentClick, onNewClick }: Appointm
                       <PaymentState appointment={appt} />
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

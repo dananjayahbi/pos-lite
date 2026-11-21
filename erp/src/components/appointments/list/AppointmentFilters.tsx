@@ -25,6 +25,7 @@ export function AppointmentFilters({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="">All Statuses</SelectItem>
+            <SelectItem value="OVERDUE">Overdue</SelectItem>
             <SelectItem value="SCHEDULED">Scheduled</SelectItem>
             <SelectItem value="CONFIRMED">Confirmed</SelectItem>
             <SelectItem value="CHECKED_IN">Checked In</SelectItem>

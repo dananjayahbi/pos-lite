@@ -31,6 +31,10 @@ import {
   buildAppointmentRebookSeed,
   type AppointmentLifecycleAction,
 } from '@/lib/appointments/appointmentLifecycle.core';
+import {
+  APPOINTMENT_OVERDUE_GRACE_MINUTES,
+  isAppointmentOverdue,
+} from '@/lib/appointments/appointmentOverdue.core';
 import type { PermissionKey } from '@/lib/constants/permissions';
 import type { AppointmentStatus } from '@/generated/prisma/client';
 
@@ -83,12 +87,16 @@ export function AppointmentActions({ appointment }: AppointmentActionsProps) {
       hasPermission(permission),
     ) && appointmentActionAllowed(status, action, effectiveSettings);
 
+  const overdue = isAppointmentOverdue({ status, startTime: appointment.startTime });
+
   const showConfirm = status === 'SCHEDULED' && can('confirm');
   const showCheckIn =
     (status === 'SCHEDULED' || status === 'CONFIRMED') && can('check_in');
   const showStart = status === 'CHECKED_IN' && can('start');
   const showComplete =
-    (status === 'SCHEDULED' || status === 'CHECKED_IN' || status === 'IN_PROGRESS') &&
+    (status === 'CHECKED_IN' ||
+      status === 'IN_PROGRESS' ||
+      (status === 'SCHEDULED' && !overdue)) &&
     can('complete');
   const showNoShow =
     (status === 'SCHEDULED' || status === 'CONFIRMED') && can('no_show');
@@ -109,6 +117,18 @@ export function AppointmentActions({ appointment }: AppointmentActionsProps) {
     ) {
       noShow.mutate(appointment.id);
     }
+  };
+
+  const handleCheckIn = () => {
+    if (
+      overdue &&
+      !window.confirm(
+        `This appointment is ${APPOINTMENT_OVERDUE_GRACE_MINUTES}+ minutes past its start time. Check the customer in as a late arrival?`,
+      )
+    ) {
+      return;
+    }
+    checkIn.mutate(appointment.id);
   };
 
   const handleRebook = () => {
@@ -145,6 +165,16 @@ export function AppointmentActions({ appointment }: AppointmentActionsProps) {
 
   return (
     <div className="flex flex-wrap gap-2">
+      {overdue && showNoShow && (
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={handleNoShow}
+          disabled={noShow.isPending}
+        >
+          Mark no-show
+        </Button>
+      )}
       {showConfirm && (
         <Button
           size="sm"
@@ -159,10 +189,10 @@ export function AppointmentActions({ appointment }: AppointmentActionsProps) {
         <Button
           size="sm"
           variant="default"
-          onClick={() => checkIn.mutate(appointment.id)}
+          onClick={handleCheckIn}
           disabled={checkIn.isPending}
         >
-          Check In
+          {overdue ? 'Check in (late)' : 'Check In'}
         </Button>
       )}
       {showStart && (
@@ -180,7 +210,7 @@ export function AppointmentActions({ appointment }: AppointmentActionsProps) {
           Complete
         </Button>
       )}
-      {showNoShow && (
+      {!overdue && showNoShow && (
         <Button
           size="sm"
           variant="outline"

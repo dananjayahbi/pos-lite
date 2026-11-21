@@ -1,8 +1,9 @@
 'use client';
 
-import { useAppointmentStats } from '@/hooks/appointments';
+import { useAppointmentStats, useAppointments } from '@/hooks/appointments';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatRupee } from '@/lib/format';
+import { APPOINTMENT_OVERDUE_GRACE_MINUTES } from '@/lib/appointments/appointmentOverdue.core';
 
 interface StatsCard {
   label: string;
@@ -19,12 +20,22 @@ interface StatsCard {
 export function AppointmentSummaryCards() {
   const today = new Date().toISOString().split('T')[0];
   const { data: stats } = useAppointmentStats(`${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`);
+  // ARGUS #126: tenant-wide derived count, not a stored status. It is visible
+  // regardless of the selected day so old unresolved rows cannot hide.
+  const { data: overdueResult } = useAppointments({ status: 'OVERDUE', limit: 1 });
+  const overdue = overdueResult?.total ?? 0;
 
   const completed = stats?.byStatus?.COMPLETED ?? 0;
   const unpaid = stats?.completedUnpaidCount ?? 0;
 
   const cards: StatsCard[] = [
     { label: "Today's Total", value: String(stats?.total ?? 0) },
+    {
+      label: 'Overdue',
+      value: String(overdue),
+      hint: overdue > 0 ? `Past the ${APPOINTMENT_OVERDUE_GRACE_MINUTES}-minute grace window` : 'None waiting',
+      tone: overdue > 0 ? 'text-orange-600' : undefined,
+    },
     { label: 'Completed', value: String(completed), tone: 'text-green-600' },
     {
       label: 'Completed Unpaid',

@@ -138,7 +138,11 @@ export const SlotGenerationSchema = z.object({
 // ── Appointment Filters ──────────────────────────────────────────────────────
 
 export const AppointmentFiltersSchema = z.object({
-  status: z.enum(['SCHEDULED', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS', 'COMPLETED', 'NO_SHOW', 'CANCELLED']).optional(),
+  /**
+   * ARGUS #126: OVERDUE is a derived filter (SCHEDULED/CONFIRMED past the grace
+   * window). It is not a stored AppointmentStatus.
+   */
+  status: z.enum(['SCHEDULED', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS', 'COMPLETED', 'NO_SHOW', 'CANCELLED', 'OVERDUE']).optional(),
   staffId: z.string().optional(),
   serviceId: z.string().optional(),
   customerId: z.string().optional(),
