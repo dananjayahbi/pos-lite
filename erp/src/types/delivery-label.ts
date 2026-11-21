@@ -24,3 +24,26 @@ export interface LabelBranding {
   address: string;
   phoneNumber: string;
 }
+
+/**
+ * Provenance of the saved waybill template (ARGUS #305/#306). Stored beside the
+ * template under `Tenant.settings.delivery.labelMeta` so the designer can show
+ * who last changed it and when without a schema change.
+ */
+export interface LabelTemplateMeta {
+  /** ISO timestamp of the last save/reset, or null when never saved. */
+  updatedAt: string | null;
+  updatedById: string | null;
+  updatedByEmail: string | null;
+  updatedByRole: string | null;
+  /** The last write; null when the tenant still uses the defaults. */
+  action: 'saved' | 'reset' | null;
+}
+
+export const EMPTY_LABEL_TEMPLATE_META: LabelTemplateMeta = {
+  updatedAt: null,
+  updatedById: null,
+  updatedByEmail: null,
+  updatedByRole: null,
+  action: null,
+};

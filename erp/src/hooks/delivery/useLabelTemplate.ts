@@ -5,13 +5,16 @@ import { toast } from 'sonner';
 import type {
   DeliveryLabelTemplate,
   LabelBranding,
+  LabelTemplateMeta,
 } from '@/types/delivery-label';
+import { EMPTY_LABEL_TEMPLATE_META } from '@/types/delivery-label';
 import type { LabelTemplateInput } from '@/lib/validators/label.validators';
 
 interface LabelTemplatePayload {
   template: DeliveryLabelTemplate;
   branding: LabelBranding;
   saved: boolean;
+  meta: LabelTemplateMeta;
 }
 
 /**
@@ -39,6 +42,7 @@ export function useLabelTemplate() {
           phoneNumber: '',
         }) as LabelBranding,
         saved: Boolean(json.meta?.saved),
+        meta: (json.meta?.templateMeta ?? EMPTY_LABEL_TEMPLATE_META) as LabelTemplateMeta,
       };
     },
     staleTime: 60_000,
@@ -90,6 +94,7 @@ export function useLabelTemplate() {
     data: query.data?.template,
     branding: query.data?.branding ?? null,
     saved: query.data?.saved ?? false,
+    meta: query.data?.meta ?? EMPTY_LABEL_TEMPLATE_META,
     isLoading: query.isLoading,
     isError: query.isError,
     error: query.error,

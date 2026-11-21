@@ -3,8 +3,20 @@ import 'server-only';
 import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import { resolveWaybillSender } from '@/lib/delivery/sender';
-import type { DeliveryLabelTemplate, LabelBranding } from '@/types/delivery-label';
+import {
+  EMPTY_LABEL_TEMPLATE_META,
+  type DeliveryLabelTemplate,
+  type LabelBranding,
+  type LabelTemplateMeta,
+} from '@/types/delivery-label';
 import type { LabelTemplateInput } from '@/lib/validators/label.validators';
+
+/** The acting user recorded on a template write. */
+export interface LabelTemplateActor {
+  id: string;
+  email: string;
+  role: string;
+}
 
 /** Read the raw saved template from `Tenant.settings.delivery.label` (may be partial). */
 function readSaved(settings: unknown): Partial<DeliveryLabelTemplate> | null {
@@ -34,7 +46,38 @@ export interface LabelTemplateBundle {
   branding: LabelBranding;
   /** False when the tenant has never saved a template (defaults are in use). */
   saved: boolean;
+  /** Who last saved/reset the template, and when. */
+  meta: LabelTemplateMeta;
 }
+
+function readMeta(settings: unknown): LabelTemplateMeta {
+  if (!settings || typeof settings !== 'object') return { ...EMPTY_LABEL_TEMPLATE_META };
+  const delivery = (settings as Record<string, unknown>).delivery;
+  if (!delivery || typeof delivery !== 'object') return { ...EMPTY_LABEL_TEMPLATE_META };
+  const raw = (delivery as Record<string, unknown>).labelMeta;
+  if (!raw || typeof raw !== 'object') return { ...EMPTY_LABEL_TEMPLATE_META };
+  const meta = raw as Record<string, unknown>;
+  const action = meta.action === 'saved' || meta.action === 'reset' ? meta.action : null;
+  return {
+    updatedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : null,
+    updatedById: typeof meta.updatedById === 'string' ? meta.updatedById : null,
+    updatedByEmail: typeof meta.updatedByEmail === 'string' ? meta.updatedByEmail : null,
+    updatedByRole: typeof meta.updatedByRole === 'string' ? meta.updatedByRole : null,
+    action,
+  };
+}
+
+function actorMeta(actor?: LabelTemplateActor): LabelTemplateMeta {
+  if (!actor) return { ...EMPTY_LABEL_TEMPLATE_META };
+  return {
+    updatedAt: new Date().toISOString(),
+    updatedById: actor.id,
+    updatedByEmail: actor.email,
+    updatedByRole: actor.role,
+    action: null,
+  };
+}
+
 
 /**
  * Resolve the template plus the tenant branding needed by the client fallback
@@ -64,6 +107,7 @@ export async function getLabelTemplateBundle(tenantId: string): Promise<LabelTem
     },
     branding,
     saved: saved !== null,
+    meta: readMeta(tenant?.settings),
   };
 }
 
@@ -79,6 +123,7 @@ export async function getLabelTemplate(tenantId: string): Promise<DeliveryLabelT
 export async function saveLabelTemplate(
   tenantId: string,
   input: LabelTemplateInput,
+  actor?: LabelTemplateActor,
 ): Promise<DeliveryLabelTemplate> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
@@ -98,7 +143,11 @@ export async function saveLabelTemplate(
 
   const nextSettings: Prisma.InputJsonValue = {
     ...current,
-    delivery: { ...delivery, label: normalized as unknown as Prisma.InputJsonValue },
+    delivery: {
+      ...delivery,
+      label: normalized as unknown as Prisma.InputJsonValue,
+      labelMeta: { ...actorMeta(actor), action: 'saved' } as unknown as Prisma.InputJsonValue,
+    },
   };
 
   await prisma.tenant.update({
@@ -110,7 +159,10 @@ export async function saveLabelTemplate(
 }
 
 /** Clear the saved template, returning the default (branding-resolved) template. */
-export async function resetLabelTemplate(tenantId: string): Promise<DeliveryLabelTemplate> {
+export async function resetLabelTemplate(
+  tenantId: string,
+  actor?: LabelTemplateActor,
+): Promise<DeliveryLabelTemplate> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
     select: { settings: true },
@@ -122,6 +174,12 @@ export async function resetLabelTemplate(tenantId: string): Promise<DeliveryLabe
       ? { ...(current.delivery as Record<string, unknown>) }
       : {};
   delete delivery.label;
+  // Keep the provenance of the reset so the designer can still say who undid
+  // the saved overrides and when.
+  delivery.labelMeta = {
+    ...actorMeta(actor),
+    action: 'reset',
+  } as unknown as Prisma.InputJsonValue;
   current.delivery = delivery;
 
   await prisma.tenant.update({

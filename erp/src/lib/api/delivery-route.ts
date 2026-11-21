@@ -23,7 +23,8 @@ export { unauthorized, forbidden, validationError, notFound, conflict, badReques
  */
 
 export async function requireDeliveryAuth(permission?: PermissionKey): Promise<
-  { ok: true; tenantId: string; userId: string } | { ok: false; response: NextResponse }
+  | { ok: true; tenantId: string; userId: string; email: string; role: string }
+  | { ok: false; response: NextResponse }
 > {
   const session = await auth();
   if (!session?.user) {
@@ -43,7 +44,13 @@ export async function requireDeliveryAuth(permission?: PermissionKey): Promise<
     return { ok: false, response: forbidden('Insufficient permissions') };
   }
 
-  return { ok: true, tenantId, userId: session.user.id };
+  return {
+    ok: true,
+    tenantId,
+    userId: session.user.id,
+    email: session.user.email ?? '',
+    role: session.user.role,
+  };
 }
 
 /**

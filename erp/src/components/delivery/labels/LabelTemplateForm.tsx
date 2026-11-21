@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
+import { Loader2 } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -8,10 +10,17 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import type { DeliveryLabelTemplate } from '@/types/delivery-label';
+import { Button } from '@/components/ui/button';
+import { labelTemplateProvenance } from './labelTemplateState';
+import type { DeliveryLabelTemplate, LabelTemplateMeta } from '@/types/delivery-label';
 
 interface LabelTemplateFormProps {
   template: DeliveryLabelTemplate;
+  meta?: LabelTemplateMeta | null;
+  /** True when a saved override exists that a reset would discard. */
+  canReset?: boolean;
+  isResetting?: boolean;
+  onReset?: () => void;
 }
 
 function SenderValue({ label, value }: { label: string; value: string }) {
@@ -29,8 +38,20 @@ function SenderValue({ label, value }: { label: string; value: string }) {
  * ARGUS #301 - the sender is the audited Store Profile. The old editable
  * brand/contact fields could print a stale business name, so this panel is now
  * read-only and points staff at the single source of truth.
+ *
+ * ARGUS #305 - with no editable sender there is no unsaved edit to lose, but a
+ * reset must still be explicit: it now asks for confirmation and the panel
+ * shows who last saved/reset the template and when.
  */
-export function LabelTemplateForm({ template }: LabelTemplateFormProps) {
+export function LabelTemplateForm({
+  template,
+  meta,
+  canReset = false,
+  isResetting = false,
+  onReset,
+}: LabelTemplateFormProps) {
+  const [confirmingReset, setConfirmingReset] = useState(false);
+
   return (
     <div className="space-y-6">
       <Card className="border-mist">
@@ -52,9 +73,68 @@ export function LabelTemplateForm({ template }: LabelTemplateFormProps) {
               : 'The waybill cannot print until the Store Profile has a business name and phone number.'}
           </p>
 
-          <Link href="/settings/store" className="inline-block text-sm underline hover:text-terracotta">
-            Edit Store Profile
-          </Link>
+          <p className="text-xs text-sand-ink" data-testid="label-template-provenance">
+            {labelTemplateProvenance(meta)}
+          </p>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Link href="/settings/store" className="text-sm underline hover:text-terracotta">
+              Edit Store Profile
+            </Link>
+            {canReset && onReset && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-mist"
+                onClick={() => setConfirmingReset(true)}
+                disabled={isResetting}
+                aria-busy={isResetting}
+              >
+                {isResetting ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                {isResetting ? 'Resetting…' : 'Reset to default'}
+              </Button>
+            )}
+          </div>
+
+          {confirmingReset && onReset && (
+            <div
+              role="alertdialog"
+              aria-label="Confirm template reset"
+              className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+            >
+              <p className="font-medium">Reset the saved waybill template?</p>
+              <p className="text-xs">
+                This discards the saved template override. Sender details still come from the
+                Store Profile, so the printed label keeps the business name and contact.
+              </p>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfirmingReset(false)}
+                  disabled={isResetting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    setConfirmingReset(false);
+                    onReset();
+                  }}
+                  disabled={isResetting}
+                  data-testid="label-template-reset-confirm"
+                >
+                  Yes, reset
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

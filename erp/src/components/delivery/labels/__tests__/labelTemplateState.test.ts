@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canPrintWaybill,
   labelTemplateErrorMessage,
+  labelTemplateProvenance,
   resolveLabelTemplate,
   resolveLabelTemplateViewState,
   type LabelTemplateViewInput,
@@ -130,5 +131,45 @@ describe('labelTemplateErrorMessage', () => {
   it('falls back for an empty message', () => {
     expect(labelTemplateErrorMessage(new Error('   '), 'fallback')).toBe('fallback');
     expect(labelTemplateErrorMessage(undefined, 'fallback')).toBe('fallback');
+  });
+});
+
+describe('labelTemplateProvenance (ARGUS #305)', () => {
+  it('states the default state when nothing was saved', () => {
+    expect(labelTemplateProvenance(null)).toContain('Store Profile defaults');
+    expect(
+      labelTemplateProvenance({
+        updatedAt: null,
+        updatedById: null,
+        updatedByEmail: null,
+        updatedByRole: null,
+        action: null,
+      }),
+    ).toContain('Store Profile defaults');
+  });
+
+  it('shows who saved the template and when', () => {
+    const text = labelTemplateProvenance({
+      updatedAt: '2026-11-22T04:30:00.000Z',
+      updatedById: 'u1',
+      updatedByEmail: 'owner@shop.lk',
+      updatedByRole: 'OWNER',
+      action: 'saved',
+    });
+    expect(text).toContain('Saved');
+    expect(text).toContain('Owner');
+    expect(text).toContain('owner');
+  });
+
+  it('calls out a reset explicitly', () => {
+    expect(
+      labelTemplateProvenance({
+        updatedAt: '2026-11-22T04:30:00.000Z',
+        updatedById: 'u1',
+        updatedByEmail: 'manager@shop.lk',
+        updatedByRole: 'MANAGER',
+        action: 'reset',
+      }),
+    ).toContain('Reset to Store Profile defaults');
   });
 });

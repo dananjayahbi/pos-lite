@@ -1,5 +1,7 @@
-import type { DeliveryLabelTemplate, LabelBranding } from '@/types/delivery-label';
+import type { DeliveryLabelTemplate, LabelBranding, LabelTemplateMeta } from '@/types/delivery-label';
 import { resolveWaybillSender } from '@/lib/delivery/sender';
+import { formatShortDateTime } from '@/lib/format';
+import { staffDisplayName } from '@/lib/utils/staff-name';
 
 /**
  * ARGUS #298 — waybill template loading and sender fallback.
@@ -83,4 +85,20 @@ export function resolveLabelTemplate(
 export function labelTemplateErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim() !== '') return error.message;
   return fallback;
+}
+
+/**
+ * ARGUS #305: the designer must say who last changed the waybill setup and
+ * when. A reset is worth stating explicitly because it discards the saved
+ * overrides.
+ */
+export function labelTemplateProvenance(meta: LabelTemplateMeta | null | undefined): string {
+  if (!meta?.updatedAt) {
+    return 'Using the Store Profile defaults; no template override has been saved.';
+  }
+  const action = meta.action === 'reset' ? 'Reset to Store Profile defaults' : 'Saved';
+  const who = meta.updatedByEmail
+    ? `${staffDisplayName(meta.updatedByEmail)}${meta.updatedByRole ? ` (${meta.updatedByRole.replace(/_/g, ' ').toLowerCase()})` : ''}`
+    : 'an unknown user';
+  return `${action} ${formatShortDateTime(meta.updatedAt)} by ${who}.`;
 }

@@ -4,6 +4,8 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useLabelTemplate } from '@/hooks/delivery';
+import { usePermissions } from '@/hooks/usePermissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { LabelTemplateForm } from '@/components/delivery/labels/LabelTemplateForm';
 import { LabelPreview } from '@/components/delivery/labels/LabelPreview';
 import {
@@ -16,12 +18,17 @@ export function LabelDesignerClient() {
   const {
     data,
     branding,
+    saved,
+    meta,
     isLoading,
     isError,
     error,
     isFetching,
     refetch,
+    reset,
   } = useLabelTemplate();
+  const { hasPermission } = usePermissions();
+  const canManage = hasPermission(PERMISSIONS.DELIVERY.manageLabelTemplate);
 
   const viewState = resolveLabelTemplateViewState({
     isError,
@@ -92,7 +99,13 @@ export function LabelDesignerClient() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <LabelTemplateForm template={template} />
+        <LabelTemplateForm
+          template={template}
+          meta={meta}
+          canReset={canManage && saved}
+          isResetting={reset.isPending}
+          onReset={() => reset.mutate()}
+        />
         <LabelPreview template={template} />
       </div>
     </div>

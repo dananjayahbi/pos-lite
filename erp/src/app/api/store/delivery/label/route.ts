@@ -27,7 +27,7 @@ export async function GET() {
       data: bundle.template,
       // The client needs the tenant identity to fill an empty sender even
       // before anything is saved (ARGUS #298).
-      meta: { branding: bundle.branding, saved: bundle.saved },
+      meta: { branding: bundle.branding, saved: bundle.saved, templateMeta: bundle.meta },
     });
   } catch (error) {
     console.error('GET /api/store/delivery/label error:', error);
@@ -52,7 +52,11 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const template = await saveLabelTemplate(guard.tenantId, parsed.data);
+    const template = await saveLabelTemplate(guard.tenantId, parsed.data, {
+      id: guard.userId,
+      email: guard.email,
+      role: guard.role,
+    });
     void createAuditLog({
       tenantId: guard.tenantId,
       actorId: guard.userId,
@@ -73,7 +77,11 @@ export async function POST() {
   if (!guard.ok) return guard.response;
 
   try {
-    const template = await resetLabelTemplate(guard.tenantId);
+    const template = await resetLabelTemplate(guard.tenantId, {
+      id: guard.userId,
+      email: guard.email,
+      role: guard.role,
+    });
     void createAuditLog({
       tenantId: guard.tenantId,
       actorId: guard.userId,
