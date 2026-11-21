@@ -20,6 +20,12 @@ export interface CategoryAuditSnapshot extends CatalogAuditSnapshot {
   imageUrl: string | null;
 }
 
+export interface BrandAuditSnapshot extends CatalogAuditSnapshot {
+  name: string;
+  description: string | null;
+  logoUrl: string | null;
+}
+
 /** Bounded snapshot of a category row for CATEGORY_CREATED / CATEGORY_UPDATED. */
 export function categoryAuditSnapshot(row: {
   name: string;
@@ -32,6 +38,19 @@ export function categoryAuditSnapshot(row: {
     description: row.description ?? null,
     sortOrder: row.sortOrder,
     imageUrl: row.imageUrl ?? null,
+  };
+}
+
+/** Bounded snapshot of a brand row for BRAND_CREATED / BRAND_UPDATED. */
+export function brandAuditSnapshot(row: {
+  name: string;
+  description: string | null;
+  logoUrl: string | null;
+}): BrandAuditSnapshot {
+  return {
+    name: row.name,
+    description: row.description ?? null,
+    logoUrl: row.logoUrl ?? null,
   };
 }
 

@@ -90,7 +90,7 @@ export async function PATCH(
     }
 
     const { id } = await params;
-    const updated = await updateBrand(tenantId, id, parsed.data as UpdateBrandInput);
+    const updated = await updateBrand(tenantId, id, session.user.id, parsed.data as UpdateBrandInput);
 
     // Revalidate so the brand change is reflected on the storefront filters immediately.
     try {

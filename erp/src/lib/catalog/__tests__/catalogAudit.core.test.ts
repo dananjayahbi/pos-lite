@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  brandAuditSnapshot,
   categoryAuditSnapshot,
   changedAuditFields,
 } from '@/lib/catalog/catalogAudit.core';
@@ -37,6 +38,40 @@ describe('categoryAuditSnapshot', () => {
       sortOrder: 0,
       imageUrl: null,
     });
+  });
+});
+
+describe('brandAuditSnapshot', () => {
+  it('keeps only the editable brand fields', () => {
+    expect(
+      brandAuditSnapshot({
+        name: 'Ayur',
+        description: 'Herbal essentials',
+        logoUrl: 'https://cdn.example/logo.png',
+      }),
+    ).toEqual({
+      name: 'Ayur',
+      description: 'Herbal essentials',
+      logoUrl: 'https://cdn.example/logo.png',
+    });
+  });
+
+  it('normalizes a cleared description and logo to null', () => {
+    expect(brandAuditSnapshot({ name: 'Ayur', description: null, logoUrl: null })).toEqual({
+      name: 'Ayur',
+      description: null,
+      logoUrl: null,
+    });
+  });
+
+  it('reports a cleared description as a changed field', () => {
+    const before = brandAuditSnapshot({
+      name: 'Ayur',
+      description: 'Old text',
+      logoUrl: null,
+    });
+    const after = brandAuditSnapshot({ name: 'Ayur', description: null, logoUrl: null });
+    expect(changedAuditFields(before, after)).toEqual(['description']);
   });
 });
 
