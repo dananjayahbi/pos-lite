@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import type { AttendanceDisplayStatus } from '@/lib/attendance/attendanceCalendar.core';
 
 export const ATTENDANCE_STATUS_OPTIONS = [
   { value: 'PRESENT', label: 'Present' },
@@ -35,8 +36,17 @@ export type AttendanceStatusValue = (typeof ATTENDANCE_STATUS_OPTIONS)[number]['
 export interface AttendanceStatusRow {
   userId: string;
   email: string;
-  status: AttendanceStatusValue;
+  /** Derived display status (may be OFF/SCHEDULED) when no override exists. */
+  status: AttendanceStatusValue | AttendanceDisplayStatus;
   attendance: { status: AttendanceStatusValue; notes: string | null } | null;
+}
+
+function initialStatus(row: AttendanceStatusRow): AttendanceStatusValue {
+  const current = row.attendance?.status ?? row.status;
+  const match = ATTENDANCE_STATUS_OPTIONS.find((option) => option.value === current);
+  // A derived OFF/SCHEDULED day has no selectable equivalent; default to Present
+  // so the manager can explicitly mark the day.
+  return match ? match.value : 'PRESENT';
 }
 
 interface AttendanceStatusDialogProps {
@@ -84,9 +94,7 @@ function StatusForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
-  const [status, setStatus] = useState<AttendanceStatusValue>(
-    row.attendance?.status ?? row.status,
-  );
+  const [status, setStatus] = useState<AttendanceStatusValue>(initialStatus(row));
   const [notes, setNotes] = useState(row.attendance?.notes ?? '');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);

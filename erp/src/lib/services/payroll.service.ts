@@ -20,6 +20,7 @@ import {
   resolveWorkingDays,
   type PayrollSettings,
 } from '@/lib/payroll/payroll-settings';
+import { parseAttendanceCalendar } from '@/lib/attendance/attendanceCalendar.core';
 import type {
   PayrollPreview,
   PayrollPreviewRow,
@@ -54,6 +55,9 @@ export async function buildPayrollPreview(
   });
   const settings = readPayrollSettingsFromTenantSettings(tenant.settings);
   const workingDays = resolveWorkingDays(settings, countWeekdaysInMonth(range.month));
+  // One calendar for the payroll preview's attendance: the same rule the daily
+  // page and the attendance report use (ARGUS #348).
+  const attendanceCalendar = parseAttendanceCalendar(tenant.settings);
 
   const [staff, existingRun] = await Promise.all([
     prisma.user.findMany({
@@ -90,7 +94,9 @@ export async function buildPayrollPreview(
   const rows: PayrollPreviewRow[] = await Promise.all(
     staff.map(async (member) => {
       const [attendance, commission] = await Promise.all([
-        getStaffAttendanceReport(tenantId, member.id, range.from, range.to),
+        getStaffAttendanceReport(tenantId, member.id, range.from, range.to, {
+          calendar: attendanceCalendar,
+        }),
         getCommissionSummaryForUser(tenantId, member.id, range.periodStart, range.periodEnd),
       ]);
 
