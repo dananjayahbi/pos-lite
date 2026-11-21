@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { updatePromotion, togglePromotion } from '@/lib/services/promotion.service';
+import { updatePromotion, deactivatePromotion, setPromotionActive } from '@/lib/services/promotion.service';
 import { UpdatePromotionSchema } from '@/lib/validators/promotion.validators';
 
 export async function PATCH(
@@ -41,6 +41,19 @@ export async function PATCH(
         { success: false, error: { code: 'VALIDATION_ERROR', message: parsed.error?.issues?.[0]?.message ?? 'Validation failed' } },
         { status: 400 },
       );
+    }
+
+    // ARGUS #325: an explicit status-only PATCH is Activate/Deactivate, not a
+    // generic edit — it writes the ACTIVATED/ARCHIVED audit action.
+    const changedKeys = Object.keys(parsed.data);
+    if (changedKeys.length === 1 && changedKeys[0] === 'isActive') {
+      const promotion = await setPromotionActive(
+        tenantId,
+        id,
+        parsed.data.isActive === true,
+        session.user.id,
+      );
+      return NextResponse.json({ success: true, data: promotion });
     }
 
     const promotion = await updatePromotion(tenantId, id, parsed.data);
@@ -82,11 +95,11 @@ export async function DELETE(
       );
     }
 
-    const promotion = await togglePromotion(tenantId, id);
+    const promotion = await deactivatePromotion(tenantId, id, session.user.id);
     return NextResponse.json({ success: true, data: promotion });
   } catch {
     return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to toggle promotion' } },
+      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to deactivate promotion' } },
       { status: 500 },
     );
   }
