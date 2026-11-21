@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useDeleteBom, type BomItemView } from '@/hooks/useBom';
+import { BOM_LOCKED_MESSAGE, canModifyBom } from '@/lib/services/bom.core';
 
 interface BomTableProps {
   items: BomItemView[];
@@ -68,48 +69,63 @@ export function BomTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((bom) => (
-            <TableRow key={bom.id}>
-              <TableCell className="font-medium text-espresso">{bom.name}</TableCell>
-              <TableCell>
-                <div className="text-sm text-espresso">{bom.variantName}</div>
-                <div className="text-xs text-mist-ink">{bom.variantSku}</div>
-              </TableCell>
-              <TableCell>
-                <span className="text-sm text-mist-ink">{bom.rawMaterialCount} materials</span>
-              </TableCell>
-              <TableCell>
-                <Badge variant={bom.isActive ? 'default' : 'secondary'}>
-                  {bom.isActive ? 'Active' : 'Inactive'}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-right">
-                <div className="flex justify-end gap-2">
-                  {canProduce && bom.isActive && (
-                    <Button variant="outline" size="sm" onClick={() => onProduce(bom.id)}>
-                      Produce
-                    </Button>
-                  )}
-                  {canEdit && (
-                    <Button variant="ghost" size="sm" onClick={() => onEdit(bom.id)}>
-                      Edit
-                    </Button>
-                  )}
-                  {canDelete && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-600 hover:text-red-700"
-                      disabled={deletingId === bom.id}
-                      onClick={() => handleDelete(bom.id, bom.name)}
-                    >
-                      {deletingId === bom.id ? 'Deleting…' : 'Delete'}
-                    </Button>
-                  )}
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
+          {items.map((bom) => {
+            const locked = !canModifyBom(bom.productionLogCount);
+            return (
+              <TableRow key={bom.id}>
+                <TableCell className="font-medium text-espresso">{bom.name}</TableCell>
+                <TableCell>
+                  <div className="text-sm text-espresso">{bom.variantName}</div>
+                  <div className="text-xs text-mist-ink">{bom.variantSku}</div>
+                </TableCell>
+                <TableCell>
+                  <span className="text-sm text-mist-ink">{bom.rawMaterialCount} materials</span>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={bom.isActive ? 'default' : 'secondary'}>
+                    {bom.isActive ? 'Active' : 'Inactive'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {canProduce && bom.isActive && (
+                      <Button variant="outline" size="sm" onClick={() => onProduce(bom.id)}>
+                        Produce
+                      </Button>
+                    )}
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={locked}
+                        title={locked ? BOM_LOCKED_MESSAGE : undefined}
+                        onClick={() => onEdit(bom.id)}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700"
+                        disabled={deletingId === bom.id || locked}
+                        title={locked ? BOM_LOCKED_MESSAGE : undefined}
+                        onClick={() => handleDelete(bom.id, bom.name)}
+                      >
+                        {deletingId === bom.id ? 'Deleting…' : 'Delete'}
+                      </Button>
+                    )}
+                    {locked && (
+                      <span className="basis-full text-xs text-mist-ink">
+                        Locked - production recorded
+                      </span>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>

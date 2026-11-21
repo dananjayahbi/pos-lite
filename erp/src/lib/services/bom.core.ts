@@ -116,6 +116,22 @@ export function isSourceEligibleForProduction(source: ProductSourceValue): boole
 }
 
 /**
+ * ARGUS #248 - a BOM is immutable once production has used it.
+ *
+ * Editing the ingredient rows after a run would rewrite the recipe behind
+ * every past production log, and a soft delete would leave those runs without
+ * a viewable recipe. Both operations are refused from the first logged run.
+ */
+export const BOM_LOCKED_MESSAGE =
+  'This bill of materials has production runs recorded, so its recipe can no longer be edited or deleted.';
+
+/** True while a BOM has never been used in production (and may be changed). */
+export function canModifyBom(productionLogCount: number): boolean {
+  if (!Number.isFinite(productionLogCount)) return false;
+  return productionLogCount <= 0;
+}
+
+/**
  * Build a deterministic, human-readable batch number for a production run.
  *
  * Example: `MFG-20261101-8FK2M1QZ`. The suffix comes from the production-log

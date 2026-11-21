@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildProductionBatchNumber,
+  canModifyBom,
   computeConsumptionPlan,
   computeIngredientRequirement,
   getInsufficientIngredients,
@@ -143,5 +144,22 @@ describe('bom.core - isSourceEligibleForProduction', () => {
 
   it('returns false for traded goods', () => {
     expect(isSourceEligibleForProduction('TRADED')).toBe(false);
+  });
+});
+
+describe('bom.core - canModifyBom', () => {
+  it('allows edits while no production run references the recipe', () => {
+    expect(canModifyBom(0)).toBe(true);
+  });
+
+  it('locks the recipe from the first recorded production run', () => {
+    expect(canModifyBom(1)).toBe(false);
+    expect(canModifyBom(4)).toBe(false);
+    expect(canModifyBom(1000)).toBe(false);
+  });
+
+  it('fails closed when the count is not a finite number', () => {
+    expect(canModifyBom(Number.NaN)).toBe(false);
+    expect(canModifyBom(Number.POSITIVE_INFINITY)).toBe(false);
   });
 });

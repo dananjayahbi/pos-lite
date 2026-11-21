@@ -22,6 +22,7 @@ export interface BomDetailView {
   isActive: boolean;
   notes: string | null;
   ingredients: BomIngredientView[];
+  productionLogCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,6 +36,8 @@ export interface BomItemView {
   isActive: boolean;
   notes: string | null;
   rawMaterialCount: number;
+  /** Production runs recorded against this recipe (ARGUS #248). */
+  productionLogCount: number;
   ingredients: { rawMaterialId: string; name: string; quantityPerUnit: number }[];
   createdAt: string;
   updatedAt: string;

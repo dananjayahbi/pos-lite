@@ -15,6 +15,7 @@ import type {
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
   buildProductionBatchNumber,
+  canModifyBom,
   computeConsumptionPlan,
   getInsufficientIngredients,
   hasInsufficientIngredients,
@@ -38,6 +39,8 @@ export interface BomItemView {
   isActive: boolean;
   notes: string | null;
   rawMaterialCount: number;
+  /** Production runs recorded against this recipe (ARGUS #248). */
+  productionLogCount: number;
   ingredients: { rawMaterialId: string; name: string; quantityPerUnit: number }[];
   createdAt: Date;
   updatedAt: Date;
@@ -61,6 +64,8 @@ export interface BomDetailView {
   isActive: boolean;
   notes: string | null;
   ingredients: BomIngredientView[];
+  /** Production runs recorded against this recipe (ARGUS #248). */
+  productionLogCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -72,6 +77,7 @@ type BomWithItems = BillOfMaterials & {
   items: (BillOfMaterialsItem & {
     rawMaterial: Pick<RawMaterial, 'id' | 'name' | 'unit' | 'quantity' | 'unitCost'>;
   })[];
+  _count: { productionLogs: number };
 };
 
 function toBomItemView(bom: BomWithItems): BomItemView {
@@ -84,6 +90,7 @@ function toBomItemView(bom: BomWithItems): BomItemView {
     isActive: bom.isActive,
     notes: bom.notes,
     rawMaterialCount: bom.items.length,
+    productionLogCount: bom._count.productionLogs,
     ingredients: bom.items.map((item) => ({
       rawMaterialId: item.rawMaterialId,
       name: item.rawMaterial.name,
@@ -111,6 +118,7 @@ function toBomDetailView(bom: BomWithItems): BomDetailView {
       quantityPerUnit: item.quantityPerUnit.toNumber(),
       available: item.rawMaterial.quantity.toNumber(),
     })),
+    productionLogCount: bom._count.productionLogs,
     createdAt: bom.createdAt,
     updatedAt: bom.updatedAt,
   };
@@ -131,6 +139,7 @@ const bomInclude = {
       },
     },
   },
+  _count: { select: { productionLogs: true } },
 } as const;
 
 type TxClient = Omit<
@@ -299,6 +308,11 @@ export async function updateBom(
   return prisma.$transaction(async (tx) => {
     await findOwnedBom(tx, tenantId, id);
 
+    // ARGUS #248: once a production run references this recipe it must stay
+    // frozen, otherwise past runs silently point at a different ingredient list.
+    const productionLogCount = await tx.productionLog.count({ where: { bomId: id } });
+    if (!canModifyBom(productionLogCount)) throw new Error('BOM_LOCKED');
+
     const bom = await tx.billOfMaterials.update({
       where: { id },
       data: {
@@ -344,6 +358,12 @@ export async function updateBom(
 export async function deleteBom(tenantId: string, actorId: string, id: string) {
   return prisma.$transaction(async (tx) => {
     await findOwnedBom(tx, tenantId, id);
+
+    // ARGUS #248: deleting a used recipe would leave its production runs with
+    // no viewable BOM, so it is refused while any run references it.
+    const productionLogCount = await tx.productionLog.count({ where: { bomId: id } });
+    if (!canModifyBom(productionLogCount)) throw new Error('BOM_LOCKED');
+
     await tx.billOfMaterials.update({
       where: { id },
       data: { deletedAt: new Date(), isActive: false },

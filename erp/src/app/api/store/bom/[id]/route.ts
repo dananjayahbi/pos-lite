@@ -8,6 +8,7 @@ import {
   deleteBom,
 } from '@/lib/services/bom.service';
 import { UpdateBomSchema } from '@/lib/validators/bom.validators';
+import { BOM_LOCKED_MESSAGE } from '@/lib/services/bom.core';
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -108,6 +109,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         { status: 403 },
       );
     }
+    if (error instanceof Error && error.message === 'BOM_LOCKED') {
+      return NextResponse.json(
+        { success: false, error: { code: 'BOM_LOCKED', message: BOM_LOCKED_MESSAGE } },
+        { status: 409 },
+      );
+    }
     console.error('PATCH /api/store/bom/[id] error:', error);
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
@@ -153,6 +160,12 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
+      );
+    }
+    if (error instanceof Error && error.message === 'BOM_LOCKED') {
+      return NextResponse.json(
+        { success: false, error: { code: 'BOM_LOCKED', message: BOM_LOCKED_MESSAGE } },
+        { status: 409 },
       );
     }
     console.error('DELETE /api/store/bom/[id] error:', error);
