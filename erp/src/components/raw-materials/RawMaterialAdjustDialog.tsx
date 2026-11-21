@@ -21,7 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { getUnitLabel } from '@/lib/services/rawMaterial.core';
 import {
   RAW_MATERIAL_ADJUSTMENT_REASON_LABELS,
   RAW_MATERIAL_ADJUSTMENT_REASONS,
@@ -92,7 +91,7 @@ export function RawMaterialAdjustDialog({
         <DialogHeader>
           <DialogTitle>Adjust stock - {material.name}</DialogTitle>
           <DialogDescription>
-            Current quantity: {material.quantity} {getUnitLabel(material.unit)}. Enter a
+            Current quantity: {material.quantity} {material.unitName}. Enter a
             positive value to add stock or a negative value to consume stock.
           </DialogDescription>
         </DialogHeader>

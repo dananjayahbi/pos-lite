@@ -11,7 +11,6 @@ import { RawMaterialStatusBadge } from '@/components/raw-materials/RawMaterialSt
 import { RawMaterialAlertsPanel } from '@/components/raw-materials/RawMaterialAlertsPanel';
 import { ProductionHistoryPanel } from '@/components/bom/ProductionHistoryPanel';
 import { useRawMaterialStats, useRawMaterials } from '@/hooks/useRawMaterials';
-import { getUnitShortLabel } from '@/lib/services/rawMaterial.core';
 import {
   FACTORY_REFRESH_INTERVAL_MS,
   FACTORY_REFRESH_TICK_MS,
@@ -292,7 +291,7 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
                 <div>
                   <p className="font-medium text-espresso">{material.name}</p>
                   <p className="text-xs text-mist-ink">
-                    {material.quantity} {getUnitShortLabel(material.unit)} on hand
+                    {material.quantity} {material.unitShortLabel} on hand
                   </p>
                 </div>
                 <RawMaterialStatusBadge status={material.stockStatus} />

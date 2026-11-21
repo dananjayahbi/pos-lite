@@ -28,6 +28,8 @@ import {
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { adjustStockInTx } from '@/lib/services/inventory.service';
 import { consumeRawMaterialQuantity } from '@/lib/services/rawMaterial.core';
+import { listRawMaterialUnitCatalog } from '@/lib/services/rawMaterialUnit.service';
+import { resolveRawMaterialUnitLabels } from '@/lib/services/rawMaterialUnitCatalog.core';
 import { computeMaterialCost } from '@/lib/services/rawMaterialValuation.core';
 import { createBatchInTx } from '@/lib/services/batchTracking.service';
 import { staffDisplayName } from '@/lib/utils/staff-name';
@@ -451,11 +453,17 @@ export async function deleteBom(tenantId: string, actorId: string, id: string) {
 
 // ── Production logging ───────────────────────────────────────────────────────
 
+export type ProductionPlanConsumptionLine = ConsumptionLine & {
+  /** Tenant-defined unit labels (ARGUS #481). */
+  unitName: string;
+  unitShortLabel: string;
+};
+
 export interface ProductionPlanView {
   bomId: string;
   variantId: string;
   quantity: number;
-  consumption: ConsumptionLine[];
+  consumption: ProductionPlanConsumptionLine[];
   sufficient: boolean;
 }
 
@@ -465,8 +473,14 @@ export interface ProductionPlanView {
  */
 export async function planProduction(tenantId: string, bomId: string, quantity: number) {
   const bom = await findOwnedBom(prisma, tenantId, bomId);
-  const ingredients = bom.items.map(toBomIngredient);
-  const consumption = computeConsumptionPlan(ingredients, quantity);
+  const [ingredients, unitCatalog] = await Promise.all([
+    Promise.resolve(bom.items.map(toBomIngredient)),
+    listRawMaterialUnitCatalog(tenantId),
+  ]);
+  const consumption = computeConsumptionPlan(ingredients, quantity).map((line) => {
+    const labels = resolveRawMaterialUnitLabels(unitCatalog, line.unit);
+    return { ...line, unitName: labels.name, unitShortLabel: labels.shortLabel };
+  });
   return {
     bomId,
     variantId: bom.variantId,

@@ -20,7 +20,6 @@ import {
   useProductionPlan,
   useProduceGoods,
 } from '@/hooks/useBom';
-import { getUnitShortLabel } from '@/lib/services/rawMaterial.core';
 import { factoryFeedErrorMessage } from '@/components/raw-materials/factoryDashboardState';
 
 interface ProductionLogDialogProps {
@@ -186,7 +185,7 @@ export function ProductionLogDialog({ bomId, onClose }: ProductionLogDialogProps
                         line.insufficient ? 'font-semibold text-red-600' : 'text-mist-ink'
                       }
                     >
-                      {line.required} {getUnitShortLabel(line.unit as 'LITERS' | 'KILOGRAMS')}
+                      {line.required} {line.unitShortLabel}
                       {line.insufficient
                         ? ` (only ${line.available})`
                         : ''}
