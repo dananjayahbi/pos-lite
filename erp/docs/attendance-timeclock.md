@@ -6,7 +6,8 @@
 compact variant, so any signed-in user can clock in/out from any page that uses
 the store layout. The widget reads the current user's status from
 `GET /api/store/timeclock/me` and invalidates both the header status and the
-attendance table after a punch.
+attendance table after a punch. On `/staff/timeclock` it is hidden for users
+without `staff:attendance:view` (ARGUS #355).
 
 The old "Clock actions" card was removed from the attendance page; clocking is
 now exclusively in the header.
@@ -146,7 +147,9 @@ carries the human status.
 
 ## Permissions
 
-- View the table: `staff:attendance:view` (`PERMISSIONS.STAFF.viewAttendance`)
+- View the table: `staff:attendance:view` (`PERMISSIONS.STAFF.viewAttendance`).
+  The `/staff/timeclock` layout redirects users without it to `/pos`; see
+  `attendance-page-access.md`.
 - Adjust punches / mark status: `staff:attendance:manage`
   (`PERMISSIONS.STAFF.manageAttendance`) — OWNER and MANAGER have it.
 
