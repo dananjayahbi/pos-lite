@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -46,6 +46,14 @@ import {
   getPermissionRisk,
   newHighRiskGrants,
 } from '@/lib/services/permissionRisk.core';
+import {
+  filterPermissionGroups,
+  grantGroupExtras,
+  permissionLabel,
+  resetGroupPermissions,
+  summarizePermissionOverrides,
+  type PermissionGridGroup,
+} from '@/lib/services/permissionGrid.core';
 import { resolveStaffRosterState } from '@/lib/services/staffRosterState.core';
 import {
   filterStaffRoster,
@@ -113,7 +121,7 @@ const GROUP_LABELS: Record<keyof typeof PERMISSIONS, string> = {
 };
 
 function formatPermissionLabel(permission: string) {
-  return permission.split(':').slice(1).join(' ').replace(/_/g, ' ');
+  return permissionLabel(permission);
 }
 
 function RoleBadge({ role }: { role: AssignableRole }) {
@@ -145,6 +153,9 @@ export default function UserPermissionsSettingsClient({
   const [draftPermissions, setDraftPermissions] = useState<string[]>([]);
   // ARGUS #464: role defaults the operator has revoked for this user.
   const [draftDenied, setDraftDenied] = useState<string[]>([]);
+  // ARGUS #466: permission grid search and group collapse.
+  const [permissionSearch, setPermissionSearch] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
   const [pendingHighRisk, setPendingHighRisk] = useState<
     Array<{ permission: string; reason: string }>
   >([]);
@@ -234,6 +245,75 @@ export default function UserPermissionsSettingsClient({
 
   const inheritedPermissions = new Set(ROLE_PERMISSIONS[draftRole]);
 
+  // ARGUS #466: grouped grid, filtered by the search box, with a single dirty
+  // decision shared by the Save button, the dirty badge and the close warning.
+  const permissionGroups = useMemo<PermissionGridGroup[]>(
+    () =>
+      (Object.entries(PERMISSIONS) as Array<[string, Record<string, string>]>).map(
+        ([group, entries]) => ({
+          group,
+          label: GROUP_LABELS[group as keyof typeof PERMISSIONS],
+          permissions: Object.values(entries),
+        }),
+      ),
+    [],
+  );
+  const visibleGroups = useMemo(
+    () => filterPermissionGroups(permissionGroups, permissionSearch),
+    [permissionGroups, permissionSearch],
+  );
+  const draftPayload = permissionPayloadToSave(draftPermissions, draftRole, draftDenied);
+  const draftDirty =
+    editingMember !== null &&
+    !isStaffPermissionDraftUnchanged(
+      {
+        role: editingMember.role,
+        isActive: editingMember.isActive,
+        permissions: editingMember.permissions,
+      },
+      { role: draftRole, isActive: draftIsActive, permissions: draftPayload },
+    );
+
+  function toggleGroup(group: string) {
+    setCollapsedGroups((current) =>
+      current.includes(group)
+        ? current.filter((entry) => entry !== group)
+        : [...current, group],
+    );
+  }
+
+  function applyGroupGrant(groupPermissions: readonly string[]) {
+    const next = grantGroupExtras({
+      permissions: draftPermissions,
+      denied: draftDenied,
+      groupPermissions,
+      inherited: inheritedPermissions,
+      grantable,
+    });
+    if (!next.changed) return;
+    setDraftPermissions(next.permissions);
+    setDraftDenied(next.denied);
+  }
+
+  function applyGroupReset(groupPermissions: readonly string[]) {
+    const next = resetGroupPermissions({
+      permissions: draftPermissions,
+      denied: draftDenied,
+      groupPermissions,
+    });
+    if (!next.changed) return;
+    setDraftPermissions(next.permissions);
+    setDraftDenied(next.denied);
+  }
+
+  function closeEditor() {
+    if (draftDirty && !window.confirm('Discard unsaved permission changes?')) {
+      return;
+    }
+    setEditingMember(null);
+    setPendingHighRisk([]);
+  }
+
   function openEditor(member: StaffMember) {
     setEditingMember(member);
     setDraftRole(member.role);
@@ -241,6 +321,8 @@ export default function UserPermissionsSettingsClient({
     // Normalize on open: legacy rows may store inherited permissions too.
     setDraftPermissions(extraPermissions(member.permissions, member.role));
     setDraftDenied(deniedPermissions(member.permissions, member.role));
+    setPermissionSearch('');
+    setCollapsedGroups([]);
     setPendingHighRisk([]);
   }
 
@@ -450,14 +532,36 @@ export default function UserPermissionsSettingsClient({
                         {member.isActive ? 'Active' : 'Inactive'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-xs text-espresso">
-                      {extraPermissions(member.permissions, member.role).length} extra
-                      {deniedPermissions(member.permissions, member.role).length > 0 && (
-                        <span className="text-terracotta">
-                          {' '}
-                          · {deniedPermissions(member.permissions, member.role).length} revoked
-                        </span>
-                      )}
+                    <TableCell
+                      className="max-w-56 text-xs text-espresso"
+                      title={summarizePermissionOverrides(
+                        member.permissions,
+                        ROLE_PERMISSIONS[member.role],
+                        50,
+                      ).text}
+                    >
+                      {(() => {
+                        const summary = summarizePermissionOverrides(
+                          member.permissions,
+                          ROLE_PERMISSIONS[member.role],
+                        );
+                        return (
+                          <>
+                            <span className="font-mono">
+                              {summary.explicit.length} extra
+                              {summary.revoked.length > 0 && (
+                                <span className="text-terracotta">
+                                  {' '}
+                                  · {summary.revoked.length} revoked
+                                </span>
+                              )}
+                            </span>
+                            <p className="mt-0.5 line-clamp-2 text-[11px] text-sand-ink">
+                              {summary.text}
+                            </p>
+                          </>
+                        );
+                      })()}
                     </TableCell>
                     {canSave && (
                       <TableCell className="text-right">
@@ -526,7 +630,7 @@ export default function UserPermissionsSettingsClient({
         </p>
       )}
 
-      <Dialog open={editingMember !== null} onOpenChange={(open) => !open && setEditingMember(null)}>
+      <Dialog open={editingMember !== null} onOpenChange={(open) => !open && closeEditor()}>
         <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle className="font-display text-espresso">
@@ -573,12 +677,102 @@ export default function UserPermissionsSettingsClient({
             </div>
 
             <div className="space-y-4">
-              <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-2">
-                {Object.entries(PERMISSIONS).map(([groupName, groupPermissions]) => (
-                  <div key={groupName} className="rounded-lg border border-mist p-4">
-                    <h3 className="font-display text-lg text-espresso">{GROUP_LABELS[groupName as keyof typeof PERMISSIONS]}</h3>
-                    <div className="mt-3 grid gap-3 md:grid-cols-2">
-                      {Object.values(groupPermissions).map((permission) => {
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="min-w-48 flex-1">
+                    <Label htmlFor="permission-search" className="text-sm text-sand-ink">
+                      Search permissions
+                    </Label>
+                    <Input
+                      id="permission-search"
+                      type="search"
+                      value={permissionSearch}
+                      onChange={(event) => setPermissionSearch(event.target.value)}
+                      placeholder="Search by name or key..."
+                      className="mt-1 border-mist"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-mist"
+                    onClick={() =>
+                      setCollapsedGroups(
+                        collapsedGroups.length === permissionGroups.length
+                          ? []
+                          : permissionGroups.map((group) => group.group),
+                      )
+                    }
+                  >
+                    {collapsedGroups.length === permissionGroups.length
+                      ? 'Expand all'
+                      : 'Collapse all'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-mist"
+                    disabled={!canAssignPermissions}
+                    onClick={() => {
+                      setDraftPermissions([]);
+                      setDraftDenied([]);
+                    }}
+                  >
+                    Reset extras
+                  </Button>
+                </div>
+
+                <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-2">
+                  {visibleGroups.length === 0 ? (
+                    <p className="rounded-md border border-mist p-4 text-sm text-sand-ink">
+                      No permissions match “{permissionSearch}”.
+                    </p>
+                  ) : (
+                    visibleGroups.map((group) => {
+                      const collapsed = collapsedGroups.includes(group.group);
+                      return (
+                        <div key={group.group} className="rounded-lg border border-mist p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleGroup(group.group)}
+                              aria-expanded={!collapsed}
+                              className="flex items-center gap-1.5 font-display text-lg text-espresso"
+                            >
+                              <span aria-hidden="true">{collapsed ? '▸' : '▾'}</span>
+                              {group.label}
+                              <span className="text-xs font-normal text-sand-ink">
+                                ({group.permissions.length})
+                              </span>
+                            </button>
+                            {canAssignPermissions && (
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs text-espresso"
+                                  onClick={() => applyGroupGrant(group.permissions)}
+                                >
+                                  Grant all
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs text-sand-ink"
+                                  onClick={() => applyGroupReset(group.permissions)}
+                                >
+                                  Reset
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                          {!collapsed && (
+                            <div className="mt-3 grid gap-3 md:grid-cols-2">
+                              {group.permissions.map((permission) => {
                         const inherited = inheritedPermissions.has(permission as PermissionKey);
                         const revoked = inherited && draftDenied.includes(permission);
                         const explicit = !inherited && draftPermissions.includes(permission);
@@ -645,19 +839,31 @@ export default function UserPermissionsSettingsClient({
                             </div>
                           </label>
                         );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
 
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setEditingMember(null)}>
-                  Cancel
-                </Button>
-                <Button onClick={requestSave} disabled={updateMutation.isPending || !canSave}>
-                  {updateMutation.isPending ? 'Saving...' : 'Save changes'}
-                </Button>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {draftDirty && (
+                    <Badge variant="secondary" className="bg-sand text-espresso">
+                      Unsaved changes
+                    </Badge>
+                  )}
+                  <Button variant="outline" onClick={closeEditor}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={requestSave}
+                    disabled={updateMutation.isPending || !canSave || !draftDirty}
+                  >
+                    {updateMutation.isPending ? 'Saving...' : 'Save changes'}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
