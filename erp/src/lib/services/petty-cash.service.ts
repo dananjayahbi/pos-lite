@@ -85,6 +85,15 @@ export interface PettyCashExportData {
     receiptImageUrl: string | null;
     recordedByEmail: string;
   }[];
+  /** Individual cash-in transactions in the same period as the statement. */
+  topUps: {
+    id: string;
+    entryDate: string;
+    source: string;
+    description: string;
+    amount: number;
+    recordedByEmail: string | null;
+  }[];
   byCategory: ExpenseCategoryTotal[];
 }
 
@@ -1132,6 +1141,93 @@ export async function buildPettyCashExportData(
     expensesInPeriod: periodExpensesAgg._sum.amount ?? 0,
   });
 
+  // ARGUS #412: the export used to show cash-in only as an aggregate. List the
+  // individual period top-ups with their source, note and operator.
+  const topUpEntries = topUpBase
+    ? await prisma.paymentAccountEntry.findMany({
+        where: {
+          ...topUpBase,
+          ...(periodFiltered
+            ? {
+                entryDate: {
+                  ...(start ? { gte: start } : {}),
+                  ...(end ? { lte: end } : {}),
+                },
+              }
+            : {}),
+        },
+        orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+        select: {
+          id: true,
+          entryDate: true,
+          description: true,
+          debit: true,
+          createdById: true,
+          source: true,
+          sourceId: true,
+          transferGroupId: true,
+        },
+      })
+    : [];
+
+  const transferKeys = Array.from(
+    new Set(
+      topUpEntries
+        .filter((entry) => entry.source !== PaymentEntrySource.DEPOSIT)
+        .map((entry) => entry.transferGroupId ?? entry.sourceId)
+        .filter((key): key is string => Boolean(key)),
+    ),
+  );
+  const sourceEntries =
+    transferKeys.length > 0 && accountId
+      ? await prisma.paymentAccountEntry.findMany({
+          where: {
+            tenantId,
+            credit: { gt: 0 },
+            accountId: { not: accountId },
+            OR: [
+              { transferGroupId: { in: transferKeys } },
+              { sourceId: { in: transferKeys } },
+            ],
+          },
+          select: {
+            transferGroupId: true,
+            sourceId: true,
+            account: { select: { name: true } },
+          },
+        })
+      : [];
+  const sourceNameByKey = new Map<string, string>();
+  for (const entry of sourceEntries) {
+    const key = entry.transferGroupId ?? entry.sourceId;
+    if (key) sourceNameByKey.set(key, entry.account.name);
+  }
+
+  const topUpActorIds = Array.from(new Set(topUpEntries.map((entry) => entry.createdById)));
+  const topUpActors =
+    topUpActorIds.length > 0
+      ? await prisma.user.findMany({
+          where: { tenantId, id: { in: topUpActorIds } },
+          select: { id: true, email: true },
+        })
+      : [];
+  const topUpEmailById = new Map(topUpActors.map((actor) => [actor.id, actor.email]));
+
+  const exportTopUps = topUpEntries.map((entry) => {
+    const key = entry.transferGroupId ?? entry.sourceId;
+    return {
+      id: entry.id,
+      entryDate: entry.entryDate.toISOString(),
+      source:
+        entry.source === PaymentEntrySource.DEPOSIT
+          ? 'External cash'
+          : (key ? sourceNameByKey.get(key) : undefined) ?? 'Account transfer',
+      description: entry.description,
+      amount: entry.debit.toNumber(),
+      recordedByEmail: topUpEmailById.get(entry.createdById) ?? null,
+    };
+  });
+
   return {
     fund: {
       id: fund.id,
@@ -1170,6 +1266,7 @@ export async function buildPettyCashExportData(
       receiptImageUrl: e.receiptImageUrl,
       recordedByEmail: e.recordedBy.email,
     })),
+    topUps: exportTopUps,
     byCategory,
   };
 }
