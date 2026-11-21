@@ -75,8 +75,10 @@ function CategoryEditForm({
         name: name.trim(),
         sortOrder: Number.parseInt(sortOrder, 10) || 0,
         imageUrl: imageUrl ?? '',
+        // Always send the description: an empty textarea clears the stored text
+        // instead of leaving the old description untouched (ARGUS #166).
+        description: description.trim() ? description.trim() : null,
       };
-      if (description.trim()) body.description = description.trim();
 
       const res = await fetch(url, {
         method,

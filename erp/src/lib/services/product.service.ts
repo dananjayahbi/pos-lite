@@ -144,14 +144,14 @@ export interface UpdateVariantInput {
 
 export interface CreateCategoryInput {
   name: string;
-  description?: string;
+  description?: string | null;
   sortOrder?: number;
   imageUrl?: string | null;
 }
 
 export interface UpdateCategoryInput {
   name?: string;
-  description?: string;
+  description?: string | null;
   sortOrder?: number;
   imageUrl?: string | null;
 }
