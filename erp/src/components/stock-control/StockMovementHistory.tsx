@@ -32,6 +32,7 @@ import { useGlobalStockMovements } from '@/hooks/useGlobalStockMovements';
 import { useStockActors } from '@/hooks/useStockActors';
 import { stockActorLabel } from '@/lib/stock/actor-label';
 import { resolveStockMovementSource } from '@/lib/stock/movement-source';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -58,13 +59,6 @@ import {
 
 const ALL_REASONS = [...STOCK_MOVEMENT_REASONS];
 const PAGE_SIZE = 25;
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  const time = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true });
-  return `${date}, ${time}`;
-}
 
 function getDefaultFrom(): string {
   const d = new Date();
@@ -535,7 +529,7 @@ function StockMovementHistoryInner() {
                     return (
                       <TableRow key={m.id}>
                         <TableCell className="whitespace-nowrap text-sm">
-                          {formatDate(m.createdAt)}
+                          {formatStockMovementTimestamp(m.createdAt)}
                         </TableCell>
                         <TableCell>
                           <Link
