@@ -32,8 +32,10 @@ export async function GET() {
     const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebsite);
     if (forbidden) return forbidden;
 
+    // BUG-69: the picker must only offer live categories. Filtering by tenant
+    // alone let a soft-deleted category be selected and saved into a section.
     const categories = await prisma.category.findMany({
-      where: { tenantId },
+      where: { tenantId, deletedAt: null },
       select: { id: true, name: true, description: true },
       orderBy: { name: 'asc' },
     });
