@@ -6,10 +6,12 @@
  * Persisted under `Tenant.settings.delivery.label`.
  */
 export interface DeliveryLabelTemplate {
-  /** Sender name printed in the "From" row. Falls back to tenant branding. */
+  /** Sender name printed in the "From" row. Sourced from the Store Profile. */
   brandName: string;
-  /** Sender contact printed in the "Contact" row. */
+  /** Sender contact printed in the "Contact" row. Sourced from the Store Profile. */
   fromContact: string;
+  /** Pickup/return address printed when the Store Profile has one. */
+  pickupAddress?: string;
 }
 
 /**

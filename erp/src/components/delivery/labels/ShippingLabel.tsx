@@ -11,6 +11,7 @@ import {
 } from '@/lib/delivery/waybill';
 import type { DeliveryLabelTemplate } from '@/types/delivery-label';
 import { collectableCodAmount, isPrepaidOrder } from '@/lib/delivery/cod';
+import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
 import { buildSampleLabelProps, buildSampleSheetProps } from './sampleLabel';
 
 interface Address {
@@ -95,7 +96,8 @@ function SectionTitle({ children }: { children: ReactNode }) {
  *
  * The layout is fixed to the courier's sticker: logo + waybill barcode header,
  * sender block, customer block, order description, and the courier's company
- * footer. Only the sender name/contact come from the tenant template.
+ * footer. The sender identity and pickup address come from the tenant's Store
+ * Profile (ARGUS #301), not a stale saved label value.
  *
  * The component fills its parent cell; printing places two of those cells on
  * one A4 landscape sheet (see `printShippingLabels`).
@@ -168,6 +170,9 @@ export function ShippingLabel({ template, address, delivery, waybillId }: Shippi
       <div className="mt-[1mm]">
         <WaybillRow label="From" value={template.brandName || '-'} />
         <WaybillRow label="Contact" value={template.fromContact || '-'} />
+        {template.pickupAddress?.trim() && (
+          <WaybillRow label="Pickup address" value={template.pickupAddress} />
+        )}
         <WaybillRow label="Date" value={formatWaybillDate(date)} />
         <WaybillRow label="Order No" value={delivery.orderRef || '-'} />
       </div>
@@ -252,6 +257,18 @@ const WAYBILL_SHEET_CSS = `@page { size: A4 landscape; margin: 0; }
 }`;
 
 /**
+ * ARGUS #300: never render a courier-facing waybill with a blank recipient
+ * block. The UI disables the buttons and lists the missing fields; this throw
+ * protects every remaining caller.
+ */
+function assertWaybillRecipient(delivery: LabelDeliveryLike): void {
+  const decision = waybillRecipientPrintDecision(delivery.address);
+  if (!decision.canPrint) {
+    throw new Error(`Waybill cannot be printed for ${delivery.orderRef || 'this order'} - ${decision.reason}`);
+  }
+}
+
+/**
  * Renders a real delivery's label into a print overlay. Only the label is
  * printed; the rest of the app is hidden via injected print CSS.
  */
@@ -259,6 +276,7 @@ export function printShippingLabel(delivery: LabelDeliveryLike, template: Delive
   if (!template.brandName?.trim()) {
     throw new Error('Waybill template is not loaded - the sender identity is missing');
   }
+  assertWaybillRecipient(delivery);
   renderPrintOverlay(
     <div className="waybill-sheet">
       <div className="waybill-page">
@@ -309,6 +327,27 @@ export function printShippingLabels(
   if (!template.brandName?.trim()) {
     throw new Error('Waybill template is not loaded - the sender identity is missing');
   }
+
+  const blocked = deliveries
+    .map((delivery) => ({
+      delivery,
+      decision: waybillRecipientPrintDecision(delivery.address),
+    }))
+    .filter(({ decision }) => !decision.canPrint);
+  if (blocked.length > 0) {
+    const details = blocked
+      .slice(0, 3)
+      .map(
+        ({ delivery, decision }) =>
+          `${delivery.orderRef || 'order'} (${decision.missing.join(', ')})`,
+      )
+      .join('; ');
+    const more = blocked.length > 3 ? `; +${blocked.length - 3} more` : '';
+    throw new Error(
+      `Waybill printing blocked for ${blocked.length} order(s): ${details}${more}`,
+    );
+  }
+
   renderPrintOverlay(
     <div className="waybill-sheet">
       {deliveries.map((delivery, index) => (

@@ -75,7 +75,7 @@ export function BulkActionBar({
         onClick={onPrint}
         disabled={isBusy || isPrintingInvoices || waybillPrintDisabled}
         aria-busy={isPrintingWaybills}
-        title={waybillPrintDisabled ? 'Waybill template is not loaded' : undefined}
+        title={waybillPrintDisabled ? 'Waybill printing is disabled' : undefined}
         data-testid="bulk-waybills"
       >
         {isPrintingWaybills ? (

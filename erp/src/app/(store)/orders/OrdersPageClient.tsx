@@ -37,6 +37,8 @@ import {
   visibleSelectedIds,
 } from '@/components/orders/selection';
 import { commonBulkStatusTargets } from '@/lib/services/dispatchStatus.core';
+import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
+import { waybillSenderDecision } from '@/lib/delivery/sender';
 import type { DeliveryListItem } from '@/types/delivery';
 import type { DeliveryStatus } from '@/generated/prisma/client';
 
@@ -86,6 +88,7 @@ export function OrdersPageClient() {
   });
   const template = resolveLabelTemplate(labelTemplate, branding);
   const canPrintWaybillNow = canPrintWaybill(templateState, template);
+  const senderDecision = waybillSenderDecision(template);
 
   // Filters and paging clear the selection: bulk actions never silently include
   // rows the operator can no longer see (ARGUS #262).
@@ -183,7 +186,9 @@ export function OrdersPageClient() {
     toast.error(
       templateState === 'error'
         ? 'Waybill template failed to load - retry before printing'
-        : 'Waybill template is still loading',
+        : templateState !== 'ready'
+          ? 'Waybill template is still loading'
+          : senderDecision.reason ?? 'Sender details are missing from the Store Profile',
     );
     return false;
   };
@@ -191,6 +196,22 @@ export function OrdersPageClient() {
   const handlePrint = () => {
     if (selectedOrders.length === 0) return;
     if (!ensureWaybillTemplate()) return;
+    const blocked = selectedOrders
+      .map((order) => ({ order, decision: waybillRecipientPrintDecision(order.address) }))
+      .filter(({ decision }) => !decision.canPrint);
+    if (blocked.length > 0) {
+      const details = blocked
+        .slice(0, 3)
+        .map(
+          ({ order, decision }) =>
+            `${order.orderRef} (${decision.missing.join(', ')})`,
+        )
+        .join('; ');
+      toast.error(
+        `Waybill printing blocked for ${blocked.length} selected order(s): ${details}${blocked.length > 3 ? `; +${blocked.length - 3} more` : ''}`,
+      );
+      return;
+    }
     void runPrint('bulk-waybills', async () => {
       printShippingLabels(selectedOrders, template);
       await waitForPrintOverlayToClose();
@@ -208,6 +229,11 @@ export function OrdersPageClient() {
 
   const handlePrintSingleWaybill = (order: DeliveryListItem) => {
     if (!ensureWaybillTemplate()) return;
+    const decision = waybillRecipientPrintDecision(order.address);
+    if (!decision.canPrint) {
+      toast.error(`${order.orderRef}: ${decision.reason}`);
+      return;
+    }
     void runPrint(`waybill:${order.id}`, async () => {
       printShippingLabels([order], template);
       await waitForPrintOverlayToClose();
@@ -242,6 +268,20 @@ export function OrdersPageClient() {
           >
             {templateFetching ? 'Retrying…' : 'Retry'}
           </Button>
+        </div>
+      )}
+
+      {senderDecision.missing.length > 0 && (
+        <div
+          role="alert"
+          className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 font-body text-sm text-amber-800"
+        >
+          <p className="font-medium">
+            {senderDecision.canPrint
+              ? 'Waybill sender address is missing.'
+              : 'Waybill printing is blocked - sender details are incomplete.'}
+          </p>
+          <p>{senderDecision.reason}. Update the Store Profile before printing.</p>
         </div>
       )}
 

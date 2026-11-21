@@ -20,6 +20,8 @@ import {
 } from '@/components/delivery/labels/labelTemplateState';
 import { printOrderInvoice } from '@/components/delivery/invoices/printOrderInvoice';
 import { deliveryDetailViewState } from '@/components/delivery/detailLoadState';
+import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
+import { waybillSenderDecision } from '@/lib/delivery/sender';
 import { deliveryErrorStatus } from '@/lib/delivery/loadError';
 import { waitForPrintOverlayToClose } from '@/lib/print-session';
 import { toast } from 'sonner';
@@ -62,10 +64,17 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
   });
   const waybillTemplate = resolveLabelTemplate(labelTemplate, branding);
   const canPrintWaybillNow = canPrintWaybill(templateState, waybillTemplate);
-  const waybillBlockedReason =
-    templateState === 'error'
+  const senderDecision = waybillSenderDecision(waybillTemplate);
+  const recipientDecision = waybillRecipientPrintDecision(delivery?.address);
+  const waybillBlockedReason = !canPrintWaybillNow
+    ? templateState === 'error'
       ? 'Waybill template failed to load - retry before printing'
-      : 'Waybill template is still loading';
+      : templateState !== 'ready'
+        ? 'Waybill template is still loading'
+        : senderDecision.reason ?? 'Sender details are missing from the Store Profile'
+    : !recipientDecision.canPrint
+      ? recipientDecision.reason
+      : null;
 
   const [dispatchOpen, setDispatchOpen] = useState(false);
   /** Which print action is running, so its button can show a spinner. */
@@ -85,7 +94,11 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
   const handlePrintWaybill = () => {
     if (!delivery) return;
     if (!canPrintWaybillNow) {
-      toast.error(waybillBlockedReason);
+      toast.error(waybillBlockedReason ?? 'Waybill cannot be printed');
+      return;
+    }
+    if (!recipientDecision.canPrint) {
+      toast.error(recipientDecision.reason ?? 'Recipient address is incomplete');
       return;
     }
     void runPrint('waybill', async () => {
@@ -136,9 +149,9 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
             <Button
               variant="outline"
               onClick={handlePrintWaybill}
-              disabled={printing !== null || !canPrintWaybillNow}
+              disabled={printing !== null || !canPrintWaybillNow || !recipientDecision.canPrint}
               aria-busy={printing === 'waybill'}
-              title={!canPrintWaybillNow ? waybillBlockedReason : undefined}
+              title={waybillBlockedReason ?? undefined}
               data-testid="delivery-waybill-button"
             >
               {printing === 'waybill' ? (
@@ -200,6 +213,32 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
           >
             {templateFetching ? 'Retrying…' : 'Retry'}
           </Button>
+        </div>
+      )}
+
+      {/* Missing sender profile (ARGUS #301) */}
+      {senderDecision.missing.length > 0 && (
+        <div
+          role="alert"
+          className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 font-body text-sm text-amber-800"
+        >
+          <p className="font-medium">
+            {senderDecision.canPrint
+              ? 'Waybill sender address is missing.'
+              : 'Waybill printing is blocked.'}
+          </p>
+          <p>{senderDecision.reason}. Update the Store Profile before printing.</p>
+        </div>
+      )}
+
+      {/* Missing recipient block (ARGUS #300) */}
+      {delivery && !recipientDecision.canPrint && (
+        <div
+          role="alert"
+          className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 font-body text-sm text-amber-800"
+        >
+          <p className="font-medium">Waybill printing is blocked.</p>
+          <p>{recipientDecision.reason}. Add the shipping address before printing.</p>
         </div>
       )}
 

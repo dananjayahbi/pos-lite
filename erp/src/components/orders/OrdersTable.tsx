@@ -9,6 +9,7 @@ import {
   paymentMethodLabel,
   paymentStatusLabel,
 } from './orderAmount';
+import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
 import { OrderStatusBadge } from './OrderStatusBadge';
 import type { DeliveryListItem } from '@/types/delivery';
 
@@ -75,6 +76,7 @@ export function OrdersTable({
             const shipment = order.shipments?.[0];
             const waybill = order.waybill ?? shipment?.waybillId;
             const amount = orderAmountSummary(order);
+            const recipientDecision = waybillRecipientPrintDecision(order.address);
             return (
               <tr key={order.id} className="border-b border-espresso/5 hover:bg-espresso/5 transition-colors">
                 <td className="px-4 py-3">
@@ -118,6 +120,9 @@ export function OrdersTable({
                 <td className="px-4 py-3">
                   <OrderStatusBadge status={order.status} />
                   {waybill && <p className="mt-0.5 text-xs text-espresso/40">{waybill}</p>}
+                  {!recipientDecision.canPrint && (
+                    <p className="mt-0.5 text-xs text-red-600">{recipientDecision.reason}</p>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5">
@@ -128,9 +133,15 @@ export function OrdersTable({
                       size="sm"
                       variant="outline"
                       onClick={() => onPrint(order)}
-                      disabled={printBusy || waybillPrintDisabled}
+                      disabled={
+                        printBusy || waybillPrintDisabled || !recipientDecision.canPrint
+                      }
                       aria-busy={printingWaybillId === order.id}
-                      title={waybillPrintDisabled ? 'Waybill template is not loaded' : undefined}
+                      title={
+                        waybillPrintDisabled
+                          ? 'Waybill printing is disabled'
+                          : recipientDecision.reason ?? undefined
+                      }
                       data-testid={`order-waybill-${order.id}`}
                     >
                       {printingWaybillId === order.id ? (

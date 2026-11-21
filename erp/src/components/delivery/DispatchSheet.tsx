@@ -34,6 +34,8 @@ import {
   togglePackagingItemId,
 } from '@/lib/packaging/packagingSelection.core';
 import { formatPackagingQuantity } from '@/lib/constants/packaging';
+import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
+import { waybillSenderDecision } from '@/lib/delivery/sender';
 import { printShippingLabel } from './labels/ShippingLabel';
 import {
   canPrintWaybill,
@@ -65,6 +67,8 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
   });
   const waybillTemplate = resolveLabelTemplate(labelTemplate, branding);
   const canPrintWaybillNow = canPrintWaybill(templateState, waybillTemplate);
+  const senderDecision = waybillSenderDecision(waybillTemplate);
+  const recipientDecision = waybillRecipientPrintDecision(delivery?.address);
   const [printing, setPrinting] = useState(false);
   // ARGUS #282: the server rejects a short packaging plan until the operator
   // explicitly acknowledges it; the details come from the typed 409.
@@ -142,10 +146,16 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
       );
       return;
     }
+    if (!recipientDecision.canPrint) {
+      toast.error(recipientDecision.reason ?? 'Recipient address is incomplete');
+      return;
+    }
     setPrinting(true);
     try {
       printShippingLabel(delivery, waybillTemplate);
       await waitForPrintOverlayToClose();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Printing failed');
     } finally {
       setPrinting(false);
     }
@@ -163,6 +173,22 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
 
         {delivery && (
           <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
+            {senderDecision.missing.length > 0 && (
+              <p
+                role="alert"
+                className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+              >
+                {senderDecision.reason}. Update the Store Profile before printing.
+              </p>
+            )}
+            {!recipientDecision.canPrint && (
+              <p
+                role="alert"
+                className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+              >
+                Waybill printing is blocked - {recipientDecision.reason}.
+              </p>
+            )}
             {/* Waybill Mode */}
             <div className="space-y-1.5">
               <Label>Waybill Mode</Label>
@@ -279,9 +305,19 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
                 type="button"
                 variant="outline"
                 onClick={() => void handlePrintWaybill()}
-                disabled={printing || dispatch.isPending || !canPrintWaybillNow}
+                disabled={
+                  printing || dispatch.isPending || !canPrintWaybillNow || !recipientDecision.canPrint
+                }
                 aria-busy={printing}
-                title={!canPrintWaybillNow ? 'Waybill template is not loaded' : undefined}
+                title={
+                  !canPrintWaybillNow
+                    ? templateState === 'ready'
+                      ? senderDecision.reason ?? 'Sender details are incomplete'
+                      : templateState === 'error'
+                        ? 'Waybill template failed to load'
+                        : 'Waybill template is still loading'
+                    : recipientDecision.reason ?? undefined
+                }
                 data-testid="dispatch-waybill-button"
               >
                 {printing ? (

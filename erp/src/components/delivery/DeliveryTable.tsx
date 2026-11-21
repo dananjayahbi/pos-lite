@@ -13,6 +13,8 @@ import { FailureReasonTag } from './FailureReasonTag';
 import { DispatchSheet } from './DispatchSheet';
 import { CancelDeliveryDialog } from './CancelDeliveryDialog';
 import { canCancelDelivery } from './cancelDelivery';
+import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
+import { waybillSenderDecision } from '@/lib/delivery/sender';
 import {
   deliveryPrintButtonState,
   deliveryPrintKey,
@@ -64,6 +66,11 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
   });
   const waybillTemplate = resolveLabelTemplate(labelTemplate, branding);
   const canPrintWaybillNow = canPrintWaybill(templateState, waybillTemplate);
+  const senderDecision = waybillSenderDecision(waybillTemplate);
+  const templateBlockedReason =
+    templateState === 'error'
+      ? 'Waybill template failed to load'
+      : 'Waybill template is still loading';
   const canDispatch = hasPermission(PERMISSIONS.DELIVERY.dispatchDelivery);
   const canCancel = hasPermission(PERMISSIONS.DELIVERY.cancelDelivery);
 
@@ -93,6 +100,11 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
   const handlePrint = (delivery: DeliveryListItem) => {
     if (!canPrintWaybillNow) {
       toast.error('Waybill template is not loaded');
+      return;
+    }
+    const decision = waybillRecipientPrintDecision(delivery.address);
+    if (!decision.canPrint) {
+      toast.error(decision.reason ?? 'Recipient address is incomplete');
       return;
     }
     void runPrint('waybill', delivery, async () => {
@@ -128,6 +140,19 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
           </Button>
         </div>
       )}
+      {senderDecision.missing.length > 0 && (
+        <div
+          role="alert"
+          className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 font-body text-sm text-amber-800"
+        >
+          <p className="font-medium">
+            {senderDecision.canPrint
+              ? 'Waybill sender address is missing.'
+              : 'Waybill printing is blocked - sender details are incomplete.'}
+          </p>
+          <p>{senderDecision.reason}. Update the Store Profile before printing.</p>
+        </div>
+      )}
       <div className="overflow-x-auto rounded-lg border border-espresso/10">
         <table className="w-full">
           <thead>
@@ -150,6 +175,7 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
               const isPending = canCancelDelivery(d.status);
               const waybillPrint = deliveryPrintButtonState(printing, 'waybill', d.id);
               const invoicePrint = deliveryPrintButtonState(printing, 'invoice', d.id);
+              const recipientDecision = waybillRecipientPrintDecision(d.address);
               return (
                 <tr
                   key={d.id}
@@ -174,7 +200,12 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                       {d.status === 'FAILED' && <FailureReasonTag reason={d.failureReason} />}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-espresso/60">{waybill ?? '-'}</td>
+                  <td className="px-4 py-3 text-sm text-espresso/60">
+                    {waybill ?? '-'}
+                    {!recipientDecision.canPrint && (
+                      <p className="mt-0.5 text-xs text-red-600">{recipientDecision.reason}</p>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm text-espresso/60">
                     {formatDate(d.dispatchedAt)}
                   </td>
@@ -191,12 +222,14 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                         size="sm"
                         variant="outline"
                         onClick={() => handlePrint(d)}
-                        disabled={!canPrintWaybillNow || waybillPrint.isBusy}
+                        disabled={!canPrintWaybillNow || !recipientDecision.canPrint || waybillPrint.isBusy}
                         aria-busy={waybillPrint.isActive}
                         title={
                           !canPrintWaybillNow
-                            ? 'Waybill template is not loaded'
-                            : undefined
+                            ? templateState === 'ready'
+                              ? senderDecision.reason ?? 'Sender details are incomplete'
+                              : templateBlockedReason
+                            : recipientDecision.reason ?? undefined
                         }
                         data-testid={`delivery-waybill-${d.id}`}
                       >
