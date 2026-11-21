@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getCashFlowStatement } from '@/lib/services/cashflow.service';
+import { parseRangeStart, parseRangeEnd } from '@/lib/dates/inclusiveRange';
 
 export async function GET(request: Request) {
   try {
@@ -45,8 +46,8 @@ export async function GET(request: Request) {
       );
     }
 
-    const dateFrom = new Date(dateFromParam);
-    const dateTo = new Date(dateToParam);
+    const dateFrom = parseRangeStart(dateFromParam);
+    const dateTo = parseRangeEnd(dateToParam);
 
     if (isNaN(dateFrom.getTime()) || isNaN(dateTo.getTime())) {
       return NextResponse.json(

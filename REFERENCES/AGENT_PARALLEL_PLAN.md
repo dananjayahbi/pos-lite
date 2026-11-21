@@ -95,13 +95,24 @@ For each agent commit:
   and enforced), #156 (barcode dialog A4 24-up layout), #181 (manual adjustment
   reasons restricted), #182 (stock-take Review link), #198 (stock ledger audit +
   repair CLI).
-- Batch 4 in flight: agent-sales -> #192 (serialize adjustments), #193 (reason
-  vs direction); agent-pos -> #205 (stock-take item/completion guards), #206
-  (cancel-with-apply bypass); agent-reports -> #213 (low-stock false all-clear).
-- Main agent: #141 (form filter), #142 (stock-status pagination + shared rule),
-  #143 (VAT label 18%) done; #207 (stock-take negative stock) held until #205/#206
-  land, then re-evaluate against #138's approval-time deltas.
-- Checkpoint after batch 3: full suite 129 files / 1126 tests green.
+- Batch 4 submitted + merged: #192 (row-locked adjustments), #193 (reason vs
+  direction), #198 (ledger audit/repair), #213 (low-stock error state), #241
+  (raw-material edit/delete guards), #242 (raw-material pre-pagination filter),
+  #243 (raw-material costing: unitCost, valuation, production material cost),
+  #244 (factory dashboard error states), #262 (dispatch pagination), #263 (bulk
+  dispatch status guard), #270 (tracking refresh/shipment status), #279
+  (packaging deduction), #280 (packaging stock guards), #287 (website weight
+  pricing), #288 (COD includes shipping), #289 (rate-card load guard), #298
+  (waybill template/branding), #309 (completed-sale marketing segments), #310
+  (customer returns tab), #322 (sequential promotion stacking), #323/#324
+  (category resolution + BOGO targets), #325 (deactivate/activate), #326
+  (customer-pricing stacking regression), #337 (payout-backed commissions).
+- Batch 5 in flight: agent-reports -> #338 (payslip), #339 (password reset),
+  then #348/#349 (attendance calendar/punch entry); agent-sales idle.
+- Main agent next: maintain checkpoints and take tasks that do not overlap the
+  agents' modules.
+- Checkpoint after batch 4: full suite green at 149 files / 1,292 tests
+  (plus two em-dash copy fixes committed separately).
 - Worktrees are reset with `git -C <wt> reset --hard argus_qa` between batches;
   their old commits are already merged, so this is safe.
 - Every agent task must call `log_task_progress` before `submit_for_review`

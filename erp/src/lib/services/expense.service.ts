@@ -10,6 +10,7 @@ import {
 } from '@/lib/services/petty-cash.service';
 import { PaymentEntrySource } from '@/generated/prisma/client';
 import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/paymentAccount.service';
+import { parseRangeStart, parseRangeEnd } from '@/lib/dates/inclusiveRange';
 
 interface ExpenseFilters {
   category?: string | undefined;
@@ -32,10 +33,10 @@ export async function getExpenses(tenantId: string, filters: ExpenseFilters) {
 
   const dateFilter: Record<string, Date> = {};
   if (filters.dateFrom) {
-    dateFilter.gte = new Date(filters.dateFrom);
+    dateFilter.gte = parseRangeStart(filters.dateFrom);
   }
   if (filters.dateTo) {
-    dateFilter.lte = new Date(filters.dateTo);
+    dateFilter.lte = parseRangeEnd(filters.dateTo);
   }
   if (Object.keys(dateFilter).length > 0) {
     where.expenseDate = dateFilter;
