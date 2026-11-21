@@ -21,7 +21,11 @@ export default async function StockTakeSessionPage(props: {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-      <StockTakeSession sessionId={sessionId} permissions={userPermissions} />
+      <StockTakeSession
+        sessionId={sessionId}
+        permissions={userPermissions}
+        userId={session.user.id}
+      />
     </div>
   );
 }

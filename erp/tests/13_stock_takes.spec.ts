@@ -569,7 +569,7 @@ test.describe.serial('Module 13 — Stock Takes (full-scope QA)', () => {
     const detail = await getSession(page, state.sessionId!);
     expect(new Date(detail.startedAt).getTime()).toBeLessThanOrEqual(Date.now() + 60_000);
     const staleComplete = await post(page, `/api/store/stock-control/stock-takes/${state.sessionId}/complete`);
-    expect(staleComplete.status()).toBe(404);
+    expect(staleComplete.status()).toBe(409);
     const staleCancel = await post(page, `/api/store/stock-control/stock-takes/${state.sessionId}/cancel`, { action: 'none' });
     expect(staleCancel.status()).toBe(400);
   });

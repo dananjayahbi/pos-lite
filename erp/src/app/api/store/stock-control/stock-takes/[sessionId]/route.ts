@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { hasPermission } from '@/lib/utils/permissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 export async function GET(
   _request: Request,
@@ -21,6 +23,15 @@ export async function GET(
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: 'No tenant associated' } },
         { status: 401 },
+      );
+    }
+
+    // ARGUS #205 — the direct session read is gated like the list so a user
+    // without stock:take cannot load the counting data.
+    if (!hasPermission(session.user, PERMISSIONS.STOCK.conductStockTake)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
       );
     }
 

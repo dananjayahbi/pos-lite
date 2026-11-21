@@ -7,6 +7,7 @@ export interface StockTakeSessionSummary {
   categoryId: string | null;
   categoryName: string | null;
   status: string;
+  initiatedById: string;
   initiatedBy: string;
   startedAt: string;
   completedAt: string | null;
