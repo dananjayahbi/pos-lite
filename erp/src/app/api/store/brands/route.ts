@@ -78,7 +78,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const brand = await createBrand(tenantId, parsed.data as CreateBrandInput);
+    const brand = await createBrand(tenantId, session.user.id, parsed.data as CreateBrandInput);
 
     // Revalidate so the new brand shows as a storefront filter immediately.
     try {

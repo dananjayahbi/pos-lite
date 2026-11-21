@@ -10,8 +10,8 @@ dialog that could only fail at the API (ARGUS #165).
   `_count.products` (the freshly loaded detail count, falling back to the list
   row while it loads).
 - An in-use category's Delete button is disabled, carries the accessible label
-  and tooltip `Cannot delete <name>: N products assigned - reassign or archive
-them first`, and shows that reason inline under the button.
+  and tooltip `Cannot delete <name>: N products assigned - reassign or delete
+  them first`, and shows that reason inline under the button.
 - A category with zero products keeps the normal enabled Delete.
 
 The copy lives in `lib/categories/categoryDelete.core.ts` and is used by both

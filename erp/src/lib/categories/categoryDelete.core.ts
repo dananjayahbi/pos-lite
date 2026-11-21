@@ -5,7 +5,7 @@
  */
 
 export function assignedProductsReason(count: number): string {
-  return `${count} product${count === 1 ? '' : 's'} assigned - reassign or archive them first`;
+  return `${count} product${count === 1 ? '' : 's'} assigned - reassign or delete them first`;
 }
 
 /** Blocked reason for an in-use category, or `undefined` when deletable. */

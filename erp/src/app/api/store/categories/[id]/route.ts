@@ -90,7 +90,7 @@ export async function PATCH(
     }
 
     const { id } = await params;
-    const updated = await updateCategory(tenantId, id, parsed.data as UpdateCategoryInput);
+    const updated = await updateCategory(tenantId, id, session.user.id, parsed.data as UpdateCategoryInput);
 
     // Revalidate so the category change is reflected on the storefront filters immediately.
     try {
