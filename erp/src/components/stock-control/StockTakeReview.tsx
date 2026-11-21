@@ -39,6 +39,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useStockTakeSession, type StockTakeItemDetail } from '@/hooks/useStockTakeSession';
+import { StockTakeId } from '@/components/stock-control/StockTakeId';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 
@@ -367,7 +368,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
                 Session ID
               </dt>
               <dd className="font-mono text-sm text-espresso">
-                {sessionData.id.slice(0, 12)}…
+                <StockTakeId id={sessionData.id} />
               </dd>
             </div>
             <div>

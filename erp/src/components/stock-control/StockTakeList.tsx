@@ -46,6 +46,7 @@ import { useStockTakeSessions } from '@/hooks/useStockTakeSessions';
 import { useInvalidateStockQueries } from '@/hooks/useInvalidateStockQueries';
 import { useCategories } from '@/hooks/useCategories';
 import { stockTakeAction } from '@/components/stock-control/stockTakeLinks';
+import { StockTakeId } from '@/components/stock-control/StockTakeId';
 import { canCancelStockTake } from '@/lib/services/stockTakePolicy.core';
 import { isStaleStockTake } from '@/lib/services/stockTakeAge.core';
 import { staffDisplayName } from '@/lib/utils/staff-name';
@@ -406,8 +407,8 @@ export function StockTakeList({ permissions, userId }: StockTakeListProps) {
                 const stale = isStaleStockTake(s.startedAt, s.status);
                 return (
                   <TableRow key={s.id} className="hover:bg-pearl/50">
-                    <TableCell className="font-mono text-xs text-espresso">
-                      {s.id.slice(0, 8)}
+                    <TableCell>
+                      <StockTakeId id={s.id} />
                     </TableCell>
                     <TableCell className="font-body text-sm text-espresso">
                       {s.categoryName ?? 'All Products'}
