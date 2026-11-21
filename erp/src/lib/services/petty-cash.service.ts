@@ -801,11 +801,31 @@ export async function topUpPettyCash(
   const amount = new Decimal(input.amount);
   const groupId = `pc_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
   const entryDate = input.entryDate;
+  const sourceType =
+    input.sourceType ?? (input.sourceAccountId ? 'ACCOUNT' : 'EXTERNAL');
+
+  // Defense in depth: the validator already enforces the split, but a service
+  // caller must not be able to label an account transfer as external cash (or
+  // record external cash against a bank account).
+  if (sourceType === 'ACCOUNT' && !input.sourceAccountId) {
+    throw new ApiError(
+      422,
+      'VALIDATION_ERROR',
+      'Select the account the transfer came from',
+    );
+  }
+  if (sourceType === 'EXTERNAL' && input.sourceAccountId) {
+    throw new ApiError(
+      422,
+      'VALIDATION_ERROR',
+      'External cash cannot name a source account',
+    );
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     let sourceName: string | null = null;
 
-    if (input.sourceAccountId) {
+    if (sourceType === 'ACCOUNT' && input.sourceAccountId) {
       const source = await tx.paymentAccount.findFirst({
         where: { id: input.sourceAccountId, tenantId },
         include: { pettyCashFund: { select: { id: true } } },
@@ -891,6 +911,7 @@ export async function topUpPettyCash(
         action: AUDIT_ACTIONS.PETTY_CASH_TOP_UP,
         after: {
           amount: amount.toNumber(),
+          sourceType,
           sourceAccountId: input.sourceAccountId ?? null,
           description: buildTopUpDescription(sourceName, input.description),
           entryDate: (entryDate ?? new Date()).toISOString(),
@@ -903,6 +924,7 @@ export async function topUpPettyCash(
       fund: updated,
       amount: amount.toNumber(),
       description: buildTopUpDescription(sourceName, input.description),
+      sourceType,
       sourceAccountId: input.sourceAccountId ?? null,
     };
   });
