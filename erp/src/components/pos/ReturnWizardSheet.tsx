@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCartStore } from '@/stores/cartStore';
@@ -91,17 +91,15 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
     return reasons;
   }, [saleData]);
 
-  useEffect(() => {
-    if (!saleData) return;
-    const storeCreditBlocked = refundMethod === 'STORE_CREDIT' && !saleHasCustomer;
-    if (storeCreditBlocked || tenderMismatchReasons[refundMethod]) {
-      setRefundMethod(
-        defaultRefundMethodForSale(saleData as SaleTenderSnapshot, {
+  // Derived, never synced via an effect: an invalid choice falls back to the
+  // most truthful method for this sale without cascading renders.
+  const effectiveRefundMethod: ReturnRefundMethod =
+    !(refundMethod === 'STORE_CREDIT' && !saleHasCustomer) &&
+    !tenderMismatchReasons[refundMethod]
+      ? refundMethod
+      : defaultRefundMethodForSale(saleData as SaleTenderSnapshot, {
           storeCreditAvailable: saleHasCustomer,
-        }),
-      );
-    }
-  }, [saleData, saleHasCustomer, refundMethod, tenderMismatchReasons]);
+        });
 
   const resetWizard = useCallback(() => {
     setStep(1);
@@ -134,12 +132,12 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
 
   const handleSubmit = async () => {
     if (!saleId) return;
-    if (refundMethod === 'STORE_CREDIT' && !saleHasCustomer) {
+    if (effectiveRefundMethod === 'STORE_CREDIT' && !saleHasCustomer) {
       toast.error('Store credit requires a sale linked to a customer');
       return;
     }
-    if (tenderMismatchReasons[refundMethod]) {
-      toast.error(tenderMismatchReasons[refundMethod]);
+    if (tenderMismatchReasons[effectiveRefundMethod]) {
+      toast.error(tenderMismatchReasons[effectiveRefundMethod]);
       return;
     }
 
@@ -155,11 +153,11 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
             variantId: l.variantId,
             quantity: l.quantity,
           })),
-          refundMethod,
+          refundMethod: effectiveRefundMethod,
           restockItems,
           reason,
           ...(authorizedById ? { authorizedById } : {}),
-          ...(refundMethod === 'CARD_REVERSAL' && cardReversalReference
+          ...(effectiveRefundMethod === 'CARD_REVERSAL' && cardReversalReference
             ? { cardReversalReference }
             : {}),
         }),
@@ -178,7 +176,7 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
 
       void queryClient.invalidateQueries({ queryKey: ['sale-history'] });
 
-      if (refundMethod === 'EXCHANGE') {
+      if (effectiveRefundMethod === 'EXCHANGE') {
         const store = useCartStore.getState();
         store.clearCart();
         store.setExchangeCredit(
@@ -192,7 +190,7 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
         setReceiptState({
           returnId: returnRecord.id,
           refundAmount: returnRecord.refundAmount,
-          refundMethod,
+          refundMethod: effectiveRefundMethod,
         });
         return;
       }
@@ -355,7 +353,7 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
               {step === 2 && (
                 <ReturnRefundOptionsStep
                   refundTotal={refundTotal}
-                  refundMethod={refundMethod}
+                  refundMethod={effectiveRefundMethod}
                   cardReversalReference={cardReversalReference}
                   reason={reason}
                   storeCreditAvailable={saleHasCustomer}

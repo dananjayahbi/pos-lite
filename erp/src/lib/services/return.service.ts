@@ -17,6 +17,7 @@ import {
   buildReturnAccountLegs,
   postReturnRefundToAccounts,
 } from '@/lib/services/saleAccounts';
+import { resolveSaleIdByReference } from '@/lib/services/returnReference';
 import { issueCredit } from '@/lib/services/customer.service';
 
 const RETURN_WINDOW_DAYS = 30;
@@ -451,8 +452,13 @@ export async function getReturns(tenantId: string, filters: GetReturnsFilters = 
 
   const where: Record<string, unknown> = { tenantId };
 
-  if (filters.originalSaleId !== undefined) {
-    where.originalSaleId = filters.originalSaleId;
+  if (filters.originalSaleId !== undefined && filters.originalSaleId.trim() !== '') {
+    // ARGUS #98: the filter accepts the printed 8-char reference, not only the
+    // full cuid. Ambiguous prefixes fail with a typed 409 (tenant-scoped).
+    where.originalSaleId = await resolveSaleIdByReference(
+      tenantId,
+      filters.originalSaleId,
+    );
   }
   if (filters.initiatedById !== undefined) {
     where.initiatedById = filters.initiatedById;
