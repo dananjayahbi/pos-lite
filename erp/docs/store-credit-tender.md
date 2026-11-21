@@ -63,6 +63,9 @@ legs are excluded from cash/card/QR totals; the sale value itself still counts
 in total sales. This also fixes SPLIT sales, which were previously absent from
 the cash/card breakdown.
 
+`EXCHANGE_CREDIT` is a separate tender funded by an exchange return; see
+[`exchange-credit.md`](./exchange-credit.md).
+
 Editing a sale's delivery charge keeps the `STORE_CREDIT` leg fixed (it is
 pinned to the customer's balance) and re-scales only the cash/card legs. An edit
 that would push the total below the redeemed credit, or add a charge to a

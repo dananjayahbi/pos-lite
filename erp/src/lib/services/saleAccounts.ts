@@ -202,15 +202,20 @@ export async function reverseSaleAccounts(
  * without a database.
  */
 export function buildSaleAccountLegs(input: {
-  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | 'NONE' | 'STORE_CREDIT';
+  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | 'NONE' | 'STORE_CREDIT' | 'EXCHANGE_CREDIT';
   totalAmount: Decimal | number | string;
   cardAmount?: Decimal | number | string | undefined;
   splitLegMethod?: 'CARD' | 'LANKAQR' | undefined;
 }): SaleAccountLeg[] {
   const total = new Decimal(input.totalAmount);
-  // NONE (zero-value) and STORE_CREDIT (settled from the customer's balance)
-  // collect no money into an account.
-  if (total.lessThanOrEqualTo(0) || input.paymentMethod === 'NONE' || input.paymentMethod === 'STORE_CREDIT') {
+  // NONE (zero-value), STORE_CREDIT and EXCHANGE_CREDIT collect no money into
+  // an account: they settle against a customer balance / a linked return.
+  if (
+    total.lessThanOrEqualTo(0) ||
+    input.paymentMethod === 'NONE' ||
+    input.paymentMethod === 'STORE_CREDIT' ||
+    input.paymentMethod === 'EXCHANGE_CREDIT'
+  ) {
     return [];
   }
 

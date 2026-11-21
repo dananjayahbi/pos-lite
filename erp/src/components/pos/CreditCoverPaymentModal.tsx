@@ -9,34 +9,44 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import type { CreateSalePayload, CompletedSale } from '@/types/pos.types';
 
-interface StoreCreditPaymentModalProps {
+type CreditMethod = 'STORE_CREDIT' | 'EXCHANGE_CREDIT';
+
+interface CreditCoverPaymentModalProps {
   open: boolean;
   onClose: () => void;
   onSaleComplete: (sale: CompletedSale) => void;
+  /** Tender recorded on the sale. */
+  method: CreditMethod;
+  /** Label for the credit row, e.g. "Store credit applied". */
+  creditLabel: string;
   /** Sale value before the credit is applied. */
   saleTotal: Decimal;
-  /** Credit redeemed from the customer's balance. */
+  /** Credit applied to this sale. */
   creditAmount: Decimal;
   salePayload: CreateSalePayload;
 }
 
 /**
- * Confirmation for a sale fully settled by store credit.
+ * Confirmation for a sale fully settled by credit (store credit or an EXCHANGE
+ * return).
  *
  * Credit is a real tender: the sale keeps its full total and the API records a
- * STORE_CREDIT payment leg instead of collecting cash/card. A fully covered
- * sale is therefore completed here, not through the zero-value flow (which is
- * reserved for genuinely free or replacement sales).
+ * credit payment leg instead of collecting cash/card. A fully covered sale is
+ * therefore completed here, not through the zero-value flow (which is reserved
+ * for genuinely free or replacement sales).
  */
-export function StoreCreditPaymentModal({
+export function CreditCoverPaymentModal({
   open,
   onClose,
   onSaleComplete,
+  method,
+  creditLabel,
   saleTotal,
   creditAmount,
   salePayload,
-}: StoreCreditPaymentModalProps) {
+}: CreditCoverPaymentModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const title = method === 'EXCHANGE_CREDIT' ? 'Exchange Credit' : 'Store Credit Payment';
 
   const handleClose = () => {
     if (isSubmitting && !window.confirm('Are you sure? The sale may still be processing.')) {
@@ -55,8 +65,10 @@ export function StoreCreditPaymentModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...salePayload,
-          paymentMethod: 'STORE_CREDIT',
-          appliedStoreCredit: creditAmount.toFixed(2),
+          paymentMethod: method,
+          ...(method === 'STORE_CREDIT' && {
+            appliedStoreCredit: creditAmount.toFixed(2),
+          }),
         }),
       });
       const json = (await res.json()) as {
@@ -93,7 +105,7 @@ export function StoreCreditPaymentModal({
         }}
       >
         <DialogHeader>
-          <DialogTitle className="font-display">Store Credit Payment</DialogTitle>
+          <DialogTitle className="font-display">{title}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -103,7 +115,7 @@ export function StoreCreditPaymentModal({
               <span className="font-mono">{formatRupee(saleTotal.toNumber())}</span>
             </div>
             <div className="font-body flex justify-between text-sm text-green-700">
-              <span>Store credit applied</span>
+              <span>{creditLabel}</span>
               <span className="font-mono">-{formatRupee(creditAmount.toNumber())}</span>
             </div>
             <div className="border-mist/30 font-body text-espresso flex justify-between border-t pt-1.5 text-sm font-semibold">
@@ -114,8 +126,9 @@ export function StoreCreditPaymentModal({
 
           <div className="bg-linen rounded-lg border-l-4 border-[#2D6A4F] p-3">
             <p className="font-body text-espresso text-sm">
-              The customer&rsquo;s store credit covers this sale in full. The amount will be
-              deducted from their balance when you confirm.
+              {method === 'EXCHANGE_CREDIT'
+                ? 'The linked return covers this sale in full. The replacement sale will be linked to the return.'
+                : 'The customer\u2019s store credit covers this sale in full. The amount will be deducted from their balance when you confirm.'}
             </p>
           </div>
 
@@ -127,6 +140,8 @@ export function StoreCreditPaymentModal({
           >
             {isSubmitting ? (
               <Loader2 className="h-5 w-5 animate-spin" />
+            ) : method === 'EXCHANGE_CREDIT' ? (
+              'Complete Exchange Sale'
             ) : (
               'Complete Sale with Store Credit'
             )}

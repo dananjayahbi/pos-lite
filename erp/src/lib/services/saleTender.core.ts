@@ -21,14 +21,17 @@ export interface SaleTenderLeg {
  */
 export function buildSaleTenderLegs(input: {
   paymentMethod: PaymentMethod;
-  /** Amount still to collect after store credit. */
+  /** Amount still to collect after store credit and exchange credit. */
   payableAmount: Decimal;
   creditAmount: Decimal;
+  /** Credit from the linked EXCHANGE return applied to this sale. */
+  exchangeCreditAmount?: Decimal | undefined;
   cardAmount?: Decimal | undefined;
   splitLegMethod?: 'CARD' | 'LANKAQR' | undefined;
 }): SaleTenderLeg[] {
   const legs: SaleTenderLeg[] = [];
   const payable = input.payableAmount;
+  const exchangeCredit = input.exchangeCreditAmount ?? new Decimal(0);
 
   if (payable.greaterThan(0)) {
     switch (input.paymentMethod) {
@@ -54,6 +57,7 @@ export function buildSaleTenderLegs(input: {
       }
       case 'NONE':
       case 'STORE_CREDIT':
+      case 'EXCHANGE_CREDIT':
         // Not a collectable tender: any payable amount must use cash/card/QR.
         break;
     }
@@ -61,6 +65,10 @@ export function buildSaleTenderLegs(input: {
 
   if (input.creditAmount.greaterThan(0)) {
     legs.push({ method: 'STORE_CREDIT', amount: input.creditAmount });
+  }
+
+  if (exchangeCredit.greaterThan(0)) {
+    legs.push({ method: 'EXCHANGE_CREDIT', amount: exchangeCredit });
   }
 
   return legs;

@@ -70,6 +70,8 @@ interface CartState {
     cartDiscountPercent: number;
     cartDiscountAmount: number;
     promotions?: CartPromotionSnapshot;
+    /** Credit from an EXCHANGE return, persisted so a reload keeps it. */
+    exchange?: { returnId: string; credit: number; ref: string } | null;
   }) => void;
   setExchangeCredit: (returnId: string, credit: number, ref: string) => void;
   clearExchangeCredit: () => void;
@@ -273,7 +275,13 @@ export const useCartStore = create<CartState>((set, get) => ({
    * Promotion state is then re-evaluated in the background to catch promotions
    * that changed while the cart was parked.
    */
-  restoreCartWithPromotions: ({ items, cartDiscountPercent, cartDiscountAmount, promotions }) => {
+  restoreCartWithPromotions: ({
+    items,
+    cartDiscountPercent,
+    cartDiscountAmount,
+    promotions,
+    exchange,
+  }) => {
     const restored = createCartPromotionSnapshot(promotions);
     set({
       items,
@@ -286,6 +294,9 @@ export const useCartStore = create<CartState>((set, get) => ({
       totalPromotionDiscount: restored.totalPromotionDiscount,
       appliedPromoCode: restored.appliedPromoCode,
       isEvaluatingPromotions: false,
+      linkedReturnId: exchange?.returnId ?? null,
+      exchangeCredit: exchange?.credit ?? null,
+      exchangeReturnRef: exchange?.ref ?? null,
     });
     sendCFDUpdate(get());
     if (items.length > 0) schedulePromoEval(get);

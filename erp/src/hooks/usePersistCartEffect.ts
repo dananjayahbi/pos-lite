@@ -14,6 +14,16 @@ interface PersistedCartState {
   cartDiscountPercent: number;
   cartDiscountAmount: number;
   promotions?: CartPromotionSnapshot;
+  /**
+   * Credit from an EXCHANGE return. Persisted even when the cart is empty so a
+   * reload between processing the return and building the replacement sale
+   * does not lose the customer's value.
+   */
+  exchange?: {
+    returnId: string;
+    credit: number;
+    ref: string;
+  } | null;
 }
 
 export function usePersistCartEffect(cartState: PersistedCartState): void {
@@ -29,12 +39,14 @@ export function usePersistCartEffect(cartState: PersistedCartState): void {
         const snapshot = await loadCartSnapshot(CART_STORE_KEY);
         if (!cancelled && snapshot) {
           const data = snapshot as PersistedCartState;
-          if (data.items && data.items.length > 0) {
+          const hasItems = Array.isArray(data.items) && data.items.length > 0;
+          if (hasItems || data.exchange) {
             useCartStore.getState().restoreCartWithPromotions({
-              items: data.items,
+              items: hasItems ? data.items : [],
               cartDiscountPercent: data.cartDiscountPercent ?? 0,
               cartDiscountAmount: data.cartDiscountAmount ?? 0,
               promotions: createCartPromotionSnapshot(data.promotions),
+              exchange: data.exchange ?? null,
             });
           }
         }
@@ -55,7 +67,7 @@ export function usePersistCartEffect(cartState: PersistedCartState): void {
     if (!hydrated) return;
     (async () => {
       try {
-        if (cartState.items.length === 0) {
+        if (cartState.items.length === 0 && !cartState.exchange) {
           await clearCartSnapshot(CART_STORE_KEY);
         } else {
           await saveCartSnapshot(CART_STORE_KEY, {
@@ -63,6 +75,7 @@ export function usePersistCartEffect(cartState: PersistedCartState): void {
             cartDiscountPercent: cartState.cartDiscountPercent,
             cartDiscountAmount: cartState.cartDiscountAmount,
             promotions: createCartPromotionSnapshot(cartState.promotions),
+            exchange: cartState.exchange ?? null,
           });
         }
       } catch (err) {

@@ -66,7 +66,7 @@ interface Sale {
   taxAmount: number;
   deliveryCharge: number;
   totalAmount: number;
-  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | 'STORE_CREDIT' | 'NONE' | null;
+  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | 'STORE_CREDIT' | 'EXCHANGE_CREDIT' | 'NONE' | null;
   status: 'OPEN' | 'COMPLETED' | 'VOIDED';
   authorizingManagerId: string | null;
   saleDate: string | null;
@@ -103,7 +103,7 @@ function formatTime(dateStr: string): string {
   return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
-/** Guest sales have no customer record — never render a blank or "null". */
+/** Guest sales have no customer record â€” never render a blank or "null". */
 function customerLabel(sale: Sale): string {
   return sale.customer?.name?.trim() || 'Walk-in / Guest';
 }
@@ -121,9 +121,11 @@ function PaymentBadge({ method }: { method: string | null }) {
     LANKAQR: 'bg-[#5B3E96] text-white',
     SPLIT: 'bg-terracotta text-white',
     STORE_CREDIT: 'bg-[#7C5E10] text-white',
+    EXCHANGE_CREDIT: 'bg-[#2D6A4F] text-white',
   };
   const labels: Record<string, string> = {
     STORE_CREDIT: 'Store Credit',
+    EXCHANGE_CREDIT: 'Exchange Credit',
     NONE: 'None',
   };
   return (
@@ -282,6 +284,7 @@ export function SaleHistoryTable() {
           <option value="LANKAQR">LankaQR</option>
           <option value="SPLIT">Split</option>
           <option value="STORE_CREDIT">Store Credit</option>
+          <option value="EXCHANGE_CREDIT">Exchange Credit</option>
         </select>
         <DateRangeFilter
           value={dateRange}
@@ -364,7 +367,7 @@ export function SaleHistoryTable() {
                       <p>{formatDate(sale.saleDate)}</p>
                       {/* A backdated sale carries a synthetic 12:00 anchor (the
                           date input is day-granular), so the real clock time only
-                          exists for same-day entries — show createdAt's time. */}
+                          exists for same-day entries â€” show createdAt's time. */}
                       <p className="font-mono text-[10px] text-mist-ink">
                         {formatTime(sale.createdAt)}
                       </p>
@@ -540,7 +543,7 @@ export function SaleHistoryTable() {
               disabled={voidLoading}
               className="bg-[#9B2226] text-white hover:bg-[#9B2226]/90"
             >
-              {voidLoading ? 'Voiding…' : 'Confirm Void'}
+              {voidLoading ? 'Voidingâ€¦' : 'Confirm Void'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -555,7 +558,7 @@ export function SaleHistoryTable() {
         }}
       />
 
-      {/* Edit sheet — customer, accounting date and delivery charge only */}
+      {/* Edit sheet â€” customer, accounting date and delivery charge only */}
       <SaleEditSheet
         sale={editSale}
         open={editSale !== null}

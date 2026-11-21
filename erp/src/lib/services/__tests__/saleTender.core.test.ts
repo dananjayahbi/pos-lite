@@ -96,4 +96,39 @@ describe('buildSaleTenderLegs', () => {
 
     expect(legs).toEqual([]);
   });
+
+  it('applies an exchange credit and collects only the remainder', () => {
+    const legs = buildSaleTenderLegs({
+      paymentMethod: 'CASH',
+      payableAmount: new Decimal('500.00'),
+      creditAmount: new Decimal(0),
+      exchangeCreditAmount: new Decimal('1240.40'),
+    });
+
+    expect(legMap(legs)).toEqual({ CASH: 500, EXCHANGE_CREDIT: 1240.4 });
+    expect(legsTotal(legs)).toBe(1740.4);
+  });
+
+  it('records only the exchange leg when the return covers the sale', () => {
+    const legs = buildSaleTenderLegs({
+      paymentMethod: 'EXCHANGE_CREDIT',
+      payableAmount: new Decimal(0),
+      creditAmount: new Decimal(0),
+      exchangeCreditAmount: new Decimal('980.25'),
+    });
+
+    expect(legMap(legs)).toEqual({ EXCHANGE_CREDIT: 980.25 });
+  });
+
+  it('stacks store credit and exchange credit before the tender', () => {
+    const legs = buildSaleTenderLegs({
+      paymentMethod: 'CARD',
+      payableAmount: new Decimal('100.00'),
+      creditAmount: new Decimal('300.00'),
+      exchangeCreditAmount: new Decimal('200.00'),
+    });
+
+    expect(legMap(legs)).toEqual({ CARD: 100, STORE_CREDIT: 300, EXCHANGE_CREDIT: 200 });
+    expect(legsTotal(legs)).toBe(600);
+  });
 });

@@ -196,7 +196,9 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
               >
                 {sale.paymentMethod === 'STORE_CREDIT'
                   ? 'Store Credit'
-                  : (sale.paymentMethod ?? '-')}
+                  : sale.paymentMethod === 'EXCHANGE_CREDIT'
+                    ? 'Exchange Credit'
+                    : (sale.paymentMethod ?? '-')}
               </Badge>
             </TableCell>
             <TableCell className="text-espresso font-medium">

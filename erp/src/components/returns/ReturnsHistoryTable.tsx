@@ -43,7 +43,7 @@ interface SaleData {
   discountAmount: number;
   taxAmount: number;
   totalAmount: number;
-  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | 'STORE_CREDIT' | 'NONE' | null;
+  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | 'STORE_CREDIT' | 'EXCHANGE_CREDIT' | 'NONE' | null;
   status: 'OPEN' | 'COMPLETED' | 'VOIDED';
   authorizingManagerId: string | null;
   createdAt: string;
@@ -214,7 +214,7 @@ export function ReturnsHistoryTable() {
         <div className="space-y-1">
           <label className="font-body text-xs text-mist-ink">Sale ID</label>
           <Input
-            placeholder="Search by sale ID…"
+            placeholder="Search by sale IDâ€¦"
             value={filters.originalSaleId}
             onChange={(e) => setFilters((prev) => ({ ...prev, originalSaleId: e.target.value }))}
             className="h-9 w-50 font-body text-sm"

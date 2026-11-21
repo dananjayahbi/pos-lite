@@ -64,6 +64,8 @@ export const CreateSaleSchema = z
     // all ("just put the bill"). Only meaningful when customerId is absent.
     isGuestSale: z.boolean().optional(),
     appliedStoreCredit: z.string().optional().default('0'),
+    // EXCHANGE return whose credit funds this replacement sale.
+    linkedReturnId: z.string().min(1).optional(),
     appliedPromotions: z.any().optional(),
     promoCode: z.string().max(50).optional(),
     // Backdated / missed-entry sales carry their own accounting date.
@@ -164,6 +166,16 @@ export const CreateSaleSchema = z
           message: 'Store credit amount is required when paying by store credit',
         });
       }
+    }
+    // EXCHANGE_CREDIT is funded by the linked return, so that link is required.
+    // The service verifies the return exists, is an EXCHANGE, and that its
+    // credit covers the total (or that the remainder can be issued).
+    if (data.paymentMethod === 'EXCHANGE_CREDIT' && !data.linkedReturnId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['paymentMethod'],
+        message: 'Exchange credit requires a linked return',
+      });
     }
     // Doc 34: a replacement must point at an original order reference.
     // M14-04 (req 3.11 / D14 = BOTH): and must carry the defective item barcode.

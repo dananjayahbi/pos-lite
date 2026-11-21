@@ -115,6 +115,7 @@ export function buildThermalReceiptHtml(
     CARD: 'Card',
     LANKAQR: 'LankaQR',
     STORE_CREDIT: 'Store Credit',
+    EXCHANGE_CREDIT: 'Exchange Credit',
   };
   for (const p of sale.payments) {
     paymentsHtml += `

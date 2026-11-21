@@ -161,6 +161,8 @@ enum PaymentMethod {
   NONE
   // Fully settled by the customer's store-credit balance (no cash collected).
   STORE_CREDIT
+  // Fully settled by the credit from a linked EXCHANGE return.
+  EXCHANGE_CREDIT
 }
 
 enum PaymentLegMethod {
@@ -169,6 +171,8 @@ enum PaymentLegMethod {
   LANKAQR
   // Credit redeemed from the customer's balance; moves no money into an account.
   STORE_CREDIT
+  // Credit from an EXCHANGE return applied to its replacement sale.
+  EXCHANGE_CREDIT
 }
 
 // Why a POS sale was completed with a zero (or negative) total. Drives the

@@ -6,7 +6,7 @@ import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { createPayment } from '@/lib/services/payment.service';
 import { buildSaleAccountLegs, postSaleToAccounts, reverseSaleAccounts } from '@/lib/services/saleAccounts';
-import { redeemCredit, addToSpendTotal } from '@/lib/services/customer.service';
+import { redeemCredit, addToSpendTotal, issueCredit } from '@/lib/services/customer.service';
 import { kickCashDrawer } from '@/lib/hardware/cashDrawer';
 import type { PrinterConfig } from '@/lib/hardware/printer';
 import type { CreateSaleInput, HoldSaleInput, UpdateSaleInput } from '@/lib/validators/sale.validators';
@@ -105,6 +105,50 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       throw new Error('Tenant not found');
     }
     const { vatRate, ssclRate } = extractTenantRates(tenant.settings);
+
+    // ── Linked EXCHANGE return (ARGUS #93) ─────────────────────────────
+    // An exchange refunds the returned goods as credit toward the replacement
+    // sale. The return supplies the credit; the sale records the link so the
+    // customer's value is traceable and cannot be spent twice.
+    let linkedReturn: { id: string; refundAmount: Decimal } | null = null;
+    if (input.linkedReturnId) {
+      const exchangeReturn = await tx.return.findFirst({
+        where: { id: input.linkedReturnId, tenantId },
+        select: { id: true, refundMethod: true, status: true, refundAmount: true },
+      });
+      if (!exchangeReturn) {
+        throw new ApiError(400, 'RETURN_NOT_FOUND', 'The linked return was not found');
+      }
+      if (exchangeReturn.status !== 'COMPLETED') {
+        throw new ApiError(
+          400,
+          'RETURN_NOT_COMPLETED',
+          'Only a completed return can fund a replacement sale',
+        );
+      }
+      if (exchangeReturn.refundMethod !== 'EXCHANGE') {
+        throw new ApiError(
+          400,
+          'RETURN_NOT_EXCHANGE',
+          'Only an exchange return can be linked to a replacement sale',
+        );
+      }
+      const alreadyLinked = await tx.sale.findFirst({
+        where: { tenantId, linkedReturnId: exchangeReturn.id },
+        select: { id: true },
+      });
+      if (alreadyLinked) {
+        throw new ApiError(
+          409,
+          'RETURN_ALREADY_LINKED',
+          'This return already has a linked replacement sale',
+        );
+      }
+      linkedReturn = {
+        id: exchangeReturn.id,
+        refundAmount: new Decimal(exchangeReturn.refundAmount.toString()),
+      };
+    }
 
     // Resolve variants and compute line data
     const lineData: Array<{
@@ -260,15 +304,44 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
         );
       }
     }
-    // What the cashier still has to collect after the credit.
-    const payableAmount = totalAmount
+    // What the cashier still has to collect after store credit and the linked
+    // exchange credit. The exchange applies up to what is still owed; any
+    // remainder is issued as store credit to the customer (never silently
+    // dropped).
+    const afterStoreCredit = totalAmount
       .minus(creditAmount)
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const requestedExchangeCredit = linkedReturn?.refundAmount ?? new Decimal(0);
+    const exchangeCreditAmount = Decimal.min(
+      requestedExchangeCredit,
+      Decimal.max(afterStoreCredit, 0),
+    ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const exchangeCreditRemainder = requestedExchangeCredit
+      .minus(exchangeCreditAmount)
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    if (exchangeCreditRemainder.greaterThan(0) && !input.customerId) {
+      throw new ApiError(
+        400,
+        'EXCHANGE_CREDIT_REMAINDER_REQUIRES_CUSTOMER',
+        'The exchange credit exceeds this sale - link a customer to receive the remainder as store credit',
+      );
+    }
+    const payableAmount = afterStoreCredit
+      .minus(exchangeCreditAmount)
       .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     if (input.paymentMethod === 'STORE_CREDIT' && payableAmount.greaterThan(0)) {
       throw new ApiError(
         400,
         'STORE_CREDIT_DOES_NOT_COVER_TOTAL',
         'Store credit does not cover the whole sale - choose a tender for the remaining amount',
+        { path: ['paymentMethod'] },
+      );
+    }
+    if (input.paymentMethod === 'EXCHANGE_CREDIT' && payableAmount.greaterThan(0)) {
+      throw new ApiError(
+        400,
+        'EXCHANGE_CREDIT_DOES_NOT_COVER_TOTAL',
+        'Exchange credit does not cover the whole sale - choose a tender for the remaining amount',
         { path: ['paymentMethod'] },
       );
     }
@@ -343,9 +416,11 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     // tender, and must never require a zero-value reason.
     const effectivePaymentMethod: PaymentMethod = isZeroValue
       ? 'NONE'
-      : payableAmount.lte(0) && creditAmount.greaterThan(0)
-        ? 'STORE_CREDIT'
-        : input.paymentMethod;
+      : payableAmount.lte(0) && exchangeCreditAmount.greaterThan(0)
+        ? 'EXCHANGE_CREDIT'
+        : payableAmount.lte(0) && creditAmount.greaterThan(0)
+          ? 'STORE_CREDIT'
+          : input.paymentMethod;
 
     // Create Sale
     const sale = await tx.sale.create({
@@ -360,6 +435,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
         ...(input.appliedPromotions !== undefined && {
           appliedPromotions: input.appliedPromotions,
         }),
+        ...(linkedReturn ? { linkedReturn: { connect: { id: linkedReturn.id } } } : {}),
         subtotal: subtotal.toNumber(),
         discountAmount: cartDiscount.toNumber(),
         taxAmount: totalTax.toNumber(),
@@ -422,6 +498,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       paymentMethod: input.paymentMethod,
       payableAmount,
       creditAmount,
+      exchangeCreditAmount,
       ...(input.cardAmount !== undefined ? { cardAmount: new Decimal(input.cardAmount) } : {}),
       ...(input.splitLegMethod !== undefined ? { splitLegMethod: input.splitLegMethod } : {}),
     });
@@ -466,6 +543,17 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       if (creditAmount.greaterThan(0)) {
         await redeemCredit(tenantId, input.customerId, creditAmount, tx);
       }
+      if (exchangeCreditRemainder.greaterThan(0) && linkedReturn) {
+        // The replacement is cheaper than the returned goods; the difference
+        // stays with the customer as store credit rather than disappearing.
+        await issueCredit(
+          tenantId,
+          input.customerId,
+          exchangeCreditRemainder,
+          `Exchange remainder for return ${linkedReturn.id}`,
+          tx,
+        );
+      }
       await addToSpendTotal(tenantId, input.customerId, totalAmount, tx);
     }
 
@@ -507,6 +595,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     after: {
       totalAmount: result.totalAmount,
       paymentMethod: result.paymentMethod,
+      linkedReturnId: result.linkedReturnId,
       lineCount: result.lines.length,
       deliveryCharge: result.deliveryCharge,
       customerId: result.customerId ?? null,
