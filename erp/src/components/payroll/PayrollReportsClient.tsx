@@ -197,8 +197,8 @@ function PayrollReportsContent() {
             Payroll reports & bank sheets
           </h1>
           <p className="text-sand-ink mt-1 text-sm">
-            Monthly bank payment file, EPF/ETF returns and the company cost summary for a generated
-            payroll run.
+            Monthly bank salary worksheet, EPF/ETF returns and the company cost summary for a
+            generated payroll run.
           </p>
         </div>
         <div className="flex items-end gap-3">
@@ -313,8 +313,8 @@ function PayrollReportsContent() {
           <div className="grid gap-4 lg:grid-cols-3">
             <ExportCard
               icon={<FileSpreadsheet className="h-5 w-5 text-[#2D6A4F]" />}
-              title="Bank salary sheet"
-              description="Employee names, bank accounts and net salary - ready for corporate banking batch upload."
+              title="Bank salary worksheet"
+              description="Employee NIC, bank details and net salary for manual upload - this is not a bank batch file."
               links={[
                 { href: downloadUrl(run.id, 'bank-sheet', 'xlsx'), label: 'Excel' },
                 { href: downloadUrl(run.id, 'bank-sheet', 'pdf'), label: 'PDF' },

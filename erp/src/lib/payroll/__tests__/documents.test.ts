@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import * as XLSX from 'xlsx';
 import { generatePayrollPayslipPdf } from '@/lib/payroll/payslip-pdf';
 import {
+  BANK_WORKSHEET_DISCLAIMER,
+  BANK_WORKSHEET_SHEET_NAME,
   generateBankSheetPdf,
   generateBankSheetXlsx,
+  bankSheetFilename,
 } from '@/lib/payroll/bank-sheet';
 import {
   generateStatutoryReturnPdf,
@@ -98,18 +102,49 @@ describe('payroll documents', () => {
     expect(pdf.byteLength).toBeGreaterThan(1000);
   });
 
-  it('renders bank salary sheets in Excel and PDF', () => {
+  it('renders bank salary worksheets in Excel and PDF', () => {
     const rows = [
       {
         staffName: item.staffName,
+        nic: item.nic,
         bankName: item.bankName,
         bankBranch: item.bankBranch,
         bankAccountNumber: item.bankAccountNumber,
         netSalary: item.netSalary,
       },
     ];
-    expect(isZip(generateBankSheetXlsx(meta, rows))).toBe(true);
+    const xlsx = generateBankSheetXlsx(meta, rows);
+    expect(isZip(xlsx)).toBe(true);
     expect(isPdf(generateBankSheetPdf(meta, rows))).toBe(true);
+
+    const workbook = XLSX.read(xlsx, { type: 'buffer' });
+    expect(workbook.SheetNames).toEqual([BANK_WORKSHEET_SHEET_NAME]);
+    const sheet = workbook.Sheets[BANK_WORKSHEET_SHEET_NAME]!;
+    const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as unknown[][];
+    expect(String(aoa[2]?.[0])).toBe(BANK_WORKSHEET_DISCLAIMER);
+    expect(aoa[4]).toEqual([
+      'No.',
+      'Employee Name',
+      'NIC',
+      'Bank',
+      'Branch',
+      'Account Number',
+      'Net Salary (LKR)',
+    ]);
+    expect(aoa[5]).toEqual([
+      1,
+      item.staffName,
+      item.nic,
+      item.bankName,
+      item.bankBranch,
+      item.bankAccountNumber,
+      Number(item.netSalary),
+    ]);
+  });
+
+  it('names the download a worksheet, not a bank batch file', () => {
+    expect(bankSheetFilename(meta, 'xlsx')).toBe('bank-salary-worksheet-2026-11.xlsx');
+    expect(BANK_WORKSHEET_DISCLAIMER).toContain('not a bank batch file');
   });
 
   it('renders EPF/ETF returns in Excel and PDF', () => {

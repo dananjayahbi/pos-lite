@@ -41,6 +41,7 @@ export async function getPayrollExportContext(
 export function toBankSheetRows(context: PayrollExportContext): BankSheetRow[] {
   return context.run.items.map((item) => ({
     staffName: item.staffName,
+    nic: item.nic,
     bankName: item.bankName,
     bankBranch: item.bankBranch,
     bankAccountNumber: item.bankAccountNumber,
