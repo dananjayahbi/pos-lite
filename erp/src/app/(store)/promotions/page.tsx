@@ -9,8 +9,15 @@ import Decimal from 'decimal.js';
 import { Plus, Pencil } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
 import { auditPromotions } from '@/lib/services/promotionHygiene.core';
+import {
+  getPromotionLiveState,
+  PROMOTION_LIVE_STATE_LABELS,
+  summarizePromotionLiveStates,
+  type PromotionLiveState,
+} from '@/lib/services/promotionLiveState.core';
 import { CreatePromotionSchema } from '@/lib/validators/promotion.validators';
 import type { CreatePromotionInput, UpdatePromotionInput } from '@/lib/validators/promotion.validators';
+import type { CreatePromotionFormValues } from '@/lib/validators/promotion.validators';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -134,6 +141,26 @@ function getTypeBadgeClasses(type: string): string {
   }
 }
 
+/**
+ * ARGUS #329 — the badge says what the row really does now: an on switch alone
+ * is not enough (a future or expired window still applies to nothing).
+ */
+function getLiveStateBadgeClasses(state: PromotionLiveState): string {
+  switch (state) {
+    case 'ACTIVE_NOW':
+      return 'bg-green-50 text-green-700';
+    case 'ENABLED':
+      return 'bg-sand text-espresso';
+    case 'SCHEDULED':
+      return 'bg-amber-50 text-amber-800';
+    case 'EXPIRED':
+      return 'bg-red-50 text-[#9B2226]';
+    case 'INACTIVE':
+    default:
+      return 'bg-mist/20 text-mist-ink';
+  }
+}
+
 function formatValue(type: string, value: string | number): string {
   const v = new Decimal(value.toString());
   if (type === 'CART_PERCENTAGE' || type === 'CATEGORY_PERCENTAGE' || type === 'PRODUCT_PERCENTAGE' || type === 'PROMO_CODE') {
@@ -145,7 +172,7 @@ function formatValue(type: string, value: string | number): string {
 function formatDateRange(startsAt: string | null, endsAt: string | null): string {
   if (!startsAt && !endsAt) return 'Always';
   const fmt = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  if (startsAt && endsAt) return `${fmt(startsAt)} – ${fmt(endsAt)}`;
+  if (startsAt && endsAt) return `${fmt(startsAt)} - ${fmt(endsAt)}`;
   if (startsAt) return `From ${fmt(startsAt)}`;
   return `Until ${fmt(endsAt!)}`;
 }
@@ -194,7 +221,7 @@ interface PromotionFormProps {
 }
 
 function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmitting, submitLabel }: PromotionFormProps) {
-  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<CreatePromotionInput>({
+  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<CreatePromotionFormValues, unknown, CreatePromotionInput>({
     resolver: standardSchemaResolver(CreatePromotionSchema),
     defaultValues: {
       name: '',
@@ -290,6 +317,9 @@ function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmit
               ))}
             </SelectContent>
           </Select>
+          {errors.targetCategoryId && (
+            <p className="text-xs text-[#9B2226]">{errors.targetCategoryId.message}</p>
+          )}
         </div>
       )}
 
@@ -311,6 +341,9 @@ function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmit
               ))}
             </SelectContent>
           </Select>
+          {errors.targetProductId && (
+            <p className="text-xs text-[#9B2226]">{errors.targetProductId.message}</p>
+          )}
         </div>
       )}
 
@@ -391,12 +424,19 @@ function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmit
         <div className="space-y-1.5">
           <Label htmlFor="startsAt" className="font-body text-sm text-espresso">Start Date</Label>
           <Input id="startsAt" type="date" {...register('startsAt')} className="font-body" />
+          {errors.startsAt && <p className="text-xs text-[#9B2226]">{errors.startsAt.message}</p>}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="endsAt" className="font-body text-sm text-espresso">End Date</Label>
           <Input id="endsAt" type="date" {...register('endsAt')} className="font-body" />
+          {errors.endsAt && <p className="text-xs text-[#9B2226]">{errors.endsAt.message}</p>}
         </div>
       </div>
+      <p className="font-body text-[11px] text-mist-ink">
+        Dates are inclusive local days: a start applies from 00:00 and an end
+        through 23:59. A same-day window is valid as long as the start and end
+        are the same date.
+      </p>
 
       <div className="space-y-1.5">
         <Label htmlFor="description" className="font-body text-sm text-espresso">Description</Label>
@@ -466,8 +506,9 @@ export default function PromotionsPage() {
   });
 
   const promotions = data ?? [];
-  const activeCount = promotions.filter((p) => p.isActive).length;
-  const timedCount = promotions.filter((promotion) => promotion.startsAt || promotion.endsAt).length;
+  // ARGUS #329: "active" means live at this instant, not merely isActive.
+  const liveCounts = summarizePromotionLiveStates(promotions);
+  const activeCount = liveCounts.live;
   const promoCodeCount = promotions.filter((promotion) => promotion.type === 'PROMO_CODE').length;
   const hygiene = auditPromotions(promotions);
 
@@ -578,7 +619,7 @@ export default function PromotionsPage() {
         <div>
           <h1 className="font-display text-2xl text-espresso">Promotions</h1>
           <p className="font-body text-sm text-mist-ink">
-            {activeCount} active promotion{activeCount !== 1 ? 's' : ''}
+            {activeCount} live promotion{activeCount !== 1 ? 's' : ''} now
           </p>
           <p className="mt-1 max-w-2xl font-body text-xs text-mist-ink">
             Stacking: product/category/BOGO promotions apply first (one per line), then the
@@ -644,12 +685,12 @@ export default function PromotionsPage() {
             <div className="rounded-xl border border-mist/30 bg-pearl p-4">
               <p className="font-body text-xs uppercase tracking-wide text-mist-ink">Active now</p>
               <p className="mt-2 font-display text-2xl text-espresso">{activeCount}</p>
-              <p className="mt-1 text-sm text-sand-ink">Inline create/edit still covers the common workflows cleanly.</p>
+              <p className="mt-1 text-sm text-sand-ink">Enabled or inside their date window right now.</p>
             </div>
             <div className="rounded-xl border border-mist/30 bg-pearl p-4">
-              <p className="font-body text-xs uppercase tracking-wide text-mist-ink">Scheduled windows</p>
-              <p className="mt-2 font-display text-2xl text-espresso">{timedCount}</p>
-              <p className="mt-1 text-sm text-sand-ink">Timed promotions stay easy to scan without adding route sprawl.</p>
+              <p className="font-body text-xs uppercase tracking-wide text-mist-ink">Scheduled</p>
+              <p className="mt-2 font-display text-2xl text-espresso">{liveCounts.scheduled}</p>
+              <p className="mt-1 text-sm text-sand-ink">Waiting for their start date; expired rows are not counted here.</p>
             </div>
             <div className="rounded-xl border border-mist/30 bg-pearl p-4">
               <p className="font-body text-xs uppercase tracking-wide text-mist-ink">Promo codes</p>
@@ -684,7 +725,9 @@ export default function PromotionsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {promotions.map((promo) => (
+                  {promotions.map((promo) => {
+                    const liveState = getPromotionLiveState(promo);
+                    return (
                     <TableRow key={promo.id} className="hover:bg-linen/30">
                       <TableCell className="font-body text-sm text-espresso font-medium">
                         <div>{promo.name}</div>
@@ -707,12 +750,20 @@ export default function PromotionsPage() {
                         {promo.type === 'PROMO_CODE' && promo.promoCode ? promo.promoCode : '-'}
                       </TableCell>
                       <TableCell>
-                        <Switch
-                          checked={promo.isActive}
-                          onCheckedChange={(checked) =>
-                            toggleMutation.mutate({ id: promo.id, isActive: checked })
-                          }
-                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Switch
+                            checked={promo.isActive}
+                            onCheckedChange={(checked) =>
+                              toggleMutation.mutate({ id: promo.id, isActive: checked })
+                            }
+                          />
+                          <Badge
+                            variant="secondary"
+                            className={`font-body text-xs ${getLiveStateBadgeClasses(liveState)}`}
+                          >
+                            {PROMOTION_LIVE_STATE_LABELS[liveState]}
+                          </Badge>
+                        </div>
                       </TableCell>
                       <TableCell className="font-body text-xs text-mist-ink">
                         {formatDateRange(promo.startsAt, promo.endsAt)}
@@ -729,7 +780,8 @@ export default function PromotionsPage() {
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
