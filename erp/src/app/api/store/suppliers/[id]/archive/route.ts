@@ -34,7 +34,10 @@ export async function PATCH(
     }
 
     const { id } = await params;
-    await archiveSupplier(tenantId, id);
+    await archiveSupplier(tenantId, id, {
+      id: session.user.id,
+      role: session.user.role,
+    });
 
     return NextResponse.json({ success: true, data: { archived: true } });
   } catch (error) {

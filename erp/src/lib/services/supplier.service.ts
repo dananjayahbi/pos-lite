@@ -5,6 +5,13 @@ import { lockForUpdate } from '@/lib/api/race-guard';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { findDuplicateSupplierName } from '@/lib/services/supplierDuplicateName.core';
 import { findSupplierPhoneClash } from '@/lib/services/supplierPhone.core';
+import { supplierAuditSnapshot } from '@/lib/services/supplierAudit.core';
+
+/** Actor passed from the route so the supplier trail records who acted. */
+export interface SupplierActor {
+  id: string;
+  role: string;
+}
 
 // ── Phone Regex ──────────────────────────────────────────────────────────────
 
@@ -39,7 +46,11 @@ interface CreateSupplierData {
   notes?: string | undefined;
 }
 
-export async function createSupplier(tenantId: string, data: CreateSupplierData) {
+export async function createSupplier(
+  tenantId: string,
+  data: CreateSupplierData,
+  actor: SupplierActor,
+) {
   validatePhone(data.phone);
   if (data.whatsappNumber !== undefined && data.whatsappNumber !== '') {
     validatePhone(data.whatsappNumber);
@@ -49,7 +60,7 @@ export async function createSupplier(tenantId: string, data: CreateSupplierData)
   // display string. Lock the tenant row so two concurrent creates in different
   // valid formats ("+9477..." vs "077...") serialise before the pre-check; the
   // raw `@@unique([tenantId, phone])` alone cannot see across formats.
-  return prisma.$transaction(async (tx) => {
+  const created = await prisma.$transaction(async (tx) => {
     await lockForUpdate(tx, 'tenants', '"id" = $1', [tenantId]);
 
     // M06-01 (BUG-30 / D5): archived rows RESERVE their phone too (same D4
@@ -94,6 +105,20 @@ export async function createSupplier(tenantId: string, data: CreateSupplierData)
 
     return { ...supplier, duplicateName: duplicate.duplicateName };
   });
+
+  // ARGUS #237: the audit trail had restore events only. Record the create with
+  // the actor and the full editable snapshot.
+  void createAuditLog({
+    tenantId,
+    actorId: actor.id,
+    actorRole: actor.role,
+    entityType: 'Supplier',
+    entityId: created.id,
+    action: AUDIT_ACTIONS.SUPPLIER_CREATED,
+    after: supplierAuditSnapshot(created),
+  }).catch(() => {});
+
+  return created;
 }
 
 // ── Update ───────────────────────────────────────────────────────────────────
@@ -113,6 +138,7 @@ export async function updateSupplier(
   tenantId: string,
   supplierId: string,
   data: UpdateSupplierData,
+  actor: SupplierActor,
 ) {
   if (data.phone !== undefined) {
     validatePhone(data.phone);
@@ -121,7 +147,7 @@ export async function updateSupplier(
     validatePhone(data.whatsappNumber);
   }
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     await lockForUpdate(tx, 'tenants', '"id" = $1', [tenantId]);
 
     const existing = await tx.supplier.findFirst({
@@ -184,8 +210,24 @@ export async function updateSupplier(
       data: updateData,
     });
 
-    return { ...updated, duplicateName };
+    return { ...updated, duplicateName, before: existing };
   });
+
+  // ARGUS #237: before/after captured from the same transaction that held the
+  // tenant lock, so the snapshot cannot describe a different supplier state.
+  void createAuditLog({
+    tenantId,
+    actorId: actor.id,
+    actorRole: actor.role,
+    entityType: 'Supplier',
+    entityId: supplierId,
+    action: AUDIT_ACTIONS.SUPPLIER_UPDATED,
+    before: supplierAuditSnapshot(result.before),
+    after: supplierAuditSnapshot(result),
+  }).catch(() => {});
+
+  const { before: _before, ...updated } = result;
+  return updated;
 }
 
 // ── Get by ID ────────────────────────────────────────────────────────────────
@@ -259,13 +301,34 @@ export async function getSuppliers(tenantId: string, options: GetSuppliersOption
 
 // ── Archive ──────────────────────────────────────────────────────────────────
 
-export async function archiveSupplier(tenantId: string, supplierId: string) {
-  await assertSupplierBelongsToTenant(tenantId, supplierId);
+export async function archiveSupplier(
+  tenantId: string,
+  supplierId: string,
+  actor: SupplierActor,
+) {
+  const existing = await assertSupplierBelongsToTenant(tenantId, supplierId);
 
-  return prisma.supplier.update({
+  const archived = await prisma.supplier.update({
     where: { id: supplierId },
     data: { isActive: false },
   });
+
+  // ARGUS #237: mirror unarchive (idempotent 200) and only audit the actual
+  // active -> archived transition, so a double archive does not spam the trail.
+  if (existing.isActive) {
+    void createAuditLog({
+      tenantId,
+      actorId: actor.id,
+      actorRole: actor.role,
+      entityType: 'Supplier',
+      entityId: supplierId,
+      action: AUDIT_ACTIONS.SUPPLIER_ARCHIVED,
+      before: supplierAuditSnapshot(existing),
+      after: supplierAuditSnapshot(archived),
+    }).catch(() => {});
+  }
+
+  return archived;
 }
 
 /**
