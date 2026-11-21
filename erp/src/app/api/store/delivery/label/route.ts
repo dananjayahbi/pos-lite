@@ -7,7 +7,7 @@ import {
 } from '@/lib/api/delivery-route';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import {
-  getLabelTemplate,
+  getLabelTemplateBundle,
   saveLabelTemplate,
   resetLabelTemplate,
 } from '@/lib/services/label.service';
@@ -21,8 +21,14 @@ export async function GET() {
   if (!guard.ok) return guard.response;
 
   try {
-    const template = await getLabelTemplate(guard.tenantId);
-    return NextResponse.json({ success: true, data: template });
+    const bundle = await getLabelTemplateBundle(guard.tenantId);
+    return NextResponse.json({
+      success: true,
+      data: bundle.template,
+      // The client needs the tenant identity to fill an empty sender even
+      // before anything is saved (ARGUS #298).
+      meta: { branding: bundle.branding, saved: bundle.saved },
+    });
   } catch (error) {
     console.error('GET /api/store/delivery/label error:', error);
     return internalError('An unexpected error occurred');

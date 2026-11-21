@@ -26,9 +26,14 @@ import {
   DispatchDeliverySchema,
 } from '@/lib/validators/delivery.validators';
 import { useDispatchDelivery, useLabelTemplate } from '@/hooks/delivery';
-import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
 import { printShippingLabel } from './labels/ShippingLabel';
+import {
+  canPrintWaybill,
+  resolveLabelTemplate,
+  resolveLabelTemplateViewState,
+} from './labels/labelTemplateState';
 import { waitForPrintOverlayToClose } from '@/lib/print-session';
+import { toast } from 'sonner';
 import type { DeliveryListItem } from '@/types/delivery';
 
 interface DispatchSheetProps {
@@ -39,7 +44,19 @@ interface DispatchSheetProps {
 
 export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
   const dispatch = useDispatchDelivery();
-  const { data: labelTemplate } = useLabelTemplate();
+  const {
+    data: labelTemplate,
+    branding,
+    isLoading: templateLoading,
+    isError: templateError,
+  } = useLabelTemplate();
+  const templateState = resolveLabelTemplateViewState({
+    isError: templateError,
+    isLoading: templateLoading,
+    hasTemplate: Boolean(labelTemplate),
+  });
+  const waybillTemplate = resolveLabelTemplate(labelTemplate, branding);
+  const canPrintWaybillNow = canPrintWaybill(templateState, waybillTemplate);
   const [printing, setPrinting] = useState(false);
 
   const {
@@ -78,9 +95,17 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
 
   const handlePrintWaybill = async () => {
     if (!delivery) return;
+    if (!canPrintWaybillNow) {
+      toast.error(
+        templateState === 'error'
+          ? 'Waybill template failed to load - retry from Waybill Design before printing'
+          : 'Waybill template is still loading',
+      );
+      return;
+    }
     setPrinting(true);
     try {
-      printShippingLabel(delivery, labelTemplate ?? DEFAULT_LABEL_TEMPLATE);
+      printShippingLabel(delivery, waybillTemplate);
       await waitForPrintOverlayToClose();
     } finally {
       setPrinting(false);
@@ -135,8 +160,9 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
                 type="button"
                 variant="outline"
                 onClick={() => void handlePrintWaybill()}
-                disabled={printing || dispatch.isPending}
+                disabled={printing || dispatch.isPending || !canPrintWaybillNow}
                 aria-busy={printing}
+                title={!canPrintWaybillNow ? 'Waybill template is not loaded' : undefined}
                 data-testid="dispatch-waybill-button"
               >
                 {printing ? (
