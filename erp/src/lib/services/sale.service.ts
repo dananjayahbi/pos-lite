@@ -847,6 +847,8 @@ export interface GetSalesFilters {
   shiftId?: string | undefined;
   cashierId?: string | undefined;
   status?: SaleStatus | undefined;
+  /** Exact tender (CASH, CARD, ...). Server-side so totals/pages stay correct. */
+  paymentMethod?: PaymentMethod | undefined;
   from?: Date | undefined;
   to?: Date | undefined;
   page?: number | undefined;
@@ -862,6 +864,7 @@ export async function getSales(tenantId: string, filters: GetSalesFilters) {
   if (filters.shiftId) where.shiftId = filters.shiftId;
   if (filters.cashierId) where.cashierId = filters.cashierId;
   if (filters.status) where.status = filters.status;
+  if (filters.paymentMethod) where.paymentMethod = filters.paymentMethod;
   if (filters.from || filters.to) {
     // Backdated sales must be findable under their accounting date, so the
     // range matches `saleDate` when it is set and falls back to `createdAt`

@@ -187,10 +187,11 @@ export function SaleHistoryTable() {
 
   // Fetch sales
   const { data, isLoading } = useQuery({
-    queryKey: [SALES_QUERY_KEY, status, dateRange, page, limit],
+    queryKey: [SALES_QUERY_KEY, status, paymentMethod, dateRange, page, limit],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (status) params.set('status', status);
+      if (paymentMethod) params.set('paymentMethod', paymentMethod);
       if (dateRange.from) {
         const from = new Date(`${dateRange.from}T00:00:00`);
         params.set('from', from.toISOString());
@@ -215,10 +216,7 @@ export function SaleHistoryTable() {
   const sales: Sale[] = data?.data ?? [];
   const meta = data?.meta ?? { page: 1, total: 0, totalPages: 1 };
 
-  // Client-side payment method filter (API doesn't support it)
-  const filteredSales = paymentMethod
-    ? sales.filter((s) => s.paymentMethod === paymentMethod)
-    : sales;
+  const filteredSales = sales;
 
   const handleReset = () => {
     setStatus('');

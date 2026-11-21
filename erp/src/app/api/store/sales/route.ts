@@ -8,6 +8,7 @@ import { createCommissionRecord } from '@/lib/services/commission.service';
 import { parseQueryDate, parsePagination } from '@/lib/api/query-params';
 import { isApiError } from '@/lib/api/errors';
 import { prisma } from '@/lib/prisma';
+import { PaymentMethod } from '@/generated/prisma/client';
 import type { SaleStatus } from '@/generated/prisma/client';
 
 export async function GET(request: NextRequest) {
@@ -39,6 +40,12 @@ export async function GET(request: NextRequest) {
     const shiftId = url.searchParams.get('shiftId') ?? undefined;
     const cashierId = url.searchParams.get('cashierId') ?? undefined;
     const status = (url.searchParams.get('status') as SaleStatus) ?? undefined;
+    const paymentMethodParam = url.searchParams.get('paymentMethod');
+    const paymentMethod =
+      paymentMethodParam &&
+      Object.values(PaymentMethod).includes(paymentMethodParam as PaymentMethod)
+        ? (paymentMethodParam as PaymentMethod)
+        : undefined;
     // M14-02 (BUG-45): XC-01 parsing — malformed from/to/page/limit now 400
     // VALIDATION_ERROR naming the param instead of leaking an Invalid Date /
     // NaN into Prisma and surfacing as an unhandled 500.
@@ -46,7 +53,16 @@ export async function GET(request: NextRequest) {
     const to = parseQueryDate(url.searchParams, 'to');
     const { page, limit } = parsePagination(url.searchParams);
 
-    const result = await getSales(tenantId, { shiftId, cashierId, status, from, to, page, limit });
+    const result = await getSales(tenantId, {
+      shiftId,
+      cashierId,
+      status,
+      paymentMethod,
+      from,
+      to,
+      page,
+      limit,
+    });
 
     return NextResponse.json({
       success: true,
