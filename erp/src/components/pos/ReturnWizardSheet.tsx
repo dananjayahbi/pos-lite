@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
+import { useSession } from 'next-auth/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCartStore } from '@/stores/cartStore';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { canAuthorizeReturn } from '@/components/returns/returnAuthorizer';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReturnItemSelectionStep } from '@/components/pos/ReturnItemSelectionStep';
@@ -42,6 +44,14 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
     refundMethod: string;
   } | null>(null);
   const queryClient = useQueryClient();
+  const { data: session } = useSession();
+  // ARGUS #95: attribute the return to the signed-in manager/owner. A cashier
+  // (or any non-manager holding an explicit `sale:refund` override) cannot
+  // authorize a refund, so no authorizer is sent — the record stays null and
+  // the history surfaces render "Not recorded".
+  const authorizedById = canAuthorizeReturn(session?.user?.role)
+    ? session?.user?.id
+    : undefined;
 
   const { data: saleData, isLoading, error, refetch } = useQuery({
     queryKey: ['sale-return', saleId],
@@ -111,6 +121,7 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
           refundMethod,
           restockItems,
           reason,
+          ...(authorizedById ? { authorizedById } : {}),
           ...(refundMethod === 'CARD_REVERSAL' && cardReversalReference
             ? { cardReversalReference }
             : {}),

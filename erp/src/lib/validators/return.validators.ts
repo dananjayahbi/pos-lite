@@ -13,6 +13,10 @@ export const ReturnCreateSchema = z.object({
   refundMethod: z.nativeEnum(ReturnRefundMethod, { error: 'Invalid refund method' }),
   restockItems: z.boolean().default(true),
   reason: z.string().max(200).default(''),
+  // Optional by design (ARGUS #95): the route fills in the signed-in
+  // manager/owner. A non-manager holding an explicit `sale:refund` override
+  // may legitimately refund without an authorizer, so the schema must accept
+  // its absence; those rows render as "Not recorded".
   authorizedById: z.string().min(1).optional(),
   cardReversalReference: z.string().max(50).optional(),
 }).superRefine((data, ctx) => {
