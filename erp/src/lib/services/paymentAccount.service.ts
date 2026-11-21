@@ -3,6 +3,7 @@ import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/lib/api/errors';
 import { AUDIT_ACTIONS, createAuditLogInTransaction } from '@/lib/services/audit.service';
+import { evaluatePaymentAccountPolicy } from '@/lib/services/paymentAccountPolicy';
 import {
   PaymentAccountStatus,
   PaymentAccountType,
@@ -63,6 +64,15 @@ function toMoney(value: Decimal): number {
 
 function makeGroupId(): string {
   return `pg_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function assertPaymentAccountPolicy(
+  input: Parameters<typeof evaluatePaymentAccountPolicy>[0],
+): void {
+  const decision = evaluatePaymentAccountPolicy(input);
+  if (!decision.allowed) {
+    throw new ApiError(403, 'FORBIDDEN', decision.reason ?? 'Owner approval is required');
+  }
 }
 
 // ── Ledger primitives ────────────────────────────────────────────────────────
@@ -294,6 +304,12 @@ export async function createPaymentAccount(
   actorRole: string,
   input: CreatePaymentAccountInput,
 ) {
+  assertPaymentAccountPolicy({
+    operation: 'CREATE',
+    actorRole,
+    openingBalance: input.openingBalance,
+  });
+
   const existing = await prisma.paymentAccount.findFirst({
     where: { tenantId, name: input.name },
     select: { id: true },
@@ -430,6 +446,11 @@ export async function transferFunds(
 ) {
   const groupId = makeGroupId();
   const amount = dec(input.amount);
+  assertPaymentAccountPolicy({
+    operation: 'TRANSFER',
+    actorRole,
+    amount: amount.toNumber(),
+  });
 
   return prisma.$transaction(async (tx) => {
     const [from, to] = await Promise.all([
@@ -538,6 +559,11 @@ export async function depositFunds(
 ) {
   const groupId = makeGroupId();
   const amount = dec(input.amount);
+  assertPaymentAccountPolicy({
+    operation: 'DEPOSIT',
+    actorRole,
+    amount: amount.toNumber(),
+  });
 
   return prisma.$transaction(async (tx) => {
     const target = await tx.paymentAccount.findFirst({ where: { id: accountId, tenantId } });
@@ -607,6 +633,11 @@ export async function withdrawFunds(
 ) {
   const groupId = makeGroupId();
   const amount = dec(input.amount);
+  assertPaymentAccountPolicy({
+    operation: 'WITHDRAW',
+    actorRole,
+    amount: amount.toNumber(),
+  });
 
   return prisma.$transaction(async (tx) => {
     const source = await tx.paymentAccount.findFirst({ where: { id: accountId, tenantId } });
@@ -693,6 +724,11 @@ export async function closePaymentAccount(
     }
 
     const balance = new Decimal(account.balance);
+    assertPaymentAccountPolicy({
+      operation: 'CLOSE',
+      actorRole,
+      amount: balance.toNumber(),
+    });
 
     if (balance.greaterThan(0)) {
       if (!input.transferToAccountId) {
