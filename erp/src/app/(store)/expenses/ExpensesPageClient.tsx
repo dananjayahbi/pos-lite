@@ -49,6 +49,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ReceiptUploader } from '@/components/expenses/ReceiptUploader';
 import { PettyCashFundPicker } from '@/components/expenses/PettyCashFundPicker';
 import { ExpenseExportButton } from '@/components/expenses/ExpenseExportButton';
+import { ExpenseAccountCell } from '@/components/expenses/ExpenseAccountCell';
 import { AccountSelect } from '@/components/payment-accounts/AccountSelect';
 import type { PaymentAccount } from '@/components/payment-accounts/paymentAccountTypes';
 
@@ -62,6 +63,8 @@ interface Expense {
   receiptImageUrl: string | null;
   pettyCashFundId: string | null;
   paymentAccountId: string | null;
+  paymentAccount: { id: string; name: string } | null;
+  pettyCashFund: { id: string; name: string } | null;
   expenseDate: string;
   recordedBy: { email: string };
   createdAt: string;
@@ -204,10 +207,6 @@ export default function ExpensesPageClient({
     },
     retry: false,
   });
-
-  const accountNameById = new Map(
-    paymentAccounts.map((account) => [account.id, account.name]),
-  );
 
   // ── Create Form ──
   const createForm = useForm<CreateExpenseInput>({
@@ -501,9 +500,10 @@ export default function ExpensesPageClient({
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate">{expense.description}</TableCell>
                       <TableCell className="text-sm text-sand-ink">
-                        {expense.paymentAccountId
-                          ? accountNameById.get(expense.paymentAccountId) ?? 'Linked account'
-                          : '-'}
+                        <ExpenseAccountCell
+                          expense={expense}
+                          className="hover:text-espresso hover:underline"
+                        />
                       </TableCell>
                       <TableCell className="text-right font-mono">{formatRupee(expense.amount)}</TableCell>
                       <TableCell className="text-sm text-sand-ink">{staffDisplayName(expense.recordedBy.email)}</TableCell>
@@ -609,11 +609,12 @@ export default function ExpensesPageClient({
                 <span className="text-sm">{staffDisplayName(viewExpense.recordedBy.email)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sand-ink">Payment Account</span>
+                <span className="text-sand-ink">Account</span>
                 <span className="text-sm">
-                  {viewExpense.paymentAccountId
-                    ? accountNameById.get(viewExpense.paymentAccountId) ?? 'Linked account'
-                    : '-'}
+                  <ExpenseAccountCell
+                    expense={viewExpense}
+                    className="hover:text-espresso hover:underline"
+                  />
                 </span>
               </div>
               {viewExpense.receiptImageUrl && (
