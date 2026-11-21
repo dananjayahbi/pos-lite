@@ -81,7 +81,11 @@ export const UpdateAppointmentSchema = z
 // ── Cancel Appointment ───────────────────────────────────────────────────────
 
 export const CancelAppointmentSchema = z.object({
-  reason: z.string().max(500).optional(),
+  reason: z
+    .string()
+    .trim()
+    .min(1, 'A cancellation reason is required')
+    .max(500, 'Reason must be 500 characters or fewer'),
 });
 
 // ── Appointment Settings ─────────────────────────────────────────────────────

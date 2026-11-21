@@ -9,7 +9,7 @@ interface AppointmentFormDialogProps {
   onClose: () => void;
   editingId?: string | null;
   defaultDate?: Date | null;
-  initialData?: Record<string, unknown>;
+  initialData?: Record<string, unknown> | undefined;
 }
 
 export function AppointmentFormDialog({ open, onClose, editingId, defaultDate, initialData }: AppointmentFormDialogProps) {
