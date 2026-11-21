@@ -17,6 +17,7 @@ import {
   buildProductionBatchNumber,
   canModifyBom,
   computeConsumptionPlan,
+  findDuplicateRawMaterialIds,
   getInsufficientIngredients,
   hasInsufficientIngredients,
   isSourceEligibleForProduction,
@@ -215,6 +216,16 @@ export interface CreateBomInput {
   ingredients: BomIngredientInput[];
 }
 
+/**
+ * ARGUS #249 - the same raw material twice would hit the DB composite unique
+ * constraint and surface as a 500. Reject it as a typed 400 instead.
+ */
+function assertNoDuplicateIngredients(ingredients: BomIngredientInput[]): void {
+  if (findDuplicateRawMaterialIds(ingredients).length > 0) {
+    throw new Error('INGREDIENT_DUPLICATE');
+  }
+}
+
 export async function createBom(
   tenantId: string,
   actorId: string,
@@ -223,6 +234,7 @@ export async function createBom(
   if (input.ingredients.length === 0) {
     throw new Error('NO_INGREDIENTS');
   }
+  assertNoDuplicateIngredients(input.ingredients);
 
   return prisma.$transaction(async (tx) => {
     const variant = await tx.productVariant.findUnique({
@@ -312,6 +324,10 @@ export async function updateBom(
     // frozen, otherwise past runs silently point at a different ingredient list.
     const productionLogCount = await tx.productionLog.count({ where: { bomId: id } });
     if (!canModifyBom(productionLogCount)) throw new Error('BOM_LOCKED');
+
+    if (input.ingredients !== undefined) {
+      assertNoDuplicateIngredients(input.ingredients);
+    }
 
     const bom = await tx.billOfMaterials.update({
       where: { id },

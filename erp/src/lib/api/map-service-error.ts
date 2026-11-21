@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { ApiError } from './errors';
-import { BOM_LOCKED_MESSAGE } from '@/lib/services/bom.core';
+import { BOM_LOCKED_MESSAGE, INGREDIENT_DUPLICATE_MESSAGE } from '@/lib/services/bom.core';
 
 /**
  * INF-02 — single service-error → HTTP mapper.
@@ -57,6 +57,7 @@ const RULES: Rule[] = [
   { match: exact('BOM_LOCKED'), status: 409, code: 'BOM_LOCKED', message: BOM_LOCKED_MESSAGE },
   { match: exact('BOM_INACTIVE'), status: 409, code: 'BOM_INACTIVE', message: 'The bill of materials is inactive.' },
   { match: exact('NO_INGREDIENTS'), status: 400, code: 'NO_INGREDIENTS', message: 'The bill of materials has no ingredients.' },
+  { match: exact('INGREDIENT_DUPLICATE'), status: 400, code: 'VALIDATION_ERROR', message: INGREDIENT_DUPLICATE_MESSAGE },
   { match: exact('ALREADY_CONVERTED'), status: 409, code: 'ALREADY_CONVERTED', message: 'This record has already been converted.' },
   { match: exact('ALREADY_DISPUTED'), status: 409, code: 'ALREADY_DISPUTED', message: 'This entry is already under dispute.' },
   { match: exact('SERVICE_NAME_EXISTS'), status: 409, code: 'CONFLICT', message: 'A service with this name already exists.' },

@@ -4,6 +4,7 @@ import {
   canModifyBom,
   computeConsumptionPlan,
   computeIngredientRequirement,
+  findDuplicateRawMaterialIds,
   getInsufficientIngredients,
   hasInsufficientIngredients,
   isSourceEligibleForProduction,
@@ -161,5 +162,46 @@ describe('bom.core - canModifyBom', () => {
   it('fails closed when the count is not a finite number', () => {
     expect(canModifyBom(Number.NaN)).toBe(false);
     expect(canModifyBom(Number.POSITIVE_INFINITY)).toBe(false);
+  });
+});
+
+describe('bom.core - findDuplicateRawMaterialIds', () => {
+  it('returns nothing when every material is used once', () => {
+    expect(findDuplicateRawMaterialIds([])).toEqual([]);
+    expect(
+      findDuplicateRawMaterialIds([{ rawMaterialId: 'a' }, { rawMaterialId: 'b' }]),
+    ).toEqual([]);
+  });
+
+  it('reports a repeated material once', () => {
+    expect(
+      findDuplicateRawMaterialIds([
+        { rawMaterialId: 'a' },
+        { rawMaterialId: 'a' },
+        { rawMaterialId: 'a' },
+        { rawMaterialId: 'b' },
+      ]),
+    ).toEqual(['a']);
+  });
+
+  it('reports each duplicated material in first-duplicate order', () => {
+    expect(
+      findDuplicateRawMaterialIds([
+        { rawMaterialId: 'a' },
+        { rawMaterialId: 'b' },
+        { rawMaterialId: 'b' },
+        { rawMaterialId: 'a' },
+      ]),
+    ).toEqual(['b', 'a']);
+  });
+
+  it('ignores empty placeholder rows', () => {
+    expect(
+      findDuplicateRawMaterialIds([
+        { rawMaterialId: '' },
+        { rawMaterialId: '' },
+        { rawMaterialId: 'a' },
+      ]),
+    ).toEqual([]);
   });
 });

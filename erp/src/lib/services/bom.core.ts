@@ -77,6 +77,38 @@ export function hasInsufficientIngredients(plan: ConsumptionLine[]): boolean {
 }
 
 /**
+ * ARGUS #249 - the same raw material must not appear on two ingredient rows.
+ *
+ * The database enforces this with `@@unique([bomId, rawMaterialId])`, but a
+ * duplicate submitted through the form used to reach that constraint and
+ * surface as an unmapped P2002 500. This helper is shared by the Zod schema,
+ * the service and the form so every layer rejects it with the same message.
+ *
+ * Blank ids (empty form rows) are ignored; they are rejected separately by the
+ * required-field validation.
+ */
+export const INGREDIENT_DUPLICATE_MESSAGE =
+  'Ingredient already added - each raw material can appear only once.';
+
+/** Ids that occur more than once, in first-duplicate order. */
+export function findDuplicateRawMaterialIds(
+  ingredients: readonly { rawMaterialId: string }[],
+): string[] {
+  const seen = new Set<string>();
+  const duplicates: string[] = [];
+  for (const ingredient of ingredients) {
+    const id = ingredient.rawMaterialId;
+    if (!id) continue;
+    if (seen.has(id)) {
+      if (!duplicates.includes(id)) duplicates.push(id);
+      continue;
+    }
+    seen.add(id);
+  }
+  return duplicates;
+}
+
+/**
  * Pick only the insufficient lines, sorted by shortfall (largest gap first).
  * Used for helpful error messages / UI surfacing before commit.
  */

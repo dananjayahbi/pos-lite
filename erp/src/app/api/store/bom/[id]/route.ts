@@ -8,7 +8,8 @@ import {
   deleteBom,
 } from '@/lib/services/bom.service';
 import { UpdateBomSchema } from '@/lib/validators/bom.validators';
-import { BOM_LOCKED_MESSAGE } from '@/lib/services/bom.core';
+import { BOM_LOCKED_MESSAGE, INGREDIENT_DUPLICATE_MESSAGE } from '@/lib/services/bom.core';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -115,11 +116,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         { status: 409 },
       );
     }
-    console.error('PATCH /api/store/bom/[id] error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    if (error instanceof Error && error.message === 'INGREDIENT_DUPLICATE') {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: INGREDIENT_DUPLICATE_MESSAGE } },
+        { status: 400 },
+      );
+    }
+    return toErrorResponse(error, 'PATCH /api/store/bom/[id]');
   }
 }
 

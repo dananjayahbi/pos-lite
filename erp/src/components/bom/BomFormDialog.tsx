@@ -26,6 +26,10 @@ import { useBom, useCreateBom, useUpdateBom, type BomIngredientView } from '@/ho
 import { useRawMaterials } from '@/hooks/useRawMaterials';
 import { useProducts } from '@/hooks/useProducts';
 import { getUnitLabel, getUnitShortLabel } from '@/lib/services/rawMaterial.core';
+import {
+  findDuplicateRawMaterialIds,
+  INGREDIENT_DUPLICATE_MESSAGE,
+} from '@/lib/services/bom.core';
 
 interface BomFormDialogProps {
   open: boolean;
@@ -105,6 +109,12 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
     const filled = form.ingredients.filter((r) => r.rawMaterialId && r.quantityPerUnit);
     if (filled.length === 0) {
       setError('Add at least one ingredient.');
+      return;
+    }
+    // ARGUS #249: never send the same raw material twice; the DB unique
+    // constraint would reject it as a generic failure after Save.
+    if (findDuplicateRawMaterialIds(filled).length > 0) {
+      setError(INGREDIENT_DUPLICATE_MESSAGE);
       return;
     }
 
@@ -210,6 +220,14 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
               </div>
               {form.ingredients.map((row, index) => {
                 const selected = materials.find((m) => m.id === row.rawMaterialId);
+                // ARGUS #249: a material already used on another row cannot be
+                // picked again, so duplicates are impossible from the form.
+                const usedElsewhere = new Set(
+                  form.ingredients
+                    .filter((_, i) => i !== index)
+                    .map((r) => r.rawMaterialId)
+                    .filter(Boolean),
+                );
                 return (
                   <div
                     key={index}
@@ -226,7 +244,11 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
                       </SelectTrigger>
                       <SelectContent>
                         {materials.map((material) => (
-                          <SelectItem key={material.id} value={material.id}>
+                          <SelectItem
+                            key={material.id}
+                            value={material.id}
+                            disabled={usedElsewhere.has(material.id)}
+                          >
                             {material.name}
                           </SelectItem>
                         ))}
