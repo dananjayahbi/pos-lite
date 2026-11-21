@@ -337,4 +337,24 @@ describe('buildReturnReceiptHtml', () => {
     expect(html).toContain('Powered by AyurPOS');
     expect(html).toContain('window.print()');
   });
+
+  it('marks a history reprint, without changing an original print (ARGUS #472)', () => {
+    const original = buildReturnReceiptHtml(makeReturn(), makeTenant(), 'Nimal', 'Kamal');
+    const reprint = buildReturnReceiptHtml(makeReturn(), makeTenant(), 'Nimal', 'Kamal', {
+      isReprint: true,
+    });
+
+    expect(original).not.toContain('Reprint - store details');
+    expect(reprint).toContain('Reprint - store details reflect the current profile');
+  });
+
+  it('keeps the sale line snapshots on a reprint', () => {
+    const html = buildReturnReceiptHtml(makeReturn(), makeTenant(), 'Nimal', 'Kamal', {
+      isReprint: true,
+    });
+
+    expect(html).toContain('Bhringraj Hair Oil');
+    expect(html).toContain('OIL / 100ml');
+    expect(html).toContain('Rs. 2,084.00');
+  });
 });

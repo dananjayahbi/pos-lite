@@ -1,4 +1,5 @@
 import { formatRupee } from '@/lib/format';
+import { reprintIdentityNotice } from '@/lib/receipt-identity.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,14 @@ export interface ReceiptSale {
 export interface ReceiptTenant {
   name: string;
   settings: unknown;
+}
+
+export interface ReceiptRenderOptions {
+  /**
+   * True when an already-completed sale is being reprinted. Store identity is
+   * read from the current tenant, so the document carries a caveat (ARGUS #472).
+   */
+  isReprint?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -74,10 +83,12 @@ export function buildThermalReceiptHtml(
   sale: ReceiptSale,
   tenant: ReceiptTenant,
   cashierName: string,
+  options: ReceiptRenderOptions = {},
 ): string {
   const s = getSettings(tenant.settings);
   const { date, time } = formatDate(sale.createdAt);
   const saleRef = sale.id.slice(0, 8).toUpperCase();
+  const identityNotice = reprintIdentityNotice(options.isReprint);
 
   const storeAddress = typeof s.address === 'string' ? s.address : '';
   const storePhone = typeof s.phoneNumber === 'string' ? s.phoneNumber : '';
@@ -173,6 +184,7 @@ export function buildThermalReceiptHtml(
   <div class="store-name">${esc(tenant.name)}</div>
   ${storeAddress ? `<div class="store-info">${esc(storeAddress)}</div>` : ''}
   ${storePhone ? `<div class="store-info">Tel: ${esc(storePhone)}</div>` : ''}
+  ${identityNotice ? `<div class="store-info" style="margin-top:4px;border-top:1px dashed #000;padding-top:4px;">${esc(identityNotice)}</div>` : ''}
 </div>
 
 <div class="separator"></div>

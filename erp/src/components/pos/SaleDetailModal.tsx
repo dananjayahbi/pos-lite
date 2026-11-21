@@ -86,7 +86,9 @@ export function SaleDetailModal({
   });
 
   const handlePrint = () => {
-    window.open(`/api/store/sales/${sale.id}/receipt`, '_blank', 'noopener');
+    // ARGUS #472: the receipt reads the current store profile, so a history
+    // reprint is explicitly marked as such.
+    window.open(`/api/store/sales/${sale.id}/receipt?reprint=1`, '_blank', 'noopener');
   };
 
   return (
