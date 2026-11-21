@@ -252,17 +252,30 @@ export default function CashFlowPage() {
                 <span className="font-mono text-espresso">{formatRupee(data.grossIncome)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sand-ink">Refunds</span>
-                <span className="font-mono text-terracotta">-{formatRupee(data.refunds)}</span>
+                <span className="text-sand-ink">Cash refunds</span>
+                <span className="font-mono text-terracotta">-{formatRupee(data.cashRefunds)}</span>
               </div>
+              {parseFloat(data.nonCashRefunds) !== 0 && (
+                <div className="flex justify-between text-mist-ink">
+                  <span>Non-cash refunds (credit / exchange)</span>
+                  <span className="font-mono">{formatRupee(data.nonCashRefunds)}</span>
+                </div>
+              )}
               <div className="my-2 border-t border-mist" />
               <div className="flex justify-between font-semibold">
-                <span className="text-espresso">Net Income</span>
+                <span className="text-espresso">Net cash income</span>
                 <span className="font-mono text-espresso">{formatRupee(data.totalIncome)}</span>
               </div>
               {data.incomeByMethod.length > 0 && (
                 <p className="mt-2 text-sm text-sand-ink">
                   {data.incomeByMethod
+                    .map((m) => `${METHOD_LABELS[m.method] ?? m.method}: ${formatRupee(m.total)}`)
+                    .join(' · ')}
+                </p>
+              )}
+              {data.refundsByMethod.length > 0 && (
+                <p className="mt-1 text-sm text-sand-ink">
+                  Refunds: {data.refundsByMethod
                     .map((m) => `${METHOD_LABELS[m.method] ?? m.method}: ${formatRupee(m.total)}`)
                     .join(' · ')}
                 </p>

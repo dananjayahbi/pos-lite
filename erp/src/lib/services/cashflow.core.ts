@@ -47,3 +47,38 @@ export function reconcileCash(openingCash: Decimalish, lines: CashBridgeLineInpu
     bridge,
   };
 }
+
+export interface RefundMethodTotal {
+  method: string;
+  total: Decimalish;
+}
+
+/**
+ * Split refunds into cash-impacting (CASH, CARD_REVERSAL) and non-cash
+ * (STORE_CREDIT, EXCHANGE) so a cash-flow report never deducts credit refunds
+ * that never left an account (ARGUS #417).
+ */
+export function splitCashRefunds(refunds: RefundMethodTotal[]): {
+  total: number;
+  cash: number;
+  nonCash: number;
+  byMethod: Array<{ method: string; total: string }>;
+} {
+  let total = new Decimal(0);
+  let cash = new Decimal(0);
+  const byMethod = refunds.map((row) => {
+    const amount = new Decimal(row.total.toString());
+    total = total.plus(amount);
+    if (row.method === 'CASH' || row.method === 'CARD_REVERSAL') {
+      cash = cash.plus(amount);
+    }
+    return { method: row.method, total: amount.toFixed(2) };
+  });
+
+  return {
+    total: total.toDecimalPlaces(2).toNumber(),
+    cash: cash.toDecimalPlaces(2).toNumber(),
+    nonCash: total.minus(cash).toDecimalPlaces(2).toNumber(),
+    byMethod,
+  };
+}

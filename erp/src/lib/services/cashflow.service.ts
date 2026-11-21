@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import Decimal from 'decimal.js';
-import { reconcileCash } from '@/lib/services/cashflow.core';
+import { reconcileCash, splitCashRefunds } from '@/lib/services/cashflow.core';
 
 export interface PaymentAccountActivityRow {
   accountId: string;
@@ -16,6 +16,11 @@ export interface PaymentAccountActivityRow {
 export interface CashFlowResult {
   grossIncome: string;
   refunds: string;
+  /** Refunds that actually left cash/bank (CASH, CARD_REVERSAL). */
+  cashRefunds: string;
+  /** STORE_CREDIT / EXCHANGE refunds - no cash impact (ARGUS #417). */
+  nonCashRefunds: string;
+  refundsByMethod: { method: string; total: string }[];
   totalIncome: string;
   incomeByMethod: { method: string; total: string }[];
   expensesByCategory: { category: string; total: string }[];
@@ -60,7 +65,8 @@ export async function getCashFlowStatement(
       where: { tenantId, status: 'COMPLETED', completedAt: { gte: dateFrom, lte: dateTo } },
       _sum: { totalAmount: true },
     }),
-    prisma.return.aggregate({
+    prisma.return.groupBy({
+      by: ['refundMethod'],
       where: { tenantId, createdAt: { gte: dateFrom, lte: dateTo } },
       _sum: { refundAmount: true },
     }),
@@ -109,8 +115,17 @@ export async function getCashFlowStatement(
   ]);
 
   const grossIncome = new Decimal(salesResult._sum.totalAmount?.toString() ?? '0');
-  const refunds = new Decimal(returnsResult._sum.refundAmount?.toString() ?? '0');
-  const totalIncome = grossIncome.minus(refunds);
+  const split = splitCashRefunds(
+    returnsResult.map((row) => ({
+      method: String(row.refundMethod),
+      total: row._sum.refundAmount?.toString() ?? '0',
+    })),
+  );
+  const refundsByMethod = split.byMethod;
+  const refunds = new Decimal(split.total);
+  const cashRefunds = new Decimal(split.cash);
+  const nonCashRefunds = new Decimal(split.nonCash);
+  const totalIncome = grossIncome.minus(cashRefunds);
 
   const incomeByMethod = paymentsByMethod.map((p) => ({
     method: p.method,
@@ -197,6 +212,9 @@ export async function getCashFlowStatement(
   return {
     grossIncome: grossIncome.toFixed(2),
     refunds: refunds.toFixed(2),
+    cashRefunds: cashRefunds.toFixed(2),
+    nonCashRefunds: nonCashRefunds.toFixed(2),
+    refundsByMethod,
     totalIncome: totalIncome.toFixed(2),
     incomeByMethod,
     expensesByCategory: expCategories,

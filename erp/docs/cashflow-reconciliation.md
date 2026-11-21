@@ -26,6 +26,19 @@ The page now shows a **Cash Reconciliation** card (opening + movement = closing
 and the source bridge) and relabels the old KPI as **Net Cash Movement
 (ledger)**. The income/expense sections remain a period operating summary.
 
+## Refund methods (ARGUS #417)
+
+The period income section used to subtract every refund, including STORE_CREDIT
+(Rs 738.40) and EXCHANGE (Rs 1,240.40) that never left a cash or bank account.
+`splitCashRefunds` now separates:
+
+- **cash-impacting**: `CASH`, `CARD_REVERSAL`
+- **non-cash**: `STORE_CREDIT`, `EXCHANGE`
+
+`totalIncome` = gross sales - cash refunds; non-cash refunds are shown as their
+own line and the refund-method split is displayed. The ledger-based closing cash
+is unaffected (those credits post no ledger credit).
+
 ## Verification
 
 `src/lib/services/__tests__/cashflow.core.test.ts` covers a simple close,

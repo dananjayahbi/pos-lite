@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { reconcileCash } from '@/lib/services/cashflow.core';
+import { reconcileCash, splitCashRefunds } from '@/lib/services/cashflow.core';
 
 /** ARGUS #416: net cash flow must reconcile opening cash to closing cash. */
-describe('reconcileCash', () => {
-  it('closes at opening + debits - credits', () => {
+describe('reconcileCash', () => {  it('closes at opening + debits - credits', () => {
     const result = reconcileCash('1000.00', [
       { source: 'SALE', debit: '500.00', credit: '0' },
       { source: 'EXPENSE', debit: '0', credit: '125.00' },
@@ -43,5 +42,28 @@ describe('reconcileCash', () => {
     expect(result.netMovement).toBe('0.00');
     expect(result.closingCash).toBe(500);
     expect(result.bridge).toEqual([]);
+  });
+});
+
+/** ARGUS #417: only cash/card refunds reduce cash. */
+describe('splitCashRefunds', () => {
+  it('separates credit/exchange refunds from cash-impacting ones', () => {
+    const result = splitCashRefunds([
+      { method: 'CASH', total: '2584.00' },
+      { method: 'CARD_REVERSAL', total: '2976.80' },
+      { method: 'STORE_CREDIT', total: '738.40' },
+      { method: 'EXCHANGE', total: '1240.40' },
+    ]);
+
+    expect(result.total).toBe(7539.6);
+    expect(result.cash).toBe(5560.8);
+    expect(result.nonCash).toBe(1978.8);
+    expect(result.byMethod).toHaveLength(4);
+  });
+
+  it('handles an all-cash refund window', () => {
+    const result = splitCashRefunds([{ method: 'CASH', total: 100 }]);
+    expect(result.cash).toBe(100);
+    expect(result.nonCash).toBe(0);
   });
 });
