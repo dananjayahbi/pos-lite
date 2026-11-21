@@ -73,7 +73,12 @@ export async function adjustStockInTx(
   tx: TxClient,
   tenantId: string,
   variantId: string,
-  actorId: string,
+  /**
+   * Nullable: `StockMovement.actorId` is optional, so a SYSTEM repair (audit /
+   * data-reconciliation CLI) can write a movement with no human actor. Every
+   * UI/service caller still passes the acting user.
+   */
+  actorId: string | null,
   options: AdjustStockOptions,
 ) {
   const variant = await tx.productVariant.findUnique({
