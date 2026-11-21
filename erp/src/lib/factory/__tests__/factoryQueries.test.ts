@@ -43,12 +43,13 @@ describe('factoryQueries - raw material surfaces (ARGUS #256)', () => {
 });
 
 describe('factoryQueries - dashboard refresh keys (ARGUS #257)', () => {
-  it('covers stats, the raw-material lists, alerts and production', () => {
+  it('covers stats, the raw-material lists, alerts, production and output KPIs', () => {
     expect(FACTORY_DASHBOARD_QUERY_KEYS).toEqual([
       ['raw-material-stats'],
       ['raw-materials'],
       ['raw-material-alerts'],
       ['production-logs'],
+      ['factory-output-stats'],
     ]);
   });
 });
