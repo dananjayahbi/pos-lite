@@ -9,6 +9,10 @@
 
 export const CATEGORY_NAME_MIN = 2;
 export const CATEGORY_NAME_MAX = 60;
+/** Matches the API/protocol cap: the category description column stores 500. */
+export const CATEGORY_DESCRIPTION_MAX = 500;
+/** `Category.sortOrder` is a 32-bit integer in the database. */
+export const CATEGORY_SORT_ORDER_MAX = 2_147_483_647;
 
 export interface CategoryFormInput {
   name: string;
@@ -19,6 +23,7 @@ export interface CategoryFormInput {
 
 export interface CategoryFormErrors {
   name?: string;
+  description?: string;
   sortOrder?: string;
 }
 
@@ -59,8 +64,16 @@ export function validateCategoryForm(input: CategoryFormInput): ValidatedCategor
     errors.name = `Name must be ${CATEGORY_NAME_MIN}-${CATEGORY_NAME_MAX} characters.`;
   }
 
-  if (sortOrder === null || sortOrder < 0) {
-    errors.sortOrder = 'Sort order must be a whole number of 0 or more.';
+  if (description.length > CATEGORY_DESCRIPTION_MAX) {
+    errors.description = `Description must be ${CATEGORY_DESCRIPTION_MAX} characters or fewer.`;
+  }
+
+  if (
+    sortOrder === null ||
+    sortOrder < 0 ||
+    sortOrder > CATEGORY_SORT_ORDER_MAX
+  ) {
+    errors.sortOrder = `Sort order must be a whole number between 0 and ${CATEGORY_SORT_ORDER_MAX}.`;
   }
 
   return {

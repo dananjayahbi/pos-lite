@@ -33,4 +33,14 @@ describe('category validators', () => {
       false,
     );
   });
+
+  /** ARGUS #170: the sort order must fit the 32-bit integer column. */
+  it('rejects a sort order above the 32-bit integer maximum', () => {
+    expect(
+      CategorySchema.safeParse({ name: 'Oils', sortOrder: 2_147_483_647 }).success,
+    ).toBe(true);
+    expect(
+      CategorySchema.safeParse({ name: 'Oils', sortOrder: 2_147_483_648 }).success,
+    ).toBe(false);
+  });
 });

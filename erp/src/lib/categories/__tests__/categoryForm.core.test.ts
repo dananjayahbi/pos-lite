@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { validateCategoryForm } from '@/lib/categories/categoryForm.core';
+import {
+  CATEGORY_DESCRIPTION_MAX,
+  CATEGORY_SORT_ORDER_MAX,
+  validateCategoryForm,
+} from '@/lib/categories/categoryForm.core';
 
 /** ARGUS #169: creating a category must offer the full field set. */
 describe('validateCategoryForm', () => {
@@ -44,5 +48,35 @@ describe('validateCategoryForm', () => {
     const result = validateCategoryForm({ name: 'Oils', sortOrder: '-1' });
     expect(result.valid).toBe(false);
     expect(result.errors.sortOrder).toBeDefined();
+  });
+
+  /** ARGUS #170: the API caps at 500 and the sort order is a 32-bit int. */
+  it('blocks a description over the 500-character API cap', () => {
+    const atLimit = validateCategoryForm({
+      name: 'Oils',
+      description: 'x'.repeat(CATEGORY_DESCRIPTION_MAX),
+    });
+    const overLimit = validateCategoryForm({
+      name: 'Oils',
+      description: 'x'.repeat(CATEGORY_DESCRIPTION_MAX + 20),
+    });
+
+    expect(atLimit.valid).toBe(true);
+    expect(overLimit.valid).toBe(false);
+    expect(overLimit.errors.description).toMatch(/500/);
+  });
+
+  it('accepts the 32-bit sort-order maximum and rejects anything larger', () => {
+    expect(
+      validateCategoryForm({ name: 'Oils', sortOrder: String(CATEGORY_SORT_ORDER_MAX) })
+        .valid,
+    ).toBe(true);
+
+    const tooLarge = validateCategoryForm({
+      name: 'Oils',
+      sortOrder: String(CATEGORY_SORT_ORDER_MAX + 1),
+    });
+    expect(tooLarge.valid).toBe(false);
+    expect(tooLarge.errors.sortOrder).toMatch(/2147483647/);
   });
 });
