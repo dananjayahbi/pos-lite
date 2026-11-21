@@ -9,6 +9,8 @@ interface LogoUploadFieldProps {
   logoUrl: string | null;
   /** Called with the stored URL, or null when the logo is removed. */
   onChange: (url: string | null) => void;
+  /** Notified when an upload starts and when it settles (success or failure). */
+  onUploadingChange?: ((uploading: boolean) => void) | undefined;
   /** Tenant-scoped upload endpoint that returns `{ url }`. */
   uploadUrl: string;
   /** Alt text for the preview (e.g. "Brand logo", "Store logo"). */
@@ -33,6 +35,7 @@ const MAX_SIZE = 2 * 1024 * 1024;
 export function LogoUploadField({
   logoUrl,
   onChange,
+  onUploadingChange,
   uploadUrl,
   alt,
   disabled,
@@ -76,6 +79,9 @@ export function LogoUploadField({
     };
 
     xhr.onload = () => {
+      // Settle the parent's gate before reporting the new URL, so a successful
+      // upload immediately re-enables Save with the new value (ARGUS #489).
+      onUploadingChange?.(false);
       setProgress(null);
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
@@ -97,13 +103,21 @@ export function LogoUploadField({
     };
 
     xhr.onerror = () => {
+      onUploadingChange?.(false);
       setProgress(null);
       setError('Upload failed. Please try again.');
     };
 
     setProgress(0);
-    xhr.open('POST', uploadUrl);
-    xhr.send(formData);
+    onUploadingChange?.(true);
+    try {
+      xhr.open('POST', uploadUrl);
+      xhr.send(formData);
+    } catch {
+      onUploadingChange?.(false);
+      setProgress(null);
+      setError('Upload failed. Please try again.');
+    }
   }
 
   function handleRemove() {
