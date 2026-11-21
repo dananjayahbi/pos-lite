@@ -33,7 +33,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { SaleDetailModal } from '@/components/pos/SaleDetailModal';
 import { ReturnWizardSheet } from '@/components/pos/ReturnWizardSheet';
 import { SaleEditSheet, type EditableSale } from '@/components/sales/SaleEditSheet';
-import { saleUnitCount } from '@/components/sales/saleDisplay';
+import { saleEmptyState, saleLineCount, saleUnitCount } from '@/components/sales/saleDisplay';
 import { SALES_QUERY_KEY } from '@/components/sales/saleQueryKey';
 
 interface SaleLine {
@@ -210,6 +210,11 @@ export function SaleHistoryTable() {
   const meta = data?.meta ?? { page: 1, total: 0, totalPages: 1 };
 
   const filteredSales = sales;
+  const emptyState = saleEmptyState({
+    preset: dateRange.preset,
+    hasStatusFilter: status !== '',
+    hasPaymentFilter: paymentMethod !== '',
+  });
 
   const handleReset = () => {
     setStatus('');
@@ -301,9 +306,10 @@ export function SaleHistoryTable() {
           ))}
         </div>
       ) : filteredSales.length === 0 ? (
-        <p className="text-center text-mist-ink font-body text-sm py-8">
-          No sales found
-        </p>
+        <div className="py-8 text-center">
+          <p className="text-mist-ink font-body text-sm">{emptyState.title}</p>
+          <p className="text-sand-ink font-body mt-1 text-xs">{emptyState.hint}</p>
+        </div>
       ) : (
         <Table>
           <TableHeader>
@@ -376,7 +382,7 @@ export function SaleHistoryTable() {
                 <TableCell className="text-center">
                   <span
                     className="inline-flex items-center justify-center bg-mist/30 text-espresso font-body text-xs px-2 py-0.5 rounded-full"
-                    title={`${sale.lines.length} line${sale.lines.length === 1 ? '' : 's'}`}
+                    title={`${saleLineCount(sale.lines)} line${saleLineCount(sale.lines) === 1 ? '' : 's'}`}
                   >
                     {saleUnitCount(sale.lines)}
                   </span>
