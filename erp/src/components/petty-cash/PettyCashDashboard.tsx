@@ -25,8 +25,6 @@ import { Loader2, ArrowRight, ArrowDownToLine, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { EXPENSE_CATEGORIES } from '@/lib/validators/expense.validators';
 import { formatRupee } from '@/lib/format';
-import { PERMISSIONS } from '@/lib/constants/permissions';
-import { usePermissions } from '@/hooks/usePermissions';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { PettyCashBalanceEquation } from '@/components/petty-cash/PettyCashBalanceEquation';
 import { PettyCashExportButton } from '@/components/petty-cash/PettyCashExportButton';
@@ -136,15 +134,18 @@ const CATEGORY_LABEL: Record<string, string> = {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-export default function PettyCashDashboard() {
+interface PettyCashDashboardProps {
+  canManage: boolean;
+  canManageSettings: boolean;
+  canCreateExpense: boolean;
+}
+
+export default function PettyCashDashboard({
+  canManage,
+  canManageSettings,
+  canCreateExpense,
+}: PettyCashDashboardProps) {
   const queryClient = useQueryClient();
-  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
-  const canManage =
-    !permissionsLoading &&
-    hasPermission(PERMISSIONS.PETTY_CASH.managePettyCash);
-  const canManageSettings =
-    !permissionsLoading &&
-    hasPermission(PERMISSIONS.PETTY_CASH.manageFundSettings);
 
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -327,7 +328,7 @@ export default function PettyCashDashboard() {
               Add Cash In
             </Button>
           )}
-          {fund && (
+          {fund && canCreateExpense && (
             <Link href={`/expenses?fundId=${encodeURIComponent(fund.id)}`}>
               <Button variant="outline" className="border-mist text-espresso">
                 Add Expense <ArrowRight className="ml-2 h-4 w-4" />
@@ -474,21 +475,24 @@ export default function PettyCashDashboard() {
                       <Switch
                         checked={toggleCategories.includes(cat)}
                         onCheckedChange={() => toggleCategory(cat)}
+                        disabled={!canManage}
                       />
                     </label>
                   ))}
                 </div>
-                <Button
-                  onClick={() => categoriesMutation.mutate(toggleCategories)}
-                  disabled={categoriesMutation.isPending}
-                  variant="outline"
-                  className="border-mist text-espresso"
-                >
-                  {categoriesMutation.isPending && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  Save Categories
-                </Button>
+                {canManage && (
+                  <Button
+                    onClick={() => categoriesMutation.mutate(toggleCategories)}
+                    disabled={categoriesMutation.isPending}
+                    variant="outline"
+                    className="border-mist text-espresso"
+                  >
+                    {categoriesMutation.isPending && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    Save Categories
+                  </Button>
+                )}
               </CardContent>
             </Card>
 
@@ -571,30 +575,28 @@ export default function PettyCashDashboard() {
         )}
       </ErrorBoundary>
 
-      {fund && (
-        <>
-          <PettyCashTopUpDialog
-            open={topUpOpen}
-            onOpenChange={setTopUpOpen}
-            fundName={fund.name}
-            paymentAccountId={fund.paymentAccount?.id ?? null}
-            accounts={paymentAccounts}
-            onSubmit={async (payload) => {
-              await topUpMutation.mutateAsync(payload);
-            }}
-          />
-          {canManageSettings && (
-            <PettyCashSettingsDialog
-              open={settingsOpen}
-              onOpenChange={setSettingsOpen}
-              name={fund.name}
-              lowBalanceThreshold={fund.lowBalanceThreshold}
-              onSubmit={async (payload) => {
-                await settingsMutation.mutateAsync(payload);
-              }}
-            />
-          )}
-        </>
+      {fund && canManage && (
+        <PettyCashTopUpDialog
+          open={topUpOpen}
+          onOpenChange={setTopUpOpen}
+          fundName={fund.name}
+          paymentAccountId={fund.paymentAccount?.id ?? null}
+          accounts={paymentAccounts}
+          onSubmit={async (payload) => {
+            await topUpMutation.mutateAsync(payload);
+          }}
+        />
+      )}
+      {fund && canManageSettings && (
+        <PettyCashSettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          name={fund.name}
+          lowBalanceThreshold={fund.lowBalanceThreshold}
+          onSubmit={async (payload) => {
+            await settingsMutation.mutateAsync(payload);
+          }}
+        />
       )}
     </div>
   );

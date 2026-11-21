@@ -37,7 +37,7 @@ export async function GET(request: Request) {
         { status: 401 },
       );
     }
-    if (!hasPermission(session.user, PERMISSIONS.EXPENSE.viewExpense)) {
+    if (!hasPermission(session.user, PERMISSIONS.PETTY_CASH.viewPettyCash)) {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
