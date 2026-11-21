@@ -12,6 +12,7 @@ import { Prisma } from '@/generated/prisma/client';
 import type { HealthConcern, ProductSource, TaxRule } from '@/generated/prisma/client';
 import { createAuditLog, writeAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { ApiError } from '@/lib/api/errors';
+import { findNearDuplicateCategoryName, normalizeCategoryName } from '@/lib/categories/categoryName.core';
 import { assertProductHasNoStock } from '@/lib/services/productDelete.core';
 import { adjustStockInTx } from '@/lib/services/inventory.service';
 import { resolveOpeningStockQuantity } from '@/lib/services/openingStock.core';
@@ -925,17 +926,20 @@ export async function getAllCategories(
 export async function createCategory(tenantId: string, actorId: string, data: CreateCategoryInput) {
   // M04-01 (D4 policy): the name is reserved while ANY row carries it — live
   // or soft-deleted — because @@unique([tenantId, name]) keeps archived rows
-  // holding the name. A deletedAt-agnostic pre-check surfaces the friendly
-  // 409 from the service instead of letting the DB throw a raw P2002 dump;
-  // mapPrismaError in toErrorResponse stays the belt-and-braces safety net
-  // for races between this check and the insert (BUG-21).
-  const existing = await prisma.category.findFirst({
-    where: { tenantId, name: data.name },
+  // holding the name. ARGUS #173: uniqueness is normalised (trimmed,
+  // whitespace-collapsed, case-insensitive) so a direct API caller cannot add
+  // "ayurvedic oils" next to "Ayurvedic Oils". mapPrismaError in
+  // toErrorResponse stays the belt-and-braces safety net for exact races.
+  const existingRows = await prisma.category.findMany({
+    where: { tenantId },
+    select: { id: true, name: true, deletedAt: true },
   });
+  const duplicate = findNearDuplicateCategoryName(data.name, existingRows);
 
-  if (existing) {
+  if (duplicate) {
+    const archived = existingRows.find((row) => row.id === duplicate.id)?.deletedAt;
     throw ApiError.conflict(
-      existing.deletedAt
+      archived
         ? 'A category with this name already exists (an archived record uses this name)'
         : 'A category with this name already exists',
     );
@@ -980,15 +984,21 @@ export async function updateCategory(
   }
 
   // Check name conflict on rename — M04-01 (D4): archived rows still reserve
-  // the name at the DB, so the pre-check is deletedAt-agnostic and throws a
-  // typed 409 with the friendly message (P2002 mapper stays the safety net).
-  if (data.name && data.name !== existing.name) {
-    const conflict = await prisma.category.findFirst({
-      where: { tenantId, name: data.name, id: { not: categoryId } },
+  // the name at the DB, so the pre-check is deletedAt-agnostic. ARGUS #173 adds
+  // the same normalised (case/whitespace-insensitive) comparison as create.
+  if (
+    data.name !== undefined &&
+    normalizeCategoryName(data.name) !== normalizeCategoryName(existing.name)
+  ) {
+    const candidates = await prisma.category.findMany({
+      where: { tenantId },
+      select: { id: true, name: true, deletedAt: true },
     });
+    const conflict = findNearDuplicateCategoryName(data.name, candidates, categoryId);
     if (conflict) {
+      const archived = candidates.find((row) => row.id === conflict.id)?.deletedAt;
       throw ApiError.conflict(
-        conflict.deletedAt
+        archived
           ? 'A category with this name already exists (an archived record uses this name)'
           : 'A category with this name already exists',
       );

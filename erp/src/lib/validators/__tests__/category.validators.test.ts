@@ -43,4 +43,11 @@ describe('category validators', () => {
       CategorySchema.safeParse({ name: 'Oils', sortOrder: 2_147_483_648 }).success,
     ).toBe(false);
   });
+
+  /** ARGUS #173: the API stores the trimmed name. */
+  it('trims a padded name before storing it', () => {
+    expect(CategorySchema.parse({ name: '  Ayurvedic Oils  ' }).name).toBe(
+      'Ayurvedic Oils',
+    );
+  });
 });
