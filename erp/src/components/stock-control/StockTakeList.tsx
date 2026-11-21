@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/table';
 import { useStockTakeSessions } from '@/hooks/useStockTakeSessions';
 import { useCategories } from '@/hooks/useCategories';
+import { stockTakeAction } from '@/components/stock-control/stockTakeLinks';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface StockTakeListProps {
@@ -400,6 +401,7 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
                   label: s.status,
                   className: 'bg-gray-100 text-gray-800',
                 };
+                const action = stockTakeAction(s.id, s.status);
                 return (
                   <TableRow key={s.id} className="hover:bg-pearl/50">
                     <TableCell className="font-mono text-xs text-espresso">
@@ -433,14 +435,10 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Link
-                          href={`/stock-control/stock-takes/${s.id}`}
+                          href={action.href}
                           className="font-body text-sm text-espresso underline-offset-2 hover:underline"
                         >
-                          {s.status === 'IN_PROGRESS'
-                            ? 'Continue Counting'
-                            : s.status === 'PENDING_APPROVAL'
-                              ? 'Review'
-                              : 'View Details'}
+                          {action.label}
                         </Link>
                         {s.status === 'IN_PROGRESS' && (
                           <Button

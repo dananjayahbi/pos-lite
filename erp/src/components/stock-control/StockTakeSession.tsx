@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Loader2,
   ClipboardList,
+  ClipboardCheck,
   ArrowLeft,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -573,6 +574,15 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
           >
             <CheckCircle2 className="mr-2 h-4 w-4" />
             Complete Session
+          </Button>
+        )}
+
+        {stockSession.status === 'PENDING_APPROVAL' && (
+          <Button asChild className="bg-espresso text-pearl hover:bg-espresso/90">
+            <Link href={`/stock-control/stock-takes/${sessionId}/review`}>
+              <ClipboardCheck className="mr-2 h-4 w-4" />
+              Review Session
+            </Link>
           </Button>
         )}
       </div>
