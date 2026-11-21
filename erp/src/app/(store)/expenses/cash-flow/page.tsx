@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AlertTriangle, ArrowLeft, Lock, RefreshCw } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { formatLocalDateInput } from '@/lib/dates/inclusiveRange';
 import { formatRupee } from '@/lib/format';
 import { resolveCashFlowReportState } from '@/lib/reports/cashflowReportState';
 import type { CashFlowResult } from '@/lib/services/cashflow.service';
@@ -38,12 +39,11 @@ class CashFlowRequestError extends Error {
 
 function getMonthStart() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  return formatLocalDateInput(new Date(d.getFullYear(), d.getMonth(), 1));
 }
 
 function getToday() {
-  const d = new Date();
-  return d.toISOString().slice(0, 10);
+  return formatLocalDateInput(new Date());
 }
 
 const MOVEMENT_LABELS: Record<string, string> = {

@@ -16,6 +16,12 @@ import type { PaymentAccount } from './paymentAccountTypes';
 
 interface PaymentAccountCardProps {
   account: PaymentAccount;
+  /** Capability gates (ARGUS #427); defaults keep existing callers working. */
+  canEdit?: boolean;
+  canTransfer?: boolean;
+  canDeposit?: boolean;
+  canWithdraw?: boolean;
+  canClose?: boolean;
   onEdit: (account: PaymentAccount) => void;
   onOpenBook: (account: PaymentAccount) => void;
   onTransfer: (account: PaymentAccount) => void;
@@ -30,6 +36,11 @@ interface PaymentAccountCardProps {
  */
 export function PaymentAccountCard({
   account,
+  canEdit = true,
+  canTransfer = true,
+  canDeposit = true,
+  canWithdraw = true,
+  canClose = true,
   onEdit,
   onOpenBook,
   onTransfer,
@@ -89,7 +100,7 @@ export function PaymentAccountCard({
           Account Book
         </Button>
 
-        {!account.pettyCashFundId && (
+        {canEdit && !account.pettyCashFundId && (
           <Button
             variant="ghost"
             size="sm"
@@ -101,44 +112,52 @@ export function PaymentAccountCard({
           </Button>
         )}
 
-        {!isClosed && !account.pettyCashFundId && (
+        {!isClosed && !account.pettyCashFundId && (canTransfer || canDeposit || canWithdraw || canClose) && (
           <>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onTransfer(account)}
-              className="font-body text-espresso"
-            >
-              <ArrowLeftRight className="h-3.5 w-3.5" />
-              Fund Transfer
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onDeposit(account)}
-              className="font-body text-espresso"
-            >
-              <ArrowDownToLine className="h-3.5 w-3.5" />
-              Deposit
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onWithdraw(account)}
-              className="font-body text-espresso"
-            >
-              <ArrowUpFromLine className="h-3.5 w-3.5" />
-              Withdraw
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onClose(account)}
-              className="font-body text-[#9B2226] hover:bg-[#9B2226]/10 hover:text-[#9B2226]"
-            >
-              <Lock className="h-3.5 w-3.5" />
-              Close
-            </Button>
+            {canTransfer && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onTransfer(account)}
+                className="font-body text-espresso"
+              >
+                <ArrowLeftRight className="h-3.5 w-3.5" />
+                Fund Transfer
+              </Button>
+            )}
+            {canDeposit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onDeposit(account)}
+                className="font-body text-espresso"
+              >
+                <ArrowDownToLine className="h-3.5 w-3.5" />
+                Deposit
+              </Button>
+            )}
+            {canWithdraw && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onWithdraw(account)}
+                className="font-body text-espresso"
+              >
+                <ArrowUpFromLine className="h-3.5 w-3.5" />
+                Withdraw
+              </Button>
+            )}
+            {canClose && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onClose(account)}
+                className="font-body text-[#9B2226] hover:bg-[#9B2226]/10 hover:text-[#9B2226]"
+              >
+                <Lock className="h-3.5 w-3.5" />
+                Close
+              </Button>
+            )}
           </>
         )}
 

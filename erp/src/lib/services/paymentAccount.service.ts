@@ -2,7 +2,8 @@ import Decimal from 'decimal.js';
 
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/lib/api/errors';
-import { AUDIT_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
+import { AUDIT_ACTIONS, createAuditLogInTransaction } from '@/lib/services/audit.service';
+import { evaluatePaymentAccountPolicy } from '@/lib/services/paymentAccountPolicy';
 import {
   PaymentAccountStatus,
   PaymentAccountType,
@@ -11,6 +12,7 @@ import {
 import type { Prisma, PrismaClient } from '@/generated/prisma/client';
 import type { TxClient } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
+import { resolveInclusiveDateRange } from '@/lib/api/inclusive-date-range';
 import type {
   CloseAccountInput,
   CreatePaymentAccountInput,
@@ -63,6 +65,15 @@ function toMoney(value: Decimal): number {
 
 function makeGroupId(): string {
   return `pg_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function assertPaymentAccountPolicy(
+  input: Parameters<typeof evaluatePaymentAccountPolicy>[0],
+): void {
+  const decision = evaluatePaymentAccountPolicy(input);
+  if (!decision.allowed) {
+    throw new ApiError(403, 'FORBIDDEN', decision.reason ?? 'Owner approval is required');
+  }
 }
 
 // ── Ledger primitives ────────────────────────────────────────────────────────
@@ -255,6 +266,27 @@ export async function listPaymentAccounts(
   };
 }
 
+/**
+ * Destination picker for operational roles (ARGUS #427).
+ *
+ * Returns only id/name/type so a cashier can choose where a POS/expense
+ * payment lands without exposing balances, ledger history or the management
+ * page. Petty-cash accounts are excluded because sale routing cannot use them.
+ */
+export async function listPaymentAccountDestinations(tenantId: string) {
+  const accounts = await prisma.paymentAccount.findMany({
+    where: {
+      tenantId,
+      status: PaymentAccountStatus.ACTIVE,
+      pettyCashFund: null,
+    },
+    select: { id: true, name: true, type: true, status: true },
+    orderBy: { name: 'asc' },
+  });
+
+  return { accounts };
+}
+
 export async function getPaymentAccount(tenantId: string, accountId: string) {
   const account = await prisma.paymentAccount.findFirst({
     where: { id: accountId, tenantId },
@@ -273,6 +305,12 @@ export async function createPaymentAccount(
   actorRole: string,
   input: CreatePaymentAccountInput,
 ) {
+  assertPaymentAccountPolicy({
+    operation: 'CREATE',
+    actorRole,
+    openingBalance: input.openingBalance,
+  });
+
   const existing = await prisma.paymentAccount.findFirst({
     where: { tenantId, name: input.name },
     select: { id: true },
@@ -307,7 +345,7 @@ export async function createPaymentAccount(
       ]);
     }
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,
@@ -369,29 +407,34 @@ export async function updatePaymentAccount(
     }
   }
 
-  const updated = await prisma.paymentAccount.update({
-    where: { id: accountId },
-    data: {
-      ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(input.type !== undefined ? { type: input.type } : {}),
-      ...(input.accountNumber !== undefined ? { accountNumber: input.accountNumber } : {}),
-      ...(input.note !== undefined ? { note: input.note } : {}),
-      ...(input.details !== undefined ? { details: input.details as Prisma.InputJsonValue } : {}),
-    },
-  });
+  // The metadata update and its audit row commit together. Using the global
+  // audit writer here would let a rolled-back update leave an orphan row
+  // (ARGUS #426).
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.paymentAccount.update({
+      where: { id: accountId },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.type !== undefined ? { type: input.type } : {}),
+        ...(input.accountNumber !== undefined ? { accountNumber: input.accountNumber } : {}),
+        ...(input.note !== undefined ? { note: input.note } : {}),
+        ...(input.details !== undefined ? { details: input.details as Prisma.InputJsonValue } : {}),
+      },
+    });
 
-  await createAuditLog({
-    tenantId,
-    actorId,
-    actorRole,
-    entityType: 'PaymentAccount',
-    entityId: accountId,
-    action: AUDIT_ACTIONS.PAYMENT_ACCOUNT_UPDATED,
-    before: { name: before.name, type: before.type, note: before.note },
-    after: { name: updated.name, type: updated.type, note: updated.note },
-  });
+    await createAuditLogInTransaction(tx, {
+      tenantId,
+      actorId,
+      actorRole,
+      entityType: 'PaymentAccount',
+      entityId: accountId,
+      action: AUDIT_ACTIONS.PAYMENT_ACCOUNT_UPDATED,
+      before: { name: before.name, type: before.type, note: before.note },
+      after: { name: updated.name, type: updated.type, note: updated.note },
+    });
 
-  return updated;
+    return updated;
+  });
 }
 
 // ── Money movements ──────────────────────────────────────────────────────────
@@ -404,6 +447,11 @@ export async function transferFunds(
 ) {
   const groupId = makeGroupId();
   const amount = dec(input.amount);
+  assertPaymentAccountPolicy({
+    operation: 'TRANSFER',
+    actorRole,
+    amount: amount.toNumber(),
+  });
 
   return prisma.$transaction(async (tx) => {
     const [from, to] = await Promise.all([
@@ -476,7 +524,7 @@ export async function transferFunds(
       });
     }
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,
@@ -512,6 +560,11 @@ export async function depositFunds(
 ) {
   const groupId = makeGroupId();
   const amount = dec(input.amount);
+  assertPaymentAccountPolicy({
+    operation: 'DEPOSIT',
+    actorRole,
+    amount: amount.toNumber(),
+  });
 
   return prisma.$transaction(async (tx) => {
     const target = await tx.paymentAccount.findFirst({ where: { id: accountId, tenantId } });
@@ -553,7 +606,7 @@ export async function depositFunds(
 
     await postLedgerEntries(tx, tenantId, actorId, lines);
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,
@@ -581,6 +634,11 @@ export async function withdrawFunds(
 ) {
   const groupId = makeGroupId();
   const amount = dec(input.amount);
+  assertPaymentAccountPolicy({
+    operation: 'WITHDRAW',
+    actorRole,
+    amount: amount.toNumber(),
+  });
 
   return prisma.$transaction(async (tx) => {
     const source = await tx.paymentAccount.findFirst({ where: { id: accountId, tenantId } });
@@ -622,7 +680,7 @@ export async function withdrawFunds(
 
     await postLedgerEntries(tx, tenantId, actorId, lines);
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,
@@ -667,6 +725,11 @@ export async function closePaymentAccount(
     }
 
     const balance = new Decimal(account.balance);
+    assertPaymentAccountPolicy({
+      operation: 'CLOSE',
+      actorRole,
+      amount: balance.toNumber(),
+    });
 
     if (balance.greaterThan(0)) {
       if (!input.transferToAccountId) {
@@ -731,7 +794,7 @@ export async function closePaymentAccount(
       },
     });
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,
@@ -763,10 +826,13 @@ export async function getAccountBook(
 
   const where: Prisma.PaymentAccountEntryWhereInput = { tenantId, accountId };
 
-  if (query.dateFrom || query.dateTo) {
+  // ARGUS #429: date-only bounds are inclusive local calendar days, shared
+  // with the tenant ledger, Expenses cash flow and inventory movement filters.
+  const range = resolveInclusiveDateRange(query.dateFrom, query.dateTo);
+  if (range.from || range.to) {
     where.entryDate = {
-      ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-      ...(query.dateTo ? { lte: new Date(`${query.dateTo}T23:59:59.999Z`) } : {}),
+      ...(range.from ? { gte: range.from } : {}),
+      ...(range.to ? { lte: range.to } : {}),
     };
   }
   if (query.source) where.source = query.source;
@@ -814,10 +880,11 @@ export async function getCashFlow(
   const where: Prisma.PaymentAccountEntryWhereInput = { tenantId };
 
   if (query.accountId) where.accountId = query.accountId;
-  if (query.dateFrom || query.dateTo) {
+  const range = resolveInclusiveDateRange(query.dateFrom, query.dateTo);
+  if (range.from || range.to) {
     where.entryDate = {
-      ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-      ...(query.dateTo ? { lte: new Date(`${query.dateTo}T23:59:59.999Z`) } : {}),
+      ...(range.from ? { gte: range.from } : {}),
+      ...(range.to ? { lte: range.to } : {}),
     };
   }
 

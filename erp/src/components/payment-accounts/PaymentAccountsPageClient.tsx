@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { usePermissions } from '@/hooks/usePermissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { formatRupee } from '@/lib/format';
 import { PaymentAccountCard } from './PaymentAccountCard';
 import { CreateAccountDialog } from './CreateAccountDialog';
@@ -47,6 +49,11 @@ export function PaymentAccountsPageClient() {
   const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<ActiveDialog>(null);
   const [bookAccount, setBookAccount] = useState<PaymentAccount | null>(null);
+  const { hasPermission } = usePermissions();
+  const canManage = hasPermission(PERMISSIONS.PAYMENT_ACCOUNT.managePaymentAccount);
+  const canTransfer = hasPermission(PERMISSIONS.PAYMENT_ACCOUNT.transferFunds);
+  const canDeposit = hasPermission(PERMISSIONS.PAYMENT_ACCOUNT.depositFunds);
+  const canClose = hasPermission(PERMISSIONS.PAYMENT_ACCOUNT.closePaymentAccount);
 
   const accountsQuery = useQuery<PaymentAccountListResult>({
     queryKey: paymentAccountKeys.list(),
@@ -147,13 +154,15 @@ export function PaymentAccountsPageClient() {
             />
             Refresh
           </Button>
-          <Button
-            className="bg-espresso font-body text-pearl hover:bg-espresso/90"
-            onClick={() => setDialog({ kind: 'create' })}
-          >
-            <Plus className="h-4 w-4" />
-            Add Account
-          </Button>
+          {canManage && (
+            <Button
+              className="bg-espresso font-body text-pearl hover:bg-espresso/90"
+              onClick={() => setDialog({ kind: 'create' })}
+            >
+              <Plus className="h-4 w-4" />
+              Add Account
+            </Button>
+          )}
         </div>
       </div>
 
@@ -214,19 +223,26 @@ export function PaymentAccountsPageClient() {
               <p className="mt-1 font-body text-sm text-sand-ink">
                 Add your cash drawer, bank account or payment gateway to start tracking money.
               </p>
-              <Button
-                className="mt-4 bg-espresso font-body text-pearl hover:bg-espresso/90"
-                onClick={() => setDialog({ kind: 'create' })}
-              >
-                <Plus className="h-4 w-4" />
-                Add Account
-              </Button>
+              {canManage && (
+                <Button
+                  className="mt-4 bg-espresso font-body text-pearl hover:bg-espresso/90"
+                  onClick={() => setDialog({ kind: 'create' })}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Account
+                </Button>
+              )}
             </div>
           ) : (
             accounts.map((account) => (
               <PaymentAccountCard
                 key={account.id}
                 account={account}
+                canEdit={canManage}
+                canTransfer={canTransfer}
+                canDeposit={canDeposit}
+                canWithdraw={canDeposit}
+                canClose={canClose}
                 onEdit={(target) => setDialog({ kind: 'edit', account: target })}
                 onOpenBook={(target) => setBookAccount(target)}
                 onTransfer={(target) => setDialog({ kind: 'transfer', account: target })}

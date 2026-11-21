@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getCashFlowStatement } from '@/lib/services/cashflow.service';
-import { parseRangeStart, parseRangeEnd } from '@/lib/dates/inclusiveRange';
+import { resolveInclusiveDateRange } from '@/lib/api/inclusive-date-range';
 
 export async function GET(request: Request) {
   try {
@@ -46,10 +46,11 @@ export async function GET(request: Request) {
       );
     }
 
-    const dateFrom = parseRangeStart(dateFromParam);
-    const dateTo = parseRangeEnd(dateToParam);
+    // ARGUS #429: one shared inclusive local-day helper for every cash-flow
+    // surface, so the same From/To label includes the same entries.
+    const { from: dateFrom, to: dateTo } = resolveInclusiveDateRange(dateFromParam, dateToParam);
 
-    if (isNaN(dateFrom.getTime()) || isNaN(dateTo.getTime())) {
+    if (!dateFrom || !dateTo) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid date format' } },
         { status: 400 },

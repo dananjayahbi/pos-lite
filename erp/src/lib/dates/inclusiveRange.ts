@@ -1,21 +1,32 @@
 /**
- * Inclusive date-range parsing for report filters (ARGUS #394).
+ * Inclusive date-range parsing for report filters.
  *
- * Date inputs send `YYYY-MM-DD`. `new Date('2026-09-16')` is midnight at the
- * START of the day, so using it as an upper bound excluded everything recorded
- * later that day. Date-only end values are expanded to 23:59:59.999; full
- * timestamps are preserved.
+ * Historically this module expanded date-only values to UTC midnight /
+ * 23:59:59.999Z. In a +05:30 store that shifted the local day by 5.5 hours, so
+ * a "From" label included entries from the previous evening and the Expenses
+ * cash flow (which used a different upper bound) disagreed with the account
+ * book. It now delegates to the shared local-calendar helper used by inventory
+ * movement filters (ARGUS #184 / #429).
  */
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+import {
+  inclusiveRangeEnd,
+  inclusiveRangeStart,
+} from '@/lib/api/inclusive-date-range';
 
 export function parseRangeStart(value: string | Date): Date {
   if (value instanceof Date) return value;
-  if (DATE_ONLY.test(value)) return new Date(`${value}T00:00:00.000Z`);
-  return new Date(value);
+  return inclusiveRangeStart(value) ?? new Date(value);
 }
 
 export function parseRangeEnd(value: string | Date): Date {
   if (value instanceof Date) return value;
-  if (DATE_ONLY.test(value)) return new Date(`${value}T23:59:59.999Z`);
-  return new Date(value);
+  return inclusiveRangeEnd(value) ?? new Date(value);
+}
+
+/** Format a Date as the `YYYY-MM-DD` value a local date input expects. */
+export function formatLocalDateInput(value: Date): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
