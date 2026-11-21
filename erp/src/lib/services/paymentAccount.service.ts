@@ -2,7 +2,7 @@ import Decimal from 'decimal.js';
 
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/lib/api/errors';
-import { AUDIT_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
+import { AUDIT_ACTIONS, createAuditLogInTransaction } from '@/lib/services/audit.service';
 import {
   PaymentAccountStatus,
   PaymentAccountType,
@@ -307,7 +307,7 @@ export async function createPaymentAccount(
       ]);
     }
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,
@@ -369,29 +369,34 @@ export async function updatePaymentAccount(
     }
   }
 
-  const updated = await prisma.paymentAccount.update({
-    where: { id: accountId },
-    data: {
-      ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(input.type !== undefined ? { type: input.type } : {}),
-      ...(input.accountNumber !== undefined ? { accountNumber: input.accountNumber } : {}),
-      ...(input.note !== undefined ? { note: input.note } : {}),
-      ...(input.details !== undefined ? { details: input.details as Prisma.InputJsonValue } : {}),
-    },
-  });
+  // The metadata update and its audit row commit together. Using the global
+  // audit writer here would let a rolled-back update leave an orphan row
+  // (ARGUS #426).
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.paymentAccount.update({
+      where: { id: accountId },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.type !== undefined ? { type: input.type } : {}),
+        ...(input.accountNumber !== undefined ? { accountNumber: input.accountNumber } : {}),
+        ...(input.note !== undefined ? { note: input.note } : {}),
+        ...(input.details !== undefined ? { details: input.details as Prisma.InputJsonValue } : {}),
+      },
+    });
 
-  await createAuditLog({
-    tenantId,
-    actorId,
-    actorRole,
-    entityType: 'PaymentAccount',
-    entityId: accountId,
-    action: AUDIT_ACTIONS.PAYMENT_ACCOUNT_UPDATED,
-    before: { name: before.name, type: before.type, note: before.note },
-    after: { name: updated.name, type: updated.type, note: updated.note },
-  });
+    await createAuditLogInTransaction(tx, {
+      tenantId,
+      actorId,
+      actorRole,
+      entityType: 'PaymentAccount',
+      entityId: accountId,
+      action: AUDIT_ACTIONS.PAYMENT_ACCOUNT_UPDATED,
+      before: { name: before.name, type: before.type, note: before.note },
+      after: { name: updated.name, type: updated.type, note: updated.note },
+    });
 
-  return updated;
+    return updated;
+  });
 }
 
 // ── Money movements ──────────────────────────────────────────────────────────
@@ -476,7 +481,7 @@ export async function transferFunds(
       });
     }
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,
@@ -553,7 +558,7 @@ export async function depositFunds(
 
     await postLedgerEntries(tx, tenantId, actorId, lines);
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,
@@ -622,7 +627,7 @@ export async function withdrawFunds(
 
     await postLedgerEntries(tx, tenantId, actorId, lines);
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,
@@ -731,7 +736,7 @@ export async function closePaymentAccount(
       },
     });
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,

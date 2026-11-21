@@ -186,30 +186,65 @@ export interface CreateAuditLogInput {
   userAgent?: string | undefined;
 }
 
+/**
+ * Build the Prisma payload once so the best-effort and transactional writers
+ * cannot drift. `null` before/after values are explicit JSON nulls, while an
+ * omitted field stays absent.
+ */
+export function buildAuditLogData(
+  input: CreateAuditLogInput,
+): Prisma.AuditLogUncheckedCreateInput {
+  const beforeData =
+    input.before === undefined ? undefined : input.before === null ? Prisma.JsonNull : input.before;
+  const afterData =
+    input.after === undefined ? undefined : input.after === null ? Prisma.JsonNull : input.after;
+
+  return {
+    tenantId: input.tenantId,
+    actorId: input.actorId,
+    actorRole: input.actorRole,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    action: input.action,
+    ...(beforeData !== undefined ? { before: beforeData } : {}),
+    ...(afterData !== undefined ? { after: afterData } : {}),
+    ...(input.ipAddress !== undefined ? { ipAddress: input.ipAddress } : {}),
+    ...(input.userAgent !== undefined ? { userAgent: input.userAgent } : {}),
+  };
+}
+
 export async function createAuditLog(input: CreateAuditLogInput): Promise<void> {
   try {
-    const beforeData =
-      input.before === undefined ? undefined : input.before === null ? Prisma.JsonNull : input.before;
-    const afterData =
-      input.after === undefined ? undefined : input.after === null ? Prisma.JsonNull : input.after;
-
-    await prisma.auditLog.create({
-      data: {
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        actorRole: input.actorRole,
-        entityType: input.entityType,
-        entityId: input.entityId,
-        action: input.action,
-        ...(beforeData !== undefined ? { before: beforeData } : {}),
-        ...(afterData !== undefined ? { after: afterData } : {}),
-        ...(input.ipAddress !== undefined ? { ipAddress: input.ipAddress } : {}),
-        ...(input.userAgent !== undefined ? { userAgent: input.userAgent } : {}),
-      },
-    });
+    await prisma.auditLog.create({ data: buildAuditLogData(input) });
   } catch (error) {
     console.error('Audit log write failed:', error);
   }
+}
+
+/**
+ * Financial audit rows that must commit or roll back with the money movement
+ * they describe (ARGUS #426).
+ *
+ * `createAuditLog` deliberately swallows failures and uses the global client,
+ * which is correct for view-ish events but wrong inside a money transaction:
+ * a rollback could leave an orphan audit row, or a commit could have no row.
+ * Callers pass their `tx` and this writer rethrows, so the audit is atomic with
+ * the ledger posting / account mutation.
+ */
+export const FINANCIAL_AUDIT_ACTIONS = new Set<string>([
+  AUDIT_ACTIONS.PAYMENT_ACCOUNT_CREATED,
+  AUDIT_ACTIONS.PAYMENT_ACCOUNT_UPDATED,
+  AUDIT_ACTIONS.PAYMENT_ACCOUNT_CLOSED,
+  AUDIT_ACTIONS.PAYMENT_ACCOUNT_TRANSFER,
+  AUDIT_ACTIONS.PAYMENT_ACCOUNT_DEPOSIT,
+  AUDIT_ACTIONS.PAYMENT_ACCOUNT_WITHDRAWAL,
+]);
+
+export async function createAuditLogInTransaction(
+  tx: Pick<Prisma.TransactionClient, 'auditLog'>,
+  input: CreateAuditLogInput,
+): Promise<void> {
+  await tx.auditLog.create({ data: buildAuditLogData(input) });
 }
 
 /**
@@ -222,26 +257,8 @@ export async function createAuditLog(input: CreateAuditLogInput): Promise<void> 
  * fire-and-forget with a console error), never a silent `.catch(() => {})`.
  */
 export async function writeAuditLog(input: CreateAuditLogInput): Promise<void> {
-  const beforeData =
-    input.before === undefined ? undefined : input.before === null ? Prisma.JsonNull : input.before;
-  const afterData =
-    input.after === undefined ? undefined : input.after === null ? Prisma.JsonNull : input.after;
-
   try {
-    await prisma.auditLog.create({
-      data: {
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        actorRole: input.actorRole,
-        entityType: input.entityType,
-        entityId: input.entityId,
-        action: input.action,
-        ...(beforeData !== undefined ? { before: beforeData } : {}),
-        ...(afterData !== undefined ? { after: afterData } : {}),
-        ...(input.ipAddress !== undefined ? { ipAddress: input.ipAddress } : {}),
-        ...(input.userAgent !== undefined ? { userAgent: input.userAgent } : {}),
-      },
-    });
+    await prisma.auditLog.create({ data: buildAuditLogData(input) });
   } catch (error) {
     console.error('SECURITY audit log write failed:', input.action, error);
     try {
