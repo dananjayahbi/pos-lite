@@ -11,6 +11,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SavedReportOpenButton } from '@/components/reports/SavedReportOpenButton';
+import { DeleteConfirmDialog } from '@/components/shared/DeleteConfirmDialog';
+import {
+  SAVED_REPORT_NAME_MAX_LENGTH,
+  validateSavedReportName,
+} from '@/lib/reports/savedReportValidation.core';
 import { savedReportsListMode } from '@/lib/reports/savedReportsList.core';
 import { hasSavedReportArtifact } from '@/lib/reports/savedReportArtifact.core';
 import { savedReportSnapshotMeta } from '@/lib/reports/savedReportAccess.core';
@@ -75,6 +80,8 @@ export default function SavedReportsPage() {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<SavedReportRecord | null>(null);
   const [nextName, setNextName] = useState('');
+  const [deletingReport, setDeletingReport] = useState<SavedReportRecord | null>(null);
+  const nameCheck = validateSavedReportName(nextName);
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery<{ success: boolean; data: SavedReportRecord[] }>({
     queryKey: ['saved-reports-page'],
@@ -102,10 +109,13 @@ export default function SavedReportsPage() {
   const renameMutation = useMutation({
     mutationFn: async () => {
       if (!editing) throw new Error('No report selected');
+      // Mirror the server's shared short-text rule before the round-trip.
+      const check = validateSavedReportName(nextName);
+      if (!check.ok) throw new Error(check.message ?? 'Invalid name');
       const res = await fetch(`/api/reports/saved/${editing.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: nextName }),
+        body: JSON.stringify({ name: check.name }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error?.message ?? 'Failed to rename report');
@@ -127,6 +137,7 @@ export default function SavedReportsPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['saved-reports-page'] });
       toast.success('Saved report deleted');
+      setDeletingReport(null);
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -233,7 +244,7 @@ export default function SavedReportsPage() {
                       <Button
                         variant="outline"
                         className="border-terracotta text-terracotta hover:bg-terracotta/10"
-                        onClick={() => deleteMutation.mutate(report.id)}
+                        onClick={() => setDeletingReport(report)}
                         disabled={deleteMutation.isPending}
                       >
                         Delete
@@ -255,17 +266,50 @@ export default function SavedReportsPage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="saved-report-name">Name</Label>
-              <Input id="saved-report-name" value={nextName} onChange={(event) => setNextName(event.target.value)} />
+              <Input
+                id="saved-report-name"
+                value={nextName}
+                maxLength={SAVED_REPORT_NAME_MAX_LENGTH}
+                aria-invalid={!nameCheck.ok && nextName.length > 0}
+                aria-describedby="saved-report-name-help"
+                onChange={(event) => setNextName(event.target.value)}
+              />
+              <p
+                id="saved-report-name-help"
+                className={`font-body text-xs ${nameCheck.ok ? 'text-mist-ink' : 'text-red-600'}`}
+              >
+                {nameCheck.ok
+                  ? `${nextName.trim().length}/${SAVED_REPORT_NAME_MAX_LENGTH} characters`
+                  : (nameCheck.message ?? 'Enter a name')}
+              </p>
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
-              <Button onClick={() => renameMutation.mutate()} disabled={renameMutation.isPending || nextName.trim().length === 0}>
+              <Button
+                onClick={() => renameMutation.mutate()}
+                disabled={renameMutation.isPending || !nameCheck.ok}
+              >
                 {renameMutation.isPending ? 'Saving…' : 'Save'}
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmDialog
+        open={deletingReport !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeletingReport(null);
+        }}
+        title="Delete saved report?"
+        description={`“${deletingReport?.name ?? ''}” and its stored file will be removed permanently. This cannot be undone.`}
+        detail="Open or download the report first if you need a copy."
+        pending={deleteMutation.isPending}
+        confirmLabel="Delete report"
+        onConfirm={() => {
+          if (deletingReport) deleteMutation.mutate(deletingReport.id);
+        }}
+      />
     </div>
   );
 }

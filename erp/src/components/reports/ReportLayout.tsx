@@ -40,6 +40,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import DateRangePicker from "@/components/reports/DateRangePicker";
+import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { ReportProvider, useReportContext } from "@/lib/reports/ReportContext";
 import {
   exportToCSV,
@@ -250,6 +251,7 @@ function ReportLayoutInner({
   const [savedReports, setSavedReports] = useState<SavedReportRecord[]>([]);
   const [savedReportsLoading, setSavedReportsLoading] = useState(false);
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
+  const [confirmDeleteReportId, setConfirmDeleteReportId] = useState<string | null>(null);
 
   const from = searchParams.get("from") || defaultFrom();
   const to = searchParams.get("to") || defaultTo();
@@ -745,9 +747,8 @@ function ReportLayoutInner({
                                   variant="ghost"
                                   className="text-terracotta hover:text-terracotta"
                                   disabled={isDeleting}
-                                  onClick={() => {
-                                    void handleDeleteSavedReport(savedReport.id);
-                                  }}
+                                  aria-label={`Delete ${savedReport.name}`}
+                                  onClick={() => setConfirmDeleteReportId(savedReport.id)}
                                 >
                                   <Trash2Icon className="h-4 w-4" />
                                 </Button>
@@ -781,6 +782,25 @@ function ReportLayoutInner({
             {children}
           </main>
         </div>
+
+        <DeleteConfirmDialog
+          open={confirmDeleteReportId !== null}
+          onOpenChange={(open) => {
+            if (!open) setConfirmDeleteReportId(null);
+          }}
+          title="Delete saved report?"
+          description={`“${
+            savedReports.find((report) => report.id === confirmDeleteReportId)?.name ?? ''
+          }” and its stored file will be removed permanently.`}
+          pending={deletingReportId !== null}
+          confirmLabel="Delete report"
+          onConfirm={() => {
+            if (!confirmDeleteReportId) return;
+            void handleDeleteSavedReport(confirmDeleteReportId).finally(() =>
+              setConfirmDeleteReportId(null),
+            );
+          }}
+        />
       </div>
   );
 }

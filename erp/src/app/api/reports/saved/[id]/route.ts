@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { savedReportPermission } from '@/lib/reports/savedReportAccess.core';
 import { deleteFile } from '@/lib/storage';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { zSafeShortText } from '@/lib/validators/shared';
+import { getClientIp } from '@/lib/utils/request';
 
 export async function GET(
   _request: Request,
@@ -76,19 +80,28 @@ export async function PUT(
       );
     }
 
-    const body = (await request.json()) as { name?: string };
-    const name = body.name?.trim();
-    if (!name) {
+    // ARGUS #448 - rename used to validate only "non-empty", while POST used
+    // the shared short-text guard (trim, 1-100 chars, no markup). One rule now
+    // applies to both, and the UI mirrors it before submitting.
+    const parsed = z.object({ name: zSafeShortText(100) }).safeParse(await request.json());
+    if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Name is required' } },
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: parsed.error.issues.map((issue) => issue.message).join(', '),
+          },
+        },
         { status: 400 },
       );
     }
+    const name = parsed.data.name;
 
     const { id } = await params;
     const existing = await prisma.savedReport.findFirst({
       where: { id, tenantId, userId: session.user.id },
-      select: { reportType: true },
+      select: { reportType: true, name: true },
     });
     if (!existing) {
       return NextResponse.json(
@@ -114,6 +127,19 @@ export async function PUT(
         { status: 404 },
       );
     }
+
+    void createAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      actorRole: session.user.role,
+      entityType: 'SavedReport',
+      entityId: id,
+      action: AUDIT_ACTIONS.SAVED_REPORT_RENAMED,
+      before: { name: existing.name },
+      after: { name },
+      ipAddress: getClientIp(request),
+      userAgent: request.headers.get('user-agent') ?? undefined,
+    }).catch(() => {});
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -148,10 +174,9 @@ export async function DELETE(
 
     const { id } = await params;
 
-    // Delete the stored artifact from object storage first, then the DB record.
     const existing = await prisma.savedReport.findFirst({
       where: { id, tenantId, userId: session.user.id },
-      select: { storageKey: true, reportType: true },
+      select: { storageKey: true, reportType: true, name: true, format: true },
     });
 
     if (!existing) {
@@ -166,6 +191,14 @@ export async function DELETE(
       savedReportPermission(existing.reportType),
     );
     if (typeForbidden) return typeForbidden;
+
+    // ARGUS #448 - remove the stored artifact BEFORE the row. The old order
+    // deleted the DB row first, so a storage failure left an unreferenced
+    // object behind with nothing to point at it. File-first is retry-safe: if
+    // the row delete fails the preset remains and can be deleted again.
+    if (existing.storageKey) {
+      await deleteFile(existing.storageKey);
+    }
 
     const deleted = await prisma.savedReport.deleteMany({
       where: {
@@ -182,9 +215,22 @@ export async function DELETE(
       );
     }
 
-    if (existing?.storageKey) {
-      await deleteFile(existing.storageKey);
-    }
+    void createAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      actorRole: session.user.role,
+      entityType: 'SavedReport',
+      entityId: id,
+      action: AUDIT_ACTIONS.SAVED_REPORT_DELETED,
+      before: {
+        name: existing.name,
+        reportType: existing.reportType,
+        format: existing.format,
+        storageKey: existing.storageKey,
+      },
+      ipAddress: getClientIp(_request),
+      userAgent: _request.headers.get('user-agent') ?? undefined,
+    }).catch(() => {});
 
     return NextResponse.json({ success: true });
   } catch (error) {
