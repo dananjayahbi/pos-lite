@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useGetNotifications, useInvalidateNotifications } from '@/hooks/useGetNotifications';
 import { getNotificationIcon } from '@/lib/constants/notification-types';
 import { getNotificationHref } from '@/lib/notifications/notification-href';
+import { formatNotificationTime } from '@/lib/notifications/notification-time';
 import {
   SALE_VOIDED_TITLE,
   buildSaleCompletedCopy,
@@ -36,21 +37,6 @@ type NotificationStatusFilter = 'all' | 'read' | 'unread';
  * M32-02 (OBS-59): the icon table is now shared with the header popover — see
  * `getNotificationIcon` in `src/lib/constants/notification-types.ts`.
  */
-
-function formatRelativeTime(dateStr: string): string {
-  const now = Date.now();
-  const date = new Date(dateStr).getTime();
-  const diff = now - date;
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString('en-LK');
-}
 
 export default function NotificationsPage() {
   const router = useRouter();
@@ -205,7 +191,7 @@ export default function NotificationsPage() {
                           {!notification.isRead && <Badge className="bg-terracotta text-pearl">Unread</Badge>}
                         </div>
                         <p className="text-sm text-sand-ink">{body}</p>
-                        <p className="font-mono text-xs text-mist-ink">{formatRelativeTime(notification.createdAt)}</p>
+                        <p className="font-mono text-xs text-mist-ink">{formatNotificationTime(notification.createdAt)}</p>
                       </div>
                     </div>
 

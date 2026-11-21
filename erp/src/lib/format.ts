@@ -14,6 +14,21 @@ export function formatLKR(amount: number | { toNumber(): number }): string {
 }
 
 /**
+ * Day-first display date used across the app, e.g. `28 Oct 2026`.
+ * Returns an empty string for an unparseable value so callers never render
+ * `Invalid Date`.
+ */
+export function formatDisplayDate(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+/**
  * Format a date relative to "now" for quick recency reading, e.g. "2 days ago",
  * "3 weeks ago", or an absolute date for older values. Returns null for null input.
  */
