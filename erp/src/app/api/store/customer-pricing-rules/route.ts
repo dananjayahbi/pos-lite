@@ -12,6 +12,12 @@ import {
   type CreateCustomerPricingRuleInput,
 } from '@/lib/validators/customer-pricing.validators';
 import { toWindowDate } from '@/lib/services/promotionWindow.core';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import {
+  assertCustomerTagInUse,
+  assertRulePriceAtOrBelowRetail,
+  getVariantRetailOr404,
+} from '@/lib/services/customerPricingRules.server';
 import type { Prisma } from '@/generated/prisma/client';
 
 /**
@@ -43,6 +49,25 @@ interface RuleWindow {
   variantId: string | null;
   startsAt: Date | null;
   endsAt: Date | null;
+}
+
+/** ARGUS #331: stable before/after audit shape for pricing rules. */
+function ruleAuditSnapshot(row: {
+  customerTag: string;
+  variantId: string | null;
+  price: { toString(): string };
+  startsAt: Date | null;
+  endsAt: Date | null;
+  isActive: boolean;
+}): Record<string, unknown> {
+  return {
+    customerTag: row.customerTag,
+    variantId: row.variantId,
+    price: row.price.toString(),
+    startsAt: row.startsAt ? row.startsAt.toISOString() : null,
+    endsAt: row.endsAt ? row.endsAt.toISOString() : null,
+    isActive: row.isActive,
+  };
 }
 
 /** True when two open-ended windows share at least one instant (inclusive bounds). */
@@ -101,14 +126,8 @@ async function assertNoOverlap(
 }
 
 /** Resolve a (possibly cross-tenant) variant id to a tenant-owned row or throw 404. */
-async function ensureVariantInTenant(tenantId: string, variantId: string): Promise<void> {
-  const variant = await prisma.productVariant.findFirst({
-    where: { id: variantId, tenantId },
-    select: { id: true },
-  });
-  if (!variant) {
-    throw ApiError.notFound('The selected variant was not found in this store.');
-  }
+async function ensureVariantInTenant(tenantId: string, variantId: string) {
+  return getVariantRetailOr404(tenantId, variantId);
 }
 
 export async function GET(request: Request) {
@@ -197,8 +216,10 @@ export async function POST(request: Request) {
 
     const data: CreateCustomerPricingRuleInput = parsed.data;
     const isActive = data.isActive ?? true;
+    await assertCustomerTagInUse(tenantId, data.customerTag);
     if (data.variantId) {
-      await ensureVariantInTenant(tenantId, data.variantId);
+      const variant = await ensureVariantInTenant(tenantId, data.variantId);
+      assertRulePriceAtOrBelowRetail(data.price, variant.retailPrice);
     }
 
     const candidate: RuleWindow = {
@@ -230,8 +251,19 @@ export async function POST(request: Request) {
       });
     });
 
+    void createAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      actorRole: session.user.role,
+      entityType: 'CustomerPricingRule',
+      entityId: created.id,
+      action: AUDIT_ACTIONS.CUSTOMER_PRICING_RULE_CREATED,
+      after: ruleAuditSnapshot(created) as Prisma.InputJsonValue,
+    }).catch(() => {});
+
     return ok(created, { status: 201 });
   } catch (error) {
     return toErrorResponse(error, 'POST /api/store/customer-pricing-rules');
   }
 }
+
