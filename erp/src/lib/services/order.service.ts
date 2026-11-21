@@ -83,6 +83,17 @@ export async function createWebsiteOrder(
     districtName: input.districtName ?? undefined,
   });
 
+  // ARGUS #287: the catalogue has no per-unit weight, so the parcel weight has
+  // to come from checkout. When it is missing the quote silently falls back to
+  // the base rate; make that visible in logs and on the delivery audit trail
+  // instead of pricing every online order as a zero-weight parcel.
+  const weightSupplied = input.totalWeightKg !== undefined;
+  if (!weightSupplied) {
+    console.warn(
+      `[createWebsiteOrder] tenant=${tenantId} order has no parcel weight; base rate applied (${shipping.shippingFee})`,
+    );
+  }
+
   const requestedLines = input.lines ?? [];
 
   const delivery = await prisma.$transaction(
@@ -244,7 +255,13 @@ export async function createWebsiteOrder(
     entityType: 'Delivery',
     entityId: delivery.id,
     action: AUDIT_ACTIONS.DELIVERY_CREATED,
-    after: { source: 'WEBSITE_CHECKOUT', orderRef: delivery.orderRef } as Prisma.InputJsonValue,
+    after: {
+      source: 'WEBSITE_CHECKOUT',
+      orderRef: delivery.orderRef,
+      weightKg: input.totalWeightKg ?? null,
+      weightSource: weightSupplied ? 'CHECKOUT' : 'MISSING',
+      shippingFee: shipping.shippingFee,
+    } as Prisma.InputJsonValue,
   });
 
   return {

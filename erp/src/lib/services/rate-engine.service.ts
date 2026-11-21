@@ -4,6 +4,7 @@ import Decimal from 'decimal.js';
 
 import { prisma } from '@/lib/prisma';
 import { setSentryTenantContext } from '@/lib/sentry/context';
+import { computeShippingFeeFromTerms } from '@/lib/delivery/shipping-rate.core';
 
 /**
  * Local shipping-fee rate engine.
@@ -12,6 +13,9 @@ import { setSentryTenantContext } from '@/lib/sentry/context';
  *
  * Rules: fee = baseRate when weight <= freeBaseWeightKg, else
  *        fee = baseRate + ceil(weight - freeBaseWeightKg) * extraKgRate.
+ *
+ * The arithmetic itself lives in `shipping-rate.core.ts` (pure, unit tested);
+ * this module only resolves the card and zone overrides from the database.
  */
 
 export interface RateCalcInput {
@@ -106,14 +110,7 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
     ? new Decimal(0)
     : new Decimal(input.weightKg.toString());
 
-  if (weight.lessThanOrEqualTo(freeBaseWeightKg)) {
-    return { shippingFee: baseRate, baseRate, extraKgRate, extraKg: new Decimal(0), freeBaseWeightKg };
-  }
-
-  const extraKg = weight.minus(freeBaseWeightKg).ceil();
-  const shippingFee = baseRate.plus(extraKg.times(extraKgRate));
-
-  return { shippingFee, baseRate, extraKgRate, extraKg, freeBaseWeightKg };
+  return computeShippingFeeFromTerms(weight, { baseRate, extraKgRate, freeBaseWeightKg });
 }
 
 /** Compute net payout for reconciliation: Net = GrossCOD − (fee + COD% + VAT%). */

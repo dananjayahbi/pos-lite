@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ROUTES } from '@/config/site';
 import { useCartStore } from '@/stores/cartStore';
-import { computeCartTotals } from '@/lib/cart';
+import { computeCartTotals, parseParcelWeightKg } from '@/lib/cart';
 import { formatLKR } from '@/lib/utils';
 import { placeOrder } from '@/lib/api/delivery';
 import { getShippingQuote } from '@/lib/api/shippingQuote';
@@ -60,14 +60,21 @@ export function CheckoutForm({ tenantSlug, cardPaymentAvailable = true }: Checko
   // Server-computed delivery-fee estimate (2dp string), requested once the
   // destination city is entered so the fee is visible before payment.
   const [shippingFee, setShippingFee] = useState<string | null>(null);
+  // ARGUS #287: the catalogue has no per-unit weight, so the checkout collects
+  // the parcel weight. The ERP prices the quote from it (base + extra-kg) and
+  // stores the same number on the delivery.
+  const [parcelWeight, setParcelWeight] = useState('');
 
   const totals = computeCartTotals(lines);
   const shippingFeeNum =
     shippingFee !== null && shippingFee !== undefined ? Number(shippingFee) : 0;
   const orderTotalLabel = formatLKR(totals.subtotal + shippingFeeNum);
 
-  // Request a delivery-fee quote whenever the destination changes. The quote is
-  // display-only; the authoritative fee is recomputed server-side on placement.
+  const parcelWeightKg = parseParcelWeightKg(parcelWeight);
+
+  // Request a delivery-fee quote whenever the destination or parcel weight
+  // changes. The quote is display-only; the authoritative fee is recomputed
+  // server-side on placement.
   useEffect(() => {
     let active = true;
     const city = values.cityName?.trim();
@@ -78,6 +85,7 @@ export function CheckoutForm({ tenantSlug, cardPaymentAvailable = true }: Checko
     getShippingQuote(tenantSlug, {
       cityName: city,
       districtName: values.districtName?.trim() || undefined,
+      totalWeightKg: parcelWeightKg,
     }).then((quote) => {
       if (active && quote) setShippingFee(quote.shippingFee);
     });
@@ -85,7 +93,7 @@ export function CheckoutForm({ tenantSlug, cardPaymentAvailable = true }: Checko
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantSlug, values.cityName, values.districtName]);
+  }, [tenantSlug, values.cityName, values.districtName, parcelWeightKg]);
 
   const setValue = (key: string, value: string) =>
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -122,6 +130,7 @@ export function CheckoutForm({ tenantSlug, cardPaymentAvailable = true }: Checko
       const result = await placeOrder(tenantSlug, parsed.data, lines, {
         codAmount: totals.subtotal,
         itemCount: totals.itemCount,
+        ...(parcelWeightKg !== undefined ? { totalWeightKg: parcelWeightKg } : {}),
         paymentMethod: effectivePaymentMethod,
       });
       clear(tenantSlug);
@@ -205,6 +214,30 @@ export function CheckoutForm({ tenantSlug, cardPaymentAvailable = true }: Checko
         {errors.form && (
           <p className="mt-4 rounded bg-red-400/10 px-3 py-2 text-sm text-red-300">{errors.form}</p>
         )}
+
+        <div className="mt-4">
+          <label
+            htmlFor="parcelWeightKg"
+            className="mb-1 block text-sm font-medium text-[#cbd5e1]"
+          >
+            Parcel weight (kg)
+            <span className="ml-1 text-xs text-[#64748b]">(optional)</span>
+          </label>
+          <input
+            id="parcelWeightKg"
+            type="number"
+            min="0"
+            step="0.1"
+            inputMode="decimal"
+            value={parcelWeight}
+            onChange={(e) => setParcelWeight(e.target.value)}
+            placeholder="e.g. 3.2"
+            className="w-full rounded-lg border border-white/12 bg-[#051610] px-3 py-2 text-sm text-white focus:border-[#97c93e] focus:outline-none"
+          />
+          <p className="mt-1 text-xs text-[#64748b]">
+            Used to price delivery by weight. Leave blank if unknown and the base rate applies.
+          </p>
+        </div>
 
         <div className="mt-6">
           <PaymentMethodSelector
