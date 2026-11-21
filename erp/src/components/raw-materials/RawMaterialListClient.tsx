@@ -30,7 +30,10 @@ import { useRawMaterials } from '@/hooks/useRawMaterials';
 import type { RawMaterialItem } from '@/hooks/useRawMaterials';
 import { useRawMaterialCategories } from '@/hooks/useRawMaterialCategories';
 import { RawMaterialCategoryManagerDialog } from '@/components/raw-materials/RawMaterialCategoryManagerDialog';
-import type { RawMaterialStockStatus } from '@/lib/services/rawMaterial.core';
+import {
+  parseRawMaterialStockStatus,
+  type RawMaterialStockStatus,
+} from '@/lib/services/rawMaterial.core';
 
 interface RawMaterialListClientProps {
   permissions: string[];
@@ -48,11 +51,9 @@ export function RawMaterialListClient({ permissions }: RawMaterialListClientProp
   const category = categoryRaw ?? undefined;
   const { data: categoriesData } = useRawMaterialCategories();
   const categories = categoriesData?.data ?? [];
-  const stockStatusRaw = searchParams.get('stockStatus');
-  const stockStatus: RawMaterialStockStatus | undefined =
-    stockStatusRaw === 'OK' || stockStatusRaw === 'LOW' || stockStatusRaw === 'OUT'
-      ? stockStatusRaw
-      : undefined;
+  const stockStatus: RawMaterialStockStatus | undefined = parseRawMaterialStockStatus(
+    searchParams.get('stockStatus'),
+  );
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<RawMaterialItem | null>(null);
@@ -253,22 +254,54 @@ export function RawMaterialListClient({ permissions }: RawMaterialListClientProp
           <DialogHeader>
             <DialogTitle>Delete raw material</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete{' '}
-              <span className="font-medium text-espresso">{deleteTarget?.name}</span>? This
-              cannot be undone.
+              {deleteTarget && deleteTarget.quantity > 0 ? (
+                <>
+                  <span className="font-medium text-espresso">{deleteTarget.name}</span> still has{' '}
+                  <span className="font-medium text-espresso">
+                    {deleteTarget.quantity} {deleteTarget.unitShortLabel}
+                  </span>{' '}
+                  on hand. Deleting would hide those units from the list, stats and valuation without
+                  writing them off. Adjust the stock to zero first.
+                </>
+              ) : (
+                <>
+                  Delete{' '}
+                  <span className="font-medium text-espresso">{deleteTarget?.name}</span>? It will be
+                  hidden from the list, stats and valuation. Deletion is only allowed when no stock is
+                  on hand and no active bill of materials uses the material.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={deleteMutation.isPending}
-              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
-            >
-              {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
-            </Button>
+            {deleteTarget && deleteTarget.quantity > 0 ? (
+              <>
+                <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    setAdjustTarget(deleteTarget);
+                    setDeleteTarget(null);
+                  }}
+                >
+                  Adjust stock
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={deleteMutation.isPending}
+                  onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+                >
+                  {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

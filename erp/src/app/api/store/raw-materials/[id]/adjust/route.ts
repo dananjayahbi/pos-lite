@@ -47,6 +47,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       session.user.id,
       id,
       parsed.data.quantityDelta,
+      parsed.data.reason,
     );
     return NextResponse.json({ success: true, data: material });
   } catch (error) {

@@ -30,11 +30,13 @@ export function RawMaterialAdjustDialog({
 }: RawMaterialAdjustDialogProps) {
   const queryClient = useQueryClient();
   const [delta, setDelta] = useState('');
+  const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setDelta('');
+      setReason('');
       setError(null);
     }
   }, [open, material]);
@@ -44,7 +46,10 @@ export function RawMaterialAdjustDialog({
       const res = await fetch(`/api/store/raw-materials/${material?.id}/adjust`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quantityDelta: delta }),
+        body: JSON.stringify({
+          quantityDelta: delta,
+          ...(reason.trim() ? { reason: reason.trim() } : {}),
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error?.message ?? 'Request failed');
@@ -89,6 +94,17 @@ export function RawMaterialAdjustDialog({
               onChange={(e) => setDelta(e.target.value)}
               placeholder="e.g. 5 or -3.5"
               required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="rm-adjust-reason">Reason (optional)</Label>
+            <Input
+              id="rm-adjust-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. production consumption, write-off, recount"
+              maxLength={200}
             />
           </div>
 
