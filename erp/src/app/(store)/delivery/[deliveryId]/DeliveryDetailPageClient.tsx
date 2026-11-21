@@ -5,11 +5,13 @@ import { useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDelivery, useLabelTemplate } from '@/hooks/delivery';
+import { useBulkCreateDelivery } from '@/hooks/orders';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StatusBadge } from '@/components/delivery/StatusBadge';
 import { DeliveryDetailPanel } from '@/components/delivery/DeliveryDetailPanel';
 import { DispatchSheet } from '@/components/delivery/DispatchSheet';
+import { canPrepareDelivery } from '@/components/delivery/prepareDelivery';
 import { printShippingLabel } from '@/components/delivery/labels/ShippingLabel';
 import {
   canPrintWaybill,
@@ -17,6 +19,8 @@ import {
   resolveLabelTemplateViewState,
 } from '@/components/delivery/labels/labelTemplateState';
 import { printOrderInvoice } from '@/components/delivery/invoices/printOrderInvoice';
+import { deliveryDetailViewState } from '@/components/delivery/detailLoadState';
+import { deliveryErrorStatus } from '@/lib/delivery/loadError';
 import { waitForPrintOverlayToClose } from '@/lib/print-session';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
@@ -30,7 +34,14 @@ type PrintAction = 'waybill' | 'invoice';
 export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClientProps) {
   const router = useRouter();
   const [isNavigating, startTransition] = useTransition();
-  const { data: delivery, isLoading } = useDelivery(deliveryId);
+  const { data: delivery, isLoading, isError, error, isFetching, refetch } =
+    useDelivery(deliveryId);
+  const detailState = deliveryDetailViewState({
+    isLoading,
+    isError,
+    errorStatus: deliveryErrorStatus(error),
+    hasDelivery: Boolean(delivery),
+  });
   const {
     data: labelTemplate,
     branding,
@@ -42,6 +53,7 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
   } = useLabelTemplate();
   const { hasPermission } = usePermissions();
   const canDispatch = hasPermission(PERMISSIONS.DELIVERY.dispatchDelivery);
+  const prepare = useBulkCreateDelivery();
 
   const templateState = resolveLabelTemplateViewState({
     isError: templateError,
@@ -110,7 +122,8 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
             Back
           </Button>
           <h1 className="truncate text-xl font-semibold text-espresso">
-            {delivery ? delivery.orderRef : 'Delivery'}
+            {delivery?.orderRef ??
+              (detailState === 'loading' ? 'Loading delivery...' : 'Delivery')}
           </h1>
           {delivery && <StatusBadge status={delivery.status} />}
         </div>
@@ -145,6 +158,20 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
               ) : null}
               {printing === 'invoice' ? 'Preparing invoice…' : 'Print Invoice'}
             </Button>
+            {canDispatch && canPrepareDelivery(delivery.status) && (
+              <Button
+                variant="outline"
+                onClick={() => prepare.mutate([delivery.id])}
+                disabled={prepare.isPending}
+                aria-busy={prepare.isPending}
+                data-testid="delivery-prepare-button"
+              >
+                {prepare.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" data-testid="loading-spinner" />
+                ) : null}
+                {prepare.isPending ? 'Preparing...' : 'Prepare for delivery'}
+              </Button>
+            )}
             {canDispatch && delivery.status === 'PENDING_DISPATCH' && (
               <Button onClick={() => setDispatchOpen(true)} data-testid="delivery-dispatch-button">
                 Dispatch
@@ -177,22 +204,60 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
       )}
 
       {/* Loading */}
-      {isLoading && (
+      {detailState === 'loading' && (
         <div className="space-y-4">
           <Skeleton className="h-40 w-full" />
           <Skeleton className="h-40 w-full" />
         </div>
       )}
 
-      {/* Not found */}
-      {!isLoading && !delivery && (
-        <div className="rounded-lg border border-espresso/10 py-16 text-center text-espresso/60">
-          Delivery not found.
+      {/* Not found (404 only) */}
+      {detailState === 'not-found' && (
+        <div className="rounded-lg border border-espresso/10 py-16 text-center">
+          <p className="text-espresso/70">Delivery not found.</p>
+          <p className="mt-1 text-sm text-espresso/40">
+            It may have been removed, or the link may be incorrect.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => startTransition(() => router.push('/delivery'))}
+          >
+            Back to deliveries
+          </Button>
+        </div>
+      )}
+
+      {/* Load error (403/500/network) - retryable, never shown as 404 */}
+      {detailState === 'error' && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 font-body text-sm text-red-700"
+        >
+          <div>
+            <p className="font-medium">Could not load this delivery.</p>
+            <p className="text-xs text-red-700/80">
+              {error instanceof Error
+                ? error.message
+                : 'Check your connection or permissions and try again.'}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            data-testid="delivery-retry"
+          >
+            {isFetching ? 'Retrying...' : 'Retry'}
+          </Button>
         </div>
       )}
 
       {/* Content */}
-      {!isLoading && delivery && <DeliveryDetailPanel delivery={delivery} />}
+      {detailState === 'ready' && delivery && <DeliveryDetailPanel delivery={delivery} />}
 
       <DispatchSheet
         delivery={delivery ?? null}

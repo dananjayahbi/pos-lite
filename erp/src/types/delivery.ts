@@ -61,6 +61,17 @@ export interface DeliveryRecoveryAttempt {
   staff?: { id: string; email: string } | null;
 }
 
+/** An ordered item snapshot on a delivery (website/manual orders). */
+export interface DeliveryLineItem {
+  id?: string;
+  variantId: string;
+  productNameSnapshot: string;
+  skuSnapshot?: string | null;
+  quantity: number;
+  unitPrice: number | string;
+  lineTotal: number | string;
+}
+
 /** Full delivery detail payload returned by /api/store/deliveries/[id]. */
 export interface DeliveryDetail {
   id: string;
@@ -87,6 +98,7 @@ export interface DeliveryDetail {
   shipments?: DeliveryShipment[];
   events?: DeliveryEvent[];
   attempts?: DeliveryRecoveryAttempt[];
+  lines?: DeliveryLineItem[];
 }
 
 /** A single row in the delivery list. */

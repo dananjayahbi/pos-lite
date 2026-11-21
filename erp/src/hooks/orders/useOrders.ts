@@ -102,6 +102,8 @@ export function useBulkCreateDelivery() {
     onSuccess: (results) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['deliveries'] });
+      // The delivery detail also exposes prepare for PLACED/HOLD (ARGUS #275).
+      queryClient.invalidateQueries({ queryKey: ['delivery'] });
       // ARGUS #265: prepare failures (already dispatched, wrong status) used to
       // disappear behind a success toast that only counted the OK rows.
       toastBulkResult(results, 'Prepared for delivery');

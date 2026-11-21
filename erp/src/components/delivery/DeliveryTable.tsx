@@ -2,37 +2,39 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { formatRupee } from '@/lib/format';
 import { collectableCodAmount } from '@/lib/delivery/cod';
+import { waitForPrintOverlayToClose } from '@/lib/print-session';
 import { StatusBadge } from './StatusBadge';
 import { FailureReasonTag } from './FailureReasonTag';
 import { DispatchSheet } from './DispatchSheet';
+import { CancelDeliveryDialog } from './CancelDeliveryDialog';
+import { canCancelDelivery } from './cancelDelivery';
+import {
+  deliveryPrintButtonState,
+  deliveryPrintKey,
+  type DeliveryPrintAction,
+} from './printState';
 import { printShippingLabel } from './labels/ShippingLabel';
 import { printOrderInvoice } from './invoices/printOrderInvoice';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useCancelDelivery, useLabelTemplate } from '@/hooks/delivery';
+import { useLabelTemplate } from '@/hooks/delivery';
+import { useBulkCreateDelivery } from '@/hooks/orders';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import {
   canPrintWaybill,
   resolveLabelTemplate,
   resolveLabelTemplateViewState,
 } from './labels/labelTemplateState';
+import { canPrepareDelivery } from './prepareDelivery';
 import type { DeliveryListItem } from '@/types/delivery';
 
 interface DeliveryTableProps {
   deliveries: DeliveryListItem[];
 }
-
-const PENDING_STATUSES = ['PLACED', 'PENDING_DISPATCH', 'HOLD'];
 
 function formatDate(value?: string | null) {
   if (!value) return '-';
@@ -67,7 +69,45 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
 
   const [dispatchTarget, setDispatchTarget] = useState<DeliveryListItem | null>(null);
   const [cancelTarget, setCancelTarget] = useState<DeliveryListItem | null>(null);
-  const cancelDelivery = useCancelDelivery();
+  const [preparingId, setPreparingId] = useState<string | null>(null);
+  const prepare = useBulkCreateDelivery();
+  /** Active print key (`waybill:<id>` / `invoice:<id>`) for row spinners. */
+  const [printing, setPrinting] = useState<string | null>(null);
+
+  const runPrint = async (
+    action: DeliveryPrintAction,
+    delivery: DeliveryListItem,
+    task: () => Promise<void>,
+  ) => {
+    setPrinting(deliveryPrintKey(action, delivery.id));
+    try {
+      await task();
+      await waitForPrintOverlayToClose();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Printing failed');
+    } finally {
+      setPrinting(null);
+    }
+  };
+
+  const handlePrint = (delivery: DeliveryListItem) => {
+    if (!canPrintWaybillNow) {
+      toast.error('Waybill template is not loaded');
+      return;
+    }
+    void runPrint('waybill', delivery, async () => {
+      printShippingLabel(delivery, waybillTemplate);
+    });
+  };
+
+  const handlePrintInvoice = (delivery: DeliveryListItem) => {
+    void runPrint('invoice', delivery, () => printOrderInvoice(delivery.id));
+  };
+
+  const handlePrepare = (delivery: DeliveryListItem) => {
+    setPreparingId(delivery.id);
+    prepare.mutate([delivery.id], { onSettled: () => setPreparingId(null) });
+  };
 
   return (
     <>
@@ -107,7 +147,9 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
             {deliveries.map((d) => {
               const shipment = d.shipments?.[0];
               const waybill = d.waybill ?? shipment?.waybillId;
-              const isPending = PENDING_STATUSES.includes(d.status);
+              const isPending = canCancelDelivery(d.status);
+              const waybillPrint = deliveryPrintButtonState(printing, 'waybill', d.id);
+              const invoicePrint = deliveryPrintButtonState(printing, 'invoice', d.id);
               return (
                 <tr
                   key={d.id}
@@ -148,28 +190,58 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => printShippingLabel(d, waybillTemplate)}
-                        disabled={!canPrintWaybillNow}
+                        onClick={() => handlePrint(d)}
+                        disabled={!canPrintWaybillNow || waybillPrint.isBusy}
+                        aria-busy={waybillPrint.isActive}
                         title={
                           !canPrintWaybillNow
                             ? 'Waybill template is not loaded'
                             : undefined
                         }
+                        data-testid={`delivery-waybill-${d.id}`}
                       >
-                        Print
+                        {waybillPrint.isActive ? (
+                          <Loader2
+                            className="mr-1.5 h-3.5 w-3.5 animate-spin"
+                            data-testid="loading-spinner"
+                          />
+                        ) : null}
+                        {waybillPrint.isActive ? 'Preparing...' : 'Print'}
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => {
-                          void printOrderInvoice(d.id).catch((e: Error) => {
-                            // best-effort; user can retry from the detail page
-                            console.error(e);
-                          });
-                        }}
+                        onClick={() => handlePrintInvoice(d)}
+                        disabled={invoicePrint.isBusy}
+                        aria-busy={invoicePrint.isActive}
+                        data-testid={`delivery-invoice-${d.id}`}
                       >
-                        Invoice
+                        {invoicePrint.isActive ? (
+                          <Loader2
+                            className="mr-1.5 h-3.5 w-3.5 animate-spin"
+                            data-testid="loading-spinner"
+                          />
+                        ) : null}
+                        {invoicePrint.isActive ? 'Preparing...' : 'Invoice'}
                       </Button>
+                      {canDispatch && canPrepareDelivery(d.status) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handlePrepare(d)}
+                          disabled={prepare.isPending}
+                          aria-busy={preparingId === d.id}
+                          data-testid={`delivery-prepare-${d.id}`}
+                        >
+                          {preparingId === d.id ? (
+                            <Loader2
+                              className="mr-1.5 h-3.5 w-3.5 animate-spin"
+                              data-testid="loading-spinner"
+                            />
+                          ) : null}
+                          {preparingId === d.id ? 'Preparing...' : 'Prepare'}
+                        </Button>
+                      )}
                       {canDispatch && d.status === 'PENDING_DISPATCH' && (
                         <Button size="sm" variant="outline" onClick={() => setDispatchTarget(d)}>
                           Dispatch
@@ -200,35 +272,11 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
         onClose={() => setDispatchTarget(null)}
       />
 
-      <Dialog open={cancelTarget !== null} onOpenChange={(open) => !open && setCancelTarget(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="font-display">Cancel delivery</DialogTitle>
-            <DialogDescription>
-              Cancel {cancelTarget?.orderRef}? Reserved stock will be returned to inventory. This
-              cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelTarget(null)}>
-              Keep delivery
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={cancelDelivery.isPending}
-              onClick={() => {
-                if (!cancelTarget) return;
-                cancelDelivery.mutate(
-                  { id: cancelTarget.id },
-                  { onSuccess: () => setCancelTarget(null) },
-                );
-              }}
-            >
-              {cancelDelivery.isPending ? 'Cancelling...' : 'Cancel delivery'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CancelDeliveryDialog
+        delivery={cancelTarget}
+        open={!!cancelTarget}
+        onClose={() => setCancelTarget(null)}
+      />
     </>
   );
 }
