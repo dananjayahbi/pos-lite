@@ -20,11 +20,15 @@ interface ExpenseFilters {
   pageSize?: number | undefined;
 }
 
-export async function getExpenses(tenantId: string, filters: ExpenseFilters) {
-  const page = filters.page ?? 1;
-  const pageSize = filters.pageSize ?? 20;
-  const skip = (page - 1) * pageSize;
+const expenseRelations = {
+  recordedBy: { select: { email: true } },
+  // ARGUS #399: the Account column needs the fund name when the spend is
+  // settled through a petty-cash fund rather than a named payment account.
+  paymentAccount: { select: { id: true, name: true } },
+  pettyCashFund: { select: { id: true, name: true } },
+} as const;
 
+function buildExpenseWhere(tenantId: string, filters: ExpenseFilters): Record<string, unknown> {
   const where: Record<string, unknown> = { tenantId };
 
   if (filters.category) {
@@ -42,10 +46,20 @@ export async function getExpenses(tenantId: string, filters: ExpenseFilters) {
     where.expenseDate = dateFilter;
   }
 
+  return where;
+}
+
+export async function getExpenses(tenantId: string, filters: ExpenseFilters) {
+  const page = filters.page ?? 1;
+  const pageSize = filters.pageSize ?? 20;
+  const skip = (page - 1) * pageSize;
+
+  const where = buildExpenseWhere(tenantId, filters);
+
   const [expenses, total] = await Promise.all([
     prisma.expense.findMany({
       where,
-      include: { recordedBy: { select: { email: true } } },
+      include: expenseRelations,
       orderBy: { expenseDate: 'desc' },
       skip,
       take: pageSize,
@@ -56,10 +70,26 @@ export async function getExpenses(tenantId: string, filters: ExpenseFilters) {
   return { expenses, total, page, pageSize };
 }
 
+/**
+ * ARGUS #396: the full register for a CSV download. Same filters as the list
+ * (category and inclusive date range) but every matching row, across every
+ * account and petty-cash fund, with no pagination.
+ */
+export async function getExpensesForExport(
+  tenantId: string,
+  filters: Omit<ExpenseFilters, 'page' | 'pageSize'>,
+) {
+  return prisma.expense.findMany({
+    where: buildExpenseWhere(tenantId, filters),
+    include: expenseRelations,
+    orderBy: [{ expenseDate: 'desc' }, { createdAt: 'desc' }],
+  });
+}
+
 export async function getExpenseById(tenantId: string, id: string) {
   return prisma.expense.findFirst({
     where: { id, tenantId },
-    include: { recordedBy: { select: { email: true } } },
+    include: expenseRelations,
   });
 }
 
