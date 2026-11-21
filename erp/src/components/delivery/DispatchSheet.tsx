@@ -27,6 +27,7 @@ import {
 } from '@/lib/validators/delivery.validators';
 import { useDispatchDelivery, useLabelTemplate } from '@/hooks/delivery';
 import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
+import { waybillSenderDecision } from '@/lib/delivery/sender';
 import { printShippingLabel } from './labels/ShippingLabel';
 import {
   canPrintWaybill,
@@ -58,6 +59,7 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
   });
   const waybillTemplate = resolveLabelTemplate(labelTemplate, branding);
   const canPrintWaybillNow = canPrintWaybill(templateState, waybillTemplate);
+  const senderDecision = waybillSenderDecision(waybillTemplate);
   const recipientDecision = waybillRecipientPrintDecision(delivery?.address);
   const [printing, setPrinting] = useState(false);
 
@@ -132,6 +134,14 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
 
         {delivery && (
           <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
+            {senderDecision.missing.length > 0 && (
+              <p
+                role="alert"
+                className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+              >
+                {senderDecision.reason}. Update the Store Profile before printing.
+              </p>
+            )}
             {!recipientDecision.canPrint && (
               <p
                 role="alert"
@@ -182,7 +192,11 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
                 aria-busy={printing}
                 title={
                   !canPrintWaybillNow
-                    ? 'Waybill template is not loaded'
+                    ? templateState === 'ready'
+                      ? senderDecision.reason ?? 'Sender details are incomplete'
+                      : templateState === 'error'
+                        ? 'Waybill template failed to load'
+                        : 'Waybill template is still loading'
                     : recipientDecision.reason ?? undefined
                 }
                 data-testid="dispatch-waybill-button"

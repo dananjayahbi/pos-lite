@@ -2,7 +2,7 @@ import 'server-only';
 
 import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
-import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
+import { resolveWaybillSender } from '@/lib/delivery/sender';
 import type { DeliveryLabelTemplate, LabelBranding } from '@/types/delivery-label';
 import type { LabelTemplateInput } from '@/lib/validators/label.validators';
 
@@ -23,7 +23,7 @@ function readBranding(
   const values =
     settings && typeof settings === 'object' ? (settings as Record<string, unknown>) : {};
   return {
-    name: name?.trim() || 'AyurPOS',
+    name: name?.trim() || '',
     address: typeof values.address === 'string' ? values.address : '',
     phoneNumber: typeof values.phoneNumber === 'string' ? values.phoneNumber : '',
   };
@@ -48,12 +48,19 @@ export async function getLabelTemplateBundle(tenantId: string): Promise<LabelTem
   const saved = readSaved(tenant?.settings);
   const branding = readBranding(tenant?.name, tenant?.settings);
 
-  const merged = { ...DEFAULT_LABEL_TEMPLATE, ...(saved ?? {}) } as DeliveryLabelTemplate;
+  // ARGUS #301: the audited Store Profile is the sender. A stale saved label
+  // brand/contact must never override the business name or pickup address.
+  const sender = resolveWaybillSender({
+    name: branding.name,
+    contact: branding.phoneNumber,
+    pickupAddress: branding.address,
+  });
 
   return {
     template: {
-      ...merged,
-      brandName: merged.brandName?.trim() ? merged.brandName : branding.name,
+      brandName: sender.name,
+      fromContact: sender.contact,
+      pickupAddress: sender.pickupAddress,
     },
     branding,
     saved: saved !== null,

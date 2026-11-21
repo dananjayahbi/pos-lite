@@ -96,7 +96,8 @@ function SectionTitle({ children }: { children: ReactNode }) {
  *
  * The layout is fixed to the courier's sticker: logo + waybill barcode header,
  * sender block, customer block, order description, and the courier's company
- * footer. Only the sender name/contact come from the tenant template.
+ * footer. The sender identity and pickup address come from the tenant's Store
+ * Profile (ARGUS #301), not a stale saved label value.
  *
  * The component fills its parent cell; printing places two of those cells on
  * one A4 landscape sheet (see `printShippingLabels`).
@@ -169,6 +170,9 @@ export function ShippingLabel({ template, address, delivery, waybillId }: Shippi
       <div className="mt-[1mm]">
         <WaybillRow label="From" value={template.brandName || '-'} />
         <WaybillRow label="Contact" value={template.fromContact || '-'} />
+        {template.pickupAddress?.trim() && (
+          <WaybillRow label="Pickup address" value={template.pickupAddress} />
+        )}
         <WaybillRow label="Date" value={formatWaybillDate(date)} />
         <WaybillRow label="Order No" value={delivery.orderRef || '-'} />
       </div>

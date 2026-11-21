@@ -39,50 +39,62 @@ describe('resolveLabelTemplateViewState', () => {
 });
 
 describe('canPrintWaybill', () => {
-  const resolved = { brandName: 'Dilani Ayurveda' };
+  const resolved = { brandName: 'Dilani Ayurveda', fromContact: '076 199 2828' };
 
   it('blocks print while loading, on error, when no template loaded or with no sender', () => {
     expect(canPrintWaybill('error', resolved)).toBe(false);
     expect(canPrintWaybill('loading', resolved)).toBe(false);
     expect(canPrintWaybill('missing', resolved)).toBe(false);
-    expect(canPrintWaybill('ready', { brandName: '   ' })).toBe(false);
+    expect(canPrintWaybill('ready', { brandName: '   ', fromContact: '076' })).toBe(false);
+    expect(canPrintWaybill('ready', { brandName: 'Store', fromContact: '   ' })).toBe(false);
     expect(canPrintWaybill('ready', null)).toBe(false);
   });
 
-  it('allows print only for a loaded template with a sender identity', () => {
+  it('allows print only for a loaded template with a sender name and contact', () => {
     expect(canPrintWaybill('ready', resolved)).toBe(true);
   });
 });
 
 describe('resolveLabelTemplate', () => {
-  it('uses explicit sender values when present', () => {
+  it('uses the audited business profile instead of a stale saved sender (ARGUS #301)', () => {
+    expect(
+      resolveLabelTemplate(
+        { brandName: '  Ayur Wellness Centre  ', fromContact: ' 0713617236 ' },
+        {
+          name: 'Ruhunu Weda Gedara',
+          address: '12 Temple Road, Matara',
+          phoneNumber: '077 111 2222',
+        },
+      ),
+    ).toEqual({
+      brandName: 'Ruhunu Weda Gedara',
+      fromContact: '077 111 2222',
+      pickupAddress: '12 Temple Road, Matara',
+    });
+  });
+
+  it('falls back to the saved values only when no business branding is supplied', () => {
     expect(
       resolveLabelTemplate(
         { brandName: '  DILANI  ', fromContact: ' 076 199 2828 ' },
-        { name: 'Store', phoneNumber: '011 111 1111' },
+        undefined,
       ),
-    ).toEqual({ brandName: 'DILANI', fromContact: '076 199 2828' });
+    ).toEqual({ brandName: 'DILANI', fromContact: '076 199 2828', pickupAddress: '' });
   });
 
-  it('falls back to tenant brand name and contact for an empty template', () => {
-    expect(
-      resolveLabelTemplate(
-        { brandName: '', fromContact: '' },
-        { name: 'Dilani Ayurveda', address: 'Colombo', phoneNumber: '076 199 2828' },
-      ),
-    ).toEqual({ brandName: 'Dilani Ayurveda', fromContact: '076 199 2828' });
-  });
-
-  it('never renders a dash placeholder when branding exists', () => {
-    const resolved = resolveLabelTemplate(null, { name: 'Store', phoneNumber: '077' });
-    expect(resolved.brandName).toBe('Store');
-    expect(resolved.fromContact).toBe('077');
+  it('does not invent missing business fields', () => {
+    expect(resolveLabelTemplate(null, { name: 'Store' })).toEqual({
+      brandName: 'Store',
+      fromContact: '',
+      pickupAddress: '',
+    });
   });
 
   it('returns empty strings when neither source has data', () => {
     expect(resolveLabelTemplate(undefined, undefined)).toEqual({
       brandName: '',
       fromContact: '',
+      pickupAddress: '',
     });
   });
 });

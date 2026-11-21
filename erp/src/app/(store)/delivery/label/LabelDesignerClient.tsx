@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -12,34 +11,24 @@ import {
   resolveLabelTemplate,
   resolveLabelTemplateViewState,
 } from '@/components/delivery/labels/labelTemplateState';
-import type { DeliveryLabelTemplate } from '@/types/delivery-label';
 
 export function LabelDesignerClient() {
   const {
     data,
     branding,
-    saved,
     isLoading,
     isError,
     error,
     isFetching,
     refetch,
-    save,
-    reset,
   } = useLabelTemplate();
-  // `null` means "no local edits yet": the saved template is rendered directly.
-  // Editing copies it into a draft, so no effect has to hydrate state later.
-  const [draft, setDraft] = useState<DeliveryLabelTemplate | null>(null);
 
   const viewState = resolveLabelTemplateViewState({
     isError,
     isLoading,
     hasTemplate: Boolean(data),
   });
-  const template = draft ?? resolveLabelTemplate(data, branding);
-
-  const patch = (next: Partial<DeliveryLabelTemplate>) =>
-    setDraft({ ...template, ...next });
+  const template = resolveLabelTemplate(data, branding);
 
   if (viewState === 'loading') {
     return (
@@ -103,23 +92,7 @@ export function LabelDesignerClient() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <LabelTemplateForm
-          template={template}
-          saved={saved}
-          onChange={patch}
-          onSave={() =>
-            save.mutate(template, {
-              onSuccess: (savedTemplate) => setDraft(savedTemplate),
-            })
-          }
-          onReset={() =>
-            reset.mutate(undefined, {
-              onSuccess: (savedTemplate) => setDraft(savedTemplate),
-            })
-          }
-          isSaving={save.isPending}
-          isResetting={reset.isPending}
-        />
+        <LabelTemplateForm template={template} />
         <LabelPreview template={template} />
       </div>
     </div>

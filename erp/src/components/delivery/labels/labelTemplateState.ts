@@ -1,4 +1,5 @@
 import type { DeliveryLabelTemplate, LabelBranding } from '@/types/delivery-label';
+import { resolveWaybillSender } from '@/lib/delivery/sender';
 
 /**
  * ARGUS #298 — waybill template loading and sender fallback.
@@ -38,23 +39,43 @@ export function resolveLabelTemplateViewState(
  */
 export function canPrintWaybill(
   state: LabelTemplateViewState,
-  template?: Pick<DeliveryLabelTemplate, 'brandName'> | null,
+  template?: Pick<DeliveryLabelTemplate, 'brandName' | 'fromContact'> | null,
 ): boolean {
-  return state === 'ready' && Boolean(template?.brandName?.trim());
+  return (
+    state === 'ready' &&
+    Boolean(template?.brandName?.trim()) &&
+    Boolean(template?.fromContact?.trim())
+  );
 }
 
 /**
- * Merge the saved/default template with tenant branding. Explicit sender
- * values win; empty ones fall back to the store name and contact number, so a
- * template with no saved identity still prints a real sender instead of "-".
+ * Merge the business profile with the legacy label template (ARGUS #301).
+ *
+ * The Store Profile is authoritative: a stale saved `brandName`/`fromContact`
+ * must not print as the sender. The template argument is only used when the
+ * caller has no business branding at all (for example an older endpoint
+ * response without `meta.branding`).
  */
 export function resolveLabelTemplate(
   template: Partial<DeliveryLabelTemplate> | null | undefined,
   branding: Partial<LabelBranding> | null | undefined,
 ): DeliveryLabelTemplate {
+  const source = branding
+    ? {
+        name: branding.name,
+        contact: branding.phoneNumber,
+        pickupAddress: branding.address,
+      }
+    : {
+        name: template?.brandName,
+        contact: template?.fromContact,
+        pickupAddress: template?.pickupAddress,
+      };
+  const sender = resolveWaybillSender(source);
   return {
-    brandName: template?.brandName?.trim() || branding?.name?.trim() || '',
-    fromContact: template?.fromContact?.trim() || branding?.phoneNumber?.trim() || '',
+    brandName: sender.name,
+    fromContact: sender.contact,
+    pickupAddress: sender.pickupAddress,
   };
 }
 

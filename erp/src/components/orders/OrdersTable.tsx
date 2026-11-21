@@ -139,7 +139,7 @@ export function OrdersTable({
                       aria-busy={printingWaybillId === order.id}
                       title={
                         waybillPrintDisabled
-                          ? 'Waybill template is not loaded'
+                          ? 'Waybill printing is disabled'
                           : recipientDecision.reason ?? undefined
                       }
                       data-testid={`order-waybill-${order.id}`}
