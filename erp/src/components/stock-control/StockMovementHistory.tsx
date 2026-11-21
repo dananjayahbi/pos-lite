@@ -55,6 +55,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { toast } from 'sonner';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -192,7 +193,18 @@ function StockMovementHistoryInner() {
       params.set('format', 'csv');
 
       const res = await fetch(`/api/store/stock-control/movements?${params}`);
-      if (!res.ok) throw new Error('Export failed');
+      if (!res.ok) {
+        // ARGUS #202: never stop the spinner silently. Surface the server's
+        // message when it sent one (permission, bad filter, export failure).
+        let message = 'Failed to export stock movements';
+        try {
+          const body = (await res.json()) as { error?: { message?: string } };
+          if (body?.error?.message) message = body.error.message;
+        } catch {
+          // Non-JSON error body - keep the generic message.
+        }
+        throw new Error(message);
+      }
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -206,8 +218,13 @@ function StockMovementHistoryInner() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-    } catch {
-      // silently fail — could add toast if desired
+      toast.success('Stock movements exported');
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to export stock movements',
+      );
     } finally {
       setExporting(false);
     }
