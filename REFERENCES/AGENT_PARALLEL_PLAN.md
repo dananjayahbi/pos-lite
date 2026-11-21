@@ -140,8 +140,11 @@ For each agent commit:
   row validation), #147 (stale stock takes), #148 (batches of deleted products),
   #131 (appointment service tax rule), #132 (appointment sale attribution and
   commission), #157 (shared A4/thermal label templates), #158 (product vs
-  variant range on Barcode Printing).
-- Checkpoint: full suite green at 1,645 tests (192 files).
+  variant range on Barcode Printing), #159 (exact barcode/SKU search), #160
+  (tax-inclusive label price), #161 (dialog variant/page previews), #165
+  (detail-panel delete blocked for in-use categories), #166 (clear a category
+  description).
+- Checkpoint: full suite green at 1,665 tests (196 files).
 - DB reachable again; the three pending migrations were applied as raw SQL with
   `prisma db execute` and verified (`RawMaterial.unitCost`,
   `ProductionLog.materialCost`, `ReturnStatus.CANCELLED`,
