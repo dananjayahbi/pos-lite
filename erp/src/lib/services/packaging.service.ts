@@ -1,10 +1,7 @@
 import 'server-only';
 
-import Decimal from 'decimal.js';
-
 import { prisma } from '@/lib/prisma';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
-import type { TxClient } from '@/lib/services/inventory.service';
 import type {
   CreatePackagingItemInput,
   UpdatePackagingItemInput,
@@ -17,6 +14,14 @@ import {
   packagingCategoryLabel,
   packagingConsumptionUnits,
 } from '@/lib/services/packaging.core';
+import {
+  changePackagingStock,
+  type DeductionResult,
+} from '@/lib/services/packagingDeduction.service';
+export {
+  autoDeductPackaging,
+  type DeductionResult,
+} from '@/lib/services/packagingDeduction.service';
 import {
   assertPackagingCategoryExists,
   getPackagingCategoryNameMap,
@@ -234,18 +239,8 @@ export async function adjustPackagingStock(
   delta: number,
   note?: string,
 ) {
-  const existing = await prisma.packagingItem.findFirst({
-    where: { id, tenantId, deletedAt: null },
-  });
-  if (!existing) throw new Error('PACKAGING_ITEM_NOT_FOUND');
-
-  const next = existing.quantityOnHand + delta;
-  if (next < 0) throw new Error('INSUFFICIENT_PACKAGING_STOCK');
-
-  const updated = await prisma.packagingItem.update({
-    where: { id },
-    data: { quantityOnHand: next },
-  });
+  const change = await changePackagingStock(prisma, tenantId, id, delta);
+  const updated = await prisma.packagingItem.findUniqueOrThrow({ where: { id } });
 
   void createAuditLog({
     tenantId,
@@ -254,85 +249,15 @@ export async function adjustPackagingStock(
     entityType: 'PackagingItem',
     entityId: id,
     action: AUDIT_ACTIONS.PACKAGING_STOCK_ADJUSTED,
-    before: { quantityOnHand: existing.quantityOnHand },
-    after: { quantityOnHand: updated.quantityOnHand, note },
+    before: { quantityOnHand: change.before },
+    after: { quantityOnHand: change.after, note },
   }).catch(() => {});
 
   const categoryNames = await getPackagingCategoryNameMap(tenantId);
   return toPackagingItemDto(updated, categoryNames);
 }
 
-export interface DeductionResult {
-  itemId: string;
-  name: string;
-  consumed: Decimal;
-  insufficient: boolean;
-}
-
 export { packagingConsumptionUnits };
-
-/**
- * Deduct configured auto-deduct packaging items for a parcel (typically 1
- * polymailer + 1 label). Writes PackagingConsumption rows. Warns (does not throw)
- * when stock is insufficient, returning which items fell short.
- *
- * Pass `tx` to make the deduction atomic with the delivery status change; that
- * is how dispatch/redelivery call it so a crash can never leave a dispatched
- * parcel with an un-deducted stock balance.
- */
-export async function autoDeductPackaging(
-  tenantId: string,
-  deliveryId: string,
-  opts?: { tx?: TxClient },
-): Promise<DeductionResult[]> {
-  const client = opts?.tx ?? prisma;
-  const items = await client.packagingItem.findMany({
-    where: { tenantId, deletedAt: null, autoDeduct: true },
-  });
-
-  if (items.length === 0) return [];
-
-  const results: DeductionResult[] = [];
-
-  for (const item of items) {
-    const perParcel = new Decimal(item.consumptionPerParcel?.toString() ?? '1');
-    const stock = new Decimal(item.quantityOnHand);
-    const insufficient = stock.lessThan(perParcel);
-
-    const wanted = packagingConsumptionUnits(perParcel);
-    const units = Math.min(wanted, Math.max(item.quantityOnHand, 0));
-    if (units <= 0) {
-      if (wanted > 0) {
-        results.push({
-          itemId: item.id,
-          name: item.name,
-          consumed: new Decimal(0),
-          insufficient: true,
-        });
-      }
-      continue;
-    }
-
-    await client.packagingItem.update({
-      where: { id: item.id },
-      data: { quantityOnHand: { decrement: units } },
-    });
-
-    const consumedQty = new Decimal(units);
-    await client.packagingConsumption.create({
-      data: {
-        tenantId,
-        deliveryId,
-        packagingItemId: item.id,
-        quantity: consumedQty,
-      },
-    });
-
-    results.push({ itemId: item.id, name: item.name, consumed: consumedQty, insufficient });
-  }
-
-  return results;
-}
 
 /** Create a non-blocking low-stock notification if any auto-deduct item is short. */
 export async function notifyLowStock(

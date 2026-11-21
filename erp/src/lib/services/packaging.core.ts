@@ -22,6 +22,52 @@ export function packagingConsumptionUnits(perParcel: Decimal | number | string):
   return Decimal.max(units, 1).toNumber();
 }
 
+export interface PackagingDeductionPlanInput {
+  perParcel: Decimal | number | string;
+  quantityOnHand: number;
+  /** Consumption rows already recorded for this delivery + item. */
+  existingConsumptions: number;
+  /** Courier shipments (parcels) recorded for the delivery. */
+  parcelCount: number;
+}
+
+export interface PackagingDeductionPlan {
+  /** Parcels that still need a consumption row (never negative). */
+  missingParcels: number;
+  unitsPerParcel: number;
+  /** Whole units to remove now, capped by available stock. */
+  unitsToDeduct: number;
+  insufficient: boolean;
+}
+
+/**
+ * Idempotent per-parcel deduction plan (ARGUS #279).
+ *
+ * A parcel is one courier shipment. The schema has no shipment id on
+ * `PackagingConsumption`, so the service compares the number of shipments with
+ * the number of consumption rows for the same delivery + item: retries and
+ * webhook replays see `missingParcels = 0` and deduct nothing, while a
+ * redelivery (a second shipment) catches up exactly one parcel. The deduction
+ * is capped at what is on hand, so stock never goes negative.
+ */
+export function planPackagingDeduction(
+  input: PackagingDeductionPlanInput,
+): PackagingDeductionPlan {
+  const unitsPerParcel = packagingConsumptionUnits(input.perParcel);
+  const parcels = Math.max(Math.floor(input.parcelCount), 0);
+  const existing = Math.max(Math.floor(input.existingConsumptions), 0);
+  const missingParcels = Math.max(parcels - existing, 0);
+  const wantedUnits = unitsPerParcel * missingParcels;
+  const available = Math.max(Math.floor(input.quantityOnHand), 0);
+
+  return {
+    missingParcels,
+    unitsPerParcel,
+    unitsToDeduct: Math.min(wantedUnits, available),
+    insufficient: wantedUnits > available,
+  };
+}
+
 /**
  * Derive the human-readable SKU stem for a packaging item, e.g. "Bubble Wrap
  * 50m" in BUBBLE_WRAP becomes `BUBB-BUBBLE-WRAP-50M`.

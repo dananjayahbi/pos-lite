@@ -242,7 +242,10 @@ export async function redeliverDelivery(
     });
 
     // Deduct packaging for the new shipment atomically with the status flip.
-    const deductions = await autoDeductPackaging(tenantId, deliveryId, { tx });
+    const deductions = await autoDeductPackaging(tenantId, deliveryId, {
+      tx,
+      actorId: staffId,
+    });
 
     return { dispatched: updated, deductions };
   });

@@ -76,9 +76,34 @@ change back too.
   0.5 → 1) with a floor of one unit; stock never goes negative.
 - Insufficient stock does not block dispatch — the item is capped at its
   remaining stock and flagged `insufficient`.
-- Each deduction writes a `PackagingConsumption` row.
+- **One `PackagingConsumption` row and one audited stock decrement per parcel**
+  (`changePackagingStock` writes `PACKAGING_STOCK_ADJUSTED` inside the same
+  transaction).
+- **Idempotent per parcel.** A parcel is one `CourierShipment`; the service
+  counts shipments vs. existing consumption rows for the same delivery + item,
+  so a retry/replay deducts nothing while a redelivery (a new shipment) fills
+  exactly the new parcel (`planPackagingDeduction`). There is no shipment id on
+  `PackagingConsumption`, so this count is the schema-compatible key.
 - `notifyLowStock` runs after commit and warns when `quantityOnHand <=
 lowStockThreshold` (threshold-based, not only at zero).
+
+### Backfilling historical parcels
+
+Deliveries dispatched before the deduction ran (or after `autoDeduct` was
+enabled later) may have shipments but no consumption rows. The explicit,
+dry-run-by-default repair is:
+
+```bash
+cd erp
+node --env-file=.env --import tsx scripts/backfill-packaging-consumptions.ts
+node --env-file=.env --import tsx scripts/backfill-packaging-consumptions.ts --apply
+node --env-file=.env --import tsx scripts/backfill-packaging-consumptions.ts --tenant=<id> --apply
+```
+
+It prints the missing parcels/units per delivery and applies them through the
+same `autoDeductPackaging` path; it never runs automatically. Stock is capped at
+the available quantity, so a large historical gap leaves later parcels flagged
+short rather than driving the balance negative.
 
 Permanently cancelling a failed delivery restores the consumed quantity to the
 packaging items.

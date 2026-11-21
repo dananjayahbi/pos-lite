@@ -7,6 +7,7 @@ import {
   packagingCategoryLabel,
   packagingConsumptionUnits,
   packagingQuantityLabel,
+  planPackagingDeduction,
 } from '@/lib/services/packaging.core';
 import {
   DEFAULT_PACKAGING_CATEGORIES,
@@ -35,6 +36,80 @@ describe('packagingConsumptionUnits', () => {
 
   it('keeps whole rates whole', () => {
     expect(packagingConsumptionUnits(3)).toBe(3);
+  });
+});
+
+describe('planPackagingDeduction', () => {
+  it('plans one parcel worth of stock for a new dispatch', () => {
+    expect(
+      planPackagingDeduction({
+        perParcel: 1.6,
+        quantityOnHand: 10,
+        existingConsumptions: 0,
+        parcelCount: 1,
+      }),
+    ).toEqual({
+      missingParcels: 1,
+      unitsPerParcel: 2,
+      unitsToDeduct: 2,
+      insufficient: false,
+    });
+  });
+
+  it('is idempotent for a retry of the same parcel', () => {
+    expect(
+      planPackagingDeduction({
+        perParcel: 1.6,
+        quantityOnHand: 8,
+        existingConsumptions: 1,
+        parcelCount: 1,
+      }),
+    ).toMatchObject({ missingParcels: 0, unitsToDeduct: 0, insufficient: false });
+  });
+
+  it('catches up exactly one parcel for a redelivery', () => {
+    expect(
+      planPackagingDeduction({
+        perParcel: 1.6,
+        quantityOnHand: 8,
+        existingConsumptions: 1,
+        parcelCount: 2,
+      }),
+    ).toMatchObject({ missingParcels: 1, unitsToDeduct: 2, insufficient: false });
+  });
+
+  it('caps at stock and flags the 10 m / 16 parcel shortage', () => {
+    const plan = planPackagingDeduction({
+      perParcel: 1.6,
+      quantityOnHand: 10,
+      existingConsumptions: 0,
+      parcelCount: 16,
+    });
+    expect(plan.missingParcels).toBe(16);
+    expect(plan.unitsToDeduct).toBe(10);
+    expect(plan.insufficient).toBe(true);
+  });
+
+  it('never deducts a negative amount', () => {
+    expect(
+      planPackagingDeduction({
+        perParcel: 1.6,
+        quantityOnHand: 0,
+        existingConsumptions: 0,
+        parcelCount: 4,
+      }),
+    ).toMatchObject({ unitsToDeduct: 0, insufficient: true });
+  });
+
+  it('treats a zero rate as nothing to deduct', () => {
+    expect(
+      planPackagingDeduction({
+        perParcel: 0,
+        quantityOnHand: 10,
+        existingConsumptions: 0,
+        parcelCount: 3,
+      }),
+    ).toMatchObject({ unitsPerParcel: 0, unitsToDeduct: 0, insufficient: false });
   });
 });
 
