@@ -15,6 +15,7 @@ import {
   appointmentDepositAmount,
   appointmentDepositDisposition,
 } from '@/lib/appointments/appointmentCancellation.core';
+import { summarizeAppointmentRevenue } from '@/lib/appointments/appointmentRevenue.core';
 import {
   APPOINTMENT_BACKDATE_GRACE_MINUTES,
   isAppointmentStatusTransitionAllowed,
@@ -559,7 +560,14 @@ export async function getAppointmentStats(tenantId: string, dateFrom?: string, d
       : {}),
   };
 
-  const [total, byStatusList, revenue] = await Promise.all([
+  // ARGUS #121: "revenue" used to sum the price of every COMPLETED appointment,
+  // including visits nobody had paid for. It now counts money actually held:
+  // the full price once the visit is marked paid, otherwise only the deposit
+  // that was collected at booking. Cancelled bookings are excluded because
+  // their deposit is returned as store credit on cancellation.
+  const collectedWhere: Prisma.AppointmentWhereInput = { ...where, status: { not: 'CANCELLED' } };
+
+  const [total, byStatusList, paidAgg, depositAgg, completedUnpaidAgg] = await Promise.all([
     prisma.appointment.count({ where }),
     prisma.appointment.groupBy({
       by: ['status'],
@@ -567,8 +575,17 @@ export async function getAppointmentStats(tenantId: string, dateFrom?: string, d
       _count: true,
     }),
     prisma.appointment.aggregate({
-      where: { ...where, status: 'COMPLETED' },
+      where: { ...collectedWhere, isPaid: true },
       _sum: { price: true },
+    }),
+    prisma.appointment.aggregate({
+      where: { ...collectedWhere, isPaid: false },
+      _sum: { depositAmount: true },
+    }),
+    prisma.appointment.aggregate({
+      where: { ...where, status: 'COMPLETED', isPaid: false },
+      _count: true,
+      _sum: { price: true, depositAmount: true },
     }),
   ]);
 
@@ -580,11 +597,28 @@ export async function getAppointmentStats(tenantId: string, dateFrom?: string, d
   const noShowCount = byStatus['NO_SHOW'] || 0;
   const noShowRate = total > 0 ? (noShowCount / total) * 100 : 0;
 
+  const paidRevenue = Number(paidAgg._sum.price ?? 0);
+  const depositsHeld = Number(depositAgg._sum.depositAmount ?? 0);
+  const completedUnpaid = completedUnpaidAgg._count;
+
+  const revenueSummary = summarizeAppointmentRevenue({
+    paidPrice: paidRevenue,
+    unpaidDeposits: depositsHeld,
+    completedUnpaidPrice: completedUnpaidAgg._sum.price ?? 0,
+    completedUnpaidDeposits: completedUnpaidAgg._sum.depositAmount ?? 0,
+  });
+
   return {
     total,
     byStatus,
     noShowRate: Math.round(noShowRate * 100) / 100,
-    revenue: Number(revenue._sum.price ?? 0),
+    /** Money actually collected (paid visits at price, otherwise deposits). */
+    revenue: revenueSummary.revenue,
+    /** Completed visits with no payment recorded, and what they still owe. */
+    completedUnpaidCount: completedUnpaid,
+    outstandingBalance: revenueSummary.outstandingBalance,
+    /** Deposits collected on bookings that are not settled as paid yet. */
+    depositsHeld: revenueSummary.depositsHeld,
   };
 }
 

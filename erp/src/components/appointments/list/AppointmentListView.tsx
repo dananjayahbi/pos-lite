@@ -5,13 +5,62 @@ import { useAppointments } from '@/hooks/appointments';
 import { StatusBadge } from '../shared/StatusBadge';
 import { AppointmentFilters } from './AppointmentFilters';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '../shared/EmptyState';
+import { AppointmentSummaryCards } from '../stats/AppointmentSummaryCards';
 import { CalendarDays } from 'lucide-react';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { formatRupee } from '@/lib/format';
 
 interface AppointmentListViewProps {
   onAppointmentClick: (id: string) => void;
   onNewClick: () => void;
+}
+
+interface AppointmentListRow {
+  id: string;
+  title: string;
+  status: string;
+  startTime: string;
+  price: number | string;
+  isPaid: boolean;
+  depositAmount: number | string | null;
+  saleId: string | null;
+  customer?: { name: string } | null;
+  walkInName?: string | null;
+  service?: { name: string } | null;
+  staff?: { email: string } | null;
+}
+
+/**
+ * ARGUS #121 — the list used to show only the catalogue price, so a booking
+ * that had taken a deposit (or had already been converted to a sale) looked
+ * identical to one nobody had paid for.
+ */
+function PaymentState({ appointment }: { appointment: AppointmentListRow }) {
+  if (appointment.saleId) {
+    return (
+      <Badge variant="success" className="text-[10px]">
+        Sale recorded
+      </Badge>
+    );
+  }
+  if (appointment.isPaid) {
+    return (
+      <Badge variant="success" className="text-[10px]">
+        Paid
+      </Badge>
+    );
+  }
+  const deposit = Number(appointment.depositAmount ?? 0);
+  if (deposit > 0) {
+    return (
+      <Badge variant="warning" className="text-[10px]">
+        Deposit {formatRupee(deposit)}
+      </Badge>
+    );
+  }
+  return <span className="text-xs text-espresso/40">Unpaid</span>;
 }
 
 export function AppointmentListView({ onAppointmentClick, onNewClick }: AppointmentListViewProps) {
@@ -29,12 +78,14 @@ export function AppointmentListView({ onAppointmentClick, onNewClick }: Appointm
   };
 
   const { data, isLoading } = useAppointments(filters);
-  const appointments = (data?.appointments ?? []) as Array<{ id: string; title: string; status: string; startTime: string; price: number; customer?: { name: string } | null; walkInName?: string | null; service?: { name: string } | null; staff?: { email: string } | null }>;
+  const appointments = (data?.appointments ?? []) as AppointmentListRow[];
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / 20);
 
   return (
     <div className="space-y-4">
+      <AppointmentSummaryCards />
+
       <div className="flex items-center justify-between">
         <AppointmentFilters
           status={status}
@@ -70,6 +121,7 @@ export function AppointmentListView({ onAppointmentClick, onNewClick }: Appointm
                   <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Staff</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Price</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Payment</th>
                 </tr>
               </thead>
               <tbody>
@@ -100,7 +152,10 @@ export function AppointmentListView({ onAppointmentClick, onNewClick }: Appointm
                       <StatusBadge status={appt.status} />
                     </td>
                     <td className="px-4 py-3 text-sm text-espresso">
-                      ${Number(appt.price).toFixed(2)}
+                      {formatRupee(appt.price)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <PaymentState appointment={appt} />
                     </td>
                   </tr>
                 ))}

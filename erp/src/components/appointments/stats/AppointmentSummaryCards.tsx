@@ -2,45 +2,66 @@
 
 import { useAppointmentStats } from '@/hooks/appointments';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatRupee } from '@/lib/format';
 
+interface StatsCard {
+  label: string;
+  value: string;
+  hint?: string | undefined;
+  tone?: string | undefined;
+}
+
+/**
+ * ARGUS #121 — revenue now reflects money actually collected (paid visits at
+ * price, otherwise the deposit taken at booking), and unpaid completed visits
+ * are called out instead of hiding inside the completed count.
+ */
 export function AppointmentSummaryCards() {
   const today = new Date().toISOString().split('T')[0];
   const { data: stats } = useAppointmentStats(`${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`);
 
+  const completed = stats?.byStatus?.COMPLETED ?? 0;
+  const unpaid = stats?.completedUnpaidCount ?? 0;
+
+  const cards: StatsCard[] = [
+    { label: "Today's Total", value: String(stats?.total ?? 0) },
+    { label: 'Completed', value: String(completed), tone: 'text-green-600' },
+    {
+      label: 'Completed Unpaid',
+      value: String(unpaid),
+      hint: unpaid > 0 ? `${formatRupee(stats?.outstandingBalance ?? 0)} still due` : 'All settled',
+      tone: unpaid > 0 ? 'text-amber-600' : undefined,
+    },
+    {
+      label: 'Collected',
+      value: formatRupee(stats?.revenue ?? 0),
+      hint: 'Paid visits at price, otherwise deposits',
+    },
+    {
+      label: 'Deposits Held',
+      value: formatRupee(stats?.depositsHeld ?? 0),
+      hint: 'On bookings not yet paid in full',
+    },
+    {
+      label: 'No-Show Rate',
+      value: `${stats?.noShowRate ?? 0}%`,
+      tone: 'text-red-600',
+    },
+  ];
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-espresso/60">Today&apos;s Total</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-2xl font-bold text-espresso">{stats?.total ?? 0}</p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-espresso/60">Completed</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-2xl font-bold text-green-600">{stats?.byStatus?.COMPLETED ?? 0}</p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-espresso/60">No-Show Rate</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-2xl font-bold text-red-600">{stats?.noShowRate ?? 0}%</p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-espresso/60">Revenue</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-2xl font-bold text-espresso">${(stats?.revenue ?? 0).toFixed(2)}</p>
-        </CardContent>
-      </Card>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {cards.map((card) => (
+        <Card key={card.label}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-espresso/60">{card.label}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className={`text-2xl font-bold ${card.tone ?? 'text-espresso'}`}>{card.value}</p>
+            {card.hint ? <p className="mt-1 text-xs text-espresso/50">{card.hint}</p> : null}
+          </CardContent>
+        </Card>
+      ))}
     </div>
   );
 }

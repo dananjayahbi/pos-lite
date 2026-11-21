@@ -21,6 +21,8 @@ interface AppointmentFormData {
   staffId: string | null;
   durationMins: number;
   price: number;
+  /** Money already taken at booking; ARGUS #121 surfaced the field. */
+  depositAmount: number;
   notes: string;
   customerNotes: string;
 }
@@ -44,15 +46,24 @@ const defaultFormData: AppointmentFormData = {
   staffId: null,
   durationMins: 30,
   price: 0,
+  depositAmount: 0,
   notes: '',
   customerNotes: '',
 };
 
 export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting, defaultStartDate }: AppointmentFormProps) {
   const [form, setForm] = useState<AppointmentFormData>(() => {
-    const initial = {
+    const merged = {
       ...defaultFormData,
       ...((initialData ?? {}) as Partial<AppointmentFormData>),
+    };
+    // Prisma Decimals arrive as strings through the API; the money and duration
+    // inputs are numeric so coerce once here.
+    const initial: AppointmentFormData = {
+      ...merged,
+      durationMins: Number(merged.durationMins) || defaultFormData.durationMins,
+      price: Number(merged.price) || 0,
+      depositAmount: Number(merged.depositAmount) || 0,
     };
     if (defaultStartDate && !initial.startTime) {
       initial.startTime = defaultStartDate.toISOString();
@@ -91,7 +102,18 @@ export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting,
     }
   };
 
-  const isValid = form.startTime && form.endTime && (form.customerId || (form.walkInName && form.walkInPhone));
+  const depositError =
+    form.depositAmount < 0
+      ? 'Deposit cannot be negative'
+      : form.depositAmount > form.price
+        ? 'Deposit cannot exceed the price'
+        : null;
+
+  const isValid =
+    !depositError &&
+    form.startTime &&
+    form.endTime &&
+    (form.customerId || (form.walkInName && form.walkInPhone));
 
   return (
     <div className="space-y-4">
@@ -155,15 +177,47 @@ export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting,
         </div>
       </div>
 
-      <div className="space-y-1.5">
-        <Label className="text-sm font-medium">Price ($)</Label>
-        <Input
-          type="number"
-          min={0}
-          step={0.01}
-          value={form.price}
-          onChange={(e) => update('price', parseFloat(e.target.value) || 0)}
-        />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-sm font-medium">Price (LKR)</Label>
+          <div className="relative">
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-mist-ink">
+              Rs.
+            </span>
+            <Input
+              type="number"
+              min={0}
+              step={0.01}
+              className="pl-10"
+              value={form.price}
+              onChange={(e) => update('price', parseFloat(e.target.value) || 0)}
+            />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-sm font-medium">Deposit Amount</Label>
+          <div className="relative">
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-mist-ink">
+              Rs.
+            </span>
+            <Input
+              type="number"
+              min={0}
+              step={0.01}
+              className="pl-10"
+              value={form.depositAmount}
+              aria-invalid={depositError ? true : undefined}
+              onChange={(e) => update('depositAmount', parseFloat(e.target.value) || 0)}
+            />
+          </div>
+          {depositError ? (
+            <p role="alert" className="text-xs text-red-600">
+              {depositError}
+            </p>
+          ) : (
+            <p className="text-xs text-espresso/60">Collected at booking; the balance is due on completion.</p>
+          )}
+        </div>
       </div>
 
       <NotesField
