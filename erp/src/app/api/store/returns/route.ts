@@ -4,7 +4,6 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { ReturnCreateSchema } from '@/lib/validators/return.validators';
 import { initiateReturn, getReturns } from '@/lib/services/return.service';
-import { createNegativeCommissionRecord } from '@/lib/services/commission.service';
 import { prisma } from '@/lib/prisma';
 import { parsePagination, parseQueryDate } from '@/lib/api/query-params';
 import { toErrorResponse } from '@/lib/api/error-envelope';
@@ -116,12 +115,8 @@ export async function POST(request: Request) {
       reason: data.reason,
     });
 
-    // Negative commission side-effect — non-blocking
-    try {
-      await createNegativeCommissionRecord(result.id, tenantId);
-    } catch (commissionError) {
-      console.warn('Negative commission record creation failed:', commissionError);
-    }
+    // Negative commission side-effect is written inside initiateReturn's
+    // transaction (ARGUS #361), so it cannot be skipped silently here.
 
     // Notification side-effect — non-blocking
     try {

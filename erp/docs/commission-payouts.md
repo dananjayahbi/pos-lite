@@ -58,6 +58,32 @@ entries follow the normal expense reversal rules.
 Payroll generation (`/payroll`) also uses `paidAmount`, so a partially paid
 commission is not paid again through the monthly salary run.
 
+## Returns and voided sales (ARGUS #361)
+
+Commission is `earnedAmount = baseAmount × commissionRate / 100`, created when
+the sale completes. It is now reconciled whenever goods come back:
+
+- **Void** → the whole commission base is reversed.
+- **Return** → the base shrinks by the completed return's `refundAmount`
+  (goods + tax), so the clawback is proportional to the refunded share.
+  Multiple partial returns are reconciled cumulatively.
+- **Paid records are never mutated.** The original (possibly paid) row keeps
+  its `paidAmount`/payout history; the clawback is a new negative
+  `CommissionRecord` with `isPaid = false` and `paidAmount = 0`. The next payout
+  nets it through the #337 `paidAmount` model (a paid commission that is later
+  returned leaves a negative outstanding balance).
+- **Idempotent.** The plan compares the target base with the signed base
+  already on the sale's ledger: a replay or the second half of a partial return
+  creates only the remaining shortfall, never a duplicate clawback.
+- **Transactional.** Returns call the reconciliation inside
+  `initiateReturn`'s transaction; voids call it inside `voidSale`'s transaction.
+  The `CommissionRecord` and the refund/void commit or roll back together.
+- The adjustment audit uses the existing `AuditLog` table with action
+  `COMMISSION_CLAWED_BACK` and the sale/void/return bases.
+
+Pure rule: `src/lib/services/commissionClawback.core.ts`
+(`planCommissionReversal`).
+
 ## Schema
 
 Added/changed in `prisma/schema.prisma`:
@@ -74,7 +100,9 @@ equivalent) before using the new payout flow.
 
 ```
 npx vitest run src/lib/services/__tests__/commission-allocation.test.ts
+npx vitest run src/lib/services/__tests__/commissionClawback.core.test.ts
 ```
 
 Covers the 144.39 → 100 + 44.39 split, oldest-first allocation, full
-settlement with negative return adjustments, and over-payment safety.
+settlement with negative return adjustments, over-payment safety, and the
+void/partial-return/full-return/already-paid/idempotent clawback plan.

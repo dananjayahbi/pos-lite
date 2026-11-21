@@ -25,6 +25,7 @@ import {
 } from '@/lib/services/saleDiscountValidation.core';
 import { evaluatePromotions } from '@/lib/services/promotion.service';
 import { notifySaleVoided } from '@/lib/notifications/sale-alert-service';
+import { reconcileCommissionForSale } from '@/lib/services/commission.service';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1148,6 +1149,16 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
         tx,
       );
     }
+
+    // Commission on a voided sale is fully clawed back as a negative
+    // outstanding record (ARGUS #361); a paid original row is left untouched.
+    await reconcileCommissionForSale({
+      tenantId,
+      saleId,
+      voided: true,
+      actorId,
+      tx,
+    });
 
     return updatedSale;
   });
