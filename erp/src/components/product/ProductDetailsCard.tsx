@@ -4,14 +4,10 @@ import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { ImageViewerModal } from '@/components/product/ImageViewerModal';
+import { taxRuleLabel } from '@/lib/constants/product-options';
+import { useTaxRates } from '@/hooks/useTaxRates';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-const TAX_LABELS: Record<string, string> = {
-  STANDARD_VAT: 'Standard VAT (15%)',
-  SSCL: 'SSCL',
-  EXEMPT: 'VAT Exempt',
-};
 
 const SOURCE_LABELS: Record<string, string> = {
   MANUFACTURED: 'Manufactured',
@@ -53,6 +49,7 @@ interface ProductDetailsCardProps {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function ProductDetailsCard({ product, variants = [] }: ProductDetailsCardProps) {
+  const { data: taxRates } = useTaxRates();
   const [descExpanded, setDescExpanded] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
   const descTruncated = product.description && product.description.length > 200;
@@ -142,7 +139,7 @@ export function ProductDetailsCard({ product, variants = [] }: ProductDetailsCar
         {/* Tax Rule */}
         <FieldRow
           label="Tax Rule"
-          value={TAX_LABELS[product.taxRule] ?? product.taxRule}
+          value={taxRuleLabel(product.taxRule, taxRates)}
         />
 
         {/* Product Source */}

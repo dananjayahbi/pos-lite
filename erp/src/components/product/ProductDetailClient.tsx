@@ -57,6 +57,8 @@ import { useCategories } from '@/hooks/useCategories';
 import { useBrands } from '@/hooks/useBrands';
 import type { HealthConcern } from '@/generated/prisma/client';
 import { HEALTH_CONCERNS } from '@/lib/constants/health-concerns';
+import { taxRuleLabel } from '@/lib/constants/product-options';
+import { useTaxRates } from '@/hooks/useTaxRates';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -388,6 +390,7 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
   const queryClient = useQueryClient();
   const { data: categoriesData } = useCategories();
   const { data: brandsData } = useBrands();
+  const { data: taxRates } = useTaxRates();
 
   const categories = categoriesData?.data ?? [];
   const brands = brandsData?.data ?? [];
@@ -563,9 +566,9 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="STANDARD_VAT">Standard VAT (15%)</SelectItem>
-                <SelectItem value="SSCL">SSCL</SelectItem>
-                <SelectItem value="EXEMPT">VAT Exempt</SelectItem>
+                <SelectItem value="STANDARD_VAT">{taxRuleLabel('STANDARD_VAT', taxRates)}</SelectItem>
+                <SelectItem value="SSCL">{taxRuleLabel('SSCL', taxRates)}</SelectItem>
+                <SelectItem value="EXEMPT">{taxRuleLabel('EXEMPT', taxRates)}</SelectItem>
               </SelectContent>
             </Select>
           </div>

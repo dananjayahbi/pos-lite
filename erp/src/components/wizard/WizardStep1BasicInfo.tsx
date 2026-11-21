@@ -11,8 +11,9 @@ import { z } from 'zod';
 import { useProductWizardStore } from '@/stores/productWizardStore';
 import { useCategories } from '@/hooks/useCategories';
 import { useBrands } from '@/hooks/useBrands';
-import { TAX_RULE, TAX_RULE_OPTIONS } from '@/lib/constants/product-options';
+import { TAX_RULE, TAX_RULE_OPTIONS, taxRuleLabel } from '@/lib/constants/product-options';
 import { PRODUCT_SOURCE_OPTIONS } from '@/lib/constants/product-options';
+import { useTaxRates } from '@/hooks/useTaxRates';
 import { productStep1Schema } from '@/lib/validators/product-wizard.validators';
 
 // The schema uses `.default([])` on `healthConcerns`, so its INPUT type (which
@@ -47,6 +48,7 @@ import { HealthConcernMultiSelect } from '@/components/product/HealthConcernMult
 export function WizardStep1BasicInfo() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { data: taxRates } = useTaxRates();
   const { step1Data, setStep1Data, goToStep, resetWizard } =
     useProductWizardStore();
 
@@ -433,7 +435,7 @@ export function WizardStep1BasicInfo() {
               <SelectContent>
                 {TAX_RULE_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
+                    {taxRuleLabel(opt.value, taxRates)}
                   </SelectItem>
                 ))}
               </SelectContent>

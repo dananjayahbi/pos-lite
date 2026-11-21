@@ -128,10 +128,43 @@ export const TAX_RULE: Record<TaxRuleValue, TaxRuleValue> = {
 };
 
 export const TAX_RULE_OPTIONS: Array<{ value: TaxRuleValue; label: string }> = [
-  { value: TAX_RULE.STANDARD_VAT, label: 'Standard VAT (15%)' },
+  { value: TAX_RULE.STANDARD_VAT, label: 'Standard VAT' },
   { value: TAX_RULE.SSCL, label: 'SSCL' },
   { value: TAX_RULE.EXEMPT, label: 'VAT Exempt' },
 ];
+
+export interface TaxRateSnapshot {
+  vatRate?: number | undefined;
+  ssclRate?: number | undefined;
+}
+
+/** 18 -> "18", 2.5 -> "2.5", 2.25 -> "2.25". */
+export function formatTaxRate(rate: number): string {
+  return Number.isInteger(rate) ? String(rate) : rate.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+/**
+ * Human label for a tax rule, using the tenant's configured rates.
+ *
+ * The old labels hard-coded "Standard VAT (15%)" while the sale engine and Tax
+ * settings resolve the tenant's real VAT (18% for the live store), so product
+ * forms understated tax by three points (ARGUS #143). When the rates are not
+ * loaded yet, the label omits the number instead of showing a wrong one.
+ */
+export function taxRuleLabel(rule: TaxRuleValue | string, rates?: TaxRateSnapshot | null): string {
+  if (rule === TAX_RULE.STANDARD_VAT) {
+    return rates?.vatRate !== undefined
+      ? `Standard VAT (${formatTaxRate(rates.vatRate)}%)`
+      : 'Standard VAT';
+  }
+  if (rule === TAX_RULE.SSCL) {
+    return rates?.ssclRate !== undefined
+      ? `SSCL (${formatTaxRate(rates.ssclRate)}%)`
+      : 'SSCL';
+  }
+  if (rule === TAX_RULE.EXEMPT) return 'VAT Exempt';
+  return rule;
+}
 
 // ── Product source (Manufactured / Traded) ──────────────────────────────────
 
