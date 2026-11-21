@@ -78,4 +78,18 @@ describe('computeStockTakeApprovalPlan', () => {
     expect(plan.adjustments).toEqual([]);
     expect(plan.missingVariantIds).toEqual(['gone']);
   });
+
+  it('never produces negative stock when the snapshot is stale (ARGUS #207)', () => {
+    // Snapshot 50, stock has since fallen to 0, the operator counted 10. The
+    // old current + (counted - snapshot) produced -40; approval must set 10.
+    const plan = computeStockTakeApprovalPlan(
+      [{ variantId: 'v1', systemQuantity: 50, countedQuantity: 10, discrepancy: -40 }],
+      () => 0,
+    );
+
+    const adjustment = plan.adjustments[0]!;
+    expect(adjustment.quantityDelta).toBe(10);
+    expect(adjustment.currentQuantity + adjustment.quantityDelta).toBe(10);
+    expect(adjustment.currentQuantity + adjustment.quantityDelta).toBeGreaterThanOrEqual(0);
+  });
 });

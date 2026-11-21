@@ -530,6 +530,7 @@ export async function approveStockTake(
     return {
       session,
       adjustmentCount: plan.adjustments.filter((adjustment) => adjustment.quantityDelta !== 0).length,
+      adjustments: plan.adjustments,
     };
   });
 
@@ -543,7 +544,11 @@ export async function approveStockTake(
     after: { adjustmentCount: result.adjustmentCount },
   });
 
-  return { session: result.session, adjustmentCount: result.adjustmentCount };
+  return {
+    session: result.session,
+    adjustmentCount: result.adjustmentCount,
+    adjustments: result.adjustments,
+  };
 }
 
 // ── Step 10: rejectStockTake ─────────────────────────────────────────────────

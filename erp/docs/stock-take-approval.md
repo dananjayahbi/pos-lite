@@ -40,4 +40,15 @@ applying a stale delta or hiding the row.
 
 `src/lib/services/__tests__/stockTakeApproval.core.test.ts` covers the reported
 48-vs-50 case, unchanged stock, stock that arrived after the count, a zero delta,
-uncounted items and missing variants.
+uncounted items and missing variants. They also cover the stale-snapshot
+negative scenario (snapshot 50, current 0, counted 10 -> set 10, never -40;
+ARGUS #207): because approval sets the counted quantity, a correction can never
+drive stock below zero.
+
+## API path (ARGUS #207)
+
+The approve route delegates to `approveStockTake` and keeps only the
+permission/maker-checker checks plus notifications, so the API and any other
+caller share the same current-stock comparison and ledger write. A vanished
+variant or a stale session returns a clear 409 instead of a generic 500.
+

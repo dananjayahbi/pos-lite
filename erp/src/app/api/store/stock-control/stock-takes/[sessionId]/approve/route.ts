@@ -3,8 +3,8 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { StockTakeStatus, StockMovementReason, UserRole, NotificationType } from '@/generated/prisma/client';
-import { createAuditLog } from '@/lib/services/audit.service';
+import { StockTakeStatus, UserRole, NotificationType } from '@/generated/prisma/client';
+import { approveStockTake } from '@/lib/services/inventory.service';
 
 export async function POST(
   _request: Request,
@@ -42,7 +42,7 @@ export async function POST(
       include: {
         items: {
           include: {
-            variant: true,
+            variant: { select: { sku: true, lowStockThreshold: true } },
           },
         },
       },
@@ -62,7 +62,7 @@ export async function POST(
       );
     }
 
-    // M13-02 (BUG-43) — maker-checker separation: the initiator can never
+    // M13-02 (BUG-43) - maker-checker separation: the initiator can never
     // approve their own stock take, even when they hold the approve
     // permission (e.g. OWNER). Enforced here, at the API source of truth.
     if (stockTakeSession.initiatedById === session.user.id) {
@@ -75,69 +75,38 @@ export async function POST(
       );
     }
 
-    const itemsWithDiscrepancy = stockTakeSession.items.filter(
-      (item) => item.discrepancy !== null && item.discrepancy !== 0,
-    );
+    // The service owns the correction: it reads the CURRENT stock under a row
+    // lock, compares it with the counted quantity (never the session-start
+    // snapshot), applies the delta, records the ledger rows and the approval
+    // audit, and rewrites the stored discrepancies (ARGUS #138/#207).
+    const result = await approveStockTake(tenantId, sessionId, session.user.id);
 
-    const result = await prisma.$transaction(async (tx) => {
-      for (const item of itemsWithDiscrepancy) {
-        const quantityBefore = item.variant.stockQuantity;
-        const quantityAfter = quantityBefore + (item.discrepancy ?? 0);
+    // Notify the session initiator and any low-stock recipients. The stock
+    // correction is already committed; these are secondary.
+    const itemByVariant = new Map(stockTakeSession.items.map((item) => [item.variantId, item]));
+    const countedItems = result.adjustments.filter((adjustment) => adjustment.quantityDelta !== 0);
 
-        await tx.productVariant.update({
-          where: { id: item.variantId },
-          data: { stockQuantity: quantityAfter },
-        });
-
-        await tx.stockMovement.create({
-          data: {
-            tenantId,
-            variantId: item.variantId,
-            reason: StockMovementReason.STOCK_TAKE_ADJUSTMENT,
-            quantityDelta: item.discrepancy ?? 0,
-            quantityBefore,
-            quantityAfter,
-            actorId: session.user.id,
-            stockTakeSessionId: sessionId,
-            note: `Stock take adjustment for session ${sessionId}`,
-          },
-        });
-      }
-
-      await tx.stockTakeSession.update({
-        where: { id: sessionId },
-        data: {
-          status: StockTakeStatus.APPROVED,
-          approvedById: session.user.id,
-          approvedAt: new Date(),
-        },
-      });
-
-      // Notify the session initiator
-      await tx.notificationRecord.create({
+    try {
+      await prisma.notificationRecord.create({
         data: {
           tenantId,
           recipientId: stockTakeSession.initiatedById,
           type: NotificationType.STOCK_TAKE_APPROVED,
           title: 'Stock take session approved',
-          body: `Your stock take session has been approved. ${itemsWithDiscrepancy.length} stock corrections were applied.`,
+          body: `Your stock take session has been approved. ${result.adjustmentCount} stock corrections were applied.`,
           relatedEntityType: 'StockTakeSession',
           relatedEntityId: sessionId,
         },
       });
 
-      // Check for low stock after corrections
-      const lowStockVariants = itemsWithDiscrepancy.filter((item) => {
-        const newQty = item.variant.stockQuantity + (item.discrepancy ?? 0);
-        return (
-          item.variant.lowStockThreshold > 0 &&
-          newQty >= 0 &&
-          newQty <= item.variant.lowStockThreshold
-        );
+      const lowStockAdjustments = countedItems.filter((adjustment) => {
+        const item = itemByVariant.get(adjustment.variantId);
+        if (!item || item.variant.lowStockThreshold <= 0) return false;
+        return adjustment.countedQuantity >= 0 && adjustment.countedQuantity <= item.variant.lowStockThreshold;
       });
 
-      if (lowStockVariants.length > 0) {
-        const recipients = await tx.user.findMany({
+      if (lowStockAdjustments.length > 0) {
+        const recipients = await prisma.user.findMany({
           where: {
             tenantId,
             role: { in: [UserRole.OWNER, UserRole.MANAGER] },
@@ -148,44 +117,48 @@ export async function POST(
         });
 
         if (recipients.length > 0) {
-          const lowStockNotifications = lowStockVariants.flatMap((item) => {
-            const newQty = item.variant.stockQuantity + (item.discrepancy ?? 0);
-            return recipients.map((r) => ({
-              tenantId,
-              recipientId: r.id,
-              type: NotificationType.LOW_STOCK_ALERT,
-              title: `${item.variant.sku} is low on stock`,
-              body: `Current stock: ${newQty} units. Threshold: ${item.variant.lowStockThreshold} units. Adjusted by stock take approval.`,
-              relatedEntityType: 'ProductVariant',
-              relatedEntityId: item.variantId,
-            }));
-          });
-
-          await tx.notificationRecord.createMany({
-            data: lowStockNotifications,
+          await prisma.notificationRecord.createMany({
+            data: lowStockAdjustments.flatMap((adjustment) => {
+              const item = itemByVariant.get(adjustment.variantId);
+              return recipients.map((recipient) => ({
+                tenantId,
+                recipientId: recipient.id,
+                type: NotificationType.LOW_STOCK_ALERT,
+                title: `${item?.variant.sku ?? 'Variant'} is low on stock`,
+                body: `Current stock: ${adjustment.countedQuantity} units. Threshold: ${item?.variant.lowStockThreshold ?? 0} units. Adjusted by stock take approval.`,
+                relatedEntityType: 'ProductVariant',
+                relatedEntityId: adjustment.variantId,
+              }));
+            }),
           });
         }
       }
+    } catch (notificationError) {
+      console.warn('[POST stock-take approve] notification warning:', notificationError);
+    }
 
-      return { correctionsApplied: itemsWithDiscrepancy.length };
+    return NextResponse.json({
+      success: true,
+      data: { correctionsApplied: result.adjustmentCount },
     });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to approve stock take session';
 
-    await createAuditLog({
-      tenantId,
-      actorId: session.user.id,
-      actorRole: session.user.role,
-      entityType: 'StockTakeSession',
-      entityId: sessionId,
-      action: 'STOCK_TAKE_APPROVED',
-      after: {
-        approvedBy: session.user.id,
-        correctionsApplied: result.correctionsApplied,
-        approvedAt: new Date().toISOString(),
-      },
-    });
+    // A stale session or a variant that disappeared is a conflict, not a 500;
+    // a correction can never produce negative stock because approval now sets
+    // the counted quantity directly (ARGUS #207).
+    if (
+      message.startsWith('Cannot approve') ||
+      message.includes('not pending approval') ||
+      message.includes('Insufficient stock')
+    ) {
+      return NextResponse.json(
+        { success: false, error: { code: 'CONFLICT', message } },
+        { status: 409 },
+      );
+    }
 
-    return NextResponse.json({ success: true, data: result });
-  } catch {
+    console.error('[POST stock-take approve] error:', error);
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to approve stock take session' } },
       { status: 500 },
