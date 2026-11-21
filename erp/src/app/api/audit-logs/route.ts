@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { getAuditLogs, attachAuditActorNames } from '@/lib/services/audit.service';
+import { getAuditLogs, getAuditLogsForExport, attachAuditActorNames } from '@/lib/services/audit.service';
 import { parseQueryInt, parseQueryDate } from '@/lib/api/query-params';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { toCsvLines } from '@/lib/export';
@@ -22,6 +22,9 @@ const AUDIT_CSV_HEADERS = [
   'actorId',
   'actorRole',
   'ipAddress',
+  'userAgent',
+  'before',
+  'after',
 ] as const;
 
 export async function GET(request: NextRequest) {
@@ -85,6 +88,14 @@ export async function GET(request: NextRequest) {
     const entries = await attachAuditActorNames(result.data);
 
     if (format === 'csv') {
+      // ARGUS #453: export the complete filtered set (not the current page) and
+      // include the change evidence the detail modal shows.
+      const exportRows = await getAuditLogsForExport(
+        isSuperAdmin ? (searchParams.get('tenantId') ?? undefined) : (tenantId as string),
+        { entityType, action, startDate, endDate, userId },
+      );
+      const exportEntries = await attachAuditActorNames(exportRows);
+
       // M35-01 (BUG-79): the header row is emitted UNQUOTED and data cells are
       // quoted only when they need it, via the shared `toCsvLines` writer. The
       // old inline mapper quoted every cell — including the header — producing
@@ -92,7 +103,7 @@ export async function GET(request: NextRequest) {
       // quotes in some locales and which makes diffs noisy (RULE: RULE-EXPORT-CSV).
       const csv = toCsvLines(
         AUDIT_CSV_HEADERS,
-        entries.map((entry) => [
+        exportEntries.map((entry) => [
           entry.createdAt.toISOString(),
           entry.entityType,
           entry.entityId,
@@ -101,6 +112,11 @@ export async function GET(request: NextRequest) {
           entry.actorId ?? '',
           entry.actorRole,
           entry.ipAddress ?? '',
+          entry.userAgent ?? '',
+          entry.before === null || entry.before === undefined
+            ? ''
+            : JSON.stringify(entry.before),
+          entry.after === null || entry.after === undefined ? '' : JSON.stringify(entry.after),
         ]),
       );
 
@@ -109,6 +125,7 @@ export async function GET(request: NextRequest) {
         headers: {
           'Content-Type': 'text/csv; charset=utf-8',
           'Content-Disposition': 'attachment; filename="audit-log-export.csv"',
+          'X-Total-Rows': String(exportEntries.length),
         },
       });
     }

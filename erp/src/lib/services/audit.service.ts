@@ -295,6 +295,35 @@ export async function getAuditLogs(tenantId: string, filters: GetAuditLogsFilter
 }
 
 /**
+ * Every row matching the filters, for a complete CSV export (ARGUS #453).
+ *
+ * The UI export used to reuse the paginated list (max 100 rows) and omit the
+ * before/after/userAgent evidence. This returns the full filtered set with all
+ * columns the detail modal shows.
+ */
+export async function getAuditLogsForExport(
+  tenantId: string | undefined,
+  filters: Omit<GetAuditLogsFilters, 'page' | 'pageSize'> = {},
+) {
+  const where: Prisma.AuditLogWhereInput = {};
+  if (tenantId !== undefined) where.tenantId = tenantId;
+  if (filters.entityType !== undefined) where.entityType = filters.entityType;
+  if (filters.action !== undefined) where.action = filters.action;
+  if (filters.userId !== undefined) where.actorId = filters.userId;
+  if (filters.startDate !== undefined || filters.endDate !== undefined) {
+    where.createdAt = {
+      ...(filters.startDate !== undefined ? { gte: filters.startDate } : {}),
+      ...(filters.endDate !== undefined ? { lte: filters.endDate } : {}),
+    };
+  }
+
+  return prisma.auditLog.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+/**
  * Resolve `actorId` values to human-readable user labels for the audit log UI
  * and export. System-generated rows (no actor) render as "System"; deleted or
  * unknown users fall back to a neutral label instead of leaking a bare CUID.

@@ -22,7 +22,16 @@ log API is unchanged.
 No schema or data migration is needed; new actions/entities appear
 automatically after they are written.
 
+## Complete export (ARGUS #453)
+
+`?format=csv` now queries the full filtered set (`getAuditLogsForExport`) instead
+of reusing the page-limited list (the UI sent pageSize=100 and the service capped
+at 100). The file includes every matching row, sorted newest first, with the
+same evidence fields as the detail modal: `userAgent`, `before` and `after`
+(JSON), alongside the actor/IP/entity columns. `X-Total-Rows` reports the count.
+
 ## Inclusive To date (ARGUS #452)
+
 
 `parseQueryDate` now accepts `{ endOfDay: true }`, used by the audit log API's
 `endDate`. A date-only To (e.g. `2026-11-20`) is expanded to
