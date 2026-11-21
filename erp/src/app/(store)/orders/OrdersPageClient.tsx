@@ -14,8 +14,12 @@ import {
   useBulkCreateDelivery,
 } from '@/hooks/orders';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
 import { printShippingLabels } from '@/components/delivery/labels/ShippingLabel';
+import {
+  canPrintWaybill,
+  resolveLabelTemplate,
+  resolveLabelTemplateViewState,
+} from '@/components/delivery/labels/labelTemplateState';
 import { printOrderInvoice, printOrderInvoices } from '@/components/delivery/invoices/printOrderInvoice';
 import { waitForPrintOverlayToClose } from '@/lib/print-session';
 import { toast } from 'sonner';
@@ -48,14 +52,27 @@ export function OrdersPageClient() {
     page,
     limit: ORDERS_PAGE_SIZE,
   });
-  const { data: labelTemplate } = useLabelTemplate();
+  const {
+    data: labelTemplate,
+    branding,
+    isLoading: templateLoading,
+    isError: templateError,
+    isFetching: templateFetching,
+    refetch: refetchTemplate,
+  } = useLabelTemplate();
   const bulkStatus = useBulkStatusChange();
   const bulkCreate = useBulkCreateDelivery();
 
   const orders = useMemo(() => (data?.items ?? []) as DeliveryListItem[], [data]);
   const total = data?.total ?? 0;
   const summary = paginationSummary(page, data?.limit ?? ORDERS_PAGE_SIZE, total);
-  const template = labelTemplate ?? DEFAULT_LABEL_TEMPLATE;
+  const templateState = resolveLabelTemplateViewState({
+    isError: templateError,
+    isLoading: templateLoading,
+    hasTemplate: Boolean(labelTemplate),
+  });
+  const template = resolveLabelTemplate(labelTemplate, branding);
+  const canPrintWaybillNow = canPrintWaybill(templateState, template);
 
   // Filters and paging clear the selection: bulk actions never silently include
   // rows the operator can no longer see (ARGUS #262).
@@ -133,8 +150,19 @@ export function OrdersPageClient() {
     }
   };
 
+  const ensureWaybillTemplate = () => {
+    if (canPrintWaybillNow) return true;
+    toast.error(
+      templateState === 'error'
+        ? 'Waybill template failed to load - retry before printing'
+        : 'Waybill template is still loading',
+    );
+    return false;
+  };
+
   const handlePrint = () => {
     if (selectedOrders.length === 0) return;
+    if (!ensureWaybillTemplate()) return;
     void runPrint('bulk-waybills', async () => {
       printShippingLabels(selectedOrders, template);
       await waitForPrintOverlayToClose();
@@ -151,6 +179,7 @@ export function OrdersPageClient() {
   };
 
   const handlePrintSingleWaybill = (order: DeliveryListItem) => {
+    if (!ensureWaybillTemplate()) return;
     void runPrint(`waybill:${order.id}`, async () => {
       printShippingLabels([order], template);
       await waitForPrintOverlayToClose();
@@ -169,6 +198,24 @@ export function OrdersPageClient() {
       <div className="flex items-center justify-between gap-4">
         <h1 className="font-display text-2xl font-bold text-espresso">Orders</h1>
       </div>
+
+      {templateState === 'error' && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 font-body text-sm text-red-700"
+        >
+          <span>Waybill template failed to load - waybill printing is disabled.</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+            onClick={() => refetchTemplate()}
+            disabled={templateFetching}
+          >
+            {templateFetching ? 'Retrying…' : 'Retry'}
+          </Button>
+        </div>
+      )}
 
       <OrderFilters
         search={search}
@@ -189,6 +236,7 @@ export function OrdersPageClient() {
         isPrintingWaybills={printBusy === 'bulk-waybills'}
         isPrintingInvoices={printBusy === 'bulk-invoices'}
         isBusy={printBusy !== null || bulkCreate.isPending || bulkStatus.isPending}
+        waybillPrintDisabled={!canPrintWaybillNow}
       />
 
       {total > 0 && (
@@ -254,6 +302,7 @@ export function OrdersPageClient() {
             printBusy?.startsWith('invoice:') ? printBusy.slice('invoice:'.length) : null
           }
           printBusy={printBusy !== null}
+          waybillPrintDisabled={!canPrintWaybillNow}
         />
       )}
 

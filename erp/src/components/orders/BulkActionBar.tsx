@@ -19,6 +19,8 @@ interface BulkActionBarProps {
   isPrintingInvoices?: boolean;
   /** Any action is running; the remaining buttons stay disabled. */
   isBusy?: boolean;
+  /** Waybill template is still loading/failed; print must stay disabled. */
+  waybillPrintDisabled?: boolean;
 }
 
 export function BulkActionBar({
@@ -33,6 +35,7 @@ export function BulkActionBar({
   isPrintingWaybills = false,
   isPrintingInvoices = false,
   isBusy = false,
+  waybillPrintDisabled = false,
 }: BulkActionBarProps) {
   if (count === 0) return null;
 
@@ -70,8 +73,9 @@ export function BulkActionBar({
         size="sm"
         variant="outline"
         onClick={onPrint}
-        disabled={isBusy || isPrintingInvoices}
+        disabled={isBusy || isPrintingInvoices || waybillPrintDisabled}
         aria-busy={isPrintingWaybills}
+        title={waybillPrintDisabled ? 'Waybill template is not loaded' : undefined}
         data-testid="bulk-waybills"
       >
         {isPrintingWaybills ? (

@@ -157,6 +157,17 @@ instead of showing one status under a generic label.
   colours, header layout, page-size, field toggles, and footer-note controls
   were removed with the fixed design; the saved template is now
   `{ brandName, fromContact }` and older saved values are ignored safely.
+- **Template load state is explicit (ARGUS #298).** `GET
+  /api/store/delivery/label` returns `data` (the template) plus
+  `meta: { branding: { name, address, phoneNumber }, saved }`. The designer and
+  every Print surface resolve `error → loading → missing → ready`:
+  - a failed request shows an error card with **Retry**; the designer renders no
+    form (so Save cannot overwrite the saved sender) and Print stays disabled;
+  - Print is enabled only when the template loaded *and* a sender identity
+    resolved; the print helpers refuse a blank `brandName`;
+  - an empty/unsaved template is filled client-side from the tenant name and
+    contact number (`resolveLabelTemplate`), so the waybill never prints From
+    "-" / Contact "-". `saved: false` shows a “no saved template yet” hint.
 - Formatting rules live in `src/lib/delivery/waybill.ts` (DD/MM/YYYY dates,
   grouped money without a currency prefix, item/weight description, barcode
   fallback) and are covered by

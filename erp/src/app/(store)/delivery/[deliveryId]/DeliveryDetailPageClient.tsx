@@ -7,11 +7,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useDelivery, useLabelTemplate } from '@/hooks/delivery';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
 import { StatusBadge } from '@/components/delivery/StatusBadge';
 import { DeliveryDetailPanel } from '@/components/delivery/DeliveryDetailPanel';
 import { DispatchSheet } from '@/components/delivery/DispatchSheet';
 import { printShippingLabel } from '@/components/delivery/labels/ShippingLabel';
+import {
+  canPrintWaybill,
+  resolveLabelTemplate,
+  resolveLabelTemplateViewState,
+} from '@/components/delivery/labels/labelTemplateState';
 import { printOrderInvoice } from '@/components/delivery/invoices/printOrderInvoice';
 import { waitForPrintOverlayToClose } from '@/lib/print-session';
 import { toast } from 'sonner';
@@ -27,9 +31,29 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
   const router = useRouter();
   const [isNavigating, startTransition] = useTransition();
   const { data: delivery, isLoading } = useDelivery(deliveryId);
-  const { data: labelTemplate } = useLabelTemplate();
+  const {
+    data: labelTemplate,
+    branding,
+    isLoading: templateLoading,
+    isError: templateError,
+    error: templateLoadError,
+    isFetching: templateFetching,
+    refetch: refetchTemplate,
+  } = useLabelTemplate();
   const { hasPermission } = usePermissions();
   const canDispatch = hasPermission(PERMISSIONS.DELIVERY.dispatchDelivery);
+
+  const templateState = resolveLabelTemplateViewState({
+    isError: templateError,
+    isLoading: templateLoading,
+    hasTemplate: Boolean(labelTemplate),
+  });
+  const waybillTemplate = resolveLabelTemplate(labelTemplate, branding);
+  const canPrintWaybillNow = canPrintWaybill(templateState, waybillTemplate);
+  const waybillBlockedReason =
+    templateState === 'error'
+      ? 'Waybill template failed to load - retry before printing'
+      : 'Waybill template is still loading';
 
   const [dispatchOpen, setDispatchOpen] = useState(false);
   /** Which print action is running, so its button can show a spinner. */
@@ -48,8 +72,12 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
 
   const handlePrintWaybill = () => {
     if (!delivery) return;
+    if (!canPrintWaybillNow) {
+      toast.error(waybillBlockedReason);
+      return;
+    }
     void runPrint('waybill', async () => {
-      printShippingLabel(delivery, labelTemplate ?? DEFAULT_LABEL_TEMPLATE);
+      printShippingLabel(delivery, waybillTemplate);
       await waitForPrintOverlayToClose();
     });
   };
@@ -95,8 +123,9 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
             <Button
               variant="outline"
               onClick={handlePrintWaybill}
-              disabled={printing !== null}
+              disabled={printing !== null || !canPrintWaybillNow}
               aria-busy={printing === 'waybill'}
+              title={!canPrintWaybillNow ? waybillBlockedReason : undefined}
               data-testid="delivery-waybill-button"
             >
               {printing === 'waybill' ? (
@@ -124,6 +153,28 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
           </div>
         )}
       </div>
+
+      {/* Waybill template failure (ARGUS #298) */}
+      {templateState === 'error' && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 font-body text-sm text-red-700"
+        >
+          <span>
+            Waybill template failed to load - printing is disabled
+            {templateLoadError instanceof Error ? ` (${templateLoadError.message})` : ''}.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+            onClick={() => refetchTemplate()}
+            disabled={templateFetching}
+          >
+            {templateFetching ? 'Retrying…' : 'Retry'}
+          </Button>
+        </div>
+      )}
 
       {/* Loading */}
       {isLoading && (

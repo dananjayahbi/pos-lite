@@ -11,3 +11,14 @@ export interface DeliveryLabelTemplate {
   /** Sender contact printed in the "Contact" row. */
   fromContact: string;
 }
+
+/**
+ * Tenant identity used as the client-side fallback when a saved waybill
+ * template has empty sender fields (ARGUS #298). Returned alongside the
+ * template so the print path never needs a second, independently failing read.
+ */
+export interface LabelBranding {
+  name: string;
+  address: string;
+  phoneNumber: string;
+}

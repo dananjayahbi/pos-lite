@@ -2,9 +2,8 @@ import 'server-only';
 
 import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
-import { getTenantBranding } from '@/lib/tenant-branding';
 import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
-import type { DeliveryLabelTemplate } from '@/types/delivery-label';
+import type { DeliveryLabelTemplate, LabelBranding } from '@/types/delivery-label';
 import type { LabelTemplateInput } from '@/lib/validators/label.validators';
 
 /** Read the raw saved template from `Tenant.settings.delivery.label` (may be partial). */
@@ -16,24 +15,57 @@ function readSaved(settings: unknown): Partial<DeliveryLabelTemplate> | null {
   return saved ?? null;
 }
 
+/** Read the tenant's client-facing branding fallback (name/address/contact). */
+function readBranding(
+  name: string | null | undefined,
+  settings: unknown,
+): LabelBranding {
+  const values =
+    settings && typeof settings === 'object' ? (settings as Record<string, unknown>) : {};
+  return {
+    name: name?.trim() || 'AyurPOS',
+    address: typeof values.address === 'string' ? values.address : '',
+    phoneNumber: typeof values.phoneNumber === 'string' ? values.phoneNumber : '',
+  };
+}
+
+export interface LabelTemplateBundle {
+  template: DeliveryLabelTemplate;
+  branding: LabelBranding;
+  /** False when the tenant has never saved a template (defaults are in use). */
+  saved: boolean;
+}
+
+/**
+ * Resolve the template plus the tenant branding needed by the client fallback
+ * (ARGUS #298). One tenant read, so the GET route can return both atomically.
+ */
+export async function getLabelTemplateBundle(tenantId: string): Promise<LabelTemplateBundle> {
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { name: true, settings: true },
+  });
+  const saved = readSaved(tenant?.settings);
+  const branding = readBranding(tenant?.name, tenant?.settings);
+
+  const merged = { ...DEFAULT_LABEL_TEMPLATE, ...(saved ?? {}) } as DeliveryLabelTemplate;
+
+  return {
+    template: {
+      ...merged,
+      brandName: merged.brandName?.trim() ? merged.brandName : branding.name,
+    },
+    branding,
+    saved: saved !== null,
+  };
+}
+
 /**
  * Resolve the effective template: merge saved over defaults, then fill an empty
  * sender name from the tenant branding. Never throws for a missing/corrupt blob.
  */
 export async function getLabelTemplate(tenantId: string): Promise<DeliveryLabelTemplate> {
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: tenantId },
-    select: { settings: true },
-  });
-  const saved = readSaved(tenant?.settings);
-  const branding = await getTenantBranding(tenantId);
-
-  const merged = { ...DEFAULT_LABEL_TEMPLATE, ...(saved ?? {}) } as DeliveryLabelTemplate;
-
-  return {
-    ...merged,
-    brandName: merged.brandName?.trim() ? merged.brandName : branding.name,
-  };
+  return (await getLabelTemplateBundle(tenantId)).template;
 }
 
 /** Persist a validated template under the tenant settings JSON. */

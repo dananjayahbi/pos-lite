@@ -14,6 +14,7 @@ import type { DeliveryLabelTemplate } from '@/types/delivery-label';
 
 interface LabelTemplateFormProps {
   template: DeliveryLabelTemplate;
+  saved: boolean;
   onChange: (patch: Partial<DeliveryLabelTemplate>) => void;
   onSave: () => void;
   onReset: () => void;
@@ -27,6 +28,7 @@ interface LabelTemplateFormProps {
  */
 export function LabelTemplateForm({
   template,
+  saved,
   onChange,
   onSave,
   onReset,
@@ -67,8 +69,9 @@ export function LabelTemplateForm({
           </div>
 
           <p className="rounded-md border border-mist/60 bg-linen/40 px-3 py-2 text-xs text-sand-ink">
-            Leave the sender name blank to use your store branding. Two waybills print on each A4
-            landscape sheet.
+            {saved
+              ? 'Leave the sender name blank to use your store branding. Two waybills print on each A4 landscape sheet.'
+              : 'No saved template yet - your store name and contact number are shown as the sender until you save. Two waybills print on each A4 landscape sheet.'}
           </p>
         </CardContent>
       </Card>

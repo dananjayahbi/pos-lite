@@ -21,6 +21,8 @@ interface OrdersTableProps {
   printingInvoiceId?: string | null;
   /** Any row-level print is running. */
   printBusy?: boolean;
+  /** Waybill template is still loading/failed; waybill print must stay disabled. */
+  waybillPrintDisabled?: boolean;
 }
 
 export function OrdersTable({
@@ -34,6 +36,7 @@ export function OrdersTable({
   printingWaybillId = null,
   printingInvoiceId = null,
   printBusy = false,
+  waybillPrintDisabled = false,
 }: OrdersTableProps) {
   const allSelected = orders.length > 0 && orders.every((o) => selectedIds.has(o.id));
 
@@ -97,8 +100,9 @@ export function OrdersTable({
                       size="sm"
                       variant="outline"
                       onClick={() => onPrint(order)}
-                      disabled={printBusy}
+                      disabled={printBusy || waybillPrintDisabled}
                       aria-busy={printingWaybillId === order.id}
+                      title={waybillPrintDisabled ? 'Waybill template is not loaded' : undefined}
                       data-testid={`order-waybill-${order.id}`}
                     >
                       {printingWaybillId === order.id ? (

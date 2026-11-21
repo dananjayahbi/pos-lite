@@ -21,7 +21,11 @@ import { printOrderInvoice } from './invoices/printOrderInvoice';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useCancelDelivery, useLabelTemplate } from '@/hooks/delivery';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
+import {
+  canPrintWaybill,
+  resolveLabelTemplate,
+  resolveLabelTemplateViewState,
+} from './labels/labelTemplateState';
 import type { DeliveryListItem } from '@/types/delivery';
 
 interface DeliveryTableProps {
@@ -43,7 +47,21 @@ function formatDate(value?: string | null) {
 export function DeliveryTable({ deliveries }: DeliveryTableProps) {
   const router = useRouter();
   const { hasPermission } = usePermissions();
-  const { data: labelTemplate } = useLabelTemplate();
+  const {
+    data: labelTemplate,
+    branding,
+    isLoading: templateLoading,
+    isError: templateError,
+    isFetching: templateFetching,
+    refetch: refetchTemplate,
+  } = useLabelTemplate();
+  const templateState = resolveLabelTemplateViewState({
+    isError: templateError,
+    isLoading: templateLoading,
+    hasTemplate: Boolean(labelTemplate),
+  });
+  const waybillTemplate = resolveLabelTemplate(labelTemplate, branding);
+  const canPrintWaybillNow = canPrintWaybill(templateState, waybillTemplate);
   const canDispatch = hasPermission(PERMISSIONS.DELIVERY.dispatchDelivery);
   const canCancel = hasPermission(PERMISSIONS.DELIVERY.cancelDelivery);
 
@@ -53,6 +71,23 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
 
   return (
     <>
+      {templateState === 'error' && (
+        <div
+          role="alert"
+          className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 font-body text-sm text-red-700"
+        >
+          <span>Waybill template failed to load - printing is disabled.</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+            onClick={() => refetchTemplate()}
+            disabled={templateFetching}
+          >
+            {templateFetching ? 'Retrying…' : 'Retry'}
+          </Button>
+        </div>
+      )}
       <div className="overflow-x-auto rounded-lg border border-espresso/10">
         <table className="w-full">
           <thead>
@@ -113,7 +148,13 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => printShippingLabel(d, labelTemplate ?? DEFAULT_LABEL_TEMPLATE)}
+                        onClick={() => printShippingLabel(d, waybillTemplate)}
+                        disabled={!canPrintWaybillNow}
+                        title={
+                          !canPrintWaybillNow
+                            ? 'Waybill template is not loaded'
+                            : undefined
+                        }
                       >
                         Print
                       </Button>
