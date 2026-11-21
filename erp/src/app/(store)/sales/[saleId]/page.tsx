@@ -187,6 +187,11 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
         <section className="border-mist/60 overflow-hidden rounded-2xl border bg-white shadow-sm">
           <div className="border-mist border-b px-5 py-3">
             <h2 className="text-espresso text-sm font-semibold">Payments</h2>
+            {sale.status === 'VOIDED' && (
+              <p className="mt-1 text-xs text-[#9B2226]">
+                This sale was voided. The tenders below were reversed and are no longer collected.
+              </p>
+            )}
           </div>
           <Table>
             <TableHeader>
@@ -201,6 +206,11 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
                 <TableRow key={payment.id}>
                   <TableCell className="text-espresso font-medium">
                     {payment.method.replace(/_/g, ' ')}
+                    {sale.status === 'VOIDED' && (
+                      <span className="ml-2 text-[10px] font-normal text-[#9B2226]">
+                        reversed
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="text-espresso text-right font-mono text-sm font-medium">
                     {formatRupee(Number(payment.amount))}
