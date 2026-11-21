@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { getDefaultRouteForRole } from '@/lib/utils/default-route';
+import { safeCallbackUrl } from '@/lib/auth/login-params';
 import { AuthLogo } from '@/components/auth/AuthLogo';
 
 const loginSchema = z.object({
@@ -59,19 +60,9 @@ function mapAuthError(error: string | undefined, code?: string): string {
 }
 
 /**
- * NEW-E (M01-05): only same-origin, root-relative callbackUrls are honored —
- * never an absolute foreign URL (open-redirect guard). The middleware sets
- * ?callbackUrl=<pathname> (path-only), but a hand-crafted query could carry
- * anything, so re-validate.
+ * NEW-E (M01-05): the callbackUrl guard now lives in
+ * `@/lib/auth/login-params` so the server page and the client form share it.
  */
-function safeCallbackUrl(raw: string | null): string | null {
-  if (!raw) return null;
-  if (!raw.startsWith('/')) return null;
-  if (raw.startsWith('//')) return null; // protocol-relative → external
-  if (raw.includes('/api/')) return null; // never bounce a page to an API path
-  return raw;
-}
-
 export function LoginFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -87,6 +78,8 @@ export function LoginFormContent() {
   const submittingRef = useRef(false);
 
   const sessionExpired = searchParams.get('sessionExpired') === 'true';
+  // Set by the no-JS POST fallback route (ARGUS #39).
+  const jsRequired = searchParams.get('js') === '1';
   const callbackUrl = safeCallbackUrl(searchParams.get('callbackUrl'));
 
   const form = useForm<LoginFormValues>({
@@ -194,6 +187,14 @@ export function LoginFormContent() {
         </div>
       ) : null}
 
+      {jsRequired ? (
+        <noscript>
+          <div className="mb-4 rounded-md border border-sand bg-sand/40 px-4 py-3 text-sm text-espresso">
+            JavaScript is required to sign in. Enable it and reload this page.
+          </div>
+        </noscript>
+      ) : null}
+
       <Card className="mx-auto w-full max-w-[400px] border-mist bg-linen p-6 shadow-lg md:p-8">
         <div className="mb-6 flex flex-col items-center">
           <AuthLogo />
@@ -201,7 +202,18 @@ export function LoginFormContent() {
           <p className="mt-1 text-sm text-terracotta">Sign in to your account</p>
         </div>
 
-        <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
+        {/*
+          ARGUS #39: a native submit before React hydrates must be a POST.
+          Without `method`, browsers fall back to GET and append the named
+          fields (?email=…&password=…) to the URL. The fallback route never
+          reads the body — it redirects to a clean /login?js=1.
+        */}
+        <form
+          className="space-y-4"
+          method="post"
+          action="/api/auth/login-fallback"
+          onSubmit={form.handleSubmit(onSubmit)}
+        >
           <div>
             <label className="mb-1 block text-sm font-medium text-espresso" htmlFor="email">
               Email address
