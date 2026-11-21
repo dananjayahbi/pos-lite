@@ -129,15 +129,17 @@ For each agent commit:
 - Batch 7 merged: #101 (receipt transparency), #102 (required reason + audited
   return reversal with ReturnStatus.CANCELLED), #110 (shift completed-sales
   count), #113 (POS shift report standalone/print).
-- Batch 8 merged: #111 (shift/Z-report access scope), #112 (Z-report top items
-  use collected revenue).
-- In flight: #125/#126 (appointment lifecycle/overdue). Queued for the same
-  agent/module: #127 availability enforcement, #128 detail completeness, #129
-  list dates/order, #130 date filters, #131 service tax (needs schema work -
-  keep with the main agent).
-- Checkpoint: full suite green at 1,551 tests.
-- DB still unreachable at 140.238.145.221:5432 (P1001); both new migrations are
-  pending deployment.
+- Batch 9 merged: #125 (appointment lifecycle actions), #126 (derived overdue
+  appointments + explicit no-show).
+- In flight: #127/#128/#129/#130 (appointment availability, detail completeness,
+  list dates/order, inclusive filters) on the appointments agent; #144 low-stock
+  shortfall sign and #145 valuation VAT labels on the other agents.
+- Held for the main agent: #131 appointment service tax (needs schema), #132
+  appointment commission attribution.
+- Checkpoint: full suite green at 1,568 tests.
+- DB still unreachable at 140.238.145.221:5432 (P1001); migrations
+  20261121160000_raw_material_costing and 20261121170000_return_cancellation
+  are pending deployment.
 - Worktrees are reset with `git -C <wt> reset --hard argus_qa` between batches;
   their old commits are already merged, so this is safe.
 - Every agent task must call `log_task_progress` before `submit_for_review`
