@@ -107,12 +107,20 @@ For each agent commit:
   (customer returns tab), #322 (sequential promotion stacking), #323/#324
   (category resolution + BOGO targets), #325 (deactivate/activate), #326
   (customer-pricing stacking regression), #337 (payout-backed commissions).
-- Batch 5 in flight: agent-reports -> #338 (payslip), #339 (password reset),
-  then #348/#349 (attendance calendar/punch entry); agent-sales idle.
-- Main agent next: maintain checkpoints and take tasks that do not overlap the
-  agents' modules.
-- Checkpoint after batch 4: full suite green at 149 files / 1,292 tests
-  (plus two em-dash copy fixes committed separately).
+- Batch 5 merged: #348/#349 (attendance calendar + missing punch), #350/#351
+  (hour-graded status + forgotten punch caps), #361 (commission clawback),
+  #371/#372/#373/#374 (payroll no-pay base, pending commission, ledger posting,
+  outstanding commission), #39 (login credential URL), #394 (inclusive expense
+  date), #395/#406 (petty-cash period report and ledger repair), #40/#41
+  (dashboard recent-sale date/payment), #416 (cash-flow reconciliation), #417
+  (cash-only refunds), #425 (payment-account row locks), #435 (P&L zero-line
+  sales), #444 (saved-report slugs), #451/#452/#453 (audit filter facets,
+  inclusive To, complete export), #468 (owner-only tax + audited settings),
+  #487 (storefront brand notice), #511 (COD reconciliation ledger/backfill),
+  plus the void-credit restoration follow-up.
+- Batch 6 in flight: #54 (notification Open links), #65 (negative discount
+  total), #66 (cart after logout), #67 queued (discount summary).
+- Checkpoint after batch 5: full suite green at 1,466 tests.
 - Worktrees are reset with `git -C <wt> reset --hard argus_qa` between batches;
   their old commits are already merged, so this is safe.
 - Every agent task must call `log_task_progress` before `submit_for_review`

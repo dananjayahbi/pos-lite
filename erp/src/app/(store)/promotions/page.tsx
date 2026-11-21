@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import Decimal from 'decimal.js';
 import { Plus, Pencil } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
+import { auditPromotions } from '@/lib/services/promotionHygiene.core';
 import { CreatePromotionSchema } from '@/lib/validators/promotion.validators';
 import type { CreatePromotionInput, UpdatePromotionInput } from '@/lib/validators/promotion.validators';
 import { Badge } from '@/components/ui/badge';
@@ -468,6 +469,7 @@ export default function PromotionsPage() {
   const activeCount = promotions.filter((p) => p.isActive).length;
   const timedCount = promotions.filter((promotion) => promotion.startsAt || promotion.endsAt).length;
   const promoCodeCount = promotions.filter((promotion) => promotion.type === 'PROMO_CODE').length;
+  const hygiene = auditPromotions(promotions);
 
   // Create mutation
   const createMutation = useMutation({
@@ -583,6 +585,25 @@ export default function PromotionsPage() {
             best cart promotion on the remainder, then a promo code on what is left. The
             combined discount can never exceed the cart subtotal.
           </p>
+          {(hygiene.openEnded.length > 0 || hygiene.missingTarget.length > 0) && (
+            <div className="mt-2 max-w-2xl rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 font-body text-xs text-amber-900">
+              {hygiene.openEnded.length > 0 && (
+                <p>
+                  {hygiene.openEnded.length} active promotion
+                  {hygiene.openEnded.length !== 1 ? 's have' : ' has'} no start or end
+                  date and appl{hygiene.openEnded.length !== 1 ? 'y' : 'ies'} until deactivated.
+                  Confirm this is intended or add a window.
+                </p>
+              )}
+              {hygiene.missingTarget.length > 0 && (
+                <p>
+                  {hygiene.missingTarget.length} BOGO/Mix promotion
+                  {hygiene.missingTarget.length !== 1 ? 's have' : ' has'} no product or
+                  category target and will never apply.
+                </p>
+              )}
+            </div>
+          )}
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
