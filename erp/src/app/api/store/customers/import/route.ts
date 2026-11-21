@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
+import { randomUUID } from 'node:crypto';
 import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import Papa from 'papaparse';
 import { Gender } from '@/generated/prisma/client';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
   CUSTOMER_IMPORT_COLUMNS,
   CustomerCsvRowSchema,
@@ -191,6 +193,22 @@ export async function POST(request: Request) {
         skipDuplicates: true,
       });
     }
+
+    // Customer imports are master-data changes too; record who ran the batch
+    // and its outcome (ARGUS #315).
+    await createAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      actorRole: session.user.role,
+      entityType: 'Customer',
+      entityId: randomUUID(),
+      action: AUDIT_ACTIONS.CUSTOMER_IMPORTED,
+      after: {
+        imported: imported.length,
+        skipped: skipped.length,
+        errors: errors.length,
+      },
+    });
 
     return NextResponse.json({
       success: true,

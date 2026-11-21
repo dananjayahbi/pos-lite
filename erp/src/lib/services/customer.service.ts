@@ -4,17 +4,42 @@ import type { TxClient } from '@/lib/services/inventory.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { ApiError } from '@/lib/api/errors';
 import { netSpendAfterVoid } from '@/lib/services/customerSpend.core';
+import {
+  customerAuditSnapshot,
+  type CustomerAuditActor,
+} from '@/lib/services/customerAudit.core';
 
 // ── Private Helpers ──────────────────────────────────────────────────────────
 
 async function assertCustomerBelongsToTenant(tenantId: string, customerId: string) {
   const customer = await prisma.customer.findFirst({
     where: { id: customerId, tenantId, deletedAt: null },
-  });
+    });
   if (!customer) {
     throw new Error('Customer not found');
   }
   return customer;
+}
+
+/** Actor for customer master-data audit rows (ARGUS #315). */
+function writeCustomerAudit(input: {
+  tenantId: string;
+  actor: CustomerAuditActor | undefined;
+  entityId: string;
+  action: string;
+  before?: ReturnType<typeof customerAuditSnapshot> | undefined;
+  after?: ReturnType<typeof customerAuditSnapshot> | undefined;
+}): void {
+  void createAuditLog({
+    tenantId: input.tenantId,
+    actorId: input.actor?.id ?? null,
+    actorRole: input.actor?.role ?? 'SYSTEM',
+    entityType: 'Customer',
+    entityId: input.entityId,
+    action: input.action,
+    ...(input.before !== undefined ? { before: input.before } : {}),
+    ...(input.after !== undefined ? { after: input.after } : {}),
+  });
 }
 
 /**
@@ -53,7 +78,11 @@ interface CreateCustomerData {
   notes?: string | undefined;
 }
 
-export async function createCustomer(tenantId: string, data: CreateCustomerData) {
+export async function createCustomer(
+  tenantId: string,
+  data: CreateCustomerData,
+  actor?: CustomerAuditActor,
+) {
   // M05-03 (BUG-27 / D4 policy): the phone is RESERVED per tenant while any
   // row carries it — live or soft-deleted — because @@unique([tenantId, phone])
   // keeps archived rows holding the phone. This deletedAt-agnostic pre-check
@@ -78,7 +107,7 @@ export async function createCustomer(tenantId: string, data: CreateCustomerData)
   const address = optionalText(data.address);
   const city = optionalText(data.city);
 
-  return prisma.customer.create({
+  const created = await prisma.customer.create({
     data: {
       tenantId,
       name: data.name,
@@ -93,6 +122,16 @@ export async function createCustomer(tenantId: string, data: CreateCustomerData)
       ...(data.notes !== undefined && { notes: optionalText(data.notes) ?? null }),
     },
   });
+
+  writeCustomerAudit({
+    tenantId,
+    actor,
+    entityId: created.id,
+    action: AUDIT_ACTIONS.CUSTOMER_CREATED,
+    after: customerAuditSnapshot(created),
+  });
+
+  return created;
 }
 
 // ── Update ───────────────────────────────────────────────────────────────────
@@ -115,8 +154,9 @@ export async function updateCustomer(
   tenantId: string,
   customerId: string,
   data: UpdateCustomerData,
+  actor?: CustomerAuditActor,
 ) {
-  await assertCustomerBelongsToTenant(tenantId, customerId);
+  const existing = await assertCustomerBelongsToTenant(tenantId, customerId);
 
   if (data.phone !== undefined) {
     const existing = await prisma.customer.findFirst({
@@ -135,7 +175,7 @@ export async function updateCustomer(
   // M05-02: only pass birthday when it resolves to a valid Date (PATCH path).
   const birthday = toValidDate(data.birthday);
 
-  return prisma.customer.update({
+  const updated = await prisma.customer.update({
     where: { id: customerId },
     data: {
       ...(data.name !== undefined && { name: data.name }),
@@ -152,6 +192,17 @@ export async function updateCustomer(
       ...(data.notes !== undefined && { notes: optionalText(data.notes) ?? null }),
     },
   });
+
+  writeCustomerAudit({
+    tenantId,
+    actor,
+    entityId: customerId,
+    action: AUDIT_ACTIONS.CUSTOMER_UPDATED,
+    before: customerAuditSnapshot(existing),
+    after: customerAuditSnapshot(updated),
+  });
+
+  return updated;
 }
 
 // ── Get by ID ────────────────────────────────────────────────────────────────
@@ -377,16 +428,31 @@ export async function getCustomers(tenantId: string, options: GetCustomersOption
 
 // ── Soft Delete ──────────────────────────────────────────────────────────────
 
-export async function softDeleteCustomer(tenantId: string, customerId: string) {
-  await assertCustomerBelongsToTenant(tenantId, customerId);
+export async function softDeleteCustomer(
+  tenantId: string,
+  customerId: string,
+  actor?: CustomerAuditActor,
+) {
+  const existing = await assertCustomerBelongsToTenant(tenantId, customerId);
 
-  return prisma.customer.update({
+  const deleted = await prisma.customer.update({
     where: { id: customerId },
     data: {
       deletedAt: new Date(),
       isActive: false,
     },
   });
+
+  writeCustomerAudit({
+    tenantId,
+    actor,
+    entityId: customerId,
+    action: AUDIT_ACTIONS.CUSTOMER_DELETED,
+    before: customerAuditSnapshot(existing),
+    after: customerAuditSnapshot(deleted),
+  });
+
+  return deleted;
 }
 
 // ── Credit Operations ────────────────────────────────────────────────────────
