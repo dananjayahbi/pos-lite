@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma';
 import Decimal from 'decimal.js';
 import type { ExpenseCategory, Prisma } from '@/generated/prisma/client';
 import type { CreateExpenseInput, UpdateExpenseInput } from '@/lib/validators/expense.validators';
-import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
   adjustFundBalance,
   assertFundCanSpend,
@@ -14,6 +14,7 @@ import { parseRangeStart, parseRangeEnd } from '@/lib/dates/inclusiveRange';
 import { ApiError } from '@/lib/api/errors';
 import { categoryDenialReason } from '@/lib/petty-cash/category-policy';
 import { resolveExpenseLinkUpdate } from '@/lib/expenses/link';
+import { expenseAuditSnapshot, expenseChangedFields } from '@/lib/expenses/audit';
 
 interface ExpenseFilters {
   category?: string | undefined;
@@ -30,6 +31,41 @@ const expenseRelations = {
   paymentAccount: { select: { id: true, name: true } },
   pettyCashFund: { select: { id: true, name: true } },
 } as const;
+
+/**
+ * ARGUS #401 - expense audits commit with the expense/ledger write instead of
+ * being fire-and-forget. A failed audit write rolls the whole operation back,
+ * so the financial history can never be missing a mutation it describes.
+ */
+async function writeExpenseAudit(
+  tx: Prisma.TransactionClient,
+  input: {
+    tenantId: string;
+    actorId: string;
+    action: string;
+    entityType?: string;
+    entityId: string;
+    before?: Prisma.InputJsonValue;
+    after?: Prisma.InputJsonValue;
+  },
+): Promise<void> {
+  await tx.auditLog.create({
+    data: {
+      tenantId: input.tenantId,
+      actorId: input.actorId,
+      actorRole: 'USER',
+      entityType: input.entityType ?? 'Expense',
+      entityId: input.entityId,
+      action: input.action,
+      ...(input.before !== undefined ? { before: input.before } : {}),
+      ...(input.after !== undefined ? { after: input.after } : {}),
+    },
+  });
+}
+
+function asJson(snapshot: unknown): Prisma.InputJsonValue {
+  return snapshot as Prisma.InputJsonValue;
+}
 
 function buildExpenseWhere(tenantId: string, filters: ExpenseFilters): Record<string, unknown> {
   const where: Record<string, unknown> = { tenantId };
@@ -243,36 +279,32 @@ export async function createExpense(
       );
     }
 
+    if (effectiveFundId && data.overdrawApproved === true) {
+      await writeExpenseAudit(tx, {
+        tenantId,
+        actorId: data.recordedById,
+        action: 'PETTY_CASH_OVERDRAW_APPROVED',
+        entityType: 'PettyCashFund',
+        entityId: effectiveFundId,
+        after: asJson({ expenseId: created.id, amount: created.amount.toString() }),
+      });
+    }
+
+    await writeExpenseAudit(tx, {
+      tenantId,
+      actorId: data.recordedById,
+      action: AUDIT_ACTIONS.EXPENSE_CREATED,
+      entityId: created.id,
+      after: asJson(expenseAuditSnapshot(created)),
+    });
+
     return created;
   });
 
   // A linked petty-cash expense reduces the fund's running balance.
   if (effectiveFundId) {
     await adjustFundBalance(tenantId, effectiveFundId, -data.amount);
-    // M19-01: an approved overdraft is a privileged exception — audit it with
-    // the actor so the audit trail answers "who allowed the negative balance?".
-    if (data.overdrawApproved === true) {
-      void createAuditLog({
-        tenantId,
-        actorId: data.recordedById,
-        actorRole: 'USER',
-        entityType: 'PettyCashFund',
-        entityId: effectiveFundId,
-        action: 'PETTY_CASH_OVERDRAW_APPROVED',
-        after: { expenseId: expense.id, amount: expense.amount },
-      }).catch(() => {});
-    }
   }
-
-  void createAuditLog({
-    tenantId,
-    actorId: data.recordedById,
-    actorRole: 'USER',
-    entityType: 'Expense',
-    entityId: expense.id,
-    action: AUDIT_ACTIONS.EXPENSE_CREATED,
-    after: { category: expense.category, amount: expense.amount, description: expense.description },
-  }).catch(() => {});
 
   return expense;
 }
@@ -367,7 +399,10 @@ export async function updateExpense(
   // guarded exactly like a create. When the fund is unchanged the old amount is
   // credited back for the check (`credit`), because the net deduction is what
   // the fund must be able to absorb.
-  if (newFundId && (newFundId !== oldFundId || newAmount !== oldAmount)) {
+  const fundCheckRan = Boolean(
+    newFundId && (newFundId !== oldFundId || newAmount !== oldAmount),
+  );
+  if (fundCheckRan && newFundId) {
     await assertFundCanSpend(
       tenantId,
       newFundId,
@@ -375,17 +410,6 @@ export async function updateExpense(
       data.overdrawApproved === true,
       sameFund ? oldAmount : 0,
     );
-    if (data.overdrawApproved === true) {
-      void createAuditLog({
-        tenantId,
-        actorId: data.actorId ?? existing.recordedById,
-        actorRole: 'USER',
-        entityType: 'PettyCashFund',
-        entityId: newFundId,
-        action: 'PETTY_CASH_OVERDRAW_APPROVED',
-        after: { expenseId: id, amount: newAmount },
-      }).catch(() => {});
-    }
   }
 
   const newExpenseDate =
@@ -395,6 +419,11 @@ export async function updateExpense(
   const dateChanged =
     data.expenseDate !== undefined &&
     newExpenseDate.getTime() !== existing.expenseDate.getTime();
+  // ARGUS #401: category/description are part of the ledger narrative. Repost
+  // the EXPENSE line when either changes, not only when money changes.
+  const narrativeChanged =
+    (data.category !== undefined && data.category !== existing.category) ||
+    (data.description !== undefined && data.description !== existing.description);
 
   const expense = await prisma.$transaction(async (tx) => {
     const updated = await tx.expense.update({
@@ -412,9 +441,10 @@ export async function updateExpense(
     });
 
     // Keep the payment-account ledger aligned with the edited expense. A changed
-    // account/amount/date reverses the old EXPENSE entries and posts the new
-    // amount, all in the same transaction as the expense row.
-    if (accountChanged || amountChanged || dateChanged) {
+    // account/amount/date/category/description reverses the old EXPENSE entries
+    // and posts the new amount/narrative, all in the same transaction as the
+    // expense row.
+    if (accountChanged || amountChanged || dateChanged || narrativeChanged) {
       const actorId = data.actorId ?? existing.recordedById;
       await reverseExpenseLedger(tx, tenantId, actorId, id, existing.description);
 
@@ -443,6 +473,31 @@ export async function updateExpense(
           { allowPettyCashAccount: true },
         );
       }
+    }
+
+    if (fundCheckRan && newFundId && data.overdrawApproved === true) {
+      await writeExpenseAudit(tx, {
+        tenantId,
+        actorId: data.actorId ?? existing.recordedById,
+        action: 'PETTY_CASH_OVERDRAW_APPROVED',
+        entityType: 'PettyCashFund',
+        entityId: newFundId,
+        after: asJson({ expenseId: id, amount: newAmount }),
+      });
+    }
+
+    // ARGUS #401: durable before/after trail for every changed expense.
+    const beforeSnapshot = expenseAuditSnapshot(existing);
+    const afterSnapshot = expenseAuditSnapshot(updated);
+    if (expenseChangedFields(beforeSnapshot, afterSnapshot).length > 0) {
+      await writeExpenseAudit(tx, {
+        tenantId,
+        actorId: data.actorId ?? existing.recordedById,
+        action: AUDIT_ACTIONS.EXPENSE_UPDATED,
+        entityId: id,
+        before: asJson(beforeSnapshot),
+        after: asJson(afterSnapshot),
+      });
     }
 
     return updated;
@@ -475,6 +530,16 @@ export async function deleteExpense(tenantId: string, id: string, actorId: strin
       expense.id,
       expense.description,
     );
+    // ARGUS #401: audit in the same transaction as the reversal/delete. The
+    // model has no status/deletedAt field, so a hard delete is the only
+    // mechanism available; this audit row is the durable tombstone.
+    await writeExpenseAudit(tx, {
+      tenantId,
+      actorId,
+      action: AUDIT_ACTIONS.EXPENSE_DELETED,
+      entityId: id,
+      before: asJson(expenseAuditSnapshot(expense)),
+    });
     await tx.expense.delete({ where: { id } });
   });
 
@@ -482,14 +547,4 @@ export async function deleteExpense(tenantId: string, id: string, actorId: strin
   if (expense.pettyCashFundId) {
     await adjustFundBalance(tenantId, expense.pettyCashFundId, expense.amount.toNumber());
   }
-
-  void createAuditLog({
-    tenantId,
-    actorId,
-    actorRole: 'USER',
-    entityType: 'Expense',
-    entityId: id,
-    action: AUDIT_ACTIONS.EXPENSE_DELETED,
-    before: { category: expense.category, amount: expense.amount, description: expense.description },
-  }).catch(() => {});
 }
