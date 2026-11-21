@@ -84,6 +84,16 @@ export const CancelAppointmentSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 
+// ── Appointment Settings ─────────────────────────────────────────────────────
+// ARGUS #124: persisted in Tenant.settings.appointments.settings (no migration).
+export const AppointmentSettingsSchema = z.object({
+  slotDurationMins: z.number().int().min(5, 'Minimum 5 minutes').max(120, 'Maximum 120 minutes'),
+  reminder24hEnabled: z.boolean(),
+  reminder2hEnabled: z.boolean(),
+  autoConfirmOnBooking: z.boolean(),
+  requireConfirmation: z.boolean(),
+});
+
 // ── Staff Availability ────────────────────────────────────────────────────────
 
 export const StaffAvailabilityEntrySchema = z.object({
@@ -150,6 +160,7 @@ export const FeatureModuleToggleSchema = z.object({
 export type CreateAppointmentInput = z.infer<typeof CreateAppointmentSchema>;
 export type UpdateAppointmentInput = z.infer<typeof UpdateAppointmentSchema>;
 export type CancelAppointmentInput = z.infer<typeof CancelAppointmentSchema>;
+export type AppointmentSettingsInput = z.infer<typeof AppointmentSettingsSchema>;
 export type AppointmentServiceInput = z.infer<typeof AppointmentServiceSchema>;
 export type UpdateAppointmentServiceInput = z.infer<typeof UpdateAppointmentServiceSchema>;
 export type StaffAvailabilityEntryInput = z.infer<typeof StaffAvailabilityEntrySchema>;

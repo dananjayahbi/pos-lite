@@ -1,11 +1,13 @@
 'use client';
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '../shared/StatusBadge';
 import { AppointmentStatusTimeline } from './AppointmentStatusTimeline';
 import { AppointmentActions } from './AppointmentActions';
 import { useAppointment } from '@/hooks/appointments';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { formatRupee } from '@/lib/format';
 
 interface AppointmentDetailPanelProps {
   appointmentId: string | null;
@@ -84,11 +86,47 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
                 <div>
                   <span className="text-espresso/50">Service</span>
                   <p className="text-espresso font-medium">{appointment.service.name}</p>
-                  <p className="text-espresso/60 text-xs">
-                    {appointment.service.durationMins} min · ${Number(appointment.price).toFixed(2)}
-                  </p>
+                  <p className="text-espresso/60 text-xs">{appointment.service.durationMins} min</p>
                 </div>
               )}
+
+              {/* ARGUS #121: price, deposit, paid state and the linked sale used
+                  to be invisible here, so a settled visit looked unpaid. */}
+              <div>
+                <span className="text-espresso/50">Payment</span>
+                <p className="text-espresso font-medium">{formatRupee(appointment.price)}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  {appointment.saleId ? (
+                    <Badge variant="success" className="text-[10px]">
+                      Sale recorded
+                    </Badge>
+                  ) : appointment.isPaid ? (
+                    <Badge variant="success" className="text-[10px]">
+                      Paid
+                    </Badge>
+                  ) : (
+                    <Badge variant="warning" className="text-[10px]">
+                      Unpaid
+                    </Badge>
+                  )}
+                  {Number(appointment.depositAmount ?? 0) > 0 && (
+                    <span className="text-espresso/60 text-xs">
+                      Deposit {formatRupee(Number(appointment.depositAmount))}
+                    </span>
+                  )}
+                  {appointment.saleId && (
+                    <span className="text-espresso/60 font-mono text-xs">
+                      Sale {appointment.saleId.slice(0, 8).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                {!appointment.isPaid && !appointment.saleId && Number(appointment.depositAmount ?? 0) > 0 && (
+                  <p className="text-espresso/50 mt-1 text-xs">
+                    Balance {formatRupee(Math.max(Number(appointment.price) - Number(appointment.depositAmount), 0))}{' '}
+                    due on completion.
+                  </p>
+                )}
+              </div>
 
               {appointment.staff && (
                 <div>

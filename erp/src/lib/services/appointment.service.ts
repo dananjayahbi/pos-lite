@@ -1,18 +1,27 @@
 import { prisma } from '@/lib/prisma';
+import Decimal from 'decimal.js';
 import type { Prisma } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
 import { getCurrentShift } from '@/lib/services/shift.service';
 import { scheduleReminders } from '@/lib/services/appointment-reminder.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { createPayment } from '@/lib/services/payment.service';
-import { addToSpendTotal } from '@/lib/services/customer.service';
+import { addToSpendTotal, issueCredit } from '@/lib/services/customer.service';
 import { buildSaleAccountLegs, postSaleToAccounts } from '@/lib/services/saleAccounts';
 import { extractTenantRates } from '@/lib/services/sale.service';
 import { computeAppointmentSalePricing } from '@/lib/appointments/appointmentSale.core';
 import {
-  APPOINTMENT_BACKDATE_GRACE_MINUTES,
-  isAppointmentStatusTransitionAllowed,
-} from '@/lib/constants/appointments';
+  appointmentCancellationBlockReason,
+  appointmentDepositAmount,
+  appointmentDepositDisposition,
+} from '@/lib/appointments/appointmentCancellation.core';
+import { summarizeAppointmentRevenue } from '@/lib/appointments/appointmentRevenue.core';
+import {
+  isAppointmentTransitionAllowedBySettings,
+  resolveInitialAppointmentStatus,
+} from '@/lib/appointments/appointmentSettings.core';
+import { getAppointmentSettings } from '@/lib/services/appointment-settings.service';
+import { APPOINTMENT_BACKDATE_GRACE_MINUTES } from '@/lib/constants/appointments';
 import type {
   CreateAppointmentInput,
   UpdateAppointmentInput,
@@ -134,6 +143,11 @@ export async function createAppointment(
   // M27-04/OBS-79: reject far-past bookings unless the actor may manage settings.
   await assertBackdateAllowed(startTime, canManageSettings);
 
+  // ARGUS #124: the tenant decides whether new bookings arrive already
+  // confirmed; defaults keep the historical SCHEDULED behaviour.
+  const settings = await getAppointmentSettings(tenantId);
+  const initialStatus = resolveInitialAppointmentStatus(settings);
+
   // M27-06/BUG-92: the overlap check used to run OUTSIDE the transaction
   // (TOCTOU — 3 concurrent same-slot bookings all 201'd). It is now performed
   // inside the transaction after locking the staff member's row, so same-staff
@@ -172,6 +186,7 @@ export async function createAppointment(
           durationMins: input.durationMins,
           price: input.price,
           depositAmount: input.depositAmount ?? 0,
+          status: initialStatus,
           notes: input.notes ?? null,
           customerNotes: input.customerNotes ?? null,
           walkInName: input.walkInName ?? null,
@@ -222,8 +237,19 @@ export async function updateAppointment(
   // (SCHEDULED→COMPLETED skipping check-in, COMPLETED→CANCELLED erasing revenue).
   // Restrict to the legal lifecycle edges; terminal rows reject status edits.
   if (input.status !== undefined && input.status !== existing.status) {
-    if (!isAppointmentStatusTransitionAllowed(existing.status, input.status)) {
+    // ARGUS #124: the tenant's "require confirmation" toggle decides whether a
+    // SCHEDULED booking may skip straight to check-in/completion. With the
+    // default settings this is exactly the canonical lifecycle map.
+    const settings = await getAppointmentSettings(tenantId);
+    if (!isAppointmentTransitionAllowedBySettings(existing.status, input.status, settings)) {
       throw new Error('INVALID_STATUS_TRANSITION');
+    }
+    // ARGUS #120: cancellation carries bookkeeping the generic edit path cannot
+    // provide (cancelledAt/By, deposit refund, cancellation audit). Faking the
+    // status here would also skip the sale guard, so cancellation must go
+    // through `cancelAppointment`.
+    if (input.status === 'CANCELLED') {
+      throw new Error('CANCELLATION_REQUIRES_CANCEL_ENDPOINT');
     }
   }
 
@@ -269,31 +295,56 @@ export async function cancelAppointment(
 ) {
   const existing = await assertAppointmentBelongsToTenant(tenantId, id);
 
-  // A converted appointment has a completed Sale; cancelling it would leave
-  // paid revenue attached to a cancelled booking (ARGUS #119). Void the sale
-  // through its own flow instead.
-  if (existing.saleId) {
-    throw new Error('APPOINTMENT_HAS_SALE');
+  // ARGUS #120: cancelling is a lifecycle transition, not a free-form write.
+  // A converted appointment has a completed Sale — cancelling it would leave
+  // paid revenue attached to a cancelled booking (ARGUS #119) — and terminal
+  // rows must not be re-cancelled. Void the sale through its own flow instead.
+  const blockReason = appointmentCancellationBlockReason(existing);
+  if (blockReason) {
+    throw new Error(blockReason);
   }
 
-  const appointment = await prisma.appointment.update({
-    where: { id },
-    data: {
-      status: 'CANCELLED',
-      cancelledAt: new Date(),
-      cancelledById: userId,
-      cancellationReason: reason ?? null,
-    },
-    include: appointmentInclude,
-  });
+  // ARGUS #120: the deposit is money already collected at booking. An unpaid
+  // deposit on a customer-linked booking is returned as store credit (balance +
+  // credit-note ledger, same helper returns use); a walk-in has no ledger, so
+  // the amount is recorded in the cancellation audit for manual follow-up.
+  const depositDisposition = appointmentDepositDisposition(existing);
+  const depositAmount = appointmentDepositAmount(existing);
+  const depositRefunded =
+    depositDisposition === 'REFUND_TO_STORE_CREDIT' && existing.customerId !== null;
 
-  // Free the slot if linked
-  if (appointment.slotId) {
-    await prisma.appointmentSlot.update({
-      where: { id: appointment.slotId },
-      data: { isBooked: false, appointmentId: null },
+  const appointment = await prisma.$transaction(async (tx) => {
+    if (depositDisposition === 'REFUND_TO_STORE_CREDIT' && existing.customerId) {
+      await issueCredit(
+        tenantId,
+        existing.customerId,
+        new Decimal(depositAmount),
+        `Deposit refund for cancelled appointment ${id.slice(0, 8).toUpperCase()}`,
+        tx,
+      );
+    }
+
+    const updated = await tx.appointment.update({
+      where: { id },
+      data: {
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        cancelledById: userId,
+        cancellationReason: reason ?? null,
+      },
+      include: appointmentInclude,
     });
-  }
+
+    // Free the slot if linked
+    if (updated.slotId) {
+      await tx.appointmentSlot.update({
+        where: { id: updated.slotId },
+        data: { isBooked: false, appointmentId: null },
+      });
+    }
+
+    return updated;
+  }, { maxWait: 10_000, timeout: 30_000 });
 
   await createAuditLog({
     tenantId,
@@ -302,6 +353,13 @@ export async function cancelAppointment(
     entityType: 'Appointment',
     entityId: id,
     action: 'CANCEL',
+    before: { status: existing.status },
+    after: {
+      status: 'CANCELLED',
+      depositAmount,
+      depositDisposition,
+      depositRefunded,
+    },
   });
 
   return appointment;
@@ -514,7 +572,14 @@ export async function getAppointmentStats(tenantId: string, dateFrom?: string, d
       : {}),
   };
 
-  const [total, byStatusList, revenue] = await Promise.all([
+  // ARGUS #121: "revenue" used to sum the price of every COMPLETED appointment,
+  // including visits nobody had paid for. It now counts money actually held:
+  // the full price once the visit is marked paid, otherwise only the deposit
+  // that was collected at booking. Cancelled bookings are excluded because
+  // their deposit is returned as store credit on cancellation.
+  const collectedWhere: Prisma.AppointmentWhereInput = { ...where, status: { not: 'CANCELLED' } };
+
+  const [total, byStatusList, paidAgg, depositAgg, completedUnpaidAgg] = await Promise.all([
     prisma.appointment.count({ where }),
     prisma.appointment.groupBy({
       by: ['status'],
@@ -522,8 +587,17 @@ export async function getAppointmentStats(tenantId: string, dateFrom?: string, d
       _count: true,
     }),
     prisma.appointment.aggregate({
-      where: { ...where, status: 'COMPLETED' },
+      where: { ...collectedWhere, isPaid: true },
       _sum: { price: true },
+    }),
+    prisma.appointment.aggregate({
+      where: { ...collectedWhere, isPaid: false },
+      _sum: { depositAmount: true },
+    }),
+    prisma.appointment.aggregate({
+      where: { ...where, status: 'COMPLETED', isPaid: false },
+      _count: true,
+      _sum: { price: true, depositAmount: true },
     }),
   ]);
 
@@ -535,11 +609,28 @@ export async function getAppointmentStats(tenantId: string, dateFrom?: string, d
   const noShowCount = byStatus['NO_SHOW'] || 0;
   const noShowRate = total > 0 ? (noShowCount / total) * 100 : 0;
 
+  const paidRevenue = Number(paidAgg._sum.price ?? 0);
+  const depositsHeld = Number(depositAgg._sum.depositAmount ?? 0);
+  const completedUnpaid = completedUnpaidAgg._count;
+
+  const revenueSummary = summarizeAppointmentRevenue({
+    paidPrice: paidRevenue,
+    unpaidDeposits: depositsHeld,
+    completedUnpaidPrice: completedUnpaidAgg._sum.price ?? 0,
+    completedUnpaidDeposits: completedUnpaidAgg._sum.depositAmount ?? 0,
+  });
+
   return {
     total,
     byStatus,
     noShowRate: Math.round(noShowRate * 100) / 100,
-    revenue: Number(revenue._sum.price ?? 0),
+    /** Money actually collected (paid visits at price, otherwise deposits). */
+    revenue: revenueSummary.revenue,
+    /** Completed visits with no payment recorded, and what they still owe. */
+    completedUnpaidCount: completedUnpaid,
+    outstandingBalance: revenueSummary.outstandingBalance,
+    /** Deposits collected on bookings that are not settled as paid yet. */
+    depositsHeld: revenueSummary.depositsHeld,
   };
 }
 
