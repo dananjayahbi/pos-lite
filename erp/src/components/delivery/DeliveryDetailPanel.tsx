@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatRupee, formatShortDateTime } from '@/lib/format';
 import { collectableCodAmount } from '@/lib/delivery/cod';
+import { describePayment } from '@/lib/delivery/payment';
 import {
   deliveryLinesTotal,
   toDeliveryLineRows,
@@ -35,6 +36,7 @@ function OrderInfoCard({ delivery }: { delivery: DeliveryDetail }) {
     { label: 'Order Ref', value: delivery.orderRef },
     { label: 'Source', value: delivery.source ?? '-' },
     { label: 'COD (goods + shipping)', value: formatRupee(collectableCodAmount(delivery).toNumber()) },
+    { label: 'Payment', value: describePayment(delivery.paymentMethod, delivery.paymentStatus) },
     { label: 'Goods Value', value: formatRupee(delivery.codAmount ?? 0) },
     { label: 'Declared Value', value: delivery.declaredValue != null ? formatRupee(delivery.declaredValue) : '-' },
     { label: 'Item Count', value: delivery.itemCount ?? '-' },
