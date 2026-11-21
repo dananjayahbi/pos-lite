@@ -184,13 +184,16 @@ export default function StaffPage() {
           const err = await pwRes.json().catch(() => null);
           toast.warning(
             'Staff created, but the initial password was NOT set: ' +
-              (err?.error?.message ?? 'unknown error'),
+              (err?.error?.message ?? 'unknown error') +
+              '. Open the staff member and use Set Password to give them a usable password.',
           );
         } else {
           toast.success('Staff member created with an initial password');
         }
       } else {
-        toast.success('Staff member created (no password set - set one before first sign-in)');
+        toast.success(
+          'Staff member created without a password - use Set Password on their page before first sign-in',
+        );
       }
       setInitialPassword('');
       queryClient.invalidateQueries({ queryKey: ['staff'] });
