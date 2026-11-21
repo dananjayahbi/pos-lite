@@ -26,6 +26,7 @@ import {
   APPOINTMENT_OVERDUE_STATUSES,
   appointmentOverdueCutoff,
 } from '@/lib/appointments/appointmentOverdue.core';
+import { appointmentAvailabilityIssue } from '@/lib/appointments/appointmentAvailability.core';
 import {
   appointmentActionBlockReason,
   type AppointmentLifecycleAction,
@@ -77,6 +78,53 @@ async function assertBackdateAllowed(
   const cutoff = new Date(Date.now() - APPOINTMENT_BACKDATE_GRACE_MINUTES * 60_000);
   if (startTime >= cutoff || actorHasManageSettings) return;
   throw new Error('BACKDATE_NOT_ALLOWED');
+}
+
+/**
+ * ARGUS #127: a specific staff member can only be booked inside their
+ * configured availability and outside approved time off / blocked slots.
+ * The issue code is the API's typed 422 reason.
+ */
+async function assertStaffAvailability(
+  tenantId: string,
+  staffId: string,
+  startTime: Date,
+  endTime: Date,
+): Promise<void> {
+  const dayStart = new Date(startTime);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(startTime);
+  dayEnd.setHours(23, 59, 59, 999);
+
+  const [availability, timeOff, blockedSlots] = await Promise.all([
+    prisma.staffAvailability.findMany({ where: { tenantId, staffId } }),
+    prisma.staffTimeOff.findMany({
+      where: {
+        tenantId,
+        staffId,
+        isApproved: true,
+        date: { gte: dayStart, lte: dayEnd },
+      },
+    }),
+    prisma.appointmentSlot.findMany({
+      where: {
+        tenantId,
+        staffId,
+        isBlocked: true,
+        startTime: { lt: endTime },
+        endTime: { gt: startTime },
+      },
+    }),
+  ]);
+
+  const issue = appointmentAvailabilityIssue({
+    startTime,
+    endTime,
+    availability,
+    timeOff,
+    blockedSlots,
+  });
+  if (issue) throw new Error(issue.code);
 }
 
 const appointmentInclude = {
@@ -177,6 +225,11 @@ export async function createAppointment(
   // M27-04/OBS-79: reject far-past bookings unless the actor may manage settings.
   await assertBackdateAllowed(startTime, canManageSettings);
 
+  // ARGUS #127: booking a specific staff member must respect their roster.
+  if (input.staffId) {
+    await assertStaffAvailability(tenantId, input.staffId, startTime, endTime);
+  }
+
   // ARGUS #124: the tenant decides whether new bookings arrive already
   // confirmed; defaults keep the historical SCHEDULED behaviour.
   const settings = await getAppointmentSettings(tenantId);
@@ -266,6 +319,26 @@ export async function updateAppointment(
   input: UpdateAppointmentInput,
 ) {
   const existing = await assertAppointmentBelongsToTenant(tenantId, id);
+
+  // ARGUS #127: re-validate the roster only when the schedule/staff actually
+  // changes. Status/notes edits on an existing row (including legacy rows that
+  // predate enforcement) must remain possible.
+  const scheduleTouched =
+    input.staffId !== undefined ||
+    input.startTime !== undefined ||
+    input.endTime !== undefined ||
+    input.durationMins !== undefined;
+  if (scheduleTouched) {
+    const effectiveStaffId = input.staffId !== undefined ? input.staffId : existing.staffId;
+    if (effectiveStaffId) {
+      await assertStaffAvailability(
+        tenantId,
+        effectiveStaffId,
+        input.startTime ? new Date(input.startTime) : existing.startTime,
+        input.endTime ? new Date(input.endTime) : existing.endTime,
+      );
+    }
+  }
 
   // M27-04/BUG-88: the PATCH path used to write any status the client sent
   // (SCHEDULED→COMPLETED skipping check-in, COMPLETED→CANCELLED erasing revenue).

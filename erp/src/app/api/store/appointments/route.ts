@@ -9,6 +9,7 @@ import {
 } from '@/lib/validators/appointment.validators';
 import type { CreateAppointmentInput } from '@/lib/validators/appointment.validators';
 import { APPOINTMENT_BACKDATE_GRACE_MINUTES } from '@/lib/constants/appointments';
+import { APPOINTMENT_AVAILABILITY_ISSUE_MESSAGES } from '@/lib/appointments/appointmentAvailability.core';
 
 export async function GET(request: Request) {
   try {
@@ -121,6 +122,25 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { success: false, error: { code: 'CONFLICT', message: 'Staff member is not available at the selected time' } },
         { status: 409 },
+      );
+    }
+
+    // ARGUS #127: roster/time-off/blocked-slot violations are a typed 422.
+    if (
+      message === 'NO_AVAILABILITY' ||
+      message === 'OUTSIDE_AVAILABILITY' ||
+      message === 'TIME_OFF' ||
+      message === 'BLOCKED_SLOT'
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: message,
+            message: APPOINTMENT_AVAILABILITY_ISSUE_MESSAGES[message],
+          },
+        },
+        { status: 422 },
       );
     }
 
