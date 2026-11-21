@@ -107,3 +107,35 @@ export function isRenderableQrImageUrl(value: string): boolean {
   if (trimmed.startsWith('/')) return true;
   return /^https?:\/\/\S+$/i.test(trimmed);
 }
+
+/**
+ * ARGUS #72: a LankaQR tender may only be completed when the tenant has a
+ * scannable configuration.
+ *
+ * The POS hides the option through `settings.enabled`, but a stale tab, a
+ * split-payment leg or a direct API call could still submit it. This pure
+ * predicate is the shared rule: it returns the cashier-facing rejection reason
+ * for a sale that uses LankaQR, or `null` when the tender is allowed.
+ */
+export function lankaQrTenderRejection(
+  input: {
+    paymentMethod?: string | null | undefined;
+    splitLegMethod?: string | null | undefined;
+  },
+  settings: LankaQrSettings,
+): string | null {
+  const isDirect = input.paymentMethod === 'LANKAQR';
+  const isSplitLeg = input.paymentMethod === 'SPLIT' && input.splitLegMethod === 'LANKAQR';
+  if (!isDirect && !isSplitLeg) return null;
+
+  if (!isRenderableQrImageUrl(settings.qrImageUrl) || settings.merchantName.trim().length === 0) {
+    return 'LankaQR is not configured for this store. Add the bank-issued QR image and merchant name in Settings → Payments first.';
+  }
+  if (!settings.enabled) {
+    return 'LankaQR is disabled for this store.';
+  }
+  if (isSplitLeg && !settings.allowSplit) {
+    return 'LankaQR cannot be used as the digital leg of a split payment for this store.';
+  }
+  return null;
+}
