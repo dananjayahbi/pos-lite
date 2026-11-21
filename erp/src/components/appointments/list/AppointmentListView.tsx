@@ -9,6 +9,10 @@ import {
   compareAppointmentsUpcomingFirst,
   formatAppointmentListDate,
 } from '@/lib/appointments/appointmentList.core';
+import {
+  parseAppointmentDateEnd,
+  parseAppointmentDateStart,
+} from '@/lib/appointments/appointmentDateFilters.core';
 import type { AppointmentStatus } from '@/generated/prisma/client';
 import { StatusBadge } from '../shared/StatusBadge';
 import { AppointmentFilters } from './AppointmentFilters';
@@ -82,8 +86,8 @@ export function AppointmentListView({ onAppointmentClick, onNewClick }: Appointm
 
   const filters = {
     ...(status ? { status: status as 'SCHEDULED' | 'CONFIRMED' | 'CHECKED_IN' | 'IN_PROGRESS' | 'COMPLETED' | 'NO_SHOW' | 'CANCELLED' | 'OVERDUE' } : {}),
-    ...(dateFrom ? { dateFrom: new Date(dateFrom).toISOString() } : {}),
-    ...(dateTo ? { dateTo: new Date(dateTo + 'T23:59:59').toISOString() } : {}),
+    ...(dateFrom ? { dateFrom: parseAppointmentDateStart(dateFrom).toISOString() } : {}),
+    ...(dateTo ? { dateTo: parseAppointmentDateEnd(dateTo).toISOString() } : {}),
     page,
     limit: 20,
   };

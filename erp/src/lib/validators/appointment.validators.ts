@@ -137,6 +137,16 @@ export const SlotGenerationSchema = z.object({
 
 // ── Appointment Filters ──────────────────────────────────────────────────────
 
+/**
+ * ARGUS #130: accept a plain `YYYY-MM-DD` (expanded to local day boundaries by
+ * the service) as well as a full ISO timestamp from calendar callers.
+ */
+const AppointmentDateFilterSchema = z.string().refine(
+  (value) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isNaN(new Date(value).getTime()),
+  { message: 'Must be a valid date' },
+);
+
 export const AppointmentFiltersSchema = z.object({
   /**
    * ARGUS #126: OVERDUE is a derived filter (SCHEDULED/CONFIRMED past the grace
@@ -146,8 +156,8 @@ export const AppointmentFiltersSchema = z.object({
   staffId: z.string().optional(),
   serviceId: z.string().optional(),
   customerId: z.string().optional(),
-  dateFrom: z.string().datetime().optional(),
-  dateTo: z.string().datetime().optional(),
+  dateFrom: AppointmentDateFilterSchema.optional(),
+  dateTo: AppointmentDateFilterSchema.optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
 });

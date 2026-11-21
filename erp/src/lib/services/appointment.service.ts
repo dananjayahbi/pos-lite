@@ -29,6 +29,10 @@ import {
 import { appointmentAvailabilityIssue } from '@/lib/appointments/appointmentAvailability.core';
 import { APPOINTMENT_OPEN_STATUSES } from '@/lib/appointments/appointmentList.core';
 import {
+  parseAppointmentDateEnd,
+  parseAppointmentDateStart,
+} from '@/lib/appointments/appointmentDateFilters.core';
+import {
   appointmentActionBlockReason,
   type AppointmentLifecycleAction,
 } from '@/lib/appointments/appointmentLifecycle.core';
@@ -150,8 +154,8 @@ export async function getAppointments(tenantId: string, filters: Partial<Appoint
   } = filters as AppointmentFilters;
 
   const startTimeFilter: { gte?: Date; lte?: Date } = {};
-  if (dateFrom) startTimeFilter.gte = new Date(dateFrom);
-  if (dateTo) startTimeFilter.lte = new Date(dateTo);
+  if (dateFrom) startTimeFilter.gte = parseAppointmentDateStart(dateFrom);
+  if (dateTo) startTimeFilter.lte = parseAppointmentDateEnd(dateTo);
   if (status === 'OVERDUE') {
     // ARGUS #126: derived filter — active rows whose start is past the grace
     // window. This only restricts the query; it never writes status.
