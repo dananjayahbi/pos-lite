@@ -140,7 +140,11 @@ export function PackagingStockTable({
                           variant="ghost"
                           size="icon"
                           className="text-red-600"
-                          title="Delete item"
+                          title={
+                            item.quantityOnHand > 0
+                              ? 'Adjust stock to zero before deleting'
+                              : 'Delete item'
+                          }
                           onClick={() => onDelete(item)}
                         >
                           <Trash2 className="h-4 w-4" />

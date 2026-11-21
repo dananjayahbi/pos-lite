@@ -14,6 +14,7 @@ import {
   packagingCategoryLabel,
   packagingConsumptionUnits,
 } from '@/lib/services/packaging.core';
+import { assertPackagingItemDeletable } from '@/lib/services/packagingGuards.core';
 import {
   changePackagingStock,
   type DeductionResult,
@@ -164,7 +165,6 @@ export async function updatePackagingItem(
   if (input.category !== undefined) data.category = input.category;
   if (input.name !== undefined) data.name = input.name.trim();
   if (input.unit !== undefined) data.unit = input.unit;
-  if (input.quantityOnHand !== undefined) data.quantityOnHand = input.quantityOnHand;
   if (input.lowStockThreshold !== undefined) data.lowStockThreshold = input.lowStockThreshold;
   if (input.autoDeduct !== undefined) data.autoDeduct = input.autoDeduct;
   if (input.sku !== undefined) data.sku = input.sku?.trim() || null;
@@ -183,15 +183,21 @@ export async function updatePackagingItem(
     entityType: 'PackagingItem',
     entityId: id,
     action: AUDIT_ACTIONS.PACKAGING_ITEM_UPDATED,
+    // Stock is not editable here (ARGUS #280); quantity only changes through
+    // `adjustPackagingStock`, which carries its own reason/note audit.
     before: {
       name: existing.name,
       category: existing.category,
-      quantityOnHand: existing.quantityOnHand,
+      unit: existing.unit,
+      lowStockThreshold: existing.lowStockThreshold,
+      autoDeduct: existing.autoDeduct,
     },
     after: {
       name: updated.name,
       category: updated.category,
-      quantityOnHand: updated.quantityOnHand,
+      unit: updated.unit,
+      lowStockThreshold: updated.lowStockThreshold,
+      autoDeduct: updated.autoDeduct,
     },
   }).catch(() => {});
 
@@ -201,9 +207,9 @@ export async function updatePackagingItem(
 
 /**
  * Soft-delete an item. Consumption history keeps pointing at the row, so the
- * delete is never a hard delete. The item must not be referenced by an open
- * (non-terminal) delivery's consumption trail? Consumption rows only exist for
- * already-dispatched parcels, so deleting is safe.
+ * delete is never a hard delete. Stock must be zero first — a soft delete hides
+ * the row from stock queries without writing anything off (ARGUS #280). The
+ * row keeps its `autoDeduct`/consumption history; only the item is hidden.
  */
 export async function deletePackagingItem(tenantId: string, id: string, userId: string) {
   const existing = await prisma.packagingItem.findFirst({
@@ -211,9 +217,14 @@ export async function deletePackagingItem(tenantId: string, id: string, userId: 
   });
   if (!existing) throw new Error('PACKAGING_ITEM_NOT_FOUND');
 
+  assertPackagingItemDeletable({
+    quantityOnHand: existing.quantityOnHand,
+    unit: existing.unit,
+  });
+
   await prisma.packagingItem.update({
     where: { id },
-    data: { deletedAt: new Date(), autoDeduct: false },
+    data: { deletedAt: new Date() },
   });
 
   void createAuditLog({
@@ -241,6 +252,7 @@ export async function adjustPackagingStock(
 ) {
   const change = await changePackagingStock(prisma, tenantId, id, delta);
   const updated = await prisma.packagingItem.findUniqueOrThrow({ where: { id } });
+  const reason = note?.trim() || 'Manual stock adjustment';
 
   void createAuditLog({
     tenantId,
@@ -250,7 +262,7 @@ export async function adjustPackagingStock(
     entityId: id,
     action: AUDIT_ACTIONS.PACKAGING_STOCK_ADJUSTED,
     before: { quantityOnHand: change.before },
-    after: { quantityOnHand: change.after, note },
+    after: { quantityOnHand: change.after, note: reason, reason },
   }).catch(() => {});
 
   const categoryNames = await getPackagingCategoryNameMap(tenantId);

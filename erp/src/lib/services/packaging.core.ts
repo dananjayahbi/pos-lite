@@ -107,6 +107,15 @@ export function isPackagingItemLowStock(
   return quantityOnHand <= lowStockThreshold;
 }
 
+/**
+ * ARGUS #280 — a soft delete hides the item from stock queries without writing
+ * it off, so any units still on hand would silently vanish. Only empty items
+ * may be deleted.
+ */
+export function packagingItemHasStock(quantityOnHand: number): boolean {
+  return quantityOnHand > 0;
+}
+
 /** Category label for an item DTO, preferring the tenant's own category name. */
 export function packagingCategoryLabel(key: string, nameMap?: Map<string, string>): string {
   return nameMap?.get(key) ?? getPackagingCategoryLabel(key);

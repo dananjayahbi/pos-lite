@@ -6,6 +6,7 @@ import {
   nextAvailablePackagingSku,
   packagingCategoryLabel,
   packagingConsumptionUnits,
+  packagingItemHasStock,
   packagingQuantityLabel,
   planPackagingDeduction,
 } from '@/lib/services/packaging.core';
@@ -142,6 +143,13 @@ describe('low-stock + label helpers', () => {
     expect(isPackagingItemLowStock(5, 5)).toBe(true);
     expect(isPackagingItemLowStock(4, 5)).toBe(true);
     expect(isPackagingItemLowStock(6, 5)).toBe(false);
+  });
+
+  it('treats any positive quantity as stock that blocks a delete', () => {
+    expect(packagingItemHasStock(10)).toBe(true);
+    expect(packagingItemHasStock(1)).toBe(true);
+    expect(packagingItemHasStock(0)).toBe(false);
+    expect(packagingItemHasStock(-1)).toBe(false);
   });
 
   it('prefers the tenant category name and falls back to the built-in label', () => {

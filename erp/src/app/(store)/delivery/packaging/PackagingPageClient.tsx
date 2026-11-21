@@ -16,7 +16,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Plus, Settings2 } from 'lucide-react';
+import { Plus, Settings2, AlertTriangle } from 'lucide-react';
+import { formatPackagingQuantity } from '@/lib/constants/packaging';
 import { PackagingStockTable } from '@/components/delivery/packaging/PackagingStockTable';
 import { PackagingItemFormDialog } from '@/components/delivery/packaging/PackagingItemFormDialog';
 import { PackagingAdjustDialog } from '@/components/delivery/packaging/PackagingAdjustDialog';
@@ -54,6 +55,7 @@ export function PackagingPageClient() {
   }
 
   const items = data ?? [];
+  const deleteBlocked = (deleteTarget?.quantityOnHand ?? 0) > 0;
 
   const openCreate = () => {
     setEditingItem(null);
@@ -137,6 +139,11 @@ export function PackagingPageClient() {
             },
           )
         }
+        onAdjustStock={(item) => {
+          setFormOpen(false);
+          setEditingItem(null);
+          setAdjustItem(item);
+        }}
       />
 
       <PackagingAdjustDialog
@@ -161,25 +168,59 @@ export function PackagingPageClient() {
           <DialogHeader>
             <DialogTitle className="font-display">Delete packaging item</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete{' '}
-              <span className="text-espresso font-medium">{deleteTarget?.name}</span>? It will no
-              longer be tracked or auto-deducted on dispatch. Past consumption history is kept.
+              {deleteBlocked && deleteTarget ? (
+                <>
+                  <span className="text-espresso font-medium">{deleteTarget.name}</span> still has{' '}
+                  {formatPackagingQuantity(deleteTarget.quantityOnHand, deleteTarget.unit)} on
+                  hand. Deleting it would hide that stock without writing it off - adjust it to
+                  zero first.
+                </>
+              ) : (
+                <>
+                  Are you sure you want to delete{' '}
+                  <span className="text-espresso font-medium">{deleteTarget?.name}</span>? It will
+                  no longer be tracked. Past consumption history is kept.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
+
+          {deleteBlocked && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                Use <strong>Adjust stock</strong> to write the remaining stock off; the change is
+                recorded with a reason. Deletion unlocks once the item is empty.
+              </span>
+            </div>
+          )}
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              disabled={remove.isPending}
-              onClick={() => {
-                if (!deleteTarget) return;
-                remove.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) });
-              }}
-            >
-              {remove.isPending ? 'Deleting...' : 'Delete Item'}
-            </Button>
+            {deleteBlocked && deleteTarget ? (
+              <Button
+                onClick={() => {
+                  const item = deleteTarget;
+                  setDeleteTarget(null);
+                  setAdjustItem(item);
+                }}
+              >
+                Adjust stock
+              </Button>
+            ) : (
+              <Button
+                variant="destructive"
+                disabled={remove.isPending}
+                onClick={() => {
+                  if (!deleteTarget) return;
+                  remove.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) });
+                }}
+              >
+                {remove.isPending ? 'Deleting...' : 'Delete Item'}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

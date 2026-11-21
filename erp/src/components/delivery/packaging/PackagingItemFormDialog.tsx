@@ -32,7 +32,11 @@ import {
   PACKAGING_UNITS,
   type PackagingUnit,
 } from '@/lib/validators/packaging.validators';
-import { getPackagingUnitLabel, getPackagingUnitShortLabel } from '@/lib/constants/packaging';
+import {
+  getPackagingUnitLabel,
+  getPackagingUnitShortLabel,
+  formatPackagingQuantity,
+} from '@/lib/constants/packaging';
 
 type FormInput = z.input<typeof CreatePackagingItemSchema>;
 
@@ -45,6 +49,8 @@ interface PackagingItemFormDialogProps {
   updatePending: boolean;
   onCreate: (values: Record<string, unknown>) => void;
   onUpdate: (id: string, values: Record<string, unknown>) => void;
+  /** Opens the audited stock-adjustment dialog from the read-only On Hand row. */
+  onAdjustStock?: (item: PackagingItemRow) => void;
 }
 
 const UNITS: PackagingUnit[] = [...PACKAGING_UNITS];
@@ -88,6 +94,7 @@ export function PackagingItemFormDialog({
   updatePending,
   onCreate,
   onUpdate,
+  onAdjustStock,
 }: PackagingItemFormDialogProps) {
   const isEdit = Boolean(item);
   const { data: categories } = usePackagingCategories();
@@ -122,6 +129,9 @@ export function PackagingItemFormDialog({
     const { autoGenerateSku, ...rest } = values;
     const payload: Record<string, unknown> = { ...rest };
     if (isEdit) {
+      // Stock is read-only in edit mode (ARGUS #280); the dedicated Adjust
+      // endpoint records the note/reason, so never send it through PATCH.
+      delete payload.quantityOnHand;
       if (payload.consumptionPerParcel === undefined) payload.consumptionPerParcel = null;
       onUpdate(item!.id, payload);
       return;
@@ -236,14 +246,39 @@ export function PackagingItemFormDialog({
               unit suffix wraps one of the labels onto a second line. */}
           <div className="grid grid-cols-3 items-end gap-4">
             <div className="space-y-1.5">
-              <Label htmlFor="pkg-qty">On Hand{suffix ? ` (${suffix})` : ''}</Label>
-              <Input
-                id="pkg-qty"
-                type="number"
-                step="1"
-                min={0}
-                {...form.register('quantityOnHand')}
-              />
+              <Label htmlFor={isEdit ? undefined : 'pkg-qty'}>
+                On Hand{suffix ? ` (${suffix})` : ''}
+              </Label>
+              {isEdit ? (
+                <>
+                  <div className="border-espresso/10 bg-espresso/[0.03] text-espresso flex h-9 items-center rounded-md border px-3 font-mono text-sm">
+                    {formatPackagingQuantity(item?.quantityOnHand ?? 0, item?.unit ?? unit)}
+                  </div>
+                  {onAdjustStock && item ? (
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="text-espresso h-auto justify-start p-0 text-xs"
+                      onClick={() => onAdjustStock(item)}
+                    >
+                      Adjust stock (audited)
+                    </Button>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <Input
+                    id="pkg-qty"
+                    type="number"
+                    step="1"
+                    min={0}
+                    {...form.register('quantityOnHand')}
+                  />
+                  <p className="text-espresso/40 text-[11px]">
+                    Opening stock - later changes use Adjust.
+                  </p>
+                </>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="pkg-threshold">Low Stock At{suffix ? ` (${suffix})` : ''}</Label>

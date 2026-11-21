@@ -7,11 +7,14 @@ import {
   mapDeliveryError,
 } from '@/lib/api/delivery-route';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { isApiError } from '@/lib/api/errors';
+import { envelopeError } from '@/lib/api/error-envelope';
 import {
   updatePackagingItem,
   adjustPackagingStock,
   deletePackagingItem,
 } from '@/lib/services/packaging.service';
+import { packagingUpdateTouchesStock } from '@/lib/services/packagingGuards.core';
 import {
   UpdatePackagingItemSchema,
   PackagingStockAdjustSchema,
@@ -28,6 +31,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     body = await request.json();
   } catch {
     return validationError(null, 'Invalid JSON body');
+  }
+
+  // ARGUS #280 — stock may only move through POST (Adjust Stock), which records
+  // a reason/note. Reject a direct quantity write instead of ignoring it.
+  if (packagingUpdateTouchesStock(body)) {
+    return validationError(
+      [
+        {
+          path: 'quantityOnHand',
+          message:
+            'Stock cannot be edited here - use the Adjust action so the change is audited',
+        },
+      ],
+      'Stock changes go through Adjust Stock',
+    );
   }
 
   const parsed = UpdatePackagingItemSchema.safeParse(body);
@@ -96,6 +114,8 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     await deletePackagingItem(guard.tenantId, id, guard.userId);
     return NextResponse.json({ success: true });
   } catch (error) {
+    // ARGUS #280: PACKAGING_HAS_STOCK is a typed 409 from the pure guard.
+    if (isApiError(error)) return envelopeError(error);
     console.error('DELETE /api/store/packaging/[id] error:', error);
     const mapped = mapDeliveryError(error);
     if (mapped) return mapped;
