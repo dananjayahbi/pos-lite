@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Pencil, RotateCcw } from 'lucide-react';
 import { ResourceDeleteButton, productsAssignedReason } from '@/components/shared/ResourceDeleteButton';
 import { CategoryIcon } from '@/components/categories/CategoryIcon';
-import { shouldHandleRowKey } from '@/lib/categories/categoryListKeyboard.core';
+import { shouldHandleRowKey } from '@/lib/catalog/listRowKeyboard.core';
 
 interface CategoryListProps {
   categories: Category[];

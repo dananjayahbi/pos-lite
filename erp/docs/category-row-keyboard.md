@@ -8,7 +8,7 @@ row: pressing Enter on the pencil selected the row and never opened Edit
 ## Rule
 
 `shouldHandleRowKey(key, fromRowItself)`
-(`src/lib/categories/categoryListKeyboard.core.ts`) returns true only when:
+(`src/lib/catalog/listRowKeyboard.core.ts`) returns true only when:
 
 - the event originated on the row (`event.target === event.currentTarget`), and
 - the key is `Enter` or `Space`.
@@ -19,5 +19,5 @@ The row itself still selects on Enter/Space, and Tab navigation is unchanged.
 
 ## Verification
 
-`categoryListKeyboard.core.test.ts` covers row-origin Enter/Space, child-origin
+`listRowKeyboard.core.test.ts` covers row-origin Enter/Space, child-origin
 Enter/Space and other keys. The same rule is applied to brands in #178.

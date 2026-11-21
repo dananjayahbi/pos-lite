@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { shouldHandleRowKey } from '@/lib/categories/categoryListKeyboard.core';
+import { shouldHandleRowKey } from '@/lib/catalog/listRowKeyboard.core';
 
 /** ARGUS #171: Enter/Space on a row action must not select the row. */
 describe('shouldHandleRowKey', () => {
