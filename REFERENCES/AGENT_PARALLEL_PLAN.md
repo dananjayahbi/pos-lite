@@ -139,8 +139,9 @@ For each agent commit:
   #144 (low-stock shortfall sign), #145 (valuation tax labels), #146 (CSV import
   row validation), #147 (stale stock takes), #148 (batches of deleted products),
   #131 (appointment service tax rule), #132 (appointment sale attribution and
-  commission).
-- Checkpoint: full suite green at 1,634 tests (190 files).
+  commission), #157 (shared A4/thermal label templates), #158 (product vs
+  variant range on Barcode Printing).
+- Checkpoint: full suite green at 1,645 tests (192 files).
 - DB reachable again; the three pending migrations were applied as raw SQL with
   `prisma db execute` and verified (`RawMaterial.unitCost`,
   `ProductionLog.materialCost`, `ReturnStatus.CANCELLED`,
