@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/table';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import Decimal from 'decimal.js';
 import { fetchPayrollEnvelope, resolvePayrollLoadState } from '@/lib/payroll/api-load-state';
 import type {
   PayrollExportKind,
@@ -187,6 +188,9 @@ function PayrollReportsContent() {
   const runStatus = run
     ? describePayrollRunStatus({ status: run.status, payment: run.payment })
     : null;
+  const totalDeductionsIncludingEpf = run
+    ? new Decimal(run.totalDeductions).add(run.totalEmployeeEpf).toFixed(2)
+    : '0.00';
 
   // ARGUS #378: completeness gate for the bank sheet and statutory exports.
   const preflightQuery = useQuery<Record<PayrollExportKind, PayrollExportPreflight>>({
@@ -328,8 +332,13 @@ function PayrollReportsContent() {
               <CostRow label="Overtime" value={run.totalOvertime} />
               <CostRow label="Sales commission" value={run.totalCommission} />
               <CostRow label="Gross salary" value={run.totalGross} strong />
-              <CostRow label="Deductions (no-pay + advances)" value={run.totalDeductions} />
+              <CostRow label="No-pay + advances" value={run.totalDeductions} />
               <CostRow label="Employee EPF" value={run.totalEmployeeEpf} />
+              <CostRow
+                label="Total deductions incl. employee EPF"
+                value={totalDeductionsIncludingEpf}
+                strong
+              />
               <CostRow label="Employer EPF" value={run.totalEmployerEpf} />
               <CostRow label="Employer ETF" value={run.totalEmployerEtf} />
               <CostRow label={runStatus?.netLabel ?? 'Net payable'} value={run.totalNet} strong />
@@ -389,6 +398,9 @@ function PayrollReportsContent() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              <p className="text-sand-ink mb-3 text-xs">
+                Net pay = Gross - no-pay + advances - employee EPF, per employee.
+              </p>
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -396,7 +408,8 @@ function PayrollReportsContent() {
                       <TableHead className="min-w-[170px]">Employee</TableHead>
                       <TableHead>Bank account</TableHead>
                       <TableHead className="text-right">Gross</TableHead>
-                      <TableHead className="text-right">Deductions</TableHead>
+                      <TableHead className="text-right">No-pay + advances</TableHead>
+                      <TableHead className="text-right">Employee EPF</TableHead>
                       <TableHead className="text-right">Net pay</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -420,6 +433,9 @@ function PayrollReportsContent() {
                         </TableCell>
                         <TableCell className="text-right font-mono text-xs">
                           {formatRupee(item.totalDeductions)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {formatRupee(item.employeeEpf)}
                         </TableCell>
                         <TableCell className="text-right font-mono text-xs font-semibold">
                           {formatRupee(item.netSalary)}

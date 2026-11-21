@@ -69,6 +69,7 @@ const summaryTotals = {
   gross: item.grossSalary,
   deductions: item.totalDeductions,
   employeeEpf: item.employeeEpf,
+  deductionsIncludingEpf: '15961.53',
   employerEpf: item.employerEpf,
   employerEtf: item.employerEtf,
   net: item.netSalary,
@@ -236,5 +237,51 @@ describe('payroll documents', () => {
     expect(paidRows.some((row) => row[0] === 'Net payable')).toBe(false);
     expect(String(paidRows[2]?.[0])).toContain('PAID');
     expect(String(paidRows[2]?.[0])).toContain('Nimal Silva');
+  });
+
+  it('reconciles gross to net through labelled no-pay/advances and EPF', () => {
+    const rows = [
+      {
+        staffName: item.staffName,
+        role: item.role,
+        basicSalary: '34109.56',
+        allowances: '0.00',
+        overtimeAmount: '0.00',
+        commissionAmount: '0.00',
+        grossSalary: '34109.56',
+        totalDeductions: '3000.00',
+        employeeEpf: '2728.76',
+        netSalary: '28380.80',
+      },
+    ];
+    const totals = {
+      ...summaryTotals,
+      gross: '34109.56',
+      deductions: '3000.00',
+      employeeEpf: '2728.76',
+      deductionsIncludingEpf: '5728.76',
+      net: '28380.80',
+    };
+    const workbook = XLSX.read(generateSummaryReportXlsx(meta, totals, rows), {
+      type: 'buffer',
+    });
+    const summaryRows = XLSX.utils.sheet_to_json(workbook.Sheets['Summary']!, {
+      header: 1,
+    }) as unknown[][];
+    expect(
+      summaryRows.some(
+        (row) => row[0] === 'Total deductions incl. employee EPF' && row[1] === 5728.76,
+      ),
+    ).toBe(true);
+    expect(summaryRows.some((row) => row[0] === 'No-pay + advances')).toBe(true);
+
+    const detailRows = XLSX.utils.sheet_to_json(workbook.Sheets['Employees']!, {
+      header: 1,
+    }) as unknown[][];
+    expect(detailRows[0]).toContain('No-pay + advances');
+    expect(detailRows[0]).toContain('Employee EPF');
+    expect(detailRows[0]).not.toContain('Deductions');
+    // 34,109.56 - 3,000.00 - 2,728.76 = 28,380.80
+    expect(Number(detailRows[1]?.[6]) - Number(detailRows[1]?.[7]) - Number(detailRows[1]?.[8])).toBeCloseTo(28380.8, 2);
   });
 });

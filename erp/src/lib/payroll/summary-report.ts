@@ -14,8 +14,11 @@ export interface SummaryReportTotals {
   overtime: string;
   commission: string;
   gross: string;
+  /** No-pay + advances (excludes employee EPF). */
   deductions: string;
   employeeEpf: string;
+  /** No-pay + advances + employee EPF, so gross - this = net. */
+  deductionsIncludingEpf: string;
   employerEpf: string;
   employerEtf: string;
   net: string;
@@ -63,13 +66,21 @@ const SUMMARY_ROWS: Array<[string, keyof SummaryReportTotals]> = [
   ['Overtime', 'overtime'],
   ['Sales commission', 'commission'],
   ['Gross salary', 'gross'],
-  ['Deductions (no-pay + advances)', 'deductions'],
+  ['No-pay + advances', 'deductions'],
   ['Employee EPF', 'employeeEpf'],
+  ['Total deductions incl. employee EPF', 'deductionsIncludingEpf'],
   ['Employer EPF', 'employerEpf'],
   ['Employer ETF', 'employerEtf'],
   ['Net salaries paid', 'net'],
   ['Total company cost', 'companyCost'],
 ];
+
+/** No-pay + advances + employee EPF; gross minus this equals net. */
+export function totalDeductionsIncludingEpf(
+  totals: Pick<SummaryReportTotals, 'deductions' | 'employeeEpf'>,
+): string {
+  return (num(totals.deductions) + num(totals.employeeEpf)).toFixed(2);
+}
 
 /** Swap the static net label for the status-correct one (ARGUS #385). */
 function summaryRows(
@@ -108,7 +119,7 @@ export function generateSummaryReportXlsx(
   XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
 
   const detailAoa: (string | number)[][] = [
-    ['Employee', 'Role', 'Basic', 'Allowances', 'OT', 'Commission', 'Gross', 'Deductions', 'Employee EPF', 'Net'],
+    ['Employee', 'Role', 'Basic', 'Allowances', 'OT', 'Commission', 'Gross', 'No-pay + advances', 'Employee EPF', 'Net'],
     ...items.map((item) => [
       item.staffName,
       item.role,
@@ -121,6 +132,8 @@ export function generateSummaryReportXlsx(
       num(item.employeeEpf),
       num(item.netSalary),
     ]),
+    [],
+    ['Net = Gross - No-pay + advances - Employee EPF'],
   ];
   const detailSheet = XLSX.utils.aoa_to_sheet(detailAoa);
   detailSheet['!cols'] = new Array(10).fill({ wch: 16 });
@@ -191,7 +204,7 @@ export function generateSummaryReportPdf(
         'OT',
         'Commission',
         'Gross',
-        'Deductions',
+        'No-pay + advances',
         'EPF (8%)',
         'Net',
       ],
@@ -221,6 +234,18 @@ export function generateSummaryReportPdf(
       8: { halign: 'right' },
     },
   });
+
+  const afterDetail =
+    (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 500;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(107, 91, 91);
+  doc.text(
+    'Per employee: Net = Gross - (No-pay + advances) - Employee EPF. The summary total deductions row includes employee EPF.',
+    40,
+    afterDetail + 14,
+    { maxWidth: pageWidth - 80 },
+  );
 
   const pageCount = doc.getNumberOfPages();
   for (let page = 1; page <= pageCount; page += 1) {

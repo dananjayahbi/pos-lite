@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import Decimal from 'decimal.js';
 import {
   getPayrollRun,
   getPayrollRunPaymentInfo,
@@ -94,6 +95,9 @@ export function summaryTotals(context: PayrollExportContext): SummaryReportTotal
     commission: run.totalCommission.toString(),
     gross: run.totalGross.toString(),
     deductions: run.totalDeductions.toString(),
+    deductionsIncludingEpf: new Decimal(run.totalDeductions)
+      .add(run.totalEmployeeEpf)
+      .toFixed(2),
     employeeEpf: run.totalEmployeeEpf.toString(),
     employerEpf: run.totalEmployerEpf.toString(),
     employerEtf: run.totalEmployerEtf.toString(),
