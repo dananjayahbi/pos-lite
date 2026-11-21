@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useCartStore } from '@/stores/cartStore';
+import type { TaxRuleValue } from '@/lib/constants/product-options';
 
 const INTER_KEY_THRESHOLD_MS = 50;
 const FLUSH_TIMEOUT_MS = 100;
@@ -26,6 +27,7 @@ interface BarcodeScanResult {
   retailPrice: number;
   stockQuantity: number;
   productName: string;
+  taxRule?: TaxRuleValue | null;
 }
 
 interface UseBarcodeScanner {
@@ -93,6 +95,7 @@ export function useBarcodeScanToCart(onScan?: (productName: string, variantDescr
           sku: data.sku,
           unitPrice: Number(data.retailPrice),
           quantity: 1,
+          taxRule: data.taxRule ?? 'STANDARD_VAT',
         });
 
         onScan?.(data.productName, variantDescription);

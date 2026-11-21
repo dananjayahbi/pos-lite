@@ -265,6 +265,7 @@ export function VariantSelectionModal({
                   sku: selectedVariant.sku,
                   unitPrice: Number(selectedVariant.retailPrice),
                   quantity,
+                  taxRule: product.taxRule ?? 'STANDARD_VAT',
                 });
                 toast.success(`Added ${quantity}× ${product.name} ${desc} to cart`);
                 onClose();

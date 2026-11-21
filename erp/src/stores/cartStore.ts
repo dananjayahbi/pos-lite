@@ -2,8 +2,10 @@ import { create } from 'zustand';
 import Decimal from 'decimal.js';
 import type { AppliedDiscount, SkippedPromotion } from '@/lib/services/promotion.service';
 import type { CFDCartPayload } from '@/lib/cfdEmitter';
+import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
 import { createCartPromotionSnapshot } from '@/stores/cartPromotions';
 import type { CartPromotionSnapshot } from '@/stores/cartPromotions';
+import type { TaxRuleValue } from '@/lib/constants/product-options';
 
 export interface CartItem {
   variantId: string;
@@ -13,6 +15,14 @@ export interface CartItem {
   unitPrice: number;       // serialized as number, Decimal used internally for math
   quantity: number;
   discountPercent: number;  // 0-100
+  /** Product tax rule; drives the per-line VAT/SSCL/exempt preview. */
+  taxRule?: TaxRuleValue | undefined;
+}
+
+/** Store-wide rates used to preview the tax the sale service will charge. */
+export interface CartTaxRates {
+  vatRate: number;
+  ssclRate: number;
 }
 
 interface CartState {
@@ -21,7 +31,10 @@ interface CartState {
   cartDiscountAmount: number;
   authorizingManagerId: string | null;
   activeLineId: string | null;
-  taxRate: number; // approximate display tax rate (e.g. 18)
+  /** Tenant VAT rate (percent), used for the per-line cart tax preview. */
+  vatRate: number;
+  /** Tenant SSCL rate (percent), used for the per-line cart tax preview. */
+  ssclRate: number;
   linkedReturnId: string | null;
   exchangeCredit: number | null;
   exchangeReturnRef: string | null;
@@ -49,7 +62,7 @@ interface CartState {
   setCartDiscount: (mode: 'percent' | 'fixed', value: number) => void;
   setAuthorizingManager: (managerId: string | null) => void;
   setActiveLine: (variantId: string | null) => void;
-  setTaxRate: (rate: number) => void;
+  setTaxRates: (vatRate: number, ssclRate: number) => void;
   clearCart: () => void;
   replaceCart: (items: CartItem[], cartDiscountPercent: number, cartDiscountAmount: number) => void;
   restoreCartWithPromotions: (snapshot: {
@@ -102,7 +115,8 @@ function sendCFDUpdate(
     state.items,
     state.cartDiscountPercent,
     state.cartDiscountAmount,
-    state.taxRate,
+    { vatRate: state.vatRate, ssclRate: state.ssclRate },
+    state.totalPromotionDiscount,
   );
 
   const payload: Omit<CFDCartPayload, 'tenantSlug'> = {
@@ -131,7 +145,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   cartDiscountAmount: 0,
   authorizingManagerId: null,
   activeLineId: null,
-  taxRate: 0, // will be set on terminal init
+  vatRate: 0, // loaded from tenant settings by the POS cart
+  ssclRate: 0, // loaded from tenant settings by the POS cart
   linkedReturnId: null,
   exchangeCredit: null,
   exchangeReturnRef: null,
@@ -215,7 +230,10 @@ export const useCartStore = create<CartState>((set, get) => ({
       activeLineId: state.activeLineId === variantId ? null : variantId,
     })),
 
-  setTaxRate: (rate) => set({ taxRate: rate }),
+  setTaxRates: (vatRate, ssclRate) => {
+    set({ vatRate, ssclRate });
+    sendCFDUpdate(get());
+  },
 
   clearCart: () => {
     set({
@@ -376,8 +394,23 @@ export function getCartDiscountEffective(
   return new Decimal(cartDiscountAmount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 }
 
-export function getCartTaxAmount(subtotalAfterDiscount: Decimal, taxRate: number): Decimal {
-  return subtotalAfterDiscount.times(taxRate).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+/**
+ * Effective tax rate (as a fraction) for one cart line, exactly as the sales
+ * service resolves it from the product's tax rule and the tenant rates.
+ */
+export function getLineTaxRate(
+  taxRule: TaxRuleValue | undefined,
+  { vatRate, ssclRate }: CartTaxRates,
+): Decimal {
+  switch (taxRule ?? 'STANDARD_VAT') {
+    case 'SSCL':
+      return new Decimal(ssclRate).div(100);
+    case 'EXEMPT':
+      return new Decimal(0);
+    case 'STANDARD_VAT':
+    default:
+      return new Decimal(vatRate).div(100);
+  }
 }
 
 /**
@@ -407,12 +440,48 @@ export function getCartTotal(
   items: CartItem[],
   cartDiscountPercent: number,
   cartDiscountAmount: number,
-  taxRate: number,
-): { subtotal: Decimal; discountEffective: Decimal; taxAmount: Decimal; total: Decimal } {
+  taxRates: CartTaxRates,
+  totalPromotionDiscount: Decimal | number | string = 0,
+): {
+  subtotal: Decimal;
+  discountEffective: Decimal;
+  saleDiscount: Decimal;
+  taxAmount: Decimal;
+  taxRatesApplied: number[];
+  total: Decimal;
+} {
   const subtotal = getCartSubtotal(items);
   const discountEffective = getCartDiscountEffective(subtotal, cartDiscountPercent, cartDiscountAmount);
-  const subtotalAfterDiscount = subtotal.minus(discountEffective);
-  const taxAmount = getCartTaxAmount(subtotalAfterDiscount, taxRate);
-  const total = subtotalAfterDiscount.plus(taxAmount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-  return { subtotal, discountEffective, taxAmount, total };
+  // The sales API receives one combined discount (manual cart discount +
+  // promotions) and apportions it across the lines before taxing them.
+  // Mirrored here so the cart's tax and total match the saved sale.
+  const saleDiscount = getSaleDiscountAmount(subtotal, discountEffective, totalPromotionDiscount);
+  const lineTotals = items.map(getLineTotalAfterDiscount);
+  const discountShares = allocateCartDiscountShares(lineTotals, saleDiscount);
+
+  const ratesApplied = new Set<number>();
+  let taxAmount = new Decimal(0);
+  items.forEach((item, index) => {
+    const taxableLine = Decimal.max(lineTotals[index]!.minus(discountShares[index]!), 0);
+    const rate = getLineTaxRate(item.taxRule, taxRates);
+    if (rate.greaterThan(0)) ratesApplied.add(rate.times(100).toNumber());
+    taxAmount = taxAmount.plus(
+      taxableLine.times(rate).toDecimalPlaces(2, Decimal.ROUND_HALF_UP),
+    );
+  });
+  taxAmount = taxAmount.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+  const total = subtotal
+    .minus(saleDiscount)
+    .plus(taxAmount)
+    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+  return {
+    subtotal,
+    discountEffective,
+    saleDiscount,
+    taxAmount,
+    taxRatesApplied: [...ratesApplied],
+    total,
+  };
 }

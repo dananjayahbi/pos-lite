@@ -51,7 +51,9 @@ export function CartPanel({
   const items = useCartStore((s) => s.items);
   const cartDiscountPercent = useCartStore((s) => s.cartDiscountPercent);
   const cartDiscountAmount = useCartStore((s) => s.cartDiscountAmount);
-  const taxRate = useCartStore((s) => s.taxRate);
+  const vatRate = useCartStore((s) => s.vatRate);
+  const ssclRate = useCartStore((s) => s.ssclRate);
+  const setTaxRates = useCartStore((s) => s.setTaxRates);
   const clearCart = useCartStore((s) => s.clearCart);
   const authorizingManagerId = useCartStore((s) => s.authorizingManagerId);
   const linkedCustomerId = useCartStore((s) => s.linkedCustomerId);
@@ -82,11 +84,12 @@ export function CartPanel({
     },
   });
 
-  const { subtotal, discountEffective, taxAmount, total } = getCartTotal(
+  const { subtotal, discountEffective, taxAmount, taxRatesApplied, total } = getCartTotal(
     items,
     cartDiscountPercent,
     cartDiscountAmount,
-    taxRate,
+    { vatRate, ssclRate },
+    totalPromotionDiscount,
   );
 
   const [retrieveOpen, setRetrieveOpen] = useState(false);
@@ -126,6 +129,25 @@ export function CartPanel({
   });
   const heldCount = heldSalesData?.total ?? 0;
 
+  // Tenant VAT/SSCL rates. The cart computes tax per line with the product's
+  // tax rule, exactly like the sales API, so the Tax row and Total here match
+  // what is persisted when the sale is charged.
+  const { data: tenantTaxRates } = useQuery({
+    queryKey: ['tax-rates'],
+    queryFn: async () => {
+      const res = await fetch('/api/settings/taxes');
+      if (!res.ok) return null;
+      const json = await res.json();
+      return (json.data ?? null) as { vatRate: number; ssclRate: number } | null;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  useEffect(() => {
+    if (tenantTaxRates) setTaxRates(tenantTaxRates.vatRate, tenantTaxRates.ssclRate);
+  }, [tenantTaxRates, setTaxRates]);
+  const taxLabel =
+    taxRatesApplied.length === 1 ? `Tax (${taxRatesApplied[0]}%)` : 'Tax';
+
   const hasItems = items.length > 0;
   // Guest-by-default (task "Walk-In customer issue"): a POS sale no longer
   // requires a customer. An unlinked cart is a guest sale — the cashier can
@@ -136,7 +158,9 @@ export function CartPanel({
   const totalDiscount = discountEffective.toNumber();
   const appliedCreditDec = new Decimal(appliedStoreCredit);
   const promoDiscountDec = new Decimal(totalPromotionDiscount);
-  const amountDue = total.minus(appliedCreditDec).minus(promoDiscountDec).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  // `total` already nets the manual cart discount, promotions and the tax on
+  // what is actually charged, so only store credit is still deducted here.
+  const amountDue = total.minus(appliedCreditDec).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
   // Zero-value gate (doc 33): a cart whose total is zero or negative must be
   // completed through the reason-selection flow instead of a payment modal.
   const isZeroValue = hasItems && amountDue.lte(0);
@@ -147,12 +171,11 @@ export function CartPanel({
   // Recap store credit when items change or promotions update
   useEffect(() => {
     if (appliedCreditDec.lte(0)) return;
-    const netTotal = total.minus(promoDiscountDec);
-    if (appliedCreditDec.greaterThan(netTotal)) {
-      setAppliedStoreCredit(Decimal.max(0, netTotal).toDecimalPlaces(2).toFixed(2));
+    if (appliedCreditDec.greaterThan(total)) {
+      setAppliedStoreCredit(Decimal.max(0, total).toDecimalPlaces(2).toFixed(2));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [total.toString(), promoDiscountDec.toString()]);
+  }, [total.toString()]);
 
   const salePayload: CreateSalePayload = {
     shiftId,
@@ -441,8 +464,7 @@ export function CartPanel({
                   onCheckedChange={(checked) => {
                     if (checked) {
                       const credit = new Decimal(linkedCustomerCreditBalance);
-                      const netTotal = total.minus(promoDiscountDec);
-                      const validAmount = Decimal.min(credit, netTotal).toDecimalPlaces(2).toFixed(2);
+                      const validAmount = Decimal.min(credit, total).toDecimalPlaces(2).toFixed(2);
                       setAppliedStoreCredit(validAmount);
                     } else {
                       setAppliedStoreCredit('0');
@@ -574,7 +596,7 @@ export function CartPanel({
               </div>
             )}
             <div className="flex justify-between font-body text-sm text-espresso">
-              <span>Tax {taxRate > 0 ? `(${taxRate}%)` : ''}</span>
+              <span>{taxLabel}</span>
               <span className="font-mono">{formatRupee(taxAmount.toNumber())}</span>
             </div>
             <div className="flex justify-between items-baseline pt-1.5 border-t border-mist/30">

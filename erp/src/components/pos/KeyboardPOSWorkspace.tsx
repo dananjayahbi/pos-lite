@@ -136,6 +136,7 @@ export function KeyboardPOSWorkspace({ shiftId, lankaQr }: KeyboardPOSWorkspaceP
         sku: variant.sku,
         unitPrice: Number(variant.retailPrice),
         quantity: 1,
+        taxRule: product.taxRule ?? 'STANDARD_VAT',
       });
       toast.success(`Added ${product.name} to cart`);
       showFeedback({

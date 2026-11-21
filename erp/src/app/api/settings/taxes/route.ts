@@ -10,6 +10,56 @@ const taxSettingsSchema = z.object({
   ssclRate: z.number().min(0, 'SSCL rate must be at least 0').max(100, 'SSCL rate cannot exceed 100'),
 });
 
+function readTaxRates(settings: unknown): { vatRate: number; ssclRate: number } {
+  const s = typeof settings === 'object' && settings !== null
+    ? (settings as Record<string, unknown>)
+    : {};
+  return {
+    vatRate: typeof s.vatRate === 'number' ? s.vatRate : 0,
+    ssclRate: typeof s.ssclRate === 'number' ? s.ssclRate : 0,
+  };
+}
+
+/**
+ * Read the tenant's store-wide tax rates.
+ *
+ * Any authenticated user of the tenant may read this: the POS cart needs the
+ * rates to preview exactly the tax a sale will charge, and cashiers do not
+ * hold the settings permission. Writing still requires SETTINGS.manageTax.
+ */
+export async function GET() {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json(
+        { success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+        { status: 401 },
+      );
+    }
+
+    const tenantId = session.user.tenantId;
+    if (!tenantId) {
+      return NextResponse.json(
+        { success: false, error: { code: 'UNAUTHORIZED', message: 'No tenant associated' } },
+        { status: 401 },
+      );
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { settings: true },
+    });
+
+    return NextResponse.json({ success: true, data: readTaxRates(tenant?.settings) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to load tax settings';
+    return NextResponse.json(
+      { success: false, error: { code: 'INTERNAL_ERROR', message } },
+      { status: 500 },
+    );
+  }
+}
+
 export async function PATCH(request: NextRequest) {
   try {
     const session = await auth();

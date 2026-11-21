@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import type { TaxRuleValue } from '@/lib/constants/product-options';
 
 /**
  * Product filters for the inventory list.
@@ -26,6 +27,8 @@ export interface ProductListItem {
   description: string | null;
   isArchived: boolean;
   tags: string[];
+  /** Product tax rule — feeds the POS cart's per-line tax preview. */
+  taxRule?: TaxRuleValue | null;
   mainImageUrl: string | null;
   mainImageThumbnailUrl: string | null;
   category: { id: string; name: string } | null;
