@@ -33,4 +33,11 @@ describe('taxRuleLabel', () => {
     expect(formatTaxRate(2.25)).toBe('2.25');
     expect(formatTaxRate(2.5)).not.toBe('2.50');
   });
+
+  it('never falls back to the old fixed 15% when a rate is configured', () => {
+    const label = taxRuleLabel('STANDARD_VAT', { vatRate: 18 });
+    expect(label).toBe('Standard VAT (18%)');
+    expect(label).not.toContain('15%');
+    expect(taxRuleLabel('STANDARD_VAT', { vatRate: 20 })).toBe('Standard VAT (20%)');
+  });
 });
