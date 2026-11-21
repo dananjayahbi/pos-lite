@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { formatLKR } from '@/lib/format';
 
@@ -13,40 +12,37 @@ export interface PettyCashFundOption {
   currentBalance?: number;
 }
 
-interface PettyCashFundPickerProps {
+interface PettyCashFundStatusProps {
   fund: PettyCashFundOption | null | undefined;
-  fundId: string | undefined;
+  /** Derived from the selected payment account, never chosen separately. */
+  fundId: string | null | undefined;
   amount: number | undefined;
   overdrawApproved: boolean;
-  onFundChange: (fundId: string | undefined) => void;
   onOverdrawChange: (approved: boolean) => void;
   canApproveOverdraw?: boolean;
 }
 
 /**
- * M19-01 (D2) — petty-cash fund picker for the expense form.
+ * ARGUS #400 - a read-only status panel, not a second selector.
  *
- * Shows the fund's live balance next to the picker and, when the entered amount
- * would overdraw the float, surfaces the shortfall and offers an explicit
- * manager "approve overdraft" checkbox. The server still enforces the policy
- * (422 `PETTY_CASH_OVERDRAW` unless `overdrawApproved` rides along with a
- * manager permission) — this control only mirrors the contract in the UI.
+ * The Payment Account select is the single authoritative control: picking the
+ * fund's account links the fund, picking another account clears it, and
+ * picking "No account" unlinks both. This panel only surfaces the resulting
+ * fund and the overdraft warning/approval.
  */
 export function PettyCashFundPicker({
   fund,
   fundId,
   amount,
   overdrawApproved,
-  onFundChange,
   onOverdrawChange,
   canApproveOverdraw = true,
-}: PettyCashFundPickerProps) {
-  if (!fund) return null;
+}: PettyCashFundStatusProps) {
+  if (!fund || fundId !== fund.id) return null;
 
-  const linked = fundId === fund.id;
   const balance = fund.currentBalance;
   const wouldOverdraw =
-    linked && typeof balance === 'number' && typeof amount === 'number' && amount > balance;
+    typeof balance === 'number' && typeof amount === 'number' && amount > balance;
   const shortfall = wouldOverdraw ? amount - (balance ?? 0) : 0;
 
   // The approval checkbox is only meaningful while an overdraft is pending —
@@ -56,29 +52,19 @@ export function PettyCashFundPicker({
   }, [wouldOverdraw, overdrawApproved, onOverdrawChange]);
 
   return (
-    <div className="space-y-2">
-      <Label>Petty Cash Fund (optional)</Label>
-      <Select
-        value={fundId ?? ''}
-        onValueChange={(v) => onFundChange(v === 'none' ? undefined : v)}
-      >
-        <SelectTrigger className="border-mist">
-          <SelectValue placeholder="Not linked" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="none">Not linked</SelectItem>
-          <SelectItem value={fund.id}>
-            {fund.name}
-            {typeof balance === 'number' ? ` - ${formatLKR(balance)} available` : ''}
-          </SelectItem>
-        </SelectContent>
-      </Select>
-
-      {linked && typeof balance === 'number' && (
+    <div className="space-y-2 rounded-md border border-mist bg-linen/20 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <Label>Petty Cash Fund</Label>
+        <span className="text-sm font-medium text-espresso">{fund.name}</span>
+      </div>
+      {typeof balance === 'number' && (
         <p className="text-xs text-espresso/70">
           Available balance: <span className="font-medium">{formatLKR(balance)}</span>
         </p>
       )}
+      <p className="text-xs text-sand-ink">
+        Change the Payment Account above to link or unlink petty cash.
+      </p>
 
       {wouldOverdraw && (
         <div className="rounded-md border border-terracotta/40 bg-terracotta/5 p-3">

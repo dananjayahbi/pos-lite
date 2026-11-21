@@ -13,6 +13,7 @@ import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/payment
 import { parseRangeStart, parseRangeEnd } from '@/lib/dates/inclusiveRange';
 import { ApiError } from '@/lib/api/errors';
 import { categoryDenialReason } from '@/lib/petty-cash/category-policy';
+import { resolveExpenseLinkUpdate } from '@/lib/expenses/link';
 
 interface ExpenseFilters {
   category?: string | undefined;
@@ -297,6 +298,24 @@ export async function updateExpense(
   let effectiveAccountId =
     data.paymentAccountId !== undefined ? data.paymentAccountId : oldAccountId;
   let effectiveFundCategories: string[] | null = null;
+
+  // ARGUS #400: an explicit null on either side unlinks the pair; a concrete
+  // account still implies its fund below. Without this an omitted fund field
+  // kept the old link and "Not linked" silently succeeded.
+  {
+    const link = resolveExpenseLinkUpdate({
+      oldFundId,
+      oldAccountId,
+      ...(data.pettyCashFundId !== undefined
+        ? { pettyCashFundId: data.pettyCashFundId }
+        : {}),
+      ...(data.paymentAccountId !== undefined
+        ? { paymentAccountId: data.paymentAccountId }
+        : {}),
+    });
+    effectiveFundId = link.pettyCashFundId;
+    effectiveAccountId = link.paymentAccountId;
+  }
 
   if (effectiveFundId) {
     const fund = await prisma.pettyCashFund.findFirst({

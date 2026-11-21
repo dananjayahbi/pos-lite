@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
+import type { UseFormReturn } from 'react-hook-form';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,6 +54,7 @@ import { ExpenseAccountCell } from '@/components/expenses/ExpenseAccountCell';
 import { AccountSelect } from '@/components/payment-accounts/AccountSelect';
 import type { PaymentAccount } from '@/components/payment-accounts/paymentAccountTypes';
 import { selectFormExpenseCategories } from '@/lib/petty-cash/category-policy';
+import { linkForPaymentAccount } from '@/lib/expenses/link';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -214,6 +216,24 @@ export default function ExpensesPageClient({
     retry: false,
   });
 
+  const paymentAccountById = new Map(
+    paymentAccounts.map((account) => [account.id, account]),
+  );
+
+  // ARGUS #400: one authoritative link. Selecting a payment account derives the
+  // fund (or clears it); there is no separate fund selector to drift from it.
+  const applyAccountLink = (
+    form: UseFormReturn<CreateExpenseInput>,
+    accountId: string | null,
+  ) => {
+    const link = linkForPaymentAccount(
+      accountId ? (paymentAccountById.get(accountId) ?? null) : null,
+    );
+    form.setValue('paymentAccountId', link.paymentAccountId);
+    form.setValue('pettyCashFundId', link.pettyCashFundId);
+    return link;
+  };
+
   // ── Create Form ──
   const createForm = useForm<CreateExpenseInput>({
     resolver: standardSchemaResolver(CreateExpenseSchema),
@@ -234,9 +254,9 @@ export default function ExpensesPageClient({
   );
   // A fund always settles through its own account; show that account while the
   // form has not explicitly written a paymentAccountId.
-  const createPaymentAccountValue = createFundId
-    ? (fund?.paymentAccount?.id ?? null)
-    : (createForm.watch('paymentAccountId') ?? null);
+  const createPaymentAccountValue =
+    createForm.watch('paymentAccountId') ??
+    (createFundId ? (fund?.paymentAccount?.id ?? null) : null);
 
   // A preselected fund may not enable the form's default category. Move to the
   // first enabled option as soon as the fund configuration arrives.
@@ -256,7 +276,9 @@ export default function ExpensesPageClient({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // M19-01 (D2): ride the manager approval only when an overdraft is pending.
-        body: JSON.stringify(createOverdraw ? { ...data, overdrawApproved: true } : data),
+        body: JSON.stringify(
+          createOverdraw && createFundId ? { ...data, overdrawApproved: true } : data,
+        ),
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error?.message ?? 'Failed to create');
@@ -281,6 +303,9 @@ export default function ExpensesPageClient({
     resolver: standardSchemaResolver(CreateExpenseSchema),
   });
   const editFundId = editForm.watch('pettyCashFundId');
+  const editPaymentAccountValue =
+    editForm.watch('paymentAccountId') ??
+    (editFundId ? (fund?.paymentAccount?.id ?? null) : null);
   // Keep the existing (possibly now-disabled) category selectable so a legacy
   // row can still be edited, but only offer the fund's enabled set besides it.
   const editCategoryOptions = (() => {
@@ -295,7 +320,9 @@ export default function ExpensesPageClient({
       const res = await fetch(`/api/store/expenses/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editOverdraw ? { ...data, overdrawApproved: true } : data),
+        body: JSON.stringify(
+          editOverdraw && editFundId ? { ...data, overdrawApproved: true } : data,
+        ),
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error?.message ?? 'Failed to update');
@@ -322,7 +349,7 @@ export default function ExpensesPageClient({
       description: expense.description,
       expenseDate: expense.expenseDate.slice(0, 10),
       receiptImageUrl: expense.receiptImageUrl ?? undefined,
-      pettyCashFundId: expense.pettyCashFundId ?? undefined,
+      pettyCashFundId: expense.pettyCashFundId ?? null,
       paymentAccountId: expense.paymentAccountId ?? null,
     });
   }
@@ -453,15 +480,17 @@ export default function ExpensesPageClient({
                 <AccountSelect
                   accounts={paymentAccounts}
                   value={createPaymentAccountValue}
-                  onValueChange={(accountId) => createForm.setValue('paymentAccountId', accountId)}
+                  onValueChange={(accountId) => {
+                    const link = applyAccountLink(createForm, accountId);
+                    if (!link.pettyCashFundId) setCreateOverdraw(false);
+                  }}
                   placeholder="Select account"
                   noneLabel="No account (unlinked)"
-                  disabled={Boolean(createFundId)}
                 />
                 <p className="mt-1 text-xs text-sand-ink">
                   {createFundId
                     ? "Linked petty-cash expenses post to the fund's payment account automatically."
-                    : 'Linked expenses post to the account ledger and the Cash Flow page.'}
+                    : 'Select the petty-cash payment account to link this expense to the fund.'}
                 </p>
               </div>
               {fund && (
@@ -470,13 +499,6 @@ export default function ExpensesPageClient({
                   fundId={createForm.watch('pettyCashFundId')}
                   amount={createForm.watch('amount')}
                   overdrawApproved={createOverdraw}
-                  onFundChange={(v) => {
-                    createForm.setValue('pettyCashFundId', v);
-                    createForm.setValue(
-                      'paymentAccountId',
-                      v ? (fund?.paymentAccount?.id ?? null) : null,
-                    );
-                  }}
                   onOverdrawChange={setCreateOverdraw}
                 />
               )}
@@ -720,11 +742,13 @@ export default function ExpensesPageClient({
                 <Label>Payment Account</Label>
                 <AccountSelect
                   accounts={paymentAccounts}
-                  value={editForm.watch('paymentAccountId') ?? null}
-                  onValueChange={(accountId) => editForm.setValue('paymentAccountId', accountId)}
+                  value={editPaymentAccountValue}
+                  onValueChange={(accountId) => {
+                    const link = applyAccountLink(editForm, accountId);
+                    if (!link.pettyCashFundId) setEditOverdraw(false);
+                  }}
                   placeholder="Select account"
                   noneLabel="No account (unlinked)"
-                  disabled={Boolean(editFundId)}
                 />
                 <p className="mt-1 text-xs text-sand-ink">
                   {editFundId
@@ -738,13 +762,6 @@ export default function ExpensesPageClient({
                   fundId={editForm.watch('pettyCashFundId')}
                   amount={editForm.watch('amount')}
                   overdrawApproved={editOverdraw}
-                  onFundChange={(v) => {
-                    editForm.setValue('pettyCashFundId', v);
-                    editForm.setValue(
-                      'paymentAccountId',
-                      v ? (fund?.paymentAccount?.id ?? null) : null,
-                    );
-                  }}
                   onOverdrawChange={setEditOverdraw}
                 />
               )}
