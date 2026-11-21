@@ -41,6 +41,7 @@ import { ArrowLeft, Download, FileText, LogOut, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { UpdateStaffSchema } from '@/lib/validators/staff.validators';
 import { formatRupee } from '@/lib/format';
+import { getCommissionRecordStatus } from '@/lib/services/commissionSummary.core';
 import { TimeClockHistoryPanel } from '@/components/staff/TimeClockHistoryPanel';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import type { UpdateStaffInput } from '@/lib/validators/staff.validators';
@@ -785,10 +786,19 @@ interface CommissionRecord {
   baseAmount: string;
   commissionRate: string;
   earnedAmount: string;
+  /** Money actually allocated to this record by a recorded payout. */
+  paidAmount: string;
   isPaid: boolean;
   createdAt: string;
   sale: { id: string; totalAmount: string; createdAt: string };
   payout: { id: string; paidAt: string } | null;
+}
+
+interface CommissionSummary {
+  totalEarned: string;
+  totalPaid: string;
+  unpaid: string;
+  lastPayout: { id: string; paidAt: string; totalEarned: string } | null;
 }
 
 interface CommissionData {
@@ -797,6 +807,8 @@ interface CommissionData {
   page: number;
   pageSize: number;
   totalPages: number;
+  /** Full-ledger totals — independent of the current page (ARGUS #337). */
+  summary: CommissionSummary;
 }
 
 function CommissionHistory({ staffId }: { staffId: string }) {
@@ -818,15 +830,12 @@ function CommissionHistory({ staffId }: { staffId: string }) {
 
   const commissions = data?.data;
 
-  // Summary calculations
-  const totalEarned = commissions?.records.reduce(
-    (sum, r) => sum + Number(r.earnedAmount),
-    0,
-  ) ?? 0;
-  const totalPaid = commissions?.records
-    .filter((r) => r.isPaid)
-    .reduce((sum, r) => sum + Number(r.earnedAmount), 0) ?? 0;
-  const unpaid = totalEarned - totalPaid;
+  // ARGUS #337: totals come from the server's full-ledger aggregates, not from
+  // the ten rows on this page, and only recorded payout money counts as paid.
+  const totalEarned = Number(commissions?.summary?.totalEarned ?? 0);
+  const totalPaid = Number(commissions?.summary?.totalPaid ?? 0);
+  const unpaid = Number(commissions?.summary?.unpaid ?? 0);
+  const lastPayout = commissions?.summary?.lastPayout ?? null;
 
   return (
     <div className="space-y-4">
@@ -847,6 +856,12 @@ function CommissionHistory({ staffId }: { staffId: string }) {
               Unpaid: {formatRupee(unpaid)}
             </Badge>
           </div>
+          {lastPayout ? (
+            <p className="text-xs text-sand-ink">
+              Last payout {lastPayout.id.slice(0, 8).toUpperCase()} on{' '}
+              {new Date(lastPayout.paidAt).toLocaleDateString('en-LK')} ({formatRupee(lastPayout.totalEarned)}).
+            </p>
+          ) : null}
 
           {isLoading ? (
             <div className="space-y-2">
@@ -866,12 +881,15 @@ function CommissionHistory({ staffId }: { staffId: string }) {
                     <TableHead className="text-right">Base Amount</TableHead>
                     <TableHead className="text-right">Rate</TableHead>
                     <TableHead className="text-right">Earned</TableHead>
+                    <TableHead className="text-right">Paid</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {commissions.records.map((r) => (
+                  {commissions.records.map((r) => {
+                    const status = getCommissionRecordStatus(r);
+                    return (
                     <TableRow key={r.id}>
                       <TableCell className="font-mono text-xs">
                         {r.saleId.slice(0, 8)}…
@@ -887,6 +905,9 @@ function CommissionHistory({ staffId }: { staffId: string }) {
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
                         {formatRupee(r.earnedAmount)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatRupee(r.paidAmount)}
                       </TableCell>
                       <TableCell>
                         <Badge
@@ -904,16 +925,25 @@ function CommissionHistory({ staffId }: { staffId: string }) {
                         <Badge
                           variant="secondary"
                           className={
-                            r.isPaid
+                            status === 'PAID'
                               ? 'bg-green-100 text-green-800'
-                              : 'bg-amber-100 text-amber-800'
+                              : status === 'PARTIAL'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-amber-100 text-amber-800'
                           }
                         >
-                          {r.isPaid ? 'Paid' : 'Unpaid'}
+                          {status === 'PAID' ? 'Paid' : status === 'PARTIAL' ? 'Partial' : 'Unpaid'}
                         </Badge>
+                        {r.payout ? (
+                          <p className="mt-0.5 font-mono text-[10px] text-sand-ink">
+                            {r.payout.id.slice(0, 8).toUpperCase()} ·{' '}
+                            {new Date(r.payout.paidAt).toLocaleDateString('en-LK')}
+                          </p>
+                        ) : null}
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
 
