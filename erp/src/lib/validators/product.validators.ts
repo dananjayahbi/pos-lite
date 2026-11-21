@@ -183,6 +183,8 @@ export const ProductListQuerySchema = z.object({
   brandId: z.string().cuid().optional(),
   categories: z.string().optional(),
   brands: z.string().optional(),
+  /** Comma-separated variant forms (OIL, POWDER, ...) - inventory form filter. */
+  forms: z.string().optional(),
   status: z.enum(['active', 'archived', 'low_stock', 'out_of_stock']).optional(),
   isArchived: z
     .enum(['true', 'false'])

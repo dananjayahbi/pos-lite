@@ -15,6 +15,8 @@ export interface ProductFilters {
   categories?: string | undefined;
   brandId?: string | undefined;
   brands?: string | undefined;
+  /** Comma-separated variant forms (OIL, POWDER, ...). */
+  forms?: string | undefined;
   isArchived?: string | undefined;
   status?: string | undefined;
   page?: number | undefined;
@@ -68,6 +70,7 @@ export function useProducts(filters: ProductFilters = {}) {
   if (filters.isArchived) params.set('isArchived', filters.isArchived);
   if (filters.categories) params.set('categories', filters.categories);
   if (filters.brands) params.set('brands', filters.brands);
+  if (filters.forms) params.set('forms', filters.forms);
   if (filters.status) params.set('status', filters.status);
   params.set('page', String(filters.page ?? 1));
   params.set('limit', String(filters.limit ?? 25));

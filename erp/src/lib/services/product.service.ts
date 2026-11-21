@@ -60,6 +60,8 @@ export interface ProductFilters {
   categoryIds?: string[] | undefined;
   brandId?: string | undefined;
   brandIds?: string[] | undefined;
+  /** Variant forms to match (OIL, POWDER, ...); a product matches when any live variant has one. */
+  forms?: string[] | undefined;
   /** Fetch a specific set of products by ID (used to hydrate pickers). */
   ids?: string[] | undefined;
   isArchived?: boolean | undefined;
@@ -176,7 +178,7 @@ function generateSku(brandName: string | null, form: string | undefined | null, 
 // ── Product Functions ────────────────────────────────────────────────────────
 
 export async function getAllProducts(tenantId: string, filters: ProductFilters = {}) {
-  const { search, categoryId, categoryIds, brandId, brandIds, ids, isArchived, includeDeleted, page = 1, limit = 20 } = filters;
+  const { search, categoryId, categoryIds, brandId, brandIds, forms, ids, isArchived, includeDeleted, page = 1, limit = 20 } = filters;
 
   // M02-03: `includeDeleted` flips the hard filter into the "Deleted" view —
   // ONLY soft-deleted rows. Default behavior (deletedAt: null) is unchanged.
@@ -210,6 +212,21 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
     where.brandId = { in: brandIds };
   } else if (brandId) {
     where.brandId = brandId;
+  }
+
+  if (forms && forms.length > 0) {
+    // The form is a variant attribute, so a product matches when any of its
+    // live variants uses one of the selected forms (ARGUS #141). This is a
+    // real query filter now, not just a URL chip. Matching is case-insensitive
+    // because historical imports stored lowercase form values.
+    where.variants = {
+      some: {
+        OR: forms.map((form) => ({
+          form: { equals: form, mode: 'insensitive' as const },
+        })),
+        ...(includeDeleted ? {} : { deletedAt: null }),
+      },
+    };
   }
 
   if (isArchived !== undefined) {

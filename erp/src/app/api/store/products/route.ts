@@ -51,11 +51,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { page, limit, categories, brands, status, ...filters } = parsed.data;
+    const { page, limit, categories, brands, forms, status, ...filters } = parsed.data;
 
     // Parse multi-value params
     const categoryIds = categories?.split(',').filter(Boolean);
     const brandIds = brands?.split(',').filter(Boolean);
+    const formValues = forms?.split(',').map((form) => form.trim()).filter(Boolean);
 
     // Map status to isArchived
     let isArchived = filters.isArchived;
@@ -69,6 +70,7 @@ export async function GET(request: NextRequest) {
       includeDeleted,
       categoryIds,
       brandIds,
+      forms: formValues,
       page,
       limit,
     });
