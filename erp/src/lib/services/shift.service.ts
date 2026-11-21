@@ -2,6 +2,7 @@ import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import type { ShiftStatus, SaleStatus, ReturnRefundMethod } from '@/generated/prisma/client';
 import { sumPaymentBreakdown } from '@/lib/services/paymentBreakdown';
+import { computeExpectedCash, sumShiftCashMovements, sumShiftRefunds } from '@/lib/services/shiftCash.core';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { staffDisplayName } from '@/lib/utils/staff-name';
@@ -135,37 +136,25 @@ export async function closeShift(
     select: { refundAmount: true, refundMethod: true },
   });
 
-  let totalReturnsAmount = new Decimal(0);
-  let cashRefundsTotal = new Decimal(0);
-  for (const ret of shiftReturns) {
-    totalReturnsAmount = totalReturnsAmount.plus(new Decimal(ret.refundAmount.toString()));
-    if (ret.refundMethod === ('CASH' satisfies ReturnRefundMethod)) {
-      cashRefundsTotal = cashRefundsTotal.plus(new Decimal(ret.refundAmount.toString()));
-    }
-  }
+  const refunds = sumShiftRefunds(shiftReturns);
+  const totalReturnsAmount = refunds.total;
+  const cashRefundsTotal = refunds.cash;
   const totalReturnsCount = shiftReturns.length;
 
   // Aggregate cash movements (petty cash / manual deposits)
   const shiftCashMovements = await prisma.cashMovement.findMany({
     where: { shiftId, tenantId },
   });
+  const { deposited: cmDeposited, pettyOut: cmPettyCashOut } =
+    sumShiftCashMovements(shiftCashMovements);
 
-  let cmDeposited = new Decimal(0);
-  let cmPettyCashOut = new Decimal(0);
-  for (const cm of shiftCashMovements) {
-    if (cm.type === 'MANUAL_IN') {
-      cmDeposited = cmDeposited.plus(new Decimal(cm.amount.toString()));
-    } else if (cm.type === 'PETTY_CASH_OUT' || cm.type === 'MANUAL_OUT') {
-      cmPettyCashOut = cmPettyCashOut.plus(new Decimal(cm.amount.toString()));
-    }
-  }
-
-  const openingFloatDec = new Decimal(shift.openingFloat.toString());
-  const expectedCash = openingFloatDec
-    .plus(totalCashAmount)
-    .minus(cashRefundsTotal)
-    .plus(cmDeposited)
-    .minus(cmPettyCashOut);
+  const expectedCash = computeExpectedCash({
+    openingFloat: shift.openingFloat,
+    cashSales: totalCashAmount,
+    cashRefunds: cashRefundsTotal,
+    cashDeposited: cmDeposited,
+    pettyCashOut: cmPettyCashOut,
+  });
   const closingCashCountDec = new Decimal(input.closingCashCount);
   const cashDifference = closingCashCountDec.minus(expectedCash);
 
@@ -277,29 +266,17 @@ export async function getShiftById(tenantId: string, shiftId: string) {
     }),
   ]);
 
-  let cashRefundsTotal = new Decimal(0);
-  for (const ret of shiftReturns) {
-    if (ret.refundMethod === ('CASH' satisfies ReturnRefundMethod)) {
-      cashRefundsTotal = cashRefundsTotal.plus(new Decimal(ret.refundAmount.toString()));
-    }
-  }
-
-  let cashDeposited = new Decimal(0);
-  let pettyCashOut = new Decimal(0);
-  for (const movement of shiftCashMovements) {
-    if (movement.type === 'MANUAL_IN') {
-      cashDeposited = cashDeposited.plus(new Decimal(movement.amount.toString()));
-    } else if (movement.type === 'PETTY_CASH_OUT' || movement.type === 'MANUAL_OUT') {
-      pettyCashOut = pettyCashOut.plus(new Decimal(movement.amount.toString()));
-    }
-  }
+  const cashRefundsTotal = sumShiftRefunds(shiftReturns).cash;
+  const { deposited: cashDeposited, pettyOut } = sumShiftCashMovements(shiftCashMovements);
 
   const openingFloat = new Decimal(shift.openingFloat.toString());
-  const expectedCash = openingFloat
-    .plus(sumPaymentBreakdown(shiftPayments).cash)
-    .minus(cashRefundsTotal)
-    .plus(cashDeposited)
-    .minus(pettyCashOut);
+  const expectedCash = computeExpectedCash({
+    openingFloat,
+    cashSales: sumPaymentBreakdown(shiftPayments).cash,
+    cashRefunds: cashRefundsTotal,
+    cashDeposited,
+    pettyCashOut: pettyOut,
+  });
 
   return {
     ...shift,
@@ -510,24 +487,19 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
     where: { shiftId, tenantId },
   });
 
-  let cashDeposited = new Decimal(0);
-  let pettyCashOutAmount = new Decimal(0);
-  for (const cm of cashMovements) {
-    if (cm.type === 'MANUAL_IN') {
-      cashDeposited = cashDeposited.plus(new Decimal(cm.amount.toString()));
-    } else if (cm.type === 'PETTY_CASH_OUT' || cm.type === 'MANUAL_OUT') {
-      pettyCashOutAmount = pettyCashOutAmount.plus(new Decimal(cm.amount.toString()));
-    }
-  }
+  const { deposited: cashDeposited, pettyOut: pettyCashOutAmount } =
+    sumShiftCashMovements(cashMovements);
 
   // Cash reconciliation
   // Expected = Opening Float + Cash Sales − Cash Refunds + Cash Deposited − Petty Cash Out
   const openingFloat = new Decimal(shift.openingFloat.toString());
-  const expectedCashInDrawer = openingFloat
-    .plus(cashSalesAmount)
-    .minus(cashRefundAmount)
-    .plus(cashDeposited)
-    .minus(pettyCashOutAmount);
+  const expectedCashInDrawer = computeExpectedCash({
+    openingFloat,
+    cashSales: cashSalesAmount,
+    cashRefunds: cashRefundAmount,
+    cashDeposited,
+    pettyCashOut: pettyCashOutAmount,
+  });
   const actualCashCounted = shift.closure ? new Decimal(shift.closure.closingCashCount.toString()) : null;
   const cashDifference = actualCashCounted ? actualCashCounted.minus(expectedCashInDrawer) : null;
 
