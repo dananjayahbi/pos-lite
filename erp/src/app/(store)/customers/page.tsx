@@ -22,13 +22,17 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Plus, Eye, Pencil, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
+import { Plus, Eye, Pencil, ChevronLeft, ChevronRight, Upload, AlertCircle } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
 import { CustomerSheet } from '@/components/customers/CustomerSheet';
 import { LoyaltyBadge } from '@/components/customers/LoyaltyBadge';
 import { RepeatBuyersTabs, type RepeatBuyersFilter } from '@/components/customers/RepeatBuyersTabs';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { CUSTOMER_SPEND_BANDS } from '@/lib/services/customerSpendBands.core';
+import {
+  CustomerLoadError,
+  resolveCustomerListState,
+} from '@/lib/services/customerLoad.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -134,16 +138,44 @@ export default function CustomersPage() {
   queryParams.set('page', String(page));
   queryParams.set('limit', '20');
 
-  const { data, isLoading } = useQuery<{ success: boolean; data: CustomersResponse }>({
+  const { data, isLoading, isError, error, isFetching, refetch } = useQuery<{
+    success: boolean;
+    data: CustomersResponse;
+  }>({
     queryKey: ['customers', debouncedSearch, tag, spendBand, audience, page],
     queryFn: async () => {
       const res = await fetch(`/api/store/customers?${queryParams.toString()}`);
-      if (!res.ok) throw new Error('Failed to fetch customers');
-      return res.json();
+      let json: {
+        success?: boolean;
+        data?: CustomersResponse;
+        error?: { message?: string };
+      } | null = null;
+      try {
+        json = await res.json();
+      } catch {
+        // A non-JSON error response still needs an explicit load error.
+      }
+      if (!res.ok || !json?.success || !json.data) {
+        throw new CustomerLoadError(
+          json?.error?.message ??
+            (res.status === 403
+              ? 'You do not have permission to view customers'
+              : 'Failed to load customers'),
+          res.status,
+        );
+      }
+      return { success: true, data: json.data };
     },
   });
 
   const result = data?.data;
+  const listState = resolveCustomerListState({
+    isLoading,
+    isError,
+    customerCount: result?.customers.length ?? 0,
+  });
+  const loadErrorMessage =
+    error instanceof Error ? error.message : 'Failed to load customers';
 
   const handleSuccess = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['customers'] });
@@ -195,7 +227,7 @@ export default function CustomersPage() {
         <RepeatBuyersTabs
           value={audience}
           onChange={changeAudience}
-          repeatCount={result?.total}
+          repeatCount={listState === 'ready' ? result?.total : undefined}
         />
         <Input
           placeholder="Search by name or phone..."
@@ -246,7 +278,7 @@ export default function CustomersPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
+            {listState === 'loading' ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
                   {Array.from({ length: 7 }).map((_, j) => (
@@ -256,7 +288,28 @@ export default function CustomersPage() {
                   ))}
                 </TableRow>
               ))
-            ) : result?.customers.length === 0 ? (
+            ) : listState === 'error' ? (
+              <TableRow>
+                <TableCell colSpan={7} className="py-12">
+                  <div role="alert" className="mx-auto max-w-lg text-center">
+                    <AlertCircle className="mx-auto h-6 w-6 text-terracotta" />
+                    <p className="mt-2 font-medium text-espresso">
+                      Could not load customers
+                    </p>
+                    <p className="mt-1 text-sm text-sand-ink">{loadErrorMessage}</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-4"
+                      disabled={isFetching}
+                      onClick={() => void refetch()}
+                    >
+                      {isFetching ? 'Retrying...' : 'Retry'}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : listState === 'empty' ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-12 text-sand-ink">
                   No customers found
@@ -316,7 +369,7 @@ export default function CustomersPage() {
       </ErrorBoundary>
 
       {/* Pagination */}
-      {result && result.totalPages > 1 && (
+      {listState === 'ready' && result && result.totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-sand-ink">
             Page {result.page} of {result.totalPages} · {result.total} customer{result.total !== 1 ? 's' : ''}

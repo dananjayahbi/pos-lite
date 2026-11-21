@@ -24,7 +24,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Pencil, Trash2, AlertCircle } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
 import { CustomerSheet } from '@/components/customers/CustomerSheet';
 import { LoyaltyBadge } from '@/components/customers/LoyaltyBadge';
@@ -36,6 +36,11 @@ import {
 import { saleItemCount } from '@/components/customers/customerPurchases';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import {
+  CustomerLoadError,
+  customerErrorStatus,
+  resolveCustomerDetailState,
+} from '@/lib/services/customerLoad.core';
 import { toast } from 'sonner';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -132,16 +137,46 @@ export default function CustomerDetailPage({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const { data, isLoading, isError, refetch } = useQuery<{ success: boolean; data: CustomerDetail }>({
+  const { data, isLoading, isError, error, isFetching, refetch } = useQuery<{
+    success: boolean;
+    data: CustomerDetail;
+  }>({
     queryKey: ['customer', customerId],
     queryFn: async () => {
       const res = await fetch(`/api/store/customers/${customerId}`);
-      if (!res.ok) throw new Error('Failed to fetch customer');
-      return res.json();
+      let json: {
+        success?: boolean;
+        data?: CustomerDetail;
+        error?: { message?: string };
+      } | null = null;
+      try {
+        json = await res.json();
+      } catch {
+        // A non-JSON error response still needs a status-aware load error.
+      }
+      if (!res.ok || !json?.success || !json.data) {
+        throw new CustomerLoadError(
+          json?.error?.message ??
+            (res.status === 404 ? 'Customer not found' : 'Failed to load customer'),
+          res.status,
+        );
+      }
+      return { success: true, data: json.data };
     },
+    // The page owns the retry button; React Query retries would only delay the
+    // explicit 404/error state.
+    retry: false,
   });
 
   const customer = data?.data;
+  const detailState = resolveCustomerDetailState({
+    isLoading,
+    isError,
+    errorStatus: customerErrorStatus(error),
+    hasCustomer: Boolean(customer),
+  });
+  const loadErrorMessage =
+    error instanceof Error ? error.message : 'Failed to load customer';
 
   const handleSuccess = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['customer', customerId] });
@@ -196,7 +231,7 @@ export default function CustomerDetailPage({
     { key: 'about', label: 'About / Notes' },
   ];
 
-  if (isLoading) {
+  if (detailState === 'loading') {
     return (
       <div className="space-y-6 p-6 md:p-8">
         <Skeleton className="h-8 w-48" />
@@ -210,18 +245,25 @@ export default function CustomerDetailPage({
     );
   }
 
-  if (isError) {
+  if (detailState === 'error') {
     return (
-      <div className="text-center py-20 text-sand-ink">
-        <p>Could not load this customer. The Returns tab depends on the same request.</p>
-        <Button variant="outline" className="mt-4" onClick={() => void refetch()}>
-          Retry
+      <div role="alert" className="text-center py-20 text-sand-ink">
+        <AlertCircle className="mx-auto h-6 w-6 text-terracotta" />
+        <p className="mt-2 font-medium text-espresso">Could not load this customer</p>
+        <p className="mt-1 text-sm">{loadErrorMessage}</p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          disabled={isFetching}
+          onClick={() => void refetch()}
+        >
+          {isFetching ? 'Retrying...' : 'Retry'}
         </Button>
       </div>
     );
   }
 
-  if (!customer) {
+  if (detailState === 'not-found') {
     return (
       <div className="text-center py-20 text-sand-ink">
         <p>Customer not found</p>
@@ -230,6 +272,11 @@ export default function CustomerDetailPage({
         </Button>
       </div>
     );
+  }
+
+  if (!customer) {
+    // `detailState` is only 'ready' when the response carried a customer.
+    return null;
   }
 
   const completedSales = customer.sales.filter((s) => s.status === 'COMPLETED');
