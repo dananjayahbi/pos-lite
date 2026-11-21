@@ -9,6 +9,7 @@ import {
   dedupeLocality,
   formatWaybillAmount,
   formatWaybillDate,
+  formatWaybillItem,
   isDraftWaybill,
   waybillBarcodeValue,
 } from '@/lib/delivery/waybill';
@@ -35,9 +36,16 @@ interface DeliveryLike {
   paymentStatus?: string | null | undefined;
   itemCount?: number | undefined;
   totalWeightKg?: string | number | null | undefined;
+  /** First ordered line, used for the product/SKU description (ARGUS #307). */
+  lines?: WaybillLineLike[] | undefined;
   deliveredAt?: string | null | undefined;
   dispatchedAt?: string | null | undefined;
   createdAt?: string | null | undefined;
+}
+
+interface WaybillLineLike {
+  productNameSnapshot?: string | null | undefined;
+  skuSnapshot?: string | null | undefined;
 }
 
 interface ShippingLabelProps {
@@ -59,6 +67,7 @@ interface LabelDeliveryLike {
   itemCount?: number | null;
   totalWeightKg?: string | number | null;
   waybill?: string | null;
+  lines?: WaybillLineLike[] | null;
   deliveredAt?: string | null;
   dispatchedAt?: string | null;
   createdAt?: string | null;
@@ -117,6 +126,12 @@ export function ShippingLabel({ template, address, delivery, waybillId }: Shippi
     totalWeightKg: delivery.totalWeightKg,
     showItemCount: true,
     showWeight: true,
+    itemLabel: (() => {
+      const line = delivery.lines?.[0];
+      return line
+        ? formatWaybillItem(line.productNameSnapshot, line.skuSnapshot)
+        : '';
+    })(),
     fallback: delivery.orderRef,
   });
   const date = delivery.deliveredAt ?? delivery.dispatchedAt ?? delivery.createdAt ?? null;
@@ -228,6 +243,7 @@ export function toLabelProps(delivery: LabelDeliveryLike): {
       paymentStatus: delivery.paymentStatus ?? null,
       itemCount: delivery.itemCount ?? 1,
       totalWeightKg: delivery.totalWeightKg,
+      lines: delivery.lines ?? [],
       deliveredAt: delivery.deliveredAt ?? null,
       dispatchedAt: delivery.dispatchedAt ?? null,
       createdAt: delivery.createdAt ?? null,

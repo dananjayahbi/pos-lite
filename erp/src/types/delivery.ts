@@ -120,6 +120,8 @@ export interface DeliveryListItem {
   address?: DeliveryAddress | null;
   customer?: DeliveryCustomer | null;
   shipments?: DeliveryShipment[];
+  /** First ordered line (product + SKU) for the waybill description. */
+  lines?: Pick<DeliveryLineItem, 'productNameSnapshot' | 'skuSnapshot'>[] | null;
 }
 
 export type { CourierShipment };

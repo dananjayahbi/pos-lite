@@ -84,6 +84,8 @@ export interface WaybillDescriptionInput {
   totalWeightKg: string | number | null | undefined;
   showItemCount: boolean;
   showWeight: boolean;
+  /** First product/SKU for courier and customs identification (ARGUS #307). */
+  itemLabel?: string | null | undefined;
   fallback?: string | null;
 }
 
@@ -100,12 +102,26 @@ export function formatWaybillWeight(
   return num.toFixed(2);
 }
 
-/** "2 items · 1.50 kg" — the Order Description row. */
+/** First product/SKU label used by the Order Description row (ARGUS #307). */
+export function formatWaybillItem(
+  productName?: string | null,
+  sku?: string | null,
+): string {
+  const name = trimmed(productName);
+  const code = trimmed(sku);
+  if (!name && !code) return '';
+  if (!code) return name;
+  if (!name) return code;
+  return `${name} (${code})`;
+}
+
+/** "2 items · 1.50 kg · Herbal Soap (HB-01)" — the Order Description row. */
 export function buildWaybillDescription({
   itemCount,
   totalWeightKg,
   showItemCount,
   showWeight,
+  itemLabel,
   fallback,
 }: WaybillDescriptionInput): string {
   const count = itemCount ?? 1;
@@ -115,6 +131,8 @@ export function buildWaybillDescription({
     const weight = formatWaybillWeight(totalWeightKg);
     parts.push(weight ? `${weight} kg` : 'weight n/a');
   }
+  const firstItem = trimmed(itemLabel);
+  if (firstItem) parts.push(firstItem);
   const description = parts.join(' · ');
   if (description) return description;
   return fallback ?? '-';

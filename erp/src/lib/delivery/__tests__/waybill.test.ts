@@ -5,6 +5,7 @@ import {
   dedupeLocality,
   formatWaybillAmount,
   formatWaybillDate,
+  formatWaybillItem,
   formatWaybillWeight,
   isDraftWaybill,
   waybillBarcodeValue,
@@ -137,6 +138,24 @@ describe('buildWaybillDescription', () => {
         fallback: 'ORD-00001',
       }),
     ).toBe('ORD-00001');
+  });
+
+  it('includes the first product and SKU for courier identification (ARGUS #307)', () => {
+    expect(
+      buildWaybillDescription({
+        itemCount: 1,
+        totalWeightKg: 1,
+        showItemCount: true,
+        showWeight: true,
+        itemLabel: formatWaybillItem('Herbal Soap', 'HB-01'),
+      }),
+    ).toBe('1 item · 1.00 kg · Herbal Soap (HB-01)');
+  });
+
+  it('formats a product with a missing SKU or only a SKU', () => {
+    expect(formatWaybillItem('Herbal Soap', null)).toBe('Herbal Soap');
+    expect(formatWaybillItem(null, 'HB-01')).toBe('HB-01');
+    expect(formatWaybillItem('  ', '  ')).toBe('');
   });
 });
 

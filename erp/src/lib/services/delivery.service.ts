@@ -94,6 +94,13 @@ export async function getDeliveries(tenantId: string, filters: DeliveryFilters) 
         address: true,
         shipments: { orderBy: { createdAt: 'desc' }, take: 1 },
         customer: { select: { id: true, name: true, phone: true } },
+        // ARGUS #307: the waybill description needs at least the first product
+        // and SKU for courier/customs identification.
+        lines: {
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+          select: { productNameSnapshot: true, skuSnapshot: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
