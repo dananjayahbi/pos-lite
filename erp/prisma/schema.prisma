@@ -218,6 +218,9 @@ enum ReturnRefundMethod {
 
 enum ReturnStatus {
   COMPLETED
+  // A completed return can be reversed by an authorised manager; the original
+  // return rows remain for audit, but reports/returnability exclude CANCELLED.
+  CANCELLED
 }
 
 enum Gender {

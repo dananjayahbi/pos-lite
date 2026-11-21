@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/lib/api/errors';
-import { ReturnRefundMethod, ReturnStatus } from '@/generated/prisma/client';
+import { ReturnRefundMethod, ReturnStatus, PaymentEntrySource } from '@/generated/prisma/client';
 import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { kickCashDrawer } from '@/lib/hardware/cashDrawer';
@@ -19,7 +19,9 @@ import {
 } from '@/lib/services/saleAccounts';
 import { resolveSaleIdByReference } from '@/lib/services/returnReference';
 import { issueCredit } from '@/lib/services/customer.service';
+import { postLedgerEntries } from '@/lib/services/paymentAccount.service';
 import { reconcileCommissionForSale } from '@/lib/services/commission.service';
+import { validateReturnCancellation } from '@/lib/services/returnCancellation.core';
 
 const RETURN_WINDOW_DAYS = 30;
 
@@ -446,6 +448,137 @@ export async function getReturnById(tenantId: string, returnId: string) {
 }
 
 // ── Get Returns (Paginated) ──────────────────────────────────────────────────
+
+// ── Cancel / reverse a completed return (ARGUS #102) ─────────────────────────
+
+/**
+ * Reverse a completed return that was entered in error.
+ *
+ * Controlled path (owner/manager, reason required): removes the restocked
+ * units, recovers the refund from the customer's store-credit balance or the
+ * payment account it was paid from, and marks the return CANCELLED. The
+ * original rows are never deleted; reports and the original sale's returnable
+ * quantity exclude CANCELLED returns. Commission clawback is not automatically
+ * restored - the operator must review it (documented).
+ */
+export async function cancelReturn(
+  tenantId: string,
+  returnId: string,
+  actorId: string,
+  reason: string,
+) {
+  if (!reason.trim()) {
+    throw new ApiError(400, 'RETURN_CANCEL_REASON_REQUIRED', 'A reason is required to reverse a return');
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.return.findFirst({
+      where: { id: returnId, tenantId },
+      include: {
+        lines: true,
+        originalSale: { select: { customerId: true } },
+        linkedSales: { select: { id: true } },
+      },
+    });
+
+    if (!existing) {
+      throw new ApiError(404, 'NOT_FOUND', 'Return not found');
+    }
+
+    const refundAmount = new Decimal(existing.refundAmount.toString());
+    const customerId = existing.originalSale.customerId;
+    let customerCreditBalance: number | undefined;
+    if (existing.refundMethod === ReturnRefundMethod.STORE_CREDIT && customerId) {
+      const customer = await tx.customer.findFirst({
+        where: { id: customerId, tenantId },
+        select: { creditBalance: true },
+      });
+      customerCreditBalance = customer ? new Decimal(customer.creditBalance.toString()).toNumber() : 0;
+    }
+
+    const cancellationProblem = validateReturnCancellation({
+      status: existing.status,
+      reason,
+      linkedSaleCount: existing.linkedSales.length,
+      refundMethod: existing.refundMethod,
+      refundAmount: refundAmount.toNumber(),
+      customerId,
+      customerCreditBalance,
+    });
+    if (cancellationProblem) {
+      throw new ApiError(
+        cancellationProblem.code === 'RETURN_CANCEL_REASON_REQUIRED' ? 400 : 409,
+        cancellationProblem.code,
+        cancellationProblem.message,
+      );
+    }
+
+    // 1. Remove the units that were restocked by the return.
+    for (const line of existing.lines) {
+      if (!line.isRestocked) continue;
+      await adjustStockInTx(tx, tenantId, line.variantId, actorId, {
+        quantityDelta: -line.quantity,
+        reason: 'SALE_RETURN',
+        note: `Reversal of cancelled return ${returnId.slice(0, 8).toUpperCase()}`,
+      });
+    }
+
+    // 2. Recover store credit from the customer's balance.
+    if (existing.refundMethod === ReturnRefundMethod.STORE_CREDIT) {
+      await tx.customer.update({
+        where: { id: customerId as string },
+        data: { creditBalance: { decrement: refundAmount.toNumber() } },
+      });
+    }
+
+    // 3. Reverse the ledger leg the refund posted (cash/card) so account
+    //    balances and cash flow no longer include the cancelled refund.
+    if (
+      existing.refundMethod === ReturnRefundMethod.CASH ||
+      existing.refundMethod === ReturnRefundMethod.CARD_REVERSAL
+    ) {
+      const entries = await tx.paymentAccountEntry.findMany({
+        where: { tenantId, source: 'SALE_REFUND', sourceId: returnId },
+        select: { accountId: true, debit: true, credit: true },
+      });
+      if (entries.length > 0) {
+        await postLedgerEntries(
+          tx,
+          tenantId,
+          actorId,
+          entries.map((entry) => ({
+            accountId: entry.accountId,
+            source: PaymentEntrySource.SALE_REFUND,
+            sourceId: `return-cancel:${returnId}`,
+            description: `Reversal of cancelled return ${returnId.slice(0, 8).toUpperCase()}`,
+            debit: new Decimal(entry.credit.toString()),
+            credit: new Decimal(entry.debit.toString()),
+            entryDate: new Date(),
+          })),
+        );
+      }
+    }
+
+    const updated = await tx.return.update({
+      where: { id: returnId },
+      data: { status: ReturnStatus.CANCELLED },
+      include: { lines: true, originalSale: true },
+    });
+
+    void createAuditLog({
+      tenantId,
+      actorId,
+      actorRole: 'USER',
+      entityType: 'Return',
+      entityId: returnId,
+      action: AUDIT_ACTIONS.RETURN_CANCELLED,
+      before: { status: 'COMPLETED', refundAmount: refundAmount.toFixed(2) },
+      after: { status: 'CANCELLED', reason: reason.trim() },
+    }).catch(() => {});
+
+    return updated;
+  });
+}
 
 interface GetReturnsFilters {
   originalSaleId?: string | undefined;

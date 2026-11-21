@@ -12,7 +12,9 @@ export const ReturnCreateSchema = z.object({
   lines: z.array(ReturnLineSchema).min(1),
   refundMethod: z.nativeEnum(ReturnRefundMethod, { error: 'Invalid refund method' }),
   restockItems: z.boolean().default(true),
-  reason: z.string().max(200).default(''),
+  // A refund always needs a reason (ARGUS #102); a mistyped refund is reversed
+  // through the controlled cancel endpoint, not by deleting the row.
+  reason: z.string().trim().min(5, 'A reason of at least 5 characters is required').max(200),
   // Optional by design (ARGUS #95): the route fills in the signed-in
   // manager/owner. A non-manager holding an explicit `sale:refund` override
   // may legitimately refund without an authorizer, so the schema must accept

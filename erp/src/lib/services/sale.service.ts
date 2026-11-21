@@ -815,7 +815,7 @@ export async function getSaleById(tenantId: string, saleId: string) {
       lines: {
         include: {
           variant: { include: { product: true } },
-          returnLines: { select: { quantity: true } },
+          returnLines: { where: { return: { status: 'COMPLETED' } }, select: { quantity: true } },
         },
       },
       cashier: { select: { id: true, email: true } },
@@ -879,7 +879,7 @@ export async function getSales(tenantId: string, filters: GetSalesFilters) {
     prisma.sale.findMany({
       where,
       include: {
-        lines: { include: { returnLines: { select: { quantity: true } } } },
+        lines: { include: { returnLines: { where: { return: { status: 'COMPLETED' } }, select: { quantity: true } } } },
         // TASK B: the management table shows the customer name, so the list
         // response carries the minimum identity fields (never the full record).
         customer: { select: { id: true, name: true, phone: true } },
@@ -1406,7 +1406,7 @@ export async function updateSale(
       where: { id: saleId },
       data,
       include: {
-        lines: { include: { returnLines: { select: { quantity: true } } } },
+        lines: { include: { returnLines: { where: { return: { status: 'COMPLETED' } }, select: { quantity: true } } } },
         customer: { select: { id: true, name: true, phone: true } },
       },
     });
