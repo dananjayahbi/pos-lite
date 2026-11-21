@@ -31,3 +31,25 @@ canonical report title instead of deriving a label from a path.
 Pure normalizer/tests:
 `src/lib/reports/report-config.ts` (`normalizeReportType`) and
 `src/lib/reports/__tests__/report-type.test.ts`.
+
+## Presentation and discovery (ARGUS #449)
+
+- `/reports/saved` no longer inherits the report shell's date range, Export or
+  Save Report controls (or the duplicate Saved Reports dialog trigger); the
+  report sidebar stays available.
+- Filters render as labelled chips (`From 2026-10-01`, `Category OILS_LIQUIDS`)
+  instead of raw JSON. The internal `_snapshot` key is hidden; unknown or nested
+  values fall back to `Saved filter` rather than printing JSON.
+- Created/Updated and every "data as of" value use the app's en-GB
+  `formatShortDateTime` helper. Each row always states the data-as-of time: the
+  saved snapshot timestamp when present, otherwise the artifact generation
+  (updated) time.
+- The list has case-insensitive search (name, report type, format, filter
+  values) and pages at 10 presets with Previous/Next and a range summary.
+- CSV and XLSX artifacts now start with the same `AyurPOS - <title>` and date
+  range lines as the PDF (`reportArtifactMetaLines`), separated from the table
+  header by one blank row.
+
+Helpers live in `src/lib/reports/savedReportsList.core.ts` and
+`src/lib/reports/reportArtifactMeta.core.ts`; their tests cover chips, search,
+pagination and metadata line construction.

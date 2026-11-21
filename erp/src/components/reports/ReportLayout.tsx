@@ -277,6 +277,9 @@ function ReportLayoutInner({
       "Report");
   // ARGUS #444 — the API stores renderable slugs, never `/reports/...` paths.
   const canonicalReportType = normalizeReportType(reportType ?? pathname);
+  // ARGUS #449 — the saved-report library is a management page, not a report:
+  // the date range, Export and Save Report controls do not apply to it.
+  const isSavedReportsPage = pathname === "/reports/saved";
 
   // ── Date range handler ──────────────────────────────────────
 
@@ -493,15 +496,17 @@ function ReportLayoutInner({
           </h1>
 
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 md:gap-3">
-            <DateRangePicker
-              from={from}
-              to={to}
-              onRangeChange={handleRangeChange}
-            />
+            {!isSavedReportsPage && (
+              <DateRangePicker
+                from={from}
+                to={to}
+                onRangeChange={handleRangeChange}
+              />
+            )}
 
             <div className="ml-auto flex items-center gap-2">
               {/* Export popover */}
-              {canExport && (
+              {canExport && !isSavedReportsPage && (
               <Popover open={exportOpen} onOpenChange={setExportOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -544,7 +549,7 @@ function ReportLayoutInner({
               )}
 
               {/* Save report dialog */}
-              {canExport && (
+              {canExport && !isSavedReportsPage && (
               <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
                 <DialogTrigger asChild>
                   <Button
@@ -627,16 +632,18 @@ function ReportLayoutInner({
               )}
 
               <Dialog open={savedReportsOpen} onOpenChange={handleSavedReportsOpenChange}>
-                <DialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5 border-mist bg-white font-body text-sm text-espresso"
-                  >
-                    <FolderOpenIcon className="h-4 w-4" />
-                    <span className="hidden sm:inline">Saved Reports</span>
-                  </Button>
-                </DialogTrigger>
+                {!isSavedReportsPage && (
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 border-mist bg-white font-body text-sm text-espresso"
+                    >
+                      <FolderOpenIcon className="h-4 w-4" />
+                      <span className="hidden sm:inline">Saved Reports</span>
+                    </Button>
+                  </DialogTrigger>
+                )}
                 <DialogContent className="sm:max-w-xl">
                   <DialogHeader>
                     <DialogTitle className="font-display text-espresso">

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,7 +16,14 @@ import {
   SAVED_REPORT_NAME_MAX_LENGTH,
   validateSavedReportName,
 } from '@/lib/reports/savedReportValidation.core';
-import { savedReportsListMode } from '@/lib/reports/savedReportsList.core';
+import {
+  SAVED_REPORTS_PAGE_SIZE,
+  filterSavedReports,
+  paginateSavedReports,
+  savedReportFilterChips,
+  savedReportsListMode,
+} from '@/lib/reports/savedReportsList.core';
+import { formatShortDateTime } from '@/lib/format';
 import { hasSavedReportArtifact } from '@/lib/reports/savedReportArtifact.core';
 import { savedReportSnapshotMeta } from '@/lib/reports/savedReportAccess.core';
 import {
@@ -81,6 +88,8 @@ export default function SavedReportsPage() {
   const [editing, setEditing] = useState<SavedReportRecord | null>(null);
   const [nextName, setNextName] = useState('');
   const [deletingReport, setDeletingReport] = useState<SavedReportRecord | null>(null);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const nameCheck = validateSavedReportName(nextName);
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery<{ success: boolean; data: SavedReportRecord[] }>({
@@ -98,13 +107,17 @@ export default function SavedReportsPage() {
     isError,
     count: reports.length,
   });
+  // ARGUS #449 - search and paginate a growing library instead of dumping every
+  // preset onto one page.
+  const filtered = useMemo(() => filterSavedReports(reports, search), [reports, search]);
+  const paged = paginateSavedReports(filtered, page, SAVED_REPORTS_PAGE_SIZE);
   const grouped = useMemo(() => {
-    return reports.reduce<Record<string, SavedReportRecord[]>>((acc, report) => {
+    return paged.items.reduce<Record<string, SavedReportRecord[]>>((acc, report) => {
       const key = formatReportType(report.reportType);
       acc[key] = [...(acc[key] ?? []), report];
       return acc;
     }, {});
-  }, [reports]);
+  }, [paged.items]);
 
   const renameMutation = useMutation({
     mutationFn: async () => {
@@ -144,9 +157,36 @@ export default function SavedReportsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-espresso">Saved Reports</h1>
-        <p className="mt-1 text-sm text-sand-ink">Open, rename, or remove the report presets you’ve collected across the reporting suite.</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-espresso">Saved Reports</h1>
+          <p className="mt-1 text-sm text-sand-ink">
+            Open, rename, or remove the report presets you’ve collected across the reporting
+            suite.
+          </p>
+          {mode === 'ready' && (
+            <p className="mt-1 font-body text-xs text-mist-ink">
+              {reports.length} {reports.length === 1 ? 'preset' : 'presets'}
+              {search.trim() !== '' ? ` · ${filtered.length} matching` : ''}
+            </p>
+          )}
+        </div>
+        <div className="relative w-full sm:w-72">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mist-ink"
+            aria-hidden="true"
+          />
+          <Input
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+            placeholder="Search presets, filters, report type…"
+            aria-label="Search saved reports"
+            className="pl-9"
+          />
+        </div>
       </div>
 
       {mode === 'loading' ? (
@@ -178,6 +218,15 @@ export default function SavedReportsPage() {
             No saved reports yet. Save a preset from any report screen to manage it here.
           </CardContent>
         </Card>
+      ) : filtered.length === 0 ? (
+        <Card className="border-mist">
+          <CardContent className="flex flex-col items-center gap-2 py-16 text-center text-sand-ink">
+            <p>No saved reports match “{search.trim()}”.</p>
+            <Button variant="outline" size="sm" onClick={() => setSearch('')}>
+              Clear search
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-6">
           {Object.entries(grouped).map(([group, groupReports]) => (
@@ -186,7 +235,11 @@ export default function SavedReportsPage() {
                 <CardTitle className="text-espresso">{group}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {groupReports.map((report) => (
+                {groupReports.map((report) => {
+                  const snapshot = savedReportSnapshotMeta(report.filters);
+                  const chips = savedReportFilterChips(report.filters);
+                  const dataAsOf = snapshot.asOf ?? report.updatedAt ?? report.createdAt;
+                  return (
                   <div key={report.id} className="flex flex-col gap-4 rounded-lg border border-mist bg-pearl/40 p-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
@@ -195,20 +248,31 @@ export default function SavedReportsPage() {
                           {report.format ?? "pdf"}
                         </span>
                       </div>
-                      <p className="text-xs text-sand-ink">Created {new Date(report.createdAt).toLocaleString()} · Updated {new Date(report.updatedAt).toLocaleString()}</p>
-                      <p className="font-mono text-[11px] text-sand-ink break-all">
-                        {Object.keys(report.filters ?? {}).length === 0 ? 'No filters saved' : JSON.stringify(report.filters)}
+                      <p className="text-xs text-sand-ink">
+                        Created {formatShortDateTime(report.createdAt)} · Updated{' '}
+                        {formatShortDateTime(report.updatedAt)}
                       </p>
-                      {(() => {
-                        const snapshot = savedReportSnapshotMeta(report.filters);
-                        if (!snapshot.asOf) return null;
-                        return (
-                          <p className="text-xs text-amber-700">
-                            Snapshot as of {new Date(snapshot.asOf).toLocaleString()} - Open in App
-                            shows current data.
-                          </p>
-                        );
-                      })()}
+                      <p className="text-xs text-amber-800">
+                        Data as of {formatShortDateTime(dataAsOf)}
+                        {snapshot.asOf
+                          ? ' (saved snapshot; Open in App shows current data)'
+                          : ' (artifact generation time)'}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {chips.length === 0 ? (
+                          <span className="text-xs text-sand-ink">No filters saved</span>
+                        ) : (
+                          chips.map((chip) => (
+                            <span
+                              key={chip.key}
+                              className="inline-flex items-center gap-1 rounded-full border border-mist bg-white px-2 py-0.5 text-[11px] text-espresso"
+                            >
+                              <span className="text-sand-ink">{chip.label}</span>
+                              {chip.value}
+                            </span>
+                          ))
+                        )}
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-2 lg:justify-end">
                       {hasSavedReportArtifact(report) ? (
@@ -251,10 +315,41 @@ export default function SavedReportsPage() {
                       </Button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </CardContent>
             </Card>
           ))}
+
+          {paged.totalPages > 1 && (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="font-body text-sm text-sand-ink">
+                Showing {(paged.page - 1) * paged.pageSize + 1}–
+                {Math.min(paged.page * paged.pageSize, paged.total)} of {paged.total}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={paged.page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  Previous
+                </Button>
+                <span className="font-body text-sm text-sand-ink">
+                  Page {paged.page} of {paged.totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={paged.page >= paged.totalPages}
+                  onClick={() => setPage((current) => Math.min(paged.totalPages, current + 1))}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

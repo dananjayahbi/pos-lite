@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { ReportColumn } from "@/lib/reports/export";
+import { reportArtifactMetaLines } from "@/lib/reports/reportArtifactMeta.core";
 
 export interface ReportFileResult {
   /** Raw file bytes suitable for upload to object storage. */
@@ -39,13 +40,22 @@ function escapeCSVValue(value: string | number | null | undefined): string {
 export function generateCSV(
   rows: Record<string, unknown>[],
   columns: ReportColumn[],
+  title = "",
+  dateRange = "",
 ): ReportFileResult {
   assertNode();
   const headerLine = columns.map((c) => escapeCSVValue(c.header)).join(",");
   const dataLines = rows.map((row) =>
     columns.map((c) => escapeCSVValue((row[c.key] as string | number | null) ?? null)).join(","),
   );
-  const csv = [headerLine, ...dataLines].join("\r\n");
+  // ARGUS #449 - CSV artifacts carry the same identity lines as the PDF.
+  // A blank line separates the metadata block from the table header.
+  const metaLines = reportArtifactMetaLines(title, dateRange).map((line) =>
+    escapeCSVValue(line),
+  );
+  const csv = [...(metaLines.length > 0 ? [...metaLines, ""] : []), headerLine, ...dataLines].join(
+    "\r\n",
+  );
   const buffer = Buffer.from("\uFEFF" + csv, "utf8");
   return { buffer, contentType: "text/csv;charset=utf-8", extension: "csv" };
 }
@@ -56,9 +66,14 @@ export function generateXLSX(
   rows: Record<string, unknown>[],
   columns: ReportColumn[],
   sheetName: string,
+  title = "",
+  dateRange = "",
 ): ReportFileResult {
   assertNode();
+  const metaRows = reportArtifactMetaLines(title, dateRange).map((line) => [line]);
   const aoa: (string | number | null)[][] = [
+    ...metaRows,
+    ...(metaRows.length > 0 ? [[]] : []),
     columns.map((c) => c.header),
     ...rows.map((row) => columns.map((c) => (row[c.key] as string | number | null) ?? null)),
   ];
@@ -148,9 +163,9 @@ export function generateReportFile(
 ): ReportFileResult {
   switch (format) {
     case "csv":
-      return generateCSV(rows, columns);
+      return generateCSV(rows, columns, title, dateRange);
     case "xlsx":
-      return generateXLSX(rows, columns, title);
+      return generateXLSX(rows, columns, title, title, dateRange);
     case "pdf":
       return generatePDF(rows, columns, title, dateRange);
   }
