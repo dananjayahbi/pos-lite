@@ -46,7 +46,8 @@ instead of a dark banner, matching the invoice redesign.
   restock status, item/line counts, return reason.
 - Line table: product, variant, qty, unit price, line refund and per-line restock
   pill. The table header repeats on page breaks and rows avoid splitting.
-- Totals: refund-method explanation plus **Total Refund**.
+- Totals: refund-method explanation, tax refunded and original sale total
+  (when recorded), plus **Total Refund**.
 - Signatures: customer and authorizing manager.
 - Footer: store receipt footer, powered-by line and print timestamp.
 

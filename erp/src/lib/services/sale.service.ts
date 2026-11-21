@@ -389,6 +389,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
             discountAmount: l.discountAmount.toNumber(),
             lineTotalBeforeDiscount: l.lineTotalBeforeDiscount.toNumber(),
             lineTotalAfterDiscount: l.lineTotalAfterDiscount.toNumber(),
+            lineTax: l.lineTax.toNumber(),
           })),
         },
       },

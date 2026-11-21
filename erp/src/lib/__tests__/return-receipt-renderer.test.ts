@@ -45,6 +45,36 @@ function makeTenant(overrides: Partial<ReceiptTenant> = {}): ReceiptTenant {
 }
 
 describe('buildReturnReceiptHtml', () => {
+  it('shows the tax refunded and the original sale total (ARGUS #90)', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn({
+        refundAmount: dec(2459.12),
+        taxAmount: dec(375.12),
+        originalSale: {
+          totalAmount: dec(2934.12),
+          taxAmount: dec(375.12),
+          deliveryCharge: dec(475),
+        },
+      }),
+      makeTenant(),
+      'Nimal',
+      'Kamal',
+    );
+
+    expect(html).toContain('Tax refunded');
+    expect(html).toContain('Rs. 375.12');
+    expect(html).toContain('Original sale total');
+    expect(html).toContain('Rs. 2,934.12');
+    expect(html).toContain('Rs. 2,459.12');
+  });
+
+  it('omits the tax and sale-total rows when they are not available', () => {
+    const html = buildReturnReceiptHtml(makeReturn(), makeTenant(), 'Nimal', 'Kamal');
+
+    expect(html).not.toContain('Tax refunded');
+    expect(html).not.toContain('Original sale total');
+  });
+
   it('targets A4 portrait at a 180 mm content width instead of the old 80 mm slip', () => {
     const html = buildReturnReceiptHtml(makeReturn(), makeTenant(), 'Nimal', 'Kamal');
 

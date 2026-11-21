@@ -7,9 +7,17 @@ export interface ReceiptReturn {
   originalSaleId: string;
   refundMethod: string;
   refundAmount: { toString(): string } | number;
+  /** Tax component included in refundAmount (0 on legacy returns). */
+  taxAmount?: { toString(): string } | number | null;
   restockItems: boolean;
   reason: string;
   createdAt: Date | string;
+  /** Original sale totals, shown so the customer can see the sale context. */
+  originalSale?: {
+    totalAmount: { toString(): string } | number;
+    taxAmount?: { toString(): string } | number | null;
+    deliveryCharge?: { toString(): string } | number | null;
+  } | null;
   lines: Array<{
     productNameSnapshot: string;
     variantDescriptionSnapshot: string;
@@ -173,6 +181,10 @@ export function buildReturnReceiptHtml(
 
   const now = new Date();
   const printTimestamp = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+  const taxRefunded = n(returnData.taxAmount);
+  const originalSaleTotal =
+    returnData.originalSale != null ? n(returnData.originalSale.totalAmount) : null;
 
   const logoHtml = logoUrl
     ? `<img class="brand-logo" src="${esc(logoUrl)}" alt="${esc(tenant.name)} logo" />`
@@ -554,6 +566,8 @@ export function buildReturnReceiptHtml(
     <div class="totals">
       <div class="totals-line"><span>Items returned</span><span>${totalQuantity}</span></div>
       <div class="totals-line"><span>Refund method</span><span>${esc(refundMethodLabel)}</span></div>
+      ${taxRefunded > 0 ? `<div class="totals-line"><span>Tax refunded</span><span>${formatRupee(taxRefunded)}</span></div>` : ''}
+      ${originalSaleTotal !== null ? `<div class="totals-line"><span>Original sale total</span><span>${formatRupee(originalSaleTotal)}</span></div>` : ''}
       <div class="totals-grand"><span>Total Refund</span><span class="amount">${formatRupee(n(returnData.refundAmount))}</span></div>
     </div>
   </div>

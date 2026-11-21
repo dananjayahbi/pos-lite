@@ -7,6 +7,7 @@ import type { PrinterConfig } from '@/lib/hardware/printer';
 import Decimal from 'decimal.js';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
+import { computeReturnRefund } from '@/lib/services/returnRefund.core';
 
 const RETURN_WINDOW_DAYS = 30;
 
@@ -113,43 +114,58 @@ interface ComputedReturnLine {
   quantity: number;
   unitPrice: Decimal;
   lineRefundAmount: Decimal;
+  lineTaxAmount: Decimal;
   productNameSnapshot: string;
   variantDescriptionSnapshot: string;
 }
 
+/**
+ * Refund per returned line, including the tax actually collected (ARGUS #90).
+ *
+ * The goods part comes from `lineTotalAfterDiscount`; the tax part comes from
+ * the line's snapshotted `lineTax` (legacy rows fall back to apportioning the
+ * sale-level tax). Delivery charges are not refunded.
+ */
 export function computeLineRefundAmounts(
-  sale: { lines: Array<{ id: string; variantId: string; quantity: number; unitPrice: Decimal | { toString(): string }; lineTotalAfterDiscount: Decimal | { toString(): string }; productNameSnapshot: string; variantDescriptionSnapshot: string }> },
+  sale: {
+    taxAmount?: Decimal | { toString(): string } | number | null;
+    lines: Array<{
+      id: string;
+      variantId: string;
+      quantity: number;
+      unitPrice: Decimal | { toString(): string };
+      lineTotalAfterDiscount: Decimal | { toString(): string };
+      lineTax?: Decimal | { toString(): string } | null;
+      productNameSnapshot: string;
+      variantDescriptionSnapshot: string;
+    }>;
+  },
   requestLines: ReturnLineInput[],
-): { lines: ComputedReturnLine[]; totalRefund: Decimal } {
-  const computed: ComputedReturnLine[] = [];
-  let totalRefund = new Decimal(0);
+): { lines: ComputedReturnLine[]; totalRefund: Decimal; totalTaxRefund: Decimal } {
+  const refund = computeReturnRefund(
+    { lines: sale.lines, taxAmount: sale.taxAmount ?? 0 },
+    requestLines,
+  );
 
-  for (const req of requestLines) {
-    const saleLine = sale.lines.find((sl) => sl.id === req.saleLineId)!;
-    const lineTotalAfterDiscount = new Decimal(saleLine.lineTotalAfterDiscount.toString());
-    const originalQty = new Decimal(saleLine.quantity);
-    const returnQty = new Decimal(req.quantity);
-    const unitPrice = new Decimal(saleLine.unitPrice.toString());
-
-    const lineRefundAmount = returnQty
-      .div(originalQty)
-      .mul(lineTotalAfterDiscount)
-      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-
-    totalRefund = totalRefund.plus(lineRefundAmount);
-
-    computed.push({
-      saleLineId: req.saleLineId,
-      variantId: req.variantId,
-      quantity: req.quantity,
-      unitPrice,
-      lineRefundAmount,
+  const computed: ComputedReturnLine[] = refund.lines.map((line) => {
+    const saleLine = sale.lines.find((sl) => sl.id === line.saleLineId)!;
+    return {
+      saleLineId: line.saleLineId,
+      variantId: saleLine.variantId,
+      quantity: line.quantity,
+      unitPrice: new Decimal(saleLine.unitPrice.toString()),
+      lineRefundAmount: line.lineRefundAmount,
+      lineTaxAmount: line.taxRefund,
       productNameSnapshot: saleLine.productNameSnapshot,
       variantDescriptionSnapshot: saleLine.variantDescriptionSnapshot,
-    });
-  }
+    };
+  });
 
-  return { lines: computed, totalRefund };
+  return {
+    lines: computed,
+    totalRefund: refund.totalRefund,
+    totalTaxRefund: refund.totalTaxRefund,
+  };
 }
 
 // ── Initiate Return ──────────────────────────────────────────────────────────
@@ -181,8 +197,12 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
       tx,
     );
 
-    // 2. Compute refunds
-    const { lines: computedLines, totalRefund } = computeLineRefundAmounts(sale, input.lines);
+    // 2. Compute refunds (goods + the tax actually collected)
+    const {
+      lines: computedLines,
+      totalRefund,
+      totalTaxRefund,
+    } = computeLineRefundAmounts(sale, input.lines);
 
     // 3. Create Return record
     const returnRecord = await tx.return.create({
@@ -193,6 +213,7 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
         authorizedById: input.authorizedById,
         refundMethod: input.refundMethod,
         refundAmount: totalRefund.toFixed(2),
+        taxAmount: totalTaxRefund.toFixed(2),
         restockItems: input.restockItems,
         reason: input.reason,
         status: ReturnStatus.COMPLETED,
@@ -210,6 +231,7 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
         quantity: cl.quantity,
         unitPrice: cl.unitPrice.toFixed(2),
         lineRefundAmount: cl.lineRefundAmount.toFixed(2),
+        lineTaxAmount: cl.lineTaxAmount.toFixed(2),
         isRestocked: false,
       })),
     });

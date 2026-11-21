@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCartStore } from '@/stores/cartStore';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ReturnItemSelectionStep } from '@/components/pos/ReturnItemSelectionStep';
 import { ReturnRefundOptionsStep } from '@/components/pos/ReturnRefundOptionsStep';
 import { ReturnReceiptDialog } from '@/components/pos/ReturnReceiptDialog';
+import { computeReturnRefund } from '@/lib/services/returnRefund.core';
 import type { ReturnRefundMethod } from '@/generated/prisma/client';
 import Decimal from 'decimal.js';
 import { toast } from 'sonner';
@@ -148,25 +149,28 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
     }
   };
 
-  // Compute refund total from selected lines
-  const computeRefundTotal = (): Decimal => {
+  // Compute refund total from selected lines, including the tax collected.
+  // Uses the same pure calculation as the API so the preview and the saved
+  // refund always agree.
+  const refundTotal = useMemo(() => {
     if (!saleData) return new Decimal(0);
-    const sale = saleData as { lines: Array<{ id: string; quantity: number; lineTotalAfterDiscount: number }> };
-    let total = new Decimal(0);
-    for (const sel of selectedLines) {
-      const saleLine = sale.lines.find((l) => l.id === sel.saleLineId);
-      if (saleLine && sel.quantity > 0) {
-        const lineRefund = new Decimal(sel.quantity)
-          .div(new Decimal(saleLine.quantity))
-          .mul(new Decimal(saleLine.lineTotalAfterDiscount.toString()))
-          .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-        total = total.plus(lineRefund);
-      }
-    }
-    return total;
-  };
-
-  const refundTotal = computeRefundTotal();
+    const sale = saleData as {
+      taxAmount?: number | string;
+      lines: Array<{
+        id: string;
+        quantity: number;
+        lineTotalAfterDiscount: number | string;
+        lineTax?: number | string | null;
+      }>;
+    };
+    return computeReturnRefund(
+      { lines: sale.lines, taxAmount: sale.taxAmount ?? 0 },
+      selectedLines.map((line) => ({
+        saleLineId: line.saleLineId,
+        quantity: line.quantity,
+      })),
+    ).totalRefund;
+  }, [saleData, selectedLines]);
   const hasSelectedItems = selectedLines.some((l) => l.quantity > 0);
 
   const stepLabels = ['Select Items', 'Refund Options'];
