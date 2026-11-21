@@ -53,9 +53,26 @@ function Row({ label, value, className }: { label: string; value: string; classN
   );
 }
 
+function ReportSurface({ children }: { children: React.ReactNode }) {
+  // The POS route tree hides the store sidebar and its scroll container, so a
+  // standalone page must own its scrolling. In print the page flows normally
+  // and is not clipped.
+  return (
+    <div className="h-dvh overflow-y-auto bg-linen print:h-auto print:overflow-visible print:bg-white">
+      {children}
+    </div>
+  );
+}
+
 export default function ShiftReportPage() {
   return (
-    <Suspense fallback={<div className="mx-auto max-w-3xl space-y-6 p-6" />}>
+    <Suspense
+      fallback={
+        <ReportSurface>
+          <div className="mx-auto max-w-5xl space-y-6 p-6" />
+        </ReportSurface>
+      }
+    >
       <ShiftReportPageContent />
     </Suspense>
   );
@@ -74,36 +91,42 @@ function ShiftReportPageContent() {
 
   if (!shiftId) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-20 text-espresso">
-        <AlertCircle className="h-10 w-10 text-terracotta" />
-        <p className="font-body text-lg">No shift ID provided.</p>
-        <Link href="/pos/history" className="text-sm text-sand-ink underline font-body">
-          Go to Shift History
-        </Link>
-      </div>
+      <ReportSurface>
+        <div className="flex flex-col items-center justify-center gap-4 py-20 text-espresso">
+          <AlertCircle className="h-10 w-10 text-terracotta" />
+          <p className="font-body text-lg">No shift ID provided.</p>
+          <Link href="/pos/history" className="text-sm text-sand-ink underline font-body">
+            Go to Shift History
+          </Link>
+        </div>
+      </ReportSurface>
     );
   }
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-3xl space-y-6 p-6">
-        <Skeleton className="h-8 w-48" />
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-32 w-full" />
-        ))}
-      </div>
+      <ReportSurface>
+        <div className="mx-auto max-w-5xl space-y-6 p-6">
+          <Skeleton className="h-8 w-48" />
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-32 w-full" />
+          ))}
+        </div>
+      </ReportSurface>
     );
   }
 
   if (error || !data) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-20 text-espresso">
-        <AlertCircle className="h-10 w-10 text-terracotta" />
-        <p className="font-body text-lg">{(error as Error)?.message ?? 'Failed to load report'}</p>
-        <Link href="/pos/history" className="text-sm text-sand-ink underline font-body">
-          Go to Shift History
-        </Link>
-      </div>
+      <ReportSurface>
+        <div className="flex flex-col items-center justify-center gap-4 py-20 text-espresso">
+          <AlertCircle className="h-10 w-10 text-terracotta" />
+          <p className="font-body text-lg">{(error as Error)?.message ?? 'Failed to load report'}</p>
+          <Link href="/pos/history" className="text-sm text-sand-ink underline font-body">
+            Go to Shift History
+          </Link>
+        </div>
+      </ReportSurface>
     );
   }
 
@@ -111,7 +134,8 @@ function ShiftReportPageContent() {
   const isOpen = shift.status === 'OPEN';
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6 print:p-2 print:max-w-full">
+    <ReportSurface>
+      <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6 print:max-w-none print:space-y-3 print:p-0">
       {/* Header */}
       <div className="flex items-center justify-between print:hidden">
         <Link
@@ -294,12 +318,38 @@ function ShiftReportPageContent() {
 
       {/* Print styles */}
       <style jsx global>{`
+        @page {
+          size: A4 portrait;
+          margin: 12mm;
+        }
         @media print {
-          nav, header, .print\\:hidden { display: none !important; }
-          body { font-family: 'JetBrains Mono', monospace; font-size: 11px; }
-          section { break-inside: avoid; }
+          html,
+          body,
+          main {
+            background: #fff !important;
+          }
+          nav,
+          header,
+          aside,
+          .print\\:hidden {
+            display: none !important;
+          }
+          body {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+          }
+          section {
+            break-inside: avoid;
+          }
+          table {
+            width: 100% !important;
+          }
+          tr {
+            break-inside: avoid;
+          }
         }
       `}</style>
-    </div>
+      </div>
+    </ReportSurface>
   );
 }
