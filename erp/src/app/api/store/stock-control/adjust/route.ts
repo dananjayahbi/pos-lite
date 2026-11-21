@@ -189,10 +189,11 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    // ARGUS #181: the route owns the low-stock notification transaction, so it
-    // must also record the audit entry and emit the webhook the service path
-    // would have written.
-    recordManualAdjustmentSideEffects({
+    // ARGUS #181 / #186: the route owns the low-stock notification transaction,
+    // so it must also record the audit entry and emit the webhook the service
+    // path would have written. Await it so the writes complete before the
+    // response (fire-and-forget can be frozen in serverless).
+    await recordManualAdjustmentSideEffects({
       tenantId,
       variantId,
       actorId: session.user.id,

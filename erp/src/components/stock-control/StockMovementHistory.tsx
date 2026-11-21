@@ -15,7 +15,18 @@ import {
   ShieldX,
   X,
 } from 'lucide-react';
-import { STOCK_MOVEMENT_REASONS } from '@/lib/constants/stock-movement';
+import {
+  STOCK_MOVEMENT_REASONS,
+  STOCK_MOVEMENT_REASON_BADGE_VARIANT,
+  STOCK_MOVEMENT_REASON_DOT_COLOR,
+  STOCK_MOVEMENT_REASON_LABELS,
+  isStockMovementReason,
+  parseStockMovementReasons,
+  serializeStockMovementReasons,
+  stockMovementReasonLabel,
+  toggleStockMovementReason,
+  type StockMovementReasonValue,
+} from '@/lib/constants/stock-movement';
 import { mergeSearchParams } from '@/lib/urlUtils';
 import { useGlobalStockMovements } from '@/hooks/useGlobalStockMovements';
 import { useStockActors } from '@/hooks/useStockActors';
@@ -43,48 +54,6 @@ import {
 } from '@/components/ui/table';
 
 // ── Constants ────────────────────────────────────────────────────────────────
-
-const REASON_LABELS: Record<string, string> = {
-  FOUND: 'Found',
-  DAMAGED: 'Damaged',
-  STOLEN: 'Stolen or Lost',
-  DATA_ERROR: 'Data Entry Correction',
-  RETURNED_TO_SUPPLIER: 'Returned to Supplier',
-  INITIAL_STOCK: 'Initial Stock Entry',
-  SALE_RETURN: 'Customer Return',
-  PURCHASE_RECEIVED: 'Received from Purchase',
-  STOCK_TAKE_ADJUSTMENT: 'Stock Take Adjustment',
-  SALE: 'Sale',
-  VOID_REVERSAL: 'Void Reversal',
-};
-
-const REASON_BADGE_VARIANT: Record<string, 'success' | 'destructive' | 'info' | 'warning'> = {
-  FOUND: 'success',
-  INITIAL_STOCK: 'success',
-  PURCHASE_RECEIVED: 'success',
-  DAMAGED: 'destructive',
-  STOLEN: 'destructive',
-  DATA_ERROR: 'info',
-  STOCK_TAKE_ADJUSTMENT: 'info',
-  RETURNED_TO_SUPPLIER: 'warning',
-  SALE_RETURN: 'warning',
-  SALE: 'info',
-  VOID_REVERSAL: 'warning',
-};
-
-const REASON_DOT_COLOR: Record<string, string> = {
-  FOUND: 'bg-green-500',
-  INITIAL_STOCK: 'bg-green-500',
-  PURCHASE_RECEIVED: 'bg-green-500',
-  DAMAGED: 'bg-red-500',
-  STOLEN: 'bg-red-500',
-  DATA_ERROR: 'bg-blue-500',
-  STOCK_TAKE_ADJUSTMENT: 'bg-blue-500',
-  RETURNED_TO_SUPPLIER: 'bg-amber-500',
-  SALE_RETURN: 'bg-amber-500',
-  SALE: 'bg-blue-400',
-  VOID_REVERSAL: 'bg-amber-400',
-};
 
 const ALL_REASONS = [...STOCK_MOVEMENT_REASONS];
 const PAGE_SIZE = 25;
@@ -145,12 +114,22 @@ function StockMovementHistoryInner() {
   const page = Number(searchParams.get('page') ?? '1');
   const from = searchParams.get('from') ?? getDefaultFrom();
   const to = searchParams.get('to') ?? '';
-  const reasonsParam = searchParams.get('reasons') ?? ALL_REASONS.join(',');
+  const reasonsParam = searchParams.get('reasons');
   const search = searchParams.get('search') ?? '';
   const actorId = searchParams.get('actorId') ?? '';
   const sortOrder = (searchParams.get('sortOrder') as 'asc' | 'desc') ?? 'desc';
 
-  const selectedReasons = useMemo(() => new Set(reasonsParam.split(',').filter(Boolean)), [reasonsParam]);
+  const selectedReasons = useMemo(
+    () => new Set<StockMovementReasonValue>(parseStockMovementReasons(reasonsParam)),
+    [reasonsParam],
+  );
+  // ARGUS #183: serialize through the shared 13-reason config. `null` means
+  // "every reason", so a partial URL never drops the newer enum members when
+  // the operator toggles a chip.
+  const reasonFilter = useMemo(
+    () => serializeStockMovementReasons(selectedReasons),
+    [selectedReasons],
+  );
 
   // ── Local state for debounced search ───────────────────────────────────────
   const [searchInput, setSearchInput] = useState(search);
@@ -186,12 +165,12 @@ function StockMovementHistoryInner() {
       limit: PAGE_SIZE,
       from: from || undefined,
       to: to || undefined,
-      reasons: reasonsParam !== ALL_REASONS.join(',') ? reasonsParam : undefined,
+      reasons: reasonFilter ?? undefined,
       search: search || undefined,
       actorId: actorId || undefined,
       sortOrder,
     }),
-    [page, from, to, reasonsParam, search, actorId, sortOrder],
+    [page, from, to, reasonFilter, search, actorId, sortOrder],
   );
 
   const { data, isLoading } = useGlobalStockMovements(filters);
@@ -210,7 +189,7 @@ function StockMovementHistoryInner() {
       const params = new URLSearchParams();
       if (from) params.set('from', from);
       if (to) params.set('to', to);
-      if (reasonsParam !== ALL_REASONS.join(',')) params.set('reasons', reasonsParam);
+      if (reasonFilter) params.set('reasons', reasonFilter);
       if (search) params.set('search', search);
       if (actorId) params.set('actorId', actorId);
       params.set('sortOrder', sortOrder);
@@ -236,21 +215,17 @@ function StockMovementHistoryInner() {
     } finally {
       setExporting(false);
     }
-  }, [from, to, reasonsParam, search, actorId, sortOrder]);
+  }, [from, to, reasonFilter, search, actorId, sortOrder]);
 
   // ── Reason chip toggle ─────────────────────────────────────────────────────
   const toggleReason = useCallback(
-    (reason: string) => {
-      const next = new Set(selectedReasons);
-      if (next.has(reason)) {
-        next.delete(reason);
-      } else {
-        next.add(reason);
-      }
-      const value = next.size === ALL_REASONS.length ? null : [...next].join(',');
-      updateParams({ reasons: value || null, page: '1' });
+    (reason: StockMovementReasonValue) => {
+      updateParams({
+        reasons: toggleStockMovementReason(reasonFilter, reason),
+        page: '1',
+      });
     },
-    [selectedReasons, updateParams],
+    [reasonFilter, updateParams],
   );
 
   // ── Sort toggle ────────────────────────────────────────────────────────────
@@ -262,7 +237,7 @@ function StockMovementHistoryInner() {
   const hasNonDefaultFilters =
     from !== getDefaultFrom() ||
     to !== '' ||
-    reasonsParam !== ALL_REASONS.join(',') ||
+    reasonFilter !== null ||
     search !== '' ||
     actorId !== '';
 
@@ -441,8 +416,8 @@ function StockMovementHistoryInner() {
                         : 'border-transparent bg-linen/50 text-mist-ink'
                     }`}
                   >
-                    <span className={`h-2 w-2 rounded-full ${REASON_DOT_COLOR[r]}`} />
-                    {REASON_LABELS[r]}
+                    <span className={`h-2 w-2 rounded-full ${STOCK_MOVEMENT_REASON_DOT_COLOR[r]}`} />
+                    {STOCK_MOVEMENT_REASON_LABELS[r]}
                   </button>
                 );
               })}
@@ -496,12 +471,11 @@ function StockMovementHistoryInner() {
               </button>
             </Badge>
           )}
-          {reasonsParam !== ALL_REASONS.join(',') && (
+          {reasonFilter !== null && (
             <Badge variant="secondary" className="gap-1">
-              {/* M09-03 (OBS-22): the chips are an exclusion model (all
-                  reasons start selected; clicking one excludes it), so the
-                  pill spells that out instead of reading inverted. */}
-              Showing {selectedReasons.size} of {ALL_REASONS.length} reasons - click to exclude
+              {/* ARGUS #183: the count is always against the full 13-reason
+                  enum, so a partial URL can never hide a newer reason. */}
+              Showing {selectedReasons.size} of {ALL_REASONS.length} reasons - click to toggle
               <button onClick={() => updateParams({ reasons: null, page: '1' })} aria-label="Reset reasons filter">
                 <X className="h-3 w-3" />
               </button>
@@ -578,8 +552,14 @@ function StockMovementHistoryInner() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <Badge variant={REASON_BADGE_VARIANT[m.reason] ?? 'secondary'}>
-                            {REASON_LABELS[m.reason] ?? m.reason}
+                          <Badge
+                            variant={
+                              isStockMovementReason(m.reason)
+                                ? STOCK_MOVEMENT_REASON_BADGE_VARIANT[m.reason]
+                                : 'secondary'
+                            }
+                          >
+                            {stockMovementReasonLabel(m.reason)}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">

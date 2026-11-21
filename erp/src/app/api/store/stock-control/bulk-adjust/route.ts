@@ -12,6 +12,7 @@ import {
 import {
   isManualAdjustmentReason,
   manualAdjustmentDirectionError,
+  manualAdjustmentSideEffectSummaries,
 } from '@/lib/services/manualAdjustment.core';
 import { recordManualAdjustmentSideEffects } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
@@ -303,20 +304,25 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    // ARGUS #181: one audit entry + webhook per applied manual row, matching
-    // the single-adjust path.
-    for (const adj of adjustments) {
-      recordManualAdjustmentSideEffects({
-        tenantId,
-        variantId: adj.variantId,
-        actorId: session.user.id,
-        options: {
-          quantityDelta: adj.quantityDelta,
-          reason: adj.reason,
-          ...(adj.note !== undefined ? { note: adj.note } : {}),
-        },
-      });
-    }
+    // ARGUS #181 / #186: one audit entry + webhook per applied manual row,
+    // matching the single-adjust path. The shared summary helper normalizes the
+    // payload and skips system-owned reasons; awaiting each side effect makes
+    // sure the writes happen before the response instead of being frozen with
+    // the serverless invocation.
+    await Promise.all(
+      manualAdjustmentSideEffectSummaries(adjustments).map((summary) =>
+        recordManualAdjustmentSideEffects({
+          tenantId,
+          variantId: summary.variantId,
+          actorId: session.user.id,
+          options: {
+            quantityDelta: summary.quantityDelta,
+            reason: summary.reason,
+            ...(summary.note !== null ? { note: summary.note } : {}),
+          },
+        }),
+      ),
+    );
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {

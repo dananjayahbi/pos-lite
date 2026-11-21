@@ -80,7 +80,7 @@ export function manualAdjustmentDirectionError(
     : `${reason} can only be used when removing stock.`;
 }
 
-/** Reasons selectable for the chosen direction — used by the adjustment UI. */
+/** Reasons selectable for the chosen direction - used by the adjustment UI. */
 export function validManualReasonsForDirection(
   direction: ManualAdjustmentDirection,
 ): readonly ManualAdjustmentReason[] {
@@ -88,4 +88,52 @@ export function validManualReasonsForDirection(
     const rule = MANUAL_ADJUSTMENT_DIRECTION[reason];
     return rule === 'either' || rule === direction;
   });
+}
+
+/**
+ * ARGUS #186 - normalized payload for the manual-adjustment audit row and
+ * `stock.adjusted` webhook.
+ *
+ * Both the single route and the bulk route (and `adjustStock` itself) build
+ * their side effects through this helper, so every surface reports the same
+ * delta/reason/note shape. System-owned reasons return `null`: their origin
+ * flow writes its own audit story, and a manual route can never reach here with
+ * one (the reason allowlist rejects it earlier).
+ */
+export interface ManualAdjustmentSideEffectSummary {
+  quantityDelta: number;
+  reason: ManualAdjustmentReason;
+  note: string | null;
+}
+
+export interface ManualAdjustmentLike {
+  quantityDelta: number;
+  reason: string | null | undefined;
+  note?: string | undefined;
+}
+
+export function manualAdjustmentSideEffectSummary(
+  adjustment: ManualAdjustmentLike,
+): ManualAdjustmentSideEffectSummary | null {
+  if (!isManualAdjustmentReason(adjustment.reason)) return null;
+  return {
+    quantityDelta: adjustment.quantityDelta,
+    reason: adjustment.reason,
+    note: adjustment.note ?? null,
+  };
+}
+
+/**
+ * Bulk counterpart: one summary per applied row, skipping system-owned reasons.
+ * The order matches the request so audit/webhook output is deterministic.
+ */
+export function manualAdjustmentSideEffectSummaries<
+  T extends ManualAdjustmentLike & { variantId: string },
+>(adjustments: readonly T[]): Array<ManualAdjustmentSideEffectSummary & { variantId: string }> {
+  const summaries: Array<ManualAdjustmentSideEffectSummary & { variantId: string }> = [];
+  for (const adjustment of adjustments) {
+    const summary = manualAdjustmentSideEffectSummary(adjustment);
+    if (summary) summaries.push({ ...summary, variantId: adjustment.variantId });
+  }
+  return summaries;
 }
