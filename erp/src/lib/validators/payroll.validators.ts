@@ -17,6 +17,12 @@ export const GeneratePayrollSchema = z.object({
   overrides: z.array(PayrollOverrideSchema).max(500).default([]),
 });
 
+/** Mark a generated run paid; the account becomes mandatory in ARGUS #373. */
+export const MarkPayrollPaidSchema = z.object({
+  paymentAccountId: z.string().min(1).optional(),
+  paidDate: z.string().trim().optional(),
+});
+
 export const PayrollSettingsSchema = z.object({
   employerEpfNumber: z.string().trim().max(40),
   employerEtfNumber: z.string().trim().max(40),

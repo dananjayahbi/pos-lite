@@ -8,6 +8,11 @@ import { getStaffAttendanceReport } from '@/lib/services/timeclock.service';
 import { getCommissionSummaryForUser } from '@/lib/services/commission.service';
 import { AUDIT_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
 import {
+  PAYROLL_PENDING_ACCOUNT_PREFIX,
+  payrollPendingMarker,
+  planPayrollCommission,
+} from '@/lib/services/payrollCommission.core';
+import {
   PAYROLL_STATUTORY_RATES,
   calculatePayroll,
   countWeekdaysInMonth,
@@ -315,32 +320,36 @@ export async function generatePayrollRun(input: GeneratePayrollInput) {
       include: { items: true },
     });
 
-    // Consume the unpaid commission records included in this payroll so the
-    // standalone Staff Commissions page cannot pay the same sale twice.
+    // ARGUS #372/#374: reserve the staff's current open commission against
+    // this run without settling it. The records stay unpaid/paidAmount 0; the
+    // linked payout is marked pending (hidden from payout history and from
+    // standalone payouts) until the run is marked paid.
     for (const row of preview.rows) {
       if (new Decimal(row.commissionAmount).lte(0)) continue;
 
-      const unpaid = await tx.commissionRecord.findMany({
+      const records = await tx.commissionRecord.findMany({
         where: {
           tenantId: input.tenantId,
           userId: row.userId,
-          isPaid: false,
-          createdAt: { gte: new Date(preview.periodStart), lte: new Date(preview.periodEnd) },
+          createdAt: { lte: new Date(preview.periodEnd) },
+          OR: [
+            { payoutId: null },
+            { payout: { paymentAccountName: null } },
+            {
+              payout: {
+                paymentAccountName: {
+                  not: { startsWith: PAYROLL_PENDING_ACCOUNT_PREFIX },
+                },
+              },
+            },
+          ],
         },
-        select: { id: true, earnedAmount: true, paidAmount: true },
+        select: { id: true, earnedAmount: true, paidAmount: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
       });
-      if (unpaid.length === 0) continue;
 
-      const total = unpaid.reduce(
-        (sum, record) =>
-          sum.add(
-            new Decimal(record.earnedAmount.toString()).minus(
-              new Decimal(record.paidAmount.toString()),
-            ),
-          ),
-        new Decimal(0),
-      );
-      if (total.lte(0)) continue;
+      const plan = planPayrollCommission(records);
+      if (plan.payable.lte(0)) continue;
 
       const payout = await tx.commissionPayout.create({
         data: {
@@ -348,19 +357,20 @@ export async function generatePayrollRun(input: GeneratePayrollInput) {
           userId: row.userId,
           periodStart: new Date(preview.periodStart),
           periodEnd: new Date(preview.periodEnd),
-          totalEarned: total,
+          totalEarned: plan.payable,
           authorizedById: input.generatedById,
-          notes: JSON.stringify({ note: `Included in ${preview.label} payroll` }),
+          // Pending marker: no account/expense yet and not a real payout.
+          paymentAccountName: payrollPendingMarker(created.id),
+          notes: JSON.stringify({
+            note: `Pending settlement from ${preview.label} payroll`,
+            payrollRunId: created.id,
+          }),
         },
       });
-      for (const record of unpaid) {
+      for (const record of plan.records) {
         await tx.commissionRecord.update({
           where: { id: record.id },
-          data: {
-            paidAmount: record.earnedAmount,
-            isPaid: true,
-            payoutId: payout.id,
-          },
+          data: { payoutId: payout.id },
         });
       }
     }
@@ -388,8 +398,101 @@ export async function generatePayrollRun(input: GeneratePayrollInput) {
   return getPayrollRun(input.tenantId, run.id);
 }
 
-export async function getPayrollRun(tenantId: string, runId: string) {
+export interface MarkPayrollPaidInput {
+  tenantId: string;
+  runId: string;
+  actorId: string;
+  actorRole: string;
+  /** Account the salary is paid from; mandatory from ARGUS #373 onward. */
+  paymentAccountId?: string | undefined;
+  paidDate?: Date | undefined;
+}
+
+/**
+ * ARGUS #372 — a generated run becomes PAID only through this action. It
+ * settles the commission records reserved at generation (paidAmount/isPaid)
+ * and moves the pending payroll payout onto its real payment date/account.
+ */
+export async function markPayrollRunPaid(input: MarkPayrollPaidInput) {
   const run = await prisma.payrollRun.findFirst({
+    where: { id: input.runId, tenantId: input.tenantId },
+    include: { items: true },
+  });
+  if (!run) throw ApiError.notFound('Payroll run not found');
+  if (run.status === 'PAID') throw ApiError.conflict('Payroll run is already paid');
+  if (run.status !== 'GENERATED') throw ApiError.conflict('Payroll run cannot be paid in its current state');
+
+  let accountName: string | null = null;
+  if (input.paymentAccountId) {
+    const account = await prisma.paymentAccount.findFirst({
+      where: { id: input.paymentAccountId, tenantId: input.tenantId },
+      select: { id: true, name: true, status: true },
+    });
+    if (!account) throw ApiError.notFound('Payment account not found');
+    if (account.status !== 'ACTIVE') throw ApiError.conflict(`Account "${account.name}" is closed`);
+    accountName = account.name;
+  }
+
+  const paidAt = input.paidDate ?? new Date();
+  const marker = payrollPendingMarker(run.id);
+
+  await prisma.$transaction(async (tx) => {
+    const payouts = await tx.commissionPayout.findMany({
+      where: { tenantId: input.tenantId, paymentAccountName: marker },
+      select: { id: true },
+    });
+
+    for (const payout of payouts) {
+      const records = await tx.commissionRecord.findMany({
+        where: { tenantId: input.tenantId, payoutId: payout.id },
+        select: { id: true, earnedAmount: true },
+      });
+      for (const record of records) {
+        await tx.commissionRecord.update({
+          where: { id: record.id },
+          data: { paidAmount: record.earnedAmount, isPaid: true },
+        });
+      }
+      await tx.commissionPayout.update({
+        where: { id: payout.id },
+        data: {
+          paidAt,
+          ...(input.paymentAccountId
+            ? { paymentAccountId: input.paymentAccountId, paymentAccountName: accountName }
+            : { paymentAccountName: null }),
+        },
+      });
+    }
+
+    await tx.payrollRun.update({
+      where: { id: run.id },
+      data: { status: 'PAID' },
+    });
+  });
+
+  await createAuditLog({
+    tenantId: input.tenantId,
+    actorId: input.actorId,
+    actorRole: input.actorRole,
+    entityType: 'PayrollRun',
+    entityId: run.id,
+    action: AUDIT_ACTIONS.PAYROLL_RUN_PAID,
+    after: {
+      status: 'PAID',
+      paidAt: paidAt.toISOString(),
+      paymentAccountId: input.paymentAccountId ?? null,
+      paymentAccountName: accountName,
+      commissionPayouts: run.items.reduce(
+        (count, item) => count + (item.commissionAmount.gt(0) ? 1 : 0),
+        0,
+      ),
+    },
+  });
+
+  return getPayrollRun(input.tenantId, run.id);
+}
+
+export async function getPayrollRun(tenantId: string, runId: string) {  const run = await prisma.payrollRun.findFirst({
     where: { id: runId, tenantId },
     include: {
       items: { orderBy: [{ staffName: 'asc' }] },

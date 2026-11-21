@@ -162,6 +162,30 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
     }));
   }
 
+  // ARGUS #372: settle the run only when salary is actually paid.
+  const markPaidMutation = useMutation({
+    mutationFn: async (runId: string) => {
+      const res = await fetch(`/api/store/payroll/runs/${runId}/pay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const json = (await res.json()) as { success: boolean; error?: { message: string } };
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message ?? 'Failed to mark payroll paid');
+      }
+      return json;
+    },
+    onSuccess: () => {
+      toast.success('Payroll marked paid; commission settled');
+      void queryClient.invalidateQueries({ queryKey: ['payroll-runs'] });
+      void queryClient.invalidateQueries({ queryKey: ['payroll-preview'] });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to mark payroll paid');
+    },
+  });
+
   if (previewQuery.isError) {
     return (
       <PageContainer className="space-y-6">
@@ -460,12 +484,24 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                         {formatRupee(run.totalCompanyCost)}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Link
-                          href={`/payroll/reports?month=${run.periodMonth}`}
-                          className="text-terracotta text-xs underline"
-                        >
-                          Open
-                        </Link>
+                        <div className="flex items-center justify-end gap-3">
+                          {run.status === 'GENERATED' && canRun && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => markPaidMutation.mutate(run.id)}
+                              disabled={markPaidMutation.isPending}
+                            >
+                              {markPaidMutation.isPending ? 'Marking…' : 'Mark paid'}
+                            </Button>
+                          )}
+                          <Link
+                            href={`/payroll/reports?month=${run.periodMonth}`}
+                            className="text-terracotta text-xs underline"
+                          >
+                            Open
+                          </Link>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

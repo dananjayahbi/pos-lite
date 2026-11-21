@@ -9,6 +9,10 @@ import {
   summarizeOpenCommission,
 } from '@/lib/services/commission-allocation';
 import { describeCommissionBalance } from '@/lib/services/commissionSummary.core';
+import {
+  PAYROLL_PENDING_ACCOUNT_PREFIX,
+  planPayrollCommission,
+} from '@/lib/services/payrollCommission.core';
 import { PaymentEntrySource } from '@/generated/prisma/client';
 import Decimal from 'decimal.js';
 
@@ -189,27 +193,49 @@ export async function getUnpaidTotal(tenantId: string, userId: string) {
 export async function getCommissionSummaryForUser(
   tenantId: string,
   userId: string,
-  periodStart: Date,
+  _periodStart: Date,
   periodEnd: Date,
 ) {
-  const where = {
-    tenantId,
-    userId,
-    createdAt: { gte: periodStart, lte: periodEnd },
-  };
-
-  const [earnedAgg, paidAgg] = await Promise.all([
-    prisma.commissionRecord.aggregate({ where, _sum: { earnedAmount: true } }),
-    prisma.commissionRecord.aggregate({ where, _sum: { paidAmount: true } }),
-  ]);
-
-  // ARGUS #337: paid is recorded payout money only — legacy `isPaid` rows with
-  // `paidAmount = 0` stay outstanding.
-  const balance = describeCommissionBalance({
-    totalEarned: earnedAgg._sum.earnedAmount,
-    totalPaid: paidAgg._sum.paidAmount,
+  // ARGUS #374: payroll pays the current outstanding balance up to month-end,
+  // not just records created in that month, so earlier negative clawbacks and
+  // partial payouts carry forward. Records reserved by a pending payroll run
+  // are already committed to that run and are excluded here.
+  const records = await prisma.commissionRecord.findMany({
+    where: {
+      tenantId,
+      userId,
+      createdAt: { lte: periodEnd },
+      OR: [
+        { payoutId: null },
+        { payout: { paymentAccountName: null } },
+        {
+          payout: {
+            paymentAccountName: {
+              not: { startsWith: PAYROLL_PENDING_ACCOUNT_PREFIX },
+            },
+          },
+        },
+      ],
+    },
+    select: { id: true, earnedAmount: true, paidAmount: true, createdAt: true },
+    orderBy: { createdAt: 'asc' },
   });
-  return { earned: balance.totalEarned, paid: balance.totalPaid, unpaid: balance.unpaid };
+
+  const plan = planPayrollCommission(records);
+  const earned = records.reduce(
+    (sum, record) => sum.plus(record.earnedAmount.toString()),
+    new Decimal(0),
+  );
+  const paid = records.reduce(
+    (sum, record) => sum.plus(record.paidAmount.toString()),
+    new Decimal(0),
+  );
+
+  return {
+    earned: describeCommissionBalance({ totalEarned: earned, totalPaid: paid }).totalEarned,
+    paid: describeCommissionBalance({ totalEarned: earned, totalPaid: paid }).totalPaid,
+    unpaid: plan.payable.toFixed(2),
+  };
 }
 
 export interface CreateCommissionPayoutInput {
@@ -255,6 +281,17 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
         tenantId: input.tenantId,
         userId: input.userId,
         createdAt: { gte: input.periodStart, lte: input.periodEnd },
+        OR: [
+          { payoutId: null },
+          { payout: { paymentAccountName: null } },
+          {
+            payout: {
+              paymentAccountName: {
+                not: { startsWith: PAYROLL_PENDING_ACCOUNT_PREFIX },
+              },
+            },
+          },
+        ],
       },
       select: { id: true, earnedAmount: true, paidAmount: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
@@ -429,6 +466,16 @@ export async function getCommissionPayouts(
           },
         }
       : {}),
+    // Pending payroll reservations are not payouts yet; hide them until the
+    // run is marked paid (ARGUS #372).
+    AND: [
+      {
+        OR: [
+          { paymentAccountName: null },
+          { paymentAccountName: { not: { startsWith: PAYROLL_PENDING_ACCOUNT_PREFIX } } },
+        ],
+      },
+    ],
   };
 
   const [records, total] = await Promise.all([
