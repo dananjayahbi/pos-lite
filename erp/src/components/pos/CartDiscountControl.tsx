@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { ChevronDown, Percent, Tag } from 'lucide-react';
 import type { UserRole } from '@/generated/prisma/client';
 import { useCartStore, getCartSubtotal } from '@/stores/cartStore';
+import type { CartDiscountSummary } from '@/components/pos/cartDiscountSummary';
 import { POS_DISCOUNT_THRESHOLDS } from '@/config/pos.config';
 import { formatRupee } from '@/lib/format';
 import { usePOSShortcuts } from '@/hooks/usePOSShortcuts';
@@ -18,6 +19,8 @@ interface CartDiscountControlProps {
   onExpandedChange: (expanded: boolean) => void;
   /** Applied promo code — surfaced in the header while the panel is collapsed. */
   activePromoCode?: string | null | undefined;
+  /** ARGUS #67: line + manual + promotion summary for the collapsed row. */
+  discountSummary: CartDiscountSummary;
   /** Promo-code controls rendered inside the same collapsible panel. */
   children?: ReactNode;
 }
@@ -34,6 +37,7 @@ export function CartDiscountControl({
   expanded,
   onExpandedChange,
   activePromoCode,
+  discountSummary,
   children,
 }: CartDiscountControlProps) {
   const { data: session } = useSession();
@@ -125,17 +129,17 @@ export function CartDiscountControl({
           aria-controls="pos-discount-promo-panel"
           aria-keyshortcuts="Alt+Shift+D"
           title={
-            hasActiveDiscount
-              ? `Discounts & promo applied - ${formatRupee(Math.min(subtotal, appliedDiscountAmount))} (Alt+Shift+D)`
+            discountSummary.hasAny
+              ? `${discountSummary.tooltip} (Alt+Shift+D)`
               : 'Discounts & promo (Alt+Shift+D)'
           }
           className="flex min-h-8 min-w-0 items-center gap-1 font-body text-[13px] text-mist-ink transition-colors hover:text-espresso focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta"
         >
           <Percent className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span className="truncate">Discounts &amp; promo</span>
-          {hasActiveDiscount && (
+          {discountSummary.hasAny && (
             <span className="shrink-0 font-mono text-[11px] text-[#2D6A4F]">
-              −{formatRupee(Math.min(subtotal, appliedDiscountAmount))}
+              −{formatRupee(discountSummary.totalDiscount)}
             </span>
           )}
           {activePromoCode && (
@@ -161,9 +165,15 @@ export function CartDiscountControl({
         )}
       </div>
 
-      {!expanded && !hasActiveDiscount && !activePromoCode && (
+      {!expanded && !discountSummary.hasAny && !activePromoCode && (
         <p className="mt-0.5 font-body text-[11px] text-mist-ink/70">
           No discount or promo - <kbd className="font-mono">Alt+Shift+D</kbd> to add one.
+        </p>
+      )}
+
+      {!expanded && discountSummary.hasAny && (
+        <p className="mt-0.5 truncate font-body text-[11px] text-mist-ink/80">
+          {discountSummary.label} · <kbd className="font-mono">Alt+Shift+D</kbd>
         </p>
       )}
 

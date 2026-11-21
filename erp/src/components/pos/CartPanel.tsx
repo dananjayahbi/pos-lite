@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Decimal from 'decimal.js';
 import { formatRupee } from '@/lib/format';
 import { useCartStore, getCartTotal } from '@/stores/cartStore';
+import { summarizeCartDiscounts } from '@/components/pos/cartDiscountSummary';
 import { createCartPromotionSnapshot } from '@/stores/cartPromotions';
 import { CartLineItems } from '@/components/pos/CartLineItems';
 import { CartDiscountControl } from '@/components/pos/CartDiscountControl';
@@ -109,6 +110,15 @@ export function CartPanel({
     { vatRate, ssclRate },
     totalPromotionDiscount,
   );
+
+  const discountSummary = summarizeCartDiscounts({
+    items,
+    subtotal,
+    manualDiscount: discountEffective,
+    promotionDiscount,
+    cartDiscountPercent,
+    promoCode: appliedPromoCode,
+  });
 
   const [retrieveOpen, setRetrieveOpen] = useState(false);
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card' | 'split' | 'lankaqr' | null>(null);
@@ -538,6 +548,7 @@ export function CartPanel({
             if (!next) setPromoCodeInput('');
           }}
           activePromoCode={appliedPromoCode}
+          discountSummary={discountSummary}
         >
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
