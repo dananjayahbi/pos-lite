@@ -111,6 +111,42 @@ Opening (period start) + Cash In (in period) − Expenses (in period) = Closing
 - The unfiltered export still shows the all-time opening/closing, now labelled
   `Closing Balance (all time)` rather than `Current Balance`.
 
+## Ledger reconciliation (ARGUS #406)
+
+`topUpPettyCash` writes the top-up audit row **inside the same transaction** as
+the fund-account debit, and records `after.ledgerEntryIds` / `after.entryDate`.
+A top-up can no longer exist as an audit without its ledger movement.
+
+The read-only audit + repair CLI (never automatic) is:
+
+```bash
+cd erp
+node --env-file=.env --import tsx scripts/petty-cash-reconcile.ts
+node --env-file=.env --import tsx scripts/petty-cash-reconcile.ts --apply
+node --env-file=.env --import tsx scripts/petty-cash-reconcile.ts --apply --rebuild-balance-after
+node --env-file=.env --import tsx scripts/petty-cash-reconcile.ts --tenant=<id>
+```
+
+- It walks the fund account's entries in date/id order and reports every
+  `balanceAfter` break (`expected = previous actual + debit − credit`).
+- It matches `PETTY_CASH_TOP_UP` audits to the fund account's top-up debits
+  (explicit ledger ids when present, otherwise amount + UTC day) and reports
+  missing audits and missing ledger lines.
+- `--apply` appends one explicit `DEPOSIT` correction for each unmatched top-up
+  audit (idempotent via `sourceId = pc_correction_<auditId>`), then recomputes
+  `PettyCashFund.currentBalance` from opening + all ledger top-ups − expenses.
+  It does **not** touch the source account; the output names it for review.
+- `--rebuild-balance-after` (only with `--apply`) rewrites the historical
+  `balanceAfter` column in one transaction and writes a
+  `PETTY_CASH_LEDGER_BALANCE_REBUILT` audit row. Debits, credits and amounts are
+  never changed. This is the only way to make earlier rows chain correctly, so
+  it is explicit and documented rather than automatic.
+- A missing top-up changes the fund equation when applied (the audited money is
+  added); always run the read-only mode and review the output first.
+
+Pure helpers/tests: `src/lib/services/pettyCashReconciliation.core.ts`,
+`src/lib/services/__tests__/pettyCashReconciliation.core.test.ts`.
+
 ## Tests
 
 - `src/lib/validators/__tests__/petty-cash.validators.test.ts` — Add Cash In
@@ -119,6 +155,8 @@ Opening (period start) + Cash In (in period) − Expenses (in period) = Closing
   naming and low-balance alert behaviour.
 - `src/lib/services/__tests__/pettyCashReport.core.test.ts` — period
   opening/closing arithmetic and out-of-window top-ups.
+- `src/lib/services/__tests__/pettyCashReconciliation.core.test.ts` — ledger
+  trail breaks, balanceAfter rebuild, top-up audit matching.
 
 Manual verification covered a Rs. 10,000 top-up from a BANK account
 (fund/account/source balances all moved), the green `Cash In` row, owner

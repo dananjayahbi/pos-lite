@@ -611,6 +611,31 @@ export async function topUpPettyCash(
       data: { currentBalance: { increment: amount.toNumber() } },
     });
 
+    // The audit row commits with the ledger debit, so a top-up can never exist
+    // as an audit without its money movement (ARGUS #406). Record the ledger
+    // entry ids so later reconciliation matches exactly.
+    const ledgerEntries = await tx.paymentAccountEntry.findMany({
+      where: { tenantId, accountId: fundAccountId, sourceId: groupId },
+      select: { id: true },
+    });
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        actorId,
+        actorRole,
+        entityType: 'PettyCashFund',
+        entityId: fund.id,
+        action: AUDIT_ACTIONS.PETTY_CASH_TOP_UP,
+        after: {
+          amount: amount.toNumber(),
+          sourceAccountId: input.sourceAccountId ?? null,
+          description: buildTopUpDescription(sourceName, input.description),
+          entryDate: (entryDate ?? new Date()).toISOString(),
+          ledgerEntryIds: ledgerEntries.map((entry) => entry.id),
+        },
+      },
+    });
+
     return {
       fund: updated,
       amount: amount.toNumber(),
@@ -619,19 +644,7 @@ export async function topUpPettyCash(
     };
   });
 
-  void createAuditLog({
-    tenantId,
-    actorId,
-    actorRole,
-    entityType: 'PettyCashFund',
-    entityId: fund.id,
-    action: AUDIT_ACTIONS.PETTY_CASH_TOP_UP,
-    after: {
-      amount: amount.toNumber(),
-      sourceAccountId: input.sourceAccountId ?? null,
-      description: result.description,
-    },
-  }).catch(() => {});
+  // A top-up can lift the fund back above its threshold and clear the alert.
 
   // A top-up can lift the fund back above its threshold and clear the alert.
   await checkFundLowBalance(tenantId, fund.id);
