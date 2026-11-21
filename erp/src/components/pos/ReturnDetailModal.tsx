@@ -1,6 +1,6 @@
 'use client';
 
-import { formatRupee } from '@/lib/format';
+import { formatRupee, formatShortDateTime } from '@/lib/format';
 import {
   Dialog,
   DialogContent,
@@ -95,16 +95,7 @@ const refundMethodBadge: Record<string, string> = {
 };
 
 function formatDateTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  return (
-    d.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    }) +
-    ' ' +
-    d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-  );
+  return formatShortDateTime(dateStr);
 }
 
 export function ReturnDetailModal({

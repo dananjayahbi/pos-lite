@@ -18,6 +18,7 @@ import {
 import { formatRupee } from '@/lib/format';
 import { toYMD } from '@/lib/date-range';
 import { CustomerPicker, type PickedCustomer } from '@/components/sales/CustomerPicker';
+import { saleEditDatePayload } from '@/components/sales/saleEditPayload';
 import { saleQueryKey } from '@/components/sales/saleQueryKey';
 
 export interface EditableSale {
@@ -129,14 +130,14 @@ function SaleEditForm({
         // `null` is meaningful: it un-links the customer (guest sale).
         customerId: customer ? customer.id : null,
         deliveryCharge: nextDelivery,
+        // ARGUS #88: only a changed day rewrites the selling date; saving a
+        // customer/delivery edit must preserve the original timestamp.
+        ...saleEditDatePayload({
+          saleDate: sale.saleDate,
+          createdAt: sale.createdAt,
+          editedDate: saleDate,
+        }),
       };
-      if (saleDate) {
-        // Noon local time keeps the calendar day stable across timezones.
-        const parsedDate = new Date(`${saleDate}T12:00:00`);
-        if (!Number.isNaN(parsedDate.getTime())) {
-          body.saleDate = parsedDate.toISOString();
-        }
-      }
 
       const res = await fetch(`/api/store/sales/${sale.id}`, {
         method: 'PATCH',

@@ -13,6 +13,8 @@ import {
 } from '@/lib/services/manualAdjustment.core';
 import { recordManualAdjustmentSideEffects } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
+import { isLowStockVariant } from '@/lib/inventory/lowStockPredicate';
+import { createLowStockAlerts } from '@/lib/notifications/low-stock-alert';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 import { stockAdjustmentRevalidationOptions } from '@/lib/website/storefront-revalidation.core';
@@ -140,45 +142,31 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Low stock notification logic
+      // Low stock notification logic. The threshold rule and notification row
+      // shape are shared with the sale path (ARGUS #55/#215).
       let lowStockTriggered = false;
       let productName = '';
       let sku = '';
 
-      if (
-        variant.lowStockThreshold > 0 &&
-        (newQty === 0 || (newQty > 0 && newQty <= variant.lowStockThreshold))
-      ) {
+      if (isLowStockVariant({ stockQuantity: newQty, lowStockThreshold: variant.lowStockThreshold })) {
         lowStockTriggered = true;
         productName = variant.product.name;
         sku = variant.sku ?? variant.id;
 
-        const recipients = await tx.user.findMany({
-          where: {
-            tenantId,
-            role: { in: ['OWNER', 'MANAGER'] },
-            isActive: true,
-            deletedAt: null,
-          },
-          select: { id: true },
-        });
-
-        if (recipients.length > 0) {
-          const title = `${productName} - ${sku} is low on stock`;
-          const body = `Current stock: ${newQty} units. Threshold: ${variant.lowStockThreshold} units. Adjusted by: ${staffDisplayName(session.user.email)}.`;
-
-          await tx.notificationRecord.createMany({
-            data: recipients.map((r) => ({
-              tenantId,
-              recipientId: r.id,
-              type: 'LOW_STOCK_ALERT' as const,
-              title,
-              body,
-              relatedEntityType: 'ProductVariant',
-              relatedEntityId: variantId,
-            })),
-          });
-        }
+        await createLowStockAlerts(
+          tx,
+          tenantId,
+          [
+            {
+              variantId,
+              productName,
+              sku,
+              stockQuantity: newQty,
+              lowStockThreshold: variant.lowStockThreshold,
+            },
+          ],
+          `Adjusted by: ${staffDisplayName(session.user.email)}`,
+        );
       }
 
       return {

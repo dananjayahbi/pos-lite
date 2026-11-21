@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, Loader2, Search } from 'lucide-react';
+import { AlertTriangle, ArrowLeftRight, Loader2, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,6 +19,7 @@ import {
 import type { PaymentLegMethod, PaymentMethod, ReturnRefundMethod } from '@/generated/prisma/client';
 import { formatRupee } from '@/lib/format';
 import { buildReturnRefundPreview } from '@/components/returns/refundPreview';
+import { useCartStore } from '@/stores/cartStore';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,9 @@ interface SaleLine {
   /** Tax charged on this line at sale time; 0/absent on legacy rows. */
   lineTax?: string | number | null;
   returnedQuantity: number;
+  /** Refunded so far on completed returns (ARGUS #104). */
+  returnedRefundAmount?: number | string | null;
+  returnedTaxAmount?: number | string | null;
 }
 
 interface SaleDetail {
@@ -60,7 +64,7 @@ interface ReturnLine {
   sku: string;
 }
 
-type RefundMethod = 'CASH' | 'CARD_REVERSAL' | 'STORE_CREDIT';
+type RefundMethod = 'CASH' | 'CARD_REVERSAL' | 'STORE_CREDIT' | 'EXCHANGE';
 
 interface NewReturnSheetProps {
   open: boolean;
@@ -173,18 +177,16 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
     (refundMethod !== 'STORE_CREDIT' || storeCreditAvailable) &&
     !tenderMismatchReasons[refundMethod]
       ? refundMethod
-      // This sheet has no EXCHANGE action (it needs a replacement cart); fall
-      // back to store credit, which the customer rule then validates.
-      : fallbackRefundMethod === 'EXCHANGE'
-        ? 'STORE_CREDIT'
-        : fallbackRefundMethod;
+      : fallbackRefundMethod;
 
   const refundDestination =
     effectiveRefundMethod === 'CASH'
       ? 'Cash from the drawer'
       : effectiveRefundMethod === 'CARD_REVERSAL'
         ? `Card reversal${cardReversalRef.trim() ? ` · ${cardReversalRef.trim()}` : ''}`
-        : 'Store credit to the linked customer';
+        : effectiveRefundMethod === 'EXCHANGE'
+          ? 'Exchange credit toward a replacement sale'
+          : 'Store credit to the linked customer';
 
   const { mutate: submitReturn, isPending } = useMutation({
     mutationFn: async () => {
@@ -225,7 +227,7 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
       });
       const json = (await res.json()) as {
         success: boolean;
-        data?: { refundAmount?: string | number };
+        data?: { id?: string; refundAmount?: string | number };
         error?: { message: string };
       };
       if (!json.success) throw new Error(json.error?.message ?? 'Failed to process return');
@@ -234,7 +236,16 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
     onSuccess: ({ json, expectedTotal }) => {
       const serverRefund = Number(json.data?.refundAmount);
       const expected = Number(expectedTotal);
-      if (
+      if (effectiveRefundMethod === 'EXCHANGE' && json.data?.id) {
+        const store = useCartStore.getState();
+        store.clearCart();
+        store.setExchangeCredit(
+          json.data.id,
+          Number.isFinite(serverRefund) ? serverRefund : expected,
+          json.data.id.slice(0, 8).toUpperCase(),
+        );
+        toast.success('Return processed. Exchange credit applied to the POS cart.');
+      } else if (
         Number.isFinite(serverRefund) &&
         Number.isFinite(expected) &&
         Math.abs(serverRefund - expected) > 0.005
@@ -319,7 +330,10 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
 
           {/* Error */}
           {saleError && (
-            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            <div
+              role="alert"
+              className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+            >
               <AlertTriangle className="h-4 w-4 shrink-0" />
               {saleError instanceof Error ? saleError.message : 'Sale not found'}
             </div>
@@ -439,13 +453,21 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
               {/* Refund method */}
               <div>
                 <Label className="mb-2 block text-xs font-semibold text-espresso">Refund Method</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['CASH', 'CARD_REVERSAL', 'STORE_CREDIT'] as const).map((m) => {
+                <div className="grid grid-cols-2 gap-2">
+                  {(['CASH', 'CARD_REVERSAL', 'STORE_CREDIT', 'EXCHANGE'] as const).map((m) => {
                     const unavailableReason =
                       m === 'STORE_CREDIT' && !storeCreditAvailable
                         ? 'Not available: the original sale is not linked to a customer'
                         : tenderMismatchReasons[m];
                     const unavailable = unavailableReason !== undefined;
+                    const label =
+                      m === 'CARD_REVERSAL'
+                        ? 'Card Reversal'
+                        : m === 'STORE_CREDIT'
+                          ? 'Store Credit'
+                          : m === 'EXCHANGE'
+                            ? 'Exchange'
+                            : 'Cash';
                     return (
                       <button
                         key={m}
@@ -453,17 +475,24 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
                         disabled={unavailable}
                         title={unavailableReason}
                         onClick={() => setRefundMethod(m)}
-                        className={`rounded-md border py-2 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                        className={`flex items-center justify-center gap-1.5 rounded-md border py-2 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                           effectiveRefundMethod === m
                             ? 'border-terracotta bg-terracotta/10 text-terracotta'
                             : 'border-mist text-sand-ink hover:border-terracotta/50 hover:text-espresso'
                         }`}
                       >
-                        {m === 'CARD_REVERSAL' ? 'Card Reversal' : m === 'STORE_CREDIT' ? 'Store Credit' : 'Cash'}
+                        {m === 'EXCHANGE' && <ArrowLeftRight className="h-3.5 w-3.5" />}
+                        {label}
                       </button>
                     );
                   })}
                 </div>
+                {effectiveRefundMethod === 'EXCHANGE' && (
+                  <p className="mt-1.5 text-[11px] text-mist-ink">
+                    The refund becomes exchange credit on the POS cart. Complete the
+                    replacement sale in the POS.
+                  </p>
+                )}
                 {!storeCreditAvailable && (
                   <p className="mt-1.5 text-[11px] text-mist-ink">
                     Store credit needs a sale linked to a customer.

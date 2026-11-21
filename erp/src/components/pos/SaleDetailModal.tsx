@@ -1,6 +1,6 @@
 'use client';
 
-import { formatRupee } from '@/lib/format';
+import { formatRupee, formatShortDateTime, formatShortTime } from '@/lib/format';
 import {
   Dialog,
   DialogContent,
@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Printer } from 'lucide-react';
 import { CopyableText } from '@/components/shared/CopyableText';
 import { saleBreakdown } from '@/lib/pos/saleBreakdown';
+import { paymentMethodLabel } from '@/lib/sales/payment-method-label';
 
 interface SaleLine {
   id: string;
@@ -44,6 +45,8 @@ interface Sale {
   paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | 'STORE_CREDIT' | 'EXCHANGE_CREDIT' | 'NONE' | null;
   status: 'OPEN' | 'COMPLETED' | 'VOIDED';
   authorizingManagerId: string | null;
+  /** Accounting date; pre-migration rows fall back to createdAt (ARGUS #82). */
+  saleDate?: string | null;
   createdAt: string;
   lines: SaleLine[];
 }
@@ -55,16 +58,7 @@ interface SaleDetailModalProps {
 }
 
 function formatDateTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  return (
-    d.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    }) +
-    ', ' +
-    d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-  );
+  return formatShortDateTime(dateStr);
 }
 
 export function SaleDetailModal({
@@ -75,7 +69,7 @@ export function SaleDetailModal({
   if (!sale) return null;
 
   const shortId = sale.id.slice(0, 8).toUpperCase();
-  // Sub-total is already net of line discounts, so the breakdown shows only the
+  // Subtotal is already net of line discounts, so the breakdown shows only the
   // cart discount, tax and delivery — the same rows as the sale detail page.
   const breakdown = saleBreakdown({
     subtotal: sale.subtotal,
@@ -99,7 +93,10 @@ export function SaleDetailModal({
             Sale {shortId}
           </DialogTitle>
           <p className="font-body text-xs text-mist-ink">
-            {formatDateTime(sale.createdAt)}
+            {formatDateTime(sale.saleDate ?? sale.createdAt)}
+          </p>
+          <p className="font-body text-[11px] text-mist-ink">
+            Entered {formatShortTime(sale.createdAt)}
           </p>
           <CopyableText value={sale.id} label="Sale ID" className="text-xs text-espresso" />
         </DialogHeader>
@@ -116,11 +113,7 @@ export function SaleDetailModal({
           )}
           {sale.paymentMethod && (
             <Badge variant="secondary" className="text-[10px]">
-              {sale.paymentMethod === 'STORE_CREDIT'
-                ? 'Store Credit'
-                : sale.paymentMethod === 'EXCHANGE_CREDIT'
-                  ? 'Exchange Credit'
-                  : sale.paymentMethod}
+              {paymentMethodLabel(sale.paymentMethod)}
             </Badge>
           )}
         </div>

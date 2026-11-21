@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, Ban, ChevronLeft, ChevronRight, RotateCcw, Copy, Check, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatRupee } from '@/lib/format';
+import { formatRupee, formatShortDate, formatShortTime } from '@/lib/format';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { defaultDateRange, type DateRangeFilterValue } from '@/lib/date-range';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -33,6 +33,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { SaleDetailModal } from '@/components/pos/SaleDetailModal';
 import { ReturnWizardSheet } from '@/components/pos/ReturnWizardSheet';
 import { SaleEditSheet, type EditableSale } from '@/components/sales/SaleEditSheet';
+import { saleEmptyState, saleLineCount, saleUnitCount } from '@/components/sales/saleDisplay';
+import { isReturnWindowExpired } from '@/lib/sales/return-window';
+import { paymentMethodLabel } from '@/lib/sales/payment-method-label';
 import { SALES_QUERY_KEY } from '@/components/sales/saleQueryKey';
 
 interface SaleLine {
@@ -87,20 +90,12 @@ export function getShortId(id: string): string {
 
 /** `dd MMM yyyy` in the operator's local timezone. */
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
+  return formatShortDate(dateStr);
 }
 
 /** `HH:mm` in the operator's local timezone. */
 function formatTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  return formatShortTime(dateStr);
 }
 
 /** Guest sales have no customer record â€” never render a blank or "null". */
@@ -122,14 +117,12 @@ function PaymentBadge({ method }: { method: string | null }) {
     SPLIT: 'bg-terracotta text-white',
     STORE_CREDIT: 'bg-[#7C5E10] text-white',
     EXCHANGE_CREDIT: 'bg-[#2D6A4F] text-white',
-  };
-  const labels: Record<string, string> = {
-    STORE_CREDIT: 'Store Credit',
-    EXCHANGE_CREDIT: 'Exchange Credit',
-    NONE: 'None',
+    NONE: 'bg-[#6B7280] text-white',
   };
   return (
-    <Badge className={`text-[10px] ${colors[method] ?? ''}`}>{labels[method] ?? method}</Badge>
+    <Badge className={`text-[10px] ${colors[method] ?? ''}`}>
+      {paymentMethodLabel(method)}
+    </Badge>
   );
 }
 
@@ -217,6 +210,11 @@ export function SaleHistoryTable() {
   const meta = data?.meta ?? { page: 1, total: 0, totalPages: 1 };
 
   const filteredSales = sales;
+  const emptyState = saleEmptyState({
+    preset: dateRange.preset,
+    hasStatusFilter: status !== '',
+    hasPaymentFilter: paymentMethod !== '',
+  });
 
   const handleReset = () => {
     setStatus('');
@@ -283,6 +281,7 @@ export function SaleHistoryTable() {
           <option value="SPLIT">Split</option>
           <option value="STORE_CREDIT">Store Credit</option>
           <option value="EXCHANGE_CREDIT">Exchange Credit</option>
+          <option value="NONE">None</option>
         </select>
         <DateRangeFilter
           value={dateRange}
@@ -308,14 +307,15 @@ export function SaleHistoryTable() {
           ))}
         </div>
       ) : filteredSales.length === 0 ? (
-        <p className="text-center text-mist-ink font-body text-sm py-8">
-          No sales found
-        </p>
+        <div className="py-8 text-center">
+          <p className="text-mist-ink font-body text-sm">{emptyState.title}</p>
+          <p className="text-sand-ink font-body mt-1 text-xs">{emptyState.hint}</p>
+        </div>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="font-body text-xs">Invoice No</TableHead>
+              <TableHead className="font-body text-xs">Reference</TableHead>
               <TableHead className="font-body text-xs">Date</TableHead>
               <TableHead className="font-body text-xs">Customer</TableHead>
               <TableHead className="font-body text-xs text-center">
@@ -360,24 +360,15 @@ export function SaleHistoryTable() {
                   </div>
                 </TableCell>
                 <TableCell className="font-body text-xs text-espresso whitespace-nowrap">
-                  {sale.saleDate ? (
-                    <div>
-                      <p>{formatDate(sale.saleDate)}</p>
-                      {/* A backdated sale carries a synthetic 12:00 anchor (the
-                          date input is day-granular), so the real clock time only
-                          exists for same-day entries â€” show createdAt's time. */}
-                      <p className="font-mono text-[10px] text-mist-ink">
-                        {formatTime(sale.createdAt)}
-                      </p>
-                    </div>
-                  ) : (
-                    <div>
-                      <p>{formatDate(sale.createdAt)}</p>
-                      <p className="font-mono text-[10px] text-mist-ink">
-                        {formatTime(sale.createdAt)}
-                      </p>
-                    </div>
-                  )}
+                  {/* ARGUS #82: show the accounting date the row is sorted by.
+                      The clock time is explicitly the entry time because a
+                      backdated sale carries a synthetic 12:00 anchor. */}
+                  <div>
+                    <p>{formatDate(saleAccountingDate(sale))}</p>
+                    <p className="font-mono text-[10px] text-mist-ink">
+                      Entered {formatTime(sale.createdAt)}
+                    </p>
+                  </div>
                 </TableCell>
                 <TableCell className="font-body text-xs text-espresso">
                   {sale.customer?.name ? (
@@ -390,8 +381,11 @@ export function SaleHistoryTable() {
                   )}
                 </TableCell>
                 <TableCell className="text-center">
-                  <span className="inline-flex items-center justify-center bg-mist/30 text-espresso font-body text-xs px-2 py-0.5 rounded-full">
-                    {sale.lines.length}
+                  <span
+                    className="inline-flex items-center justify-center bg-mist/30 text-espresso font-body text-xs px-2 py-0.5 rounded-full"
+                    title={`${saleLineCount(sale.lines)} line${saleLineCount(sale.lines) === 1 ? '' : 's'}`}
+                  >
+                    {saleUnitCount(sale.lines)}
                   </span>
                 </TableCell>
                 <TableCell className="text-right font-mono text-sm font-bold text-espresso">
@@ -446,11 +440,9 @@ export function SaleHistoryTable() {
                       </button>
                     )}
                     {sale.status === 'COMPLETED' && (() => {
-                      const RETURN_WINDOW_DAYS = 30;
-                      const saleDate = new Date(sale.createdAt);
-                      const expiryDate = new Date(saleDate);
-                      expiryDate.setDate(expiryDate.getDate() + RETURN_WINDOW_DAYS);
-                      const returnWindowExpired = new Date() > expiryDate;
+                      // ARGUS #87: the same 30-day rule as the return service,
+                      // measured from the recorded selling date.
+                      const returnWindowExpired = isReturnWindowExpired(sale);
                       const fullyReturned = sale.lines.every(l => (l.returnedQuantity ?? 0) >= l.quantity);
 
                       if (returnWindowExpired) {

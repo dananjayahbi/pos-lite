@@ -79,3 +79,42 @@ describe('buildThermalReceiptHtml identity caveat', () => {
     expect(html).toContain('Renamed Store');
   });
 });
+
+/**
+ * ARGUS #86: the Print Receipt button is disabled for voided sales, but the
+ * receipt URL is public to any signed-in user. A stamped receipt is never
+ * mistaken for a collectable document, and each tender is labelled reversed.
+ */
+describe('buildThermalReceiptHtml voided sales', () => {
+  it('stamps a voided receipt', () => {
+    const html = buildThermalReceiptHtml(
+      makeSale({ status: 'VOIDED', payments: [{ method: 'CARD', amount: dec(1256.7) }] }),
+      makeTenant(),
+      'Nimal',
+    );
+
+    expect(html).toContain('<div class="void-stamp">VOID</div>');
+    expect(html).toContain('not a valid receipt');
+  });
+
+  it('annotates the reversed tender on a voided sale', () => {
+    const html = buildThermalReceiptHtml(
+      makeSale({ status: 'VOIDED', payments: [{ method: 'CARD', amount: dec(1256.7) }] }),
+      makeTenant(),
+      'Nimal',
+    );
+
+    expect(html).toContain('Card (reversed)');
+  });
+
+  it('does not stamp or annotate a completed sale', () => {
+    const html = buildThermalReceiptHtml(
+      makeSale({ status: 'COMPLETED' }),
+      makeTenant(),
+      'Nimal',
+    );
+
+    expect(html).not.toContain('<div class="void-stamp">');
+    expect(html).not.toContain('(reversed)');
+  });
+});

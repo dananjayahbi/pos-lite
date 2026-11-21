@@ -17,6 +17,7 @@ import { buildSaleTenderLegs, sumRedeemedCreditLegs } from '@/lib/services/saleT
 import { resolveCashTender } from '@/lib/services/saleCashTender.core';
 import { assertSaleVoidable } from '@/lib/services/saleVoid.core';
 import { assertCompletedSaleShape } from '@/lib/services/saleCompleteness.core';
+import { preserveSellingTimestamp } from '@/lib/sales/sale-edit';
 import {
   assertDiscountsAuthorized,
   cartDiscountPercent,
@@ -26,6 +27,10 @@ import {
 } from '@/lib/services/saleDiscountValidation.core';
 import { evaluatePromotions } from '@/lib/services/promotion.service';
 import { notifySaleVoided } from '@/lib/notifications/sale-alert-service';
+import {
+  createLowStockAlerts,
+  type LowStockAlertCandidate,
+} from '@/lib/notifications/low-stock-alert';
 import { reconcileCommissionForSale } from '@/lib/services/commission.service';
 import { resolveTaxRate } from '@/lib/pricing/taxRules.core';
 
@@ -58,6 +63,10 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     userId: input.cashierId,
     userEmail: '',
   });
+
+  // Filled inside the transaction from the committed stock adjustments, used
+  // after commit for the low-stock inbox alert (ARGUS #55).
+  const lowStockCandidates: LowStockAlertCandidate[] = [];
 
   const result = await prisma.$transaction(async (tx: TxClient) => {
     // POS sales must belong to an open shift. Management sales may be
@@ -603,12 +612,24 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       include: { lines: true },
     });
 
-    // Adjust stock for each line
+    // Adjust stock for each line. Collect post-sale quantities for the
+    // low-stock inbox alert (ARGUS #55): the threshold rule lives in the shared
+    // notification producer, not here.
     for (const l of lineData) {
-      await adjustStockInTx(tx, tenantId, l.variantId, input.cashierId, {
+      const updatedVariant = await adjustStockInTx(tx, tenantId, l.variantId, input.cashierId, {
         quantityDelta: -l.quantity,
         reason: 'SALE',
         saleId: sale.id,
+      });
+      lowStockCandidates.push({
+        variantId: l.variantId,
+        productName: l.productNameSnapshot,
+        sku: updatedVariant.sku ?? l.sku,
+        stockQuantity: updatedVariant.stockQuantity,
+        lowStockThreshold: updatedVariant.lowStockThreshold,
+        // Crossing only: a sale that leaves an already-low variant low must not
+        // add another alert on every transaction.
+        previousQuantity: updatedVariant.stockQuantity + l.quantity,
       });
     }
 
@@ -737,6 +758,20 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     customerId: result.customerId ?? null,
   });
 
+  // ARGUS #55: a completed sale that drops a variant to/below its threshold
+  // must reach the inbox like a manual adjustment does. Best-effort and after
+  // commit - a notification failure never fails a paid sale.
+  if (lowStockCandidates.length > 0) {
+    void createLowStockAlerts(
+      prisma,
+      tenantId,
+      lowStockCandidates,
+      `Sold via sale ${result.id.slice(0, 8).toUpperCase()}`,
+    ).catch((notificationError) => {
+      console.warn('Sale low-stock notification failed:', notificationError);
+    });
+  }
+
   // Kick cash drawer for cash payments (fire-and-forget)
   if (input.paymentMethod === 'CASH' || input.paymentMethod === 'SPLIT') {
     void prisma.tenant
@@ -811,7 +846,10 @@ export async function getSaleById(tenantId: string, saleId: string) {
       lines: {
         include: {
           variant: { include: { product: true } },
-          returnLines: { where: { return: { status: 'COMPLETED' } }, select: { quantity: true } },
+          returnLines: {
+            where: { return: { status: 'COMPLETED' } },
+            select: { quantity: true, lineRefundAmount: true, lineTaxAmount: true },
+          },
         },
       },
       cashier: { select: { id: true, email: true } },
@@ -833,6 +871,16 @@ export async function getSaleById(tenantId: string, saleId: string) {
     lines: sale.lines.map((line) => ({
       ...line,
       returnedQuantity: line.returnLines.reduce((sum, rl) => sum + rl.quantity, 0),
+      // Amounts already refunded, so the return preview also works from the
+      // remaining balance on a repeat partial return (ARGUS #104).
+      returnedRefundAmount: line.returnLines.reduce(
+        (sum, rl) => sum + Number(rl.lineRefundAmount.toString()),
+        0,
+      ),
+      returnedTaxAmount: line.returnLines.reduce(
+        (sum, rl) => sum + Number(rl.lineTaxAmount.toString()),
+        0,
+      ),
     })),
   };
 }
@@ -880,7 +928,14 @@ export async function getSales(tenantId: string, filters: GetSalesFilters) {
         // response carries the minimum identity fields (never the full record).
         customer: { select: { id: true, name: true, phone: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        // ARGUS #82: the ledger is ordered by the same accounting date the row
+        // displays, not the entry timestamp, so a backdated sale sits in its
+        // recorded period and the Date column stays monotonic. Legacy rows
+        // without a saleDate fall back to createdAt and sort after dated rows.
+        { saleDate: { sort: 'desc', nulls: 'last' } },
+        { createdAt: 'desc' },
+      ],
       skip,
       take: limit,
     }),
@@ -1280,7 +1335,14 @@ export async function updateSale(
   } = {};
 
   if (input.customerId !== undefined) data.customerId = input.customerId ?? null;
-  if (input.saleDate !== undefined) data.saleDate = input.saleDate ?? null;
+  if (input.saleDate !== undefined) {
+    // ARGUS #88: a day-granular edit that stays on the same calendar day keeps
+    // the recorded clock time; only an intentional day change moves the anchor.
+    data.saleDate =
+      input.saleDate === null
+        ? null
+        : preserveSellingTimestamp(before.saleDate ?? before.createdAt, input.saleDate);
+  }
 
   let nextTotal = previousTotal;
   if (input.deliveryCharge !== undefined) {

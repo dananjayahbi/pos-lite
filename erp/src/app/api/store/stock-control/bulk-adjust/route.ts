@@ -16,6 +16,11 @@ import {
 } from '@/lib/services/manualAdjustment.core';
 import { recordManualAdjustmentSideEffects } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
+import { isLowStockVariant } from '@/lib/inventory/lowStockPredicate';
+import {
+  createLowStockAlerts,
+  type LowStockAlertCandidate,
+} from '@/lib/notifications/low-stock-alert';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 import { stockAdjustmentRevalidationOptions } from '@/lib/website/storefront-revalidation.core';
@@ -183,15 +188,7 @@ export async function POST(request: NextRequest) {
       }> = [];
       const lowStockTriggeredVariantIds: string[] = [];
       const affectedProductIds = new Set<string>();
-      const notificationsToCreate: Array<{
-        tenantId: string;
-        recipientId: string;
-        type: 'LOW_STOCK_ALERT';
-        title: string;
-        body: string;
-        relatedEntityType: string;
-        relatedEntityId: string;
-      }> = [];
+      const lowStockCandidates: LowStockAlertCandidate[] = [];
 
       // Fetch fresh variant state inside transaction
       const freshVariants = await tx.productVariant.findMany({
@@ -249,26 +246,20 @@ export async function POST(request: NextRequest) {
           createdAt: movement.createdAt,
         });
 
-        // Check low stock threshold
+        // Check low stock threshold with the shared rule (ARGUS #55/#215).
         if (
-          variant.lowStockThreshold > 0 &&
-          (newQty === 0 || (newQty > 0 && newQty <= variant.lowStockThreshold))
+          isLowStockVariant({
+            stockQuantity: newQty,
+            lowStockThreshold: variant.lowStockThreshold,
+          })
         ) {
           lowStockTriggeredVariantIds.push(adj.variantId);
-
-          const productName = variant.product.name;
-          const sku = variant.sku;
-          const title = `${productName} - ${sku} is low on stock`;
-          const notifBody = `Current stock: ${newQty} units. Threshold: ${variant.lowStockThreshold} units. Adjusted by: ${staffDisplayName(session.user.email)}.`;
-
-          notificationsToCreate.push({
-            tenantId,
-            recipientId: '',
-            type: 'LOW_STOCK_ALERT' as const,
-            title,
-            body: notifBody,
-            relatedEntityType: 'ProductVariant',
-            relatedEntityId: adj.variantId,
+          lowStockCandidates.push({
+            variantId: adj.variantId,
+            productName: variant.product.name,
+            sku: variant.sku,
+            stockQuantity: newQty,
+            lowStockThreshold: variant.lowStockThreshold,
           });
         }
 
@@ -276,31 +267,13 @@ export async function POST(request: NextRequest) {
         variant.stockQuantity = newQty;
       }
 
-      // Create notifications in batch
-      if (notificationsToCreate.length > 0) {
-        const recipients = await tx.user.findMany({
-          where: {
-            tenantId,
-            role: { in: ['OWNER', 'MANAGER'] },
-            isActive: true,
-            deletedAt: null,
-          },
-          select: { id: true },
-        });
-
-        if (recipients.length > 0) {
-          const allNotifications = notificationsToCreate.flatMap((n) =>
-            recipients.map((r) => ({
-              ...n,
-              recipientId: r.id,
-            })),
-          );
-
-          await tx.notificationRecord.createMany({
-            data: allNotifications,
-          });
-        }
-      }
+      // One shared producer writes the owner/manager alerts.
+      await createLowStockAlerts(
+        tx,
+        tenantId,
+        lowStockCandidates,
+        `Adjusted by: ${staffDisplayName(session.user.email)}`,
+      );
 
       return {
         adjustedCount: movements.length,

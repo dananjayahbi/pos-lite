@@ -191,7 +191,12 @@ export async function reconcileCommissionForSale(input: ReconcileCommissionForSa
     }),
     client.sale.findUnique({
       where: { id: input.saleId },
-      select: { totalAmount: true, createdAt: true, completedAt: true },
+      select: {
+        totalAmount: true,
+        deliveryCharge: true,
+        createdAt: true,
+        completedAt: true,
+      },
     }),
   ]);
 
@@ -203,6 +208,8 @@ export async function reconcileCommissionForSale(input: ReconcileCommissionForSa
   // Both sides use the tax-inclusive sale base: `refundAmount` includes the tax
   // that was refunded (Return.refundAmount / Return.taxAmount), so a full
   // return claws the full commission rather than leaving the VAT share behind.
+  // Delivery is not refundable and is excluded from the comparison base too, so
+  // a full goods return also reverses the commission earned on delivery.
   const saleBase = sale
     ? new Decimal(sale.totalAmount.toString())
     : originalBase;
@@ -211,6 +218,7 @@ export async function reconcileCommissionForSale(input: ReconcileCommissionForSa
     originalBase,
     commissionRate: originalRate,
     saleBase,
+    deliveryChargeBase: sale ? sale.deliveryCharge.toString() : 0,
     returnedBase: refunded._sum.refundAmount?.toString() ?? '0',
     voided: input.voided === true,
     existingBase,
