@@ -828,7 +828,7 @@ export async function getVariantById(tenantId: string, variantId: string) {
   const variant = await prisma.productVariant.findUnique({
     where: { id: variantId, deletedAt: null },
     include: {
-      product: { select: { id: true, name: true, categoryId: true, taxRule: true } },
+      product: { select: { id: true, name: true, categoryId: true, taxRule: true, isArchived: true } },
     },
   });
 
