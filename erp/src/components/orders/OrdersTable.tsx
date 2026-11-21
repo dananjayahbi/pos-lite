@@ -3,7 +3,12 @@
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
-import { collectableCodAmount } from '@/lib/delivery/cod';
+import {
+  deliverySourceLabel,
+  orderAmountSummary,
+  paymentMethodLabel,
+  paymentStatusLabel,
+} from './orderAmount';
 import { OrderStatusBadge } from './OrderStatusBadge';
 import type { DeliveryListItem } from '@/types/delivery';
 
@@ -57,8 +62,10 @@ export function OrdersTable({
             <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Order Ref</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Customer</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">City</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Source</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Items</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">COD</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Payment</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">To collect</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Status</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Actions</th>
           </tr>
@@ -67,6 +74,7 @@ export function OrdersTable({
           {orders.map((order) => {
             const shipment = order.shipments?.[0];
             const waybill = order.waybill ?? shipment?.waybillId;
+            const amount = orderAmountSummary(order);
             return (
               <tr key={order.id} className="border-b border-espresso/5 hover:bg-espresso/5 transition-colors">
                 <td className="px-4 py-3">
@@ -83,9 +91,29 @@ export function OrdersTable({
                   {order.customer?.name ?? order.address?.fullName ?? '-'}
                 </td>
                 <td className="px-4 py-3 text-sm text-espresso/60">{order.address?.cityName ?? '-'}</td>
+                <td className="px-4 py-3 text-sm text-espresso/60">
+                  {deliverySourceLabel(order.source)}
+                </td>
                 <td className="px-4 py-3 text-sm text-espresso/60">{order.itemCount ?? 1}</td>
                 <td className="px-4 py-3 text-sm text-espresso">
-                  {formatRupee(collectableCodAmount(order).toNumber())}
+                  <p>{paymentMethodLabel(order.paymentMethod)}</p>
+                  <p className="text-xs text-espresso/60">
+                    {paymentStatusLabel(order.paymentStatus)}
+                  </p>
+                </td>
+                <td className="px-4 py-3 text-sm text-espresso">
+                  {amount.isPrepaid ? (
+                    <p className="font-medium">Prepaid</p>
+                  ) : (
+                    <>
+                      <p>{formatRupee(amount.totalToCollect.toNumber())}</p>
+                      <p className="text-xs text-espresso/40">
+                        {amount.shippingFee.greaterThan(0)
+                          ? `Goods ${formatRupee(amount.goodsAmount.toNumber())} + shipping ${formatRupee(amount.shippingFee.toNumber())}`
+                          : 'Goods only'}
+                      </p>
+                    </>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <OrderStatusBadge status={order.status} />

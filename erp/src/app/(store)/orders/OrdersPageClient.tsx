@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -28,6 +28,14 @@ import { OrdersTable } from '@/components/orders/OrdersTable';
 import { BulkActionBar } from '@/components/orders/BulkActionBar';
 import { BulkStatusDialog } from '@/components/orders/BulkStatusDialog';
 import { paginationSummary } from '@/components/orders/pagination';
+import { ordersListState } from '@/components/orders/listState';
+import { retainFailedSelection, summarizeBulkResults } from '@/components/orders/bulkResult';
+import {
+  pruneSelection,
+  toggleAllVisible,
+  toggleSelection,
+  visibleSelectedIds,
+} from '@/components/orders/selection';
 import { commonBulkStatusTargets } from '@/lib/services/dispatchStatus.core';
 import type { DeliveryListItem } from '@/types/delivery';
 import type { DeliveryStatus } from '@/generated/prisma/client';
@@ -46,7 +54,7 @@ export function OrdersPageClient() {
   /** Which print action is currently running (`bulk-*` or `<kind>:<id>`). */
   const [printBusy, setPrintBusy] = useState<string | null>(null);
 
-  const { data, isLoading } = useOrders({
+  const { data, isLoading, isError, error, isFetching, refetch } = useOrders({
     status,
     search,
     page,
@@ -65,6 +73,11 @@ export function OrdersPageClient() {
 
   const orders = useMemo(() => (data?.items ?? []) as DeliveryListItem[], [data]);
   const total = data?.total ?? 0;
+  const listState = ordersListState({
+    isLoading,
+    isError,
+    itemCount: orders.length,
+  });
   const summary = paginationSummary(page, data?.limit ?? ORDERS_PAGE_SIZE, total);
   const templateState = resolveLabelTemplateViewState({
     isError: templateError,
@@ -93,21 +106,28 @@ export function OrdersPageClient() {
     setSelectedIds(new Set());
   };
 
-  const toggle = (id: string) =>
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const toggle = (id: string) => setSelectedIds((prev) => toggleSelection(prev, id));
 
-  const toggleAll = () =>
-    setSelectedIds((prev) => {
-      if (orders.length > 0 && orders.every((o) => prev.has(o.id))) return new Set();
-      return new Set(orders.map((o) => o.id));
-    });
+  const toggleAll = () => setSelectedIds((prev) => toggleAllVisible(prev, orders));
 
-  const selectedOrders = orders.filter((o) => selectedIds.has(o.id));
+  // ARGUS #264: every action reads the same visible selection. Ids left over
+  // from a previous page/filter are pruned here, so the bulk count and the ids
+  // sent to status/prepare/print can never disagree.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = pruneSelection(prev, orders);
+      return next.size === prev.size ? prev : next;
+    });
+  }, [orders]);
+
+  const selectedVisibleIds = useMemo(
+    () => visibleSelectedIds(selectedIds, orders),
+    [selectedIds, orders],
+  );
+  const selectedOrders = useMemo(
+    () => orders.filter((o) => selectedIds.has(o.id)),
+    [selectedIds, orders],
+  );
 
   // ARGUS #263: only offer statuses legal for every selected order. A mixed
   // pre-dispatch/dispatched selection gets an empty list instead of a menu
@@ -120,22 +140,30 @@ export function OrdersPageClient() {
   );
 
   const handleStatusChange = (newStatus: DeliveryStatus) => {
-    const ids = Array.from(selectedIds);
+    const ids = selectedVisibleIds;
     bulkStatus.mutate(
       { deliveryIds: ids, status: newStatus },
       {
-        onSuccess: () => {
+        onSuccess: (results) => {
+          const summary = summarizeBulkResults(results);
+          // ARGUS #265: keep the dialog and the failed rows when nothing moved.
+          if (summary.okCount === 0) return;
+          setSelectedIds((prev) => retainFailedSelection(prev, results));
           setStatusDialogOpen(false);
-          setSelectedIds(new Set());
         },
       },
     );
   };
 
   const handleCreateDelivery = () => {
-    const ids = Array.from(selectedIds);
+    const ids = selectedVisibleIds;
     bulkCreate.mutate(ids, {
-      onSuccess: () => setSelectedIds(new Set()),
+      onSuccess: (results) => {
+        // Failed rows stay selected so they can be retried; never clear the
+        // selection when every row was rejected.
+        if (summarizeBulkResults(results).okCount === 0) return;
+        setSelectedIds((prev) => retainFailedSelection(prev, results));
+      },
     });
   };
 
@@ -224,25 +252,27 @@ export function OrdersPageClient() {
         onStatusChange={handleStatusFilterChange}
       />
 
-      <BulkActionBar
-        count={selectedIds.size}
-        canEdit={canEdit}
-        canDispatch={canDispatch}
-        onStatusChange={() => setStatusDialogOpen(true)}
-        onCreateDelivery={handleCreateDelivery}
-        onPrint={handlePrint}
-        onPrintInvoices={handlePrintInvoices}
-        isCreatingDelivery={bulkCreate.isPending}
-        isPrintingWaybills={printBusy === 'bulk-waybills'}
-        isPrintingInvoices={printBusy === 'bulk-invoices'}
-        isBusy={printBusy !== null || bulkCreate.isPending || bulkStatus.isPending}
-        waybillPrintDisabled={!canPrintWaybillNow}
-      />
+      {listState !== 'error' && (
+        <BulkActionBar
+          count={selectedVisibleIds.length}
+          canEdit={canEdit}
+          canDispatch={canDispatch}
+          onStatusChange={() => setStatusDialogOpen(true)}
+          onCreateDelivery={handleCreateDelivery}
+          onPrint={handlePrint}
+          onPrintInvoices={handlePrintInvoices}
+          isCreatingDelivery={bulkCreate.isPending}
+          isPrintingWaybills={printBusy === 'bulk-waybills'}
+          isPrintingInvoices={printBusy === 'bulk-invoices'}
+          isBusy={printBusy !== null || bulkCreate.isPending || bulkStatus.isPending}
+          waybillPrintDisabled={!canPrintWaybillNow}
+        />
+      )}
 
-      {total > 0 && (
+      {total > 0 && listState !== 'error' && (
         <div className="flex flex-wrap items-center justify-between gap-3 font-body text-sm text-espresso/60">
           <span>
-            Showing {summary.start}–{summary.end} of {total} order{total === 1 ? '' : 's'}
+            Showing {summary.start}-{summary.end} of {total} order{total === 1 ? '' : 's'}
           </span>
           <div className="flex items-center gap-2">
             <Button
@@ -272,7 +302,7 @@ export function OrdersPageClient() {
         </div>
       )}
 
-      {isLoading && (
+      {listState === 'loading' && (
         <div className="space-y-2">
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
@@ -280,13 +310,39 @@ export function OrdersPageClient() {
         </div>
       )}
 
-      {!isLoading && orders.length === 0 && (
+      {listState === 'error' && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 font-body text-sm text-red-700"
+        >
+          <div>
+            <p className="font-medium">Could not load orders.</p>
+            <p className="text-xs text-red-700/80">
+              {error instanceof Error
+                ? error.message
+                : 'The order list could not be loaded. Check your connection or permissions and try again.'}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            data-testid="orders-retry"
+          >
+            {isFetching ? 'Retrying...' : 'Retry'}
+          </Button>
+        </div>
+      )}
+
+      {listState === 'empty' && (
         <div className="rounded-lg border border-espresso/10 py-16 text-center">
           <p className="text-espresso/60">No orders found.</p>
         </div>
       )}
 
-      {!isLoading && orders.length > 0 && (
+      {listState === 'ready' && (
         <OrdersTable
           orders={orders}
           selectedIds={selectedIds}
@@ -308,7 +364,7 @@ export function OrdersPageClient() {
 
       {statusDialogOpen && (
         <BulkStatusDialog
-          count={selectedIds.size}
+          count={selectedVisibleIds.length}
           allowedStatuses={allowedBulkStatuses}
           onCancel={() => setStatusDialogOpen(false)}
           onConfirm={handleStatusChange}
