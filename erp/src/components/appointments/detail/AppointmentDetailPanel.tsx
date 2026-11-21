@@ -6,12 +6,19 @@ import Link from 'next/link';
 import { StatusBadge } from '../shared/StatusBadge';
 import { AppointmentStatusTimeline } from './AppointmentStatusTimeline';
 import { AppointmentActions } from './AppointmentActions';
-import { useAppointment } from '@/hooks/appointments';
+import { ReminderStatusBadge } from '../shared/ReminderStatusBadge';
+import { useAppointment, useAppointmentReminders } from '@/hooks/appointments';
 import {
   APPOINTMENT_OVERDUE_GRACE_MINUTES,
   appointmentDisplayStatus,
 } from '@/lib/appointments/appointmentOverdue.core';
 import { buildAppointmentDetailView } from '@/lib/appointments/appointmentDetail.core';
+import {
+  appointmentCustomerLabel,
+  formatAppointmentDate,
+  formatAppointmentDateTime,
+  formatAppointmentTimeRange,
+} from '@/lib/appointments/appointmentDisplay.core';
 import type { AppointmentStatus } from '@/generated/prisma/client';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { formatRupee } from '@/lib/format';
@@ -24,6 +31,9 @@ interface AppointmentDetailPanelProps {
 
 export function AppointmentDetailPanel({ appointmentId, open, onClose }: AppointmentDetailPanelProps) {
   const { data: appointment, isLoading } = useAppointment(appointmentId);
+  // ARGUS #135: the aggregate summary was visible but the individual reminder
+  // rows (and their PENDING/SENT/FAILED status) were not.
+  const { data: reminderList } = useAppointmentReminders(open ? appointmentId : null);
   const displayStatus = appointment
     ? appointmentDisplayStatus({
         status: appointment.status as AppointmentStatus,
@@ -45,6 +55,10 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
         cancelledByEmail: appointment.cancelledBy?.email ?? null,
         reminders: appointment.reminders ?? [],
       })
+    : null;
+  // ARGUS #136: hide the "Walk-in Customer" name when it just repeats the title.
+  const walkInLabel = appointment
+    ? appointmentCustomerLabel({ title: appointment.title, walkInName: appointment.walkInName })
     : null;
 
   return (
@@ -84,21 +98,16 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
                 <div>
                   <span className="text-espresso/50">Date</span>
                   <p className="text-espresso font-medium">
-                    {new Date(appointment.startTime).toLocaleDateString('en-US', {
-                      weekday: 'long', month: 'long', day: 'numeric',
+                    {formatAppointmentDate(appointment.startTime, {
+                      weekday: true,
+                      month: 'long',
                     })}
                   </p>
                 </div>
                 <div>
                   <span className="text-espresso/50">Time</span>
                   <p className="text-espresso font-medium">
-                    {new Date(appointment.startTime).toLocaleTimeString('en-US', {
-                      hour: '2-digit', minute: '2-digit',
-                    })}
-                    {' - '}
-                    {new Date(appointment.endTime).toLocaleTimeString('en-US', {
-                      hour: '2-digit', minute: '2-digit',
-                    })}
+                    {formatAppointmentTimeRange(appointment.startTime, appointment.endTime)}
                   </p>
                 </div>
               </div>
@@ -111,10 +120,12 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
                 </div>
               )}
 
-              {(appointment.walkInName || appointment.walkInPhone) && (
+              {(walkInLabel || appointment.walkInPhone) && (
                 <div>
                   <span className="text-espresso/50">Walk-in Customer</span>
-                  <p className="text-espresso font-medium">{appointment.walkInName}</p>
+                  {walkInLabel ? (
+                    <p className="text-espresso font-medium">{walkInLabel}</p>
+                  ) : null}
                   {appointment.walkInPhone && <p className="text-espresso/60 text-xs">{appointment.walkInPhone}</p>}
                 </div>
               )}
@@ -166,11 +177,7 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
                   <p className="mt-1 text-sm">{view.cancellation.reason ?? 'No reason recorded.'}</p>
                   {view.cancellation.at ? (
                     <p className="mt-1 text-xs">
-                      Cancelled{' '}
-                      {new Date(view.cancellation.at).toLocaleString('en-US', {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      })}
+                      Cancelled {formatAppointmentDateTime(view.cancellation.at)}
                     </p>
                   ) : null}
                   {view.cancellation.byEmail ? (
@@ -192,24 +199,41 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
                     </p>
                     {view.reminders.nextScheduledFor ? (
                       <p className="text-espresso/60 text-xs">
-                        Next{' '}
-                        {new Date(view.reminders.nextScheduledFor).toLocaleString('en-US', {
-                          dateStyle: 'medium',
-                          timeStyle: 'short',
-                        })}
+                        Next {formatAppointmentDateTime(view.reminders.nextScheduledFor)}
                       </p>
                     ) : null}
                     {view.reminders.lastSentAt ? (
                       <p className="text-espresso/60 text-xs">
-                        Last sent{' '}
-                        {new Date(view.reminders.lastSentAt).toLocaleString('en-US', {
-                          dateStyle: 'medium',
-                          timeStyle: 'short',
-                        })}
+                        Last sent {formatAppointmentDateTime(view.reminders.lastSentAt)}
                       </p>
                     ) : null}
                   </>
                 )}
+                {reminderList && reminderList.reminders.length > 0 ? (
+                  <ul className="mt-2 space-y-1">
+                    {reminderList.reminders.map((reminder) => (
+                      <li
+                        key={reminder.id}
+                        className="flex items-start justify-between gap-2 rounded border border-espresso/10 p-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-espresso">
+                            {reminder.channel} · {formatAppointmentDateTime(reminder.scheduledFor)}
+                          </p>
+                          {reminder.sentAt ? (
+                            <p className="text-espresso/60 text-[11px]">
+                              Sent {formatAppointmentDateTime(reminder.sentAt)}
+                            </p>
+                          ) : null}
+                          {reminder.errorMessage ? (
+                            <p className="text-[11px] text-red-700">{reminder.errorMessage}</p>
+                          ) : null}
+                        </div>
+                        <ReminderStatusBadge status={reminder.status} />
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
 
               {appointment.staff && (

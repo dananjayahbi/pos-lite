@@ -2,6 +2,11 @@ import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/services/email.service';
 import { sendWhatsAppTextMessage } from '@/lib/whatsapp';
 import { getAppointmentSettings } from '@/lib/services/appointment-settings.service';
+import { enabledReminderOffsetsHours } from '@/lib/appointments/appointmentSettings.core';
+import {
+  summarizeReminderStatusCounts,
+  type ReminderStatusCounts,
+} from '@/lib/appointments/appointmentReminders.core';
 
 interface ScheduleRemindersInput {
   appointmentId: string;
@@ -21,33 +26,21 @@ export async function scheduleReminders({ appointmentId, tenantId }: ScheduleRem
   if (!appointment) throw new Error('APPOINTMENT_NOT_FOUND');
 
   const settings = await getAppointmentSettings(tenantId);
-  const reminders = [];
-
-  // 24-hour reminder
-  const reminder24h = new Date(appointment.startTime);
-  reminder24h.setHours(reminder24h.getHours() - 24);
-  if (settings.reminder24hEnabled && reminder24h > new Date()) {
-    reminders.push({
+  const now = new Date();
+  const reminders = enabledReminderOffsetsHours(settings)
+    .map((hoursBefore) => {
+      const scheduledFor = new Date(appointment.startTime);
+      scheduledFor.setHours(scheduledFor.getHours() - hoursBefore);
+      return scheduledFor;
+    })
+    .filter((scheduledFor) => scheduledFor > now)
+    .map((scheduledFor) => ({
       appointmentId,
       tenantId,
-      scheduledFor: reminder24h,
+      scheduledFor,
       channel: 'WHATSAPP' as const,
       status: 'PENDING' as const,
-    });
-  }
-
-  // 2-hour reminder
-  const reminder2h = new Date(appointment.startTime);
-  reminder2h.setHours(reminder2h.getHours() - 2);
-  if (settings.reminder2hEnabled && reminder2h > new Date()) {
-    reminders.push({
-      appointmentId,
-      tenantId,
-      scheduledFor: reminder2h,
-      channel: 'WHATSAPP' as const,
-      status: 'PENDING' as const,
-    });
-  }
+    }));
 
   if (reminders.length > 0) {
     await prisma.appointmentReminder.createMany({ data: reminders });
@@ -151,6 +144,51 @@ export async function getReminderHistory(tenantId: string, appointmentId: string
     where: { tenantId, appointmentId },
     orderBy: { scheduledFor: 'asc' },
   });
+}
+
+/**
+ * ARGUS #135 — tenant-wide reminder queue for the Settings page, so the ~70
+ * PENDING rows are visible with their delivery status instead of only as a
+ * per-appointment aggregate. PENDING rows sort first, then by urgency.
+ */
+export function parseReminderLimit(value: string | null): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  if (!Number.isFinite(parsed)) return 25;
+  return Math.min(Math.max(parsed, 1), 100);
+}
+
+export async function listTenantReminders(tenantId: string, limit = 25) {
+  const take = Math.min(Math.max(Math.trunc(limit), 1), 100);
+
+  const [reminders, grouped] = await Promise.all([
+    prisma.appointmentReminder.findMany({
+      where: { tenantId },
+      orderBy: [{ status: 'asc' }, { scheduledFor: 'asc' }],
+      take,
+      include: {
+        appointment: {
+          select: {
+            id: true,
+            title: true,
+            startTime: true,
+            walkInName: true,
+            customer: { select: { name: true } },
+          },
+        },
+      },
+    }),
+    prisma.appointmentReminder.groupBy({
+      by: ['status'],
+      where: { tenantId },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const summary = summarizeReminderStatusCounts(
+    grouped.map((group) => ({ status: group.status, count: group._count._all })),
+  );
+
+  return { reminders, summary };
 }
 
 // Helper to build reminder message

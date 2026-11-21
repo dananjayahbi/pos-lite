@@ -1,5 +1,10 @@
 'use client';
 
+import {
+  appointmentCustomerLabel,
+  formatAppointmentTime,
+} from '@/lib/appointments/appointmentDisplay.core';
+
 const STATUS_BORDER_COLORS: Record<string, string> = {
   SCHEDULED: 'border-l-blue-500',
   CONFIRMED: 'border-l-indigo-500',
@@ -24,12 +29,12 @@ interface CalendarAppointmentCardProps {
 export function CalendarAppointmentCard({
   id, title, status, startTime, endTime, customerName, walkInName, onClick,
 }: CalendarAppointmentCardProps) {
-  const name = customerName ?? walkInName ?? 'Walk-in';
+  // ARGUS #136: a walk-in booking's title is often the walk-in name, so the
+  // card used to show the same string twice. Fall back to the generic label.
+  const name = appointmentCustomerLabel({ title, customerName, walkInName }) ?? 'Walk-in';
   const borderColor = STATUS_BORDER_COLORS[status] ?? 'border-l-gray-400';
 
-  const timeStr = new Date(startTime).toLocaleTimeString('en-US', {
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  });
+  const timeStr = formatAppointmentTime(startTime);
 
   return (
     <div

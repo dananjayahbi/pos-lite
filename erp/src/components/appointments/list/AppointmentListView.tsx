@@ -5,6 +5,7 @@ import { useAppointments, useMarkNoShow } from '@/hooks/appointments';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { appointmentDisplayStatus } from '@/lib/appointments/appointmentOverdue.core';
+import { appointmentCustomerLabel } from '@/lib/appointments/appointmentDisplay.core';
 import {
   compareAppointmentsUpcomingFirst,
   formatAppointmentListDate,
@@ -153,6 +154,14 @@ export function AppointmentListView({ onAppointmentClick, onNewClick }: Appointm
                     startTime: appt.startTime,
                   });
                   const overdue = displayStatus === 'OVERDUE';
+                  // ARGUS #136: do not echo the walk-in name when it is already
+                  // the appointment title; show the generic label instead.
+                  const customerLabel =
+                    appointmentCustomerLabel({
+                      title: appt.title,
+                      customerName: appt.customer?.name,
+                      walkInName: appt.walkInName,
+                    }) ?? (appt.walkInName ? 'Walk-in' : '-');
 
                   return (
                   <tr
@@ -167,7 +176,7 @@ export function AppointmentListView({ onAppointmentClick, onNewClick }: Appointm
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-espresso">
-                      {appt.customer?.name ?? appt.walkInName ?? '-'}
+                      {customerLabel}
                     </td>
                     <td className="px-4 py-3 text-sm text-espresso/60">
                       {appt.service?.name ?? '-'}

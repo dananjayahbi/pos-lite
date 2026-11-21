@@ -8,7 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { useAppointmentSettings, useUpdateAppointmentSettings } from '@/hooks/appointments';
+import { useAppointmentSettings, useTenantReminders, useUpdateAppointmentSettings } from '@/hooks/appointments';
+import { formatAppointmentDateTime } from '@/lib/appointments/appointmentDisplay.core';
+import { ReminderStatusBadge } from '../shared/ReminderStatusBadge';
 import {
   APPOINTMENT_SLOT_DURATION_MAX,
   APPOINTMENT_SLOT_DURATION_MIN,
@@ -33,6 +35,7 @@ function clampSlotDuration(value: number): number {
 export function AppointmentSettingsForm() {
   const { data: settings, isLoading, isError, refetch } = useAppointmentSettings();
   const saveMutation = useUpdateAppointmentSettings();
+  const { data: reminderQueue, isLoading: remindersLoading, isError: remindersError } = useTenantReminders(25);
 
   const [draft, setDraft] = useState<AppointmentSettings>(DEFAULT_APPOINTMENT_SETTINGS);
   const [slotText, setSlotText] = useState(String(DEFAULT_APPOINTMENT_SETTINGS.slotDurationMins));
@@ -137,8 +140,68 @@ export function AppointmentSettingsForm() {
             />
           </div>
           <p className="text-xs text-espresso/50">
-            Disabled reminders are not scheduled for new bookings; reminders already queued keep sending.
+            These switches are the reminder policy: each enabled switch schedules one message at
+            that offset for new bookings. Disabled reminders are not scheduled; reminders already
+            queued keep their delivery status.
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Reminder Delivery</CardTitle>
+          <CardDescription>Status of the reminder queue across all appointments.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {remindersLoading ? (
+            <p className="text-sm text-espresso/50">Loading reminder queue…</p>
+          ) : remindersError ? (
+            <p className="text-sm text-red-700">Could not load the reminder queue.</p>
+          ) : reminderQueue ? (
+            <>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">
+                  {reminderQueue.summary.pending} pending
+                </span>
+                <span className="rounded-full bg-green-100 px-2 py-0.5 text-green-800">
+                  {reminderQueue.summary.sent} sent
+                </span>
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-800">
+                  {reminderQueue.summary.failed} failed
+                </span>
+              </div>
+              {reminderQueue.reminders.length === 0 ? (
+                <p className="text-sm text-espresso/50">No reminders scheduled.</p>
+              ) : (
+                <ul className="max-h-[280px] space-y-1 overflow-auto">
+                  {reminderQueue.reminders.map((reminder) => (
+                    <li
+                      key={reminder.id}
+                      className="flex items-start justify-between gap-2 rounded border border-espresso/10 p-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-espresso">
+                          {reminder.appointment?.title ?? 'Appointment'} ·{' '}
+                          {reminder.channel}
+                        </p>
+                        <p className="text-espresso/60 text-[11px]">
+                          Scheduled {formatAppointmentDateTime(reminder.scheduledFor)}
+                        </p>
+                        {reminder.errorMessage ? (
+                          <p className="text-[11px] text-red-700">{reminder.errorMessage}</p>
+                        ) : null}
+                      </div>
+                      <ReminderStatusBadge status={reminder.status} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-xs text-espresso/50">
+                Showing the first {reminderQueue.reminders.length} reminder
+                {reminderQueue.reminders.length === 1 ? '' : 's'} (pending first).
+              </p>
+            </>
+          ) : null}
         </CardContent>
       </Card>
 

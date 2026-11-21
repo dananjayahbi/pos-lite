@@ -24,9 +24,17 @@ describe('formatAppointmentListDate', () => {
     expect(formatAppointmentListDate(new Date(2034, 5, 25, 10, 0), NOW)).toContain('2034');
   });
 
+  it('uses day-first en-GB dates and 24-hour times (ARGUS #136)', () => {
+    const formatted = formatAppointmentListDate(new Date(2029, 8, 7, 10, 0), NOW);
+
+    expect(formatted).toBe('07 Sep 2029, 10:00');
+    expect(formatted).not.toContain('AM');
+    expect(formatted).not.toContain('PM');
+  });
+
   it('uses relative labels for today and tomorrow', () => {
-    expect(formatAppointmentListDate(new Date(2026, 8, 7, 14, 30), NOW)).toMatch(/^Today, /);
-    expect(formatAppointmentListDate(new Date(2026, 8, 8, 14, 30), NOW)).toMatch(/^Tomorrow, /);
+    expect(formatAppointmentListDate(new Date(2026, 8, 7, 14, 30), NOW)).toBe('Today, 14:30');
+    expect(formatAppointmentListDate(new Date(2026, 8, 8, 14, 30), NOW)).toBe('Tomorrow, 14:30');
   });
 
   it('handles an invalid date', () => {

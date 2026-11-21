@@ -36,6 +36,21 @@ export const DEFAULT_APPOINTMENT_SETTINGS: AppointmentSettings = {
 export const APPOINTMENT_SLOT_DURATION_MIN = 5;
 export const APPOINTMENT_SLOT_DURATION_MAX = 120;
 
+/** Reminder offsets (hours before start) that the Settings switches control. */
+export const APPOINTMENT_REMINDER_OFFSETS_HOURS = [24, 2] as const;
+
+/**
+ * ARGUS #135 — the reminder policy is derived from the Settings switches.
+ * `scheduleReminders` uses this list instead of duplicating the two booleans,
+ * so ticking/unticking a switch has exactly one meaning.
+ */
+export function enabledReminderOffsetsHours(settings: AppointmentSettings): number[] {
+  const offsets: number[] = [];
+  if (settings.reminder24hEnabled) offsets.push(APPOINTMENT_REMINDER_OFFSETS_HOURS[0]);
+  if (settings.reminder2hEnabled) offsets.push(APPOINTMENT_REMINDER_OFFSETS_HOURS[1]);
+  return offsets;
+}
+
 type JsonRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is JsonRecord {

@@ -3,6 +3,7 @@
 import { useAppointmentStats, useAppointments } from '@/hooks/appointments';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatRupee } from '@/lib/format';
+import { appointmentLocalDayRange } from '@/lib/appointments/appointmentStats.core';
 import { APPOINTMENT_OVERDUE_GRACE_MINUTES } from '@/lib/appointments/appointmentOverdue.core';
 
 interface StatsCard {
@@ -16,10 +17,14 @@ interface StatsCard {
  * ARGUS #121 — revenue now reflects money actually collected (paid visits at
  * price, otherwise the deposit taken at booking), and unpaid completed visits
  * are called out instead of hiding inside the completed count.
+ *
+ * ARGUS #134 — the cards were not mounted on the calendar and asked for the UTC
+ * day. They now cover the operator's local day and use the shared rupee
+ * formatter (`formatRupee`, "Rs. …"), matching the rest of the ERP.
  */
 export function AppointmentSummaryCards() {
-  const today = new Date().toISOString().split('T')[0];
-  const { data: stats } = useAppointmentStats(`${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`);
+  const { dateFrom, dateTo } = appointmentLocalDayRange();
+  const { data: stats } = useAppointmentStats(dateFrom, dateTo);
   // ARGUS #126: tenant-wide derived count, not a stored status. It is visible
   // regardless of the selected day so old unresolved rows cannot hide.
   const { data: overdueResult } = useAppointments({ status: 'OVERDUE', limit: 1 });

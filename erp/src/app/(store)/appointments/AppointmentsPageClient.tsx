@@ -4,7 +4,9 @@ import { CalendarView } from '@/components/appointments/calendar/CalendarView';
 import { AppointmentFormDialog } from '@/components/appointments/form/AppointmentFormDialog';
 import { AppointmentDetailPanel } from '@/components/appointments/detail/AppointmentDetailPanel';
 import { AppointmentsLayout } from '@/components/appointments/AppointmentsLayout';
+import { AppointmentSummaryCards } from '@/components/appointments/stats/AppointmentSummaryCards';
 import { useAppointmentStore } from '@/stores/appointmentStore';
+import { appointmentSlotDefaults } from '@/lib/appointments/appointmentCalendar.core';
 
 export function AppointmentsPageClient() {
   const isFormOpen = useAppointmentStore((s) => s.isFormOpen);
@@ -21,13 +23,13 @@ export function AppointmentsPageClient() {
 
   return (
     <AppointmentsLayout>
+      <AppointmentSummaryCards />
       <CalendarView
         onAppointmentClick={(id) => openDetail(id)}
+        onNewClick={() => openCreateForm()}
         onSlotClick={(date) => {
-          // Pre-fill the form with the clicked slot time
-          const end = new Date(date);
-          end.setMinutes(end.getMinutes() + 30);
-          openCreateForm();
+          // ARGUS #133: prefill the form with the clicked slot, not "now".
+          openCreateForm(appointmentSlotDefaults(date));
         }}
       />
 
