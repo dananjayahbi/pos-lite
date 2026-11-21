@@ -3,6 +3,7 @@ import Decimal from 'decimal.js';
 import type { TxClient } from '@/lib/services/inventory.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { ApiError } from '@/lib/api/errors';
+import { netSpendAfterVoid } from '@/lib/services/customerSpend.core';
 
 // ── Private Helpers ──────────────────────────────────────────────────────────
 
@@ -159,7 +160,7 @@ export async function getCustomerById(tenantId: string, customerId: string) {
   const customer = await prisma.customer.findFirst({
     where: { id: customerId, tenantId, deletedAt: null },
     include: {
-      _count: { select: { sales: true } },
+      _count: { select: { sales: { where: { status: 'COMPLETED' } } } },
       sales: {
         take: 20,
         orderBy: { createdAt: 'desc' },
@@ -213,7 +214,7 @@ export async function getPreferredCategories(
   customerId: string,
 ): Promise<PreferredCategory[]> {
   const lines = await prisma.saleLine.findMany({
-    where: { sale: { tenantId, customerId } },
+    where: { sale: { tenantId, customerId, status: 'COMPLETED' } },
     select: {
       quantity: true,
       lineTotalAfterDiscount: true,
@@ -335,7 +336,7 @@ export async function getCustomers(tenantId: string, options: GetCustomersOption
       orderBy: { createdAt: 'desc' },
       skip,
       take: limit,
-      include: { _count: { select: { sales: true } } },
+      include: { _count: { select: { sales: { where: { status: 'COMPLETED' } } } } },
     }),
     prisma.customer.count({ where }),
   ]);
@@ -486,6 +487,43 @@ export async function issueCredit(
   }).catch(() => {});
 
   return updated;
+}
+
+/**
+ * Reverse the spend accrued by a sale that is being voided (ARGUS #308).
+ *
+ * `addToSpendTotal` runs once at sale creation, so without this a void left the
+ * customer's lifetime spend (and the loyalty/broadcast segments derived from it)
+ * counting money that was never collected. `lastPurchaseAt` is recomputed from
+ * the most recent remaining completed sale.
+ */
+export async function reverseSpendOnVoid(
+  tenantId: string,
+  customerId: string,
+  amount: Decimal,
+  voidedSaleId: string,
+  tx: TxClient,
+) {
+  const customer = await tx.customer.findFirst({
+    where: { id: customerId, tenantId },
+    select: { totalSpend: true },
+  });
+  if (!customer) return;
+
+  const nextSpend = netSpendAfterVoid(customer.totalSpend.toString(), amount);
+  const lastSale = await tx.sale.findFirst({
+    where: { tenantId, customerId, status: 'COMPLETED', id: { not: voidedSaleId } },
+    orderBy: { createdAt: 'desc' },
+    select: { saleDate: true, createdAt: true },
+  });
+
+  await tx.customer.update({
+    where: { id: customerId },
+    data: {
+      totalSpend: nextSpend.toNumber(),
+      lastPurchaseAt: lastSale ? (lastSale.saleDate ?? lastSale.createdAt) : null,
+    },
+  });
 }
 
 // ── Spend Tracking ───────────────────────────────────────────────────────────

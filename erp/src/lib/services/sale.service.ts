@@ -6,7 +6,7 @@ import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { createPayment } from '@/lib/services/payment.service';
 import { buildSaleAccountLegs, postSaleToAccounts, reverseSaleAccounts } from '@/lib/services/saleAccounts';
-import { redeemCredit, addToSpendTotal, issueCredit } from '@/lib/services/customer.service';
+import { redeemCredit, addToSpendTotal, issueCredit, reverseSpendOnVoid } from '@/lib/services/customer.service';
 import { kickCashDrawer } from '@/lib/hardware/cashDrawer';
 import type { PrinterConfig } from '@/lib/hardware/printer';
 import type { CreateSaleInput, HoldSaleInput, UpdateSaleInput } from '@/lib/validators/sale.validators';
@@ -1020,6 +1020,18 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
     // Put the money back where it came from. Mirrors the entries written by
     // `postSaleToAccounts` at collection time.
     await reverseSaleAccounts(tx, tenantId, actorId, sale.id, sale.id.slice(0, 8).toUpperCase());
+
+    // Voided sales must stop counting toward the customer's lifetime spend and
+    // visit/loyalty metrics (ARGUS #308).
+    if (sale.customerId) {
+      await reverseSpendOnVoid(
+        tenantId,
+        sale.customerId,
+        new Decimal(sale.totalAmount.toString()),
+        sale.id,
+        tx,
+      );
+    }
 
     return updatedSale;
   });
