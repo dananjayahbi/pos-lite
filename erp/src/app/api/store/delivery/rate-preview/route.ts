@@ -3,11 +3,15 @@ import { NextResponse } from 'next/server';
 import { requireDeliveryAuth, validationError, internalError } from '@/lib/api/delivery-route';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { calculateShippingFee } from '@/lib/services/rate-engine.service';
+import { MAX_RATE_WEIGHT_KG } from '@/lib/delivery/rateCardQuote.core';
 import { z } from 'zod';
 
 const RatePreviewSchema = z
   .object({
-    weightKg: z.coerce.number().positive('Weight must be greater than zero'),
+    weightKg: z.coerce
+      .number()
+      .positive('Weight must be greater than zero')
+      .max(MAX_RATE_WEIGHT_KG, `Weight cannot exceed ${MAX_RATE_WEIGHT_KG} kg`),
     destinationDistrictId: z.coerce.number().int().positive().optional(),
     destinationCityId: z.coerce.number().int().positive().optional(),
   })

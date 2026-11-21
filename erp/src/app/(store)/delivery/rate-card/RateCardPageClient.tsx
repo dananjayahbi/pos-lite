@@ -8,7 +8,7 @@ import { AlertTriangle } from 'lucide-react';
 import { useRateCard, useLocations } from '@/hooks/delivery';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { originSpecificEntryCount, withoutOriginSpecificEntries } from '@/lib/delivery/rateZone.core';
+import { originSpecificEntryCount, withoutOriginSpecificEntries, validateRateZoneEntries } from '@/lib/delivery/rateZone.core';
 import {
   UpsertRateCardSchema,
 } from '@/lib/validators/ratecard.validators';
@@ -17,8 +17,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { formatRupee } from '@/lib/format';
+import {
+  MAX_RATE_AMOUNT,
+  MAX_RATE_WEIGHT_KG,
+  quoteRateCard,
+  type RateQuoteResult,
+} from '@/lib/delivery/rateCardQuote.core';
 import { RateMatrixTable } from '@/components/delivery/rate-card/RateMatrixTable';
 import { rateCardLoadState } from '@/components/delivery/rate-card/rateCardLoadState';
+import { rateCardMetaSummary } from '@/lib/delivery/rateCardMeta.core';
 
 interface RateEntry {
   id?: string;
@@ -75,22 +83,27 @@ function rateCardFormDefaults(card: RateCardData | null) {
  */
 const RateCardFormSchema = UpsertRateCardSchema.extend({
   name: z.string().trim().min(1, 'Rate card name is required').max(120),
-  baseRate: z.number({ error: 'Base rate is required' }).nonnegative('Base rate cannot be negative'),
+  baseRate: z
+    .number({ error: 'Base rate is required' })
+    .nonnegative('Base rate cannot be negative')
+    .max(MAX_RATE_AMOUNT, `Base rate cannot exceed ${MAX_RATE_AMOUNT}`),
   extraKgRate: z
     .number({ error: 'Extra kg rate is required' })
-    .nonnegative('Extra kg rate cannot be negative'),
+    .nonnegative('Extra kg rate cannot be negative')
+    .max(MAX_RATE_AMOUNT, `Extra kg rate cannot exceed ${MAX_RATE_AMOUNT}`),
   freeBaseWeightKg: z
     .number({ error: 'Free base weight is required' })
-    .nonnegative('Free base weight cannot be negative'),
+    .nonnegative('Free base weight cannot be negative')
+    .max(MAX_RATE_WEIGHT_KG, `Free base weight cannot exceed ${MAX_RATE_WEIGHT_KG} kg`),
   coddCommissionPct: z
     .union([
-      z.number({ error: 'Enter a valid COD commission' }).nonnegative('Cannot be negative'),
+      z.number({ error: 'Enter a valid COD commission' }).nonnegative('Cannot be negative').max(100, 'Cannot exceed 100%'),
       z.nan().transform(() => undefined),
     ])
     .optional(),
   vatRatePct: z
     .union([
-      z.number({ error: 'Enter a valid VAT rate' }).nonnegative('Cannot be negative'),
+      z.number({ error: 'Enter a valid VAT rate' }).nonnegative('Cannot be negative').max(100, 'Cannot exceed 100%'),
       z.nan().transform(() => undefined),
     ])
     .optional(),
@@ -99,7 +112,7 @@ const RateCardFormSchema = UpsertRateCardSchema.extend({
 export function RateCardPageClient() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const canManage = hasPermission(PERMISSIONS.DELIVERY.manageRateCard);
-  const { data, isLoading, isError, error, isFetching, refetch, save, saveEntries } =
+  const { data, meta, isLoading, isError, error, isFetching, refetch, save, saveEntries } =
     useRateCard();
   const { data: locations } = useLocations();
   const districts = locations?.districts ?? [];
@@ -113,6 +126,11 @@ export function RateCardPageClient() {
 
   const [entries, setEntries] = useState<RateEntry[]>(initialEntries);
   const originSpecificCount = originSpecificEntryCount(entries);
+  const zoneErrors = validateRateZoneEntries(entries);
+  const hasZoneErrors = zoneErrors.length > 0;
+  // ARGUS #296: built-in base-rate quote preview.
+  const [quoteWeight, setQuoteWeight] = useState('1');
+  const [quote, setQuote] = useState<RateQuoteResult | null>(null);
 
   // Hydrate the zone matrix once from the loaded rate card.
   useEffect(() => {
@@ -127,6 +145,7 @@ export function RateCardPageClient() {
     register,
     handleSubmit,
     reset,
+    getValues,
     formState: { errors },
   } = useForm<
     z.input<typeof RateCardFormSchema>,
@@ -183,6 +202,7 @@ export function RateCardPageClient() {
 
   const onSaveEntries = () => {
     if (loadState !== 'ready') return;
+    if (hasZoneErrors) return;
     if (submittingRef.current) return;
     submittingRef.current = true;
     saveEntries.mutate(entries, { onSettled: () => { submittingRef.current = false; } });
@@ -194,6 +214,9 @@ export function RateCardPageClient() {
         <h1 className="font-display text-2xl font-bold text-espresso">Delivery Rate Card</h1>
         <p className="text-sm text-espresso/60">
           Base Trans Express pricing and zone-level overrides for COD deliveries.
+        </p>
+        <p className="mt-1 text-xs text-espresso/50" data-testid="rate-card-meta">
+          {rateCardMetaSummary(meta)}
         </p>
       </div>
 
@@ -353,6 +376,64 @@ export function RateCardPageClient() {
         </CardContent>
       </Card>
 
+      <Card className="border-mist">
+        <CardHeader>
+          <CardTitle className="font-display text-lg">Quote check</CardTitle>
+          <CardDescription>
+            Preview the base-rate fee for a parcel. Zone overrides are applied at checkout.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="quote-weight">Weight (kg)</Label>
+              <Input
+                id="quote-weight"
+                type="number"
+                min={0}
+                max={MAX_RATE_WEIGHT_KG}
+                step="any"
+                value={quoteWeight}
+                onChange={(event) => setQuoteWeight(event.target.value)}
+                className="w-32"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                const values = getValues();
+                setQuote(
+                  quoteRateCard({
+                    weightKg: Number(quoteWeight),
+                    baseRate: Number(values.baseRate),
+                    extraKgRate: Number(values.extraKgRate),
+                    freeBaseWeightKg: Number(values.freeBaseWeightKg),
+                  }),
+                );
+              }}
+            >
+              Calculate
+            </Button>
+          </div>
+          {quote &&
+            (quote.ok ? (
+              <p className="text-sm text-espresso" data-testid="rate-quote-result">
+                {formatRupee(quote.shippingFee ?? 0)} for {quoteWeight} kg
+                {quote.extraKg ? ` (${quote.extraKg} extra kg)` : ' (within the free weight)'}
+              </p>
+            ) : (
+              <p role="alert" className="text-sm text-terracotta">
+                {quote.error}
+              </p>
+            ))}
+          <p className="text-xs text-espresso/50">
+            Maximum {MAX_RATE_WEIGHT_KG} kg per parcel; higher weights are rejected by the quote
+            API.
+          </p>
+        </CardContent>
+      </Card>
+
       {loadState === 'ready' && (
         <Card className="border-mist">
           <CardHeader>
@@ -363,6 +444,22 @@ export function RateCardPageClient() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {hasZoneErrors ? (
+              <div
+                role="alert"
+                className="mb-4 rounded-lg border border-terracotta/30 bg-terracotta/5 p-3 text-sm text-terracotta"
+                data-testid="rate-zone-errors"
+              >
+                <p className="font-medium">Fix these zone rows before saving</p>
+                <ul className="mt-1 space-y-0.5 text-xs">
+                  {zoneErrors.map((error) => (
+                    <li key={`${error.index}-${error.field}-${error.message}`}>
+                      Row {error.index + 1}: {error.message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {originSpecificCount > 0 ? (
               <div
                 role="alert"
@@ -407,7 +504,7 @@ export function RateCardPageClient() {
             <div className="mt-4 flex justify-end">
               <Button
                 onClick={onSaveEntries}
-                disabled={saveEntries.isPending || originSpecificCount > 0}
+                disabled={saveEntries.isPending || originSpecificCount > 0 || hasZoneErrors}
               >
                 {saveEntries.isPending ? 'Saving...' : 'Save Zone Overrides'}
               </Button>

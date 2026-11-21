@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { formatRupee } from '@/lib/format';
+import { formatShortDateTime } from '@/lib/format';
 import { collectableCodAmount } from '@/lib/delivery/cod';
 import { waitForPrintOverlayToClose } from '@/lib/print-session';
 import { StatusBadge } from './StatusBadge';
@@ -39,13 +40,7 @@ interface DeliveryTableProps {
 }
 
 function formatDate(value?: string | null) {
-  if (!value) return '-';
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatShortDateTime(value ?? null);
 }
 
 export function DeliveryTable({ deliveries }: DeliveryTableProps) {

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canPrintWaybill,
   labelTemplateErrorMessage,
+  labelTemplateProvenance,
   resolveLabelTemplate,
   resolveLabelTemplateViewState,
   type LabelTemplateViewInput,
@@ -82,6 +83,27 @@ describe('resolveLabelTemplate', () => {
     ).toEqual({ brandName: 'DILANI', fromContact: '076 199 2828', pickupAddress: '' });
   });
 
+  it('shows the Store Profile branding in the preview when the saved sender is blank (ARGUS #304)', () => {
+    // The designer's live preview and the print path both call this helper, so
+    // a blank saved template must resolve to the same non-empty sender.
+    const preview = resolveLabelTemplate(
+      { brandName: '', fromContact: '', pickupAddress: '' },
+      {
+        name: 'Ruhunu Weda Gedara',
+        address: '12 Temple Road, Matara',
+        phoneNumber: '077 111 2222',
+      },
+    );
+    expect(preview).toEqual({
+      brandName: 'Ruhunu Weda Gedara',
+      fromContact: '077 111 2222',
+      pickupAddress: '12 Temple Road, Matara',
+    });
+    expect(
+      canPrintWaybill('ready', { brandName: preview.brandName, fromContact: preview.fromContact }),
+    ).toBe(true);
+  });
+
   it('does not invent missing business fields', () => {
     expect(resolveLabelTemplate(null, { name: 'Store' })).toEqual({
       brandName: 'Store',
@@ -109,5 +131,45 @@ describe('labelTemplateErrorMessage', () => {
   it('falls back for an empty message', () => {
     expect(labelTemplateErrorMessage(new Error('   '), 'fallback')).toBe('fallback');
     expect(labelTemplateErrorMessage(undefined, 'fallback')).toBe('fallback');
+  });
+});
+
+describe('labelTemplateProvenance (ARGUS #305)', () => {
+  it('states the default state when nothing was saved', () => {
+    expect(labelTemplateProvenance(null)).toContain('Store Profile defaults');
+    expect(
+      labelTemplateProvenance({
+        updatedAt: null,
+        updatedById: null,
+        updatedByEmail: null,
+        updatedByRole: null,
+        action: null,
+      }),
+    ).toContain('Store Profile defaults');
+  });
+
+  it('shows who saved the template and when', () => {
+    const text = labelTemplateProvenance({
+      updatedAt: '2026-11-22T04:30:00.000Z',
+      updatedById: 'u1',
+      updatedByEmail: 'owner@shop.lk',
+      updatedByRole: 'OWNER',
+      action: 'saved',
+    });
+    expect(text).toContain('Saved');
+    expect(text).toContain('Owner');
+    expect(text).toContain('owner');
+  });
+
+  it('calls out a reset explicitly', () => {
+    expect(
+      labelTemplateProvenance({
+        updatedAt: '2026-11-22T04:30:00.000Z',
+        updatedById: 'u1',
+        updatedByEmail: 'manager@shop.lk',
+        updatedByRole: 'MANAGER',
+        action: 'reset',
+      }),
+    ).toContain('Reset to Store Profile defaults');
   });
 });

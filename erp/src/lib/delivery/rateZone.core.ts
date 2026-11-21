@@ -17,6 +17,8 @@ export interface RateZoneEntryLike {
   originDistrictId?: number | null | undefined;
   destinationDistrictId?: number | null | undefined;
   destinationCityId?: number | null | undefined;
+  baseRate?: number | null | undefined;
+  extraKgRate?: number | null | undefined;
 }
 
 export type RateZoneField =
@@ -54,6 +56,43 @@ export function withoutOriginSpecificEntries<T extends RateZoneEntryLike>(entrie
   return entries.filter((entry) => !isOriginSpecificZone(entry));
 }
 
+export const DUPLICATE_ZONE_MESSAGE =
+  'Another row already targets this destination. Keep one row per district/city pair.';
+export const BLANK_ZONE_MESSAGE =
+  'This row has no destination and no rates. Remove it or fill in a destination.';
+
+function valueOrAny(value: number | null | undefined): string {
+  return value === null || value === undefined ? 'any' : String(value);
+}
+
+/** Identity of a destination (null means "any" at that level). */
+export function rateZoneKey(entry: RateZoneEntryLike): string {
+  return `${valueOrAny(entry.destinationDistrictId)}|${valueOrAny(entry.destinationCityId)}`;
+}
+
+/** A row added by the UI and never filled in. */
+export function isBlankRateZoneEntry(entry: RateZoneEntryLike): boolean {
+  return (
+    (entry.originDistrictId === null || entry.originDistrictId === undefined) &&
+    (entry.destinationDistrictId === null || entry.destinationDistrictId === undefined) &&
+    (entry.destinationCityId === null || entry.destinationCityId === undefined) &&
+    (entry.baseRate === null || entry.baseRate === undefined) &&
+    (entry.extraKgRate === null || entry.extraKgRate === undefined)
+  );
+}
+
+/** Indexes whose destination already appeared on an earlier row. */
+export function duplicateRateZoneIndexes(entries: RateZoneEntryLike[]): number[] {
+  const seen = new Set<string>();
+  const duplicates: number[] = [];
+  entries.forEach((entry, index) => {
+    const key = rateZoneKey(entry);
+    if (seen.has(key)) duplicates.push(index);
+    else seen.add(key);
+  });
+  return duplicates;
+}
+
 export function validateRateZoneEntries(
   entries: RateZoneEntryLike[],
   context: RateZoneValidationContext = {},
@@ -61,8 +100,23 @@ export function validateRateZoneEntries(
   const districts = new Set(context.districtIds ?? []);
   const cities = new Set(context.cityIds ?? []);
   const errors: RateZoneValidationError[] = [];
+  const duplicates = new Set(duplicateRateZoneIndexes(entries));
 
   entries.forEach((entry, index) => {
+    if (duplicates.has(index)) {
+      errors.push({
+        index,
+        field: 'destinationCityId',
+        message: DUPLICATE_ZONE_MESSAGE,
+      });
+    }
+    if (isBlankRateZoneEntry(entry)) {
+      errors.push({
+        index,
+        field: 'destinationCityId',
+        message: BLANK_ZONE_MESSAGE,
+      });
+    }
     if (isOriginSpecificZone(entry)) {
       errors.push({ index, field: 'originDistrictId', message: ORIGIN_NOT_SUPPORTED_MESSAGE });
     }

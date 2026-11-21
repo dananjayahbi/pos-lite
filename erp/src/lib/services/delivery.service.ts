@@ -4,6 +4,8 @@ import Decimal from 'decimal.js';
 
 import { Prisma } from '@/generated/prisma/client';
 import type { StockMovementReason } from '@/generated/prisma/client';
+import type { DeliveryStatus } from '@/generated/prisma/client';
+import { DELIVERY_STATUSES } from '@/lib/validators/delivery.validators';
 import { prisma } from '@/lib/prisma';
 import {
   createAuditLog,
@@ -14,6 +16,7 @@ import { setSentryTenantContext } from '@/lib/sentry/context';
 import type { TxClient } from '@/lib/services/inventory.service';
 import { calculateShippingFee } from '@/lib/services/rate-engine.service';
 import { resolveShippingChargeDecision } from '@/lib/delivery/shippingConfig.core';
+import { phoneSearchVariants } from '@/lib/delivery/search.core';
 import { createShipment } from '@/lib/services/shipment.service';
 import { autoDeductPackaging, assertPackagingAvailableForDispatch, notifyLowStock } from '@/lib/services/packaging.service';
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
@@ -67,17 +70,26 @@ async function generateOrderRef(tx: TxClient, tenantId: string): Promise<string>
 }
 
 export async function getDeliveries(tenantId: string, filters: DeliveryFilters) {
-  const { status, source, search, dateFrom, dateTo, page, limit } = filters;
+  const { status, statuses, source, search, dateFrom, dateTo, includeCounts, page, limit } = filters;
 
   const where: Prisma.DeliveryWhereInput = { tenantId, deletedAt: null };
-  if (status) where.status = status;
   if (source) where.source = source;
   if (search) {
+    // ARGUS #268: a dispatch lookup is usually a phone number. Match the
+    // recipient/alternate phone, the linked customer's phone and name, plus the
+    // common phone spellings from `phoneSearchVariants`.
+    const phoneMatches = phoneSearchVariants(search).flatMap((term) => [
+      { address: { phone: { contains: term, mode: 'insensitive' as const } } },
+      { address: { phone2: { contains: term, mode: 'insensitive' as const } } },
+      { customer: { phone: { contains: term, mode: 'insensitive' as const } } },
+    ]);
     where.OR = [
       { orderRef: { contains: search, mode: 'insensitive' } },
       { courierOrderRef: { contains: search, mode: 'insensitive' } },
       { address: { fullName: { contains: search, mode: 'insensitive' } } },
+      { customer: { name: { contains: search, mode: 'insensitive' } } },
       { shipments: { some: { waybillId: { contains: search, mode: 'insensitive' } } } },
+      ...phoneMatches,
     ];
   }
   if (dateFrom || dateTo) {
@@ -86,7 +98,23 @@ export async function getDeliveries(tenantId: string, filters: DeliveryFilters) 
     if (dateTo) where.createdAt.lte = new Date(dateTo);
   }
 
-  const [total, items] = await Promise.all([
+  // ARGUS #269: the dispatch queue sends several statuses at once.
+  const requestedStatuses = (statuses ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value): value is DeliveryStatus =>
+      (DELIVERY_STATUSES as readonly string[]).includes(value),
+    );
+  // Counts describe the search scope, not the current status filter, so the
+  // workload summary still shows the other buckets.
+  const countWhere: Prisma.DeliveryWhereInput = { ...where };
+  if (requestedStatuses.length > 0) {
+    where.status = { in: requestedStatuses };
+  } else if (status) {
+    where.status = status;
+  }
+
+  const [total, items, statusGroups] = await Promise.all([
     prisma.delivery.count({ where }),
     prisma.delivery.findMany({
       where,
@@ -94,14 +122,38 @@ export async function getDeliveries(tenantId: string, filters: DeliveryFilters) 
         address: true,
         shipments: { orderBy: { createdAt: 'desc' }, take: 1 },
         customer: { select: { id: true, name: true, phone: true } },
+        // ARGUS #307: the waybill description needs at least the first product
+        // and SKU for courier/customs identification.
+        lines: {
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+          select: { productNameSnapshot: true, skuSnapshot: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
     }),
+    includeCounts === '1'
+      ? prisma.delivery.groupBy({
+          by: ['status'],
+          where: countWhere,
+          _count: { _all: true },
+        })
+      : Promise.resolve([]),
   ]);
 
-  return { items, total, page, limit };
+  const statusCounts = Object.fromEntries(
+    statusGroups.map((group) => [group.status, group._count._all]),
+  );
+
+  return {
+    items,
+    total,
+    page,
+    limit,
+    ...(includeCounts === '1' ? { statusCounts } : {}),
+  };
 }
 
 export async function getDeliveryById(tenantId: string, id: string) {

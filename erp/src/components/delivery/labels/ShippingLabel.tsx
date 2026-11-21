@@ -4,9 +4,12 @@ import Barcode from 'react-barcode';
 import type { ReactNode } from 'react';
 import { renderPrintOverlay } from '@/lib/print-overlay';
 import {
+  buildWaybillAddress,
   buildWaybillDescription,
+  dedupeLocality,
   formatWaybillAmount,
   formatWaybillDate,
+  formatWaybillItem,
   isDraftWaybill,
   waybillBarcodeValue,
 } from '@/lib/delivery/waybill';
@@ -33,9 +36,16 @@ interface DeliveryLike {
   paymentStatus?: string | null | undefined;
   itemCount?: number | undefined;
   totalWeightKg?: string | number | null | undefined;
+  /** First ordered line, used for the product/SKU description (ARGUS #307). */
+  lines?: WaybillLineLike[] | undefined;
   deliveredAt?: string | null | undefined;
   dispatchedAt?: string | null | undefined;
   createdAt?: string | null | undefined;
+}
+
+interface WaybillLineLike {
+  productNameSnapshot?: string | null | undefined;
+  skuSnapshot?: string | null | undefined;
 }
 
 interface ShippingLabelProps {
@@ -57,6 +67,7 @@ interface LabelDeliveryLike {
   itemCount?: number | null;
   totalWeightKg?: string | number | null;
   waybill?: string | null;
+  lines?: WaybillLineLike[] | null;
   deliveredAt?: string | null;
   dispatchedAt?: string | null;
   createdAt?: string | null;
@@ -104,32 +115,23 @@ function SectionTitle({ children }: { children: ReactNode }) {
  * one A4 landscape sheet (see `printShippingLabels`).
  */
 export function ShippingLabel({ template, address, delivery, waybillId }: ShippingLabelProps) {
-  const fullAddress = [
-    address.addressLine1,
-    address.addressLine2,
-    [address.cityName, address.districtName].filter(Boolean).join(', '),
-    address.postalCode,
-  ]
-    .filter(Boolean)
-    .join(', ');
+  const fullAddress = buildWaybillAddress(address);
 
   const barcodeValue = waybillBarcodeValue({ waybillId });
   const draft = isDraftWaybill(waybillId);
-  const branchParts = [address.cityName, address.districtName].filter(
-    (part): part is string => Boolean(part),
-  );
-  const branch =
-    branchParts.length > 0
-      ? branchParts.every((part) => part === branchParts[0])
-        ? branchParts[0]!
-        : branchParts.join(' / ')
-      : '';
+  const branch = dedupeLocality(address.cityName, address.districtName, ' / ');
   const contact = [address.phone, address.phone2].filter(Boolean).join(' / ');
   const description = buildWaybillDescription({
     itemCount: delivery.itemCount,
     totalWeightKg: delivery.totalWeightKg,
     showItemCount: true,
     showWeight: true,
+    itemLabel: (() => {
+      const line = delivery.lines?.[0];
+      return line
+        ? formatWaybillItem(line.productNameSnapshot, line.skuSnapshot)
+        : '';
+    })(),
     fallback: delivery.orderRef,
   });
   const date = delivery.deliveredAt ?? delivery.dispatchedAt ?? delivery.createdAt ?? null;
@@ -241,6 +243,7 @@ export function toLabelProps(delivery: LabelDeliveryLike): {
       paymentStatus: delivery.paymentStatus ?? null,
       itemCount: delivery.itemCount ?? 1,
       totalWeightKg: delivery.totalWeightKg,
+      lines: delivery.lines ?? [],
       deliveredAt: delivery.deliveredAt ?? null,
       dispatchedAt: delivery.dispatchedAt ?? null,
       createdAt: delivery.createdAt ?? null,

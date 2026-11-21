@@ -26,28 +26,113 @@ export function formatWaybillAmount(value: string | number | null | undefined): 
   });
 }
 
+function trimmed(value: string | null | undefined): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/**
+ * ARGUS #302: city and district are frequently the same locality ("Colombo,
+ * Colombo", "Deiyandara, Deiyandara"). Print one occurrence instead of the
+ * repeated text, matching the Branch row's existing de-duplication.
+ */
+export function dedupeLocality(
+  city?: string | null,
+  district?: string | null,
+  separator = ', ',
+): string {
+  const cityText = trimmed(city);
+  const districtText = trimmed(district);
+  if (!cityText) return districtText;
+  if (!districtText) return cityText;
+  return cityText.toLowerCase() === districtText.toLowerCase()
+    ? cityText
+    : `${cityText}${separator}${districtText}`;
+}
+
+export interface WaybillAddressInput {
+  addressLine1?: string | null | undefined;
+  addressLine2?: string | null | undefined;
+  cityName?: string | null | undefined;
+  districtName?: string | null | undefined;
+  postalCode?: string | null | undefined;
+}
+
+/**
+ * Join the recipient address with a single city/district occurrence. Adjacent
+ * identical parts are also collapsed, so an address line that already repeats
+ * the city never prints it twice.
+ */
+export function buildWaybillAddress(address: WaybillAddressInput): string {
+  const parts = [
+    trimmed(address.addressLine1),
+    trimmed(address.addressLine2),
+    dedupeLocality(address.cityName, address.districtName),
+    trimmed(address.postalCode),
+  ].filter(Boolean);
+
+  const deduped: string[] = [];
+  for (const part of parts) {
+    const previous = deduped[deduped.length - 1];
+    if (previous && previous.toLowerCase() === part.toLowerCase()) continue;
+    deduped.push(part);
+  }
+  return deduped.join(', ');
+}
+
 export interface WaybillDescriptionInput {
   itemCount: number | null | undefined;
   totalWeightKg: string | number | null | undefined;
   showItemCount: boolean;
   showWeight: boolean;
+  /** First product/SKU for courier and customs identification (ARGUS #307). */
+  itemLabel?: string | null | undefined;
   fallback?: string | null;
 }
 
-/** "2 items · 1.5 kg" — the Order Description row. */
+/**
+ * ARGUS #303: the same field printed as absent, `1 kg` and `1.5 kg`. The
+ * courier sheet uses one two-decimal form; a missing weight is explicit.
+ */
+export function formatWaybillWeight(
+  value: string | number | null | undefined,
+): string | null {
+  if (value === null || value === undefined || `${value}`.trim() === '') return null;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return null;
+  return num.toFixed(2);
+}
+
+/** First product/SKU label used by the Order Description row (ARGUS #307). */
+export function formatWaybillItem(
+  productName?: string | null,
+  sku?: string | null,
+): string {
+  const name = trimmed(productName);
+  const code = trimmed(sku);
+  if (!name && !code) return '';
+  if (!code) return name;
+  if (!name) return code;
+  return `${name} (${code})`;
+}
+
+/** "2 items · 1.50 kg · Herbal Soap (HB-01)" — the Order Description row. */
 export function buildWaybillDescription({
   itemCount,
   totalWeightKg,
   showItemCount,
   showWeight,
+  itemLabel,
   fallback,
 }: WaybillDescriptionInput): string {
   const count = itemCount ?? 1;
   const parts: string[] = [];
   if (showItemCount) parts.push(`${count} item${count === 1 ? '' : 's'}`);
-  if (showWeight && totalWeightKg !== null && totalWeightKg !== undefined && `${totalWeightKg}` !== '') {
-    parts.push(`${totalWeightKg} kg`);
+  if (showWeight) {
+    const weight = formatWaybillWeight(totalWeightKg);
+    parts.push(weight ? `${weight} kg` : 'weight n/a');
   }
+  const firstItem = trimmed(itemLabel);
+  if (firstItem) parts.push(firstItem);
   const description = parts.join(' · ');
   if (description) return description;
   return fallback ?? '-';

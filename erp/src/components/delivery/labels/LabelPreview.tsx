@@ -14,6 +14,10 @@ export function LabelPreview({ template }: { template: DeliveryLabelTemplate }) 
           <p className="text-xs text-sand-ink">
             A4 landscape · 2 waybills per sheet · 148.5 × 210 mm each.
           </p>
+          <p className="mt-1 text-xs text-sand-ink">
+            Sender rows use the Store Profile branding shown here, not the saved
+            template, so the preview matches the printed label.
+          </p>
         </div>
         <Button size="sm" variant="outline" onClick={() => printSampleSheet(template)}>
           Print 2-up sample

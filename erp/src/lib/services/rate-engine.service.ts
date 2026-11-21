@@ -5,6 +5,7 @@ import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { computeShippingFeeFromTerms } from '@/lib/delivery/shipping-rate.core';
+import { MAX_RATE_WEIGHT_KG } from '@/lib/delivery/rateCardQuote.core';
 import { computeCourierFeeBreakdown } from '@/lib/delivery/courier-fees.core';
 
 /**
@@ -41,6 +42,16 @@ export interface RateCalcResult {
 
 export async function calculateShippingFee(input: RateCalcInput): Promise<RateCalcResult> {
   setSentryTenantContext({ tenantId: input.tenantId });
+
+  // ARGUS #296: a 1,000,000 kg parcel produced a Rs 100,000,475.00 quote. The
+  // limit is enforced server-side here so every caller (website quote, order
+  // creation, ERP delivery) shares it.
+  if (input.weightKg !== null && input.weightKg !== undefined) {
+    const weight = Number(input.weightKg.toString());
+    if (Number.isFinite(weight) && weight > MAX_RATE_WEIGHT_KG) {
+      throw new Error('RATE_WEIGHT_EXCEEDED');
+    }
+  }
 
   const card = await prisma.rateCard.findFirst({
     where: { tenantId: input.tenantId, isActive: true },
@@ -87,6 +98,8 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
               originDistrictId: null,
               destinationCityId: input.destinationCityId,
             },
+            // ARGUS #294: legacy duplicate rows must resolve deterministically.
+            orderBy: { id: 'asc' },
           })
         : null) ??
       (input.destinationDistrictId
@@ -98,6 +111,7 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
               destinationCityId: null,
               destinationDistrictId: input.destinationDistrictId,
             },
+            orderBy: { id: 'asc' },
           })
         : null) ??
       (await prisma.rateCardEntry.findFirst({
@@ -108,6 +122,7 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
           destinationCityId: null,
           destinationDistrictId: null,
         },
+        orderBy: { id: 'asc' },
       }));
 
     if (override) {

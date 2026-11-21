@@ -17,6 +17,7 @@ export const SAMPLE_DELIVERY = {
   codAmount: 2500,
   itemCount: 2,
   totalWeightKg: 1.5,
+  lines: [{ productNameSnapshot: 'Herbal Soap', skuSnapshot: 'HB-01' }],
   waybill: 'TE-12345678',
   deliveredAt: '2026-07-20T10:15:00.000Z',
   address: SAMPLE_ADDRESS,
@@ -38,6 +39,7 @@ export const SAMPLE_DELIVERY_2 = {
   codAmount: 3300,
   itemCount: 1,
   totalWeightKg: 0.5,
+  lines: [{ productNameSnapshot: 'Ayurvedic Balm', skuSnapshot: 'AB-14' }],
   waybill: 'TE-12345679',
   deliveredAt: '2026-07-20T11:30:00.000Z',
   address: {

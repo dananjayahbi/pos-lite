@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Trash2, Plus } from 'lucide-react';
+import { formatRupee } from '@/lib/format';
 
 interface RateEntry {
   id?: string;
@@ -193,7 +194,9 @@ export function RateMatrixTable({
                       entry.destinationCityId,
                     )}
                   </td>
-                  {NUMERIC_FIELDS.map((field) => (
+                  {NUMERIC_FIELDS.map((field) => {
+                    const amount = entry[field.key];
+                    return (
                     <td key={field.key} className="px-3 py-2">
                       <Input
                         type="number"
@@ -208,8 +211,14 @@ export function RateMatrixTable({
                         }}
                         className="h-8 text-sm"
                       />
+                      <span className="mt-0.5 block text-xs text-espresso/50">
+                        {amount !== null && amount !== undefined
+                          ? formatRupee(amount)
+                          : 'No override'}
+                      </span>
                     </td>
-                  ))}
+                    );
+                  })}
                   <td className="px-3 py-2">
                     <Button
                       type="button"

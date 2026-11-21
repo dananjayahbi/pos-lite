@@ -94,10 +94,14 @@ export const CancelDeliverySchema = z.object({
 
 export const DeliveryFiltersSchema = z.object({
   status: z.enum(DELIVERY_STATUSES).optional(),
+  /** Comma-separated statuses, used by the dispatch queue default (ARGUS #269). */
+  statuses: z.string().max(300).optional(),
   source: z.enum(DELIVERY_SOURCES).optional(),
   search: z.string().max(200).optional(),
   dateFrom: z.string().datetime().optional(),
   dateTo: z.string().datetime().optional(),
+  /** Include per-status workload counts for the dispatch summary. */
+  includeCounts: z.enum(['0', '1']).optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
 });
