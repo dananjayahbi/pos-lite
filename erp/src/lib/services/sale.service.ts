@@ -17,6 +17,7 @@ import { buildSaleTenderLegs, sumRedeemedCreditLegs } from '@/lib/services/saleT
 import { resolveCashTender } from '@/lib/services/saleCashTender.core';
 import { assertSaleVoidable } from '@/lib/services/saleVoid.core';
 import { assertCompletedSaleShape } from '@/lib/services/saleCompleteness.core';
+import { preserveSellingTimestamp } from '@/lib/sales/sale-edit';
 import {
   assertDiscountsAuthorized,
   cartDiscountPercent,
@@ -1285,7 +1286,14 @@ export async function updateSale(
   } = {};
 
   if (input.customerId !== undefined) data.customerId = input.customerId ?? null;
-  if (input.saleDate !== undefined) data.saleDate = input.saleDate ?? null;
+  if (input.saleDate !== undefined) {
+    // ARGUS #88: a day-granular edit that stays on the same calendar day keeps
+    // the recorded clock time; only an intentional day change moves the anchor.
+    data.saleDate =
+      input.saleDate === null
+        ? null
+        : preserveSellingTimestamp(before.saleDate ?? before.createdAt, input.saleDate);
+  }
 
   let nextTotal = previousTotal;
   if (input.deliveryCharge !== undefined) {
