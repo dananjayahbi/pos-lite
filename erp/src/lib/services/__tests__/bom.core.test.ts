@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  bomCreateDecision,
   bomVariantIneligibilityReason,
   buildProductionBatchNumber,
   canModifyBom,
@@ -246,5 +247,20 @@ describe('bom.core - findDuplicateRawMaterialIds', () => {
         { rawMaterialId: 'a' },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe('bomCreateDecision', () => {
+  it('creates when no row exists', () => {
+    expect(bomCreateDecision(null)).toBe('create');
+    expect(bomCreateDecision(undefined)).toBe('create');
+  });
+
+  it('conflicts with a live BOM', () => {
+    expect(bomCreateDecision({ deletedAt: null })).toBe('exists');
+  });
+
+  it('revives a soft-deleted BOM instead of blocking the variant forever', () => {
+    expect(bomCreateDecision({ deletedAt: new Date() })).toBe('revive');
   });
 });

@@ -14,6 +14,7 @@ import type {
 } from '@/generated/prisma/client';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
+  bomCreateDecision,
   buildProductionBatchNumber,
   canModifyBom,
   computeConsumptionPlan,
@@ -224,7 +225,11 @@ export async function listBomEligibleVariants(
       id: true,
       sku: true,
       product: { select: { name: true, productSource: true } },
-      _count: { select: { billOfMaterials: true } },
+      _count: {
+        // Only a live BOM makes the variant ineligible. A soft-deleted row can
+        // be revived by createBom, so the variant must stay in the picker.
+        select: { billOfMaterials: { where: { deletedAt: null } } },
+      },
     },
     orderBy: [{ sku: 'asc' }],
   });
@@ -303,11 +308,10 @@ export async function createBom(
 
     const existing = await tx.billOfMaterials.findUnique({
       where: { tenantId_variantId: { tenantId, variantId: input.variantId } },
-      select: { id: true },
+      select: { id: true, deletedAt: true },
     });
-    // A soft-deleted row still occupies the `[tenantId, variantId]` unique key,
-    // so treat it as existing instead of letting the create hit P2002.
-    if (existing) throw new Error('BOM_EXISTS');
+    const decision = bomCreateDecision(existing);
+    if (decision === 'exists') throw new Error('BOM_EXISTS');
 
     const rawMaterialIds = [...new Set(input.ingredients.map((i) => i.rawMaterialId))];
     const ownedMaterials = await tx.rawMaterial.findMany({
@@ -317,6 +321,45 @@ export async function createBom(
     const ownedIdSet = new Set(ownedMaterials.map((m) => m.id));
     for (const id of rawMaterialIds) {
       if (!ownedIdSet.has(id)) throw new Error('INGREDIENT_NOT_FOUND');
+    }
+
+    // A soft-deleted BOM still occupies `[tenantId, variantId]`. Recreate it
+    // in place instead of leaving the variant permanently without a recipe.
+    if (decision === 'revive' && existing) {
+      const revived = await tx.billOfMaterials.update({
+        where: { id: existing.id },
+        data: {
+          deletedAt: null,
+          isActive: true,
+          name: input.name.trim(),
+          notes: input.notes?.trim() || null,
+          items: {
+            deleteMany: {},
+            create: input.ingredients.map((ing) => ({
+              rawMaterialId: ing.rawMaterialId,
+              quantityPerUnit: new Prisma.Decimal(ing.quantityPerUnit),
+            })),
+          },
+        },
+        include: bomInclude,
+      });
+
+      void createAuditLog({
+        tenantId,
+        actorId,
+        actorRole: 'USER',
+        entityType: 'BillOfMaterials',
+        entityId: revived.id,
+        action: AUDIT_ACTIONS.BOM_RESTORED,
+        before: { variantId: input.variantId, restoredFrom: existing.id },
+        after: {
+          variantId: input.variantId,
+          name: revived.name,
+          ingredientCount: input.ingredients.length,
+        },
+      }).catch(() => {});
+
+      return toBomDetailView(revived);
     }
 
     const bom = await tx.billOfMaterials.create({

@@ -189,6 +189,21 @@ export function isVariantEligibleForBom(input: BomVariantEligibilityInput): bool
 }
 
 /**
+ * What a create-BOM request should do when a unique `[tenantId, variantId]`
+ * row already exists. A live row is a real conflict; a soft-deleted one can be
+ * revived so the variant is not permanently stuck without a recipe (ARGUS
+ * proposal: soft-deleted BOM restore).
+ */
+export type BomCreateDecision = 'create' | 'revive' | 'exists';
+
+export function bomCreateDecision(
+  existing: { deletedAt: Date | null } | null | undefined,
+): BomCreateDecision {
+  if (!existing) return 'create';
+  return existing.deletedAt ? 'revive' : 'exists';
+}
+
+/**
  * ARGUS #248 - a BOM is immutable once production has used it.
  *
  * Editing the ingredient rows after a run would rewrite the recipe behind
