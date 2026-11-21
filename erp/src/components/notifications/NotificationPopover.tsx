@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useGetNotifications, useInvalidateNotifications } from '@/hooks/useGetNotifications';
 import { getNotificationIcon } from '@/lib/constants/notification-types';
+import { getNotificationHref } from '@/lib/notifications/notification-href';
 import {
   SALE_VOIDED_TITLE,
   buildSaleCompletedCopy,
@@ -37,30 +38,6 @@ function formatRelativeTime(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString();
 }
 
-function getNotificationHref(type: string, relatedEntityId: string | null): string | null {
-  switch (type) {
-    case 'LOW_STOCK_ALERT':
-      return '/stock-control/low-stock';
-    case 'PETTY_CASH_LOW':
-      return '/petty-cash';
-    case 'STOCK_TAKE_SUBMITTED':
-    case 'STOCK_TAKE_APPROVED':
-    case 'STOCK_TAKE_REJECTED':
-      return relatedEntityId
-        ? `/stock-control/stock-takes/${relatedEntityId}/review`
-        : null;
-    case 'SALE_COMPLETED':
-      // ARGUS #52: open the sale itself so the operator can confirm the void.
-      return relatedEntityId ? `/sales/${relatedEntityId}` : '/sales';
-    case 'RETURN_PROCESSED':
-      return '/returns';
-    case 'SHIFT_CLOSED':
-      return relatedEntityId ? `/staff/shifts/${relatedEntityId}` : '/staff/shifts';
-    default:
-      return null;
-  }
-}
-
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function NotificationPopover() {
@@ -78,15 +55,13 @@ export function NotificationPopover() {
 
   const handleNotificationClick = async (
     id: string,
-    type: string,
-    relatedEntityId: string | null,
+    href: string | null,
     isRead: boolean,
   ) => {
     if (!isRead) {
       await fetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
       invalidate();
     }
-    const href = getNotificationHref(type, relatedEntityId);
     if (href) router.push(href);
   };
 
@@ -143,12 +118,16 @@ export function NotificationPopover() {
                   ? buildSaleVoidedCopy(n.relatedEntityId ?? '', n.relatedSale.totalAmount).body
                   : (completedCopy?.body ?? n.body);
 
+              const href = getNotificationHref({
+                type: n.type,
+                relatedEntityId: n.relatedEntityId,
+                relatedEntityType: n.relatedEntityType,
+              });
+
               return (
                 <button
                   key={n.id}
-                  onClick={() =>
-                    handleNotificationClick(n.id, n.type, n.relatedEntityId, n.isRead)
-                  }
+                  onClick={() => handleNotificationClick(n.id, href, n.isRead)}
                   className={`flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-linen/60 ${
                     !n.isRead ? 'bg-pearl/60' : ''
                   }`}
