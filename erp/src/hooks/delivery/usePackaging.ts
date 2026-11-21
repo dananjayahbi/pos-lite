@@ -3,6 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import type { PackagingHistoryRow } from '@/lib/packaging/packagingHistory.core';
+
 export interface PackagingCategoryItem {
   id: string;
   key: string;
@@ -105,6 +107,10 @@ export function usePackaging() {
   return {
     data: query.data as PackagingItemRow[] | undefined,
     isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
+    isFetching: query.isFetching,
+    refetch: query.refetch,
     create,
     update,
     remove,
@@ -123,6 +129,60 @@ export interface PackagingItemRow {
   lowStockThreshold: number;
   autoDeduct: boolean;
   consumptionPerParcel?: number | string | null;
+}
+
+export interface PackagingHistoryPage {
+  rows: PackagingHistoryRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** ARGUS #281: paginated consumption ledger, optionally scoped to one item. */
+export function usePackagingHistory(input: {
+  page: number;
+  pageSize?: number;
+  itemId?: string | undefined;
+  enabled?: boolean;
+}) {
+  return useQuery<PackagingHistoryPage>({
+    queryKey: ['packaging-history', input.page, input.pageSize ?? 25, input.itemId ?? null],
+    queryFn: async () => {
+      const params = new URLSearchParams({ page: String(input.page) });
+      if (input.pageSize) params.set('pageSize', String(input.pageSize));
+      if (input.itemId) params.set('itemId', input.itemId);
+      const res = await fetch(`/api/store/packaging/history?${params.toString()}`);
+      const json = await res.json().catch(() => null);
+      if (!json?.success) {
+        throw new Error(json?.error?.message ?? 'Failed to load packaging history');
+      }
+      return json.data as PackagingHistoryPage;
+    },
+    staleTime: 15_000,
+    ...(input.enabled === false ? { enabled: false } : {}),
+  });
+}
+
+/** ARGUS #283: packaging items selectable on the dispatch sheet. */
+export interface PackagingDispatchOption {
+  id: string;
+  name: string;
+  unit: string;
+  quantityOnHand: number;
+  autoDeduct: boolean;
+  consumptionPerParcel: string | null;
+}
+
+export function usePackagingDispatchOptions(enabled = true) {
+  return useQuery<PackagingDispatchOption[]>({
+    queryKey: ['packaging', 'dispatch-options'],
+    queryFn: async () => {
+      const res = await fetch('/api/store/deliveries/packaging-options');
+      return readJson(res);
+    },
+    staleTime: 30_000,
+    enabled,
+  });
 }
 
 export function usePackagingCategories() {

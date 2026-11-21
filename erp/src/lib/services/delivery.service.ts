@@ -10,7 +10,7 @@ import { setSentryTenantContext } from '@/lib/sentry/context';
 import type { TxClient } from '@/lib/services/inventory.service';
 import { calculateShippingFee } from '@/lib/services/rate-engine.service';
 import { createShipment } from '@/lib/services/shipment.service';
-import { autoDeductPackaging, notifyLowStock } from '@/lib/services/packaging.service';
+import { autoDeductPackaging, assertPackagingAvailableForDispatch, notifyLowStock } from '@/lib/services/packaging.service';
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
 import { toCourierOrderPayload } from '@/lib/courier/mappers';
 import { HOLD_BUFFER_DURATION_MS, TERMINAL_SHIPMENT_STATUSES } from '@/lib/constants/courier';
@@ -444,6 +444,13 @@ export async function dispatchDelivery(
     throw new Error('DELIVERY_PAYMENT_NOT_SETTLED');
   }
 
+  // ARGUS #282: short packaging blocks the dispatch before a courier waybill is
+  // issued. The API caller must send the explicit shortfall override to proceed.
+  await assertPackagingAvailableForDispatch(tenantId, id, {
+    ...(input.packagingItemIds !== undefined ? { itemIds: input.packagingItemIds } : {}),
+    allowShortfall: input.allowPackagingShortfall === true,
+  });
+
   const account = await prisma.courierAccount.findFirst({ where: { tenantId } });
   if (!account?.isActive) throw new Error('COURIER_ACCOUNT_NOT_CONFIGURED');
 
@@ -529,7 +536,12 @@ export async function dispatchDelivery(
     // status flip, so a parcel can never be marked DISPATCHED with its
     // packaging stock left un-deducted. The low-stock notification stays
     // outside the transaction (notifications must not roll stock back).
-    const deductions = await autoDeductPackaging(tenantId, id, { tx, actorId: userId });
+    const deductions = await autoDeductPackaging(tenantId, id, {
+      tx,
+      actorId: userId,
+      ...(input.packagingItemIds !== undefined ? { itemIds: input.packagingItemIds } : {}),
+      allowShortfall: input.allowPackagingShortfall === true,
+    });
 
     return { dispatched: updated, deductions };
   });

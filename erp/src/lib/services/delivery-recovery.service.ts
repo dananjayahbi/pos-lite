@@ -243,9 +243,13 @@ export async function redeliverDelivery(
     });
 
     // Deduct packaging for the new shipment atomically with the status flip.
+    // ARGUS #282: redelivery keeps its historical best-effort behaviour (there
+    // is no override control on the recovery flow yet); the primary dispatch
+    // path is the one that blocks a shortfall.
     const deductions = await autoDeductPackaging(tenantId, deliveryId, {
       tx,
       actorId: staffId,
+      allowShortfall: true,
     });
 
     return { dispatched: updated, deductions };

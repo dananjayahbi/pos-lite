@@ -67,12 +67,17 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
     // always sorted ahead of the exact city match and city rates never applied.
     // Three deterministic lookups encode the documented precedence:
     //   1) exact city (+ district when supplied)  2) district-only  3) card default
+    //
+    // ARGUS #290: every lookup requires originDistrictId = null. The data model
+    // has no origin on a delivery, so legacy origin-specific rows must never
+    // fall through as a global override.
     const override =
       (input.destinationCityId
         ? await prisma.rateCardEntry.findFirst({
             where: {
               tenantId: input.tenantId,
               rateCardId: card.id,
+              originDistrictId: null,
               destinationCityId: input.destinationCityId,
             },
           })
@@ -82,6 +87,7 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
             where: {
               tenantId: input.tenantId,
               rateCardId: card.id,
+              originDistrictId: null,
               destinationCityId: null,
               destinationDistrictId: input.destinationDistrictId,
             },
@@ -91,6 +97,7 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
         where: {
           tenantId: input.tenantId,
           rateCardId: card.id,
+          originDistrictId: null,
           destinationCityId: null,
           destinationDistrictId: null,
         },

@@ -16,12 +16,19 @@ import {
 } from '@/lib/services/packaging.core';
 import { assertPackagingItemDeletable } from '@/lib/services/packagingGuards.core';
 import {
+  toPackagingHistoryRow,
+  type PackagingHistoryRow,
+} from '@/lib/packaging/packagingHistory.core';
+import {
   changePackagingStock,
   type DeductionResult,
 } from '@/lib/services/packagingDeduction.service';
 export {
   autoDeductPackaging,
+  assertPackagingAvailableForDispatch,
+  previewPackagingDeduction,
   type DeductionResult,
+  type PackagingDeductionPreview,
 } from '@/lib/services/packagingDeduction.service';
 import {
   assertPackagingCategoryExists,
@@ -72,6 +79,106 @@ export async function getPackagingItems(tenantId: string): Promise<PackagingItem
     .slice()
     .sort(comparePackagingItems)
     .map((item) => toPackagingItemDto(item, categoryNames));
+}
+
+/**
+ * Newest-first packaging consumption ledger (ARGUS #281). Paginated and
+ * optionally scoped to one item. Reads the same `PackagingConsumption` rows
+ * that reconciliation relies on, including consumptions of soft-deleted items
+ * (the delete dialog promises that history is kept).
+ */
+export async function getPackagingConsumptionHistory(
+  tenantId: string,
+  input: {
+    page?: number | undefined;
+    pageSize?: number | undefined;
+    itemId?: string | undefined;
+  } = {},
+): Promise<{
+  rows: PackagingHistoryRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}> {
+  const page = Math.max(1, Math.floor(input.page ?? 1));
+  const pageSize = Math.min(Math.max(1, Math.floor(input.pageSize ?? 25)), 100);
+  const where = {
+    tenantId,
+    ...(input.itemId ? { packagingItemId: input.itemId } : {}),
+  };
+
+  const [consumptions, total] = await Promise.all([
+    prisma.packagingConsumption.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        packagingItem: { select: { id: true, name: true, sku: true, unit: true } },
+        delivery: { select: { id: true, orderRef: true, saleId: true } },
+      },
+    }),
+    prisma.packagingConsumption.count({ where }),
+  ]);
+
+  const rows = consumptions.map((consumption) =>
+    toPackagingHistoryRow({
+      id: consumption.id,
+      deliveryId: consumption.deliveryId,
+      orderRef: consumption.delivery.orderRef,
+      saleId: consumption.delivery.saleId,
+      packagingItemId: consumption.packagingItemId,
+      itemName: consumption.packagingItem.name,
+      itemSku: consumption.packagingItem.sku,
+      unit: consumption.packagingItem.unit,
+      quantity: consumption.quantity.toString(),
+      createdAt: consumption.createdAt,
+    }),
+  );
+
+  return { rows, total, page, pageSize };
+}
+
+/** One selectable packaging item on the dispatch sheet (ARGUS #283). */
+export interface PackagingDispatchOptionDto {
+  id: string;
+  name: string;
+  unit: string;
+  quantityOnHand: number;
+  autoDeduct: boolean;
+  consumptionPerParcel: string | null;
+}
+
+/**
+ * Minimal packaging options for the dispatch sheet. Readable by anyone allowed
+ * to dispatch (not only packaging managers), and deliberately excludes cost /
+ * audit fields. `autoDeduct` is the default suggestion; the operator sends the
+ * explicit `packagingItemIds` selection with the dispatch request.
+ */
+export async function getPackagingDispatchOptions(
+  tenantId: string,
+): Promise<PackagingDispatchOptionDto[]> {
+  const items = await prisma.packagingItem.findMany({
+    where: { tenantId, deletedAt: null },
+    orderBy: [{ name: 'asc' }],
+    select: {
+      id: true,
+      name: true,
+      unit: true,
+      quantityOnHand: true,
+      autoDeduct: true,
+      consumptionPerParcel: true,
+    },
+  });
+
+  return items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    unit: item.unit,
+    quantityOnHand: item.quantityOnHand,
+    autoDeduct: item.autoDeduct,
+    consumptionPerParcel: serializeMoneyOrNull(item.consumptionPerParcel),
+  }));
 }
 
 /**

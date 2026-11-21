@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 import {
   buildPackagingSkuBase,
+  decidePackagingShortfall,
   isPackagingItemLowStock,
   nextAvailablePackagingSku,
   packagingCategoryLabel,
@@ -111,6 +112,43 @@ describe('planPackagingDeduction', () => {
         parcelCount: 3,
       }),
     ).toMatchObject({ unitsPerParcel: 0, unitsToDeduct: 0, insufficient: false });
+  });
+});
+
+describe('decidePackagingShortfall', () => {
+  const enough = {
+    name: 'Polymailer',
+    requiredUnits: 2,
+    availableUnits: 10,
+    insufficient: false,
+  };
+  const short = {
+    name: 'Tape roll',
+    requiredUnits: 5,
+    availableUnits: 2,
+    insufficient: true,
+  };
+
+  it('blocks dispatch when any item is short', () => {
+    expect(decidePackagingShortfall([enough, short])).toEqual({
+      blocked: true,
+      shortItems: [short],
+    });
+  });
+
+  it('allows dispatch when every item has enough stock', () => {
+    expect(decidePackagingShortfall([enough])).toEqual({ blocked: false, shortItems: [] });
+  });
+
+  it('allows an explicit override to proceed despite the shortfall', () => {
+    expect(decidePackagingShortfall([short], { allowOverride: true })).toEqual({
+      blocked: false,
+      shortItems: [short],
+    });
+  });
+
+  it('does not block when no packaging was selected', () => {
+    expect(decidePackagingShortfall([])).toEqual({ blocked: false, shortItems: [] });
   });
 });
 
