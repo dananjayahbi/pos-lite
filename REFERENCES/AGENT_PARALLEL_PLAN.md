@@ -157,14 +157,15 @@ For each agent commit:
   and the re-submission of #322.
 - Checkpoint after batch 12: full suite green at 1,912 tests (230 files);
   `tsc` clean.
-- Batch 13 in flight on the same five agents: #208-#210/#214/#215/#218,
-  #236/#237/#245/#246, #253/#256/#257, #291-#293, #300/#301.
-- Prisma baseline completed: live schema diff is empty, all 54 migrations
-  recorded; `migrate status` is blocked only by intermittent P1001/P1017 host
-  connection drops. The baseline task and the older void-credit task have no
-  Definition-of-Done items, so Atlas rejects their submission; both are
-  documented in `REFERENCES/ACTIVE_TASK_QUEUE.md`.
-- Checkpoint: full suite green at 1,912 tests (230 files).
+- Batch 13 (100 newly added tasks) implemented: all 96 tasks with DoD submitted
+  to review; the 6 no-DoD items (Prisma baseline, void-credit restoration, and
+  the four proposals: reports stock-movement reasons, seed PO receipts,
+  soft-deleted BOM revival, dispatch orphaned-waybill audit) are implemented,
+  documented and merged but Atlas rejects their submission.
+- Checkpoint after batch 13: full suite green at **2,567 tests (331 files)**;
+  `tsc` clean.
+- Prisma baseline verified: `migrate status` reports the database schema is up
+  to date (54/54 migrations).
 - DB reachable again; the three pending migrations were applied as raw SQL with
   `prisma db execute` and verified (`RawMaterial.unitCost`,
   `ProductionLog.materialCost`, `ReturnStatus.CANCELLED`,

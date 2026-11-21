@@ -1,59 +1,49 @@
-# ARGUS batch 13 queue (100 claimed)
+# ARGUS batch 13 (100 tasks) - final state
 
-All 100 newly added pending tasks are claimed by
-`opencode-deepseek-v4.1-flash` and `IN_PROGRESS`. They are split into six
-workstreams plus two main-agent items. Atlas remains the source of truth.
+All 100 newly added pending tasks were implemented. 96 had Definition-of-Done
+items and were submitted to Atlas; the 4 proposal tasks (which have no DoD, so
+Atlas rejects their submission) were implemented and merged with docs.
 
-## Batch 1 (running now)
+Final checkpoint: **2,567 tests / 331 files green**, `tsc` clean.
 
-| Agent / worktree | Module | ARGUS tasks |
-| --- | --- | --- |
-| catalog (`agent-catalog`) | Customers | #312 spend bands, #313 load errors, #314 edit permission, #316 export audit/CSV safety |
-| pos (`agent-pos`) | Promotions | #327 local date windows, #328 400/404 mapping, #329 live states, #330 required targets/codes |
-| sales (`agent-sales`) | Cash Flow | #418 ledger bridge, #419 unallocated payments, #420 cash movement bridge, #421 access/error states |
-| factory (`agent-factory`) | Expenses | #396 register export, #397 approval control, #398 page gate, #399 account/fund column |
-| reports (`agent-reports`) | Staff Directory | #340 audit, #341 PII list DTO/masking, #342 0-100 commission, #343 attendance/period coverage |
-| payroll (`agent-payroll`) | Run Payroll | #375 zero-run guard, #376 missing-attendance, #377 load errors, #378 export preflight |
-| main | misc | #46 Low Stock card note (submitted), BOM soft-delete restore (done, no DoD) |
+## Implemented and submitted (96)
 
-## Queued after batch 1
+- Customers: #312, #313, #314, #316
+- Promotions: #327-#333
+- Staff Directory: #340-#345
+- Attendance & Timeclock: #352-#358
+- Staff Commissions: #362-#368
+- Run Payroll: #375, #376, #377, #378, #379
+- Payroll Reports: #384, #385, #386, #387, #388, #389, #391
+- Expenses: #396-#403
+- Petty Cash: #407-#413
+- Cash Flow: #418-#421
+- Payment Accounts: #426-#430
+- Sales & Profit Reports: #436-#438
+- Saved Reports: #445, #446, #447
+- Audit Log: #454, #455, #456
+- Team & Permissions: #459-#463
+- Taxes & Store Settings: #469-#472
+- Units: #479-#481
+- Store Profile: #488, #489
+- Website CMS: #497, #498
+- My Account: #504
+- Failed Deliveries & Recovery: #515
+- Waybill: #299
+- Other: #46 (Low Stock card note)
 
-Counts per module (all claimed, all `IN_PROGRESS`):
+## Implemented, merged, but cannot be submitted (no DoD items)
 
-- Customers: #312-316 (3 remaining after batch 1: #312-314, #316 in batch; only
-  #315 done earlier; this batch covers all 4 new customer tasks).
-- Promotions: #327-333 (3 remaining: #331 audit/usage, #332 page permission,
-  #333 customer-pricing identity).
-- Staff Directory: #340-345 (2 remaining: #344 page permission, #345 VAT
-  commission basis).
-- Attendance & Timeclock: #352-358 (7).
-- Staff Commissions: #362-368 (7).
-- Run Payroll: #375-379 (1 remaining: #379 advance ledger).
-- Payroll Reports: #384-391 (7).
-- Expenses: #396-403 (4 remaining: #400 controls, #401 history, #402 error
-  state, #403 transaction).
-- Petty Cash: #407-413 (7).
-- Cash Flow: #418-421 (done in batch 1).
-- Payment Accounts: #426-430 (5).
-- Sales & Profit Reports: #436-438 (3).
-- Saved Reports: #445-447 (3).
-- Audit Log: #454-456 (3).
-- Team & Permissions: #459-463 (5).
-- Taxes & Store Settings: #469-472 (4).
-- Units: #479-481 (3).
-- Store Profile: #488-489 (2).
-- Website CMS: #497-498 (2).
-- My Account: #504 (1).
-- Failed Deliveries & Recovery: #515 (1).
-- Waybill: #299 (1).
-- Proposed/triage items included in the claim: seed PO drift, Reports stock
-  movement reasons, dispatch courier/transaction ordering (3).
+- Baseline Prisma migrations (P3005) - schema diff empty, 54/54 baselined,
+  `migrate status` is up to date.
+- Void credit restoration (older claim).
+- Reports > Stock Movements shared 13-reason catalog (proposal).
+- Seed PO subtotal/receipt consistency (proposal).
+- Soft-deleted BOM revival (proposal).
+- Dispatch orphaned-waybill audit on rollback (proposal).
 
-## Notes
+## Verification
 
-- Every task must be submitted with `log_task_progress` before
-  `submit_for_review`; proposed tasks with zero DoD items cannot be submitted.
-- No new pending tasks will be claimed until batch 1 is merged and the queue is
-  visibly down to the last modules.
-- Batches are merged into `argus_qa` and followed by `tsc` + full Vitest
-  checkpoints.
+- `npx tsc --noEmit`: clean.
+- `npx vitest run`: 2,567 passed in 331 files.
+- All work merged into `argus_qa`; nothing pushed.
