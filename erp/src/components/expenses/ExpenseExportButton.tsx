@@ -34,8 +34,19 @@ export function ExpenseExportButton({
 
       const res = await fetch(`/api/store/expenses/export?${params.toString()}`);
       if (!res.ok) {
-        const json = await res.json().catch(() => null);
-        throw new Error(json?.error?.message ?? 'Export failed');
+        const raw = await res.text().catch(() => '');
+        let detail = '';
+        try {
+          const json = JSON.parse(raw);
+          detail = json?.error?.message ?? '';
+        } catch {
+          detail = raw.trim();
+        }
+        throw new Error(
+          detail
+            ? `Export failed (HTTP ${res.status}): ${detail}`
+            : `Export failed (HTTP ${res.status})`,
+        );
       }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

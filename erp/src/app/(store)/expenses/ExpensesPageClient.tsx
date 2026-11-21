@@ -55,6 +55,7 @@ import { AccountSelect } from '@/components/payment-accounts/AccountSelect';
 import type { PaymentAccount } from '@/components/payment-accounts/paymentAccountTypes';
 import { selectFormExpenseCategories } from '@/lib/petty-cash/category-policy';
 import { linkForPaymentAccount } from '@/lib/expenses/link';
+import { resolveExpenseListState } from '@/lib/expenses/list-state';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -161,7 +162,7 @@ export default function ExpensesPageClient({
     return p.toString();
   }, [categoryFilter, dateFrom, dateTo, page]);
 
-  const { data, isLoading } = useQuery<ExpenseListResponse>({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<ExpenseListResponse>({
     queryKey: ['expenses', categoryFilter, dateFrom, dateTo, page],
     queryFn: async () => {
       const res = await fetch(`/api/store/expenses?${buildParams()}`);
@@ -169,6 +170,12 @@ export default function ExpensesPageClient({
       if (!json.success) throw new Error(json.error?.message ?? 'Failed to fetch');
       return json.data;
     },
+  });
+
+  const listState = resolveExpenseListState({
+    isError,
+    isLoading,
+    count: data?.expenses?.length ?? 0,
   });
 
   const totalAmount = (data?.expenses ?? []).reduce(
@@ -519,11 +526,34 @@ export default function ExpensesPageClient({
 
       {/* Table */}
       <ErrorBoundary>
-      {isLoading ? (
+      {listState === 'loading' ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full" />
           ))}
+        </div>
+      ) : listState === 'error' ? (
+        <div className="rounded-lg border border-terracotta/40 bg-terracotta/5 p-6">
+          <h2 className="font-display text-lg font-semibold text-terracotta">
+            Could not load expenses
+          </h2>
+          <p className="mt-1 text-sm text-sand-ink">
+            {error instanceof Error && error.message
+              ? error.message
+              : 'The expense list could not be loaded.'}
+          </p>
+          <Button
+            variant="outline"
+            className="mt-4 border-terracotta/40 text-espresso"
+            onClick={() => refetch()}
+            disabled={isFetching}
+          >
+            {isFetching ? 'Retrying...' : 'Retry'}
+          </Button>
+        </div>
+      ) : listState === 'empty' ? (
+        <div className="rounded-lg border border-mist p-8 text-center text-sand-ink">
+          No expenses found for the selected filters.
         </div>
       ) : (
         <>
