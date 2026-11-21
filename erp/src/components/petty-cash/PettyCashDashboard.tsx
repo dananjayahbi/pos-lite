@@ -84,9 +84,13 @@ interface BalanceEquation {
 }
 
 interface FundResponse {
-  fund: PettyCashFund;
-  balance: BalanceEquation;
+  fund: PettyCashFund | null;
+  balance: BalanceEquation | null;
   topUps: PettyCashTopUp[];
+  setupRequired: boolean;
+  multipleFunds: boolean;
+  fundCount?: number;
+  message?: string;
 }
 
 type LedgerRow =
@@ -135,6 +139,9 @@ const CATEGORY_LABEL: Record<string, string> = {
 export default function PettyCashDashboard() {
   const queryClient = useQueryClient();
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
+  const canManage =
+    !permissionsLoading &&
+    hasPermission(PERMISSIONS.PETTY_CASH.managePettyCash);
   const canManageSettings =
     !permissionsLoading &&
     hasPermission(PERMISSIONS.PETTY_CASH.manageFundSettings);
@@ -152,14 +159,18 @@ export default function PettyCashDashboard() {
       const json = await res.json();
       if (!json.success) throw new Error(json.error?.message ?? 'Failed to load fund');
       return {
-        fund: json.data,
-        balance: json.balance,
+        fund: json.data as PettyCashFund | null,
+        balance: (json.balance ?? null) as BalanceEquation | null,
         topUps: (json.topUps ?? []) as PettyCashTopUp[],
+        setupRequired: Boolean(json.setupRequired),
+        multipleFunds: Boolean(json.multipleFunds),
+        ...(typeof json.fundCount === 'number' ? { fundCount: json.fundCount } : {}),
+        ...(typeof json.message === 'string' ? { message: json.message } : {}),
       };
     },
   });
 
-  const fund = response?.fund;
+  const fund = response?.fund ?? null;
   const toggleCategories = categoryEdits ?? fund?.activeCategories ?? [];
 
   // Active source accounts for "Add Cash In". The fund's own account is
@@ -244,6 +255,22 @@ export default function PettyCashDashboard() {
     },
   });
 
+  const setupMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/store/petty-cash/setup', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message ?? 'Setup failed');
+      }
+      return json.data;
+    },
+    onSuccess: () => {
+      invalidateFundViews();
+      toast.success('Petty cash set up');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const toggleCategory = (cat: string) => {
     setCategoryEdits((prev) => {
       const base = prev ?? fund?.activeCategories ?? [];
@@ -278,8 +305,10 @@ export default function PettyCashDashboard() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-2xl font-bold text-espresso">Petty Cash</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <PettyCashExportButton className="border-mist text-espresso" />
-          {canManageSettings && (
+          {fund && (
+            <PettyCashExportButton className="border-mist text-espresso" />
+          )}
+          {fund && canManageSettings && (
             <Button
               variant="outline"
               className="border-mist text-espresso"
@@ -289,18 +318,22 @@ export default function PettyCashDashboard() {
               Settings
             </Button>
           )}
-          <Button
-            className="bg-espresso text-pearl hover:bg-espresso/90"
-            onClick={() => setTopUpOpen(true)}
-          >
-            <ArrowDownToLine className="mr-2 h-4 w-4" />
-            Add Cash In
-          </Button>
-          <Link href={fund ? `/expenses?fundId=${encodeURIComponent(fund.id)}` : '/expenses'}>
-            <Button variant="outline" className="border-mist text-espresso">
-              Add Expense <ArrowRight className="ml-2 h-4 w-4" />
+          {fund && canManage && (
+            <Button
+              className="bg-espresso text-pearl hover:bg-espresso/90"
+              onClick={() => setTopUpOpen(true)}
+            >
+              <ArrowDownToLine className="mr-2 h-4 w-4" />
+              Add Cash In
             </Button>
-          </Link>
+          )}
+          {fund && (
+            <Link href={`/expenses?fundId=${encodeURIComponent(fund.id)}`}>
+              <Button variant="outline" className="border-mist text-espresso">
+                Add Expense <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -311,6 +344,53 @@ export default function PettyCashDashboard() {
               <Skeleton key={i} className="h-28 w-full" />
             ))}
           </div>
+        ) : response?.multipleFunds ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-display text-espresso">
+                Multiple petty-cash funds found
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-sm text-sand-ink">
+                {response.message ??
+                  'This store has more than one active petty-cash fund. Reads and exports stop here instead of silently using the first one.'}
+              </p>
+              <p className="text-sm text-sand-ink">
+                Resolve the duplicate funds with the owner before recording more petty-cash activity.
+              </p>
+            </CardContent>
+          </Card>
+        ) : response?.setupRequired ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-display text-espresso">
+                Petty cash is not set up
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-sand-ink">
+                Opening this page no longer creates a fund or a payment account. Set up the
+                default petty-cash fund explicitly when you are ready.
+              </p>
+              {canManage ? (
+                <Button
+                  onClick={() => setupMutation.mutate()}
+                  disabled={setupMutation.isPending}
+                  className="bg-espresso text-pearl hover:bg-espresso/90"
+                >
+                  {setupMutation.isPending && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Set up Petty Cash
+                </Button>
+              ) : (
+                <p className="text-sm text-sand-ink">
+                  Ask an owner or manager to set up petty cash for this store.
+                </p>
+              )}
+            </CardContent>
+          </Card>
         ) : fund ? (
           <>
             {/* Balance equation (doc 39) */}
