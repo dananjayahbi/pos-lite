@@ -145,6 +145,9 @@ export async function listBatches(
 
   const where: Prisma.BatchTrackingWhereInput = {
     tenantId,
+    // A soft-deleted product/variant is not live stock; its batches must not
+    // look like sellable inventory or inflate the health counts (ARGUS #148).
+    variant: { deletedAt: null, product: { deletedAt: null } },
     ...(variantId ? { variantId } : {}),
     ...(source ? { source } : {}),
     ...(and.length > 0 ? { AND: and } : {}),
@@ -211,7 +214,10 @@ export interface BatchStats {
 
 export async function getBatchStats(tenantId: string): Promise<BatchStats> {
   const rows = await prisma.batchTracking.findMany({
-    where: { tenantId },
+    where: {
+      tenantId,
+      variant: { deletedAt: null, product: { deletedAt: null } },
+    },
     select: { id: true, expiryDate: true, quantity: true },
   });
 
