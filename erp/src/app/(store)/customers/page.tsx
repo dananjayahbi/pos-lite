@@ -33,6 +33,9 @@ import {
   CustomerLoadError,
   resolveCustomerListState,
 } from '@/lib/services/customerLoad.core';
+import { resolveCustomerEditAccess } from '@/lib/services/customerPermissions.core';
+import { usePermissions } from '@/hooks/usePermissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -90,6 +93,11 @@ function formatRelativeDate(value?: string | null) {
 
 export default function CustomersPage() {
   const queryClient = useQueryClient();
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
+  const { canEdit: canEditCustomer } = resolveCustomerEditAccess({
+    permissionsLoading,
+    hasEditPermission: hasPermission(PERMISSIONS.CUSTOMER.editCustomer),
+  });
 
   // Filters
   const [search, setSearch] = useState('');
@@ -187,9 +195,10 @@ export default function CustomersPage() {
   }, []);
 
   const openEdit = useCallback((customer: Customer) => {
+    if (!canEditCustomer) return;
     setEditingCustomer(customer);
     setSheetOpen(true);
-  }, []);
+  }, [canEditCustomer]);
 
   const getCreditColor = (val: string | number) => {
     const n = Number(val);
@@ -355,9 +364,11 @@ export default function CustomersPage() {
                           <Eye className="h-4 w-4" />
                         </Link>
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      {canEditCustomer && (
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -400,7 +411,7 @@ export default function CustomersPage() {
       {/* Sheet */}
       <CustomerSheet
         customer={editingCustomer}
-        open={sheetOpen}
+        open={sheetOpen && (canEditCustomer || !editingCustomer)}
         onOpenChange={setSheetOpen}
         onSuccess={handleSuccess}
       />

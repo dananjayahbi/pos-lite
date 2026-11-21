@@ -41,6 +41,7 @@ import {
   customerErrorStatus,
   resolveCustomerDetailState,
 } from '@/lib/services/customerLoad.core';
+import { resolveCustomerEditAccess } from '@/lib/services/customerPermissions.core';
 import { toast } from 'sonner';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -283,6 +284,10 @@ export default function CustomerDetailPage({
   const customerReturns = customer.returns ?? [];
   const returnSummary = summarizeCustomerReturns(customerReturns);
   const canDeleteCustomer = !permissionsLoading && hasPermission(PERMISSIONS.CUSTOMER.deleteCustomer);
+  const { canEdit: canEditCustomer } = resolveCustomerEditAccess({
+    permissionsLoading,
+    hasEditPermission: hasPermission(PERMISSIONS.CUSTOMER.editCustomer),
+  });
 
   const getCreditColor = (val: string | number) => {
     const n = Number(val);
@@ -312,10 +317,12 @@ export default function CustomerDetailPage({
               {customer.name}
             </h1>
             <LoyaltyBadge orderCount={customer.orderCount} />
-            <Button variant="outline" size="sm" onClick={() => setSheetOpen(true)}>
-              <Pencil className="mr-1.5 h-3.5 w-3.5" />
-              Edit
-            </Button>
+            {canEditCustomer && (
+              <Button variant="outline" size="sm" onClick={() => setSheetOpen(true)}>
+                <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                Edit
+              </Button>
+            )}
             {canDeleteCustomer && (
               <Button
                 variant="outline"
@@ -608,13 +615,16 @@ export default function CustomerDetailPage({
         </div>
       )}
 
-      {/* Edit Sheet */}
-      <CustomerSheet
-        customer={customer}
-        open={sheetOpen}
-        onOpenChange={setSheetOpen}
-        onSuccess={handleSuccess}
-      />
+      {/* Edit Sheet - rendered only for holders of customer:edit, the same
+          permission PATCH enforces (ARGUS #314). */}
+      {canEditCustomer && (
+        <CustomerSheet
+          customer={customer}
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          onSuccess={handleSuccess}
+        />
+      )}
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
