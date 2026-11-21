@@ -16,6 +16,7 @@ import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
 import { buildSaleTenderLegs } from '@/lib/services/saleTender.core';
 import { resolveCashTender } from '@/lib/services/saleCashTender.core';
 import { assertSaleVoidable } from '@/lib/services/saleVoid.core';
+import { assertCompletedSaleShape } from '@/lib/services/saleCompleteness.core';
 import {
   assertDiscountsAuthorized,
   cartDiscountPercent,
@@ -517,6 +518,37 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
           ? 'STORE_CREDIT'
           : input.paymentMethod;
 
+    // ── Completed-shape invariant (ARGUS #76) ────────────────────────────
+    // Build the tender legs before writing the row so a COMPLETED sale can
+    // never be persisted with a total but no line item or no payment. This is
+    // the same guard the validator applies, repeated at the only service that
+    // creates completed sales (internal callers bypass the HTTP validator).
+    if (input.paymentMethod === 'SPLIT' && payableAmount.greaterThan(0)) {
+      const digitalAmt = new Decimal(input.cardAmount ?? 0);
+      if (digitalAmt.greaterThan(payableAmount)) {
+        throw new ApiError(
+          400,
+          'CARD_AMOUNT_EXCEEDS_PAYABLE',
+          'The card portion cannot exceed the amount still payable after store credit',
+          { path: ['cardAmount'] },
+        );
+      }
+    }
+    const tenderLegs = buildSaleTenderLegs({
+      paymentMethod: input.paymentMethod,
+      payableAmount,
+      creditAmount,
+      exchangeCreditAmount,
+      ...(input.cardAmount !== undefined ? { cardAmount: new Decimal(input.cardAmount) } : {}),
+      ...(input.splitLegMethod !== undefined ? { splitLegMethod: input.splitLegMethod } : {}),
+    });
+    assertCompletedSaleShape({
+      status: 'COMPLETED',
+      lineCount: lineData.length,
+      paymentCount: tenderLegs.length,
+      totalAmount,
+    });
+
     // Create Sale
     const sale = await tx.sale.create({
       data: {
@@ -578,25 +610,6 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
 
     // Create Payment records. The credit leg settles whatever the customer's
     // balance covers; the chosen tender settles only the remaining payable.
-    if (input.paymentMethod === 'SPLIT' && payableAmount.greaterThan(0)) {
-      const digitalAmt = new Decimal(input.cardAmount ?? 0);
-      if (digitalAmt.greaterThan(payableAmount)) {
-        throw new ApiError(
-          400,
-          'CARD_AMOUNT_EXCEEDS_PAYABLE',
-          'The card portion cannot exceed the amount still payable after store credit',
-          { path: ['cardAmount'] },
-        );
-      }
-    }
-    const tenderLegs = buildSaleTenderLegs({
-      paymentMethod: input.paymentMethod,
-      payableAmount,
-      creditAmount,
-      exchangeCreditAmount,
-      ...(input.cardAmount !== undefined ? { cardAmount: new Decimal(input.cardAmount) } : {}),
-      ...(input.splitLegMethod !== undefined ? { splitLegMethod: input.splitLegMethod } : {}),
-    });
     for (const leg of tenderLegs) {
       await createPayment(
         {

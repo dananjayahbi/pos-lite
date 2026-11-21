@@ -44,6 +44,8 @@ commission rate, exactly like `POST /api/store/sales` (non-blocking side effect)
 Sales created by the old conversion (for example the four Rs. 2,500 sales dated
 17 Sep for 4 Nov appointments) remain in place; they have no lines/payments and
 must be corrected manually (void or a data fix). The code now prevents new ones.
+`scripts/repair-zero-line-sales.ts` is the explicit, dry-run-by-default repair
+path — see `zero-line-sales.md` (ARGUS #76).
 
 ## Verification
 
