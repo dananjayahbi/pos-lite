@@ -49,7 +49,23 @@ export async function GET(_request: Request, props: { params: Promise<{ id: stri
     const managerName = returnRecord.authorizedBy
       ? staffDisplayName(returnRecord.authorizedBy.email)
       : 'Unknown';
-    const html = buildReturnReceiptHtml(returnRecord, tenant, cashierName, managerName);
+
+    // ARGUS #101: the receipt must name the tender actually collected (a QR
+    // sale is not a card). Payment legs are the source of truth; tenant-scope
+    // them through the original sale relation.
+    const payments = await prisma.payment.findMany({
+      where: { sale: { id: returnRecord.originalSaleId, tenantId } },
+      select: { method: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    const receiptData = {
+      ...returnRecord,
+      originalSale: {
+        ...returnRecord.originalSale,
+        payments,
+      },
+    };
+    const html = buildReturnReceiptHtml(receiptData, tenant, cashierName, managerName);
 
     return new Response(html, {
       status: 200,

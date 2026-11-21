@@ -17,6 +17,9 @@ export interface ReceiptReturn {
     totalAmount: { toString(): string } | number;
     taxAmount?: { toString(): string } | number | null;
     deliveryCharge?: { toString(): string } | number | null;
+    /** Tender header/legs used to name a card/QR reversal truthfully. */
+    paymentMethod?: string | null;
+    payments?: Array<{ method: string }> | null;
   } | null;
   lines: Array<{
     productNameSnapshot: string;
@@ -84,6 +87,31 @@ function initialsOf(name: string): string {
       .join('')
       .toUpperCase() || 'AY'
   );
+}
+
+/**
+ * ARGUS #96/#101: name the digital tender actually collected. Payment legs are
+ * authoritative (a split sale can have cash + card/QR); the sale header is the
+ * fallback for legacy rows. Returns null when only cash/unknown was collected,
+ * so the receipt never claims "original card" for a QR-only sale.
+ */
+function originalDigitalTenderLabel(
+  originalSale: NonNullable<ReceiptReturn['originalSale']>,
+): string | null {
+  const methods = new Set(
+    (originalSale.payments ?? []).map((payment) => payment.method),
+  );
+  const hasCard = methods.has('CARD');
+  const hasQr = methods.has('LANKAQR');
+
+  if (hasCard && hasQr) return 'card/LankaQR';
+  if (hasQr) return 'LankaQR';
+  if (hasCard) return 'card';
+
+  if (originalSale.paymentMethod === 'LANKAQR') return 'LankaQR';
+  if (originalSale.paymentMethod === 'CARD') return 'card';
+  if (originalSale.paymentMethod === 'SPLIT') return 'card/QR';
+  return null;
 }
 
 // ── Builder ──────────────────────────────────────────────────────────────────
@@ -160,12 +188,20 @@ export function buildReturnReceiptHtml(
     refundNote = 'Cash was handed back to the customer at the counter.';
   } else if (refundMethod === 'CARD_REVERSAL') {
     refundMethodLabel = 'Card Reversal';
-    // ARGUS #96: a reversal is only allowed against a card/QR tender, so the
-    // note must not claim a physical card when the sale was paid by QR.
-    refundNote = 'The refund is reversed through the original card/QR payment channel.';
+    // ARGUS #96/#101: a reversal is only allowed against a card/QR tender, and
+    // the receipt must name the channel actually used (QR is not a card).
+    const tender = returnData.originalSale
+      ? originalDigitalTenderLabel(returnData.originalSale)
+      : null;
+    refundNote = tender
+      ? `The refund is reversed to the original ${tender} payment channel.`
+      : 'The refund is reversed through the original card/QR payment channel.';
   } else if (refundMethod === 'STORE_CREDIT') {
     refundMethodLabel = 'Store Credit';
-    refundNote = 'A credit note was issued and can be redeemed on a future purchase.';
+    // There is no separate credit-note redemption/expiry; the refund simply
+    // lands on the customer's existing store-credit balance (ARGUS #101).
+    refundNote =
+      "The refund has been added to the customer's store-credit balance and can be used on a future purchase.";
   } else if (refundMethod === 'EXCHANGE') {
     refundMethodLabel = 'Exchange';
     refundNote = 'The returned items were exchanged for other items in store.';
@@ -185,8 +221,13 @@ export function buildReturnReceiptHtml(
   const printTimestamp = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
   const taxRefunded = n(returnData.taxAmount);
+  const totalRefund = n(returnData.refundAmount);
+  const taxProvided = returnData.taxAmount != null;
+  const goodsRefunded = Math.max(totalRefund - taxRefunded, 0);
   const originalSaleTotal =
     returnData.originalSale != null ? n(returnData.originalSale.totalAmount) : null;
+  const notRefunded =
+    originalSaleTotal !== null ? originalSaleTotal - totalRefund : null;
 
   const logoHtml = logoUrl
     ? `<img class="brand-logo" src="${esc(logoUrl)}" alt="${esc(tenant.name)} logo" />`
@@ -568,9 +609,11 @@ export function buildReturnReceiptHtml(
     <div class="totals">
       <div class="totals-line"><span>Items returned</span><span>${totalQuantity}</span></div>
       <div class="totals-line"><span>Refund method</span><span>${esc(refundMethodLabel)}</span></div>
-      ${taxRefunded > 0 ? `<div class="totals-line"><span>Tax refunded</span><span>${formatRupee(taxRefunded)}</span></div>` : ''}
+      <div class="totals-line"><span>Goods refunded</span><span>${formatRupee(goodsRefunded)}</span></div>
+      ${taxProvided ? `<div class="totals-line"><span>Tax refunded</span><span>${formatRupee(taxRefunded)}</span></div>` : ''}
       ${originalSaleTotal !== null ? `<div class="totals-line"><span>Original sale total</span><span>${formatRupee(originalSaleTotal)}</span></div>` : ''}
-      <div class="totals-grand"><span>Total Refund</span><span class="amount">${formatRupee(n(returnData.refundAmount))}</span></div>
+      ${notRefunded !== null && notRefunded > 0.005 ? `<div class="totals-line"><span>Not refunded (original − refund)</span><span>${formatRupee(notRefunded)}</span></div>` : ''}
+      <div class="totals-grand"><span>Total Refund</span><span class="amount">${formatRupee(totalRefund)}</span></div>
     </div>
   </div>
 

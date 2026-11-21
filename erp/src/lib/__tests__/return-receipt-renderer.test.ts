@@ -168,11 +168,11 @@ describe('buildReturnReceiptHtml', () => {
     expect(html).not.toContain('a"onmouseover="alert(1).png');
   });
 
-  it('labels each refund method and explains it', () => {
+  it('labels each refund method and explains it truthfully', () => {
     const cases: Array<[ReceiptReturn['refundMethod'], string, string]> = [
       ['CASH', 'Cash Refund', 'handed back'],
       ['CARD_REVERSAL', 'Card Reversal', 'original card/QR'],
-      ['STORE_CREDIT', 'Store Credit', 'credit note'],
+      ['STORE_CREDIT', 'Store Credit', 'store-credit balance'],
       ['EXCHANGE', 'Exchange', 'exchanged'],
     ];
 
@@ -186,6 +186,104 @@ describe('buildReturnReceiptHtml', () => {
       expect(html, method).toContain(label);
       expect(html, method).toContain(detail);
     }
+  });
+
+  it('shows goods, tax and total refund plus the amount not refunded', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn({
+        refundAmount: dec(2459.12),
+        taxAmount: dec(375.12),
+        originalSale: { totalAmount: dec(2934.12), taxAmount: dec(375.12) },
+      }),
+      makeTenant(),
+      'Nimal',
+      'Kamal',
+    );
+
+    expect(html).toContain('Goods refunded');
+    expect(html).toContain('Rs. 2,084.00');
+    expect(html).toContain('Tax refunded');
+    expect(html).toContain('Rs. 375.12');
+    expect(html).toContain('Original sale total');
+    expect(html).toContain('Not refunded (original');
+    expect(html).toContain('Rs. 475.00');
+    expect(html).toContain('Rs. 2,459.12');
+  });
+
+  it('shows a zero tax row when the return recorded zero tax', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn({ refundAmount: dec(100), taxAmount: dec(0) }),
+      makeTenant(),
+      'Nimal',
+      'Kamal',
+    );
+    expect(html).toContain('Tax refunded');
+    expect(html).toContain('Rs. 0.00');
+  });
+
+  it('omits the not-refunded row on a full refund', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn({
+        refundAmount: dec(100),
+        taxAmount: dec(0),
+        originalSale: { totalAmount: dec(100) },
+      }),
+      makeTenant(),
+      'Nimal',
+      'Kamal',
+    );
+    expect(html).not.toContain('Not refunded (original');
+  });
+
+  it('uses the original QR tender for a card reversal, not "original card"', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn({
+        refundMethod: 'CARD_REVERSAL',
+        originalSale: {
+          totalAmount: dec(2084),
+          paymentMethod: 'LANKAQR',
+          payments: [{ method: 'LANKAQR' }],
+        },
+      }),
+      makeTenant(),
+      'Nimal',
+      'Kamal',
+    );
+
+    expect(html).toContain('original LankaQR payment channel');
+    expect(html).not.toContain('original card payment channel');
+  });
+
+  it('names the card tender when the original sale was paid by card', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn({
+        refundMethod: 'CARD_REVERSAL',
+        originalSale: {
+          totalAmount: dec(2084),
+          paymentMethod: 'CARD',
+          payments: [{ method: 'CARD' }],
+        },
+      }),
+      makeTenant(),
+      'Nimal',
+      'Kamal',
+    );
+
+    expect(html).toContain('original card payment channel');
+  });
+
+  it('does not promise a separate store-credit note or expiry', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn({ refundMethod: 'STORE_CREDIT' }),
+      makeTenant(),
+      'Nimal',
+      'Kamal',
+    );
+
+    expect(html).toContain("customer's store-credit balance");
+    expect(html).toContain('future purchase');
+    expect(html).not.toContain('credit note was issued');
+    expect(html).not.toContain('redeemed');
   });
 
   it('distinguishes fully, partially and not-restocked returns', () => {
