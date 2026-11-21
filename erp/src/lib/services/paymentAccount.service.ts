@@ -10,6 +10,7 @@ import {
 } from '@/generated/prisma/client';
 import type { Prisma, PrismaClient } from '@/generated/prisma/client';
 import type { TxClient } from '@/lib/services/inventory.service';
+import { lockForUpdate } from '@/lib/api/race-guard';
 import type {
   CloseAccountInput,
   CreatePaymentAccountInput,
@@ -83,6 +84,14 @@ export async function postLedgerEntries(
   if (lines.length === 0) return;
 
   const accountIds = Array.from(new Set(lines.map((line) => line.accountId)));
+
+  // Serialize ledger postings per account: without the lock two concurrent
+  // movements read the same cached balance, both pass their checks and both
+  // write the same next balance (lost update / negative balance). Sorted ids
+  // keep multi-account postings deadlock-free (ARGUS #425).
+  for (const accountId of [...accountIds].sort()) {
+    await lockForUpdate(tx, 'payment_accounts', '"id" = $1', [accountId]);
+  }
 
   const accounts = await tx.paymentAccount.findMany({
     where: { id: { in: accountIds }, tenantId },
@@ -179,6 +188,10 @@ export async function assertSufficientFunds(
   overdrawApproved = false,
 ): Promise<void> {
   if (overdrawApproved) return;
+
+  // Lock the row so the funds check and the later posting in the same
+  // transaction see a serialized balance (ARGUS #425).
+  await lockForUpdate(tx, 'payment_accounts', '"id" = $1', [accountId]);
 
   const account = await tx.paymentAccount.findFirst({
     where: { id: accountId, tenantId },
