@@ -23,6 +23,11 @@ import {
   type RawMaterialUnitOption,
 } from '@/lib/services/rawMaterialUnit.service';
 
+import {
+  assertRawMaterialDeletable,
+  assertRawMaterialUnitChangeAllowed,
+} from '@/lib/services/rawMaterialGuards.core';
+
 // ── Public list item shape (Decimal → number for the client) ────────────────
 
 export interface RawMaterialItem {
@@ -191,7 +196,6 @@ export interface UpdateRawMaterialInput {
   name?: string | undefined;
   category?: string | undefined;
   unit?: string | undefined;
-  quantity?: string | undefined;
   lowStockThreshold?: string | undefined;
   description?: string | undefined;
   isActive?: boolean | undefined;
@@ -211,7 +215,19 @@ export async function updateRawMaterial(
   }
 
   return prisma.$transaction(async (tx) => {
-    await findOwnedMaterial(tx, tenantId, id);
+    const existing = await findOwnedMaterial(tx, tenantId, id);
+
+    // ARGUS #241: quantity is deliberately NOT updatable here — stock changes
+    // go through `adjustRawMaterialStock` (delta + reason + audit). A unit
+    // change would reinterpret the stored number, so it is blocked while stock
+    // is on hand.
+    if (input.unit !== undefined) {
+      assertRawMaterialUnitChangeAllowed({
+        currentUnit: existing.unit,
+        nextUnit: input.unit,
+        quantityOnHand: existing.quantity.toNumber(),
+      });
+    }
 
     const updated = await tx.rawMaterial.update({
       where: { id },
@@ -219,9 +235,6 @@ export async function updateRawMaterial(
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
         ...(input.category !== undefined ? { category: input.category } : {}),
         ...(input.unit !== undefined ? { unit: input.unit } : {}),
-        ...(input.quantity !== undefined
-          ? { quantity: new Prisma.Decimal(input.quantity) }
-          : {}),
         ...(input.lowStockThreshold !== undefined
           ? { lowStockThreshold: new Prisma.Decimal(input.lowStockThreshold) }
           : {}),
@@ -270,6 +283,7 @@ export async function adjustRawMaterialStock(
   actorId: string,
   id: string,
   quantityDelta: number,
+  reason?: string,
 ) {
   if (quantityDelta === 0) {
     throw new Error('DELTA_ZERO');
@@ -292,7 +306,12 @@ export async function adjustRawMaterialStock(
       entityType: 'RawMaterial',
       entityId: id,
       action: AUDIT_ACTIONS.RAW_MATERIAL_STOCK_ADJUSTED,
-      after: { quantityDelta, quantityBefore: currentQuantity, quantityAfter: newQuantity },
+      after: {
+        quantityDelta,
+        quantityBefore: currentQuantity,
+        quantityAfter: newQuantity,
+        reason: reason?.trim() || null,
+      },
     }).catch(() => {});
 
     return toRawMaterialItem(updated);
@@ -307,7 +326,21 @@ export async function deleteRawMaterial(
   id: string,
 ) {
   return prisma.$transaction(async (tx) => {
-    await findOwnedMaterial(tx, tenantId, id);
+    const existing = await findOwnedMaterial(tx, tenantId, id);
+
+    // ARGUS #241: a soft delete hides the row from the list/stats/valuation but
+    // writes no stock movement, so units on hand would vanish from the books.
+    // Active BOMs would also be left pointing at a hidden material.
+    const activeBomCount = await tx.billOfMaterialsItem.count({
+      where: {
+        rawMaterialId: id,
+        bom: { tenantId, isActive: true, deletedAt: null },
+      },
+    });
+    assertRawMaterialDeletable({
+      quantityOnHand: existing.quantity.toNumber(),
+      activeBomCount,
+    });
 
     const updated = await tx.rawMaterial.update({
       where: { id },
@@ -321,6 +354,10 @@ export async function deleteRawMaterial(
       entityType: 'RawMaterial',
       entityId: id,
       action: AUDIT_ACTIONS.RAW_MATERIAL_DELETED,
+      before: {
+        quantityOnHand: existing.quantity.toString(),
+        activeBomCount,
+      },
     }).catch(() => {});
 
     return toRawMaterialItem(updated);

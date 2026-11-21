@@ -25,7 +25,8 @@ export const UpdateRawMaterialSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(120).optional(),
   category: RawMaterialCategorySchema.optional(),
   unit: RawMaterialUnitSchema.optional(),
-  quantity: positiveDecimal.optional(),
+  // ARGUS #241: quantity is not editable — stock moves through the adjustment
+  // endpoint (delta + reason + audit), never through an absolute overwrite.
   lowStockThreshold: positiveDecimal.optional(),
   description: z.string().trim().max(500).optional(),
   isActive: z.boolean().optional(),
@@ -36,6 +37,8 @@ export const AdjustRawMaterialStockSchema = z.object({
     .string()
     .regex(/^-?\d+(\.\d+)?$/, 'Must be a decimal number (can be negative)')
     .transform((value) => Number(value)),
+  /** Why the stock moved (consumption, write-off, recount, …). */
+  reason: z.string().trim().max(200).optional(),
 });
 
 export const CreateRawMaterialCategorySchema = z.object({
