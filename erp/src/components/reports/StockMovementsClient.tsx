@@ -25,6 +25,10 @@ import {
 } from "@/components/ui/table";
 import { useReportContext } from "@/lib/reports/ReportContext";
 import { staffDisplayName } from "@/lib/utils/staff-name";
+import {
+  STOCK_MOVEMENT_REASONS,
+  stockMovementReasonLabel,
+} from '@/lib/constants/stock-movement';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -66,34 +70,6 @@ interface ApiResponse {
 // ── Constants ────────────────────────────────────────────────────
 
 const PAGE_SIZE = 50;
-
-const REASON_OPTIONS = [
-  "SALE",
-  "SALE_RETURN",
-  "PURCHASE_RECEIVED",
-  "STOCK_TAKE_ADJUSTMENT",
-  "FOUND",
-  "DAMAGED",
-  "STOLEN",
-  "DATA_ERROR",
-  "RETURNED_TO_SUPPLIER",
-  "INITIAL_STOCK",
-  "VOID_REVERSAL",
-] as const;
-
-const REASON_LABELS: Record<string, string> = {
-  SALE: "Sale",
-  SALE_RETURN: "Sale Return",
-  PURCHASE_RECEIVED: "Purchase Received",
-  STOCK_TAKE_ADJUSTMENT: "Stock Take Adj.",
-  FOUND: "Found",
-  DAMAGED: "Damaged",
-  STOLEN: "Stolen",
-  DATA_ERROR: "Data Error",
-  RETURNED_TO_SUPPLIER: "Returned to Supplier",
-  INITIAL_STOCK: "Initial Stock",
-  VOID_REVERSAL: "Void Reversal",
-};
 
 // ── Badge colors by reason ───────────────────────────────────────
 
@@ -238,7 +214,7 @@ export default function StockMovementsClient() {
       Date: fmtDate(m.createdAt),
       Product: m.productName,
       SKU: m.sku,
-      "Movement Type": REASON_LABELS[m.reason] ?? m.reason,
+      "Movement Type": stockMovementReasonLabel(m.reason),
       Delta: m.quantityDelta,
       "Qty Before": m.quantityBefore,
       "Qty After": m.quantityAfter,
@@ -282,7 +258,7 @@ export default function StockMovementsClient() {
                     variant="outline"
                     className={reasonBadgeClasses(s.reason)}
                   >
-                    {REASON_LABELS[s.reason] ?? s.reason}
+                    {stockMovementReasonLabel(s.reason)}
                   </Badge>
                   <p className={`mt-2 text-lg font-bold ${delta.className}`}>
                     {delta.text}
@@ -327,9 +303,9 @@ export default function StockMovementsClient() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Types</SelectItem>
-              {REASON_OPTIONS.map((r) => (
+              {STOCK_MOVEMENT_REASONS.map((r) => (
                 <SelectItem key={r} value={r}>
-                  {REASON_LABELS[r]}
+                  {stockMovementReasonLabel(r)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -378,7 +354,7 @@ export default function StockMovementsClient() {
                         variant="outline"
                         className={reasonBadgeClasses(m.reason)}
                       >
-                        {REASON_LABELS[m.reason] ?? m.reason}
+                        {stockMovementReasonLabel(m.reason)}
                       </Badge>
                     </TableCell>
                     <TableCell className={`text-right ${delta.className}`}>
