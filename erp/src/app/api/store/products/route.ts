@@ -165,7 +165,12 @@ export async function POST(request: Request) {
 
     if (variantDefinitions && variantDefinitions.length > 0) {
       try {
-        const variants = await createProductVariants(tenantId, product.id, variantDefinitions);
+        const variants = await createProductVariants(
+          tenantId,
+          session.user.id,
+          product.id,
+          variantDefinitions,
+        );
         return NextResponse.json(
           { success: true, data: { ...product, variants } },
           { status: 201 },

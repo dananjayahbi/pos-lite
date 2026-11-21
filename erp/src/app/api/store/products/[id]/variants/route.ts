@@ -54,7 +54,7 @@ export async function POST(
       );
     }
 
-    const variants = await createProductVariants(tenantId, id, parsed.data);
+    const variants = await createProductVariants(tenantId, session.user.id, id, parsed.data);
 
     // Revalidate so new variants (prices, stock) show on the storefront immediately.
     try {

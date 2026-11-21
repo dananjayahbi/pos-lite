@@ -13,6 +13,8 @@ import type { HealthConcern, ProductSource, TaxRule } from '@/generated/prisma/c
 import { createAuditLog, writeAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { ApiError } from '@/lib/api/errors';
 import { assertProductHasNoStock } from '@/lib/services/productDelete.core';
+import { adjustStockInTx } from '@/lib/services/inventory.service';
+import { resolveOpeningStockQuantity } from '@/lib/services/openingStock.core';
 import { generateBarcode } from '@/lib/barcode';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -323,6 +325,7 @@ export async function createProduct(tenantId: string, actorId: string, data: Cre
 
 export async function createProductVariants(
   tenantId: string,
+  actorId: string,
   productId: string,
   variants: CreateVariantInput[],
 ) {
@@ -400,12 +403,34 @@ export async function createProductVariants(
         costPrice: v.costPrice,
         retailPrice: v.retailPrice,
         wholesalePrice: v.wholesalePrice ?? null,
-        stockQuantity: v.initialStock ?? v.stockQuantity ?? 0,
+        // Opening stock is applied below as an INITIAL_STOCK movement so the
+        // stock ledger explains the balance (ARGUS #139).
+        stockQuantity: 0,
         lowStockThreshold: v.lowStockThreshold ?? 5,
         imageUrls: v.imageUrls ?? [],
         thumbnailImageUrls: v.thumbnailImageUrls ?? [],
       })),
     });
+
+    const createdVariants = await tx.productVariant.findMany({
+      where: {
+        productId,
+        tenantId,
+        sku: { in: resolvedVariants.map((v) => v.sku) },
+      },
+    });
+
+    for (const variant of createdVariants) {
+      const input = withBarcodes.find((v) => v.sku === variant.sku);
+      const openingStock = resolveOpeningStockQuantity(input ?? {});
+      if (openingStock <= 0) continue;
+
+      await adjustStockInTx(tx, tenantId, variant.id, actorId, {
+        quantityDelta: openingStock,
+        reason: 'INITIAL_STOCK',
+        note: 'Opening stock recorded on product creation',
+      });
+    }
 
     return tx.productVariant.findMany({
       where: {

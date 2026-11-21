@@ -11,6 +11,7 @@ import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
 import type { StockMovementReason, StockTakeStatus } from '@/generated/prisma/client';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { computeStockTakeApprovalPlan } from '@/lib/services/stockTakeApproval.core';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 
 // ── Transaction Client Type ──────────────────────────────────────────────────
@@ -427,25 +428,59 @@ export async function approveStockTake(
   }
 
   const items = await prisma.stockTakeItem.findMany({
-    where: { sessionId, NOT: { discrepancy: 0 } },
-    select: { variantId: true, discrepancy: true },
+    where: { sessionId },
+    select: {
+      variantId: true,
+      countedQuantity: true,
+      systemQuantity: true,
+      discrepancy: true,
+    },
   });
 
-  // Filter only non-zero and non-null discrepancies
-  const adjustmentsToMake = items.filter(
-    (i): i is typeof i & { discrepancy: number } => i.discrepancy !== null && i.discrepancy !== 0,
-  );
-
   const result = await prisma.$transaction(async (tx) => {
-    for (const item of adjustmentsToMake) {
-      await adjustStockInTx(tx, tenantId, item.variantId, actorId, {
-        quantityDelta: item.discrepancy,
-        reason: 'STOCK_TAKE_ADJUSTMENT',
-        stockTakeSessionId: sessionId,
+    // Stock can move between the count and approval (sales, receipts,
+    // adjustments). Applying the session-start discrepancy would then leave the
+    // variant at the wrong quantity, so the delta is recomputed against the
+    // current stock and the variants end at exactly what was counted
+    // (ARGUS #138).
+    const variantIds = items
+      .filter((item) => item.countedQuantity !== null)
+      .map((item) => item.variantId);
+    const currentVariants =
+      variantIds.length > 0
+        ? await tx.productVariant.findMany({
+            where: { id: { in: variantIds }, tenantId },
+            select: { id: true, stockQuantity: true },
+          })
+        : [];
+    const currentById = new Map(currentVariants.map((variant) => [variant.id, variant.stockQuantity]));
+
+    const plan = computeStockTakeApprovalPlan(items, (variantId) => currentById.get(variantId));
+
+    if (plan.missingVariantIds.length > 0) {
+      throw new Error(
+        `Cannot approve: variant(s) no longer exist - ${plan.missingVariantIds.join(', ')}`,
+      );
+    }
+
+    for (const adjustment of plan.adjustments) {
+      if (adjustment.quantityDelta !== 0) {
+        await adjustStockInTx(tx, tenantId, adjustment.variantId, actorId, {
+          quantityDelta: adjustment.quantityDelta,
+          reason: 'STOCK_TAKE_ADJUSTMENT',
+          stockTakeSessionId: sessionId,
+        });
+      }
+
+      // Keep the stored line truthful for the session detail: its discrepancy
+      // now explains the adjustment that was actually applied.
+      await tx.stockTakeItem.updateMany({
+        where: { sessionId, variantId: adjustment.variantId },
+        data: { discrepancy: adjustment.quantityDelta },
       });
     }
 
-    return tx.stockTakeSession.update({
+    const session = await tx.stockTakeSession.update({
       where: { id: sessionId },
       data: {
         status: 'APPROVED',
@@ -453,6 +488,11 @@ export async function approveStockTake(
         approvedAt: new Date(),
       },
     });
+
+    return {
+      session,
+      adjustmentCount: plan.adjustments.filter((adjustment) => adjustment.quantityDelta !== 0).length,
+    };
   });
 
   await createAuditLog({
@@ -462,10 +502,10 @@ export async function approveStockTake(
     entityType: 'StockTakeSession',
     entityId: sessionId,
     action: 'STOCK_TAKE_APPROVED',
-    after: { adjustmentCount: adjustmentsToMake.length },
+    after: { adjustmentCount: result.adjustmentCount },
   });
 
-  return { session: result, adjustmentCount: adjustmentsToMake.length };
+  return { session: result.session, adjustmentCount: result.adjustmentCount };
 }
 
 // ── Step 10: rejectStockTake ─────────────────────────────────────────────────
