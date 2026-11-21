@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import PettyCashSection from '@/components/shift/PettyCashSection';
 import { formatRupee } from '@/lib/format';
+import { formatShiftDateTime, formatShiftRupee } from '@/lib/shifts/shift-format';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import type { ZReportData } from '@/lib/services/shift.service';
 
@@ -30,11 +31,7 @@ interface ShiftDetail {
 }
 
 function formatDateTime(value: string | null) {
-  if (!value) return '-';
-  return new Date(value).toLocaleString('en-LK', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+  return formatShiftDateTime(value);
 }
 
 function formatDuration(openedAt: string, closedAt: string | null) {
@@ -191,7 +188,7 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
                 <p className="mt-1 text-sm text-espresso">
                   {report.cashReconciliation.cashDifference === null
                     ? 'Not closed yet'
-                    : formatRupee(report.cashReconciliation.cashDifference)}
+                    : formatShiftRupee(report.cashReconciliation.cashDifference)}
                 </p>
               </div>
             </CardContent>
@@ -264,7 +261,7 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
                   <span className="font-mono text-espresso">
                     {report.cashReconciliation.cashDifference === null
                       ? 'Not closed yet'
-                      : formatRupee(report.cashReconciliation.cashDifference)}
+                      : formatShiftRupee(report.cashReconciliation.cashDifference)}
                   </span>
                 </div>
               </div>

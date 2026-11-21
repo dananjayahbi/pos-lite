@@ -18,6 +18,7 @@ import {
 } from '@/lib/shifts/shift-sales-count';
 import { buildZReportTopItems } from '@/lib/shifts/z-report-top-items';
 import { toShiftStatusCounts } from '@/lib/shifts/shift-status-counts';
+import { netRevenueOnSameTaxBasis } from '@/lib/shifts/z-report-net-revenue';
 
 // ── Open Shift ───────────────────────────────────────────────────────────────
 
@@ -97,6 +98,7 @@ async function getShiftReturns(
       },
       select: {
         refundAmount: true,
+        taxAmount: true,
         refundMethod: true,
         initiatedById: true,
         createdAt: true,
@@ -112,6 +114,7 @@ async function getShiftReturns(
   const attributed = filterReturnsForShift(
     returns.map((ret) => ({
       refundAmount: ret.refundAmount,
+      taxAmount: ret.taxAmount,
       refundMethod: ret.refundMethod,
       originalSaleShiftId: ret.originalSale.shiftId,
       initiatedById: ret.initiatedById,
@@ -123,6 +126,7 @@ async function getShiftReturns(
 
   return attributed.map((ret) => ({
     refundAmount: ret.refundAmount,
+    taxAmount: ret.taxAmount,
     refundMethod: ret.refundMethod,
   }));
 }
@@ -515,6 +519,7 @@ export async function buildZReportData(
     select: {
       status: true,
       totalAmount: true,
+      taxAmount: true,
       discountAmount: true,
       payments: true,
       lines: {
@@ -533,6 +538,7 @@ export async function buildZReportData(
   });
 
   let totalSalesAmount = new Decimal(0);
+  let totalSalesTax = new Decimal(0);
   const paymentBreakdown = sumPaymentBreakdown(
     completedSales.flatMap((s) => s.payments),
   );
@@ -540,6 +546,7 @@ export async function buildZReportData(
 
   for (const sale of completedSales) {
     totalSalesAmount = totalSalesAmount.plus(new Decimal(sale.totalAmount.toString()));
+    totalSalesTax = totalSalesTax.plus(new Decimal(sale.taxAmount.toString()));
     totalDiscountAmount = totalDiscountAmount.plus(new Decimal(sale.discountAmount.toString()));
   }
 
@@ -558,6 +565,7 @@ export async function buildZReportData(
   const returns = await getShiftReturns(tenantId, shift, shift.closedAt ?? new Date());
 
   let totalRefundAmount = new Decimal(0);
+  let totalRefundTax = new Decimal(0);
   let cashRefundAmount = new Decimal(0);
   let cardRefundAmount = new Decimal(0);
   let creditRefundAmount = new Decimal(0);
@@ -565,6 +573,9 @@ export async function buildZReportData(
 
   for (const ret of returns) {
     totalRefundAmount = totalRefundAmount.plus(new Decimal(ret.refundAmount.toString()));
+    if (ret.taxAmount !== undefined) {
+      totalRefundTax = totalRefundTax.plus(new Decimal(ret.taxAmount.toString()));
+    }
     switch (ret.refundMethod) {
       case 'CASH' satisfies ReturnRefundMethod:
         cashRefundAmount = cashRefundAmount.plus(new Decimal(ret.refundAmount.toString()));
@@ -602,7 +613,14 @@ export async function buildZReportData(
   const actualCashCounted = shift.closure ? new Decimal(shift.closure.closingCashCount.toString()) : null;
   const cashDifference = actualCashCounted ? actualCashCounted.minus(expectedCashInDrawer) : null;
 
-  const netRevenue = totalSalesAmount.minus(totalRefundAmount).toDecimalPlaces(2).toNumber();
+  // ARGUS #117: compare sales and refunds on the same tax basis (goods value)
+  // instead of subtracting a pre-tax refund from a tax-inclusive sales total.
+  const netRevenue = netRevenueOnSameTaxBasis({
+    salesTotal: totalSalesAmount,
+    salesTax: totalSalesTax,
+    refundTotal: totalRefundAmount,
+    refundTax: totalRefundTax,
+  }).toNumber();
 
   return {
     shift: {

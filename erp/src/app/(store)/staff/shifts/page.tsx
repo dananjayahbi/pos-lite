@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { formatRupee } from '@/lib/format';
+import { formatShiftDateTime, formatShiftRupee } from '@/lib/shifts/shift-format';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import {
   emptyShiftSales,
@@ -74,11 +75,7 @@ interface ShiftListResponse {
 }
 
 function formatDateTime(value: string | null): string {
-  if (!value) return '-';
-  return new Date(value).toLocaleString('en-LK', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+  return formatShiftDateTime(value);
 }
 
 function StatusBadge({ status }: { status: ShiftRow['status'] }) {
@@ -432,7 +429,7 @@ export default function StaffShiftsPage() {
                     <ShiftSalesCells counts={shift.salesCounts} />
                     <TableCell className="font-mono text-sm text-espresso">
                       {shift.closure?.cashDifference !== undefined && shift.closure?.cashDifference !== null
-                        ? formatRupee(shift.closure.cashDifference)
+                        ? formatShiftRupee(shift.closure.cashDifference)
                         : '-'}
                     </TableCell>
                     <TableCell>

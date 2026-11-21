@@ -15,14 +15,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatRupee } from '@/lib/format';
+import { formatShiftDateTime, formatShiftRupee } from '@/lib/shifts/shift-format';
 import PettyCashSection from '@/components/shift/PettyCashSection';
 import type { ZReportData } from '@/lib/services/shift.service';
 
 function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+  return formatShiftDateTime(iso);
 }
 
 function formatDuration(openedAt: string, closedAt: string | null) {
@@ -210,7 +208,7 @@ function ShiftReportPageContent() {
       <section className="rounded-lg border-2 border-espresso bg-linen p-5 text-center">
         <p className="font-body text-sm text-espresso/70 mb-1">Net Revenue</p>
         <p className="font-mono text-3xl text-espresso">{formatRupee(netRevenue)}</p>
-        <p className="font-body text-xs text-espresso/50 mt-1">Sales − Returns</p>
+        <p className="font-body text-xs text-espresso/50 mt-1">Sales − Returns (excl. tax)</p>
       </section>
 
       {/* 5. Cash Reconciliation */}
@@ -234,7 +232,7 @@ function ShiftReportPageContent() {
         {cashReconciliation.cashDifference !== null && (
           <Row
             label="Difference"
-            value={`${cashReconciliation.cashDifference >= 0 ? '+' : ''}${formatRupee(cashReconciliation.cashDifference)}`}
+            value={formatShiftRupee(cashReconciliation.cashDifference, { sign: 'always' })}
             className={
               cashReconciliation.cashDifference === 0
                 ? ''
