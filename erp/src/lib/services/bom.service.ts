@@ -23,6 +23,7 @@ import {
   type ConsumptionLine,
 } from '@/lib/services/bom.core';
 import { adjustStockInTx } from '@/lib/services/inventory.service';
+import { computeMaterialCost } from '@/lib/services/rawMaterialValuation.core';
 import { createBatchInTx } from '@/lib/services/batchTracking.service';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
@@ -69,7 +70,7 @@ type BomWithItems = BillOfMaterials & {
     product: { name: string; productSource: 'MANUFACTURED' | 'TRADED' };
   };
   items: (BillOfMaterialsItem & {
-    rawMaterial: Pick<RawMaterial, 'id' | 'name' | 'unit' | 'quantity'>;
+    rawMaterial: Pick<RawMaterial, 'id' | 'name' | 'unit' | 'quantity' | 'unitCost'>;
   })[];
 };
 
@@ -126,7 +127,7 @@ const bomInclude = {
   items: {
     include: {
       rawMaterial: {
-        select: { id: true, name: true, unit: true, quantity: true },
+        select: { id: true, name: true, unit: true, quantity: true, unitCost: true },
       },
     },
   },
@@ -418,6 +419,19 @@ export async function produceGoods(
       );
     }
 
+    // Value of the materials consumed, at the unit cost recorded on each raw
+    // material (ARGUS #243). Stored with the log so finished-goods COGS can be
+    // explained even after the material cost changes.
+    const unitCostByMaterial = new Map(
+      bom.items.map((item) => [item.rawMaterialId, item.rawMaterial.unitCost.toNumber()]),
+    );
+    const materialCost = computeMaterialCost(
+      consumption.map((line) => ({
+        required: line.required,
+        unitCost: unitCostByMaterial.get(line.rawMaterialId) ?? 0,
+      })),
+    );
+
     // 1) Deduct each raw material within the same transaction.
     for (const line of consumption) {
       await tx.rawMaterial.update({
@@ -439,6 +453,7 @@ export async function produceGoods(
         bomId,
         variantId: bom.variantId,
         quantity,
+        materialCost,
         actorId,
         note: note?.trim() || null,
       },
@@ -478,6 +493,7 @@ export async function produceGoods(
         quantity,
         batchId: batch.id,
         batchNumber,
+        materialCost,
         consumption: consumption.map((c) => ({
           rawMaterialId: c.rawMaterialId,
           required: c.required,
@@ -490,6 +506,7 @@ export async function produceGoods(
       batchId: batch.id,
       batchNumber,
       quantity,
+      materialCost,
       consumption,
     };
   });
@@ -500,6 +517,8 @@ export async function produceGoods(
 export interface ProductionHistoryItem {
   id: string;
   quantity: number;
+  /** Raw-material value consumed (ARGUS #243). */
+  materialCost: number;
   note: string | null;
   createdAt: Date;
   actorName: string;
@@ -536,6 +555,7 @@ export async function listProductionLogs(
   const items: ProductionHistoryItem[] = rows.map((row) => ({
     id: row.id,
     quantity: row.quantity,
+    materialCost: row.materialCost.toNumber(),
     note: row.note,
     createdAt: row.createdAt,
     actorName: staffDisplayName(row.actor.email),

@@ -107,6 +107,7 @@ export function ProductionHistoryPanel({ compact = false }: ProductionHistoryPan
           <tr className="border-b text-left text-xs uppercase tracking-wide text-mist-ink">
             <th className="px-4 py-3 font-medium">Product</th>
             <th className="px-4 py-3 font-medium">Quantity</th>
+            <th className="px-4 py-3 font-medium">Material cost</th>
             <th className="px-4 py-3 font-medium">By</th>
             <th className="px-4 py-3 font-medium">Date</th>
           </tr>
@@ -119,6 +120,7 @@ export function ProductionHistoryPanel({ compact = false }: ProductionHistoryPan
                 <div className="text-xs text-mist-ink">{log.variantSku}</div>
               </td>
               <td className="px-4 py-3 font-semibold text-espresso">+{log.quantity}</td>
+              <td className="px-4 py-3 text-mist-ink">Rs {(log.materialCost ?? 0).toFixed(2)}</td>
               <td className="px-4 py-3 text-mist-ink">{log.actorName}</td>
               <td className="px-4 py-3 text-mist-ink">{formatDate(log.createdAt)}</td>
             </tr>

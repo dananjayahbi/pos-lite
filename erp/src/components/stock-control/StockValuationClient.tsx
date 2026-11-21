@@ -220,9 +220,12 @@ export function StockValuationClient() {
               </CardHeader>
               <CardContent>
                 <p className="font-display text-2xl font-semibold text-espresso">
-                  {formatRupee(valuation.costValue)}
+                  {formatRupee(valuation.totalCostValue ?? valuation.costValue)}
                 </p>
-                <p className="mt-1 font-body text-xs text-mist-ink">What your current stock cost to acquire</p>
+                <p className="mt-1 font-body text-xs text-mist-ink">
+                  Products {formatRupee(valuation.costValue)} + raw materials{' '}
+                  {formatRupee(valuation.rawMaterialValue ?? 0)}
+                </p>
               </CardContent>
             </Card>
 

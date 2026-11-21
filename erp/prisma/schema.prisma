@@ -953,6 +953,9 @@ model RawMaterial {
   unit               String
   quantity           Decimal            @default(0)
   lowStockThreshold  Decimal            @default(0)
+  // Cost of one base unit (`unit`), used for raw-material valuation and the
+  // material cost of a production run (ARGUS #243).
+  unitCost           Decimal            @default(0) @db.Decimal(12, 4)
   description        String?
   isActive           Boolean            @default(true)
   createdAt          DateTime           @default(now())
@@ -1053,6 +1056,9 @@ model ProductionLog {
   variantId String
   variant   ProductVariant @relation(fields: [variantId], references: [id])
   quantity  Int       @default(0)
+  // Value of the raw materials consumed for this run, at the cost recorded on
+  // the raw materials when production happened (ARGUS #243).
+  materialCost Decimal @default(0) @db.Decimal(12, 2)
   actorId   String
   actor     User      @relation(fields: [actorId], references: [id])
   note      String?

@@ -63,6 +63,8 @@ export interface ProductionPlanView {
 export interface ProductionHistoryItem {
   id: string;
   quantity: number;
+  /** Raw-material value consumed (ARGUS #243). */
+  materialCost: number;
   note: string | null;
   createdAt: string;
   actorName: string;

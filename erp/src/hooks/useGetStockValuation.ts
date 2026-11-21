@@ -11,6 +11,11 @@ interface CategoryBreakdown {
 interface StockValuationData {
   retailValue: number;
   costValue: number;
+  /** Raw-material stock value (ARGUS #243). */
+  rawMaterialValue: number;
+  rawMaterialCount: number;
+  /** costValue + rawMaterialValue. */
+  totalCostValue: number;
   estimatedMargin: number;
   estimatedMarginPercent: number;
   variantCount: number;

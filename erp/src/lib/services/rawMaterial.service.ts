@@ -28,6 +28,7 @@ import {
   assertRawMaterialDeletable,
   assertRawMaterialUnitChangeAllowed,
 } from '@/lib/services/rawMaterialGuards.core';
+import { computeRawMaterialStockValue } from '@/lib/services/rawMaterialValuation.core';
 
 // ── Public list item shape (Decimal → number for the client) ────────────────
 
@@ -41,6 +42,10 @@ export interface RawMaterialItem {
   unitShortLabel: string;
   quantity: number;
   lowStockThreshold: number;
+  /** Cost of one base unit (ARGUS #243). */
+  unitCost: number;
+  /** quantity x unitCost, for raw-material valuation. */
+  stockValue: number;
   description: string | null;
   isActive: boolean;
   createdAt: Date;
@@ -55,6 +60,7 @@ export function toRawMaterialItem(
 ): RawMaterialItem {
   const quantity = m.quantity.toNumber();
   const lowStockThreshold = m.lowStockThreshold.toNumber();
+  const unitCost = m.unitCost.toNumber();
   return {
     id: m.id,
     name: m.name,
@@ -65,6 +71,8 @@ export function toRawMaterialItem(
     unitShortLabel: unit?.shortLabel ?? m.unit,
     quantity,
     lowStockThreshold,
+    unitCost,
+    stockValue: computeRawMaterialStockValue(quantity, unitCost),
     description: m.description,
     isActive: m.isActive,
     createdAt: m.createdAt,
@@ -167,6 +175,7 @@ export interface CreateRawMaterialInput {
   unit: string;
   quantity?: string | undefined;
   lowStockThreshold?: string | undefined;
+  unitCost?: string | undefined;
   description?: string | undefined;
 }
 
@@ -186,6 +195,7 @@ export async function createRawMaterial(
       unit: input.unit,
       quantity: new Prisma.Decimal(input.quantity ?? '0'),
       lowStockThreshold: new Prisma.Decimal(input.lowStockThreshold ?? '0'),
+      unitCost: new Prisma.Decimal(input.unitCost ?? '0'),
       description: input.description?.trim() || null,
     },
   });
@@ -218,6 +228,7 @@ export interface UpdateRawMaterialInput {
   category?: string | undefined;
   unit?: string | undefined;
   lowStockThreshold?: string | undefined;
+  unitCost?: string | undefined;
   description?: string | undefined;
   isActive?: boolean | undefined;
 }
@@ -258,6 +269,9 @@ export async function updateRawMaterial(
         ...(input.unit !== undefined ? { unit: input.unit } : {}),
         ...(input.lowStockThreshold !== undefined
           ? { lowStockThreshold: new Prisma.Decimal(input.lowStockThreshold) }
+          : {}),
+        ...(input.unitCost !== undefined
+          ? { unitCost: new Prisma.Decimal(input.unitCost) }
           : {}),
         ...(input.description !== undefined
           ? { description: input.description.trim() || null }

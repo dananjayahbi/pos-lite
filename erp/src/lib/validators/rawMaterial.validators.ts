@@ -18,6 +18,8 @@ export const CreateRawMaterialSchema = z.object({
   unit: RawMaterialUnitSchema,
   quantity: positiveDecimal.default('0'),
   lowStockThreshold: positiveDecimal.default('0'),
+  // Cost of one base unit; drives raw-material valuation and production COGS.
+  unitCost: positiveDecimal.default('0'),
   description: z.string().trim().max(500).optional(),
 });
 
@@ -28,6 +30,8 @@ export const UpdateRawMaterialSchema = z.object({
   // ARGUS #241: quantity is not editable — stock moves through the adjustment
   // endpoint (delta + reason + audit), never through an absolute overwrite.
   lowStockThreshold: positiveDecimal.optional(),
+  // Cost per base unit. Not a stock movement, so it stays editable (ARGUS #243).
+  unitCost: positiveDecimal.optional(),
   description: z.string().trim().max(500).optional(),
   isActive: z.boolean().optional(),
 });

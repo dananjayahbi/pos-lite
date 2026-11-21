@@ -46,6 +46,7 @@ interface FormState {
   unit: string;
   quantity: string;
   lowStockThreshold: string;
+  unitCost: string;
   description: string;
 }
 
@@ -57,6 +58,7 @@ const EMPTY: FormState = {
   unit: 'LITERS',
   quantity: '0',
   lowStockThreshold: '0',
+  unitCost: '0',
   description: '',
 };
 
@@ -68,6 +70,7 @@ function toFormState(material: RawMaterialItem | null): FormState {
     unit: material.unit,
     quantity: String(material.quantity),
     lowStockThreshold: String(material.lowStockThreshold),
+    unitCost: String(material.unitCost),
     description: material.description ?? '',
   };
 }
@@ -202,6 +205,7 @@ export function RawMaterialFormDialog({
         category: selectedCategory,
         unit: selectedUnit,
         lowStockThreshold: form.lowStockThreshold || '0',
+        unitCost: form.unitCost || '0',
         description: form.description || undefined,
       };
       // ARGUS #241: the edit payload never carries `quantity`; opening stock is
@@ -441,6 +445,30 @@ export function RawMaterialFormDialog({
                 placeholder="0"
               />
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="rm-unit-cost">Cost per unit (Rs)</Label>
+              <Input
+                id="rm-unit-cost"
+                inputMode="decimal"
+                value={form.unitCost}
+                onChange={(e) => setForm({ ...form, unitCost: e.target.value })}
+                placeholder="0.00"
+              />
+              <p className="text-xs text-mist-ink">
+                Used for raw-material valuation and the material cost of production.
+              </p>
+            </div>
+            {isEdit ? (
+              <div className="space-y-2">
+                <Label>Stock value</Label>
+                <div className="flex h-9 items-center rounded-md border border-mist bg-mist/20 px-3 font-body text-sm text-espresso">
+                  Rs {material?.stockValue.toFixed(2)}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="space-y-2">

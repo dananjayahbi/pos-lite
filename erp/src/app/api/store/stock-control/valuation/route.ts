@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const [totals, categoryBreakdown] = await Promise.all([
+    const [totals, categoryBreakdown, rawMaterialTotals] = await Promise.all([
       prisma.$queryRaw<ValuationRow[]>`
         SELECT
           COALESCE(SUM(pv."stockQuantity" * pv."retailPrice"), 0)::text as retail_value,
@@ -76,11 +76,25 @@ export async function GET(request: NextRequest) {
         GROUP BY c.id, c.name
         ORDER BY c.name
       `,
+      prisma.$queryRaw<Array<{ raw_material_value: string; material_count: bigint }>>`
+        SELECT
+          COALESCE(SUM(rm.quantity * rm."unitCost"), 0)::text as raw_material_value,
+          COUNT(*)::bigint as material_count
+        FROM raw_materials rm
+        WHERE rm."tenantId" = ${tenantId}
+          AND rm."deletedAt" IS NULL
+          AND rm."isActive" = true
+      `,
     ]);
 
     const retailValue = parseFloat(totals[0]?.retail_value ?? '0');
     const costValue = parseFloat(totals[0]?.cost_value ?? '0');
     const variantCount = Number(totals[0]?.variant_count ?? 0);
+    // Raw materials live in their own table; include their value so the report
+    // covers the whole inventory (ARGUS #243).
+    const rawMaterialValue = parseFloat(rawMaterialTotals[0]?.raw_material_value ?? '0');
+    const rawMaterialCount = Number(rawMaterialTotals[0]?.material_count ?? 0);
+    const totalCostValue = Math.round((costValue + rawMaterialValue) * 100) / 100;
     const estimatedMargin = retailValue - costValue;
     const estimatedMarginPercent = retailValue > 0 ? (estimatedMargin / retailValue) * 100 : 0;
     const roundedMarginPercent = Math.round(estimatedMarginPercent * 100) / 100;
@@ -100,6 +114,8 @@ export async function GET(request: NextRequest) {
       lines.push('Metric,Value');
       lines.push(`Total Retail Value,${csvCell(retailValue.toFixed(2))}`);
       lines.push(`Total Cost Value,${csvCell(costValue.toFixed(2))}`);
+      lines.push(`Raw Material Value,${csvCell(rawMaterialValue.toFixed(2))}`);
+      lines.push(`Total Inventory Cost Value,${csvCell(totalCostValue.toFixed(2))}`);
       lines.push(`Estimated Margin (Rs.),${csvCell(estimatedMargin.toFixed(2))}`);
       lines.push(`Estimated Margin (%),${csvCell(roundedMarginPercent)}`);
       lines.push('');
@@ -139,6 +155,9 @@ export async function GET(request: NextRequest) {
       data: {
         retailValue,
         costValue,
+        rawMaterialValue,
+        rawMaterialCount,
+        totalCostValue,
         estimatedMargin,
         estimatedMarginPercent: roundedMarginPercent,
         variantCount,
