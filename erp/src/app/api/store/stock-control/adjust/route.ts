@@ -7,6 +7,8 @@ import {
   StockAdjustmentSchema,
   MAX_STOCK_QUANTITY,
 } from '@/lib/validators/product.validators';
+import { isManualAdjustmentReason } from '@/lib/services/manualAdjustment.core';
+import { recordManualAdjustmentSideEffects } from '@/lib/services/inventory.service';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
 export async function POST(request: NextRequest) {
@@ -50,6 +52,23 @@ export async function POST(request: NextRequest) {
     }
 
     const { variantId, quantityDelta, reason, note } = parsed.data;
+
+    // ARGUS #181: the movement enum is wider than the manual-adjustment
+    // allowlist. System-only reasons (SALE, PURCHASE_RECEIVED, INITIAL_STOCK,
+    // STOCK_TAKE_ADJUSTMENT, …) must go through the flow that owns them.
+    if (!isManualAdjustmentReason(reason)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_ADJUSTMENT_REASON',
+            message: `${reason} is a system-managed stock reason and cannot be used for a manual adjustment. Choose Found, Damaged, Stolen, Data Error or Returned to Supplier.`,
+            details: [{ path: 'reason', message: 'Reason is not a manual adjustment reason' }],
+          },
+        },
+        { status: 422 },
+      );
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       const variant = await tx.productVariant.findFirst({
@@ -139,6 +158,16 @@ export async function POST(request: NextRequest) {
         productName,
         sku,
       };
+    });
+
+    // ARGUS #181: the route owns the low-stock notification transaction, so it
+    // must also record the audit entry and emit the webhook the service path
+    // would have written.
+    recordManualAdjustmentSideEffects({
+      tenantId,
+      variantId,
+      actorId: session.user.id,
+      options: { quantityDelta, reason, note },
     });
 
     return NextResponse.json({ success: true, data: result });

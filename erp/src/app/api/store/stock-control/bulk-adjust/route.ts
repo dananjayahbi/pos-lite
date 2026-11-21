@@ -9,6 +9,8 @@ import {
   MAX_STOCK_ADJUSTMENT_DELTA,
   MAX_STOCK_QUANTITY,
 } from '@/lib/validators/product.validators';
+import { isManualAdjustmentReason } from '@/lib/services/manualAdjustment.core';
+import { recordManualAdjustmentSideEffects } from '@/lib/services/inventory.service';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
 const BulkAdjustSchema = z.object({
@@ -73,6 +75,32 @@ export async function POST(request: NextRequest) {
     }
 
     const { adjustments } = parsed.data;
+
+    // ARGUS #181: bulk adjustments are manual too — reject system-only reasons
+    // at the same boundary as the single-adjust route.
+    const invalidReasonIndex = adjustments.findIndex(
+      (adj) => !isManualAdjustmentReason(adj.reason),
+    );
+    if (invalidReasonIndex !== -1) {
+      const invalidReason = adjustments[invalidReasonIndex]!.reason;
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_ADJUSTMENT_REASON',
+            message: `${invalidReason} is a system-managed stock reason and cannot be used for a manual adjustment.`,
+            details: [
+              {
+                path: `adjustments.${invalidReasonIndex}.reason`,
+                message: 'Reason is not a manual adjustment reason',
+              },
+            ],
+          },
+        },
+        { status: 422 },
+      );
+    }
+
     const variantIds = [...new Set(adjustments.map((a) => a.variantId))];
 
     // Validate all variants belong to this tenant
@@ -231,6 +259,21 @@ export async function POST(request: NextRequest) {
         lowStockTriggeredVariantIds,
       };
     });
+
+    // ARGUS #181: one audit entry + webhook per applied manual row, matching
+    // the single-adjust path.
+    for (const adj of adjustments) {
+      recordManualAdjustmentSideEffects({
+        tenantId,
+        variantId: adj.variantId,
+        actorId: session.user.id,
+        options: {
+          quantityDelta: adj.quantityDelta,
+          reason: adj.reason,
+          ...(adj.note !== undefined ? { note: adj.note } : {}),
+        },
+      });
+    }
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {

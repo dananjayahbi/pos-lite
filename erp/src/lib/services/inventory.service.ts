@@ -9,10 +9,11 @@
 
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
-import type { StockMovementReason, StockTakeStatus } from '@/generated/prisma/client';
+import type { StockMovementReason } from '@/generated/prisma/client';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { computeStockTakeApprovalPlan } from '@/lib/services/stockTakeApproval.core';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
+import { isManualAdjustmentReason } from '@/lib/services/manualAdjustment.core';
 
 // ── Transaction Client Type ──────────────────────────────────────────────────
 
@@ -125,33 +126,43 @@ export async function adjustStockInTx(
 
 // ── Step 2: adjustStock ──────────────────────────────────────────────────────
 
-const MANUAL_ADJUSTMENT_REASONS = new Set<string>(['FOUND', 'DAMAGED', 'STOLEN', 'DATA_ERROR', 'RETURNED_TO_SUPPLIER']);
-
 export async function adjustStock(input: AdjustStockInput) {
   const result = await prisma.$transaction(async (tx) => {
     return adjustStockInTx(tx, input.tenantId, input.variantId, input.actorId, input.options);
   });
 
-  if (MANUAL_ADJUSTMENT_REASONS.has(input.options.reason)) {
-    void createAuditLog({
-      tenantId: input.tenantId,
-      actorId: input.actorId,
-      actorRole: 'USER',
-      entityType: 'Stock',
-      entityId: input.variantId,
-      action: AUDIT_ACTIONS.STOCK_ADJUSTED,
-      after: { quantityDelta: input.options.quantityDelta, reason: input.options.reason, note: input.options.note },
-    }).catch(() => {});
-
-    void dispatchWebhooks(input.tenantId, 'stock.adjusted', {
-      variantId: input.variantId,
-      quantityDelta: input.options.quantityDelta,
-      reason: input.options.reason,
-      note: input.options.note ?? null,
-    });
-  }
+  recordManualAdjustmentSideEffects(input);
 
   return result;
+}
+
+/**
+ * ARGUS #181 — audit + webhook for a manual adjustment.
+ *
+ * Extracted so the adjust API route (which owns its low-stock notification
+ * transaction) records the same audit trail as `adjustStock` instead of
+ * silently bypassing it. System-only reasons are ignored: their originating
+ * flows own the audit story.
+ */
+export function recordManualAdjustmentSideEffects(input: AdjustStockInput): void {
+  if (!isManualAdjustmentReason(input.options.reason)) return;
+
+  void createAuditLog({
+    tenantId: input.tenantId,
+    actorId: input.actorId,
+    actorRole: 'USER',
+    entityType: 'Stock',
+    entityId: input.variantId,
+    action: AUDIT_ACTIONS.STOCK_ADJUSTED,
+    after: { quantityDelta: input.options.quantityDelta, reason: input.options.reason, note: input.options.note },
+  }).catch(() => {});
+
+  void dispatchWebhooks(input.tenantId, 'stock.adjusted', {
+    variantId: input.variantId,
+    quantityDelta: input.options.quantityDelta,
+    reason: input.options.reason,
+    note: input.options.note ?? null,
+  });
 }
 
 // ── Step 3: bulkAdjustStock ──────────────────────────────────────────────────
