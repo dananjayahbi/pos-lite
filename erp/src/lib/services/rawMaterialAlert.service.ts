@@ -29,6 +29,13 @@ export interface RawMaterialAlert {
 /**
  * Compute the alert for a raw material row, or `null` when it is not flagged.
  * A material is flagged when quantity is at or below the low-stock threshold.
+ *
+ * ARGUS #260: out-of-stock is unconditionally critical. The previous
+ * `threshold <= 0 → null` short-circuit ran before the stock-state check, so a
+ * material at 0 with threshold 0 counted as Out of stock in the KPI but raised
+ * no alert (the UI allows a threshold of 0). Zero/negative quantity is now
+ * checked first; a positive quantity with no configured threshold still never
+ * alerts.
  */
 export function evaluateRawMaterialAlert(
   material: Pick<RawMaterial, 'quantity' | 'lowStockThreshold'>,
@@ -36,11 +43,12 @@ export function evaluateRawMaterialAlert(
   const quantity = material.quantity.toNumber();
   const threshold = material.lowStockThreshold.toNumber();
 
-  // No threshold configured ⇒ never alert.
+  if (quantity <= 0) return 'CRITICAL';
+
+  // No threshold configured ⇒ a positive quantity is not "low".
   if (threshold <= 0) return null;
 
   const status = getRawMaterialStockStatus(quantity, threshold);
-  if (status === 'OUT') return 'CRITICAL';
   if (status === 'LOW') return 'LOW';
   return null;
 }

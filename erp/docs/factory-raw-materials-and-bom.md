@@ -116,6 +116,13 @@ surface. The list header states both counts, so the KPI cards, alert summary
 and list cannot disagree. `raw-materials` is no longer requested by the
 dashboard itself.
 
+### Zero-threshold out-of-stock alerts (ARGUS #260)
+
+`evaluateRawMaterialAlert()` checks `quantity <= 0` before the threshold guard,
+so a material at zero with a configured threshold of `0` raises `CRITICAL`
+instead of silently disappearing from the alerts panel. A positive quantity
+with no threshold still never alerts.
+
 ## Migration
 
 - `prisma/migrations/20261101000000_add_raw_material_categories_and_units`
