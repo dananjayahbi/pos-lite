@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,11 +11,13 @@ import {
   toDeliveryLineRows,
   toLineInputs,
 } from './deliveryLineItems';
-import { useCancelDelivery, useShipmentTracking } from '@/hooks/delivery';
+import { useShipmentTracking } from '@/hooks/delivery';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StatusBadge } from './StatusBadge';
 import { StatusTimeline } from './StatusTimeline';
+import { CancelDeliveryDialog } from './CancelDeliveryDialog';
+import { canCancelDelivery } from './cancelDelivery';
 import {
   summarizeShipmentDeliveryStatus,
   type ShipmentDeliverySummary,
@@ -231,10 +234,11 @@ function ShipmentStatusCard({
 }
 
 export function DeliveryDetailPanel({ delivery }: DeliveryDetailPanelProps) {
-  const cancel = useCancelDelivery();
   const { hasPermission } = usePermissions();
-  const canCancel = hasPermission(PERMISSIONS.DELIVERY.cancelDelivery);
-  const isPending = delivery.status === 'PENDING_DISPATCH';
+  const canCancel =
+    hasPermission(PERMISSIONS.DELIVERY.cancelDelivery) &&
+    canCancelDelivery(delivery.status);
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   const shipment = delivery.shipments?.[0] ?? null;
   const tracking = useShipmentTracking(shipment?.id ?? null, delivery.id);
@@ -260,21 +264,23 @@ export function DeliveryDetailPanel({ delivery }: DeliveryDetailPanelProps) {
 
         <RecoverySection delivery={delivery} />
 
-        {canCancel && isPending && (
+        {canCancel && (
           <Button
             variant="outline"
             className="text-terracotta"
-            onClick={() => cancel.mutate({ id: delivery.id })}
-            disabled={cancel.isPending}
-            aria-busy={cancel.isPending}
+            onClick={() => setCancelOpen(true)}
+            data-testid="delivery-cancel-button"
           >
-            {cancel.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" data-testid="loading-spinner" />
-            ) : null}
-            {cancel.isPending ? 'Cancelling…' : 'Cancel Delivery'}
+            Cancel Delivery
           </Button>
         )}
       </div>
+
+      <CancelDeliveryDialog
+        delivery={delivery}
+        open={cancelOpen}
+        onClose={() => setCancelOpen(false)}
+      />
     </div>
   );
 }

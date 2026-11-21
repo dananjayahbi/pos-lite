@@ -3,23 +3,17 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { formatRupee } from '@/lib/format';
 import { collectableCodAmount } from '@/lib/delivery/cod';
 import { StatusBadge } from './StatusBadge';
 import { FailureReasonTag } from './FailureReasonTag';
 import { DispatchSheet } from './DispatchSheet';
+import { CancelDeliveryDialog } from './CancelDeliveryDialog';
+import { canCancelDelivery } from './cancelDelivery';
 import { printShippingLabel } from './labels/ShippingLabel';
 import { printOrderInvoice } from './invoices/printOrderInvoice';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useCancelDelivery, useLabelTemplate } from '@/hooks/delivery';
+import { useLabelTemplate } from '@/hooks/delivery';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import {
   canPrintWaybill,
@@ -31,8 +25,6 @@ import type { DeliveryListItem } from '@/types/delivery';
 interface DeliveryTableProps {
   deliveries: DeliveryListItem[];
 }
-
-const PENDING_STATUSES = ['PLACED', 'PENDING_DISPATCH', 'HOLD'];
 
 function formatDate(value?: string | null) {
   if (!value) return '-';
@@ -67,7 +59,6 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
 
   const [dispatchTarget, setDispatchTarget] = useState<DeliveryListItem | null>(null);
   const [cancelTarget, setCancelTarget] = useState<DeliveryListItem | null>(null);
-  const cancelDelivery = useCancelDelivery();
 
   return (
     <>
@@ -107,7 +98,7 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
             {deliveries.map((d) => {
               const shipment = d.shipments?.[0];
               const waybill = d.waybill ?? shipment?.waybillId;
-              const isPending = PENDING_STATUSES.includes(d.status);
+              const isPending = canCancelDelivery(d.status);
               return (
                 <tr
                   key={d.id}
@@ -200,35 +191,11 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
         onClose={() => setDispatchTarget(null)}
       />
 
-      <Dialog open={cancelTarget !== null} onOpenChange={(open) => !open && setCancelTarget(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="font-display">Cancel delivery</DialogTitle>
-            <DialogDescription>
-              Cancel {cancelTarget?.orderRef}? Reserved stock will be returned to inventory. This
-              cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelTarget(null)}>
-              Keep delivery
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={cancelDelivery.isPending}
-              onClick={() => {
-                if (!cancelTarget) return;
-                cancelDelivery.mutate(
-                  { id: cancelTarget.id },
-                  { onSuccess: () => setCancelTarget(null) },
-                );
-              }}
-            >
-              {cancelDelivery.isPending ? 'Cancelling...' : 'Cancel delivery'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CancelDeliveryDialog
+        delivery={cancelTarget}
+        open={!!cancelTarget}
+        onClose={() => setCancelTarget(null)}
+      />
     </>
   );
 }
