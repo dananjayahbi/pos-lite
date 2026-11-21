@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { updatePromotion, deactivatePromotion, setPromotionActive } from '@/lib/services/promotion.service';
 import { UpdatePromotionSchema } from '@/lib/validators/promotion.validators';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function PATCH(
   request: Request,
@@ -58,11 +59,10 @@ export async function PATCH(
 
     const promotion = await updatePromotion(tenantId, id, parsed.data);
     return NextResponse.json({ success: true, data: promotion });
-  } catch {
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to update promotion' } },
-      { status: 500 },
-    );
+  } catch (error) {
+    // ARGUS #328/#330: foreign/missing ids are 404 NOT_FOUND (not 500), and
+    // duplicate promo codes are 409 CONFLICT.
+    return toErrorResponse(error, 'PATCH /api/store/promotions/[id]');
   }
 }
 
@@ -97,10 +97,7 @@ export async function DELETE(
 
     const promotion = await deactivatePromotion(tenantId, id, session.user.id);
     return NextResponse.json({ success: true, data: promotion });
-  } catch {
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to deactivate promotion' } },
-      { status: 500 },
-    );
+  } catch (error) {
+    return toErrorResponse(error, 'DELETE /api/store/promotions/[id]');
   }
 }

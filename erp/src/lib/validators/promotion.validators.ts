@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+import { promotionTypeIssues } from '@/lib/services/promotionValidation.core';
+import { isValidWindowInput, windowIssues } from '@/lib/services/promotionWindow.core';
+
 /**
  * M15-02 (BUG-47) — `value` is bounded per promotion `type`.
  *
@@ -123,51 +126,127 @@ function assertValueBounds(
   }
 }
 
-const PromotionBaseSchema = z.object({
+/**
+ * ARGUS #328 — a typed date contract at the request boundary. Anything that
+ * is not a real calendar day or a parseable ISO datetime is a 400
+ * VALIDATION_ERROR instead of an Invalid Date reaching Prisma (which used to
+ * surface as a 500).
+ */
+const PromotionDateSchema = z
+  .string()
+  .trim()
+  .refine(
+    isValidWindowInput,
+    'Must be a valid date (YYYY-MM-DD or ISO datetime)',
+  );
+
+/** Create: '' (untouched date input) → undefined → NULL (open bound). */
+const CreateWindowDateSchema = z
+  .union([z.literal(''), PromotionDateSchema])
+  .optional()
+  .transform((value) => (value === '' ? undefined : value));
+
+/** Update: '' / explicit null → NULL (clear the bound); undefined = untouched. */
+const UpdateWindowDateSchema = z
+  .union([z.literal(''), z.null(), PromotionDateSchema])
+  .optional()
+  .transform((value) => (value === '' ? null : value));
+
+/**
+ * ARGUS #330 — an empty string is the form's "not selected" sentinel and
+ * normalizes to undefined on create; on update it clears the nullable column.
+ */
+const CreateNullableIdSchema = z
+  .union([z.literal(''), z.string().trim().min(1)])
+  .optional()
+  .transform((value) => (value === '' ? undefined : value));
+
+const UpdateNullableIdSchema = z
+  .union([z.literal(''), z.null(), z.string().trim().min(1)])
+  .optional()
+  .transform((value) => (value === '' ? null : value));
+
+const PromotionFields = {
   name: z.string().min(1).max(100),
-  type: z.enum(['CART_PERCENTAGE', 'CART_FIXED', 'CATEGORY_PERCENTAGE', 'PRODUCT_PERCENTAGE', 'PRODUCT_FIXED', 'BOGO', 'MIX_AND_MATCH', 'PROMO_CODE']),
+  type: z.enum([
+    'CART_PERCENTAGE',
+    'CART_FIXED',
+    'CATEGORY_PERCENTAGE',
+    'PRODUCT_PERCENTAGE',
+    'PRODUCT_FIXED',
+    'BOGO',
+    'MIX_AND_MATCH',
+    'PROMO_CODE',
+  ]),
   value: z.number().min(0),
-  promoCode: z.string().max(50).optional(),
-  targetCategoryId: z.string().optional(),
-  targetProductId: z.string().optional(),
+  promoCode: z.string().trim().max(50).optional(),
+  targetCategoryId: CreateNullableIdSchema,
+  targetProductId: CreateNullableIdSchema,
   // M15-02: int column bound; min stays 1 because `evaluateBOGO` divides by
   // `minQuantity` (0 would make free units Infinity).
   minQuantity: z.number().int().min(1).max(MAX_MIN_QUANTITY).optional(),
-  startsAt: z.string().optional(),
-  endsAt: z.string().optional(),
+  startsAt: CreateWindowDateSchema,
+  endsAt: CreateWindowDateSchema,
+  isActive: z.boolean().optional(),
+  description: z.string().max(500).optional(),
+};
+
+const PromotionBaseSchema = z.object(PromotionFields);
+
+/**
+ * PATCH contract: same field shapes, every field optional, and the value/date
+ * bounds still applied. Built from its own shape (rather than
+ * `CreatePromotionSchema.partial()`) so the null/undefined transforms and the
+ * refinements are attached explicitly and cannot be dropped by `.partial()`.
+ */
+const PromotionUpdateBaseSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  type: PromotionFields.type.optional(),
+  value: z.number().min(0).optional(),
+  promoCode: z.string().trim().max(50).optional(),
+  targetCategoryId: UpdateNullableIdSchema,
+  targetProductId: UpdateNullableIdSchema,
+  minQuantity: z.number().int().min(1).max(MAX_MIN_QUANTITY).optional(),
+  startsAt: UpdateWindowDateSchema,
+  endsAt: UpdateWindowDateSchema,
   isActive: z.boolean().optional(),
   description: z.string().max(500).optional(),
 });
 
-/**
- * ARGUS #324: a free-item promotion must name what it applies to. Without a
- * target the evaluator skips it rather than giving a free unit on every line.
- */
-function assertFreeItemTarget(
-  data: { type?: string | undefined; targetProductId?: string | undefined; targetCategoryId?: string | undefined },
+type PromotionWindowInput = {
+  startsAt?: string | null | undefined;
+  endsAt?: string | null | undefined;
+};
+
+/** Shared refinements: value bounds, type requirements, window order. */
+function applyPromotionRefinements(
+  data: PromotionWindowInput & {
+    type?: string | undefined;
+    value?: number | undefined;
+    promoCode?: string | undefined;
+    targetCategoryId?: string | null | undefined;
+    targetProductId?: string | null | undefined;
+  },
   ctx: z.RefinementCtx,
 ): void {
-  if (data.type !== 'BOGO' && data.type !== 'MIX_AND_MATCH') return;
-  if (data.targetProductId || data.targetCategoryId) return;
-  ctx.addIssue({
-    code: 'custom',
-    path: ['targetProductId'],
-    message: 'Select a target product or category for a free-item promotion',
-  });
+  assertValueBounds(data, ctx);
+
+  for (const issue of promotionTypeIssues(data)) {
+    ctx.addIssue({ code: 'custom', path: [issue.path], message: issue.message });
+  }
+
+  for (const issue of windowIssues(data.startsAt, data.endsAt)) {
+    ctx.addIssue({ code: 'custom', path: [issue.path], message: issue.message });
+  }
 }
 
-export const CreatePromotionSchema = PromotionBaseSchema.superRefine((data, ctx) => {
-  assertValueBounds(data, ctx);
-  assertFreeItemTarget(data, ctx);
-});
+export const CreatePromotionSchema = PromotionBaseSchema.superRefine(
+  applyPromotionRefinements,
+);
 
-/**
- * PATCH contract: same field shapes, every field optional, and the value bounds
- * still applied. It is built from the base shape (rather than
- * `CreatePromotionSchema.partial()`) so the refinement is attached explicitly
- * and cannot be dropped by the `.partial()` projection.
- */
-export const UpdatePromotionSchema = PromotionBaseSchema.partial().superRefine(assertValueBounds);
+export const UpdatePromotionSchema = PromotionUpdateBaseSchema.superRefine(
+  applyPromotionRefinements,
+);
 
 export const EvaluateCartSchema = z.object({
   cartLines: z.array(z.object({
@@ -182,5 +261,7 @@ export const EvaluateCartSchema = z.object({
 });
 
 export type CreatePromotionInput = z.infer<typeof CreatePromotionSchema>;
+/** Raw form shape before the schema's '' -> undefined/null normalization. */
+export type CreatePromotionFormValues = z.input<typeof CreatePromotionSchema>;
 export type UpdatePromotionInput = z.infer<typeof UpdatePromotionSchema>;
 export type EvaluateCartInput = z.infer<typeof EvaluateCartSchema>;

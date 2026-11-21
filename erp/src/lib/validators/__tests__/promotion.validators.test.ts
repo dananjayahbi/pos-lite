@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { CreatePromotionSchema } from '@/lib/validators/promotion.validators';
+import { CreatePromotionSchema, UpdatePromotionSchema } from '@/lib/validators/promotion.validators';
 
 describe('CreatePromotionSchema free-item promotions (ARGUS #324)', () => {
   it('accepts a BOGO with a cap, buy quantity and target', () => {
@@ -110,6 +110,135 @@ describe('CreatePromotionSchema product promotions', () => {
     expect(parsed.success).toBe(false);
     if (!parsed.success) {
       expect(parsed.error.issues[0]?.path).toEqual(['value']);
+    }
+  });
+});
+
+describe('CreatePromotionSchema windows (ARGUS #327)', () => {
+  it('accepts a same-day date-only window', () => {
+    const parsed = CreatePromotionSchema.safeParse({
+      name: 'One day sale',
+      type: 'CART_PERCENTAGE',
+      value: 10,
+      startsAt: '2026-10-29',
+      endsAt: '2026-10-29',
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it('rejects an end date before the start date', () => {
+    const parsed = CreatePromotionSchema.safeParse({
+      name: 'Backwards',
+      type: 'CART_PERCENTAGE',
+      value: 10,
+      startsAt: '2026-10-29',
+      endsAt: '2026-10-28',
+    });
+
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.path).toEqual(['endsAt']);
+      expect(parsed.error.issues[0]?.message).toMatch(/after the start/i);
+    }
+  });
+
+  it('rejects a malformed start date as a typed validation issue', () => {
+    const parsed = CreatePromotionSchema.safeParse({
+      name: 'Bad date',
+      type: 'CART_PERCENTAGE',
+      value: 10,
+      startsAt: 'not-a-date',
+    });
+
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.path).toEqual(['startsAt']);
+    }
+  });
+
+  it('normalizes blank create bounds to undefined (open bound)', () => {
+    const parsed = CreatePromotionSchema.safeParse({
+      name: 'Open',
+      type: 'CART_PERCENTAGE',
+      value: 10,
+      startsAt: '',
+      endsAt: '',
+    });
+
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.startsAt).toBeUndefined();
+      expect(parsed.data.endsAt).toBeUndefined();
+    }
+  });
+
+  it('lets PATCH clear a bound with null / empty and validates only supplied bounds', () => {
+    const cleared = UpdatePromotionSchema.safeParse({ startsAt: null, endsAt: '' });
+    expect(cleared.success).toBe(true);
+    if (cleared.success) {
+      expect(cleared.data.startsAt).toBeNull();
+      expect(cleared.data.endsAt).toBeNull();
+    }
+
+    const backwards = UpdatePromotionSchema.safeParse({
+      startsAt: '2026-10-29',
+      endsAt: '2026-10-28',
+    });
+    expect(backwards.success).toBe(false);
+  });
+});
+
+describe('CreatePromotionSchema conditional requirements (ARGUS #330)', () => {
+  it('requires a code for PROMO_CODE', () => {
+    const parsed = CreatePromotionSchema.safeParse({
+      name: 'No code',
+      type: 'PROMO_CODE',
+      value: 10,
+    });
+
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.path).toEqual(['promoCode']);
+    }
+  });
+
+  it('accepts PROMO_CODE with a code', () => {
+    expect(
+      CreatePromotionSchema.safeParse({
+        name: 'Summer',
+        type: 'PROMO_CODE',
+        value: 10,
+        promoCode: 'SUMMER10',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('requires a category for CATEGORY_PERCENTAGE', () => {
+    const parsed = CreatePromotionSchema.safeParse({
+      name: 'No category',
+      type: 'CATEGORY_PERCENTAGE',
+      value: 10,
+    });
+
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.path).toEqual(['targetCategoryId']);
+    }
+  });
+
+  it('requires a product for PRODUCT_PERCENTAGE and PRODUCT_FIXED', () => {
+    for (const type of ['PRODUCT_PERCENTAGE', 'PRODUCT_FIXED']) {
+      const parsed = CreatePromotionSchema.safeParse({
+        name: 'No product',
+        type,
+        value: 10,
+      });
+
+      expect(parsed.success, type).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues[0]?.path).toEqual(['targetProductId']);
+      }
     }
   });
 });

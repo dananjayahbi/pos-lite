@@ -16,6 +16,10 @@ import {
 import { AddCustomerPricingRuleDialog } from './AddCustomerPricingRuleDialog';
 import { CustomerPricingRow } from './CustomerPricingRow';
 import type { CustomerPricingRuleDraft, CustomerPricingRuleRow } from './customerPricing.types';
+import {
+  getPromotionLiveState,
+  isPromotionLive,
+} from '@/lib/services/promotionLiveState.core';
 
 /**
  * M15-01 (BUG-46) — Customer pricing tab.
@@ -105,7 +109,10 @@ export function CustomerPricingTab() {
   });
 
   const rules = data ?? [];
-  const activeCount = rules.filter((rule) => rule.isActive).length;
+  // ARGUS #329: only rules that are on AND inside their window apply now.
+  const activeCount = rules.filter((rule) =>
+    isPromotionLive(getPromotionLiveState(rule)),
+  ).length;
 
   return (
     <section className="space-y-4" aria-label="Customer pricing">
@@ -113,8 +120,8 @@ export function CustomerPricingTab() {
         <div>
           <h2 className="font-display text-lg text-espresso">Customer Pricing</h2>
           <p className="font-body text-sm text-mist-ink">
-            {activeCount} active rule{activeCount === 1 ? '' : 's'} - tagged customers get the
-            rule price when it is below the normal selling price.
+            {activeCount} rule{activeCount === 1 ? '' : 's'} active now - tagged customers get
+            the rule price when it is below the normal selling price.
           </p>
         </div>
         <Button

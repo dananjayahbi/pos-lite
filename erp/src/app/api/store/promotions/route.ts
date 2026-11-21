@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getPromotions, createPromotion } from '@/lib/services/promotion.service';
 import { CreatePromotionSchema } from '@/lib/validators/promotion.validators';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function GET() {
   try {
@@ -35,11 +36,9 @@ export async function GET() {
 
     const promotions = await getPromotions(tenantId);
     return NextResponse.json({ success: true, data: promotions });
-  } catch {
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch promotions' } },
-      { status: 500 },
-    );
+  } catch (error) {
+    // ARGUS #328: typed 400/404/409 envelope instead of a blanket 500.
+    return toErrorResponse(error, 'GET /api/store/promotions');
   }
 }
 
@@ -79,10 +78,9 @@ export async function POST(request: Request) {
 
     const promotion = await createPromotion(tenantId, parsed.data);
     return NextResponse.json({ success: true, data: promotion }, { status: 201 });
-  } catch {
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to create promotion' } },
-      { status: 500 },
-    );
+  } catch (error) {
+    // ARGUS #328/#330: validation, duplicate promo code and Prisma errors get
+    // their typed status; only truly unexpected failures stay 500.
+    return toErrorResponse(error, 'POST /api/store/promotions');
   }
 }

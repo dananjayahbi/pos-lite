@@ -5,6 +5,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { TableCell, TableRow } from '@/components/ui/table';
 import type { CustomerPricingRuleRow } from './customerPricing.types';
+import {
+  getPromotionLiveState,
+  PROMOTION_LIVE_STATE_LABELS,
+  type PromotionLiveState,
+} from '@/lib/services/promotionLiveState.core';
 
 /**
  * M15-01 (BUG-46) — one customer pricing rule row.
@@ -25,9 +30,25 @@ function formatWindow(startsAt: string | null, endsAt: string | null): string {
       year: 'numeric',
     });
   if (!startsAt && !endsAt) return 'Always';
-  if (startsAt && endsAt) return `${fmt(startsAt)} – ${fmt(endsAt)}`;
+  if (startsAt && endsAt) return `${fmt(startsAt)} - ${fmt(endsAt)}`;
   if (startsAt) return `From ${fmt(startsAt)}`;
   return `Until ${fmt(endsAt as string)}`;
+}
+
+function liveStateClasses(state: PromotionLiveState): string {
+  switch (state) {
+    case 'ACTIVE_NOW':
+      return 'bg-green-50 text-green-700';
+    case 'ENABLED':
+      return 'bg-sand text-espresso';
+    case 'SCHEDULED':
+      return 'bg-amber-50 text-amber-800';
+    case 'EXPIRED':
+      return 'bg-red-50 text-[#9B2226]';
+    case 'INACTIVE':
+    default:
+      return 'bg-mist/20 text-mist-ink';
+  }
 }
 
 interface CustomerPricingRowProps {
@@ -37,6 +58,7 @@ interface CustomerPricingRowProps {
 }
 
 export function CustomerPricingRow({ rule, onDeactivate, isDeactivating }: CustomerPricingRowProps) {
+  const liveState = getPromotionLiveState(rule);
   const variantLabel = rule.variant
     ? `${rule.variant.product.name} - ${rule.variant.sku}`
     : 'All variants';
@@ -70,9 +92,9 @@ export function CustomerPricingRow({ rule, onDeactivate, isDeactivating }: Custo
       <TableCell>
         <Badge
           variant="secondary"
-          className={`font-body text-xs ${rule.isActive ? 'bg-green-50 text-green-700' : 'bg-mist/20 text-mist-ink'}`}
+          className={`font-body text-xs ${liveStateClasses(liveState)}`}
         >
-          {rule.isActive ? 'Active' : 'Inactive'}
+          {PROMOTION_LIVE_STATE_LABELS[liveState]}
         </Badge>
       </TableCell>
       <TableCell>
