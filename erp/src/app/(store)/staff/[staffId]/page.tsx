@@ -50,6 +50,13 @@ import { maskBankAccountNumber } from '@/lib/services/staffPrivacy.core';
 import { TimeClockHistoryPanel } from '@/components/staff/TimeClockHistoryPanel';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { extraPermissions } from '@/lib/services/permissionSet.core';
+import { describeApiFailure, readJsonBody } from '@/lib/api/safe-response';
+import {
+  STAFF_DETAIL_FALLBACK,
+  StaffRequestError,
+  classifyStaffDetailFailure,
+  staffDetailErrorTitle,
+} from '@/lib/staff/staffPageState.core';
 import type { UpdateStaffInput } from '@/lib/validators/staff.validators';
 
 
@@ -155,12 +162,30 @@ export default function StaffDetailPage({
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [month, setMonth] = useState(currentMonth);
 
-  const { data, isLoading } = useQuery<{ success: boolean; data: StaffDetail }>({
+  const { data, isLoading, error, refetch } = useQuery<{
+    success: boolean;
+    data: StaffDetail;
+  }>({
     queryKey: ['staff-detail', staffId],
     queryFn: async () => {
       const res = await fetch(`/api/store/staff/${staffId}`);
-      if (!res.ok) throw new Error('Failed to fetch staff member');
-      return res.json();
+      const parsed = await readJsonBody<{
+        success: boolean;
+        data: StaffDetail;
+        error?: { message?: string };
+      }>(res);
+      if (!res.ok || !parsed.ok || !parsed.value?.success) {
+        throw new StaffRequestError(
+          describeApiFailure({
+            ok: res.ok,
+            status: res.status,
+            body: parsed.ok ? parsed.value : null,
+            fallback: STAFF_DETAIL_FALLBACK,
+          }),
+          res.status,
+        );
+      }
+      return parsed.value;
     },
   });
 
@@ -182,6 +207,37 @@ export default function StaffDetailPage({
       <div className="space-y-6 p-6 md:p-8">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-32 w-full" />
+      </div>
+    );
+  }
+
+  if (error) {
+    const status = error instanceof StaffRequestError ? error.status : 500;
+    const kind = classifyStaffDetailFailure(status);
+    return (
+      <div className="mx-auto max-w-md space-y-4 py-20 text-center">
+        <p className="font-display text-xl font-bold text-espresso">
+          {staffDetailErrorTitle(kind)}
+        </p>
+        <p className="text-sm text-sand-ink">
+          {error instanceof Error ? error.message : 'Please try again.'}
+        </p>
+        <div className="flex justify-center gap-2">
+          {kind !== 'not-found' && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void refetch();
+              }}
+            >
+              Retry
+            </Button>
+          )}
+          <Button variant="outline" asChild>
+            <Link href="/staff">Back to Staff</Link>
+          </Button>
+        </div>
       </div>
     );
   }

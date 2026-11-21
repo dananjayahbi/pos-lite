@@ -11,6 +11,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Table,
   TableBody,
   TableCell,
@@ -28,6 +35,7 @@ import {
   type AttendanceDisplayStatus,
 } from '@/lib/attendance/attendanceCalendar.core';
 import { summarizeDailyAttendance } from '@/lib/attendance/attendanceSummary.core';
+import { summarizePunchIntervals } from '@/lib/attendance/punchIntervals.core';
 import {
   AttendanceStatusDialog,
   type AttendanceStatusValue,
@@ -55,6 +63,8 @@ interface AttendanceRow {
   totalMinutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
+  /** Explicit status cleared or capped the punched minutes (ARGUS #358). */
+  hoursAdjusted: boolean;
   needsReview: boolean;
   records: AttendanceRecord[];
   attendance: { id: string; status: AttendanceStatusValue; notes: string | null } | null;
@@ -129,6 +139,7 @@ export default function TimeclockPage() {
   const [date, setDate] = useState(todayYmd());
   const [adjustRow, setAdjustRow] = useState<AttendanceRow | null>(null);
   const [statusRow, setStatusRow] = useState<AttendanceRow | null>(null);
+  const [punchesRow, setPunchesRow] = useState<AttendanceRow | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery<{
     success: boolean;
@@ -225,6 +236,10 @@ export default function TimeclockPage() {
     queryClient.invalidateQueries({ queryKey: ['attendance-settings'] });
     queryClient.invalidateQueries({ queryKey: ['timeclock-me'] });
   };
+
+  const punchesSummary = punchesRow
+    ? summarizePunchIntervals(punchesRow.records)
+    : null;
 
   return (
     <div className="space-y-6 p-6">
@@ -398,6 +413,7 @@ export default function TimeclockPage() {
             {Array.from({ length: 5 }).map((_, index) => (
               <Skeleton key={index} className="h-14 w-full" />
             ))}
+
           </div>
         ) : error ? null : (
           <Card>
@@ -413,6 +429,7 @@ export default function TimeclockPage() {
                     <TableHead className="text-espresso">Status</TableHead>
                     <TableHead className="text-espresso">Clock In</TableHead>
                     <TableHead className="text-espresso">Clock Out</TableHead>
+                    <TableHead className="text-espresso">Punches</TableHead>
                     <TableHead className="text-right text-espresso">Worked</TableHead>
                     <TableHead className="text-right text-espresso">OT</TableHead>
                     <TableHead className="text-right text-espresso">Actions</TableHead>
@@ -421,7 +438,7 @@ export default function TimeclockPage() {
                 <TableBody>
                   {rows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="py-10 text-center text-sand-ink">
+                      <TableCell colSpan={9} className="py-10 text-center text-sand-ink">
                         No active staff found.
                       </TableCell>
                     </TableRow>
@@ -462,8 +479,29 @@ export default function TimeclockPage() {
                           <TableCell className="font-mono text-sm">
                             {row.clockOutAt ? formatTime(row.clockOutAt) : '-'}
                           </TableCell>
+                          <TableCell>
+                            {row.records.length > 0 ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-auto px-1.5 py-0.5 font-mono text-xs text-espresso"
+                                onClick={() => setPunchesRow(row)}
+                                title="Show every punch for this day"
+                              >
+                                {row.records.length}
+                                {row.records.length > 1 ? ' punches' : ' punch'}
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-sand-ink">-</span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right font-mono text-sm">
-                            {row.totalMinutes > 0 ? formatMinutes(row.totalMinutes) : '-'}
+                            <p>{row.totalMinutes > 0 ? formatMinutes(row.totalMinutes) : '-'}</p>
+                            {row.hoursAdjusted ? (
+                              <p className="text-[10px] font-body text-sand-ink">
+                                by {STATUS_LABEL[row.status]}
+                              </p>
+                            ) : null}
                           </TableCell>
                           <TableCell
                             className={`text-right font-mono text-sm ${
@@ -510,6 +548,76 @@ export default function TimeclockPage() {
           </Card>
         )}
       </ErrorBoundary>
+
+      <Dialog open={punchesRow !== null} onOpenChange={(open) => !open && setPunchesRow(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display">Punches for the day</DialogTitle>
+            <DialogDescription>
+              {punchesRow
+                ? `${punchesRow.fullName ?? staffDisplayName(punchesRow.email)} on ${date}. The table shows the earliest clock-in and latest clock-out; every interval and the gaps between them are listed here.`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          {punchesSummary ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="rounded-lg border border-mist p-3">
+                  <p className="text-xs uppercase tracking-wide text-sand-ink">Punches</p>
+                  <p className="font-display text-xl text-espresso">{punchesSummary.count}</p>
+                </div>
+                <div className="rounded-lg border border-mist p-3">
+                  <p className="text-xs uppercase tracking-wide text-sand-ink">Worked</p>
+                  <p className="font-display text-xl text-espresso">
+                    {formatMinutes(punchesSummary.workedMinutes)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-mist p-3">
+                  <p className="text-xs uppercase tracking-wide text-sand-ink">Gaps</p>
+                  <p className="font-display text-xl text-espresso">
+                    {formatMinutes(punchesSummary.gapMinutes)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-mist">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-linen/40">
+                      <TableHead className="text-espresso">Clock In</TableHead>
+                      <TableHead className="text-espresso">Clock Out</TableHead>
+                      <TableHead className="text-right text-espresso">Duration</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {punchesSummary.intervals.map((punch) => (
+                      <TableRow key={punch.id}>
+                        <TableCell className="font-mono text-sm">
+                          {formatTime(punch.startAt)}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {punch.isOpen ? 'Active' : formatTime(punch.endAt)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          {formatMinutes(punch.minutes)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {punchesSummary.hasMultiple ? (
+                <p className="text-xs text-sand-ink">
+                  First-to-last span: {formatMinutes(punchesSummary.spanMinutes)}. The difference
+                  of {formatMinutes(punchesSummary.gapMinutes)} is time between punches, not
+                  worked time.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <AttendanceAdjustDialog
         open={adjustRow !== null}

@@ -29,6 +29,8 @@ import {
   startOfLocalWeek,
   summarizeTimeClockHours,
 } from '@/lib/attendance/timeclockSummary.core';
+import { buildSelfPunchAuditAfter } from '@/lib/attendance/selfPunchAudit.core';
+import { applyStatusOverrideToMinutes } from '@/lib/attendance/attendanceMinutes.core';
 
 /** A standard full day. Anything beyond this is overtime (OT). */
 export const STANDARD_WORKDAY_MINUTES = 8 * 60;
@@ -55,6 +57,8 @@ export interface DailyAttendanceRow {
   totalMinutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
+  /** True when an explicit status cleared/capped the punched minutes. */
+  hoursAdjusted: boolean;
   /** At least one open punch is beyond the maximum shift (ARGUS #351). */
   needsReview: boolean;
   records: AttendanceClockRecord[];
@@ -250,6 +254,8 @@ export interface ClockInOptions {
    * conflict; never invented silently.
    */
   closePreviousPunchAt?: string | undefined;
+  /** Session role for the ARGUS #357 self-punch audit row. */
+  actorRole?: string | undefined;
 }
 
 export async function clockIn(
@@ -348,11 +354,29 @@ export async function clockIn(
     return { timeClock, closed };
   });
 
+  // ARGUS #357: every self clock-in is audited, including the actor role and
+  // the exact punch time. The TimeClock row remains the payroll source.
+  void createAuditLog({
+    tenantId,
+    actorId: userId,
+    actorRole: options.actorRole ?? 'UNKNOWN',
+    entityType: 'TimeClock',
+    entityId: result.timeClock.id,
+    action: AUDIT_ACTIONS.ATTENDANCE_CLOCKED_IN,
+    after: buildSelfPunchAuditAfter({
+      direction: 'IN',
+      userId,
+      timeClockId: result.timeClock.id,
+      occurredAt: result.timeClock.clockedInAt,
+      shiftId: shiftId ?? result.timeClock.shiftId,
+    }) as Prisma.InputJsonValue,
+  }).catch(() => {});
+
   if (result.closed) {
     void createAuditLog({
       tenantId,
       actorId: userId,
-      actorRole: 'UNKNOWN',
+      actorRole: options.actorRole ?? 'UNKNOWN',
       entityType: 'TimeClock',
       entityId: result.closed.id,
       action: AUDIT_ACTIONS.ATTENDANCE_ADJUSTED,
@@ -367,10 +391,15 @@ export async function clockIn(
   return result.timeClock;
 }
 
-export async function clockOut(tenantId: string, userId: string, notes?: string | undefined) {
+export async function clockOut(
+  tenantId: string,
+  userId: string,
+  notes?: string | undefined,
+  actorRole?: string | undefined,
+) {
   const calendar = await readAttendanceCalendar(tenantId);
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUnique({
       where: { id: userId },
       select: { clockedInAt: true },
@@ -418,7 +447,7 @@ export async function clockOut(tenantId: string, userId: string, notes?: string 
       void createAuditLog({
         tenantId,
         actorId: userId,
-        actorRole: 'UNKNOWN',
+        actorRole: actorRole ?? 'UNKNOWN',
         entityType: 'TimeClock',
         entityId: openEntry.id,
         action: AUDIT_ACTIONS.ATTENDANCE_PUNCH_AUTO_CAPPED,
@@ -433,6 +462,28 @@ export async function clockOut(tenantId: string, userId: string, notes?: string 
 
     return { ...timeClock, durationMinutes, cappedAtMaxShift: capped };
   });
+
+  // ARGUS #357: audit every self clock-out. The source TimeClock row is
+  // untouched; this row carries the actor, method and timestamp.
+  void createAuditLog({
+    tenantId,
+    actorId: userId,
+    actorRole: actorRole ?? 'UNKNOWN',
+    entityType: 'TimeClock',
+    entityId: result.id,
+    action: AUDIT_ACTIONS.ATTENDANCE_CLOCKED_OUT,
+    after: buildSelfPunchAuditAfter({
+      direction: 'OUT',
+      userId,
+      timeClockId: result.id,
+      occurredAt: result.clockedOutAt ?? new Date(),
+      durationMinutes: result.durationMinutes,
+      cappedAtMaxShift: result.cappedAtMaxShift,
+      notes,
+    }) as Prisma.InputJsonValue,
+  }).catch(() => {});
+
+  return result;
 }
 
 export async function getTimeClockHistory(
@@ -571,6 +622,12 @@ export async function getDailyAttendance(
       calendar,
       employedFrom: formatAttendanceDate(user.createdAt),
     });
+    // ARGUS #358: an explicit status decides whether the punched minutes count.
+    const adjusted = applyStatusOverrideToMinutes({
+      override: attendance?.status ?? null,
+      minutes: totals,
+      calendar,
+    });
 
     return {
       userId: user.id,
@@ -580,9 +637,10 @@ export async function getDailyAttendance(
       status,
       clockInAt: totals.clockInAt?.toISOString() ?? null,
       clockOutAt: totals.clockOutAt?.toISOString() ?? null,
-      totalMinutes: totals.totalMinutes,
-      regularMinutes: totals.regularMinutes,
-      overtimeMinutes: totals.overtimeMinutes,
+      totalMinutes: adjusted.totalMinutes,
+      regularMinutes: adjusted.regularMinutes,
+      overtimeMinutes: adjusted.overtimeMinutes,
+      hoursAdjusted: adjusted.adjustment !== 'NONE',
       needsReview: totals.hasOverdue,
       records: userRecords.map((record) => {
         const isOpen = record.clockedOutAt === null;
@@ -628,6 +686,8 @@ export interface StaffAttendanceReportRow {
   totalMinutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
+  /** True when an explicit status cleared/capped the punched minutes. */
+  hoursAdjusted: boolean;
   status: AttendanceDisplayStatus;
   notes: string | null;
   punches: number;
@@ -739,13 +799,21 @@ export async function getStaffAttendanceReport(
     const dayRecords = recordsByDate.get(calendarRow.date) ?? [];
     const override = overrideByDate.get(calendarRow.date);
     const totals = computeAttendanceTotals(dayRecords, now, calendar.maxShiftMinutes);
+    // ARGUS #358: monthly report/payroll inputs follow the same override rule
+    // as the daily page (Leave/Absent/Holiday clear, Half Day caps).
+    const adjusted = applyStatusOverrideToMinutes({
+      override: override?.status ?? null,
+      minutes: totals,
+      calendar,
+    });
     return {
       date: calendarRow.date,
       clockInAt: totals.clockInAt?.toISOString() ?? null,
       clockOutAt: totals.clockOutAt?.toISOString() ?? null,
-      totalMinutes: totals.totalMinutes,
-      regularMinutes: totals.regularMinutes,
-      overtimeMinutes: totals.overtimeMinutes,
+      totalMinutes: adjusted.totalMinutes,
+      regularMinutes: adjusted.regularMinutes,
+      overtimeMinutes: adjusted.overtimeMinutes,
+      hoursAdjusted: adjusted.adjustment !== 'NONE',
       status: calendarRow.status,
       notes: override?.notes ?? null,
       punches: dayRecords.length,
