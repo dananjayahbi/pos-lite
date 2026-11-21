@@ -5,7 +5,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { csvCell } from '@/lib/export';
+import { buildValuationCsv, valuationCsvFilename } from '@/lib/pricing/valuationCsv.core';
 import {
   readValuationTaxRates,
   summarizeValuationTax,
@@ -147,77 +147,35 @@ export async function GET(request: NextRequest) {
     const estimatedMargin = retailValue.minus(costValue).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     const roundedMarginPercent = valuationMarginPercent(retailValue, costValue);
 
+    const snapshot = {
+      retailValue: retailValue.toNumber(),
+      vatAmount: Number(breakdownTotals.vatAmount),
+      ssclAmount: Number(breakdownTotals.ssclAmount),
+      taxAmount: Number(breakdownTotals.taxAmount),
+      retailValueInclTax: Number(breakdownTotals.retailValueInclTax),
+      taxRates,
+      costValue: costValue.toNumber(),
+      rawMaterialValue,
+      totalCostValue: totalCostValue.toNumber(),
+      estimatedMargin: estimatedMargin.toNumber(),
+      estimatedMarginPercent: roundedMarginPercent,
+      variantCount,
+      categoryBreakdown: breakdown,
+      calculatedAt: new Date().toISOString(),
+    };
+
     const format = request.nextUrl.searchParams.get('format');
     if (format === 'csv') {
-      const linesOut: string[] = [];
-      linesOut.push('Stock Valuation Summary');
-      linesOut.push('Metric,Value');
-      linesOut.push(`Total Retail Value (Excl. Tax),${csvCell(retailValue.toFixed(2))}`);
-      linesOut.push(`VAT (${taxRates.vatRate}%),${csvCell(breakdownTotals.vatAmount)}`);
-      if (taxRates.ssclRate > 0 || Number(breakdownTotals.ssclAmount) > 0) {
-        linesOut.push(`SSCL (${taxRates.ssclRate}%),${csvCell(breakdownTotals.ssclAmount)}`);
-      }
-      linesOut.push(`Total Retail Value (Incl. Tax),${csvCell(breakdownTotals.retailValueInclTax)}`);
-      linesOut.push(`Total Cost Value (At Current Cost),${csvCell(costValue.toFixed(2))}`);
-      linesOut.push(`Raw Material Value,${csvCell(rawMaterialValue.toFixed(2))}`);
-      linesOut.push(`Total Inventory Cost Value,${csvCell(totalCostValue.toFixed(2))}`);
-      // ARGUS #218: the figure is a current-cost snapshot, not acquisition cost.
-      linesOut.push(`Cost Basis,${csvCell(VALUATION_COST_BASIS_NOTE)}`);
-      linesOut.push(`Estimated Margin (Rs.),${csvCell(estimatedMargin.toFixed(2))}`);
-      linesOut.push(`Estimated Margin (%),${csvCell(roundedMarginPercent.toFixed(2))}`);
-      linesOut.push('');
-      linesOut.push('Category Breakdown');
-      linesOut.push(
-        'Category,Variants in Stock,Retail Value Excl. Tax (Rs.),Tax (Rs.),Retail Value Incl. Tax (Rs.),Cost Value - At Current Cost (Rs.),Margin %,Share of Total',
-      );
-      for (const cat of breakdown) {
-        const catMargin = valuationMarginPercent(cat.retailValue, cat.costValue);
-        const share = retailValue.greaterThan(0)
-          ? new Decimal(cat.retailValue).div(retailValue).times(100)
-          : new Decimal(0);
-        linesOut.push(
-          [
-            csvCell(cat.categoryName),
-            csvCell(cat.variantCount),
-            csvCell(cat.retailValue.toFixed(2)),
-            csvCell(cat.taxAmount.toFixed(2)),
-            csvCell(cat.retailValueInclTax.toFixed(2)),
-            csvCell(cat.costValue.toFixed(2)),
-            csvCell(catMargin.toFixed(2)),
-            csvCell(share.toFixed(2)),
-          ].join(','),
-        );
-      }
-      // ARGUS #220: the totals row reconciles the exported table to the summary.
-      linesOut.push(
-        [
-          csvCell('Total'),
-          csvCell(breakdownTotals.variantCount),
-          csvCell(breakdownTotals.retailValue),
-          csvCell(breakdownTotals.taxAmount),
-          csvCell(breakdownTotals.retailValueInclTax),
-          csvCell(breakdownTotals.costValue),
-          csvCell(
-            valuationMarginPercent(
-              breakdownTotals.retailValue,
-              breakdownTotals.costValue,
-            ).toFixed(2),
-          ),
-          csvCell(retailValue.greaterThan(0) ? '100.00' : '0.00'),
-        ].join(','),
-      );
-
-      const csv = linesOut.join('\n');
-      const today = new Date().toISOString().split('T')[0];
-      return new NextResponse(csv, {
+      // ARGUS #223: same snapshot, same builder as the page, plus an as-of line
+      // and a time-stamped filename.
+      return new NextResponse(buildValuationCsv(snapshot), {
         status: 200,
         headers: {
           'Content-Type': 'text/csv',
-          'Content-Disposition': `attachment; filename="stock-valuation-${today}.csv"`,
+          'Content-Disposition': `attachment; filename="${valuationCsvFilename(snapshot.calculatedAt)}"`,
         },
       });
     }
-
     return NextResponse.json({
       success: true,
       data: {
@@ -238,7 +196,7 @@ export async function GET(request: NextRequest) {
         estimatedMarginPercent: roundedMarginPercent,
         variantCount,
         categoryBreakdown: breakdown,
-        calculatedAt: new Date().toISOString(),
+        calculatedAt: snapshot.calculatedAt,
       },
     });
   } catch (error) {

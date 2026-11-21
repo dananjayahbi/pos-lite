@@ -22,6 +22,10 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { formatRupee } from '@/lib/format';
 import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 import { VALUATION_COST_BASIS_NOTE } from '@/lib/pricing/valuationBasis';
+import {
+  buildValuationCsv,
+  valuationCsvFilename,
+} from '@/lib/pricing/valuationCsv.core';
 import { valuationRefreshOutcome } from '@/components/stock-control/valuationRefresh';
 
 type SortColumn = 'categoryName' | 'variantCount' | 'retailValue' | 'costValue' | 'marginPercent' | 'share';
@@ -112,15 +116,21 @@ export function StockValuationClient() {
   }
 
   async function handleExport() {
+    // ARGUS #223: export the snapshot on screen, not a fresh live query, so the
+    // file and the cards cannot disagree inside the 5-minute cache window.
+    if (!valuation) {
+      toast.error('No valuation snapshot to export');
+      return;
+    }
+
     setIsExporting(true);
     try {
-      const res = await fetch('/api/store/stock-control/valuation?format=csv');
-      if (!res.ok) throw new Error('Export failed');
-      const blob = await res.blob();
+      const csv = buildValuationCsv(valuation);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `stock-valuation-${new Date().toISOString().split('T')[0]}.csv`;
+      a.download = valuationCsvFilename(valuation.calculatedAt);
       document.body.appendChild(a);
       a.click();
       a.remove();
