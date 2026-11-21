@@ -110,7 +110,11 @@ const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
  * calendar-invalid dates (2026-02-31 → 400, not a silent roll-over) instead
  * of leaking an Invalid Date into a Prisma filter.
  */
-export function parseQueryDate(params: URLSearchParams, name: string): Date | undefined {
+export function parseQueryDate(
+  params: URLSearchParams,
+  name: string,
+  opts: { endOfDay?: boolean } = {},
+): Date | undefined {
   const value = raw(params, name);
   if (value === null) return undefined;
   if (!ISO_DATE_RE.test(value)) {
@@ -121,7 +125,7 @@ export function parseQueryDate(params: URLSearchParams, name: string): Date | un
     throw ApiError.badRequest(`Query parameter "${name}" is not a valid date`);
   }
   // Calendar-validity check for plain dates: JS silently rolls 2026-02-30
-  // over to 2026-03-02 — reject the caller's mistake instead.
+  // over to 2026-03-02 - reject the caller's mistake instead.
   const dateOnly = DATE_ONLY_RE.exec(value);
   if (dateOnly) {
     const [, y, m, day] = dateOnly;
@@ -132,6 +136,11 @@ export function parseQueryDate(params: URLSearchParams, name: string): Date | un
     ) {
       throw ApiError.badRequest(`Query parameter "${name}" is not a real calendar date`);
     }
+  }
+  // An end-date filter must include the whole selected day, not just its
+  // midnight (ARGUS #452).
+  if (opts.endOfDay) {
+    return new Date(`${value}T23:59:59.999Z`);
   }
   return d;
 }

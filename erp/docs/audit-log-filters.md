@@ -21,3 +21,11 @@ log API is unchanged.
 
 No schema or data migration is needed; new actions/entities appear
 automatically after they are written.
+
+## Inclusive To date (ARGUS #452)
+
+`parseQueryDate` now accepts `{ endOfDay: true }`, used by the audit log API's
+`endDate`. A date-only To (e.g. `2026-11-20`) is expanded to
+`23:59:59.999Z`, so a From/To same-day investigation returns that day's rows and
+the CSV export inherits the inclusive bound. Other callers keep the previous
+midnight semantics unless they opt in.

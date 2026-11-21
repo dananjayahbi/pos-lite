@@ -120,6 +120,12 @@ describe('XC-01 parseQueryDate', () => {
     }
     expect(parseQueryDate(sp(''), 'from')).toBeUndefined();
   });
+
+  it('accepts an end-of-day option for inclusive To filters (ARGUS #452)', () => {
+    expect(parseQueryDate(sp('to=2026-11-20'), 'to', { endOfDay: true })?.toISOString()).toBe(
+      '2026-11-20T23:59:59.999Z',
+    );
+  });
 });
 
 describe('XC-01 parseQueryBool', () => {

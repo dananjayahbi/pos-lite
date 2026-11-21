@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     // XC-01 + XC-02: dates validated (garbage → 400, not Invalid Date in a
     // Prisma filter); pagination clamped.
     const startDate = parseQueryDate(searchParams, 'startDate');
-    const endDate = parseQueryDate(searchParams, 'endDate');
+    const endDate = parseQueryDate(searchParams, 'endDate', { endOfDay: true });
     const page = parseQueryInt(searchParams, 'page', { default: 1, min: 1, max: 1_000_000 }) ?? 1;
     const pageSize = parseQueryInt(searchParams, 'pageSize', { default: 50, min: 1, max: 200 }) ?? 50;
     const format = searchParams.get('format') ?? 'json';
