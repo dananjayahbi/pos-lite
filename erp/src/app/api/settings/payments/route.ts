@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@/generated/prisma/client';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { hasPermission } from '@/lib/utils/permissions';
-import { PERMISSIONS } from '@/lib/constants/permissions';
 import { readLankaQrSettingsFromTenantSettings } from '@/lib/payments/lanka-qr-config';
 import { LankaQrSettingsSchema } from '@/lib/validators/lanka-qr.validators';
+import { writeAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 
 /** Reads the tenant's LankaQR configuration (owner/manager settings surface). */
 export async function GET() {
@@ -25,9 +25,10 @@ export async function GET() {
       );
     }
 
-    if (!hasPermission(session.user, PERMISSIONS.SETTINGS.managePayments)) {
+    // The QR is a payment destination: owners only (ARGUS #509).
+    if (session.user.role !== 'OWNER' && session.user.role !== 'SUPER_ADMIN') {
       return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Only an owner can manage payment settings' } },
         { status: 403 },
       );
     }
@@ -68,9 +69,10 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    if (!hasPermission(session.user, PERMISSIONS.SETTINGS.managePayments)) {
+    // The QR is a payment destination: owners only (ARGUS #509).
+    if (session.user.role !== 'OWNER' && session.user.role !== 'SUPER_ADMIN') {
       return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Only an owner can manage payment settings' } },
         { status: 403 },
       );
     }
@@ -109,6 +111,18 @@ export async function PATCH(request: NextRequest) {
         },
       },
       select: { settings: true },
+    });
+
+    // A changed payment destination is security-relevant: audit it durably.
+    await writeAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      actorRole: session.user.role,
+      entityType: 'TenantSettings',
+      entityId: tenantId,
+      action: AUDIT_ACTIONS.SETTINGS_CHANGED,
+      before: { lankaQr: readLankaQrSettingsFromTenantSettings(tenant.settings) } as unknown as Prisma.InputJsonValue,
+      after: { lankaQr: parsed.data } as unknown as Prisma.InputJsonValue,
     });
 
     return NextResponse.json({

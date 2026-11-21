@@ -46,10 +46,35 @@ describe('parseLankaQrSettings', () => {
       referenceRequired: 'true',
     });
 
-    expect(parsed.enabled).toBe(true);
+    expect(parsed.enabled).toBe(false);
     expect(parsed.merchantName).toBe('');
     expect(parsed.instructions).toBe(DEFAULT_LANKA_QR_INSTRUCTIONS);
     expect(parsed.referenceRequired).toBe(false);
+  });
+
+  it('only reports enabled when the merchant can actually be scanned', () => {
+    expect(parseLankaQrSettings({ enabled: true }).enabled).toBe(false);
+    expect(
+      parseLankaQrSettings({
+        enabled: true,
+        merchantName: 'AyurPOS',
+        qrImageUrl: 'https://cdn.example.com/qr.png',
+      }).enabled,
+    ).toBe(true);
+    expect(
+      parseLankaQrSettings({
+        enabled: true,
+        merchantName: 'AyurPOS',
+        qrImageUrl: '',
+      }).enabled,
+    ).toBe(false);
+    expect(
+      parseLankaQrSettings({
+        enabled: true,
+        merchantName: '',
+        qrImageUrl: 'https://cdn.example.com/qr.png',
+      }).enabled,
+    ).toBe(false);
   });
 
   it('truncates over-long strings instead of throwing', () => {

@@ -551,7 +551,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
                 onChange={(e) =>
                   handleHeroSectionChange('craftedByText', e.target.value)
                 }
-                placeholder="e.g. Crafted by Wedagedara Herbal Sanctuary"
+                placeholder="e.g. Crafted by our in-house team"
                 className="h-9 text-sm"
               />
             </div>

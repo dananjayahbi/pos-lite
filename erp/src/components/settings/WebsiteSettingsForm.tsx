@@ -15,6 +15,7 @@ import { AppointmentsTab } from './website-tabs/AppointmentsTab';
 import { ResetConfirmDialog } from './ResetConfirmDialog';
 import { pendingUploads, removedUrls, processPendingUploads, deleteRemovedUrls, resetUploadState } from './uploadState';
 import type { WebsiteConfigData } from '@/types/website.types';
+import { resolveWebsiteLoadResult } from '@/lib/website/load-state';
 
 const DEFAULT_CONFIG: WebsiteConfigData = {
   siteName: '',
@@ -31,10 +32,10 @@ const DEFAULT_CONFIG: WebsiteConfigData = {
   sections: {
     hero: { isActive: true, sortOrder: 1 },
     imageSlider: { isActive: true, sortOrder: 2, images: [] },
-    bestSelling: { isActive: true, sortOrder: 3, label: 'MOST LOVED BOTANICAL REMEDIES', title: 'Top Selling Items This Week', productCount: 7, productIds: [] },
+    bestSelling: { isActive: true, sortOrder: 3, label: 'MOST LOVED PRODUCTS', title: 'Top Selling Items This Week', productCount: 7, productIds: [] },
     infoAd: { isActive: true, sortOrder: 4, desktopImageUrl: '', title: '', subtitle: '' },
-    categories: { isActive: true, sortOrder: 5, label: 'CURATED AYURVEDIC LINEUP', title: 'Top Categories', categoryIds: [], categoryImages: {} },
-    latestProducts: { isActive: true, sortOrder: 6, label: 'NEW HERBAL ARRIVALS', title: 'Latest Products', productCount: 7, productIds: [] },
+    categories: { isActive: true, sortOrder: 5, label: 'SHOP BY CATEGORY', title: 'Top Categories', categoryIds: [], categoryImages: {} },
+    latestProducts: { isActive: true, sortOrder: 6, label: 'NEW ARRIVALS', title: 'Latest Products', productCount: 7, productIds: [] },
     testimonials: { isActive: true, sortOrder: 7, label: 'VOICES OF HEALING', title: 'Testimonials', subtitle: 'What Our Community Says', items: [] },
     storeReference: { isActive: true, sortOrder: 8, desktopImageUrl: '', title: '', subtitle: '' },
     footer: { isActive: true, sortOrder: 9 },
@@ -43,54 +44,30 @@ const DEFAULT_CONFIG: WebsiteConfigData = {
   footerColumns: [],
   heroSlides: [],
   aboutPageTitle: 'About Us',
-  aboutPageSubtitle: 'Learn more about our story and mission',
+  aboutPageSubtitle: '',
   aboutStoryTitle: 'Our Story',
-  aboutStoryContent:
-    'It all started when our founders, direct descendants of royal Ceylon Ayurvedic physicians, recognized that modern wellness had lost touch with the pure botanical alchemy of ancestral medicine.\nRooted in centuries-old Ola Leaf manuscripts preserved through family generations, Wedagedara was born to revive authentic Ayurvedic remedies. We combine ethical forest harvesting with slow-fire earthen decoction methods to extract the unadulterated healing essence of nature.',
+  aboutStoryContent: '',
   aboutMissionTitle: 'Our Mission',
-  aboutMissionContent:
-    'We believe in the timeless balance of mind, body, and spirit. Our sacred mission is to restore cellular vitality and holistic longevity by delivering purest, non-commercialized Ceylon Ayurvedic elixirs crafted with unwavering reverence for nature.',
+  aboutMissionContent: '',
   aboutValuesSectionTitle: 'Our Values',
-  aboutValues: [
-    {
-      title: 'Ancestral Ola Leaf Purity',
-      description:
-        'Every formula adheres strictly to classical texts and ancestral decoction techniques without synthetic dilution.',
-    },
-    {
-      title: 'Ethical Forest Sanctuaries',
-      description:
-        'We sustainably wild-harvest herbs from certified organic Ceylon forest reserves, honoring the natural regeneration cycles of the earth.',
-    },
-    {
-      title: 'Tridosha Equilibrium',
-      description:
-        'Our remedies are carefully crafted to balance Vata, Pitta, and Kapha bio-energies for deep, holistic restoration.',
-    },
-    {
-      title: 'Sacred Sustainability',
-      description:
-        'From earthen brewing vessels to zero-waste glass bottling, every touchpoint reflects our deep reverence for mother earth.',
-    },
-  ],
-  aboutPhoneLabel: 'Call Us',
-  aboutPhoneNumber: '+94 11 234 5678',
+  aboutValues: [],
+  aboutPhoneLabel: '',
+  aboutPhoneNumber: '',
   contactPageTitle: 'Contact Us',
-  contactPageSubtitle: "We'd love to hear from you",
+  contactPageSubtitle: '',
   contactInfoTitle: 'Get in Touch',
-  contactAddress: 'No. 42, Horton Place, Colombo 07, Western Province, Sri Lanka (00700)',
-  contactPhoneDisplay: '+94 (0) 11 234 5678',
-  contactEmailDisplay: 'care@wedagedara.lk',
-  contactBusinessHours: 'Monday – Sunday: 8:00 AM – 7:00 PM',
+  contactAddress: '',
+  contactPhoneDisplay: '',
+  contactEmailDisplay: '',
+  contactBusinessHours: '',
   shopPageTitle: 'Shop',
-  shopPageSubtitle: 'Browse our collection',
-  shopPageDescription:
-    'Discover our pure Ayurvedic elixirs, oils, and balms crafted with ancestral herbs and slow-decoction wisdom.',
+  shopPageSubtitle: '',
+  shopPageDescription: '',
   shopProductsPerPage: 24,
   appointments: {
     enabled: false,
     navLabel: 'Appointments',
-    title: 'Book a Channeling',
+    title: 'Book an Appointment',
     subtitle: '',
     serviceIds: [],
     intro: '',
@@ -143,6 +120,10 @@ export default function WebsiteSettingsForm() {
   const [activeTab, setActiveTab] = useState<TabValue>('general');
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
+  const [loadError, setLoadError] = useState('');
+  const [reloadToken, setReloadToken] = useState(0);
+  const [startedFromEmpty, setStartedFromEmpty] = useState(false);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
   // Cheap O(1) dirty tracking — avoids expensive JSON.stringify on every keystroke
@@ -165,33 +146,50 @@ export default function WebsiteSettingsForm() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [dirtyCount]);
 
-  // Load config from API on mount
+  // Load config from API on mount (and on retry)
   useEffect(() => {
+    let cancelled = false;
+
     const loadConfig = async () => {
+      setLoadState('loading');
+      setLoadError('');
       try {
-        const res = await fetch('/api/store/website');
-        if (res.ok) {
-          const body = await res.json();
-          if (body.success && body.data) {
-            const merged = deepMergeConfig(
-              DEFAULT_CONFIG as unknown as Record<string, unknown>,
-              body.data,
-            ) as unknown as WebsiteConfigData;
-            setConfig(merged);
-            initialConfigRef.current = JSON.stringify(merged);
-            return;
-          }
+        const res = await fetch('/api/store/website', { cache: 'no-store' });
+        const body = await res.json().catch(() => null);
+        if (cancelled) return;
+
+        const result = resolveWebsiteLoadResult({ ok: res.ok, status: res.status, body });
+        if (result.kind === 'ready') {
+          const merged = deepMergeConfig(
+            DEFAULT_CONFIG as unknown as Record<string, unknown>,
+            result.data,
+          ) as unknown as WebsiteConfigData;
+          setConfig(merged);
+          initialConfigRef.current = JSON.stringify(merged);
+          setLoadState('ready');
+        } else if (result.kind === 'empty') {
+          setConfig(DEFAULT_CONFIG);
+          initialConfigRef.current = JSON.stringify(DEFAULT_CONFIG);
+          setStartedFromEmpty(false);
+          setDirtyCount(0);
+          setLoadState('empty');
+        } else {
+          setLoadError(result.message);
+          setLoadState('error');
         }
-        initialConfigRef.current = JSON.stringify(DEFAULT_CONFIG);
       } catch {
-        initialConfigRef.current = JSON.stringify(DEFAULT_CONFIG);
-        toast.error('Failed to load website configuration');
+        if (cancelled) return;
+        setLoadError('Failed to load the website configuration. Check your connection and retry.');
+        setLoadState('error');
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
     loadConfig();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadToken]);
 
   // Pure state updater — increments dirty counter on every change
   const updateConfig = useCallback((updates: Partial<WebsiteConfigData>) => {
@@ -257,6 +255,14 @@ export default function WebsiteSettingsForm() {
   }
 
   const handleSave = async () => {
+    if (loadState !== 'ready' && !(loadState === 'empty' && startedFromEmpty)) {
+      toast.error('Website configuration is not loaded - reload before saving');
+      return;
+    }
+    if (!config.siteName?.trim()) {
+      toast.error('Set a Site Name on the General tab before saving');
+      return;
+    }
     setIsSaving(true);
     try {
       // Process deferred media uploads (upload pending files to Cloudflare)
@@ -337,6 +343,8 @@ export default function WebsiteSettingsForm() {
       setConfig(DEFAULT_CONFIG);
       setDirtyCount(0);
       initialConfigRef.current = JSON.stringify(DEFAULT_CONFIG);
+      setStartedFromEmpty(false);
+      setLoadState('empty');
       resetUploadState();
       setShowResetDialog(false);
       toast.success('Website settings reset to defaults');
@@ -368,10 +376,58 @@ export default function WebsiteSettingsForm() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || loadState === 'loading') {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-espresso border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (loadState === 'error') {
+    return (
+      <div className="mx-auto max-w-xl space-y-4 p-10 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-50">
+          <AlertTriangle className="h-6 w-6 text-amber-600" />
+        </div>
+        <h2 className="text-lg font-semibold text-espresso">Website configuration could not be loaded</h2>
+        <p className="text-sm text-sand-ink">
+          {loadError || 'The request failed. Your live site has not been changed.'}
+        </p>
+        <Button
+          type="button"
+          className="bg-espresso hover:bg-espresso/90"
+          onClick={() => {
+            setIsLoading(true);
+            setReloadToken((token) => token + 1);
+          }}
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  if (loadState === 'empty' && !startedFromEmpty) {
+    return (
+      <div className="mx-auto max-w-xl space-y-4 p-10 text-center">
+        <h2 className="text-lg font-semibold text-espresso">Website not configured</h2>
+        <p className="text-sm text-sand-ink">
+          This store does not have a website configuration yet. Starting here opens a blank
+          template - nothing is published until you save.
+        </p>
+        <Button
+          type="button"
+          className="bg-espresso hover:bg-espresso/90"
+          onClick={() => {
+            setConfig(DEFAULT_CONFIG);
+            initialConfigRef.current = JSON.stringify(DEFAULT_CONFIG);
+            setDirtyCount(0);
+            setStartedFromEmpty(true);
+          }}
+        >
+          Create website configuration
+        </Button>
       </div>
     );
   }

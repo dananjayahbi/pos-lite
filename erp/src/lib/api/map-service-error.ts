@@ -83,6 +83,10 @@ const RULES: Rule[] = [
   { match: token('RETURN_QTY_EXCEEDS_RETURNABLE'), status: 422, code: 'UNPROCESSABLE', message: 'The requested quantity exceeds the remaining returnable quantity for this line.' },
   { match: token('RETURN_STORE_CREDIT_REQUIRES_CUSTOMER'), status: 422, code: 'UNPROCESSABLE', message: 'Store credit can only be issued for a sale linked to a customer.' },
   { match: token('RETURN_SERVICE_LINE_NOT_RETURNABLE'), status: 422, code: 'UNPROCESSABLE', message: 'Service lines cannot be returned to stock.' },
+  { match: token('STAFF_ROLE_NOT_ASSIGNABLE'), status: 403, code: 'FORBIDDEN', message: 'You cannot assign this staff role.' },
+  { match: token('STAFF_PASSWORD_RESET_FORBIDDEN'), status: 403, code: 'FORBIDDEN', message: 'You cannot reset the password for this staff member.' },
+  { match: token('PERMISSION_NOT_GRANTABLE'), status: 403, code: 'FORBIDDEN', message: 'You cannot grant a permission you do not hold.' },
+  { match: exact('LAST_OWNER_REQUIRED'), status: 409, code: 'LAST_OWNER_REQUIRED', message: 'The store must keep at least one active owner.' },
 
   // ── Prose messages from the older product/customer services ────────────
   // Status + code are preserved exactly as the routes returned them; only the

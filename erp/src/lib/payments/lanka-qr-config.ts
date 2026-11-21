@@ -36,7 +36,9 @@ export const DEFAULT_LANKA_QR_INSTRUCTIONS =
   'Ask the customer to scan the LankaQR code with their banking app, enter the amount and confirm. Check the bank confirmation before accepting the payment.';
 
 export const DEFAULT_LANKA_QR_SETTINGS: LankaQrSettings = {
-  enabled: true,
+  // A tender that cannot be scanned must not be offered. It only becomes
+  // available after the tenant stores a merchant name and QR image.
+  enabled: false,
   merchantName: '',
   merchantId: '',
   bankName: '',
@@ -58,19 +60,28 @@ function readBoolean(value: unknown, fallback: boolean): boolean {
  * Coerce the persisted `settings.lankaQr` blob into a complete settings object.
  * Unknown keys are ignored and missing/invalid values fall back to safe
  * defaults, so callers never have to null-check individual fields.
+ *
+ * `enabled` is only honoured when the configuration is actually usable (a
+ * merchant name and a renderable QR image). Legacy tenants that saved
+ * `enabled: true` before this rule therefore stop offering an unscannable
+ * LankaQR tender until they finish configuring it (ARGUS #509).
  */
 export function parseLankaQrSettings(raw: unknown): LankaQrSettings {
   const source =
     typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
 
   const instructions = readString(source.instructions, 240);
+  const merchantName = readString(source.merchantName, 80);
+  const qrImageUrl = readString(source.qrImageUrl, 2048);
+  const requestedEnabled = readBoolean(source.enabled, DEFAULT_LANKA_QR_SETTINGS.enabled);
+  const usable = merchantName.length > 0 && isRenderableQrImageUrl(qrImageUrl);
 
   return {
-    enabled: readBoolean(source.enabled, DEFAULT_LANKA_QR_SETTINGS.enabled),
-    merchantName: readString(source.merchantName, 80),
+    enabled: requestedEnabled && usable,
+    merchantName,
     merchantId: readString(source.merchantId, 40),
     bankName: readString(source.bankName, 80),
-    qrImageUrl: readString(source.qrImageUrl, 2048),
+    qrImageUrl,
     instructions: instructions || DEFAULT_LANKA_QR_SETTINGS.instructions,
     referenceRequired: readBoolean(
       source.referenceRequired,

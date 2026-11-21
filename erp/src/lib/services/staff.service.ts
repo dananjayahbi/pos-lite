@@ -1,11 +1,19 @@
 import { prisma } from '@/lib/prisma';
 import { UserRole } from '@/generated/prisma/client';
+import type { Prisma } from '@/generated/prisma/client';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { writeAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { mapPrismaError } from '@/lib/api/map-prisma-error';
 import { withUniqueGuard } from '@/lib/api/race-guard';
 import { ApiError } from '@/lib/api/errors';
+import {
+  assertLastOwnerRemains,
+  assertPermissionsGrantable,
+  canAssignRole,
+  canManageStaffRole,
+  canResetStaffPassword,
+} from '@/lib/auth/staff-authorization';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -188,6 +196,45 @@ export async function updateStaff(
 ) {
   const existing = await assertStaffBelongsToTenant(tenantId, id);
 
+  // Role hierarchy (ARGUS #335): staff:manage does not let a manager touch an
+  // owner/manager, change their own privileges, or grant permissions they do
+  // not hold.
+  if (!canManageStaffRole(actor.role, existing.role)) {
+    throw new ApiError(403, 'FORBIDDEN', 'You cannot manage a staff member at this role level');
+  }
+  if (
+    actor.role === 'MANAGER' &&
+    id === actor.id &&
+    (data.role !== undefined || data.permissions !== undefined || data.isActive !== undefined)
+  ) {
+    throw new ApiError(
+      403,
+      'FORBIDDEN',
+      'Managers cannot change their own role, status or permissions',
+    );
+  }
+  if (data.role !== undefined && !canAssignRole(actor.role, data.role)) {
+    throw new ApiError(403, 'FORBIDDEN', 'You cannot assign this role');
+  }
+  if (data.permissions !== undefined) {
+    assertPermissionsGrantable(actor.role, data.permissions);
+  }
+  const demotesOwner =
+    existing.role === 'OWNER' &&
+    ((data.role !== undefined && data.role !== 'OWNER') || data.isActive === false);
+  if (demotesOwner) {
+    const otherActiveOwners = await prisma.user.count({
+      where: { tenantId, role: 'OWNER', isActive: true, deletedAt: null, id: { not: id } },
+    });
+    assertLastOwnerRemains({
+      existingRole: existing.role,
+      existingIsActive: existing.isActive,
+      nextRole: data.role,
+      nextIsActive: data.isActive,
+      otherActiveOwners,
+    });
+  }
+
   const updateData: Record<string, unknown> = {};
 
   if (data.email !== undefined) {
@@ -292,6 +339,47 @@ export async function updateStaff(
     });
   }
 
+  // HR / contact / salary / bank changes are security-sensitive too (ARGUS
+  // #336). Without this row an admin edit of a bank account or salary left no
+  // audit trail.
+  const detailFields = [
+    'email',
+    'isActive',
+    'commissionRate',
+    'fullName',
+    'nic',
+    'contactNumber',
+    'address',
+    'basicSalary',
+    'allowances',
+    'bankName',
+    'bankBranch',
+    'bankAccountNumber',
+    'etfNumber',
+    'epfNumber',
+  ] as const;
+  const changedDetailFields = detailFields.filter(
+    (key) => (data as Record<string, unknown>)[key] !== undefined,
+  );
+  if (changedDetailFields.length > 0) {
+    const before: Record<string, unknown> = {};
+    const after: Record<string, unknown> = {};
+    for (const key of changedDetailFields) {
+      before[key] = (existing as Record<string, unknown>)[key] ?? null;
+      after[key] = updateData[key] ?? (data as Record<string, unknown>)[key] ?? null;
+    }
+    await writeAuditLog({
+      tenantId,
+      actorId: actor.id,
+      actorRole: actor.role,
+      entityType: 'Staff',
+      entityId: id,
+      action: AUDIT_ACTIONS.STAFF_DETAILS_UPDATED,
+      before: before as Prisma.InputJsonValue,
+      after: after as Prisma.InputJsonValue,
+    });
+  }
+
   return updated;
 }
 
@@ -306,9 +394,16 @@ export async function updateStaff(
  * created account cannot sign in until an OWNER sets one via
  * /api/store/staff/[id]/password. Returns the created record.
  */
-export async function createStaffMember(tenantId: string, data: CreateStaffInput) {
+export async function createStaffMember(
+  tenantId: string,
+  data: CreateStaffInput,
+  actor: AuditActor,
+) {
   if (data.role === UserRole.SUPER_ADMIN) {
     throw new Error('Cannot assign SUPER_ADMIN role');
+  }
+  if (!canAssignRole(actor.role, data.role)) {
+    throw new Error('STAFF_ROLE_NOT_ASSIGNABLE');
   }
 
   const tempPassword = randomUUID();
@@ -374,6 +469,10 @@ export async function setStaffPassword(
   context?: { ipAddress?: string | undefined; userAgent?: string | undefined },
 ) {
   const existing = await assertStaffBelongsToTenant(tenantId, id);
+
+  if (!canResetStaffPassword(actor.role, existing.role)) {
+    throw new Error('STAFF_PASSWORD_RESET_FORBIDDEN');
+  }
 
   const passwordHash = await bcrypt.hash(newPassword, 12);
 

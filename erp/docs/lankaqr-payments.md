@@ -63,6 +63,20 @@ Permissions: `settings:payments`. OWNER and MANAGER hold it; CASHIER does not.
 Cashiers still see the tender because the POS layout resolves the config for
 them server-side.
 
+## Configuration ownership and enablement (ARGUS #509)
+
+- The LankaQR config is a payment destination: `GET`/`PATCH
+  /api/settings/payments` and `/settings/payments` are **OWNER/SUPER_ADMIN only**
+  (managers can no longer view or change it), and every PATCH writes a durable
+  `SETTINGS_CHANGED` audit row with before/after.
+- `PATCH` rejects `enabled: true` unless a merchant name and a renderable QR
+  image are supplied.
+- The parser (`parseLankaQrSettings`) only reports `enabled: true` when the
+  configuration is actually usable, and `DEFAULT_LANKA_QR_SETTINGS.enabled` is
+  `false`. A tenant with no/legacy config therefore no longer offers an
+  unscannable LankaQR tender in the POS or back-office sale sheet until it is
+  configured.
+
 ## API
 
 - `PATCH /api/store/sales` with `paymentMethod: "LANKAQR"` records the sale and
