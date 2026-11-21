@@ -34,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -227,20 +228,30 @@ export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }
           </SelectContent>
         </Select>
 
-        <Input
-          type="date"
-          value={fromDate}
-          onChange={(event) => changeFromDate(event.target.value)}
-          className="w-[160px]"
-          aria-label="Created from"
-        />
-        <Input
-          type="date"
-          value={toDate}
-          onChange={(event) => changeToDate(event.target.value)}
-          className="w-[160px]"
-          aria-label="Created to"
-        />
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="po-order-date-from" className="text-xs text-mist-ink">
+            Order date from
+          </Label>
+          <Input
+            id="po-order-date-from"
+            type="date"
+            value={fromDate}
+            onChange={(event) => changeFromDate(event.target.value)}
+            className="w-[160px]"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="po-order-date-to" className="text-xs text-mist-ink">
+            Order date to
+          </Label>
+          <Input
+            id="po-order-date-to"
+            type="date"
+            value={toDate}
+            onChange={(event) => changeToDate(event.target.value)}
+            className="w-[160px]"
+          />
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-sand/30 bg-pearl">

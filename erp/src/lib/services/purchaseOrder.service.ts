@@ -7,6 +7,7 @@ import { lockForUpdate } from '@/lib/api/race-guard';
 import { computePurchaseOrderTotals } from '@/lib/services/purchaseOrderTotals';
 import { computePurchaseOrderPayable } from '@/lib/services/purchaseOrderPayable.core';
 import { computePurchaseOrderPaymentState } from '@/lib/services/purchaseOrderPaymentState.core';
+import { buildPurchaseOrderDateRange } from '@/lib/services/purchaseOrderDateRange.core';
 import {
   canCancelPurchaseOrder,
   isPurchaseOrderFinanciallyLocked,
@@ -287,11 +288,12 @@ export async function getPOs(tenantId: string, options: GetPOsOptions) {
   if (options.status !== undefined) {
     where.status = options.status;
   }
-  if (options.from !== undefined || options.to !== undefined) {
-    const createdAt: Record<string, Date> = {};
-    if (options.from !== undefined) createdAt.gte = new Date(options.from);
-    if (options.to !== undefined) createdAt.lte = new Date(options.to + 'T23:59:59.999Z');
-    where.createdAt = createdAt;
+  // ARGUS #230: the table shows Order Date, so the filter must compare that
+  // column, with both local day edges inclusive. Filtering the UTC createdAt
+  // made a 29 Oct order created late on 28 Oct UTC vanish from 29 Oct results.
+  const orderDateRange = buildPurchaseOrderDateRange(options.from, options.to);
+  if (orderDateRange) {
+    where.orderDate = orderDateRange;
   }
 
   const [purchaseOrders, total] = await Promise.all([
