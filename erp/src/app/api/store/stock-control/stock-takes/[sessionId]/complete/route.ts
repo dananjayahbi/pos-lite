@@ -127,6 +127,15 @@ export async function POST(
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
 
+    // ARGUS #187 (BUG-42): never submit a legacy row with a negative or
+    // fractional count for approval.
+    if (message.startsWith('Invalid counted quantity')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'INVALID_COUNTED_QUANTITY', message } },
+        { status: 400 },
+      );
+    }
+
     if (message.includes('not found or does not belong')) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Stock take session not found' } },

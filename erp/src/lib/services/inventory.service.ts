@@ -15,6 +15,7 @@ import { computeStockTakeApprovalPlan } from '@/lib/services/stockTakeApproval.c
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { manualAdjustmentSideEffectSummary } from '@/lib/services/manualAdjustment.core';
+import { invalidCountedQuantityRows } from '@/lib/services/stockTakePolicy.core';
 
 // ── Transaction Client Type ──────────────────────────────────────────────────
 
@@ -452,6 +453,15 @@ export async function completeStockTakeSession(
     include: { variant: { select: { sku: true } } },
   });
 
+  // ARGUS #187 (BUG-42): a legacy or direct-database row with a negative count
+  // must not reach approval. Reject it before the status transition.
+  const invalidCounts = invalidCountedQuantityRows(items);
+  if (invalidCounts.length > 0) {
+    throw new Error(
+      `Invalid counted quantity for ${invalidCounts.map((row) => row.label).join(', ')}`,
+    );
+  }
+
   const uncounted = items.filter((i) => i.countedQuantity === null);
   if (uncounted.length > 0) {
     const skus = uncounted.map((i) => i.variant.sku).join(', ');
@@ -484,7 +494,7 @@ export async function approveStockTake(
 ) {
   const session = await prisma.stockTakeSession.findUnique({
     where: { id: sessionId },
-    select: { tenantId: true, status: true },
+    select: { tenantId: true, status: true, initiatedById: true },
   });
 
   if (!session || session.tenantId !== tenantId) {
@@ -492,6 +502,11 @@ export async function approveStockTake(
   }
   if (session.status !== 'PENDING_APPROVAL') {
     throw new Error('Stock take session is not pending approval');
+  }
+  // ARGUS #187 (BUG-43): the route checks this for a typed 403; the service
+  // repeats it so any direct caller cannot bypass maker-checker.
+  if (session.initiatedById === actorId) {
+    throw new Error('You cannot approve a stock take you initiated');
   }
 
   const items = await prisma.stockTakeItem.findMany({
@@ -503,6 +518,15 @@ export async function approveStockTake(
       discrepancy: true,
     },
   });
+
+  // ARGUS #187 (BUG-42): defend the approval path against a legacy/manual row
+  // that still holds a negative or fractional count.
+  const invalidCounts = invalidCountedQuantityRows(items);
+  if (invalidCounts.length > 0) {
+    throw new Error(
+      `Invalid counted quantity for ${invalidCounts.map((row) => row.label).join(', ')}`,
+    );
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     // Stock can move between the count and approval (sales, receipts,

@@ -5,6 +5,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StockTakeStatus, UserRole, NotificationType } from '@/generated/prisma/client';
 import { approveStockTake } from '@/lib/services/inventory.service';
+import { canApproveStockTake } from '@/lib/services/stockTakePolicy.core';
 
 export async function POST(
   _request: Request,
@@ -64,8 +65,17 @@ export async function POST(
 
     // M13-02 (BUG-43) - maker-checker separation: the initiator can never
     // approve their own stock take, even when they hold the approve
-    // permission (e.g. OWNER). Enforced here, at the API source of truth.
-    if (stockTakeSession.initiatedById === session.user.id) {
+    // permission (e.g. OWNER). The shared policy helper is the same rule the
+    // service repeats.
+    if (
+      !canApproveStockTake({
+        status: stockTakeSession.status,
+        userId: session.user.id,
+        initiatedById: stockTakeSession.initiatedById,
+        canConduct: true,
+        canApprove: true,
+      })
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -79,7 +89,8 @@ export async function POST(
     // lock, compares it with the counted quantity (never the session-start
     // snapshot), applies the delta, records the ledger rows and the approval
     // audit, and rewrites the stored discrepancies (ARGUS #138/#207).
-    const result = await approveStockTake(tenantId, sessionId, session.user.id);
+    // ARGUS #187: keep the service's (sessionId, tenantId, actorId) order.
+    const result = await approveStockTake(sessionId, tenantId, session.user.id);
 
     // Notify the session initiator and any low-stock recipients. The stock
     // correction is already committed; these are secondary.
@@ -143,6 +154,24 @@ export async function POST(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to approve stock take session';
+
+    // ARGUS #187 (BUG-42): a stored negative/fractional count is invalid input,
+    // not a server failure. Return the same 400 the PATCH validator uses.
+    if (message.startsWith('Invalid counted quantity')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'INVALID_COUNTED_QUANTITY', message } },
+        { status: 400 },
+      );
+    }
+
+    // ARGUS #187 (BUG-43): the route pre-checks this, but a direct service
+    // caller (or a race) still gets a typed refusal rather than a 500.
+    if (message.includes('cannot approve a stock take you initiated')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message } },
+        { status: 403 },
+      );
+    }
 
     // A stale session or a variant that disappeared is a conflict, not a 500;
     // a correction can never produce negative stock because approval now sets
