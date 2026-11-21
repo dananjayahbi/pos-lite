@@ -2,6 +2,7 @@
 
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatRupee } from '@/lib/format';
 import type { PaymentBreakdown } from './types';
 
 const COLORS: Record<string, string> = {
@@ -11,12 +12,6 @@ const COLORS: Record<string, string> = {
   BANK_TRANSFER: '#f59e0b',
   OTHER: '#D1C7BD',
 };
-
-const lkr = new Intl.NumberFormat('en-LK', {
-  style: 'currency',
-  currency: 'LKR',
-  maximumFractionDigits: 0,
-});
 
 interface SalesByPaymentChartProps {
   data: PaymentBreakdown[];
@@ -65,7 +60,7 @@ export function SalesByPaymentChart({ data }: SalesByPaymentChartProps) {
                     border: '1px solid #D1C7BD',
                     fontSize: 12,
                   }}
-                  formatter={(value) => [lkr.format(Number(value)), 'Total']}
+                  formatter={(value) => [formatRupee(Number(value)), 'Total']}
                 />
               </PieChart>
             </ResponsiveContainer>

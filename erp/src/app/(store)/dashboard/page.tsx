@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
 import { LOW_STOCK_SQL_PREDICATE } from '@/lib/inventory/lowStockPredicate';
 import { lowStockCardSubtitle } from '@/lib/dashboard/lowStockNote.core';
+import { formatRupee } from '@/lib/format';
 import { getDefaultRouteForRole } from '@/lib/utils/default-route';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -29,11 +30,6 @@ import {
   resolveRecentSalePayment,
   type RecentSalePaymentTone,
 } from '@/components/dashboard/recentSalePayment';
-
-const lkr = new Intl.NumberFormat('en-LK', {
-  style: 'currency',
-  currency: 'LKR',
-});
 
 const PAYMENT_TONE_CLASS: Record<RecentSalePaymentTone, string> = {
   cash: 'bg-green-100 text-green-800',
@@ -126,7 +122,7 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <StatCard
         label="Today's Revenue"
-        value={lkr.format(todayRevenue)}
+        value={formatRupee(todayRevenue)}
         icon={<TrendingUp className="h-6 w-6" />}
         sub={`${todaySales.length} transaction${todaySales.length !== 1 ? 's' : ''}`}
       />
@@ -195,7 +191,7 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
                 <Badge className={PAYMENT_TONE_CLASS[payment.tone]}>{payment.label}</Badge>
               </TableCell>
               <TableCell className="text-espresso font-medium">
-                {lkr.format(Number(sale.totalAmount))}
+                {formatRupee(Number(sale.totalAmount))}
               </TableCell>
               <TableCell className="text-sand-ink text-sm">
                 {sale.completedAt ? formatRecentSaleTimestamp(sale.completedAt) : '-'}

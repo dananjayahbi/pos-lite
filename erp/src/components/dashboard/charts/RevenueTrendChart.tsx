@@ -10,13 +10,8 @@ import {
   YAxis,
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatRupee } from '@/lib/format';
 import type { DailyRevenue } from './types';
-
-const lkr = new Intl.NumberFormat('en-LK', {
-  style: 'currency',
-  currency: 'LKR',
-  maximumFractionDigits: 0,
-});
 
 interface RevenueTrendChartProps {
   data: DailyRevenue[];
@@ -80,7 +75,7 @@ export function RevenueTrendChart({ data }: RevenueTrendChartProps) {
                   border: '1px solid #D1C7BD',
                   fontSize: 12,
                 }}
-                formatter={(value) => [lkr.format(Number(value)), 'Revenue']}
+                formatter={(value) => [formatRupee(Number(value)), 'Revenue']}
               />
               <Area
                 type="monotone"
