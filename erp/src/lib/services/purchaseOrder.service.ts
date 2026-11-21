@@ -6,7 +6,10 @@ import { adjustStockInTx } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { computePurchaseOrderTotals } from '@/lib/services/purchaseOrderTotals';
 import { computePurchaseOrderPayable } from '@/lib/services/purchaseOrderPayable.core';
-import { isPurchaseOrderFinanciallyLocked } from '@/lib/services/purchaseOrderPermissions.core';
+import {
+  canCancelPurchaseOrder,
+  isPurchaseOrderFinanciallyLocked,
+} from '@/lib/services/purchaseOrderPermissions.core';
 import {
   generatePurchaseOrderReference,
   isPurchaseOrderReferenceTaken,
@@ -512,8 +515,10 @@ export async function cancelPO(tenantId: string, poId: string) {
     throw new Error('Purchase order not found');
   }
 
-  if (po.status !== POStatus.DRAFT && po.status !== POStatus.SENT) {
-    throw new Error(`Cannot cancel a purchase order with status ${po.status}`);
+  if (!canCancelPurchaseOrder(po.status)) {
+    throw new Error(
+      `Cannot cancel a purchase order with status ${po.status} - cancel is only available before goods are received`,
+    );
   }
 
   // Cancelling after money has been applied would leave the payment row and its

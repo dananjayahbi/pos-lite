@@ -51,6 +51,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { formatRupee } from '@/lib/format';
+import { canCancelPurchaseOrder } from '@/lib/services/purchaseOrderPermissions.core';
 
 import { cancelPurchaseOrder } from './poApi';
 import { formatPoDate } from './poDates';
@@ -363,9 +364,7 @@ export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }
                             </Link>
                           </DropdownMenuItem>
                         ) : null}
-                        {po.status === 'DRAFT' ||
-                        po.status === 'SENT' ||
-                        po.status === 'PARTIALLY_RECEIVED' ? (
+                        {canCancelPurchaseOrder(po.status) ? (
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -374,6 +373,17 @@ export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }
                             >
                               <XCircle className="h-4 w-4" />
                               Cancel PO
+                            </DropdownMenuItem>
+                          </>
+                        ) : po.status === 'PARTIALLY_RECEIVED' ? (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              disabled
+                              className="flex cursor-not-allowed items-center gap-2 text-mist-ink"
+                            >
+                              <XCircle className="h-4 w-4" />
+                              Cancel unavailable - goods received
                             </DropdownMenuItem>
                           </>
                         ) : null}

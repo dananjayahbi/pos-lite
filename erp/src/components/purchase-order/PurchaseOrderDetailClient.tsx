@@ -29,6 +29,10 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatRupee } from '@/lib/format';
+import {
+  canCancelPurchaseOrder,
+  isPurchaseOrderFinanciallyLocked,
+} from '@/lib/services/purchaseOrderPermissions.core';
 
 import { cancelPurchaseOrder, recordPurchaseOrderPayment } from './poApi';
 import { formatPoDate } from './poDates';
@@ -155,8 +159,7 @@ export function PurchaseOrderDetailClient({ poId, canApprove }: { poId: string; 
 
   const status = po.status;
   const canCancel =
-    (status === 'DRAFT' || status === 'SENT' || status === 'PARTIALLY_RECEIVED') &&
-    Number(po.paidTotal ?? 0) <= 0;
+    canCancelPurchaseOrder(status) && !isPurchaseOrderFinanciallyLocked(po.paidTotal ?? 0);
   const canPay = PAYABLE_STATUSES.has(status) && paymentsState.outstanding > 0;
 
   return (
@@ -220,6 +223,15 @@ export function PurchaseOrderDetailClient({ poId, canApprove }: { poId: string; 
               variant="destructive"
               onClick={() => setCancelOpen(true)}
               disabled={cancelling}
+            >
+              <XCircle className="mr-2 h-4 w-4" />
+              Cancel PO
+            </Button>
+          ) : status === 'PARTIALLY_RECEIVED' ? (
+            <Button
+              variant="outline"
+              disabled
+              title="Goods have already been received - cancel is not available"
             >
               <XCircle className="mr-2 h-4 w-4" />
               Cancel PO

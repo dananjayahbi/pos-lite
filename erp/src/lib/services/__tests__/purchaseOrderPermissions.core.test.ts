@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { canCreatePurchaseOrderWithStatus, isPurchaseOrderFinanciallyLocked } from '@/lib/services/purchaseOrderPermissions.core';
+import {
+  canCancelPurchaseOrder,
+  canCreatePurchaseOrderWithStatus,
+  isPurchaseOrderFinanciallyLocked,
+} from '@/lib/services/purchaseOrderPermissions.core';
 
 /** ARGUS #224: creating as SENT must require purchase_order:approve. */
 describe('canCreatePurchaseOrderWithStatus', () => {
@@ -28,5 +32,27 @@ describe('isPurchaseOrderFinanciallyLocked', () => {
   it('leaves an unpaid order editable/cancellable', () => {
     expect(isPurchaseOrderFinanciallyLocked(0)).toBe(false);
     expect(isPurchaseOrderFinanciallyLocked('0.00')).toBe(false);
+  });
+});
+
+/** ARGUS #227: only the statuses cancelPO accepts may offer Cancel. */
+describe('canCancelPurchaseOrder', () => {
+  it('allows the pre-receipt statuses', () => {
+    expect(canCancelPurchaseOrder('DRAFT')).toBe(true);
+    expect(canCancelPurchaseOrder('SENT')).toBe(true);
+  });
+
+  it('refuses once goods have been received', () => {
+    expect(canCancelPurchaseOrder('PARTIALLY_RECEIVED')).toBe(false);
+    expect(canCancelPurchaseOrder('RECEIVED')).toBe(false);
+  });
+
+  it('refuses an already cancelled order', () => {
+    expect(canCancelPurchaseOrder('CANCELLED')).toBe(false);
+  });
+
+  it('refuses unknown statuses', () => {
+    expect(canCancelPurchaseOrder('')).toBe(false);
+    expect(canCancelPurchaseOrder('PENDING')).toBe(false);
   });
 });
