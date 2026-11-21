@@ -35,6 +35,7 @@ import { useStockActors } from '@/hooks/useStockActors';
 import { stockActorLabel } from '@/lib/stock/actor-label';
 import { resolveStockMovementSource } from '@/lib/stock/movement-source';
 import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
+import { movementDateRangeError } from '@/lib/stock/movement-date-range';
 import { formatVariantLabel, VARIANT_LABEL_SEPARATOR } from '@/lib/products/variant-label';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { Badge } from '@/components/ui/badge';
@@ -113,6 +114,9 @@ function StockMovementHistoryInner() {
   const page = Number(searchParams.get('page') ?? '1');
   const from = searchParams.get('from') ?? getDefaultFrom();
   const to = searchParams.get('to') ?? '';
+  // ARGUS #204: an inverted range can never match, so say so instead of
+  // showing the ordinary empty result.
+  const dateRangeError = movementDateRangeError(from, to);
   const reasonsParam = searchParams.get('reasons');
   const search = searchParams.get('search') ?? '';
   const actorId = searchParams.get('actorId') ?? '';
@@ -183,6 +187,10 @@ function StockMovementHistoryInner() {
   const [exporting, setExporting] = useState(false);
 
   const handleExport = useCallback(async () => {
+    if (dateRangeError) {
+      toast.error(dateRangeError);
+      return;
+    }
     setExporting(true);
     try {
       const params = new URLSearchParams();
@@ -230,7 +238,7 @@ function StockMovementHistoryInner() {
     } finally {
       setExporting(false);
     }
-  }, [from, to, reasonFilter, search, actorId, sortOrder]);
+  }, [from, to, reasonFilter, search, actorId, sortOrder, dateRangeError]);
 
   // ── Reason chip toggle ─────────────────────────────────────────────────────
   const toggleReason = useCallback(
@@ -283,7 +291,7 @@ function StockMovementHistoryInner() {
           <h1 className="font-display text-2xl font-semibold text-espresso">Stock Movement History</h1>
           <p className="mt-1 font-body text-sm text-mist-ink">View and export all stock movements across your inventory.</p>
         </div>
-        <Button variant="outline" onClick={handleExport} disabled={exporting}>
+        <Button variant="outline" onClick={handleExport} disabled={exporting || Boolean(dateRangeError)}>
           {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
           Export CSV
         </Button>
@@ -382,8 +390,7 @@ function StockMovementHistoryInner() {
             </div>
 
             {/* Search */}
-            <div className="space-y-1 flex-1 min-w-50">
-              <label className="text-xs font-medium text-mist-ink">Product / SKU</label>
+            <div className="space-y-1 flex-1 min-w-50">              <label className="text-xs font-medium text-mist-ink">Product / SKU</label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-mist-ink" />
                 <Input
@@ -414,6 +421,12 @@ function StockMovementHistoryInner() {
               </Select>
             </div>
           </div>
+
+          {dateRangeError && (
+            <p role="alert" className="font-body text-xs font-medium text-red-600">
+              {dateRangeError}
+            </p>
+          )}
 
           {/* Row 2: reason chips */}
           <div className="space-y-1.5">
@@ -522,7 +535,19 @@ function StockMovementHistoryInner() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading
+            {dateRangeError ? (
+              <TableRow>
+                <TableCell colSpan={10} className="h-40">
+                  <div className="flex flex-col items-center justify-center gap-2 text-center text-red-700">
+                    <AlertTriangle className="h-8 w-8 text-red-500" />
+                    <p className="text-sm font-medium">{dateRangeError}</p>
+                    <p className="text-xs">
+                      Adjust the dates to run the query - this is not an empty result.
+                    </p>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : isLoading
               ? Array.from({ length: 7 }).map((_, i) => (
                   <TableRow key={i}>
                     {Array.from({ length: 10 }).map((_, j) => (
@@ -664,7 +689,7 @@ function StockMovementHistoryInner() {
       </div>
 
       {/* Pagination */}
-      {meta && !isError && meta.totalPages > 0 && (
+      {meta && !isError && !dateRangeError && meta.totalPages > 0 && (
         <div className="flex items-center justify-between text-sm">
           <p className="text-mist-ink">
             Showing {startItem}–{endItem} of {meta.total}

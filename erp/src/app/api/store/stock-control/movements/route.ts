@@ -57,6 +57,21 @@ export async function GET(request: NextRequest) {
     parseQueryDate(searchParams, 'from');
     parseQueryDate(searchParams, 'to');
     const { from: fromDate, to: toDate } = resolveInclusiveDateRange(fromParam, toParam);
+    // ARGUS #204: an inverted range is invalid input, not a valid empty
+    // result. The UI shows the same message before it queries.
+    if (fromDate && toDate && fromDate.getTime() > toDate.getTime()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'From must be on or before To',
+            details: [{ path: 'from', message: 'From must be on or before To' }],
+          },
+        },
+        { status: 400 },
+      );
+    }
     const reasonsParam = searchParams.get('reasons');
     const search = searchParams.get('search');
     const actorId = searchParams.get('actorId');
