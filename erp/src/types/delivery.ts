@@ -96,6 +96,7 @@ export interface DeliveryListItem {
   source: DeliverySource;
   status: DeliveryStatus;
   codAmount: number | string;
+  declaredValue?: number | string | null;
   shippingFee?: number | string | null;
   totalWeightKg?: number | string | null;
   itemCount: number;
