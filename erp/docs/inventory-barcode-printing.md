@@ -40,6 +40,17 @@ thumbnail → variant image), falling back to a bag icon when no image exists.
 and is unit-tested, so the preview page count and the printed page count cannot
 drift apart.
 
+## Inventory dialog A4 mode
+
+The **Print Barcode Labels** dialog on the inventory list offers Thermal
+(4 × 6 cm) and A4 Sheet modes. A4 reuses this page's geometry and
+`BarcodeSheetPage`: 3 × 8 (24) labels of 63.5 × 33.9 mm per sheet, paginated by
+`paginateBarcodeSheet`, with the same `@page { size: A4 portrait; margin: 0 }`
+and explicit per-sheet break. It previously claimed 4 × 8 = 32 labels per
+sheet, but 4 × 6 cm labels only fit 4 rows — the overflow was left to browser
+auto-pagination and split rows across pages (ARGUS #156). Thermal mode is
+unchanged.
+
 ## Barcode generation and storage
 
 - `src/lib/barcode.ts` generates **EAN-13** values in the GS1 internal-use range:
