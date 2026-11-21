@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { formatRupee } from '@/lib/format';
-import { staffDisplayName } from '@/lib/utils/staff-name';
+import { returnStaffLabel } from '@/components/returns/returnAuthorizer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -72,7 +72,8 @@ interface ReturnRecord {
   lines: ReturnLine[];
   originalSale: SaleData;
   initiatedBy: { id: string; email: string };
-  authorizedBy: { id: string; email: string };
+  // Nullable: legacy rows and non-manager refunds have no recorded authorizer.
+  authorizedBy: { id: string; email: string } | null;
 }
 
 interface Filters {
@@ -309,7 +310,7 @@ export function ReturnsHistoryTable() {
                       )}
                     </TableCell>
                     <TableCell className="font-body text-xs text-espresso">
-                      {staffDisplayName(returnRecord.authorizedBy.email)}
+                      {returnStaffLabel(returnRecord.authorizedBy)}
                     </TableCell>
                     <TableCell className="text-center">
                       <Button

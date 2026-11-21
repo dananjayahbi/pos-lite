@@ -77,10 +77,24 @@ export async function POST(request: Request) {
 
     const data = parsed.data;
 
-    // If an authorizing manager was provided, verify they are a manager+ in the same tenant
-    if (data.authorizedById) {
+    // ARGUS #95: require an authorizer for manager-tier actors. A manager or
+    // owner processing a return authorizes it themselves, so when a client
+    // omits `authorizedById` (e.g. the POS wizard before it learned the role)
+    // the session user is recorded rather than persisting a null authorizer.
+    // Deliberate exception: a non-manager holding an explicit `sale:refund`
+    // override may still refund without an authorizer; those legacy/direct
+    // rows render as "Not recorded" instead of crashing the returns ledger.
+    const actorMayAuthorize = ['MANAGER', 'OWNER', 'SUPER_ADMIN'].includes(
+      session.user.role,
+    );
+    const authorizedById =
+      data.authorizedById ?? (actorMayAuthorize ? session.user.id : null);
+
+    // If an authorizing manager was provided (or derived), verify they are a
+    // manager+ in the same tenant.
+    if (authorizedById) {
       const authorizer = await prisma.user.findFirst({
-        where: { id: data.authorizedById, tenantId, isActive: true },
+        where: { id: authorizedById, tenantId, isActive: true },
         select: { role: true },
       });
 
@@ -94,7 +108,7 @@ export async function POST(request: Request) {
 
     const result = await initiateReturn(tenantId, {
       initiatedById: session.user.id,
-      authorizedById: data.authorizedById ?? null,
+      authorizedById,
       originalSaleId: data.originalSaleId,
       lines: data.lines,
       refundMethod: data.refundMethod,

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { canAuthorizeReturn } from '@/components/returns/returnAuthorizer';
 import { formatRupee } from '@/lib/format';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -126,7 +127,10 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
         refundMethod,
         restockItems,
         reason: reason.trim(),
-        authorizedById: currentUserId,
+        // ARGUS #95: a manager/owner authorizes their own return. A non-manager
+        // with an explicit `sale:refund` override sends nothing — recording
+        // them as the authorizer would fail the manager check in the route.
+        ...(canAuthorizeReturn(session?.user?.role) ? { authorizedById: currentUserId } : {}),
       };
       if (refundMethod === 'CARD_REVERSAL' && cardReversalRef.trim()) {
         body.cardReversalReference = cardReversalRef.trim();
