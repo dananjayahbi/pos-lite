@@ -28,6 +28,11 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { formatRupee } from '@/lib/format';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import {
+  emptyShiftSales,
+  shiftSalesDetailLabel,
+  type ShiftSalesSummary,
+} from '@/lib/shifts/shift-sales-count';
 import { Eye, PlusCircle, Wallet } from 'lucide-react';
 
 interface StaffMember {
@@ -47,7 +52,7 @@ interface ShiftRow {
     cashDifference?: number | string;
     closedAt?: string;
   } | null;
-  _count?: { sales: number };
+  salesCounts?: ShiftSalesSummary;
 }
 
 interface ShiftListResponse {
@@ -71,6 +76,25 @@ function StatusBadge({ status }: { status: ShiftRow['status'] }) {
     <Badge variant="secondary" className="bg-slate-100 text-slate-700 hover:bg-slate-100">
       Closed
     </Badge>
+  );
+}
+
+/**
+ * ARGUS #110: a transaction is any sale row; only COMPLETED rows are sales.
+ * The completed figure is the one closures/Z-reports print.
+ */
+function ShiftSalesCells({ counts }: { counts?: ShiftSalesSummary | undefined }) {
+  const summary = counts ?? emptyShiftSales();
+  const detail = shiftSalesDetailLabel(summary);
+
+  return (
+    <>
+      <TableCell className="font-mono text-sm text-espresso">{summary.total}</TableCell>
+      <TableCell className="text-sm text-espresso">
+        <span className="font-mono">{summary.completed}</span>
+        {detail ? <span className="ml-2 text-xs text-sand-ink">{detail}</span> : null}
+      </TableCell>
+    </>
   );
 }
 
@@ -315,7 +339,8 @@ export default function StaffShiftsPage() {
                   <TableHead>Opened</TableHead>
                   <TableHead>Closed</TableHead>
                   <TableHead>Opening Float</TableHead>
-                  <TableHead>Sales</TableHead>
+                  <TableHead>Transactions</TableHead>
+                  <TableHead>Completed sales</TableHead>
                   <TableHead>Recorded difference</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -337,9 +362,7 @@ export default function StaffShiftsPage() {
                     <TableCell className="font-mono text-sm text-espresso">
                       {formatRupee(shift.openingFloat)}
                     </TableCell>
-                    <TableCell className="font-mono text-sm text-espresso">
-                      {shift._count?.sales ?? 0}
-                    </TableCell>
+                    <ShiftSalesCells counts={shift.salesCounts} />
                     <TableCell className="font-mono text-sm text-espresso">
                       {shift.closure?.cashDifference !== undefined && shift.closure?.cashDifference !== null
                         ? formatRupee(shift.closure.cashDifference)
