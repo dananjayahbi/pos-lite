@@ -88,9 +88,20 @@ For each agent commit:
 - Batch 2 submitted + merged: #75 (sale detail breakdown), #76 (zero-line sales
   invariant + repair script), #95 (return authorizer), #108 (historical shift
   closure recompute script).
-- Batch 3 in flight (agents): returns specialist -> #96, #97, #98; appointments
-  specialist -> #120, #121; shifts specialist -> #109.
-- Current main checkpoint SHA after batch 2: see `git log --oneline -1`.
+- Batch 3 submitted + merged: #96 (refund method vs original tender), #97 (refund
+  payment-account posting), #98 (printed 8-char sale reference lookup), #120
+  (appointment cancel guard + deposit credit), #121 (appointment deposit/paid
+  state), #123 (appointment Rs. currency), #124 (appointment settings persisted
+  and enforced), #156 (barcode dialog A4 24-up layout), #181 (manual adjustment
+  reasons restricted), #182 (stock-take Review link), #198 (stock ledger audit +
+  repair CLI).
+- Batch 4 in flight: agent-sales -> #192 (serialize adjustments), #193 (reason
+  vs direction); agent-pos -> #205 (stock-take item/completion guards), #206
+  (cancel-with-apply bypass); agent-reports -> #213 (low-stock false all-clear).
+- Main agent: #141 (form filter), #142 (stock-status pagination + shared rule),
+  #143 (VAT label 18%) done; #207 (stock-take negative stock) held until #205/#206
+  land, then re-evaluate against #138's approval-time deltas.
+- Checkpoint after batch 3: full suite 129 files / 1126 tests green.
 - Worktrees are reset with `git -C <wt> reset --hard argus_qa` between batches;
   their old commits are already merged, so this is safe.
 - Every agent task must call `log_task_progress` before `submit_for_review`

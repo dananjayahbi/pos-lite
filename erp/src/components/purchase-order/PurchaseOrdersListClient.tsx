@@ -73,7 +73,7 @@ interface SupplierOption {
   name: string;
 }
 
-export function PurchaseOrdersListClient() {
+export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }) {
   const queryClient = useQueryClient();
 
   const [supplierId, setSupplierId] = useState('ALL');
@@ -339,7 +339,7 @@ export function PurchaseOrdersListClient() {
                             </Link>
                           </DropdownMenuItem>
                         ) : null}
-                        {po.status === 'DRAFT' ? (
+                        {po.status === 'DRAFT' && canApprove ? (
                           <DropdownMenuItem
                             className="flex cursor-pointer items-center gap-2"
                             onClick={() => void handleMarkSent(po)}

@@ -52,7 +52,7 @@ import { usePOPayments } from './usePOPayments';
 
 const PAYABLE_STATUSES = new Set(['DRAFT', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED']);
 
-export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
+export function PurchaseOrderDetailClient({ poId, canApprove }: { poId: string; canApprove: boolean }) {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -193,7 +193,7 @@ export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
               Record Payment
             </Button>
           ) : null}
-          {status === 'DRAFT' ? (
+          {status === 'DRAFT' && canApprove ? (
             <>
               <Button variant="outline" onClick={handleMarkSent} disabled={markingSent}>
                 {markingSent ? (

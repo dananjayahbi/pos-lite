@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getPOs, createPO } from '@/lib/services/purchaseOrder.service';
+import { canCreatePurchaseOrderWithStatus } from '@/lib/services/purchaseOrderPermissions.core';
 import { CreatePOSchema } from '@/lib/validators/purchaseOrder.validators';
 import { POStatus } from '@/generated/prisma/client';
 import { parseQueryInt } from '@/lib/api/query-params';
@@ -92,6 +93,27 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message: 'Validation failed', details: errors } },
         { status: 400 },
+      );
+    }
+
+    // "Create as SENT" commits the order to the supplier, which is an approval
+    // action: create-only roles may save a DRAFT but must not bypass the
+    // purchase_order:approve separation (ARGUS #224).
+    if (
+      !canCreatePurchaseOrderWithStatus(
+        parsed.data.status,
+        hasPermission(session.user, PERMISSIONS.SUPPLIER.approvePurchaseOrder),
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Sending a purchase order requires the purchase_order:approve permission',
+          },
+        },
+        { status: 403 },
       );
     }
 
