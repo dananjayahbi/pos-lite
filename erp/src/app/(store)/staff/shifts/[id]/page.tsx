@@ -144,7 +144,9 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
             <CardTitle className="text-sm text-sand-ink">Expected cash</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="font-display text-3xl text-espresso">{formatRupee(shift.expectedCash)}</p>
+            <p className="font-display text-3xl text-espresso">
+              {formatRupee(report.cashReconciliation.expectedCashInDrawer)}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -187,7 +189,9 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
               <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Cash difference</p>
                 <p className="mt-1 text-sm text-espresso">
-                  {shift.closure ? formatRupee(shift.closure.cashDifference) : 'Not closed yet'}
+                  {report.cashReconciliation.cashDifference === null
+                    ? 'Not closed yet'
+                    : formatRupee(report.cashReconciliation.cashDifference)}
                 </p>
               </div>
             </CardContent>
@@ -242,8 +246,26 @@ export default function ShiftDetailPage({ params }: { params: Promise<{ id: stri
               </div>
               <div className="border-t border-mist pt-3">
                 <div className="flex items-center justify-between">
+                  <span className="text-sand-ink">Actual cash counted</span>
+                  <span className="font-mono text-espresso">
+                    {report.cashReconciliation.actualCashCounted === null
+                      ? '-'
+                      : formatRupee(report.cashReconciliation.actualCashCounted)}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center justify-between">
                   <span className="font-medium text-espresso">Expected cash</span>
-                  <span className="font-mono text-espresso">{formatRupee(report.cashReconciliation.expectedCashInDrawer)}</span>
+                  <span className="font-mono text-espresso">
+                    {formatRupee(report.cashReconciliation.expectedCashInDrawer)}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="font-medium text-espresso">Cash difference</span>
+                  <span className="font-mono text-espresso">
+                    {report.cashReconciliation.cashDifference === null
+                      ? 'Not closed yet'
+                      : formatRupee(report.cashReconciliation.cashDifference)}
+                  </span>
                 </div>
               </div>
             </CardContent>

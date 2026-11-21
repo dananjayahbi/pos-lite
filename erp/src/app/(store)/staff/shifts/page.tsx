@@ -316,7 +316,7 @@ export default function StaffShiftsPage() {
                   <TableHead>Closed</TableHead>
                   <TableHead>Opening Float</TableHead>
                   <TableHead>Sales</TableHead>
-                  <TableHead>Difference</TableHead>
+                  <TableHead>Recorded difference</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>

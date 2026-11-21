@@ -94,6 +94,22 @@ describe('shift cash reconciliation', () => {
     expect(totals.pettyOut.toNumber()).toBe(200);
   });
 
+  it('keeps one authoritative difference for the shift detail page', () => {
+    // CMU4USAR1: the old closure ignored the 500 cash refund and 35 petty cash
+    // and reported 0.00. The payment-leg view shows a 535.00 shortage.
+    const expected = computeExpectedCash({
+      openingFloat: 0,
+      cashSales: 30668.36,
+      cashRefunds: 500,
+      cashDeposited: 0,
+      pettyCashOut: 35,
+    });
+    const actualCashCounted = new Decimal(30668.36);
+
+    expect(expected.toNumber()).toBe(30133.36);
+    expect(actualCashCounted.minus(expected).toNumber()).toBe(535);
+  });
+
   it('rounds the drawer total to two decimals', () => {
     const expected = computeExpectedCash({
       openingFloat: '0.005',

@@ -35,6 +35,18 @@ payment-leg totals (including SPLIT legs), and `expectedCash`/`cashDifference`
 use the shared formula. The shift-closed notification reads the same
 `cashDifference`, so it now alerts on the real shortage.
 
+## One authoritative figure on the shift detail page
+
+The shift detail page (`/staff/shifts/[id]`) now takes **expected cash, actual
+cash counted and the cash difference from the same Z-report payload**, so the
+top card, the cash-reconciliation card and the summary can no longer contradict
+each other.
+
+A closure recorded before this fix may still hold stale totals in
+`ShiftClosure`. The shifts list labels that column **Recorded difference** to
+make clear it is the historical snapshot, while the detail page shows the
+payment-leg recomputation as the authoritative figure (ARGUS #107).
+
 ## Verification
 
 `src/lib/services/__tests__/shiftCash.core.test.ts` covers split cash legs,
