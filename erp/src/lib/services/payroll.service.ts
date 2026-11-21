@@ -335,6 +335,7 @@ export async function generatePayrollRun(input: GeneratePayrollInput) {
           tenantId: input.tenantId,
           userId: row.userId,
           createdAt: { lte: new Date(preview.periodEnd) },
+          sale: { status: { not: 'VOIDED' } },
           OR: [
             { payoutId: null },
             { payout: { paymentAccountName: null } },

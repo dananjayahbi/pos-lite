@@ -205,6 +205,7 @@ export async function getCommissionSummaryForUser(
       tenantId,
       userId,
       createdAt: { lte: periodEnd },
+      sale: { status: { not: 'VOIDED' } },
       OR: [
         { payoutId: null },
         { payout: { paymentAccountName: null } },

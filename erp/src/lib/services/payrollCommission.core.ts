@@ -24,6 +24,17 @@ export function isPendingPayrollPayoutName(name: string | null | undefined): boo
   return typeof name === 'string' && name.startsWith(PAYROLL_PENDING_ACCOUNT_PREFIX);
 }
 
+/**
+ * ARGUS #374: a voided sale carries no payable commission. Returned sales are
+ * still eligible for the record-based netting (the negative clawback record
+ * reduces the outstanding balance); only VOIDED is excluded outright.
+ */
+export function isPayrollEligibleCommissionSale(
+  status: string | null | undefined,
+): boolean {
+  return status !== 'VOIDED';
+}
+
 export interface PayrollCommissionPlan {
   netOutstanding: Decimal;
   /** Never negative — payroll must not pay a negative commission balance. */

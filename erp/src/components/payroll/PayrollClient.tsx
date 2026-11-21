@@ -357,7 +357,7 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                     <TableHead className="text-right">Basic</TableHead>
                     <TableHead className="text-right">Allowances</TableHead>
                     <TableHead className="text-right">OT</TableHead>
-                    <TableHead className="text-right">Commission</TableHead>
+                    <TableHead className="text-right">Commission outstanding</TableHead>
                     <TableHead className="text-right">Gross</TableHead>
                     <TableHead className="min-w-[92px] text-right">No-pay days</TableHead>
                     <TableHead className="min-w-[110px] text-right">Advance (LKR)</TableHead>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  isPayrollEligibleCommissionSale,
   isPendingPayrollPayoutName,
   payrollPendingMarker,
   planPayrollCommission,
@@ -50,5 +51,13 @@ describe('pending payroll payout marker', () => {
     expect(isPendingPayrollPayoutName(marker)).toBe(true);
     expect(isPendingPayrollPayoutName('Cash Drawer')).toBe(false);
     expect(isPendingPayrollPayoutName(null)).toBe(false);
+  });
+});
+
+describe('commission sale eligibility', () => {
+  it('excludes voided sales but keeps returned/completed sales for netting', () => {
+    expect(isPayrollEligibleCommissionSale('VOIDED')).toBe(false);
+    expect(isPayrollEligibleCommissionSale('COMPLETED')).toBe(true);
+    expect(isPayrollEligibleCommissionSale('RETURNED')).toBe(true);
   });
 });
