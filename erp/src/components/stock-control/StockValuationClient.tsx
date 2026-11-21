@@ -19,20 +19,14 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useGetStockValuation, useInvalidateStockValuation } from '@/hooks/useGetStockValuation';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { formatRupee } from '@/lib/format';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 import { VALUATION_COST_BASIS_NOTE } from '@/lib/pricing/valuationBasis';
 
 type SortColumn = 'categoryName' | 'variantCount' | 'retailValue' | 'costValue' | 'marginPercent' | 'share';
 type SortDirection = 'asc' | 'desc';
 
 function formatTimestamp(iso: string): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  }).format(new Date(iso));
+  return formatStockMovementTimestamp(iso);
 }
 
 function marginColor(percent: number): string {

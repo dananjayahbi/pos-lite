@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/table';
 import { useStockTakeSession, type StockTakeItemDetail } from '@/hooks/useStockTakeSession';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 
 interface StockTakeReviewProps {
   sessionId: string;
@@ -49,20 +50,7 @@ interface StockTakeReviewProps {
 type TabKey = 'all' | 'discrepancies' | 'matches';
 
 function formatDateTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  return (
-    d.toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }) +
-    ', ' +
-    d.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
-  );
+  return formatStockMovementTimestamp(dateStr);
 }
 
 function DiscrepancyBadge({ value }: { value: number }) {
