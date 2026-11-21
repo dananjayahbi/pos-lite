@@ -141,7 +141,7 @@ export default function ExpensesPageClient({
   const [page, setPage] = useState(1);
 
   // Dialog / Sheet state
-  const [createOpen, setCreateOpen] = useState(Boolean(initialFundId));
+  const [createOpen, setCreateOpen] = useState(Boolean(initialFundId) && canCreate);
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
   const [viewExpense, setViewExpense] = useState<Expense | null>(null);
   // M19-01 (D2): explicit manager approval to let a linked expense overdraw the fund.
@@ -188,7 +188,10 @@ export default function ExpensesPageClient({
     queryFn: async () => {
       const res = await fetch('/api/store/petty-cash');
       const json = await res.json();
-      if (!json.success) return null;
+      // ARGUS #408: GET is read-only and returns data:null when the tenant is
+      // not configured or has duplicate funds. Do not build a fund picker from
+      // an absent fund.
+      if (!json.success || !json.data) return null;
       return json;
     },
     retry: false,
