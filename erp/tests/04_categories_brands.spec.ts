@@ -420,7 +420,7 @@ test.describe.serial('Module 4 — Categories & Brands (full-scope QA)', () => {
     await expect(page.getByRole('heading', { name: 'Brands' })).toBeVisible({ timeout: 90_000 });
     const reason = `${withProducts._count.products} product${
       withProducts._count.products === 1 ? '' : 's'
-    } assigned — reassign or archive them first`;
+    } assigned - reassign or delete them first`;
     // exact:true — the clickable row container is also role=button and its
     // accessible name contains this label as a substring.
     const lock = page.getByRole('button', {
