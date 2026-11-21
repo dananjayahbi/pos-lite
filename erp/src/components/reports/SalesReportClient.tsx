@@ -15,7 +15,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReportContext } from "@/lib/reports/ReportContext";
-import { salesProductLabel } from "@/lib/reports/sales-report";
+import { salesProductLabel, topRevenueProducts } from "@/lib/reports/sales-report";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -67,6 +67,8 @@ interface SalesTotals {
   grossRevenue: string;
   totalReturns: string;
   netRevenue: string;
+  /** Sum of the displayed row percentages (ARGUS #439). */
+  pctOfTotal?: string;
 }
 
 interface SalesData {
@@ -135,11 +137,22 @@ export default function SalesReportClient() {
     return sortProducts(data.products, sortKey, sortDir);
   }, [data, sortKey, sortDir]);
 
-  const top10 = useMemo(() => sorted.slice(0, 10), [sorted]);
+  // ARGUS #439: chart only products with positive revenue, so a zero-value
+  // variant cannot render as a 0-width "top" bar.
+  const top10 = useMemo(() => topRevenueProducts(sorted, 10), [sorted]);
   const maxBar = useMemo(() => {
     if (top10.length === 0) return 1;
     return Math.max(...top10.map((p) => parseFloat(p.netRevenue)), 1);
   }, [top10]);
+
+  const totalPct = useMemo(() => {
+    if (data?.totals.pctOfTotal) return data.totals.pctOfTotal;
+    return data
+      ? data.products
+          .reduce((sum, p) => sum + (parseFloat(p.pctOfTotal) || 0), 0)
+          .toFixed(2)
+      : "0.00";
+  }, [data]);
 
   // Push data to ReportContext for export
   useEffect(() => {
@@ -338,7 +351,7 @@ export default function SalesReportClient() {
                   <TableCell className="text-right font-mono">
                     {fmtCurrency(data.totals.netRevenue)}
                   </TableCell>
-                  <TableCell className="text-right font-mono">100%</TableCell>
+                  <TableCell className="text-right font-mono">{totalPct}%</TableCell>
                 </TableRow>
               </TableFooter>
             </Table>
