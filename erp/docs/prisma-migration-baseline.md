@@ -28,8 +28,8 @@ tables existed.
 
 - `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script`
   returns "This is an empty migration."
-- `prisma migrate status` reports no unapplied migrations once the flaky
-  database connection is available.
+- `prisma migrate status` reports **Database schema is up to date!** for all 54
+  migrations (verified after the transient P1001/P1017 host drops).
 - Schema spot checks: `RawMaterial.unitCost`, `ProductionLog.materialCost`,
   `ReturnStatus.CANCELLED`, `AppointmentService.taxRule`, `PaymentMethod`/
   `PaymentLegMethod` store/exchange credit values, return tax columns and the
