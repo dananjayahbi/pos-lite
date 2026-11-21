@@ -134,12 +134,16 @@ For each agent commit:
 - In flight: #127/#128/#129/#130 (appointment availability, detail completeness,
   list dates/order, inclusive filters) on the appointments agent; #144 low-stock
   shortfall sign and #145 valuation VAT labels on the other agents.
-- Held for the main agent: #131 appointment service tax (needs schema), #132
-  appointment commission attribution.
-- Checkpoint: full suite green at 1,568 tests.
+- Batch 10 merged: #127 (booking availability), #128 (detail completeness),
+  #129 (list years/upcoming-first), #130 (inclusive local date filters),
+  #144 (low-stock shortfall sign), #145 (valuation tax labels), #146 (CSV import
+  row validation), #147 (stale stock takes), #148 (batches of deleted products),
+  #131 (appointment service tax rule), #132 (appointment sale attribution and
+  commission).
+- Checkpoint: full suite green at 1,634 tests (190 files).
 - DB still unreachable at 140.238.145.221:5432 (P1001); migrations
-  20261121160000_raw_material_costing and 20261121170000_return_cancellation
-  are pending deployment.
+  20261121160000_raw_material_costing, 20261121170000_return_cancellation and
+  20261121180000_appointment_service_tax are pending deployment.
 - Worktrees are reset with `git -C <wt> reset --hard argus_qa` between batches;
   their old commits are already merged, so this is safe.
 - Every agent task must call `log_task_progress` before `submit_for_review`
