@@ -131,6 +131,21 @@ export async function PATCH(
       );
     }
 
+    // ARGUS #120: cancellation is owned by the cancel endpoint, which records
+    // the cancellation and returns any outstanding deposit.
+    if (message === 'CANCELLATION_REQUIRES_CANCEL_ENDPOINT') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'CANCELLATION_REQUIRES_CANCEL_ENDPOINT',
+            message: 'Use the cancel action to cancel an appointment',
+          },
+        },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message } },
       { status: 500 },
@@ -178,6 +193,35 @@ export async function DELETE(
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Appointment not found' } },
         { status: 404 },
+      );
+    }
+
+    // ARGUS #120: DELETE shares the cancel guard — never silently reverse a
+    // cancelled booking's sale, never re-cancel a terminal row.
+    if (message === 'APPOINTMENT_HAS_SALE') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'APPOINTMENT_HAS_SALE',
+            message: 'This appointment was converted to a sale - void the sale instead of cancelling',
+          },
+        },
+        { status: 409 },
+      );
+    }
+
+    if (message === 'APPOINTMENT_NOT_CANCELLABLE') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'APPOINTMENT_NOT_CANCELLABLE',
+            message:
+              'Only scheduled, confirmed, checked-in or in-progress appointments can be cancelled',
+          },
+        },
+        { status: 409 },
       );
     }
 

@@ -1,14 +1,20 @@
 import { prisma } from '@/lib/prisma';
+import Decimal from 'decimal.js';
 import type { Prisma } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
 import { getCurrentShift } from '@/lib/services/shift.service';
 import { scheduleReminders } from '@/lib/services/appointment-reminder.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { createPayment } from '@/lib/services/payment.service';
-import { addToSpendTotal } from '@/lib/services/customer.service';
+import { addToSpendTotal, issueCredit } from '@/lib/services/customer.service';
 import { buildSaleAccountLegs, postSaleToAccounts } from '@/lib/services/saleAccounts';
 import { extractTenantRates } from '@/lib/services/sale.service';
 import { computeAppointmentSalePricing } from '@/lib/appointments/appointmentSale.core';
+import {
+  appointmentCancellationBlockReason,
+  appointmentDepositAmount,
+  appointmentDepositDisposition,
+} from '@/lib/appointments/appointmentCancellation.core';
 import {
   APPOINTMENT_BACKDATE_GRACE_MINUTES,
   isAppointmentStatusTransitionAllowed,
@@ -225,6 +231,13 @@ export async function updateAppointment(
     if (!isAppointmentStatusTransitionAllowed(existing.status, input.status)) {
       throw new Error('INVALID_STATUS_TRANSITION');
     }
+    // ARGUS #120: cancellation carries bookkeeping the generic edit path cannot
+    // provide (cancelledAt/By, deposit refund, cancellation audit). Faking the
+    // status here would also skip the sale guard, so cancellation must go
+    // through `cancelAppointment`.
+    if (input.status === 'CANCELLED') {
+      throw new Error('CANCELLATION_REQUIRES_CANCEL_ENDPOINT');
+    }
   }
 
   const data: Prisma.AppointmentUpdateInput = {};
@@ -269,31 +282,56 @@ export async function cancelAppointment(
 ) {
   const existing = await assertAppointmentBelongsToTenant(tenantId, id);
 
-  // A converted appointment has a completed Sale; cancelling it would leave
-  // paid revenue attached to a cancelled booking (ARGUS #119). Void the sale
-  // through its own flow instead.
-  if (existing.saleId) {
-    throw new Error('APPOINTMENT_HAS_SALE');
+  // ARGUS #120: cancelling is a lifecycle transition, not a free-form write.
+  // A converted appointment has a completed Sale — cancelling it would leave
+  // paid revenue attached to a cancelled booking (ARGUS #119) — and terminal
+  // rows must not be re-cancelled. Void the sale through its own flow instead.
+  const blockReason = appointmentCancellationBlockReason(existing);
+  if (blockReason) {
+    throw new Error(blockReason);
   }
 
-  const appointment = await prisma.appointment.update({
-    where: { id },
-    data: {
-      status: 'CANCELLED',
-      cancelledAt: new Date(),
-      cancelledById: userId,
-      cancellationReason: reason ?? null,
-    },
-    include: appointmentInclude,
-  });
+  // ARGUS #120: the deposit is money already collected at booking. An unpaid
+  // deposit on a customer-linked booking is returned as store credit (balance +
+  // credit-note ledger, same helper returns use); a walk-in has no ledger, so
+  // the amount is recorded in the cancellation audit for manual follow-up.
+  const depositDisposition = appointmentDepositDisposition(existing);
+  const depositAmount = appointmentDepositAmount(existing);
+  const depositRefunded =
+    depositDisposition === 'REFUND_TO_STORE_CREDIT' && existing.customerId !== null;
 
-  // Free the slot if linked
-  if (appointment.slotId) {
-    await prisma.appointmentSlot.update({
-      where: { id: appointment.slotId },
-      data: { isBooked: false, appointmentId: null },
+  const appointment = await prisma.$transaction(async (tx) => {
+    if (depositDisposition === 'REFUND_TO_STORE_CREDIT' && existing.customerId) {
+      await issueCredit(
+        tenantId,
+        existing.customerId,
+        new Decimal(depositAmount),
+        `Deposit refund for cancelled appointment ${id.slice(0, 8).toUpperCase()}`,
+        tx,
+      );
+    }
+
+    const updated = await tx.appointment.update({
+      where: { id },
+      data: {
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        cancelledById: userId,
+        cancellationReason: reason ?? null,
+      },
+      include: appointmentInclude,
     });
-  }
+
+    // Free the slot if linked
+    if (updated.slotId) {
+      await tx.appointmentSlot.update({
+        where: { id: updated.slotId },
+        data: { isBooked: false, appointmentId: null },
+      });
+    }
+
+    return updated;
+  }, { maxWait: 10_000, timeout: 30_000 });
 
   await createAuditLog({
     tenantId,
@@ -302,6 +340,13 @@ export async function cancelAppointment(
     entityType: 'Appointment',
     entityId: id,
     action: 'CANCEL',
+    before: { status: existing.status },
+    after: {
+      status: 'CANCELLED',
+      depositAmount,
+      depositDisposition,
+      depositRefunded,
+    },
   });
 
   return appointment;

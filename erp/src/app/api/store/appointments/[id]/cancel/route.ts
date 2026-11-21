@@ -65,6 +65,20 @@ export async function POST(
       );
     }
 
+    if (message === 'APPOINTMENT_NOT_CANCELLABLE') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'APPOINTMENT_NOT_CANCELLABLE',
+            message:
+              'Only scheduled, confirmed, checked-in or in-progress appointments can be cancelled',
+          },
+        },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message } },
       { status: 500 },
