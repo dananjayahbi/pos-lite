@@ -18,7 +18,9 @@
  *   CSV header: Product Name,Category,SKU,Form,Pack Size,Current Stock,Threshold,Shortfall,Retail Price (unquoted).
  * - UI /stock-control/low-stock: h1 "Low Stock Variants", amber count badge, threshold override checkbox + input,
  *   Export CSV button (disabled when total===0), Adjust Stock deep-links, pagination limit 25, empty state
- *   "All variants are adequately stocked". Gate: permissions.includes('stock:view') else in-page message.
+ *   "All variants are adequately stocked". A failed feed shows a red role="alert" card with the endpoint
+ *   message and a Retry button, a neutral "—" badge, and never the healthy empty copy (ARGUS #213).
+ *   Gate: permissions.includes('stock:view') else in-page message.
  * - Adjust route (POST /api/store/stock-control/adjust, permission stock:adjust) creates LOW_STOCK_ALERT
  *   NotificationRecords for OWNER+MANAGER users when newQty <= threshold (and threshold > 0).
  * - Cron routes /api/cron/{batch-alerts,raw-material-alerts,petty-cash-low-alerts}: Bearer CRON_SECRET
@@ -346,16 +348,59 @@ test.describe.serial('Module 10 — Low-Stock Alerts & Reorder Thresholds', () =
     expect((await big.json()).data.length).toBeLessThanOrEqual(100);
   });
 
-  test('N4 — mocked 500 on the feed → UI shows error state, page survives', async ({ page }) => {
+  test('N4 — mocked 500 on the feed → explicit error state, never the all-clear', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     await page.route('**/api/store/stock-control/low-stock**', (route) =>
-      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ success: false, error: { code: 'INTERNAL_ERROR', message: 'boom' } }) }),
+      route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: 'low stock feed unavailable' },
+        }),
+      }),
     );
     await page.goto(LOWSTOCK_PAGE);
     await expect(page.getByRole('heading', { name: /low stock variants/i })).toBeVisible({ timeout: 15000 });
+
+    // ARGUS #213: the failed check is an error, not an empty result.
+    const alert = page.getByRole('alert');
+    await expect(alert).toBeVisible({ timeout: 15000 });
+    await expect(alert).toContainText(/low stock check failed/i);
+    await expect(alert).toContainText(/low stock feed unavailable/i);
+    await expect(alert.getByRole('button', { name: /retry/i })).toBeVisible();
+
+    // Never the healthy state, and the badge is neutral rather than 0.
+    await expect(page.getByText(/all variants are adequately stocked/i)).toHaveCount(0);
+    await expect(page.getByLabel('Low stock count unavailable')).toHaveText('—');
+    await expect(page.getByRole('button', { name: /export csv/i })).toBeDisabled();
+
+    // Retry recovers once the feed is reachable again.
     await page.unroute('**/api/store/stock-control/low-stock**');
-    // Page still interactive after the mocked failure.
+    await alert.getByRole('button', { name: /retry/i }).click();
+    await expect(page.getByRole('alert')).toHaveCount(0, { timeout: 15000 });
     await expect(page.getByRole('heading', { name: /low stock variants/i })).toBeVisible();
+  });
+
+  test('N5 — successful empty feed → green all-clear (distinct from the error state)', async ({ page }) => {
+    await login(page, OWNER.email, OWNER.password);
+    await page.route('**/api/store/stock-control/low-stock**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: [],
+          meta: { total: 0, page: 1, limit: 25, totalPages: 0 },
+        }),
+      }),
+    );
+    await page.goto(LOWSTOCK_PAGE);
+    await expect(page.getByText(/all variants are adequately stocked/i)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.getByLabel('0 low stock variants')).toHaveText('0');
+    await expect(page.getByRole('button', { name: /export csv/i })).toBeDisabled();
+    await page.unroute('**/api/store/stock-control/low-stock**');
   });
 
   // ─── §8 Security, RBAC & Multi-Tenant Isolation ───────────────────────
