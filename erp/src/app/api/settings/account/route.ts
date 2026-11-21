@@ -6,6 +6,14 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getClientIp } from '@/lib/utils/request';
 import { AUTH_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
+import {
+  checkRateLimit,
+  clearRateLimitBucket,
+  recordFailedAttempt,
+} from '@/lib/rate-limit';
+
+const PASSWORD_CHANGE_MAX_ATTEMPTS = 5;
+const PASSWORD_CHANGE_WINDOW_MS = 15 * 60 * 1000;
 
 const changePasswordSchema = z
   .object({
@@ -80,8 +88,50 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: { message: 'User not found' } }, { status: 404 });
     }
 
+    const ip = getClientIp(request);
+    const limiterKey = `account-password:${user.id}`;
+    const limit = checkRateLimit(
+      ip,
+      limiterKey,
+      PASSWORD_CHANGE_MAX_ATTEMPTS,
+      PASSWORD_CHANGE_WINDOW_MS,
+    );
+    if (!limit.allowed) {
+      void createAuditLog({
+        tenantId: user.tenantId,
+        actorId: user.id,
+        actorRole: user.role,
+        entityType: 'User',
+        entityId: user.id,
+        action: AUTH_ACTIONS.PASSWORD_CHANGE_THROTTLED,
+        ipAddress: ip,
+        userAgent: request.headers.get('user-agent') ?? undefined,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          error: { message: 'Too many password attempts. Try again later.' },
+        },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(Math.max(1, Math.ceil((limit.resetAt.getTime() - Date.now()) / 1000))) },
+        },
+      );
+    }
+
     const passwordValid = await bcrypt.compare(currentPassword, user.passwordHash);
     if (!passwordValid) {
+      recordFailedAttempt(ip, limiterKey, PASSWORD_CHANGE_WINDOW_MS);
+      void createAuditLog({
+        tenantId: user.tenantId,
+        actorId: user.id,
+        actorRole: user.role,
+        entityType: 'User',
+        entityId: user.id,
+        action: AUTH_ACTIONS.PASSWORD_CHANGE_FAILED,
+        ipAddress: ip,
+        userAgent: request.headers.get('user-agent') ?? undefined,
+      });
       return NextResponse.json(
         { success: false, error: { message: 'Current password is incorrect' } },
         { status: 400 },
@@ -98,14 +148,16 @@ export async function POST(request: Request) {
       },
     });
 
+    clearRateLimitBucket(ip, limiterKey);
+
     await createAuditLog({
       tenantId: user.tenantId,
       actorId: user.id,
       actorRole: user.role,
       entityType: 'User',
       entityId: user.id,
-      action: AUTH_ACTIONS.PASSWORD_RESET_COMPLETED,
-      ipAddress: getClientIp(request),
+      action: AUTH_ACTIONS.PASSWORD_CHANGED,
+      ipAddress: ip,
       userAgent: request.headers.get('user-agent') ?? undefined,
     });
 
