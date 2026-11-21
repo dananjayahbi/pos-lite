@@ -6,6 +6,8 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StockTakeStatus, UserRole, NotificationType } from '@/generated/prisma/client';
 import { approveStockTake } from '@/lib/services/inventory.service';
 import { canApproveStockTake } from '@/lib/services/stockTakePolicy.core';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
+import { stockAdjustmentRevalidationOptions } from '@/lib/website/storefront-revalidation.core';
 
 export async function POST(
   _request: Request,
@@ -43,7 +45,14 @@ export async function POST(
       include: {
         items: {
           include: {
-            variant: { select: { sku: true, lowStockThreshold: true } },
+            variant: {
+              select: {
+                sku: true,
+                lowStockThreshold: true,
+                // ARGUS #210: storefront product tags/paths for revalidation.
+                product: { select: { id: true } },
+              },
+            },
           },
         },
       },
@@ -146,6 +155,20 @@ export async function POST(
       }
     } catch (notificationError) {
       console.warn('[POST stock-take approve] notification warning:', notificationError);
+    }
+
+    // ARGUS #210: approval changes stock, so purge the affected product pages
+    // and catalog availability. Failure is logged, never fatal.
+    try {
+      const productIds = countedItems
+        .map((adjustment) => itemByVariant.get(adjustment.variantId)?.variant.product.id)
+        .filter((id): id is string => Boolean(id));
+      await revalidateTenantStorefront(
+        tenantId,
+        stockAdjustmentRevalidationOptions(productIds),
+      );
+    } catch (revalidateError) {
+      console.warn('[POST stock-take approve] Revalidation warning:', revalidateError);
     }
 
     return NextResponse.json({

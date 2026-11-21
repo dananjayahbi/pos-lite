@@ -43,6 +43,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useStockTakeSessions } from '@/hooks/useStockTakeSessions';
+import { useInvalidateStockQueries } from '@/hooks/useInvalidateStockQueries';
 import { useCategories } from '@/hooks/useCategories';
 import { stockTakeAction } from '@/components/stock-control/stockTakeLinks';
 import { canCancelStockTake } from '@/lib/services/stockTakePolicy.core';
@@ -106,6 +107,9 @@ function formatDateTime(dateStr: string): string {
 export function StockTakeList({ permissions, userId }: StockTakeListProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  // ARGUS #210: a cancel discards counts, so the stock/session caches must
+  // refresh with the session list.
+  const invalidateStockQueries = useInvalidateStockQueries();
   const { data: sessionsRes, isLoading } = useStockTakeSessions();
   const { data: categoriesRes } = useCategories();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -169,13 +173,18 @@ export function StockTakeList({ permissions, userId }: StockTakeListProps) {
       }
       toast.success('Stock take session cancelled');
       await queryClient.invalidateQueries({ queryKey: ['stock-take-sessions'] });
+      try {
+        await invalidateStockQueries();
+      } catch {
+        // The cancel is committed; a cache refresh failure is not a failure.
+      }
       setCancelTarget(null);
     } catch {
       toast.error('Failed to cancel session');
     } finally {
       setCancelling(false);
     }
-  }, [cancelTarget, queryClient, setCancelTarget]);
+  }, [cancelTarget, queryClient, invalidateStockQueries, setCancelTarget]);
 
   const handleCreateSession = useCallback(async () => {
     setCreating(true);
