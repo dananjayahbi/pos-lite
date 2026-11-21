@@ -607,6 +607,31 @@ test.describe('§7 Network resilience & offline sync', () => {
     const retry = await page.request.post(QUOTE_URL, { data: { totalWeightKg: 1 } });
     expect(retry.status()).toBe(200);
   });
+
+  test('N5 (ARGUS #289): failed rate-card GET shows error + Retry and disables Save', async ({ page }) => {
+    await login(page, OWNER_EMAIL, OWNER_PASSWORD);
+    await page.route('**/api/store/delivery/ratecard', (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      return route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: 'Rate card load failed (injected)' },
+        }),
+      });
+    });
+
+    await page.goto(`${BASE_URL}/delivery/rate-card`);
+    await expect(page.getByRole('alert')).toContainText(/could not load the rate card/i);
+    await expect(page.getByRole('button', { name: /retry/i })).toBeVisible();
+    // A failed load must not render an editable/blank card.
+    await expect(page.locator('#rate-base')).toHaveCount(0);
+    await expect(page.locator('button:has-text("Save Rate Card")')).toHaveCount(0);
+    await expect(page.locator('button:has-text("Save Zone Overrides")')).toHaveCount(0);
+
+    await page.unroute('**/api/store/delivery/ratecard');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

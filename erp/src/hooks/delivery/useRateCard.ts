@@ -10,10 +10,26 @@ export function useRateCard() {
     queryKey: ['ratecard'],
     queryFn: async () => {
       const res = await fetch('/api/store/delivery/ratecard');
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error?.message ?? 'Failed to fetch rate card');
-      return json.data;
+      const json = (await res.json().catch(() => null)) as {
+        success?: boolean;
+        data?: unknown;
+        error?: { message?: string };
+      } | null;
+
+      // ARGUS #289: the API intentionally returns `200 { data: null }` when a
+      // tenant has no card. A 404 therefore means the route/deployment is
+      // broken, not "create your first card" — surface it as a load error.
+      if (res.status === 404) {
+        throw new Error('Rate card service was not found. Retry or contact support.');
+      }
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? 'Failed to fetch rate card');
+      }
+      return json.data ?? null;
     },
+    // One retry smooths a transient blip without hiding a hard failure behind
+    // a long retry backoff; the page also offers an explicit Retry.
+    retry: 1,
     staleTime: 60_000,
   });
 
@@ -57,5 +73,14 @@ export function useRateCard() {
     },
   });
 
-  return { data: query.data, isLoading: query.isLoading, save, saveEntries };
+  return {
+    data: query.data,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
+    isFetching: query.isFetching,
+    refetch: query.refetch,
+    save,
+    saveEntries,
+  };
 }
