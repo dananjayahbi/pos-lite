@@ -33,6 +33,7 @@ import {
   returnItemCount,
   summarizeCustomerReturns,
 } from '@/components/customers/customerReturns';
+import { saleItemCount } from '@/components/customers/customerPurchases';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { toast } from 'sonner';
@@ -414,7 +415,7 @@ export default function CustomerDetailPage({
                       {sale.id.slice(-8).toUpperCase()}
                     </TableCell>
                     <TableCell className="text-right font-mono">
-                      {sale.lines.length}
+                      {saleItemCount(sale.lines)}
                     </TableCell>
                     <TableCell className="text-right font-mono">
                       {formatRupee(sale.totalAmount)}
