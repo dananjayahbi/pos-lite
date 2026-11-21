@@ -11,8 +11,9 @@ import type { PermissionKey } from '@/lib/constants/permissions';
 // INF-02: the typed error builders live in the canonical modules now; this
 // file re-exports them so the delivery route family keeps compiling
 // unchanged (back-compat per the INF-02 design).
-import { unauthorized, forbidden, badRequest, conflict, notFound, upstreamError } from './error-envelope';
+import { unauthorized, forbidden, badRequest, conflict, notFound, upstreamError, internalError } from './error-envelope';
 import { Prisma } from '@/generated/prisma/client';
+import { CourierCredentialError } from '@/lib/courier/credentials';
 export { unauthorized, forbidden, validationError, notFound, conflict, badRequest, internalError } from './error-envelope';
 
 /**
@@ -56,6 +57,11 @@ export function mapDeliveryError(error: unknown): NextResponse | null {
     return conflict('A record with this unique value already exists');
   }
   const message = error instanceof Error ? error.message : '';
+  if (error instanceof CourierCredentialError) {
+    return internalError(
+      'Saved courier credentials could not be decrypted. Re-enter them in Courier Settings.',
+    );
+  }
   if (message === 'DELIVERY_NOT_FOUND') return notFound('Delivery not found');
   if (message === 'CUSTOMER_NOT_FOUND') return badRequest('Customer not found');
   if (message === 'SALE_NOT_FOUND') return badRequest('Sale not found');

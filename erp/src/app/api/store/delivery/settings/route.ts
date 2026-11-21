@@ -14,6 +14,13 @@ import { prisma } from '@/lib/prisma';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { transExpressAuthenticate } from '@/lib/courier/trans-express/auth';
 import {
+  CourierCredentialError,
+  decryptCourierAccount,
+  encryptCourierSecret,
+  isCourierCredentialKeyConfigured,
+  isEncryptedCourierSecret,
+} from '@/lib/courier/credentials';
+import {
   hasCourierTestCredentials,
   resolveCourierSettingsUpdate,
   resolveCourierTestCredentials,
@@ -81,6 +88,27 @@ export async function PUT(request: Request) {
       return validationError(activationIssues, activationIssues[0]!.message);
     }
 
+    // ARGUS #514: never persist a clear-text secret. Existing plaintext rows are
+    // lazily re-encrypted on the next save when key material is available.
+    if (typeof data.password === 'string') {
+      data.password = encryptCourierSecret(data.password);
+    } else if (
+      existing?.password &&
+      !isEncryptedCourierSecret(existing.password) &&
+      isCourierCredentialKeyConfigured()
+    ) {
+      data.password = encryptCourierSecret(existing.password);
+    }
+    if (typeof data.apiKey === 'string') {
+      data.apiKey = encryptCourierSecret(data.apiKey);
+    } else if (
+      existing?.apiKey &&
+      !isEncryptedCourierSecret(existing.apiKey) &&
+      isCourierCredentialKeyConfigured()
+    ) {
+      data.apiKey = encryptCourierSecret(existing.apiKey);
+    }
+
     const account = existing
       ? await prisma.courierAccount.update({ where: { id: existing.id }, data })
       : await prisma.courierAccount.create({
@@ -99,6 +127,19 @@ export async function PUT(request: Request) {
     return NextResponse.json({ success: true, data: redact(account) });
   } catch (error) {
     console.error('PUT /api/store/delivery/settings error:', error);
+    if (error instanceof CourierCredentialError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'CREDENTIALS_ENCRYPTION_UNAVAILABLE',
+            message:
+              'Courier credential encryption is not configured. Set COURIER_CREDENTIALS_KEY (or AUTH_SECRET) before saving credentials.',
+          },
+        },
+        { status: 503 },
+      );
+    }
     const mapped = mapDeliveryError(error);
     if (mapped) return mapped;
     return internalError('An unexpected error occurred');
@@ -129,7 +170,28 @@ export async function POST(request: Request) {
   }
 
   const account = await prisma.courierAccount.findFirst({ where: { tenantId: guard.tenantId } });
-  const credentials = resolveCourierTestCredentials(parsed.data, account);
+
+  let credentials: ReturnType<typeof resolveCourierTestCredentials>;
+  try {
+    // ARGUS #514: stored secrets are ciphertext; only the outbound credential
+    // object is decrypted. The request body's fresh secret stays as typed.
+    credentials = resolveCourierTestCredentials(
+      parsed.data,
+      account ? decryptCourierAccount(account) : null,
+    );
+  } catch (error) {
+    console.error('POST /api/store/delivery/settings credential decrypt error:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'COURIER_CREDENTIALS_UNREADABLE',
+          message: 'Saved courier credentials could not be decrypted. Re-enter them and save.',
+        },
+      },
+      { status: 500 },
+    );
+  }
 
   if (!hasCourierTestCredentials(credentials)) {
     if (!account) {

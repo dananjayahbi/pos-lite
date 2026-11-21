@@ -4,6 +4,7 @@ import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
+import { decryptCourierAccount } from '@/lib/courier/credentials';
 import {
   hasCourierTestCredentials,
   resolveCourierTestCredentials,
@@ -74,7 +75,10 @@ export async function syncLocations(
   const account = await prisma.courierAccount.findFirst({ where: { tenantId } });
   if (!account && !draft) throw new Error('COURIER_ACCOUNT_NOT_CONFIGURED');
 
-  const credentials = resolveCourierTestCredentials(draft ?? {}, account);
+  const credentials = resolveCourierTestCredentials(
+    draft ?? {},
+    account ? decryptCourierAccount(account) : null,
+  );
   if (!hasCourierTestCredentials(credentials)) {
     throw new Error('COURIER_CREDENTIALS_MISSING');
   }
