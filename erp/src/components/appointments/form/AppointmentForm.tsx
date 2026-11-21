@@ -8,6 +8,7 @@ import { CustomerSelector } from './CustomerSelector';
 import { ServiceSelector } from './ServiceSelector';
 import { StaffSelector } from './StaffSelector';
 import { NotesField } from './NotesField';
+import { fromDatetimeLocalValue, toDatetimeLocalValue } from '@/lib/appointments/datetime-local';
 
 interface AppointmentFormData {
   title: string;
@@ -120,11 +121,15 @@ export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting,
           <Label className="text-sm font-medium">Start Time</Label>
           <Input
             type="datetime-local"
-            value={form.startTime ? form.startTime.slice(0, 16) : ''}
+            value={toDatetimeLocalValue(form.startTime)}
             onChange={(e) => {
-              const d = new Date(e.target.value);
-              update('startTime', d.toISOString());
-              const end = new Date(d);
+              const startIso = fromDatetimeLocalValue(e.target.value);
+              update('startTime', startIso);
+              if (!startIso) {
+                update('endTime', '');
+                return;
+              }
+              const end = new Date(startIso);
               end.setMinutes(end.getMinutes() + form.durationMins);
               update('endTime', end.toISOString());
             }}
