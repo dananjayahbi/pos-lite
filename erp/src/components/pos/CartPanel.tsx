@@ -31,6 +31,8 @@ import { usePersistCartEffect } from '@/hooks/usePersistCartEffect';
 import { usePOSShortcuts } from '@/hooks/usePOSShortcuts';
 import { focusPOSBarcodeInput, isPOSDialogOpen } from '@/lib/pos/keyboard';
 import { clearCartSnapshot } from '@/lib/idb-store';
+import { buildCartStoreKey } from '@/lib/pos/cartPersistence';
+import { useSession } from 'next-auth/react';
 
 interface CartPanelProps {
   shiftId: string;
@@ -74,23 +76,31 @@ export function CartPanel({
   const appliedPromoCode = useCartStore((s) => s.appliedPromoCode);
   const setPromoCode = useCartStore((s) => s.setPromoCode);
   const evaluatePromotionsAction = useCartStore((s) => s.evaluatePromotions);
-
-  // Persist cart to IndexedDB
-  usePersistCartEffect({
-    items,
-    cartDiscountPercent,
-    cartDiscountAmount,
-    promotions: {
-      appliedPromotions,
-      skippedPromotions,
-      totalPromotionDiscount,
-      appliedPromoCode,
-    },
-    exchange:
-      linkedReturnId !== null && exchangeCredit !== null && exchangeReturnRef !== null
-        ? { returnId: linkedReturnId, credit: exchangeCredit, ref: exchangeReturnRef }
-        : null,
+  const { data: session } = useSession();
+  const cartStoreKey = buildCartStoreKey({
+    userId: session?.user?.id ?? null,
+    shiftId,
   });
+
+  // Persist cart to IndexedDB, scoped to this cashier + shift (ARGUS #66).
+  usePersistCartEffect(
+    {
+      items,
+      cartDiscountPercent,
+      cartDiscountAmount,
+      promotions: {
+        appliedPromotions,
+        skippedPromotions,
+        totalPromotionDiscount,
+        appliedPromoCode,
+      },
+      exchange:
+        linkedReturnId !== null && exchangeCredit !== null && exchangeReturnRef !== null
+          ? { returnId: linkedReturnId, credit: exchangeCredit, ref: exchangeReturnRef }
+          : null,
+    },
+    { userId: session?.user?.id ?? null, shiftId },
+  );
 
   const { subtotal, discountEffective, promotionDiscount, saleDiscount, taxAmount, taxRatesApplied, total } = getCartTotal(
     items,
@@ -238,7 +248,7 @@ export function CartPanel({
     // way (X, backdrop, Esc) and the cashier may navigate straight back to the
     // grid — without this the sold items stay in the cart and get charged twice.
     clearCart();
-    clearCartSnapshot('ayurpos_cart_default').catch(() => {});
+    if (cartStoreKey) clearCartSnapshot(cartStoreKey).catch(() => {});
     setDiscountExpanded(false);
     setPromoCodeInput('');
     toast.success(`Sale completed - ${formatRupee(sale.totalAmount)}`);
@@ -279,7 +289,7 @@ export function CartPanel({
       appliedPromoCode,
     });
     clearCart();
-    clearCartSnapshot('ayurpos_cart_default').catch(() => {});
+    if (cartStoreKey) clearCartSnapshot(cartStoreKey).catch(() => {});
     setDiscountExpanded(false);
     setPromoCodeInput('');
     toast('Cart cleared', {

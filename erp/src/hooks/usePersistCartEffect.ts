@@ -1,13 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { saveCartSnapshot, loadCartSnapshot, clearCartSnapshot } from '@/lib/idb-store';
 import { useCartStore } from '@/stores/cartStore';
 import type { CartItem } from '@/stores/cartStore';
 import { createCartPromotionSnapshot } from '@/stores/cartPromotions';
 import type { CartPromotionSnapshot } from '@/stores/cartPromotions';
-
-const CART_STORE_KEY = 'ayurpos_cart_default';
+import {
+  LEGACY_CART_STORE_KEY,
+  buildCartStoreKey,
+  type CartOwner,
+} from '@/lib/pos/cartPersistence';
+import { clearCartOnSignOut } from '@/lib/pos/cartSession';
 
 interface PersistedCartState {
   items: CartItem[];
@@ -26,18 +31,50 @@ interface PersistedCartState {
   } | null;
 }
 
-export function usePersistCartEffect(cartState: PersistedCartState): void {
-  const [hydrated, setHydrated] = useState(false);
+/**
+ * Persist/restore the active cart for one cashier + shift (ARGUS #66).
+ *
+ * The old snapshot key was terminal-wide, so a prior cashier's cart came back
+ * after logout. The key is now `<prefix>_<userId>_<shiftId>`; the legacy shared
+ * key is deleted and never read. Missing ownership during session hydration
+ * disables persistence rather than falling back to a shared bucket.
+ */
+export function usePersistCartEffect(cartState: PersistedCartState, owner: CartOwner): void {
+  // The key whose snapshot has finished loading. Persistence stays off until
+  // this equals the current scoped key, so a new owner's snapshot cannot be
+  // overwritten by the previous cart.
+  const [hydratedKey, setHydratedKey] = useState<string | null>(null);
+  const { status } = useSession();
+  const storeKey = buildCartStoreKey(owner);
+
+  // Session expiry (or a client-side logout that did not hit a sign-out button)
+  // must not leave the previous cashier's cart available to the next user.
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      void clearCartOnSignOut();
+    }
+  }, [status]);
 
   // Restore first. On a fresh mount the store is empty, so persisting before
-  // this runs would delete the snapshot we are about to read — which is why a
-  // reload used to come back to an empty cart.
+  // this runs would delete the snapshot we are about to read. The effect reruns
+  // when the session/shift resolves the scoped key.
   useEffect(() => {
+    // The old terminal-wide key can only leak a cart across owners.
+    void clearCartSnapshot(LEGACY_CART_STORE_KEY).catch(() => {});
+
+    if (!storeKey) return;
+
     let cancelled = false;
     (async () => {
       try {
-        const snapshot = await loadCartSnapshot(CART_STORE_KEY);
-        if (!cancelled && snapshot) {
+        const snapshot = await loadCartSnapshot(storeKey);
+        // Do not overwrite a cart the cashier already started while the
+        // session/key was still hydrating.
+        if (
+          !cancelled &&
+          snapshot &&
+          useCartStore.getState().items.length === 0
+        ) {
           const data = snapshot as PersistedCartState;
           const hasItems = Array.isArray(data.items) && data.items.length > 0;
           if (hasItems || data.exchange) {
@@ -53,24 +90,23 @@ export function usePersistCartEffect(cartState: PersistedCartState): void {
       } catch (err) {
         console.warn('[usePersistCartEffect] Failed to restore cart:', err);
       } finally {
-        if (!cancelled) setHydrated(true);
+        if (!cancelled) setHydratedKey(storeKey);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [storeKey]);
 
-  // Persist only after the restore attempt has settled, so the stored snapshot
-  // is never cleared before it has been read back.
+  // Persist only after the restore attempt has settled for this owner.
   useEffect(() => {
-    if (!hydrated) return;
+    if (!storeKey || hydratedKey !== storeKey) return;
     (async () => {
       try {
         if (cartState.items.length === 0 && !cartState.exchange) {
-          await clearCartSnapshot(CART_STORE_KEY);
+          await clearCartSnapshot(storeKey);
         } else {
-          await saveCartSnapshot(CART_STORE_KEY, {
+          await saveCartSnapshot(storeKey, {
             items: cartState.items,
             cartDiscountPercent: cartState.cartDiscountPercent,
             cartDiscountAmount: cartState.cartDiscountAmount,
@@ -82,5 +118,5 @@ export function usePersistCartEffect(cartState: PersistedCartState): void {
         console.warn('[usePersistCartEffect] Failed to save cart:', err);
       }
     })();
-  }, [hydrated, cartState]);
+  }, [hydratedKey, storeKey, cartState]);
 }
