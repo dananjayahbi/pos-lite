@@ -8,7 +8,7 @@ import { StockMovementReason } from '@/generated/prisma/client';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { parseQueryInt, parseQueryDate } from '@/lib/api/query-params';
 import { resolveInclusiveDateRange } from '@/lib/api/inclusive-date-range';
-import { toCsvLines } from '@/lib/export';
+import { neutralizeCsvFormula, toCsvLines } from '@/lib/export';
 import { stockMovementReasonLabel } from '@/lib/constants/stock-movement';
 import { resolveStockMovementSource } from '@/lib/stock/movement-source';
 import {
@@ -162,17 +162,19 @@ export async function GET(request: NextRequest) {
           const source = resolveStockMovementSource(m);
           return [
             formatStockMovementTimestamp(m.createdAt, displayTimeZone),
-            m.variant.product.name,
-            m.variant.sku,
-            m.variant.form ?? '',
-            m.variant.packSize ?? '',
+            // ARGUS #201: product name, SKU, variant text, actor and note are
+            // user-entered. A leading = + - @ must not become a formula.
+            neutralizeCsvFormula(m.variant.product.name),
+            neutralizeCsvFormula(m.variant.sku),
+            neutralizeCsvFormula(m.variant.form ?? ''),
+            neutralizeCsvFormula(m.variant.packSize ?? ''),
             m.reason,
             stockMovementReasonLabel(m.reason),
             m.quantityDelta > 0 ? `+${m.quantityDelta}` : String(m.quantityDelta),
             String(m.quantityBefore),
             String(m.quantityAfter),
-            m.actor?.email ?? 'system',
-            m.note ?? '',
+            neutralizeCsvFormula(m.actor?.email ?? 'system'),
+            neutralizeCsvFormula(m.note ?? ''),
             source?.label ?? '',
             source?.id ?? '',
             m.saleId ?? '',
