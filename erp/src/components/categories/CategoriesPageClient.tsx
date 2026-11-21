@@ -17,7 +17,8 @@ interface CategoriesPageClientProps {
 }
 
 export function CategoriesPageClient({ permissions }: CategoriesPageClientProps) {
-  const { data, isLoading, isError } = useCategories();
+  const [view, setView] = useState<'active' | 'deleted'>('active');
+  const { data, isLoading, isError } = useCategories(view === 'deleted');
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -51,6 +52,29 @@ export function CategoriesPageClient({ permissions }: CategoriesPageClientProps)
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const restoreMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/store/categories/${id}/restore`, { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message ?? 'Failed to restore category');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
+      toast.success('Category restored');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  function switchView(next: 'active' | 'deleted') {
+    setView(next);
+    setSelectedId(null);
+    setCreateOpen(false);
+    setEditTargetId(null);
+  }
+
   if (isLoading) {
     return <PageSkeleton caption="Select a category to see details" />;
   }
@@ -69,23 +93,52 @@ export function CategoriesPageClient({ permissions }: CategoriesPageClientProps)
     <div className="flex gap-6 p-6">
       {/* Left panel */}
       <div className="w-3/5 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div>
             <h1 className="font-display text-2xl font-semibold text-espresso">Categories</h1>
             <p className="text-sm text-mist-ink">
-              {categories.length} {categories.length === 1 ? 'category' : 'categories'}
+              {categories.length}{' '}
+              {view === 'deleted'
+                ? categories.length === 1
+                  ? 'deleted category'
+                  : 'deleted categories'
+                : categories.length === 1
+                  ? 'category'
+                  : 'categories'}
             </p>
           </div>
+          {view === 'active' && (
+            <Button
+              size="sm"
+              className="bg-espresso text-pearl hover:bg-espresso/90"
+              onClick={() => {
+                setEditTargetId(null);
+                setCreateOpen(true);
+              }}
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              New Category
+            </Button>
+          )}
+        </div>
+
+        {/* ARGUS #172: soft-deleted categories are recoverable, not lost. */}
+        <div className="flex items-center gap-1" role="group" aria-label="Category view">
           <Button
             size="sm"
-            className="bg-espresso text-pearl hover:bg-espresso/90"
-            onClick={() => {
-              setEditTargetId(null);
-              setCreateOpen(true);
-            }}
+            variant={view === 'active' ? 'secondary' : 'ghost'}
+            aria-pressed={view === 'active'}
+            onClick={() => switchView('active')}
           >
-            <Plus className="mr-1 h-4 w-4" />
-            New Category
+            Active
+          </Button>
+          <Button
+            size="sm"
+            variant={view === 'deleted' ? 'secondary' : 'ghost'}
+            aria-pressed={view === 'deleted'}
+            onClick={() => switchView('deleted')}
+          >
+            Deleted
           </Button>
         </div>
 
@@ -93,16 +146,24 @@ export function CategoriesPageClient({ permissions }: CategoriesPageClientProps)
           categories={categories}
           canEdit={canEdit}
           canDelete={canDelete}
-          selectedId={selectedId}
-          onSelect={(c) => setSelectedId(c.id)}
-          onEdit={(c) => setEditTargetId(c.id)}
-          onDelete={(c) => setDeleteTargetId(c.id)}
+          selectedId={view === 'active' ? selectedId : null}
+          onSelect={view === 'active' ? (c) => setSelectedId(c.id) : undefined}
+          onEdit={view === 'active' ? (c) => setEditTargetId(c.id) : undefined}
+          onDelete={view === 'active' ? (c) => setDeleteTargetId(c.id) : undefined}
+          onRestore={canDelete ? (c) => restoreMutation.mutate(c.id) : undefined}
         />
       </div>
 
       {/* Right panel */}
       <div className="w-2/5">
-        {selectedCategory ? (
+        {view === 'deleted' ? (
+          <div className="flex h-full min-h-75 items-center justify-center rounded-lg border border-sand bg-linen p-8 text-center">
+            <p className="max-w-xs text-sm text-mist-ink">
+              Deleted categories are hidden from products and the storefront. Use
+              Restore to bring one back.
+            </p>
+          </div>
+        ) : selectedCategory ? (
           <CategoryDetailPanel
             category={selectedCategory}
             canEdit={canEdit}
@@ -136,7 +197,7 @@ export function CategoriesPageClient({ permissions }: CategoriesPageClientProps)
         title="Delete Category"
         description={
           deleteTarget
-            ? `Are you sure you want to delete "${deleteTarget.name}"? This action cannot be undone.`
+            ? `Are you sure you want to delete "${deleteTarget.name}"? It will be hidden from products and the storefront; you can restore it from the Deleted view.`
             : ''
         }
         pending={deleteMutation.isPending}

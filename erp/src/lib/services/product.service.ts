@@ -903,9 +903,14 @@ export async function getCategoryById(tenantId: string, categoryId: string) {
   return category;
 }
 
-export async function getAllCategories(tenantId: string) {
+export async function getAllCategories(
+  tenantId: string,
+  view: 'active' | 'deleted' = 'active',
+) {
   return prisma.category.findMany({
-    where: { tenantId, deletedAt: null },
+    // ARGUS #172: the Deleted view lists exactly the soft-deleted rows so a
+    // category can be restored instead of staying unreachable.
+    where: { tenantId, deletedAt: view === 'deleted' ? { not: null } : null },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     include: {
       _count: {
@@ -1058,6 +1063,50 @@ export async function softDeleteCategory(tenantId: string, categoryId: string, a
   });
 
   return updated;
+}
+
+/**
+ * ARGUS #172 - undo a category soft delete.
+ *
+ * Restoring a live category is a 409 (stale UI should not silently no-op).
+ * Archived rows keep the name reserved at the database, so the row itself is
+ * always the one restored; its products were already required to be zero at
+ * delete time.
+ */
+export async function restoreCategory(
+  tenantId: string,
+  categoryId: string,
+  actorId: string,
+) {
+  const existing = await prisma.category.findFirst({
+    where: { id: categoryId, tenantId },
+  });
+
+  if (!existing) {
+    throw new Error('Category not found');
+  }
+
+  if (!existing.deletedAt) {
+    throw ApiError.conflict('Category is not deleted');
+  }
+
+  const restored = await prisma.category.update({
+    where: { id: categoryId },
+    data: { deletedAt: null },
+  });
+
+  await createAuditLog({
+    tenantId,
+    actorId,
+    actorRole: 'SYSTEM',
+    entityType: 'Category',
+    entityId: categoryId,
+    action: AUDIT_ACTIONS.CATEGORY_RESTORED,
+    before: { deletedAt: existing.deletedAt } as unknown as Prisma.InputJsonValue,
+    after: { deletedAt: null } as unknown as Prisma.InputJsonValue,
+  });
+
+  return restored;
 }
 
 // ── Brand Functions ──────────────────────────────────────────────────────────
