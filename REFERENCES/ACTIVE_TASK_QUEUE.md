@@ -1,102 +1,59 @@
-# Active ARGUS task queue (claimed)
+# ARGUS batch 13 queue (100 claimed)
 
-All 65 tasks below are claimed by `opencode-deepseek-v4.1-flash`. Atlas is the
-source of truth; this checklist exists so none is missed.
+All 100 newly added pending tasks are claimed by
+`opencode-deepseek-v4.1-flash` and `IN_PROGRESS`. They are split into six
+workstreams plus two main-agent items. Atlas remains the source of truth.
 
-Status: **57 submitted to review + merged**, 6 in the final inventory batch,
-2 blocked by a missing Definition of Done (cannot be submitted by any agent).
+## Batch 1 (running now)
 
-## Submitted + merged
-
-- #167 category create/update audit
-- #168 category archive-copy fix
-- #174 brand description clearing
-- #175 brand create/update audit
-- #176 brand delete-lock copy/detail
-- #183 all 13 movement reasons
-- #184 inclusive movement date filters
-- #185 stock valuation permission gate
-- #186 adjustment audit + webhook
-- #187 stock-take counts + maker-checker
-- #194 adjustment cache invalidation
-- #195 adjustment storefront revalidation
-- #199 movement source documents
-- #200 movement CSV local timestamps
-- #201 movement CSV formula safety
-- #227 PO cancel guard
-- #228 PO partial payment state
-- #229 PO lifecycle audit
-- #230 PO order-date filter
-- #231 PO payment row lock
-- #232 PO legacy totals/receipt repair script
-- #234 supplier list error state
-- #235 supplier duplicate-name warning
-- #236 supplier phone normalization
-- #237 supplier audit trail
-- #245 raw-material locks and Decimal
-- #246 raw-material reason/history
-- #248 BOM production lock
-- #249 BOM duplicate ingredients
-- #250 BOM eligible variants
-- #252 BOM error/retry states
-- #253 legacy production batch repair
-- #256 factory dashboard alert invalidation
-- #257 factory dashboard auto-refresh
-- #264 dispatch visible selection
-- #265 dispatch bulk failure reporting
-- #266 dispatch source/payment/total-to-collect
-- #267 dispatch list error state
-- #271 delivery detail item lines
-- #272 shared confirmed cancel flow
-- #273 delivery detail load states
-- #274 list print/invoice feedback
-- #275 prepare PLACED/HOLD deliveries
-- #281 packaging consumption ledger
-- #282 packaging shortfall blocks dispatch
-- #283 explicit per-dispatch packaging selection
-- #284 packaging list error state
-- #290 name-based destination-only rate zones
-- #291 rate preview district/staleness
-- #292 missing rate card is unconfigured, not free
-- #293 VAT on service fees
-- #300 waybill recipient guard
-- #301 waybill sender identity
-- #311 customer purchase items count units
-- #315 customer audit trail
-- #317 broadcast no-contact opt-out
-- #322 promotions sequential stacking (already merged; re-submitted)
-
-Checkpoint after this batch: **2,008 tests / 242 files**, `tsc` clean.
-
-## Final inventory batch (agent-reports)
-
-| ARGUS | Task id | State |
+| Agent / worktree | Module | ARGUS tasks |
 | --- | --- | --- |
-| #208 clear stock-take count | `a544671f-f681-4d04-a1fb-59292cd95d72` | assigned |
-| #209 stock-take category validation | `cc7098d7-3587-4b94-82b3-cd903f5e938d` | assigned |
-| #210 stock-take refresh/revalidation | `c98b64ae-df7a-4da5-a62d-cdaada2bcf18` | assigned |
-| #214 low-stock effective threshold | `2b86853e-517c-4b7a-8b2c-f5ed8a3527d5` | assigned |
-| #215 shared low-stock predicate | `9433e200-0fc2-4c3e-b712-a22afe0aed49` | assigned |
-| #218 valuation cost-basis label | `27ad61c0-c358-48e1-9028-3104131a278e` | assigned |
+| catalog (`agent-catalog`) | Customers | #312 spend bands, #313 load errors, #314 edit permission, #316 export audit/CSV safety |
+| pos (`agent-pos`) | Promotions | #327 local date windows, #328 400/404 mapping, #329 live states, #330 required targets/codes |
+| sales (`agent-sales`) | Cash Flow | #418 ledger bridge, #419 unallocated payments, #420 cash movement bridge, #421 access/error states |
+| factory (`agent-factory`) | Expenses | #396 register export, #397 approval control, #398 page gate, #399 account/fund column |
+| reports (`agent-reports`) | Staff Directory | #340 audit, #341 PII list DTO/masking, #342 0-100 commission, #343 attendance/period coverage |
+| payroll (`agent-payroll`) | Run Payroll | #375 zero-run guard, #376 missing-attendance, #377 load errors, #378 export preflight |
+| main | misc | #46 Low Stock card note (submitted), BOM soft-delete restore (done, no DoD) |
 
-Note: the inventory batch above is the last one; nothing else is unassigned.
+## Queued after batch 1
 
-## Blocked (no Definition of Done items)
+Counts per module (all claimed, all `IN_PROGRESS`):
 
-| Item | Task id | State |
-| --- | --- | --- |
-| Baseline Prisma migrations (P3005) | `cf45521f-907c-4753-abd6-8124c70d0375` | **done**: schema diff empty, 54/54 baselined, `migrate status` says up to date; cannot submit (0 DoD items) |
-| Void credit restoration | `86a457ca-453f-4a2c-a172-6e7b1a9233df` | fix merged earlier, cannot submit (0 DoD items) |
+- Customers: #312-316 (3 remaining after batch 1: #312-314, #316 in batch; only
+  #315 done earlier; this batch covers all 4 new customer tasks).
+- Promotions: #327-333 (3 remaining: #331 audit/usage, #332 page permission,
+  #333 customer-pricing identity).
+- Staff Directory: #340-345 (2 remaining: #344 page permission, #345 VAT
+  commission basis).
+- Attendance & Timeclock: #352-358 (7).
+- Staff Commissions: #362-368 (7).
+- Run Payroll: #375-379 (1 remaining: #379 advance ledger).
+- Payroll Reports: #384-391 (7).
+- Expenses: #396-403 (4 remaining: #400 controls, #401 history, #402 error
+  state, #403 transaction).
+- Petty Cash: #407-413 (7).
+- Cash Flow: #418-421 (done in batch 1).
+- Payment Accounts: #426-430 (5).
+- Sales & Profit Reports: #436-438 (3).
+- Saved Reports: #445-447 (3).
+- Audit Log: #454-456 (3).
+- Team & Permissions: #459-463 (5).
+- Taxes & Store Settings: #469-472 (4).
+- Units: #479-481 (3).
+- Store Profile: #488-489 (2).
+- Website CMS: #497-498 (2).
+- My Account: #504 (1).
+- Failed Deliveries & Recovery: #515 (1).
+- Waybill: #299 (1).
+- Proposed/triage items included in the claim: seed PO drift, Reports stock
+  movement reasons, dispatch courier/transaction ordering (3).
 
-## Database
+## Notes
 
-- `prisma migrate status`: **Database schema is up to date!**
-- Live schema diff: empty migration.
-- New migrations can use `prisma migrate deploy`; do not reset the live DB.
-
-## Proposed for triage (not claimed)
-
-- Reports > Stock Movements still uses the old 11-reason list.
-- Seed creates demo POs without subtotal/receipt movements.
-- Soft-deleted BOMs cannot be restored/recreated.
-- Dispatch uploads to the courier before the DB transaction.
+- Every task must be submitted with `log_task_progress` before
+  `submit_for_review`; proposed tasks with zero DoD items cannot be submitted.
+- No new pending tasks will be claimed until batch 1 is merged and the queue is
+  visibly down to the last modules.
+- Batches are merged into `argus_qa` and followed by `tsc` + full Vitest
+  checkpoints.
