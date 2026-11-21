@@ -4,6 +4,7 @@ import { CalendarView } from '@/components/appointments/calendar/CalendarView';
 import { AppointmentFormDialog } from '@/components/appointments/form/AppointmentFormDialog';
 import { AppointmentDetailPanel } from '@/components/appointments/detail/AppointmentDetailPanel';
 import { AppointmentsLayout } from '@/components/appointments/AppointmentsLayout';
+import { AppointmentSummaryCards } from '@/components/appointments/stats/AppointmentSummaryCards';
 import { useAppointmentStore } from '@/stores/appointmentStore';
 import { appointmentSlotDefaults } from '@/lib/appointments/appointmentCalendar.core';
 
@@ -22,6 +23,7 @@ export function AppointmentsPageClient() {
 
   return (
     <AppointmentsLayout>
+      <AppointmentSummaryCards />
       <CalendarView
         onAppointmentClick={(id) => openDetail(id)}
         onNewClick={() => openCreateForm()}
