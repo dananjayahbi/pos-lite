@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!hasPermission(session.user, PERMISSIONS.SALE.viewSale)) {
+    if (!hasPermission(session.user, PERMISSIONS.SALE.viewSaleHistory)) {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
