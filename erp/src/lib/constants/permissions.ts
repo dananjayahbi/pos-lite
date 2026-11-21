@@ -96,6 +96,9 @@ export const PERMISSIONS = {
     viewPayroll: 'payroll:view',
     runPayroll: 'payroll:run',
     managePayrollSettings: 'payroll:settings:manage',
+    // ARGUS #367: paying staff commissions moves real money and stays with the
+    // owner by default (manager defaults exclude it).
+    payCommission: 'payroll:commission:payout',
   },
   REPORT: {
     viewSalesReport: 'report:view_sales',
@@ -260,6 +263,9 @@ const managerExcluded = new Set<PermissionKey>([
   PERMISSIONS.DELIVERY.manageRateCard,
   PERMISSIONS.REPORT.viewZeroValueReport,
   PERMISSIONS.PETTY_CASH.manageFundSettings,
+  // ARGUS #367: commission payouts leave a payment account; an owner must
+  // approve who can do that, so managers do not get it by default.
+  PERMISSIONS.PAYROLL.payCommission,
 ]);
 
 export type AssignableRole = Exclude<UserRole, 'SUPER_ADMIN'>;

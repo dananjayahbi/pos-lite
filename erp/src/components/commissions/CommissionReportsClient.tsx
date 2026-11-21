@@ -31,6 +31,9 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
+import { usePermissions } from '@/hooks/usePermissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
+import { COMMISSION_PAYOUT_REQUIRES_OWNER } from '@/lib/services/commission-payout-permission.core';
 import { formatRupee } from '@/lib/format';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import {
@@ -100,6 +103,8 @@ function getDefaultPeriod() {
 
 export default function CommissionReportsClient() {
   const queryClient = useQueryClient();
+  const { hasPermission } = usePermissions();
+  const canPay = hasPermission(PERMISSIONS.PAYROLL.payCommission);
   const defaults = getDefaultPeriod();
   const [periodStart, setPeriodStart] = useState(defaults.start);
   const [periodEnd, setPeriodEnd] = useState(defaults.end);
@@ -388,7 +393,7 @@ export default function CommissionReportsClient() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      {Number(s.unpaid) > 0 && (
+                      {Number(s.unpaid) > 0 && canPay && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -401,6 +406,11 @@ export default function CommissionReportsClient() {
                         >
                           Mark as Paid
                         </Button>
+                      )}
+                      {Number(s.unpaid) > 0 && !canPay && (
+                        <span className="text-xs text-sand-ink">
+                          Owner approval required
+                        </span>
                       )}
                     </TableCell>
                   </TableRow>
@@ -579,13 +589,19 @@ export default function CommissionReportsClient() {
                 </div>
               )}
 
+              {!canPay && (
+                <p className="text-xs text-[#9B2226]">
+                  {COMMISSION_PAYOUT_REQUIRES_OWNER}
+                </p>
+              )}
+
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setPayoutOpen(false)}>
                   Cancel
                 </Button>
                 <Button
                   onClick={() => payoutMutation.mutate(payoutTarget)}
-                  disabled={payoutMutation.isPending || !payoutValid}
+                  disabled={payoutMutation.isPending || !payoutValid || !canPay}
                 >
                   {payoutMutation.isPending ? 'Processing...' : 'Confirm Payout'}
                 </Button>
