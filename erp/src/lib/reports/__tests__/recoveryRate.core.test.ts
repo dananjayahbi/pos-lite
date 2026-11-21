@@ -18,9 +18,9 @@ describe('computeRecoveryRate (ARGUS #517)', () => {
 });
 
 describe('formatRecoveryRate', () => {
-  it('shows an em dash for an undefined rate and a percent otherwise', () => {
-    expect(formatRecoveryRate(null)).toBe('—');
-    expect(formatRecoveryRate(undefined)).toBe('—');
+  it('shows a hyphen for an undefined rate and a percent otherwise', () => {
+    expect(formatRecoveryRate(null)).toBe('-');
+    expect(formatRecoveryRate(undefined)).toBe('-');
     expect(formatRecoveryRate(0)).toBe('0%');
     expect(formatRecoveryRate(66.7)).toBe('66.7%');
   });
