@@ -40,6 +40,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { formatRupee } from '@/lib/format';
 import { calculatePayroll } from '@/lib/payroll/calculations';
+import { fetchPayrollEnvelope, resolvePayrollLoadState } from '@/lib/payroll/api-load-state';
 import { assessPayrollRunReadiness, listStaffNames } from '@/lib/payroll/run-readiness';
 import type { PayrollPreview, PayrollPreviewRow } from '@/lib/payroll/types';
 
@@ -77,27 +78,16 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
 
   const previewQuery = useQuery<PayrollPreview>({
     queryKey: ['payroll-preview', month],
-    queryFn: async () => {
-      const res = await fetch(`/api/store/payroll/preview?month=${encodeURIComponent(month)}`);
-      const json = (await res.json()) as {
-        success: boolean;
-        data?: PayrollPreview;
-        error?: { message: string };
-      };
-      if (!res.ok || !json.success || !json.data) {
-        throw new Error(json.error?.message ?? 'Failed to load payroll preview');
-      }
-      return json.data;
-    },
+    queryFn: () =>
+      fetchPayrollEnvelope<PayrollPreview>(
+        `/api/store/payroll/preview?month=${encodeURIComponent(month)}`,
+      ),
   });
 
   const runsQuery = useQuery<PayrollRunSummary[]>({
     queryKey: ['payroll-runs'],
-    queryFn: async () => {
-      const res = await fetch('/api/store/payroll/runs?limit=12');
-      const json = (await res.json()) as { success: boolean; data?: PayrollRunSummary[] };
-      return json.data ?? [];
-    },
+    queryFn: () =>
+      fetchPayrollEnvelope<PayrollRunSummary[]>('/api/store/payroll/runs?limit=12'),
   });
 
   const [payRun, setPayRun] = useState<PayrollRunSummary | null>(null);
@@ -108,10 +98,10 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
     queryKey: ['payroll-payment-accounts'],
     enabled: canRun,
     queryFn: async () => {
-      const res = await fetch('/api/store/payment-accounts?status=ACTIVE');
-      if (!res.ok) return [];
-      const json = (await res.json()) as { data?: { id: string; name: string }[] };
-      return (json.data ?? []).filter((account) => !('pettyCashFund' in account));
+      const accounts = await fetchPayrollEnvelope<{ id: string; name: string }[]>(
+        '/api/store/payment-accounts?status=ACTIVE',
+      );
+      return accounts.filter((account) => !('pettyCashFund' in account));
     },
   });
 
@@ -154,6 +144,13 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
   // ARGUS #375: zero/unsalaried runs need an explicit acknowledgement; no
   // staff is a hard refusal on the server and here.
   const readiness = useMemo(() => assessPayrollRunReadiness(rows), [rows]);
+
+  // ARGUS #377: a failed list request is an error, never "no payroll yet".
+  const runsState = resolvePayrollLoadState({
+    isLoading: runsQuery.isLoading,
+    isError: runsQuery.isError,
+    hasData: (runsQuery.data?.length ?? 0) > 0,
+  });
 
   const generateMutation = useMutation({
     mutationFn: async () => {
@@ -584,9 +581,25 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {runsQuery.isLoading ? (
+          {runsState === 'loading' ? (
             <Skeleton className="bg-linen h-24 rounded" />
-          ) : (runsQuery.data ?? []).length === 0 ? (
+          ) : runsState === 'error' ? (
+            <div className="py-6 text-center text-sm">
+              <p className="text-sand-ink">
+                Could not load payroll runs:{' '}
+                {runsQuery.error instanceof Error
+                  ? runsQuery.error.message
+                  : 'the request failed'}
+              </p>
+              <Button
+                variant="outline"
+                className="mt-3"
+                onClick={() => void runsQuery.refetch()}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : runsState === 'empty' ? (
             <p className="text-sand-ink py-6 text-center text-sm">
               No payroll has been generated yet.
             </p>

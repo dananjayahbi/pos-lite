@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/table';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { fetchPayrollEnvelope, resolvePayrollLoadState } from '@/lib/payroll/api-load-state';
 import { formatRupee } from '@/lib/format';
 
 interface PayrollRunSummary {
@@ -123,30 +124,23 @@ function PayrollReportsContent() {
 
   const runsQuery = useQuery<PayrollRunSummary[]>({
     queryKey: ['payroll-runs'],
-    queryFn: async () => {
-      const res = await fetch('/api/store/payroll/runs?limit=60');
-      const json = (await res.json()) as { success: boolean; data?: PayrollRunSummary[] };
-      return json.data ?? [];
-    },
+    queryFn: () =>
+      fetchPayrollEnvelope<PayrollRunSummary[]>('/api/store/payroll/runs?limit=60'),
   });
 
   const summary = (runsQuery.data ?? []).find((run) => run.periodMonth === month);
 
   const runQuery = useQuery<PayrollRunDetail>({
     queryKey: ['payroll-run', summary?.id],
-    queryFn: async () => {
-      const res = await fetch(`/api/store/payroll/runs/${summary!.id}`);
-      const json = (await res.json()) as {
-        success: boolean;
-        data?: PayrollRunDetail;
-        error?: { message: string };
-      };
-      if (!res.ok || !json.success || !json.data) {
-        throw new Error(json.error?.message ?? 'Failed to load payroll run');
-      }
-      return json.data;
-    },
+    queryFn: () =>
+      fetchPayrollEnvelope<PayrollRunDetail>(`/api/store/payroll/runs/${summary!.id}`),
     enabled: Boolean(summary?.id),
+  });
+
+  const runsState = resolvePayrollLoadState({
+    isLoading: runsQuery.isLoading,
+    isError: runsQuery.isError,
+    hasData: (runsQuery.data?.length ?? 0) > 0,
   });
 
   const emailMutation = useMutation({
@@ -220,7 +214,42 @@ function PayrollReportsContent() {
         </div>
       </div>
 
-      {runsQuery.isLoading || runQuery.isLoading ? (
+      {runsState === 'error' ? (
+        <Card className="border-mist">
+          <CardContent className="text-sand-ink py-10 text-center text-sm">
+            <p>
+              Could not load payroll runs:{' '}
+              {runsQuery.error instanceof Error
+                ? runsQuery.error.message
+                : 'the request failed'}
+            </p>
+            <Button variant="outline" className="mt-4" onClick={() => void runsQuery.refetch()}>
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ) : summary && runQuery.isError ? (
+        <Card className="border-mist">
+          <CardContent className="text-sand-ink py-10 text-center text-sm">
+            <p>
+              Could not load the {month} payroll run:{' '}
+              {runQuery.error instanceof Error
+                ? runQuery.error.message
+                : 'the request failed'}
+            </p>
+            <Button
+              variant="outline"
+              className="mt-4"
+              onClick={() => {
+                void runsQuery.refetch();
+                void runQuery.refetch();
+              }}
+            >
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ) : runsState === 'loading' || (summary && runQuery.isLoading) ? (
         <Skeleton className="bg-linen h-48 rounded" />
       ) : !summary ? (
         <Card className="border-mist">
@@ -404,6 +433,17 @@ function PayrollReportsContent() {
         <Card className="border-mist">
           <CardContent className="text-sand-ink py-10 text-center text-sm">
             Could not load this payroll run.
+            <div className="mt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  void runsQuery.refetch();
+                  void runQuery.refetch();
+                }}
+              >
+                Retry
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
