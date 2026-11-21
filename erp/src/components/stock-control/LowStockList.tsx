@@ -24,6 +24,11 @@ import {
   resolveLowStockViewState,
 } from '@/components/stock-control/lowStockState';
 import { resolveLowStockShortfall } from '@/lib/inventory/lowStockShortfall';
+import {
+  lowStockThresholdCellLabel,
+  lowStockThresholdRuleLabel,
+  resolveEffectiveLowStockThreshold,
+} from '@/lib/inventory/lowStockThreshold';
 
 interface LowStockListProps {
   permissions: string[];
@@ -127,7 +132,7 @@ export function LowStockList({ permissions }: LowStockListProps) {
             )}
           </div>
           <p className="mt-1 font-body text-sm text-mist-ink">
-            Variants at or below their low stock threshold - sorted by urgency.
+            Variants {lowStockThresholdRuleLabel(threshold)} - sorted by urgency.
           </p>
         </div>
         <Button
@@ -212,7 +217,7 @@ export function LowStockList({ permissions }: LowStockListProps) {
             All variants are adequately stocked
           </p>
           <p className="font-body text-sm text-green-600">
-            No variants are currently at or below their low stock threshold.
+            No variants are currently {lowStockThresholdRuleLabel(threshold)}.
           </p>
         </div>
       ) : (
@@ -233,9 +238,14 @@ export function LowStockList({ permissions }: LowStockListProps) {
               <TableBody>
                 {variants.map((v) => {
                   const isOutOfStock = v.stock_quantity === 0;
+                  // ARGUS #214: the list/shortfall predicate used the override;
+                  // show that same effective threshold here.
+                  const effectiveThreshold =
+                    v.effective_threshold ??
+                    resolveEffectiveLowStockThreshold(v.low_stock_threshold, threshold).applied;
                   const shortfall = resolveLowStockShortfall(
                     v.stock_quantity,
-                    v.low_stock_threshold,
+                    effectiveThreshold,
                   );
                   return (
                     <TableRow key={v.id}>
@@ -268,7 +278,7 @@ export function LowStockList({ permissions }: LowStockListProps) {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center font-body text-sm text-espresso">
-                        {v.low_stock_threshold}
+                        {lowStockThresholdCellLabel(v.low_stock_threshold, threshold)}
                       </TableCell>
                       <TableCell className="text-center">
                         <span
