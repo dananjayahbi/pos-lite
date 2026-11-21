@@ -53,10 +53,15 @@ export async function GET(request: NextRequest) {
     }
 
     // ── 1. Revenue: completed sales aggregate ────────────────────
+    // Revenue only from sales that actually have line items: legacy zero-line
+    // sales carry a header subtotal but no product revenue/COGS, so counting
+    // them made the P&L disagree with Sales by Product by Rs 10,000
+    // (ARGUS #435).
     const revenueAgg = await prisma.sale.aggregate({
       where: {
         tenantId,
         status: "COMPLETED",
+        lines: { some: {} },
         ...saleAccountingDateWhere(from, to),
       },
       _sum: { subtotal: true, discountAmount: true },
@@ -102,6 +107,7 @@ export async function GET(request: NextRequest) {
       where: {
         tenantId,
         status: "COMPLETED",
+        lines: { some: {} },
         ...saleAccountingDateWhere(from, to),
       },
       _sum: { subtotal: true, discountAmount: true },
@@ -189,6 +195,9 @@ export async function GET(request: NextRequest) {
       FROM sales
       WHERE "tenantId" = ${tenantId}
         AND "status" = 'COMPLETED'
+        AND EXISTS (
+          SELECT 1 FROM sale_lines sl WHERE sl."saleId" = sales."id"
+        )
         AND COALESCE("saleDate", "createdAt") >= NOW() - INTERVAL '12 months'
       GROUP BY DATE_TRUNC('month', COALESCE("saleDate", "createdAt"))
       ORDER BY month
