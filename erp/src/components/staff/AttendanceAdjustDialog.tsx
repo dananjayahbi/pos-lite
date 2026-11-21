@@ -21,6 +21,8 @@ export interface AdjustableClockRecord {
   clockedOutAt: string | null;
   durationMinutes: number;
   isOpen: boolean;
+  /** Open beyond the maximum shift — capped and waiting for a real clock-out. */
+  needsReview?: boolean;
 }
 
 export interface AttendanceAdjustRow {
@@ -366,8 +368,14 @@ function ClockRecordEditor({
       </div>
 
       {record.isOpen && (
-        <p className="font-body text-[11px] text-sand-ink">
-          Clock-out is empty. Set the actual end time to close this punch.
+        <p
+          className={`font-body text-[11px] ${
+            record.needsReview ? 'text-orange-700' : 'text-sand-ink'
+          }`}
+        >
+          {record.needsReview
+            ? 'Open beyond the maximum shift — the duration is capped. Set the real clock-out time.'
+            : 'Clock-out is empty. Set the actual end time to close this punch.'}
         </p>
       )}
       {error && <p className="font-body text-xs text-[#9B2226]">{error}</p>}

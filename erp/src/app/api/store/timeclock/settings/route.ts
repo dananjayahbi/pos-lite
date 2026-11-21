@@ -15,12 +15,26 @@ import { toErrorResponse } from '@/lib/api/error-envelope';
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
-const AttendanceCalendarSchema = z.object({
-  /** ISO weekdays: 1 = Monday … 7 = Sunday. At least one working day. */
-  workingDays: z.array(z.number().int().min(1).max(7)).min(1).max(7),
-  /** YYYY-MM-DD holiday dates. */
-  holidays: z.array(z.string().regex(YMD, 'Holiday dates must be YYYY-MM-DD')).max(400),
-});
+const AttendanceCalendarSchema = z
+  .object({
+    /** ISO weekdays: 1 = Monday … 7 = Sunday. At least one working day. */
+    workingDays: z.array(z.number().int().min(1).max(7)).min(1).max(7),
+    /** YYYY-MM-DD holiday dates. */
+    holidays: z.array(z.string().regex(YMD, 'Holiday dates must be YYYY-MM-DD')).max(400),
+    /** Worked minutes required for a full Present day. */
+    fullDayMinutes: z.number().int().min(60).max(1440).optional(),
+    /** Worked minutes required for a Half Day. */
+    halfDayMinutes: z.number().int().min(30).max(1439).optional(),
+    /** Maximum shift length before an open punch is capped (ARGUS #351). */
+    maxShiftMinutes: z.number().int().min(60).max(1440).optional(),
+  })
+  .refine(
+    (value) =>
+      value.fullDayMinutes === undefined ||
+      value.halfDayMinutes === undefined ||
+      value.halfDayMinutes < value.fullDayMinutes,
+    { message: 'Half-day minutes must be below the full-day minutes', path: ['halfDayMinutes'] },
+  );
 
 async function requireSession() {
   const session = await auth();

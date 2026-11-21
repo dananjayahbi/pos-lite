@@ -11,12 +11,19 @@ import {
   parseAttendanceCalendar,
   todayAttendanceYmd,
   type AttendanceCalendarSettings,
+  type AttendanceCalendarUpdate,
   type AttendanceDisplayStatus,
 } from '@/lib/attendance/attendanceCalendar.core';
 import {
   findOverlappingPunch,
   validatePunchTimes,
 } from '@/lib/attendance/punchTimes.core';
+import {
+  DEFAULT_MAX_SHIFT_MINUTES,
+  capPunchEnd,
+  describeClockInConflict,
+  isPunchOverdue,
+} from '@/lib/attendance/openPunch.core';
 
 /** A standard full day. Anything beyond this is overtime (OT). */
 export const STANDARD_WORKDAY_MINUTES = 8 * 60;
@@ -28,6 +35,8 @@ export interface AttendanceClockRecord {
   notes: string | null;
   durationMinutes: number;
   isOpen: boolean;
+  /** Open longer than the maximum shift — needs a real clock-out. */
+  needsReview: boolean;
 }
 
 export interface DailyAttendanceRow {
@@ -41,6 +50,8 @@ export interface DailyAttendanceRow {
   totalMinutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
+  /** At least one open punch is beyond the maximum shift (ARGUS #351). */
+  needsReview: boolean;
   records: AttendanceClockRecord[];
   attendance: {
     id: string;
@@ -52,6 +63,7 @@ export interface DailyAttendanceRow {
 export interface DailyAttendanceResult {
   date: string;
   standardWorkdayMinutes: number;
+  maxShiftMinutes: number;
   isWorkingDay: boolean;
   isHoliday: boolean;
   isFuture: boolean;
@@ -98,7 +110,7 @@ export async function readAttendanceCalendar(tenantId: string): Promise<Attendan
  */
 export async function saveAttendanceCalendar(
   tenantId: string,
-  input: Partial<AttendanceCalendarSettings>,
+  input: AttendanceCalendarUpdate,
   actorId: string,
   actorRole: string,
 ): Promise<AttendanceCalendarSettings> {
@@ -117,7 +129,9 @@ export async function saveAttendanceCalendar(
       : {};
 
   const previous = parseAttendanceCalendar(current);
-  const next = normalizeAttendanceCalendar(input);
+  // Merge over the current values so a working-day-only save does not reset the
+  // hour thresholds (and vice versa).
+  const next = normalizeAttendanceCalendar({ ...previous, ...input });
 
   await prisma.tenant.update({
     where: { id: tenantId },
@@ -146,28 +160,40 @@ export async function saveAttendanceCalendar(
 /**
  * Sum one staff member's punches for the day and split the total into regular
  * minutes and overtime beyond the 8-hour standard workday.
+ *
+ * ARGUS #351: an open punch is capped at `maxShiftMinutes` (and at `now`), so a
+ * forgotten clock-out can never accrue unbounded hours. `hasOverdue` flags
+ * such a punch for review.
  */
 export function computeAttendanceTotals(
   records: { clockedInAt: Date; clockedOutAt: Date | null }[],
   now: Date = new Date(),
+  maxShiftMinutes: number = DEFAULT_MAX_SHIFT_MINUTES,
 ) {
   let totalMinutes = 0;
   let clockInAt: Date | null = null;
   let clockOutAt: Date | null = null;
   let hasOpen = false;
+  let hasOverdue = false;
 
   for (const record of records) {
     if (!clockInAt || record.clockedInAt < clockInAt) clockInAt = record.clockedInAt;
     if (record.clockedOutAt) {
       if (!clockOutAt || record.clockedOutAt > clockOutAt) clockOutAt = record.clockedOutAt;
+      totalMinutes += Math.max(
+        0,
+        Math.round((record.clockedOutAt.getTime() - record.clockedInAt.getTime()) / 60_000),
+      );
     } else {
       hasOpen = true;
+      const overdue = isPunchOverdue(record.clockedInAt, now, maxShiftMinutes);
+      if (overdue) hasOverdue = true;
+      const end = capPunchEnd(record.clockedInAt, now, maxShiftMinutes);
+      totalMinutes += Math.max(
+        0,
+        Math.round((end.getTime() - record.clockedInAt.getTime()) / 60_000),
+      );
     }
-    const end = record.clockedOutAt ?? now;
-    totalMinutes += Math.max(
-      0,
-      Math.round((end.getTime() - record.clockedInAt.getTime()) / 60_000),
-    );
   }
 
   const overtimeMinutes = Math.max(0, totalMinutes - STANDARD_WORKDAY_MINUTES);
@@ -178,39 +204,124 @@ export function computeAttendanceTotals(
     clockInAt,
     clockOutAt: hasOpen ? null : clockOutAt,
     hasOpen,
+    hasOverdue,
   };
 }
 
 /** Lightweight current-user status for the global header clock widget. */
 export async function getMyTimeClockStatus(tenantId: string, userId: string) {
-  const [user, openRecord] = await Promise.all([
-    prisma.user.findFirst({
-      where: { id: userId, tenantId },
-      select: { clockedInAt: true },
-    }),
+  const [openRecord, calendar] = await Promise.all([
     prisma.timeClock.findFirst({
       where: { tenantId, userId, clockedOutAt: null },
       orderBy: { clockedInAt: 'desc' },
       select: { id: true, clockedInAt: true },
     }),
+    readAttendanceCalendar(tenantId),
   ]);
 
-  const clockedInAt = user?.clockedInAt ?? openRecord?.clockedInAt ?? null;
+  // The open TimeClock row is the source of truth; a stale user.clockedInAt
+  // flag without a row would otherwise show a timer nobody can clock out of.
+  const clockedInAt = openRecord?.clockedInAt ?? null;
+  const conflict = describeClockInConflict(
+    openRecord ? { id: openRecord.id, clockedInAt: openRecord.clockedInAt } : null,
+    new Date(),
+    calendar.maxShiftMinutes,
+  );
+
   return {
     clockedInAt: clockedInAt?.toISOString() ?? null,
     openRecordId: openRecord?.id ?? null,
+    maxShiftMinutes: calendar.maxShiftMinutes,
+    // Open beyond the maximum shift: the header shows "needs review" rather
+    // than a growing timer (ARGUS #351).
+    needsReview: conflict.punch?.overdue ?? false,
   };
 }
 
-export async function clockIn(tenantId: string, userId: string, shiftId?: string | undefined) {
-  return prisma.$transaction(async (tx) => {
+export interface ClockInOptions {
+  /**
+   * Explicit clock-out for a still-open punch from a previous day, chosen by
+   * the person in the clock-in prompt (ARGUS #351). Required to resolve that
+   * conflict; never invented silently.
+   */
+  closePreviousPunchAt?: string | undefined;
+}
+
+export async function clockIn(
+  tenantId: string,
+  userId: string,
+  shiftId?: string | undefined,
+  options: ClockInOptions = {},
+) {
+  const calendar = await readAttendanceCalendar(tenantId);
+
+  const result = await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUnique({
       where: { id: userId },
       select: { clockedInAt: true },
     });
 
-    if (user?.clockedInAt) {
-      throw new Error('User is already clocked in');
+    const openRecord = await tx.timeClock.findFirst({
+      where: { tenantId, userId, clockedOutAt: null },
+      orderBy: { clockedInAt: 'asc' },
+      select: { id: true, clockedInAt: true, clockedOutAt: true },
+    });
+
+    // ARGUS #351: a forgotten clock-out from a previous day must be resolved
+    // explicitly; a same-day open punch is the historical "already clocked in".
+    const conflict = describeClockInConflict(
+      openRecord,
+      new Date(),
+      calendar.maxShiftMinutes,
+    );
+
+    let closed: { id: string; clockedInAt: Date; clockedOutAt: Date } | null = null;
+
+    if (conflict.kind === 'PREVIOUS_DAY' && conflict.punch && openRecord) {
+      if (!options.closePreviousPunchAt) {
+        throw new ApiError(
+          409,
+          'OPEN_PUNCH_FROM_PREVIOUS_DAY',
+          'A previous clock-in is still open. Close it before starting a new shift.',
+          {
+            punchId: conflict.punch.id,
+            clockedInAt: conflict.punch.clockedInAt,
+            cappedEndAt: conflict.punch.cappedEndAt,
+            maxShiftMinutes: conflict.maxShiftMinutes,
+            suggestedCloseAt: conflict.suggestedCloseAt,
+          },
+        );
+      }
+
+      const closeAt = new Date(options.closePreviousPunchAt);
+      const now = new Date();
+      const validation = validatePunchTimes(
+        { clockedInAt: openRecord.clockedInAt, clockedOutAt: closeAt },
+        now,
+      );
+      if (validation) {
+        throw new ApiError(400, 'VALIDATION_ERROR', validation.message);
+      }
+      const capAt = openRecord.clockedInAt.getTime() + calendar.maxShiftMinutes * 60_000;
+      if (closeAt.getTime() > capAt) {
+        throw new ApiError(
+          400,
+          'VALIDATION_ERROR',
+          `Clock-out cannot exceed the maximum shift (${Math.round(calendar.maxShiftMinutes / 60)}h)`,
+        );
+      }
+
+      await tx.timeClock.update({
+        where: { id: openRecord.id },
+        data: { clockedOutAt: closeAt },
+      });
+      await tx.user.update({ where: { id: userId }, data: { clockedInAt: null } });
+      closed = { id: openRecord.id, clockedInAt: openRecord.clockedInAt, clockedOutAt: closeAt };
+    } else if (conflict.kind === 'SAME_DAY') {
+      throw new ApiError(409, 'ALREADY_CLOCKED_IN', 'Already clocked in');
+    } else if (user?.clockedInAt) {
+      // Stale header flag without an open row: clear it and start clean.
+      await tx.user.update({ where: { id: userId }, data: { clockedInAt: null } });
     }
 
     const now = new Date();
@@ -229,11 +340,31 @@ export async function clockIn(tenantId: string, userId: string, shiftId?: string
       data: { clockedInAt: now },
     });
 
-    return timeClock;
+    return { timeClock, closed };
   });
+
+  if (result.closed) {
+    void createAuditLog({
+      tenantId,
+      actorId: userId,
+      actorRole: 'UNKNOWN',
+      entityType: 'TimeClock',
+      entityId: result.closed.id,
+      action: AUDIT_ACTIONS.ATTENDANCE_ADJUSTED,
+      before: { clockedInAt: result.closed.clockedInAt.toISOString(), clockedOutAt: null },
+      after: {
+        clockedOutAt: result.closed.clockedOutAt.toISOString(),
+        reason: 'CLOSED_BEFORE_NEXT_CLOCK_IN',
+      },
+    }).catch(() => {});
+  }
+
+  return result.timeClock;
 }
 
 export async function clockOut(tenantId: string, userId: string, notes?: string | undefined) {
+  const calendar = await readAttendanceCalendar(tenantId);
+
   return prisma.$transaction(async (tx) => {
     const user = await tx.user.findUnique({
       where: { id: userId },
@@ -255,10 +386,16 @@ export async function clockOut(tenantId: string, userId: string, notes?: string 
       throw new Error('No open time clock entry found');
     }
 
+    // ARGUS #351: never store an unbounded shift. A clock-out after the
+    // maximum shift closes the punch at the cap and flags it for review.
+    const capEnd = capPunchEnd(openEntry.clockedInAt, now, calendar.maxShiftMinutes);
+    const capped = capEnd.getTime() < now.getTime();
+    const closedAt = capped ? capEnd : now;
+
     const timeClock = await tx.timeClock.update({
       where: { id: openEntry.id },
       data: {
-        clockedOutAt: now,
+        clockedOutAt: closedAt,
         ...(notes !== undefined && { notes }),
       },
     });
@@ -268,10 +405,28 @@ export async function clockOut(tenantId: string, userId: string, notes?: string 
       data: { clockedInAt: null },
     });
 
-    const durationMs = now.getTime() - openEntry.clockedInAt.getTime();
-    const durationMinutes = Math.round(durationMs / 60000);
+    const durationMinutes = Math.round(
+      (closedAt.getTime() - openEntry.clockedInAt.getTime()) / 60000,
+    );
 
-    return { ...timeClock, durationMinutes };
+    if (capped) {
+      void createAuditLog({
+        tenantId,
+        actorId: userId,
+        actorRole: 'UNKNOWN',
+        entityType: 'TimeClock',
+        entityId: openEntry.id,
+        action: AUDIT_ACTIONS.ATTENDANCE_PUNCH_AUTO_CAPPED,
+        before: { clockedInAt: openEntry.clockedInAt.toISOString(), clockedOutAt: null },
+        after: {
+          clockedOutAt: closedAt.toISOString(),
+          maxShiftMinutes: calendar.maxShiftMinutes,
+          durationMinutes,
+        },
+      }).catch(() => {});
+    }
+
+    return { ...timeClock, durationMinutes, cappedAtMaxShift: capped };
   });
 }
 
@@ -317,7 +472,7 @@ export async function getTimeClockSummary(tenantId: string, userId: string) {
   // Start of current month
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [weekRecords, monthRecords] = await Promise.all([
+  const [weekRecords, monthRecords, calendar] = await Promise.all([
     prisma.timeClock.findMany({
       where: { tenantId, userId, clockedInAt: { gte: weekStart } },
       select: { clockedInAt: true, clockedOutAt: true },
@@ -326,11 +481,14 @@ export async function getTimeClockSummary(tenantId: string, userId: string) {
       where: { tenantId, userId, clockedInAt: { gte: monthStart } },
       select: { clockedInAt: true, clockedOutAt: true },
     }),
+    readAttendanceCalendar(tenantId),
   ]);
 
   function sumHours(records: { clockedInAt: Date; clockedOutAt: Date | null }[]): number {
     return records.reduce((total, r) => {
-      const end = r.clockedOutAt ?? now;
+      // ARGUS #351: a forgotten clock-out contributes at most the max shift.
+      const end =
+        r.clockedOutAt ?? capPunchEnd(r.clockedInAt, now, calendar.maxShiftMinutes);
       return total + (end.getTime() - r.clockedInAt.getTime()) / 3600000;
     }, 0);
   }
@@ -400,12 +558,13 @@ export async function getDailyAttendance(
 
   const staff: DailyAttendanceRow[] = users.map((user) => {
     const userRecords = recordsByUser.get(user.id) ?? [];
-    const totals = computeAttendanceTotals(userRecords, now);
+    const totals = computeAttendanceTotals(userRecords, now, calendar.maxShiftMinutes);
     const attendance = attendanceByUser.get(user.id) ?? null;
     const status = deriveAttendanceStatus({
       date: dateKey,
       today,
       hasPunches: userRecords.length > 0,
+      workedMinutes: totals.totalMinutes,
       override: attendance?.status ?? null,
       calendar,
       employedFrom: formatAttendanceDate(user.createdAt),
@@ -422,8 +581,12 @@ export async function getDailyAttendance(
       totalMinutes: totals.totalMinutes,
       regularMinutes: totals.regularMinutes,
       overtimeMinutes: totals.overtimeMinutes,
+      needsReview: totals.hasOverdue,
       records: userRecords.map((record) => {
-        const end = record.clockedOutAt ?? now;
+        const isOpen = record.clockedOutAt === null;
+        const end =
+          record.clockedOutAt ??
+          capPunchEnd(record.clockedInAt, now, calendar.maxShiftMinutes);
         return {
           id: record.id,
           clockedInAt: record.clockedInAt.toISOString(),
@@ -433,7 +596,9 @@ export async function getDailyAttendance(
             0,
             Math.round((end.getTime() - record.clockedInAt.getTime()) / 60_000),
           ),
-          isOpen: record.clockedOutAt === null,
+          isOpen,
+          needsReview:
+            isOpen && isPunchOverdue(record.clockedInAt, now, calendar.maxShiftMinutes),
         };
       }),
       attendance: attendance
@@ -445,6 +610,7 @@ export async function getDailyAttendance(
   return {
     date: dateKey,
     standardWorkdayMinutes: STANDARD_WORKDAY_MINUTES,
+    maxShiftMinutes: calendar.maxShiftMinutes,
     isWorkingDay: isWorkingDay(dateKey, calendar),
     isHoliday: isCalendarHoliday(dateKey, calendar),
     isFuture: dateKey > today,
@@ -463,6 +629,8 @@ export interface StaffAttendanceReportRow {
   status: AttendanceDisplayStatus;
   notes: string | null;
   punches: number;
+  /** An open punch on this day exceeded the maximum shift (ARGUS #351). */
+  needsReview: boolean;
 }
 
 export interface StaffAttendanceReport {
@@ -471,12 +639,17 @@ export interface StaffAttendanceReport {
   userId: string;
   rows: StaffAttendanceReportRow[];
   daysPresent: number;
+  /** Real absences + insufficient-hours days (payroll no-pay days). */
   daysAbsent: number;
+  /** Subset of `daysAbsent`: punched but below the half-day threshold. */
+  daysInsufficient: number;
   daysLeave: number;
   daysHalfDay: number;
   daysHoliday: number;
   /** Weekend / not-employed days (never counted as absent). */
   daysOff: number;
+  /** Days with an overdue open punch that needs a real clock-out. */
+  daysNeedsReview: number;
   totalMinutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
@@ -537,23 +710,33 @@ export async function getStaffAttendanceReport(
     attendanceDays.map((row) => [formatAttendanceDate(row.date), row]),
   );
 
+  const now = new Date();
+  // Worked minutes per date drive the Present/Half Day/Insufficient grading.
+  const workedMinutesByDate = new Map<string, number>();
+  for (const [dateKey, dayRecords] of recordsByDate) {
+    workedMinutesByDate.set(
+      dateKey,
+      computeAttendanceTotals(dayRecords, now, calendar.maxShiftMinutes).totalMinutes,
+    );
+  }
+
   const calendarRows = buildAttendanceCalendarRows({
     from: formatAttendanceDate(from),
     to: formatAttendanceDate(to),
     today: todayAttendanceYmd(),
     calendar,
     punchDates: new Set(recordsByDate.keys()),
+    workedMinutesByDate,
     overrides: new Map(
       attendanceDays.map((row) => [formatAttendanceDate(row.date), row.status]),
     ),
     employedFrom: user ? formatAttendanceDate(user.createdAt) : null,
   });
 
-  const now = new Date();
   const rows: StaffAttendanceReportRow[] = calendarRows.rows.map((calendarRow) => {
     const dayRecords = recordsByDate.get(calendarRow.date) ?? [];
     const override = overrideByDate.get(calendarRow.date);
-    const totals = computeAttendanceTotals(dayRecords, now);
+    const totals = computeAttendanceTotals(dayRecords, now, calendar.maxShiftMinutes);
     return {
       date: calendarRow.date,
       clockInAt: totals.clockInAt?.toISOString() ?? null,
@@ -564,6 +747,7 @@ export async function getStaffAttendanceReport(
       status: calendarRow.status,
       notes: override?.notes ?? null,
       punches: dayRecords.length,
+      needsReview: totals.hasOverdue,
     };
   });
 
@@ -573,11 +757,15 @@ export async function getStaffAttendanceReport(
     userId,
     rows,
     daysPresent: calendarRows.counts.present,
-    daysAbsent: calendarRows.counts.absent,
+    // Payroll no-pay uses one derived absence rule: real absences plus days
+    // worked below the half-day threshold (ARGUS #350).
+    daysAbsent: calendarRows.counts.absent + calendarRows.counts.insufficient,
+    daysInsufficient: calendarRows.counts.insufficient,
     daysLeave: calendarRows.counts.leave,
     daysHalfDay: calendarRows.counts.halfDay,
     daysHoliday: calendarRows.counts.holiday,
     daysOff: calendarRows.counts.off,
+    daysNeedsReview: rows.filter((row) => row.needsReview).length,
     totalMinutes: rows.reduce((total, row) => total + row.totalMinutes, 0),
     regularMinutes: rows.reduce((total, row) => total + row.regularMinutes, 0),
     overtimeMinutes: rows.reduce((total, row) => total + row.overtimeMinutes, 0),

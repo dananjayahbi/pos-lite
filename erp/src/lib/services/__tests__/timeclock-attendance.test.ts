@@ -51,6 +51,27 @@ describe('computeAttendanceTotals - 8-hour standard and OT', () => {
     expect(result.hasOpen).toBe(true);
   });
 
+  it('caps an overdue open punch at the maximum shift (ARGUS #351)', () => {
+    const opened = new Date(2026, 10, 5, 8, 0, 0, 0); // previous day
+    const now = new Date(2026, 10, 6, 12, 0, 0, 0); // 28 hours later
+    const result = computeAttendanceTotals([{ clockedInAt: opened, clockedOutAt: null }], now, 960);
+
+    expect(result.totalMinutes).toBe(960);
+    expect(result.regularMinutes).toBe(480);
+    expect(result.overtimeMinutes).toBe(480);
+    expect(result.hasOpen).toBe(true);
+    expect(result.hasOverdue).toBe(true);
+  });
+
+  it('does not flag a normal same-day open punch as overdue', () => {
+    const result = computeAttendanceTotals(
+      [{ clockedInAt: at(8), clockedOutAt: null }],
+      at(18),
+      960,
+    );
+    expect(result.hasOverdue).toBe(false);
+  });
+
   it('never reports negative duration when the punch is in the future', () => {
     const result = computeAttendanceTotals(
       [{ clockedInAt: at(10), clockedOutAt: null }],

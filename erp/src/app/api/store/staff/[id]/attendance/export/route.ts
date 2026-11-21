@@ -20,6 +20,7 @@ const STATUS_LABEL: Record<string, string> = {
   HOLIDAY: 'Holiday',
   OFF: 'Off',
   SCHEDULED: 'Scheduled',
+  INSUFFICIENT: 'Insufficient hours',
 };
 
 function timeLabel(iso: string | null): string {
@@ -85,6 +86,7 @@ export async function GET(
       { header: 'Overtime', value: (row) => formatMinutesAsHm(row.overtimeMinutes) },
       { header: 'Status', value: (row) => STATUS_LABEL[row.status] ?? row.status },
       { header: 'Punches', value: (row) => row.punches },
+      { header: 'Needs Review', value: (row) => (row.needsReview ? 'Yes' : '') },
       { header: 'Notes', value: (row) => row.notes ?? '' },
     ];
 

@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { clockIn } from '@/lib/services/timeclock.service';
-import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 const ClockInSchema = z.object({
   shiftId: z.string().optional(),
+  /** Clock-out for an open punch from a previous day (explicit confirmation). */
+  closePreviousPunchAt: z.string().min(1).optional(),
 });
 
 export async function POST(request: Request) {
@@ -35,26 +37,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { clockedInAt: true },
+    // The service owns conflict detection: a same-day open punch is
+    // ALREADY_CLOCKED_IN; a previous-day one is OPEN_PUNCH_FROM_PREVIOUS_DAY
+    // with the punch details the widget needs to offer closing it (ARGUS #351).
+    const record = await clockIn(tenantId, session.user.id, parsed.data.shiftId, {
+      closePreviousPunchAt: parsed.data.closePreviousPunchAt,
     });
-
-    if (user?.clockedInAt) {
-      return NextResponse.json(
-        { success: false, error: { code: 'CONFLICT', message: 'Already clocked in' } },
-        { status: 409 },
-      );
-    }
-
-    const record = await clockIn(tenantId, session.user.id, parsed.data.shiftId);
 
     return NextResponse.json({ success: true, data: record }, { status: 201 });
   } catch (error) {
-    console.error('POST /api/store/timeclock/clock-in error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'POST /api/store/timeclock/clock-in');
   }
 }

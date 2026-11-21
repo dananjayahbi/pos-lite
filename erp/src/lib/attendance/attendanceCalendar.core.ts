@@ -25,7 +25,8 @@ export type AttendanceDisplayStatus =
   | 'HALF_DAY'
   | 'HOLIDAY'
   | 'OFF'
-  | 'SCHEDULED';
+  | 'SCHEDULED'
+  | 'INSUFFICIENT';
 
 /** ISO weekdays: 1 = Monday … 7 = Sunday. */
 export const ALL_ISO_WEEKDAYS = [1, 2, 3, 4, 5, 6, 7] as const;
@@ -33,15 +34,29 @@ export const ALL_ISO_WEEKDAYS = [1, 2, 3, 4, 5, 6, 7] as const;
 /** Mon–Fri by default, matching the payroll module's calendar weekday base. */
 export const DEFAULT_ATTENDANCE_WORKING_DAYS: readonly number[] = [1, 2, 3, 4, 5];
 
+/** 8 hours. */
+export const DEFAULT_FULL_DAY_MINUTES = 480;
+/** 4 hours. */
+export const DEFAULT_HALF_DAY_MINUTES = 240;
+
 export interface AttendanceCalendarSettings {
   workingDays: number[];
   /** YYYY-MM-DD dates treated as public/company holidays. */
   holidays: string[];
+  /** Worked minutes required for a full Present day. */
+  fullDayMinutes: number;
+  /** Worked minutes required for a Half Day (below it = Insufficient hours). */
+  halfDayMinutes: number;
+  /** Maximum shift length before an open punch is capped/flagged (ARGUS #351). */
+  maxShiftMinutes: number;
 }
 
 export const DEFAULT_ATTENDANCE_CALENDAR: AttendanceCalendarSettings = {
   workingDays: [...DEFAULT_ATTENDANCE_WORKING_DAYS],
   holidays: [],
+  fullDayMinutes: DEFAULT_FULL_DAY_MINUTES,
+  halfDayMinutes: DEFAULT_HALF_DAY_MINUTES,
+  maxShiftMinutes: 16 * 60,
 };
 
 const YMD_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -70,26 +85,64 @@ function normalizeHolidays(value: unknown): string[] {
   return [...dates].sort();
 }
 
+function normalizeThreshold(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === 'number' ? value : Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.trunc(parsed), min), max);
+}
+
 /** Read `settings.attendance`; corrupt/partial blobs fall back per-field. */
 export function parseAttendanceCalendar(settings: unknown): AttendanceCalendarSettings {
   if (!isRecord(settings)) return { ...DEFAULT_ATTENDANCE_CALENDAR };
   const attendance = settings.attendance;
   if (!isRecord(attendance)) return { ...DEFAULT_ATTENDANCE_CALENDAR };
 
+  const fullDayMinutes = normalizeThreshold(
+    attendance.fullDayMinutes,
+    DEFAULT_FULL_DAY_MINUTES,
+    60,
+    1440,
+  );
+  const halfDayMinutesRaw = normalizeThreshold(
+    attendance.halfDayMinutes,
+    Math.min(DEFAULT_HALF_DAY_MINUTES, fullDayMinutes - 1),
+    30,
+    1440,
+  );
+
   return {
     workingDays: normalizeWorkingDays(attendance.workingDays),
     holidays: normalizeHolidays(attendance.holidays),
+    fullDayMinutes,
+    // A half-day threshold at/above the full-day threshold would make Present
+    // unreachable; fall back to half of the full day.
+    halfDayMinutes:
+      halfDayMinutesRaw < fullDayMinutes
+        ? halfDayMinutesRaw
+        : Math.max(30, Math.floor(fullDayMinutes / 2)),
+    maxShiftMinutes: normalizeThreshold(
+      attendance.maxShiftMinutes,
+      DEFAULT_ATTENDANCE_CALENDAR.maxShiftMinutes,
+      60,
+      1440,
+    ),
   };
+}
+
+/** Partial calendar update (settings PATCH); every field is optional. */
+export interface AttendanceCalendarUpdate {
+  workingDays?: number[] | undefined;
+  holidays?: string[] | undefined;
+  fullDayMinutes?: number | undefined;
+  halfDayMinutes?: number | undefined;
+  maxShiftMinutes?: number | undefined;
 }
 
 /** Clamp a submitted calendar into the storable full shape. */
 export function normalizeAttendanceCalendar(
-  input: Partial<AttendanceCalendarSettings>,
+  input: AttendanceCalendarUpdate,
 ): AttendanceCalendarSettings {
-  return {
-    workingDays: normalizeWorkingDays(input.workingDays),
-    holidays: normalizeHolidays(input.holidays),
-  };
+  return parseAttendanceCalendar({ attendance: input });
 }
 
 /** Local calendar date as YYYY-MM-DD (no UTC shift). */
@@ -131,6 +184,8 @@ export interface DeriveAttendanceStatusInput {
   /** YYYY-MM-DD of "today" (local). */
   today: string;
   hasPunches: boolean;
+  /** Minutes worked that day (closed punches; open punches capped). */
+  workedMinutes?: number | undefined;
   /** Explicit AttendanceDay override — always authoritative. */
   override?: AttendanceDisplayStatus | null;
   calendar: AttendanceCalendarSettings;
@@ -140,6 +195,18 @@ export interface DeriveAttendanceStatusInput {
   employedTo?: string | null | undefined;
 }
 
+/**
+ * Derive the day's status.
+ *
+ * - explicit override wins;
+ * - weekends/holidays/before employment are OFF/HOLIDAY;
+ * - future working days are SCHEDULED;
+ * - today is provisional: any punch shows PRESENT while the day is running;
+ * - past working days are graded by worked minutes:
+ *     >= fullDayMinutes   → PRESENT
+ *     >= halfDayMinutes   → HALF_DAY
+ *     below half (or 0)   → INSUFFICIENT (never a full Present badge).
+ */
 export function deriveAttendanceStatus(
   input: DeriveAttendanceStatusInput,
 ): AttendanceDisplayStatus {
@@ -149,12 +216,25 @@ export function deriveAttendanceStatus(
   if (input.employedTo && input.date > input.employedTo) return 'OFF';
 
   if (isCalendarHoliday(input.date, input.calendar)) return 'HOLIDAY';
-  if (!isWorkingDay(input.date, input.calendar)) return 'OFF';
+
+  const workingDay = isWorkingDay(input.date, input.calendar);
+  // A non-working day without punches is Off; a weekend someone actually
+  // worked is graded by hours below (never Absent).
+  if (!workingDay && !input.hasPunches) return 'OFF';
 
   // Never mark a future working day absent.
   if (input.date > input.today) return 'SCHEDULED';
 
-  return input.hasPunches ? 'PRESENT' : 'ABSENT';
+  if (!input.hasPunches) return 'ABSENT';
+
+  // ARGUS #350: today is still in progress, so an early clock-in must not read
+  // as "Insufficient hours"; the day is graded once it is in the past.
+  if (input.date === input.today) return 'PRESENT';
+
+  const worked = input.workedMinutes ?? 0;
+  if (worked >= input.calendar.fullDayMinutes) return 'PRESENT';
+  if (worked >= input.calendar.halfDayMinutes) return 'HALF_DAY';
+  return 'INSUFFICIENT';
 }
 
 export interface AttendanceCalendarRow {
@@ -166,6 +246,8 @@ export interface AttendanceCalendarRow {
 export interface AttendanceCalendarCounts {
   present: number;
   absent: number;
+  /** Punched in but below the half-day threshold (subset paid as no-pay). */
+  insufficient: number;
   leave: number;
   halfDay: number;
   holiday: number;
@@ -181,10 +263,20 @@ export interface BuildAttendanceCalendarInput {
   calendar: AttendanceCalendarSettings;
   /** Days (YYYY-MM-DD) that have at least one punch. */
   punchDates: ReadonlySet<string>;
+  /** Worked minutes per YYYY-MM-DD (open punches capped by the caller). */
+  workedMinutesByDate?: ReadonlyMap<string, number>;
   /** Explicit overrides by YYYY-MM-DD. */
   overrides?: ReadonlyMap<string, AttendanceDisplayStatus>;
   employedFrom?: string | null | undefined;
   employedTo?: string | null | undefined;
+}
+
+/**
+ * Days that count as no-pay: true absences plus days below the half-day
+ * threshold. Kept as a helper so payroll and the UI cannot disagree.
+ */
+export function countNoPayDays(counts: AttendanceCalendarCounts): number {
+  return counts.absent + counts.insufficient;
 }
 
 export function enumerateDateRange(from: string, to: string): string[] {
@@ -223,6 +315,7 @@ export function buildAttendanceCalendarRows(input: BuildAttendanceCalendarInput)
         date,
         today: input.today,
         hasPunches,
+        workedMinutes: input.workedMinutesByDate?.get(date),
         override,
         calendar: input.calendar,
         employedFrom: input.employedFrom,
@@ -235,6 +328,7 @@ export function buildAttendanceCalendarRows(input: BuildAttendanceCalendarInput)
   const counts: AttendanceCalendarCounts = {
     present: 0,
     absent: 0,
+    insufficient: 0,
     leave: 0,
     halfDay: 0,
     holiday: 0,
@@ -249,6 +343,9 @@ export function buildAttendanceCalendarRows(input: BuildAttendanceCalendarInput)
         break;
       case 'ABSENT':
         counts.absent += 1;
+        break;
+      case 'INSUFFICIENT':
+        counts.insufficient += 1;
         break;
       case 'LEAVE':
         counts.leave += 1;

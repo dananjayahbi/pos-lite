@@ -39,6 +39,7 @@ interface AttendanceRecord {
   notes: string | null;
   durationMinutes: number;
   isOpen: boolean;
+  needsReview: boolean;
 }
 
 interface AttendanceRow {
@@ -52,6 +53,7 @@ interface AttendanceRow {
   totalMinutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
+  needsReview: boolean;
   records: AttendanceRecord[];
   attendance: { id: string; status: AttendanceStatusValue; notes: string | null } | null;
 }
@@ -59,6 +61,7 @@ interface AttendanceRow {
 interface AttendanceResponse {
   date: string;
   standardWorkdayMinutes: number;
+  maxShiftMinutes: number;
   isWorkingDay: boolean;
   isHoliday: boolean;
   isFuture: boolean;
@@ -74,6 +77,7 @@ const STATUS_LABEL: Record<AttendanceDisplayStatus, string> = {
   HOLIDAY: 'Holiday',
   OFF: 'Off',
   SCHEDULED: 'Scheduled',
+  INSUFFICIENT: 'Insufficient hours',
 };
 
 const STATUS_CLASS: Record<AttendanceDisplayStatus, string> = {
@@ -84,6 +88,7 @@ const STATUS_CLASS: Record<AttendanceDisplayStatus, string> = {
   HOLIDAY: 'border border-slate-200 bg-slate-100 text-slate-700',
   OFF: 'border border-slate-200 bg-slate-50 text-slate-600',
   SCHEDULED: 'border border-sky-200 bg-sky-50 text-sky-700',
+  INSUFFICIENT: 'border border-orange-200 bg-orange-100 text-orange-800',
 };
 
 function todayYmd(): string {
@@ -187,15 +192,28 @@ export default function TimeclockPage() {
       (acc, row) => {
         if (row.status === 'PRESENT') acc.present += 1;
         else if (row.status === 'ABSENT') acc.absent += 1;
-        else if (row.status === 'LEAVE') acc.onLeave += 1;
+        else if (row.status === 'INSUFFICIENT') {
+          // ARGUS #350: below half a day is a no-pay day, not a full Present.
+          acc.absent += 1;
+          acc.insufficient += 1;
+        } else if (row.status === 'LEAVE') acc.onLeave += 1;
         else if (row.status === 'HALF_DAY') acc.halfDay += 1;
         else if (row.status === 'HOLIDAY' || row.status === 'OFF') acc.holidayOff += 1;
         acc.overtimeMinutes += row.overtimeMinutes;
         return acc;
       },
-      { present: 0, absent: 0, onLeave: 0, halfDay: 0, holidayOff: 0, overtimeMinutes: 0 },
+      {
+        present: 0,
+        absent: 0,
+        insufficient: 0,
+        onLeave: 0,
+        halfDay: 0,
+        holidayOff: 0,
+        overtimeMinutes: 0,
+      },
     );
   }, [rows]);
+  const reviewCount = rows.filter((row) => row.needsReview).length;
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['attendance'] });
@@ -268,6 +286,13 @@ export default function TimeclockPage() {
           Future date  -  absences are not recorded until the day has passed.
         </p>
       )}
+      {reviewCount > 0 && (
+        <p className="rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-sm text-orange-800">
+          {reviewCount} staff member{reviewCount === 1 ? '' : 's'} have an open punch longer than
+          the maximum shift ({Math.round((dayInfo?.maxShiftMinutes ?? 960) / 60)}h). The duration
+          is capped — use Adjust to set the real clock-out.
+        </p>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
@@ -284,6 +309,11 @@ export default function TimeclockPage() {
           </CardHeader>
           <CardContent>
             <p className="font-display text-3xl font-bold text-red-700">{summary.absent}</p>
+            {summary.insufficient > 0 ? (
+              <p className="text-xs text-orange-700">
+                {summary.insufficient} insufficient hours
+              </p>
+            ) : null}
           </CardContent>
         </Card>
         <Card>
@@ -378,6 +408,11 @@ export default function TimeclockPage() {
                             {hasOpenPunch && (
                               <Badge className="ml-1 border border-amber-200 bg-amber-50 text-xs text-amber-700">
                                 Active
+                              </Badge>
+                            )}
+                            {row.needsReview && (
+                              <Badge className="ml-1 border border-orange-300 bg-orange-100 text-xs text-orange-800">
+                                Needs review
                               </Badge>
                             )}
                           </TableCell>
@@ -486,6 +521,9 @@ function AttendanceCalendarCard({
 }) {
   const [workingDays, setWorkingDays] = useState<number[]>(calendar.workingDays);
   const [holidaysText, setHolidaysText] = useState(calendar.holidays.join('\n'));
+  const [fullDayMinutes, setFullDayMinutes] = useState(String(calendar.fullDayMinutes));
+  const [halfDayMinutes, setHalfDayMinutes] = useState(String(calendar.halfDayMinutes));
+  const [maxShiftMinutes, setMaxShiftMinutes] = useState(String(calendar.maxShiftMinutes));
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
@@ -497,7 +535,13 @@ function AttendanceCalendarCard({
       const res = await fetch('/api/store/timeclock/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workingDays, holidays }),
+        body: JSON.stringify({
+          workingDays,
+          holidays,
+          fullDayMinutes: Number(fullDayMinutes),
+          halfDayMinutes: Number(halfDayMinutes),
+          maxShiftMinutes: Number(maxShiftMinutes),
+        }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
@@ -545,6 +589,66 @@ function AttendanceCalendarCard({
               {label}
             </label>
           ))}
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="attendance-full-day">Full day (hours)</Label>
+            <Input
+              id="attendance-full-day"
+              type="number"
+              min={1}
+              max={24}
+              step={0.5}
+              value={fullDayMinutes === '' ? '' : Number(fullDayMinutes) / 60}
+              onChange={(event) => {
+                const hours = Number.parseFloat(event.target.value);
+                setFullDayMinutes(Number.isFinite(hours) ? String(Math.round(hours * 60)) : '');
+              }}
+              className="w-32 border-mist"
+            />
+            <p className="text-xs text-sand-ink">
+              Worked hours needed for a full Present day (default 8h).
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="attendance-half-day">Half day (hours)</Label>
+            <Input
+              id="attendance-half-day"
+              type="number"
+              min={0.5}
+              max={23}
+              step={0.5}
+              value={halfDayMinutes === '' ? '' : Number(halfDayMinutes) / 60}
+              onChange={(event) => {
+                const hours = Number.parseFloat(event.target.value);
+                setHalfDayMinutes(Number.isFinite(hours) ? String(Math.round(hours * 60)) : '');
+              }}
+              className="w-32 border-mist"
+            />
+            <p className="text-xs text-sand-ink">
+              Below this a punched day reads “Insufficient hours” (default 4h).
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="attendance-max-shift">Maximum shift (hours)</Label>
+            <Input
+              id="attendance-max-shift"
+              type="number"
+              min={1}
+              max={24}
+              step={0.5}
+              value={maxShiftMinutes === '' ? '' : Number(maxShiftMinutes) / 60}
+              onChange={(event) => {
+                const hours = Number.parseFloat(event.target.value);
+                setMaxShiftMinutes(Number.isFinite(hours) ? String(Math.round(hours * 60)) : '');
+              }}
+              className="w-32 border-mist"
+            />
+            <p className="text-xs text-sand-ink">
+              A forgotten clock-out is capped here and flagged for review (default 16h).
+            </p>
+          </div>
         </div>
 
         <div className="space-y-1.5">
