@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SavedReportOpenButton } from '@/components/reports/SavedReportOpenButton';
 import { savedReportsListMode } from '@/lib/reports/savedReportsList.core';
+import { hasSavedReportArtifact } from '@/lib/reports/savedReportArtifact.core';
 import {
   buildReportHref,
   normalizeReportType,
@@ -188,18 +189,26 @@ export default function SavedReportsPage() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2 lg:justify-end">
-                      <Button variant="outline" asChild>
-                        <a
-                          href={`/api/reports/saved/${report.id}/download?view=1`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          View
-                        </a>
-                      </Button>
-                      <Button variant="outline" asChild>
-                        <a href={`/api/reports/saved/${report.id}/download`}>Download</a>
-                      </Button>
+                      {hasSavedReportArtifact(report) ? (
+                        <>
+                          <Button variant="outline" asChild>
+                            <a
+                              href={`/api/reports/saved/${report.id}/download?view=1`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              View
+                            </a>
+                          </Button>
+                          <Button variant="outline" asChild>
+                            <a href={`/api/reports/saved/${report.id}/download`}>Download</a>
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="inline-flex items-center rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                          Artifact unavailable - view/download disabled
+                        </span>
+                      )}
                       <SavedReportOpenButton href={buildSavedReportHref(report)} />
                       <Button
                         variant="outline"
