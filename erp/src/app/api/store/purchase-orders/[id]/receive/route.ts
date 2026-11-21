@@ -60,7 +60,13 @@ export async function POST(
       );
     }
 
-    const result = await receivePOLines(tenantId, id, parsed.data, session.user.id);
+    const result = await receivePOLines(
+      tenantId,
+      id,
+      parsed.data,
+      session.user.id,
+      session.user.role,
+    );
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {

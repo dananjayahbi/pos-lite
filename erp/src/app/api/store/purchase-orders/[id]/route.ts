@@ -105,7 +105,13 @@ export async function PATCH(
         );
       }
 
-      const po = await updatePOStatus(tenantId, id, parsed.data.status);
+      const po = await updatePOStatus(
+        tenantId,
+        id,
+        parsed.data.status,
+        session.user.id,
+        session.user.role,
+      );
       return NextResponse.json({ success: true, data: po });
     }
 
@@ -129,7 +135,13 @@ export async function PATCH(
       );
     }
 
-    const edited = await updatePO(tenantId, id, parsedEdit.data);
+    const edited = await updatePO(
+      tenantId,
+      id,
+      parsedEdit.data,
+      session.user.id,
+      session.user.role,
+    );
     return NextResponse.json({ success: true, data: edited });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';

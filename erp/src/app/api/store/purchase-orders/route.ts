@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getPOs, createPO } from '@/lib/services/purchaseOrder.service';
 import { canCreatePurchaseOrderWithStatus } from '@/lib/services/purchaseOrderPermissions.core';
+import { isValidIsoDay } from '@/lib/services/purchaseOrderDateRange.core';
 import { CreatePOSchema } from '@/lib/validators/purchaseOrder.validators';
 import { POStatus } from '@/generated/prisma/client';
 import { parseQueryInt } from '@/lib/api/query-params';
@@ -37,12 +38,30 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const statusParam = searchParams.get('status');
+    const from = searchParams.get('from') ?? undefined;
+    const to = searchParams.get('to') ?? undefined;
+
+    // The two date inputs are plain `yyyy-mm-dd` days. Reject anything else
+    // before it reaches the range builder, so a malformed filter is a 400 and
+    // never a silently widened result set (ARGUS #230).
+    if ((from !== undefined && !isValidIsoDay(from)) || (to !== undefined && !isValidIsoDay(to))) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'from and to must be valid yyyy-mm-dd dates',
+          },
+        },
+        { status: 400 },
+      );
+    }
 
     const result = await getPOs(tenantId, {
       supplierId: searchParams.get('supplierId') ?? undefined,
       status: statusParam && statusParam in POStatus ? (statusParam as POStatus) : undefined,
-      from: searchParams.get('from') ?? undefined,
-      to: searchParams.get('to') ?? undefined,
+      from,
+      to,
       // XC-01: malformed page/limit now 400 instead of NaN → 500.
       page: parseQueryInt(searchParams, 'page', { min: 1, max: 1_000_000 }),
       limit: parseQueryInt(searchParams, 'limit', { min: 1, max: 200 }),
@@ -117,12 +136,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const po = await createPO(tenantId, session.user.id, {
-      ...parsed.data,
-      ...(parsed.data.discountType !== undefined
-        ? { discountType: parsed.data.discountType }
-        : {}),
-    });
+    const po = await createPO(
+      tenantId,
+      session.user.id,
+      {
+        ...parsed.data,
+        ...(parsed.data.discountType !== undefined
+          ? { discountType: parsed.data.discountType }
+          : {}),
+      },
+      session.user.role,
+    );
 
     return NextResponse.json({ success: true, data: po }, { status: 201 });
   } catch (error) {

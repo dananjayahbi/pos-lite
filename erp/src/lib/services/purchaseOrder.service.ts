@@ -6,11 +6,18 @@ import { adjustStockInTx } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { computePurchaseOrderTotals } from '@/lib/services/purchaseOrderTotals';
 import { computePurchaseOrderPayable } from '@/lib/services/purchaseOrderPayable.core';
-import { isPurchaseOrderFinanciallyLocked } from '@/lib/services/purchaseOrderPermissions.core';
+import { computePurchaseOrderPaymentState } from '@/lib/services/purchaseOrderPaymentState.core';
+import { buildPurchaseOrderDateRange } from '@/lib/services/purchaseOrderDateRange.core';
+import {
+  canCancelPurchaseOrder,
+  isPurchaseOrderFinanciallyLocked,
+} from '@/lib/services/purchaseOrderPermissions.core';
 import {
   generatePurchaseOrderReference,
   isPurchaseOrderReferenceTaken,
 } from '@/lib/services/purchaseOrderReference';
+import { purchaseOrderAuditSnapshot } from '@/lib/services/purchaseOrderAudit.core';
+import { AUDIT_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
 // ── Private Helpers ──────────────────────────────────────────────────────────
 
 function buildVariantDescription(variant: {
@@ -55,7 +62,12 @@ interface CreatePOInput {
 
 const MAX_REFERENCE_ATTEMPTS = 5;
 
-export async function createPO(tenantId: string, createdById: string, input: CreatePOInput) {
+export async function createPO(
+  tenantId: string,
+  createdById: string,
+  input: CreatePOInput,
+  actorRole = 'USER',
+) {
   if (input.lines.length === 0) {
     throw new Error('At least one line is required');
   }
@@ -127,7 +139,7 @@ export async function createPO(tenantId: string, createdById: string, input: Cre
     }
 
     try {
-      return await prisma.purchaseOrder.create({
+      const created = await prisma.purchaseOrder.create({
         data: {
           tenantId,
           referenceNo,
@@ -157,6 +169,18 @@ export async function createPO(tenantId: string, createdById: string, input: Cre
           supplier: true,
         },
       });
+
+      await createAuditLog({
+        tenantId,
+        actorId: createdById,
+        actorRole,
+        entityType: 'PurchaseOrder',
+        entityId: created.id,
+        action: AUDIT_ACTIONS.PURCHASE_ORDER_CREATED,
+        after: purchaseOrderAuditSnapshot(created),
+      });
+
+      return created;
     } catch (error) {
       const isReferenceCollision =
         !customReference &&
@@ -211,11 +235,16 @@ export async function getPOById(tenantId: string, poId: string) {
     .toDecimalPlaces(2)
     .toNumber();
 
+  const paymentSummary = computePurchaseOrderPaymentState(costing.payable, paidTotal);
+
   return {
     ...po,
     /** Money already applied to this order (ARGUS #226). */
     paidTotal,
     hasPayments: paidTotal > 0,
+    /** Paid/outstanding/Paid-Partially paid-Unpaid state (ARGUS #228). */
+    outstanding: paymentSummary.outstanding,
+    paymentState: paymentSummary.state,
     /**
      * What the order owes right now: the received value once goods arrive,
      * otherwise the expected total (ARGUS #225). The payment API and UI use
@@ -259,11 +288,12 @@ export async function getPOs(tenantId: string, options: GetPOsOptions) {
   if (options.status !== undefined) {
     where.status = options.status;
   }
-  if (options.from !== undefined || options.to !== undefined) {
-    const createdAt: Record<string, Date> = {};
-    if (options.from !== undefined) createdAt.gte = new Date(options.from);
-    if (options.to !== undefined) createdAt.lte = new Date(options.to + 'T23:59:59.999Z');
-    where.createdAt = createdAt;
+  // ARGUS #230: the table shows Order Date, so the filter must compare that
+  // column, with both local day edges inclusive. Filtering the UTC createdAt
+  // made a 29 Oct order created late on 28 Oct UTC vanish from 29 Oct results.
+  const orderDateRange = buildPurchaseOrderDateRange(options.from, options.to);
+  if (orderDateRange) {
+    where.orderDate = orderDateRange;
   }
 
   const [purchaseOrders, total] = await Promise.all([
@@ -280,6 +310,7 @@ export async function getPOs(tenantId: string, options: GetPOsOptions) {
             actualCostPrice: true,
           },
         },
+        payments: { select: { amount: true } },
       },
       orderBy: { createdAt: 'desc' },
       skip,
@@ -289,12 +320,22 @@ export async function getPOs(tenantId: string, options: GetPOsOptions) {
   ]);
 
   return {
-    purchaseOrders: purchaseOrders.map((po) => {
+    purchaseOrders: purchaseOrders.map(({ payments, ...po }) => {
       const costing = computePurchaseOrderPayable(po.lines, po.discountAmount, po.totalAmount);
+      const paidTotal = payments
+        .reduce((sum, payment) => sum.plus(payment.amount), new Decimal(0))
+        .toDecimalPlaces(2)
+        .toNumber();
+      const paymentSummary = computePurchaseOrderPaymentState(costing.payable, paidTotal);
+
       return {
         ...po,
         payableAmount: costing.payable,
         receivedValue: costing.receivedSubtotal,
+        /** Money applied across instalments (ARGUS #228). */
+        paidTotal: paymentSummary.paidTotal,
+        outstanding: paymentSummary.outstanding,
+        paymentState: paymentSummary.state,
       };
     }),
     total,
@@ -305,7 +346,13 @@ export async function getPOs(tenantId: string, options: GetPOsOptions) {
 
 // ── Update PO Status ─────────────────────────────────────────────────────────
 
-export async function updatePOStatus(tenantId: string, poId: string, newStatus: POStatus) {
+export async function updatePOStatus(
+  tenantId: string,
+  poId: string,
+  newStatus: POStatus,
+  actorId?: string | undefined,
+  actorRole = 'USER',
+) {
   const po = await prisma.purchaseOrder.findFirst({
     where: { id: poId, tenantId },
   });
@@ -319,10 +366,25 @@ export async function updatePOStatus(tenantId: string, poId: string, newStatus: 
     throw new Error(`Cannot transition from ${po.status} to ${newStatus}`);
   }
 
-  return prisma.purchaseOrder.update({
+  const updated = await prisma.purchaseOrder.update({
     where: { id: poId },
     data: { status: newStatus },
   });
+
+  // Sending (DRAFT -> SENT) and any future transition are one lifecycle event
+  // type: PO_STATUS_CHANGED (ARGUS #229).
+  await createAuditLog({
+    tenantId,
+    actorId: actorId ?? null,
+    actorRole,
+    entityType: 'PurchaseOrder',
+    entityId: poId,
+    action: AUDIT_ACTIONS.PO_STATUS_CHANGED,
+    before: { status: po.status },
+    after: { status: updated.status, referenceNo: updated.referenceNo },
+  });
+
+  return updated;
 }
 
 // ── Update PO (draft / sent only) ────────────────────────────────────────────
@@ -348,6 +410,8 @@ export async function updatePO(
     paymentAccountId?: string | null | undefined;
     lines?: Array<{ variantId: string; orderedQty: number; expectedCostPrice: number }> | undefined;
   },
+  actorId?: string | undefined,
+  actorRole = 'USER',
 ) {
   const po = await prisma.purchaseOrder.findFirst({
     where: { id: poId, tenantId },
@@ -471,7 +535,7 @@ export async function updatePO(
     { discountType: discountType ?? null, discountValue },
   );
 
-  return prisma.purchaseOrder.update({
+  const updated = await prisma.purchaseOrder.update({
     where: { id: poId },
     data: {
       ...(input.referenceNo !== undefined ? { referenceNo: input.referenceNo } : {}),
@@ -499,11 +563,29 @@ export async function updatePO(
     },
     include: { lines: true, supplier: true },
   });
+
+  await createAuditLog({
+    tenantId,
+    actorId: actorId ?? null,
+    actorRole,
+    entityType: 'PurchaseOrder',
+    entityId: poId,
+    action: AUDIT_ACTIONS.PURCHASE_ORDER_UPDATED,
+    before: purchaseOrderAuditSnapshot(po),
+    after: purchaseOrderAuditSnapshot(updated),
+  });
+
+  return updated;
 }
 
 // ── Cancel PO ────────────────────────────────────────────────────────────────
 
-export async function cancelPO(tenantId: string, poId: string) {
+export async function cancelPO(
+  tenantId: string,
+  poId: string,
+  actorId?: string | undefined,
+  actorRole = 'USER',
+) {
   const po = await prisma.purchaseOrder.findFirst({
     where: { id: poId, tenantId },
   });
@@ -512,8 +594,10 @@ export async function cancelPO(tenantId: string, poId: string) {
     throw new Error('Purchase order not found');
   }
 
-  if (po.status !== POStatus.DRAFT && po.status !== POStatus.SENT) {
-    throw new Error(`Cannot cancel a purchase order with status ${po.status}`);
+  if (!canCancelPurchaseOrder(po.status)) {
+    throw new Error(
+      `Cannot cancel a purchase order with status ${po.status} - cancel is only available before goods are received`,
+    );
   }
 
   // Cancelling after money has been applied would leave the payment row and its
@@ -528,10 +612,23 @@ export async function cancelPO(tenantId: string, poId: string) {
     );
   }
 
-  return prisma.purchaseOrder.update({
+  const cancelled = await prisma.purchaseOrder.update({
     where: { id: poId },
     data: { status: POStatus.CANCELLED },
   });
+
+  await createAuditLog({
+    tenantId,
+    actorId: actorId ?? null,
+    actorRole,
+    entityType: 'PurchaseOrder',
+    entityId: poId,
+    action: AUDIT_ACTIONS.PURCHASE_ORDER_CANCELLED,
+    before: { status: po.status, referenceNo: po.referenceNo },
+    after: { status: cancelled.status, referenceNo: cancelled.referenceNo },
+  });
+
+  return cancelled;
 }
 
 // ── Receive PO Lines ─────────────────────────────────────────────────────────
@@ -572,8 +669,9 @@ export async function receivePOLines(
   poId: string,
   input: ReceivePOLinesInput,
   actorId: string,
+  actorRole = 'USER',
 ) {
-  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const po = await tx.purchaseOrder.findFirst({
       where: { id: poId, tenantId },
       include: { lines: true },
@@ -800,8 +898,32 @@ export async function receivePOLines(
       },
       costPricesChanged,
       costPriceChangedCount: costPricesChanged.length,
+      /** Audit-only; stripped before the response is returned. */
+      previousStatus: po.status,
     };
   }, { timeout: 30000 });
+
+  const { previousStatus, ...response } = result;
+
+  await createAuditLog({
+    tenantId,
+    actorId,
+    actorRole,
+    entityType: 'PurchaseOrder',
+    entityId: poId,
+    action: AUDIT_ACTIONS.PO_STATUS_CHANGED,
+    before: { status: previousStatus },
+    after: {
+      status: result.updatedPO.status,
+      referenceNo: result.updatedPO.referenceNo,
+      receivedLines: input.receivedLines.map((line) => ({
+        lineId: line.lineId,
+        receivedQty: line.receivedQty,
+      })),
+    },
+  });
+
+  return response;
 }
 
 // ── Format PO for WhatsApp ───────────────────────────────────────────────────

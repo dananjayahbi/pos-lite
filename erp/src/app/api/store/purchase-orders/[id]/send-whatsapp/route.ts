@@ -100,7 +100,13 @@ export async function POST(
       );
     }
 
-    const updatedPO = await updatePOStatus(tenantId, id, POStatus.SENT);
+    const updatedPO = await updatePOStatus(
+      tenantId,
+      id,
+      POStatus.SENT,
+      session.user.id,
+      session.user.role,
+    );
 
     return NextResponse.json({ success: true, data: updatedPO });
   } catch (error) {

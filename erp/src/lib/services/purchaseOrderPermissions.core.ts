@@ -24,3 +24,17 @@ export function canCreatePurchaseOrderWithStatus(
 export function isPurchaseOrderFinanciallyLocked(paidTotal: number | string): boolean {
   return Number(paidTotal) > 0;
 }
+
+/**
+ * The statuses the cancel endpoint accepts (ARGUS #227).
+ *
+ * `cancelPO` only cancels a DRAFT or SENT order. Once any goods have been
+ * received (PARTIALLY_RECEIVED/RECEIVED) the receipt has already created stock
+ * movements, so there is no cancel-short path - the corrective action is a
+ * return or a new order. The list and detail used to offer Cancel for
+ * PARTIALLY_RECEIVED and every click ended in a 409. Money is a separate lock
+ * (`isPurchaseOrderFinanciallyLocked`); callers compose both.
+ */
+export function canCancelPurchaseOrder(status: string): boolean {
+  return status === 'DRAFT' || status === 'SENT';
+}
