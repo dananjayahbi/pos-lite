@@ -65,7 +65,9 @@ the sale completes. It is now reconciled whenever goods come back:
 
 - **Void** → the whole commission base is reversed.
 - **Return** → the base shrinks by the completed return's `refundAmount`
-  (goods + tax), so the clawback is proportional to the refunded share.
+  (goods + tax), so the clawback is proportional to the refunded share. The
+  reversing row uses the original record's rate and sale date; see
+  `commission-reversal-basis.md` (ARGUS #345).
   Multiple partial returns are reconciled cumulatively.
 - **Paid records are never mutated.** The original (possibly paid) row keeps
   its `paidAmount`/payout history; the clawback is a new negative

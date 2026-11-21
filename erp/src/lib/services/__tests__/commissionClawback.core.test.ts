@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { planCommissionReversal } from '@/lib/services/commissionClawback.core';
+import {
+  planCommissionReversal,
+  resolveCommissionSaleDate,
+  resolveOriginalCommissionBase,
+  resolveOriginalCommissionRate,
+} from '@/lib/services/commissionClawback.core';
 
 /**
  * ARGUS #361 — commission on returned/voided sales.
@@ -87,5 +92,86 @@ describe('planCommissionReversal', () => {
       existingBase: 0,
     });
     expect(plan.noop).toBe(true);
+  });
+});
+
+/**
+ * ARGUS #345 — the earning and reversal bases are both the tax-inclusive sale
+ * total. A full VAT-inclusive refund must reverse the whole commission.
+ */
+describe('tax-inclusive reversal base (ARGUS #345)', () => {
+  it('zeros the commission when the full tax-inclusive total is refunded', () => {
+    const plan = planCommissionReversal({
+      originalBase: 1100, // sale 1000 goods + 100 VAT
+      commissionRate: 10,
+      saleBase: 1100,
+      returnedBase: 1100, // Return.refundAmount includes the VAT
+      existingBase: 1100,
+    });
+    expect(plan.targetBase.toNumber()).toBe(0);
+    expect(plan.adjustmentBase.toNumber()).toBe(-1100);
+    expect(plan.adjustmentEarned.toNumber()).toBe(-110);
+  });
+
+  it('reverses the same tax-inclusive share on a partial return', () => {
+    const plan = planCommissionReversal({
+      originalBase: 1100,
+      commissionRate: 10,
+      saleBase: 1100,
+      returnedBase: 550,
+      existingBase: 1100,
+    });
+    expect(plan.targetBase.toNumber()).toBe(550);
+    expect(plan.adjustmentBase.toNumber()).toBe(-550);
+    expect(plan.adjustmentEarned.toNumber()).toBe(-55);
+  });
+
+  it('scales the refund to a legacy original base that differs from the sale total', () => {
+    const plan = planCommissionReversal({
+      originalBase: 1000, // legacy row earned before a later sale amendment
+      commissionRate: 10,
+      saleBase: 1100,
+      returnedBase: 1100,
+      existingBase: 1000,
+    });
+    expect(plan.targetBase.toNumber()).toBe(0);
+    expect(plan.adjustmentBase.toNumber()).toBe(-1000);
+  });
+});
+
+describe('original commission basis (ARGUS #345)', () => {
+  it('uses the stored rate of the single original record, not a current rate', () => {
+    expect(
+      resolveOriginalCommissionRate([
+        { baseAmount: 1100, earnedAmount: 55, commissionRate: 5 },
+      ]).toNumber(),
+    ).toBe(5);
+  });
+
+  it('uses the earned/base weighted rate for mixed legacy records', () => {
+    expect(
+      resolveOriginalCommissionRate([
+        { baseAmount: 1000, earnedAmount: 50, commissionRate: 5 },
+        { baseAmount: 1000, earnedAmount: 100, commissionRate: 10 },
+      ]).toNumber(),
+    ).toBe(7.5);
+  });
+
+  it('sums only positive original bases', () => {
+    expect(
+      resolveOriginalCommissionBase([
+        { baseAmount: 1000, earnedAmount: 100, commissionRate: 10 },
+        { baseAmount: -200, earnedAmount: -20, commissionRate: 10 },
+      ]).toNumber(),
+    ).toBe(1000);
+  });
+
+  it('dates the reversal by the sale, not by the return', () => {
+    const created = new Date('2026-10-01T10:00:00Z');
+    const completed = new Date('2026-10-01T10:05:00Z');
+    expect(resolveCommissionSaleDate({ createdAt: created, completedAt: completed })).toBe(
+      completed,
+    );
+    expect(resolveCommissionSaleDate({ createdAt: created, completedAt: null })).toBe(created);
   });
 });

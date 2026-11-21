@@ -9,7 +9,12 @@ import {
   summarizeOpenCommission,
 } from '@/lib/services/commission-allocation';
 import { describeCommissionBalance } from '@/lib/services/commissionSummary.core';
-import { planCommissionReversal } from '@/lib/services/commissionClawback.core';
+import {
+  planCommissionReversal,
+  resolveCommissionSaleDate,
+  resolveOriginalCommissionBase,
+  resolveOriginalCommissionRate,
+} from '@/lib/services/commissionClawback.core';
 import type { TxClient } from '@/lib/services/inventory.service';
 import {
   PAYROLL_PENDING_ACCOUNT_PREFIX,
@@ -137,40 +142,49 @@ export async function reconcileCommissionForSale(input: ReconcileCommissionForSa
   );
   if (positive.length === 0) return null;
 
-  const originalBase = positive.reduce(
-    (sum, record) => sum.plus(record.baseAmount.toString()),
-    new Decimal(0),
-  );
+  const originalBase = resolveOriginalCommissionBase(records);
   const originalEarned = positive.reduce(
     (sum, record) => sum.plus(record.earnedAmount.toString()),
     new Decimal(0),
   );
   if (originalBase.lte(0) || originalEarned.lte(0)) return null;
 
-  // Preserve the rate that actually earned the commission. With duplicate or
-  // mixed-rate records the weighted average keeps earned/base proportional.
-  const effectiveRate = originalEarned
-    .div(originalBase)
-    .mul(100)
-    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  // ARGUS #345: reverse with the rate that actually earned the commission, not
+  // the staff member's current rate. A single row carries the exact snapshot;
+  // mixed/legacy rows fall back to the earned/base weighted average.
+  const originalRate = resolveOriginalCommissionRate(records);
 
-  const refunded = await client.return.aggregate({
-    where: {
-      tenantId: input.tenantId,
-      originalSaleId: input.saleId,
-      status: ReturnStatus.COMPLETED,
-    },
-    _sum: { refundAmount: true },
-  });
+  const [refunded, sale] = await Promise.all([
+    client.return.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        originalSaleId: input.saleId,
+        status: ReturnStatus.COMPLETED,
+      },
+      _sum: { refundAmount: true },
+    }),
+    client.sale.findUnique({
+      where: { id: input.saleId },
+      select: { totalAmount: true, createdAt: true, completedAt: true },
+    }),
+  ]);
 
   const existingBase = records.reduce(
     (sum, record) => sum.plus(record.baseAmount.toString()),
     new Decimal(0),
   );
 
+  // Both sides use the tax-inclusive sale base: `refundAmount` includes the tax
+  // that was refunded (Return.refundAmount / Return.taxAmount), so a full
+  // return claws the full commission rather than leaving the VAT share behind.
+  const saleBase = sale
+    ? new Decimal(sale.totalAmount.toString())
+    : originalBase;
+
   const plan = planCommissionReversal({
     originalBase,
-    commissionRate: effectiveRate,
+    commissionRate: originalRate,
+    saleBase,
     returnedBase: refunded._sum.refundAmount?.toString() ?? '0',
     voided: input.voided === true,
     existingBase,
@@ -178,15 +192,19 @@ export async function reconcileCommissionForSale(input: ReconcileCommissionForSa
 
   if (plan.noop) return null;
 
+  const saleDate = sale ? resolveCommissionSaleDate(sale) : new Date();
+
   const adjustment = await client.commissionRecord.create({
     data: {
       tenantId: input.tenantId,
       saleId: input.saleId,
       userId: positive[0]!.userId,
       baseAmount: plan.adjustmentBase,
-      commissionRate: effectiveRate,
+      commissionRate: originalRate,
       earnedAmount: plan.adjustmentEarned,
       isPaid: false,
+      // Payroll period truth: the reversing row belongs to the sale's period.
+      createdAt: saleDate,
     },
   });
 
@@ -200,6 +218,9 @@ export async function reconcileCommissionForSale(input: ReconcileCommissionForSa
     after: {
       saleId: input.saleId,
       voided: input.voided === true,
+      saleDate: saleDate.toISOString(),
+      commissionRate: originalRate.toFixed(2),
+      saleBase: saleBase.toFixed(2),
       originalBase: originalBase.toFixed(2),
       returnedBase: refunded._sum.refundAmount?.toString() ?? '0',
       targetBase: plan.targetBase.toFixed(2),
