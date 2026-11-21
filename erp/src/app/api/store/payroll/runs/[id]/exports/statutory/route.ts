@@ -9,6 +9,7 @@ import {
   formatExtension,
   getPayrollExportContext,
   periodLabel,
+  recordPayrollExportDownload,
   toStatutoryRows,
 } from '@/lib/services/payroll-exports.service';
 import {
@@ -40,10 +41,10 @@ export async function GET(
     // ARGUS #378: NIC, EPF/ETF staff numbers and employer numbers are required
     // for a usable C-form / ETF return; never emit blank fallbacks silently.
     const preflight = buildPayrollExportPreflight(context, 'statutory');
-    if (
-      !preflight.complete &&
-      !allowsIncompleteExport(request.nextUrl.searchParams.get('allowIncomplete'))
-    ) {
+    const incompleteOverride = allowsIncompleteExport(
+      request.nextUrl.searchParams.get('allowIncomplete'),
+    );
+    if (!preflight.complete && !incompleteOverride) {
       return NextResponse.json(
         {
           success: false,
@@ -76,6 +77,17 @@ export async function GET(
 
     if (extension === 'xlsx') {
       const buffer = generateStatutoryReturnXlsx(meta, rows);
+      await recordPayrollExportDownload({
+        tenantId,
+        runId: context.run.id,
+        actorId: session.user.id,
+        actorRole: session.user.role ?? 'UNKNOWN',
+        exportType: 'statutory',
+        format: 'xlsx',
+        periodMonth: context.run.periodMonth,
+        itemCount: rows.length,
+        incompleteOverride,
+      });
       return new Response(new Uint8Array(buffer), {
         headers: {
           'Content-Type':
@@ -87,6 +99,17 @@ export async function GET(
     }
 
     const buffer = generateStatutoryReturnPdf(meta, rows);
+    await recordPayrollExportDownload({
+      tenantId,
+      runId: context.run.id,
+      actorId: session.user.id,
+      actorRole: session.user.role ?? 'UNKNOWN',
+      exportType: 'statutory',
+      format: 'pdf',
+      periodMonth: context.run.periodMonth,
+      itemCount: rows.length,
+      incompleteOverride,
+    });
     return new Response(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'application/pdf',

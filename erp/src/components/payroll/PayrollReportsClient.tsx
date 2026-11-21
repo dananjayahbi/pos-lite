@@ -41,6 +41,8 @@ import {
   type PayrollRunPaymentInfo,
 } from '@/lib/payroll/payroll-run-status';
 import { PAYROLL_EXPORT_PROVENANCE_CAVEAT } from '@/lib/payroll/export-provenance';
+import { summarizePayrollHeadcount } from '@/lib/payroll/export-eligibility.core';
+import { PAYROLL_TAX_NOT_CONFIGURED_MESSAGE } from '@/lib/payroll/tax-disclosure.core';
 import { formatRupee } from '@/lib/format';
 
 interface PayrollRunSummary {
@@ -192,6 +194,7 @@ function PayrollReportsContent() {
   const totalDeductionsIncludingEpf = run
     ? new Decimal(run.totalDeductions).add(run.totalEmployeeEpf).toFixed(2)
     : '0.00';
+  const headcount = run ? summarizePayrollHeadcount(run.items) : null;
 
   // ARGUS #378: completeness gate for the bank sheet and statutory exports.
   const preflightQuery = useQuery<Record<PayrollExportKind, PayrollExportPreflight>>({
@@ -306,8 +309,18 @@ function PayrollReportsContent() {
             </div>
           )}
 
+          <div className="rounded-lg border border-[#B7791F]/40 bg-[#FDF6E7] p-4">
+            <p className="text-espresso text-sm font-semibold">PAYE/APIT not configured</p>
+            <p className="text-sand-ink mt-1 text-xs">{PAYROLL_TAX_NOT_CONFIGURED_MESSAGE}</p>
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Employees" value={String(run.items.length)} />
+            <Stat
+              label="Paid employees"
+              value={
+                headcount ? `${headcount.paid} of ${headcount.total}` : String(run.items.length)
+              }
+            />
             <Stat label="Gross salary" value={formatRupee(run.totalGross)} />
             <Stat
               label={runStatus?.netLabel ?? 'Net payable'}
@@ -315,6 +328,13 @@ function PayrollReportsContent() {
             />
             <Stat label="Total company cost" value={formatRupee(run.totalCompanyCost)} />
           </div>
+          {headcount && headcount.zeroEarnings > 0 && (
+            <p className="text-mist-ink -mt-3 text-xs">
+              {headcount.zeroEarnings} zero-earnings staff
+              {headcount.zeroEarnings === 1 ? ' is' : ' are'} excluded from the bank worksheet
+              and statutory return rows and totals.
+            </p>
+          )}
 
           <Card className="border-mist">
             <CardHeader>

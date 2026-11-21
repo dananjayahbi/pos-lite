@@ -9,6 +9,7 @@ import {
   formatExtension,
   getPayrollExportContext,
   periodLabel,
+  recordPayrollExportDownload,
   toBankSheetRows,
 } from '@/lib/services/payroll-exports.service';
 import {
@@ -39,10 +40,10 @@ export async function GET(
 
     // ARGUS #378: never silently emit blank bank cells.
     const preflight = buildPayrollExportPreflight(context, 'bank-sheet');
-    if (
-      !preflight.complete &&
-      !allowsIncompleteExport(request.nextUrl.searchParams.get('allowIncomplete'))
-    ) {
+    const incompleteOverride = allowsIncompleteExport(
+      request.nextUrl.searchParams.get('allowIncomplete'),
+    );
+    if (!preflight.complete && !incompleteOverride) {
       return NextResponse.json(
         {
           success: false,
@@ -70,6 +71,17 @@ export async function GET(
 
     if (extension === 'xlsx') {
       const buffer = generateBankSheetXlsx(meta, rows);
+      await recordPayrollExportDownload({
+        tenantId,
+        runId: context.run.id,
+        actorId: session.user.id,
+        actorRole: session.user.role ?? 'UNKNOWN',
+        exportType: 'bank-sheet',
+        format: 'xlsx',
+        periodMonth: context.run.periodMonth,
+        itemCount: rows.length,
+        incompleteOverride,
+      });
       return new Response(new Uint8Array(buffer), {
         headers: {
           'Content-Type':
@@ -81,6 +93,17 @@ export async function GET(
     }
 
     const buffer = generateBankSheetPdf(meta, rows);
+    await recordPayrollExportDownload({
+      tenantId,
+      runId: context.run.id,
+      actorId: session.user.id,
+      actorRole: session.user.role ?? 'UNKNOWN',
+      exportType: 'bank-sheet',
+      format: 'pdf',
+      periodMonth: context.run.periodMonth,
+      itemCount: rows.length,
+      incompleteOverride,
+    });
     return new Response(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'application/pdf',

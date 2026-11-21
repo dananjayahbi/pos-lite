@@ -31,6 +31,10 @@ export interface PayrollPreviewRow {
   noPayDays: string;
   noPayDeduction: string;
   advanceDeduction: string;
+  /** ARGUS #379: net pay before the advance; the maximum this run may deduct. */
+  advanceLimit: string;
+  /** True when the requested advance was capped to `advanceLimit`. */
+  advanceCapped: boolean;
   totalDeductions: string;
   employeeEpf: string;
   employerEpf: string;

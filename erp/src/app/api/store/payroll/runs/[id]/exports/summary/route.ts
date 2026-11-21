@@ -7,6 +7,7 @@ import {
   formatExtension,
   getPayrollExportContext,
   periodLabel,
+  recordPayrollExportDownload,
   summaryTotals,
   toSummaryItems,
 } from '@/lib/services/payroll-exports.service';
@@ -50,6 +51,16 @@ export async function GET(
 
     if (extension === 'xlsx') {
       const buffer = generateSummaryReportXlsx(meta, totals, items);
+      await recordPayrollExportDownload({
+        tenantId,
+        runId: context.run.id,
+        actorId: session.user.id,
+        actorRole: session.user.role ?? 'UNKNOWN',
+        exportType: 'summary',
+        format: 'xlsx',
+        periodMonth: context.run.periodMonth,
+        itemCount: items.length,
+      });
       return new Response(new Uint8Array(buffer), {
         headers: {
           'Content-Type':
@@ -61,6 +72,16 @@ export async function GET(
     }
 
     const buffer = generateSummaryReportPdf(meta, totals, items);
+    await recordPayrollExportDownload({
+      tenantId,
+      runId: context.run.id,
+      actorId: session.user.id,
+      actorRole: session.user.role ?? 'UNKNOWN',
+      exportType: 'summary',
+      format: 'pdf',
+      periodMonth: context.run.periodMonth,
+      itemCount: items.length,
+    });
     return new Response(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'application/pdf',

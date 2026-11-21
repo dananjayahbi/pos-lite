@@ -13,6 +13,13 @@ import {
   buildPayrollExportProvenance,
   type PayrollExportProvenance,
 } from '@/lib/payroll/export-provenance';
+import { filterPayrollExportItems } from '@/lib/payroll/export-eligibility.core';
+import {
+  buildPayrollExportAudit,
+  type PayrollExportAuditFormat,
+  type PayrollExportAuditType,
+} from '@/lib/payroll/export-audit.core';
+import { AUDIT_ACTIONS, writeAuditLog } from '@/lib/services/audit.service';
 import {
   buildExportPreflight,
   type PayrollExportKind,
@@ -63,7 +70,7 @@ export async function getPayrollExportContext(
 }
 
 export function toBankSheetRows(context: PayrollExportContext): BankSheetRow[] {
-  return context.run.items.map((item) => ({
+  return filterPayrollExportItems(context.run.items, 'bank-sheet').map((item) => ({
     staffName: item.staffName,
     nic: item.nic,
     bankName: item.bankName,
@@ -74,7 +81,7 @@ export function toBankSheetRows(context: PayrollExportContext): BankSheetRow[] {
 }
 
 export function toStatutoryRows(context: PayrollExportContext): StatutoryRow[] {
-  return context.run.items.map((item) => ({
+  return filterPayrollExportItems(context.run.items, 'statutory').map((item) => ({
     staffName: item.staffName,
     nic: item.nic,
     epfNumber: item.epfNumber,
@@ -131,8 +138,11 @@ export function formatExtension(value: string | null): 'xlsx' | 'pdf' {
 }
 
 /** Staff details needed by the bank sheet / C-form / ETF return checks. */
-export function toPreflightStaff(context: PayrollExportContext): PayrollExportStaffRow[] {
-  return context.run.items.map((item) => ({
+export function toPreflightStaff(
+  context: PayrollExportContext,
+  kind: PayrollExportKind,
+): PayrollExportStaffRow[] {
+  return filterPayrollExportItems(context.run.items, kind).map((item) => ({
     staffName: item.staffName,
     bankName: item.bankName,
     bankAccountNumber: item.bankAccountNumber,
@@ -152,7 +162,7 @@ export function buildPayrollExportPreflight(
 ): PayrollExportPreflight {
   return buildExportPreflight({
     kind,
-    staff: toPreflightStaff(context),
+    staff: toPreflightStaff(context, kind),
     employerEpfNumber: context.payrollSettings.employerEpfNumber,
     employerEtfNumber: context.payrollSettings.employerEtfNumber,
   });
@@ -173,4 +183,45 @@ export function buildPayrollExportPreflights(
 /** Download links may explicitly override a flagged (incomplete) export. */
 export function allowsIncompleteExport(value: string | null): boolean {
   return value === '1' || value === 'true';
+}
+
+/**
+ * ARGUS #391: durable audit trace for every successful sensitive payroll
+ * download. Uses `writeAuditLog`, which throws rather than swallowing failure,
+ * so an unauditable file is not returned.
+ */
+export async function recordPayrollExportDownload(input: {
+  tenantId: string;
+  runId: string;
+  actorId: string;
+  actorRole: string;
+  exportType: PayrollExportAuditType;
+  format: PayrollExportAuditFormat;
+  periodMonth: string;
+  itemCount: number;
+  incompleteOverride?: boolean | undefined;
+}): Promise<void> {
+  const payload = buildPayrollExportAudit({
+    exportType: input.exportType,
+    format: input.format,
+    periodMonth: input.periodMonth,
+    itemCount: input.itemCount,
+    incompleteOverride: input.incompleteOverride,
+  });
+
+  await writeAuditLog({
+    tenantId: input.tenantId,
+    actorId: input.actorId,
+    actorRole: input.actorRole,
+    entityType: 'PayrollRun',
+    entityId: input.runId,
+    action: AUDIT_ACTIONS.PAYROLL_EXPORT_DOWNLOADED,
+    after: {
+      exportType: payload.exportType,
+      format: payload.format,
+      periodMonth: payload.periodMonth,
+      itemCount: payload.itemCount,
+      incompleteOverride: payload.incompleteOverride,
+    },
+  });
 }

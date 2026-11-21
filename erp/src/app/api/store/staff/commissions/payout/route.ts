@@ -48,9 +48,18 @@ export async function POST(request: Request) {
 
     // M20-01 (XC-03): payouts gate on the staff-management permission rather
     // than a hard-coded role list, so role drift can't silently widen access.
-    if (!hasPermission(session.user, PERMISSIONS.STAFF.manageStaff)) {
+    // ARGUS #367: paying commissions now requires the owner-only payout
+    // permission; staff:manage alone can no longer move money.
+    if (!hasPermission(session.user, PERMISSIONS.PAYROLL.payCommission)) {
       return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Only managers and owners can create payouts' } },
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message:
+              'Commission payouts require owner approval (payroll:commission:payout)',
+          },
+        },
         { status: 403 },
       );
     }

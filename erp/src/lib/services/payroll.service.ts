@@ -30,6 +30,7 @@ import {
 } from '@/lib/payroll/payroll-settings';
 import { parseAttendanceCalendar } from '@/lib/attendance/attendanceCalendar.core';
 import { assessPayrollRunReadiness } from '@/lib/payroll/run-readiness';
+import { validatePayrollAdvance } from '@/lib/payroll/advance-validation.core';
 import {
   assessAttendanceCompleteness,
   summarizeAttendanceCompleteness,
@@ -149,6 +150,26 @@ export async function buildPayrollPreview(
         recordedDays,
       });
 
+      // ARGUS #379: there is no advance register, so the safe guard is to cap
+      // the deduction at the employee's net pay before the advance.
+      const baseComputed = calculatePayroll({
+        basicSalary,
+        allowances,
+        overtimeMinutes: attendance.overtimeMinutes,
+        overtimeMultiplier: settings.overtimeMultiplier,
+        workingDays,
+        commissionAmount: commission.unpaid,
+        noPayDays,
+        advanceDeduction: 0,
+        employeeEpfRate: PAYROLL_STATUTORY_RATES.employeeEpf,
+        employerEpfRate: PAYROLL_STATUTORY_RATES.employerEpf,
+        employerEtfRate: PAYROLL_STATUTORY_RATES.employerEtf,
+      });
+      const advanceCheck = validatePayrollAdvance({
+        requested: advanceDeduction,
+        netBeforeAdvance: baseComputed.netSalary,
+      });
+
       const computed = calculatePayroll({
         basicSalary,
         allowances,
@@ -159,7 +180,7 @@ export async function buildPayrollPreview(
         // standalone commission payout is never paid twice.
         commissionAmount: commission.unpaid,
         noPayDays,
-        advanceDeduction,
+        advanceDeduction: advanceCheck.allowed,
         employeeEpfRate: PAYROLL_STATUTORY_RATES.employeeEpf,
         employerEpfRate: PAYROLL_STATUTORY_RATES.employerEpf,
         employerEtfRate: PAYROLL_STATUTORY_RATES.employerEtf,
@@ -177,6 +198,8 @@ export async function buildPayrollPreview(
         epfNumber: member.epfNumber,
         etfNumber: member.etfNumber,
         ...computed,
+        advanceLimit: advanceCheck.maxAdvance,
+        advanceCapped: advanceCheck.capped,
         hasSalaryConfig:
           (member.basicSalary !== null && member.basicSalary.greaterThan(0)) ||
           (member.allowances !== null && member.allowances.greaterThan(0)),

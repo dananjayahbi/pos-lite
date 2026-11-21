@@ -40,6 +40,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { formatRupee } from '@/lib/format';
 import { calculatePayroll } from '@/lib/payroll/calculations';
+import { validatePayrollAdvance } from '@/lib/payroll/advance-validation.core';
 import { fetchPayrollEnvelope, resolvePayrollLoadState } from '@/lib/payroll/api-load-state';
 import { assessPayrollRunReadiness, listStaffNames } from '@/lib/payroll/run-readiness';
 import type { PayrollPreview, PayrollPreviewRow } from '@/lib/payroll/types';
@@ -111,6 +112,24 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
     if (!preview) return [];
     return preview.rows.map((row) => {
       const override = overrides[row.userId];
+      const requestedAdvance = override?.advanceDeduction ?? Number(row.advanceDeduction);
+      const base = calculatePayroll({
+        basicSalary: row.basicSalary,
+        allowances: row.allowances,
+        overtimeMinutes: row.overtimeMinutes,
+        overtimeMultiplier: preview.overtimeMultiplier,
+        workingDays: preview.workingDays,
+        commissionAmount: row.commissionAmount,
+        noPayDays: override?.noPayDays ?? Number(row.noPayDays),
+        advanceDeduction: 0,
+        employeeEpfRate: preview.rates.employeeEpf,
+        employerEpfRate: preview.rates.employerEpf,
+        employerEtfRate: preview.rates.employerEtf,
+      });
+      const advanceCheck = validatePayrollAdvance({
+        requested: requestedAdvance,
+        netBeforeAdvance: base.netSalary,
+      });
       const computed = calculatePayroll({
         basicSalary: row.basicSalary,
         allowances: row.allowances,
@@ -119,12 +138,17 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
         workingDays: preview.workingDays,
         commissionAmount: row.commissionAmount,
         noPayDays: override?.noPayDays ?? Number(row.noPayDays),
-        advanceDeduction: override?.advanceDeduction ?? Number(row.advanceDeduction),
+        advanceDeduction: advanceCheck.allowed,
         employeeEpfRate: preview.rates.employeeEpf,
         employerEpfRate: preview.rates.employerEpf,
         employerEtfRate: preview.rates.employerEtf,
       });
-      return { ...row, ...computed };
+      return {
+        ...row,
+        ...computed,
+        advanceLimit: base.netSalary,
+        advanceCapped: advanceCheck.capped,
+      };
     });
   }, [overrides, preview]);
 
@@ -464,6 +488,11 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                           className="ml-auto h-8 w-24 text-right font-mono text-xs"
                           aria-label={`Salary advance for ${row.staffName}`}
                         />
+                        {row.advanceCapped && (
+                          <p className="mt-1 text-[10px] text-[#B7791F]">
+                            capped at {formatRupee(row.advanceLimit)} by net pay
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-mono text-xs text-[#9B2226]">
                         {formatRupee(row.employeeEpf)}
