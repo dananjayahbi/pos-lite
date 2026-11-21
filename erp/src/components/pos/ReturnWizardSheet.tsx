@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCartStore } from '@/stores/cartStore';
@@ -12,6 +12,12 @@ import { ReturnItemSelectionStep } from '@/components/pos/ReturnItemSelectionSte
 import { ReturnRefundOptionsStep } from '@/components/pos/ReturnRefundOptionsStep';
 import { ReturnReceiptDialog } from '@/components/pos/ReturnReceiptDialog';
 import { computeReturnRefund } from '@/lib/services/returnRefund.core';
+import {
+  REFUND_METHODS,
+  defaultRefundMethodForSale,
+  refundMethodTenderMismatchReason,
+  type SaleTenderSnapshot,
+} from '@/lib/services/returnTender.core';
 import type { ReturnRefundMethod } from '@/generated/prisma/client';
 import Decimal from 'decimal.js';
 import { toast } from 'sonner';
@@ -70,6 +76,33 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
     (saleData as { customer?: { id?: string } | null } | undefined)?.customer?.id,
   );
 
+  // ARGUS #96: cash/card refunds are only offered for a tender the sale
+  // actually collected. Store credit/exchange remain available.
+  const tenderMismatchReasons = useMemo(() => {
+    const reasons: Partial<Record<ReturnRefundMethod, string>> = {};
+    if (!saleData) return reasons;
+    for (const method of REFUND_METHODS) {
+      const reason = refundMethodTenderMismatchReason(
+        method,
+        saleData as SaleTenderSnapshot,
+      );
+      if (reason) reasons[method] = reason;
+    }
+    return reasons;
+  }, [saleData]);
+
+  useEffect(() => {
+    if (!saleData) return;
+    const storeCreditBlocked = refundMethod === 'STORE_CREDIT' && !saleHasCustomer;
+    if (storeCreditBlocked || tenderMismatchReasons[refundMethod]) {
+      setRefundMethod(
+        defaultRefundMethodForSale(saleData as SaleTenderSnapshot, {
+          storeCreditAvailable: saleHasCustomer,
+        }),
+      );
+    }
+  }, [saleData, saleHasCustomer, refundMethod, tenderMismatchReasons]);
+
   const resetWizard = useCallback(() => {
     setStep(1);
     setSelectedLines([]);
@@ -103,6 +136,10 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
     if (!saleId) return;
     if (refundMethod === 'STORE_CREDIT' && !saleHasCustomer) {
       toast.error('Store credit requires a sale linked to a customer');
+      return;
+    }
+    if (tenderMismatchReasons[refundMethod]) {
+      toast.error(tenderMismatchReasons[refundMethod]);
       return;
     }
 
@@ -322,6 +359,7 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
                   cardReversalReference={cardReversalReference}
                   reason={reason}
                   storeCreditAvailable={saleHasCustomer}
+                  tenderMismatchReasons={tenderMismatchReasons}
                   onChange={(patch) => {
                     if (patch.refundMethod !== undefined) setRefundMethod(patch.refundMethod);
                     if (patch.cardReversalReference !== undefined) setCardReversalReference(patch.cardReversalReference);

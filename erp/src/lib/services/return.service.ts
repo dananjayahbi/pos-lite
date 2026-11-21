@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { ApiError } from '@/lib/api/errors';
 import { ReturnRefundMethod, ReturnStatus } from '@/generated/prisma/client';
 import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
@@ -8,6 +9,10 @@ import Decimal from 'decimal.js';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 import { computeReturnRefund } from '@/lib/services/returnRefund.core';
+import {
+  collectedTenderMethods,
+  refundMethodTenderMismatchReason,
+} from '@/lib/services/returnTender.core';
 import { issueCredit } from '@/lib/services/customer.service';
 
 const RETURN_WINDOW_DAYS = 30;
@@ -44,7 +49,7 @@ export async function validateReturnEligibility(
 ) {
   const sale = await tx.sale.findUnique({
     where: { id: originalSaleId },
-    include: { lines: true },
+    include: { lines: true, payments: true },
   });
 
   if (!sale) {
@@ -210,6 +215,23 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
       input.lines,
       tx,
     );
+
+    // ARGUS #96: the refund must leave through a tender the sale actually
+    // collected. Manager/owner authorization alone is not an override — that
+    // would let a card reversal be recorded against a cash sale and desync the
+    // drawer. Store credit/exchange stay available on every tender.
+    const tenderMismatch = refundMethodTenderMismatchReason(
+      input.refundMethod,
+      sale,
+    );
+    if (tenderMismatch) {
+      const collected = [...collectedTenderMethods(sale)];
+      throw new ApiError(
+        422,
+        'REFUND_METHOD_MISMATCH',
+        `${tenderMismatch} Original tender: ${collected.length > 0 ? collected.join(', ') : 'none recorded'}.`,
+      );
+    }
 
     // 2. Compute refunds (goods + the tax actually collected)
     const {

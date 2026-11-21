@@ -171,7 +171,7 @@ describe('buildReturnReceiptHtml', () => {
   it('labels each refund method and explains it', () => {
     const cases: Array<[ReceiptReturn['refundMethod'], string, string]> = [
       ['CASH', 'Cash Refund', 'handed back'],
-      ['CARD_REVERSAL', 'Card Reversal', 'original card'],
+      ['CARD_REVERSAL', 'Card Reversal', 'original card/QR'],
       ['STORE_CREDIT', 'Store Credit', 'credit note'],
       ['EXCHANGE', 'Exchange', 'exchanged'],
     ];
