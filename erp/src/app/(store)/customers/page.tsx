@@ -28,6 +28,7 @@ import { CustomerSheet } from '@/components/customers/CustomerSheet';
 import { LoyaltyBadge } from '@/components/customers/LoyaltyBadge';
 import { RepeatBuyersTabs, type RepeatBuyersFilter } from '@/components/customers/RepeatBuyersTabs';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { CUSTOMER_SPEND_BANDS } from '@/lib/services/customerSpendBands.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,13 +59,10 @@ interface CustomersResponse {
 }
 
 // ── Spend band options ───────────────────────────────────────────────────────
+// Bands come from the shared, disjoint definition so a customer on a boundary
+// is counted in exactly one band (ARGUS #312).
 
-const SPEND_BANDS = [
-  { label: 'Any', min: undefined, max: undefined },
-  { label: 'Under Rs. 5,000', min: undefined, max: 5000 },
-  { label: 'Rs. 5,000 – 25,000', min: 5000, max: 25000 },
-  { label: 'Rs. 25,000+', min: 25000, max: undefined },
-] as const;
+const SPEND_BANDS = CUSTOMER_SPEND_BANDS;
 
 // ── Relative timestamps ──────────────────────────────────────────────────────
 
@@ -126,7 +124,7 @@ export default function CustomersPage() {
   };
 
   // Build query params
-  const band = SPEND_BANDS[Number(spendBand)] ?? SPEND_BANDS[0];
+  const band = SPEND_BANDS[Number(spendBand)] ?? SPEND_BANDS[0]!;
   const queryParams = new URLSearchParams();
   if (debouncedSearch) queryParams.set('search', debouncedSearch);
   if (tag !== 'ALL') queryParams.set('tag', tag);
@@ -224,7 +222,7 @@ export default function CustomersPage() {
           </SelectTrigger>
           <SelectContent>
             {SPEND_BANDS.map((b, i) => (
-              <SelectItem key={i} value={String(i)}>
+              <SelectItem key={b.key} value={String(i)}>
                 {b.label}
               </SelectItem>
             ))}
