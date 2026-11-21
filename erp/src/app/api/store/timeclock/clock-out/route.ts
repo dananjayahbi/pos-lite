@@ -47,7 +47,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const record = await clockOut(tenantId, session.user.id, parsed.data.notes);
+    const record = await clockOut(
+      tenantId,
+      session.user.id,
+      parsed.data.notes,
+      session.user.role,
+    );
 
     return NextResponse.json({ success: true, data: record }, { status: 201 });
   } catch (error) {

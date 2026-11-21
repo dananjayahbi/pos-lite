@@ -83,6 +83,9 @@ export const AUDIT_ACTIONS = {
   // Attendance / time clock
   ATTENDANCE_ADJUSTED: 'ATTENDANCE_ADJUSTED',
   ATTENDANCE_STATUS_SET: 'ATTENDANCE_STATUS_SET',
+  // ARGUS #357: every self-service clock-in/out, regardless of role.
+  ATTENDANCE_CLOCKED_IN: 'ATTENDANCE_CLOCKED_IN',
+  ATTENDANCE_CLOCKED_OUT: 'ATTENDANCE_CLOCKED_OUT',
   // ARGUS #349: a manually added clock punch.
   ATTENDANCE_PUNCH_ADDED: 'ATTENDANCE_PUNCH_ADDED',
   // ARGUS #351: an open punch closed at the maximum-shift cap.

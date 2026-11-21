@@ -42,6 +42,7 @@ export async function POST(request: Request) {
     // with the punch details the widget needs to offer closing it (ARGUS #351).
     const record = await clockIn(tenantId, session.user.id, parsed.data.shiftId, {
       closePreviousPunchAt: parsed.data.closePreviousPunchAt,
+      actorRole: session.user.role,
     });
 
     return NextResponse.json({ success: true, data: record }, { status: 201 });
