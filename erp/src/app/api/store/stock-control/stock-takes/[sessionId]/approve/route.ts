@@ -5,7 +5,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StockTakeStatus, UserRole, NotificationType } from '@/generated/prisma/client';
 import { approveStockTake } from '@/lib/services/inventory.service';
-import { canApproveStockTake } from '@/lib/services/stockTakePolicy.core';
+import { canApproveStockTake, stockTakeHasNoItems } from '@/lib/services/stockTakePolicy.core';
 import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 import { stockAdjustmentRevalidationOptions } from '@/lib/website/storefront-revalidation.core';
 
@@ -68,6 +68,21 @@ export async function POST(
     if (stockTakeSession.status !== StockTakeStatus.PENDING_APPROVAL) {
       return NextResponse.json(
         { success: false, error: { code: 'BAD_REQUEST', message: 'Session is not pending approval' } },
+        { status: 400 },
+      );
+    }
+
+    // ARGUS #212: an empty legacy session cannot be approved as a valid count.
+    if (stockTakeHasNoItems(stockTakeSession.items.length)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'EMPTY_SESSION',
+            message:
+              'This session has no items, so there is nothing to approve. Cancel it and start a session with a scope that has countable variants.',
+          },
+        },
         { status: 400 },
       );
     }

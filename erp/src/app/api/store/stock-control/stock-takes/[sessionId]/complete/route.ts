@@ -5,6 +5,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StockTakeStatus, NotificationType, UserRole } from '@/generated/prisma/client';
 import { completeStockTakeSession } from '@/lib/services/inventory.service';
+import { stockTakeHasNoItems } from '@/lib/services/stockTakePolicy.core';
 
 export async function POST(
   _request: Request,
@@ -41,7 +42,12 @@ export async function POST(
 
     const stockTakeSession = await prisma.stockTakeSession.findFirst({
       where: { id: sessionId, tenantId },
-      select: { id: true, status: true, initiatedById: true },
+      select: {
+        id: true,
+        status: true,
+        initiatedById: true,
+        _count: { select: { items: true } },
+      },
     });
 
     if (!stockTakeSession) {
@@ -74,6 +80,22 @@ export async function POST(
           },
         },
         { status: 403 },
+      );
+    }
+
+    // ARGUS #212: legacy empty sessions must not be submitted as a valid
+    // "everything matched" count.
+    if (stockTakeHasNoItems(stockTakeSession._count.items)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'EMPTY_SESSION',
+            message:
+              'This session has no items to count, so it cannot be completed. Cancel it and start a session with a scope that has countable variants.',
+          },
+        },
+        { status: 400 },
       );
     }
 
