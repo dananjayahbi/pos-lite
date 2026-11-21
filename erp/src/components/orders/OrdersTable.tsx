@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
+import { collectableCodAmount } from '@/lib/delivery/cod';
 import { OrderStatusBadge } from './OrderStatusBadge';
 import type { DeliveryListItem } from '@/types/delivery';
 
@@ -80,7 +81,9 @@ export function OrdersTable({
                 </td>
                 <td className="px-4 py-3 text-sm text-espresso/60">{order.address?.cityName ?? '-'}</td>
                 <td className="px-4 py-3 text-sm text-espresso/60">{order.itemCount ?? 1}</td>
-                <td className="px-4 py-3 text-sm text-espresso">{formatRupee(order.codAmount ?? 0)}</td>
+                <td className="px-4 py-3 text-sm text-espresso">
+                  {formatRupee(collectableCodAmount(order).toNumber())}
+                </td>
                 <td className="px-4 py-3">
                   <OrderStatusBadge status={order.status} />
                   {waybill && <p className="mt-0.5 text-xs text-espresso/40">{waybill}</p>}

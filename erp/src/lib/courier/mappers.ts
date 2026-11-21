@@ -27,6 +27,8 @@ interface MapperAddress {
 interface MapperDelivery {
   orderRef: string;
   codAmount: { toString(): string };
+  /** Delivery fee collected on top of the goods value for COD orders. */
+  shippingFee?: { toString(): string } | number | string | null | undefined;
   /** PAID orders are prepaid and must reach the courier with COD 0. */
   paymentStatus?: string | null | undefined;
   notes?: string | null | undefined;

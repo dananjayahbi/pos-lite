@@ -7,6 +7,7 @@ import { setSentryTenantContext } from '@/lib/sentry/context';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { cancelDelivery } from '@/lib/services/delivery.service';
 import { estimateWebsiteShippingFee } from '@/lib/services/shipping-fee.service';
+import { collectableCodAmount } from '@/lib/delivery/cod';
 import { bulkStatusRejection } from '@/lib/services/dispatchStatus.core';
 import type {
   BulkStatusChangeInput,
@@ -82,6 +83,17 @@ export async function createWebsiteOrder(
     cityName: input.cityName,
     districtName: input.districtName ?? undefined,
   });
+
+  // ARGUS #287: the catalogue has no per-unit weight, so the parcel weight has
+  // to come from checkout. When it is missing the quote silently falls back to
+  // the base rate; make that visible in logs and on the delivery audit trail
+  // instead of pricing every online order as a zero-weight parcel.
+  const weightSupplied = input.totalWeightKg !== undefined;
+  if (!weightSupplied) {
+    console.warn(
+      `[createWebsiteOrder] tenant=${tenantId} order has no parcel weight; base rate applied (${shipping.shippingFee})`,
+    );
+  }
 
   const requestedLines = input.lines ?? [];
 
@@ -166,8 +178,10 @@ export async function createWebsiteOrder(
           source: 'WEBSITE_CHECKOUT',
           status: 'PLACED',
           orderRef,
-          // Server-computed when lines are supplied; the client scalar is only a
-          // fallback for legacy payloads that send no lines.
+          // ARGUS #288: `codAmount` stores the GOODS value only - it is the
+          // PayHere amount basis and the invoice subtotal fallback. The
+          // courier-facing collectable is goods + `shippingFee`, derived by
+          // `collectableCodAmount` at dispatch / waybill / reconciliation time.
           codAmount: (hasLines
             ? computedCodAmount
             : new Prisma.Decimal(input.codAmount ?? 0)
@@ -244,7 +258,13 @@ export async function createWebsiteOrder(
     entityType: 'Delivery',
     entityId: delivery.id,
     action: AUDIT_ACTIONS.DELIVERY_CREATED,
-    after: { source: 'WEBSITE_CHECKOUT', orderRef: delivery.orderRef } as Prisma.InputJsonValue,
+    after: {
+      source: 'WEBSITE_CHECKOUT',
+      orderRef: delivery.orderRef,
+      weightKg: input.totalWeightKg ?? null,
+      weightSource: weightSupplied ? 'CHECKOUT' : 'MISSING',
+      shippingFee: shipping.shippingFee,
+    } as Prisma.InputJsonValue,
   });
 
   return {
@@ -273,6 +293,7 @@ export async function bulkChangeOrderStatus(
       orderRef: true,
       status: true,
       codAmount: true,
+      shippingFee: true,
       paymentMethod: true,
       paymentStatus: true,
       shipments: {
@@ -336,10 +357,13 @@ export async function bulkChangeOrderStatus(
         });
 
         if (input.status === 'DELIVERED') {
+          // ARGUS #288: the receivable is the collectable total (goods +
+          // shipping), not the goods value alone.
+          const expectedCod = collectableCodAmount(delivery);
           if (
             delivery.paymentMethod === 'COD' &&
             delivery.paymentStatus !== 'PAID' &&
-            delivery.codAmount.gt(0)
+            expectedCod.gt(0)
           ) {
             // The shipment is guaranteed by bulkStatusRejection, so the COD
             // receivable always carries the real waybill (ARGUS #263).
@@ -349,7 +373,7 @@ export async function bulkChangeOrderStatus(
                 tenantId,
                 deliveryId: delivery.id,
                 waybillId: shipment!.waybillId,
-                expectedCod: delivery.codAmount,
+                expectedCod,
                 status: 'PENDING_SETTLEMENT',
               },
               update: {},

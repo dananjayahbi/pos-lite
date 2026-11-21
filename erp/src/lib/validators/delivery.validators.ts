@@ -50,6 +50,10 @@ export const CreateDeliverySchema = z.object({
   source: z.enum(DELIVERY_SOURCES).optional(),
   customerId: z.string().cuid().optional(),
   saleId: z.string().cuid().optional(),
+  /**
+   * Goods value only (ARGUS #288). The shipping fee is computed from the rate
+   * card and stored separately; the courier collects goods + shipping.
+   */
   codAmount: z.coerce.number().nonnegative('COD amount cannot be negative').optional(),
   declaredValue: z.coerce.number().nonnegative().optional(),
   itemCount: z.coerce.number().int().min(1).default(1),

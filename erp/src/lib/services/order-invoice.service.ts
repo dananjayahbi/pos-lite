@@ -2,6 +2,7 @@ import 'server-only';
 
 import { prisma } from '@/lib/prisma';
 import { getTenantBranding } from '@/lib/tenant-branding';
+import { collectableCodAmount } from '@/lib/delivery/cod';
 import type { OrderInvoiceData, OrderInvoiceLine } from '@/types/order-invoice';
 
 /** Invoice chrome stays neutral: the waybill design owns the courier palette. */
@@ -139,7 +140,11 @@ export async function getOrderInvoiceData(
     taxAmount: sale ? toNumber(sale.taxAmount) : 0,
     shippingFee,
     deliveryFee: delivery.deliveryFee != null ? toNumber(delivery.deliveryFee) : null,
-    codAmount: toNumber(delivery.codAmount),
+    // ARGUS #288: the invoice collects goods + shipping for COD orders, so the
+    // displayed COD matches the grand total. Prepaid orders show 0 (the row is
+    // hidden by the renderer). Goods-only value stays in `codAmount` for the
+    // subtotal fallback below.
+    codAmount: collectableCodAmount(delivery).toNumber(),
     // The website total is goods + shipping; a sale already stores its own
     // delivery charge in totalAmount, so only add shipping for website orders.
     totalAmount: sale

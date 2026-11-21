@@ -27,6 +27,7 @@ interface Address {
 interface DeliveryLike {
   orderRef: string;
   codAmount: string | number;
+  shippingFee?: string | number | null | undefined;
   paymentStatus?: string | null | undefined;
   itemCount?: number | undefined;
   totalWeightKg?: string | number | null | undefined;
@@ -49,6 +50,7 @@ interface ShippingLabelProps {
 interface LabelDeliveryLike {
   orderRef: string;
   codAmount?: string | number | null;
+  shippingFee?: string | number | null;
   paymentStatus?: string | null;
   itemCount?: number | null;
   totalWeightKg?: string | number | null;
@@ -225,6 +227,7 @@ export function toLabelProps(delivery: LabelDeliveryLike): {
     delivery: {
       orderRef: delivery.orderRef ?? '',
       codAmount: delivery.codAmount ?? 0,
+      shippingFee: delivery.shippingFee ?? 0,
       paymentStatus: delivery.paymentStatus ?? null,
       itemCount: delivery.itemCount ?? 1,
       totalWeightKg: delivery.totalWeightKg,

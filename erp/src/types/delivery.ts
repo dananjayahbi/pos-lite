@@ -74,6 +74,8 @@ export interface DeliveryDetail {
   hubWeightKg?: number | string | null;
   shippingFee?: number | string | null;
   deliveryFee?: number | string | null;
+  paymentMethod?: string | null;
+  paymentStatus?: string | null;
   holdExpiresAt?: string | null;
   dispatchedAt?: string | null;
   deliveredAt?: string | null;
@@ -97,6 +99,8 @@ export interface DeliveryListItem {
   shippingFee?: number | string | null;
   totalWeightKg?: number | string | null;
   itemCount: number;
+  paymentMethod?: string | null;
+  paymentStatus?: string | null;
   dispatchedAt?: string | null;
   failureReason?: string | null;
   waybill?: string | null;

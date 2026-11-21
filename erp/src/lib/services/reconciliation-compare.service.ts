@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { prisma } from '@/lib/prisma';
+import { collectableCodAmount } from '@/lib/delivery/cod';
 import {
   parseRemittanceFile,
   type RemittanceParsedRow,
@@ -66,6 +67,7 @@ export async function getDeliveryComparisonReport(
       orderRef: true,
       codAmount: true,
       shippingFee: true,
+      paymentStatus: true,
       deliveredAt: true,
       status: true,
       shipments: {
@@ -85,7 +87,9 @@ export async function getDeliveryComparisonReport(
     waybillId:
       delivery.reconciliationEntry?.waybillId ?? delivery.shipments[0]?.waybillId ?? null,
     orderRef: delivery.orderRef,
-    expectedCod: Number(delivery.codAmount.toString()),
+    // ARGUS #288: the courier remits goods + shipping; compare against the
+    // collectable total, not the goods-only stored value.
+    expectedCod: Number(collectableCodAmount(delivery).toString()),
     deliveredAt: delivery.deliveredAt?.toISOString() ?? null,
     deliveryStatus: delivery.status,
     shippingFee: delivery.shippingFee ? Number(delivery.shippingFee.toString()) : null,
