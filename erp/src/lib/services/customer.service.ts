@@ -184,12 +184,34 @@ export async function getCustomerById(tenantId: string, customerId: string) {
 
   const preferredCategories = await getPreferredCategories(tenantId, customerId);
 
+  // ARGUS #310: returns belong to the customer through the original sale. The
+  // customer detail API previously returned none, so the Returns tab could
+  // never show a real row.
+  const returns = await prisma.return.findMany({
+    where: {
+      tenantId,
+      originalSale: { customerId, tenantId },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    select: {
+      id: true,
+      originalSaleId: true,
+      refundAmount: true,
+      refundMethod: true,
+      status: true,
+      createdAt: true,
+      lines: { select: { quantity: true } },
+    },
+  });
+
   return {
     ...customer,
     orderCount: visitCount,
     visitCount,
     avgOrderValue: avgOrderValue.toString(),
     preferredCategories,
+    returns,
   };
 }
 

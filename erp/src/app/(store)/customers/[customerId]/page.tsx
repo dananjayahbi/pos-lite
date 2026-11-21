@@ -29,6 +29,10 @@ import { formatRupee } from '@/lib/format';
 import { CustomerSheet } from '@/components/customers/CustomerSheet';
 import { LoyaltyBadge } from '@/components/customers/LoyaltyBadge';
 import { CustomerValueInsights } from '@/components/customers/CustomerValueInsights';
+import {
+  returnItemCount,
+  summarizeCustomerReturns,
+} from '@/components/customers/customerReturns';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { toast } from 'sonner';
@@ -59,6 +63,16 @@ interface Sale {
   payments: Payment[];
 }
 
+interface CustomerReturn {
+  id: string;
+  originalSaleId: string;
+  refundAmount: string | number;
+  refundMethod: string;
+  status: string;
+  createdAt: string;
+  lines: { quantity: number }[];
+}
+
 interface CustomerDetail {
   id: string;
   name: string;
@@ -87,9 +101,18 @@ interface CustomerDetail {
     lineTotal: string;
   }[];
   sales: Sale[];
+  /** ARGUS #310: returns joined through the original sale. */
+  returns?: CustomerReturn[];
 }
 
 type Tab = 'purchases' | 'returns' | 'about';
+
+const REFUND_METHOD_LABELS: Record<string, string> = {
+  CASH: 'Cash',
+  CARD_REVERSAL: 'Card Reversal',
+  STORE_CREDIT: 'Store Credit',
+  EXCHANGE: 'Exchange',
+};
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -108,7 +131,7 @@ export default function CustomerDetailPage({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const { data, isLoading } = useQuery<{ success: boolean; data: CustomerDetail }>({
+  const { data, isLoading, isError, refetch } = useQuery<{ success: boolean; data: CustomerDetail }>({
     queryKey: ['customer', customerId],
     queryFn: async () => {
       const res = await fetch(`/api/store/customers/${customerId}`);
@@ -186,6 +209,17 @@ export default function CustomerDetailPage({
     );
   }
 
+  if (isError) {
+    return (
+      <div className="text-center py-20 text-sand-ink">
+        <p>Could not load this customer. The Returns tab depends on the same request.</p>
+        <Button variant="outline" className="mt-4" onClick={() => void refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
   if (!customer) {
     return (
       <div className="text-center py-20 text-sand-ink">
@@ -198,6 +232,8 @@ export default function CustomerDetailPage({
   }
 
   const completedSales = customer.sales.filter((s) => s.status === 'COMPLETED');
+  const customerReturns = customer.returns ?? [];
+  const returnSummary = summarizeCustomerReturns(customerReturns);
   const canDeleteCustomer = !permissionsLoading && hasPermission(PERMISSIONS.CUSTOMER.deleteCustomer);
 
   const getCreditColor = (val: string | number) => {
@@ -396,22 +432,78 @@ export default function CustomerDetailPage({
 
       {activeTab === 'returns' && (
         <div className="rounded-lg border border-sand/30 bg-white">
+          {returnSummary.count > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sand/30 px-4 py-3">
+              <p className="text-sm text-sand-ink">
+                {returnSummary.count} return{returnSummary.count === 1 ? '' : 's'} ·{' '}
+                {returnSummary.totalItems} item{returnSummary.totalItems === 1 ? '' : 's'} returned
+              </p>
+              <p className="font-mono text-sm font-medium text-espresso">
+                {formatRupee(returnSummary.totalRefund)} refunded
+              </p>
+            </div>
+          )}
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
                 <TableHead>Return No.</TableHead>
+                <TableHead>Original Sale</TableHead>
                 <TableHead className="text-right">Items</TableHead>
                 <TableHead className="text-right">Refund Amount</TableHead>
                 <TableHead>Method</TableHead>
+                <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-sand-ink">
-                  No returns on record
-                </TableCell>
-              </TableRow>
+              {customerReturns.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-sand-ink">
+                    No returns on record
+                  </TableCell>
+                </TableRow>
+              ) : (
+                customerReturns.map((returnRecord) => (
+                  <TableRow key={returnRecord.id}>
+                    <TableCell className="text-sm">
+                      {formatDate(returnRecord.createdAt)}
+                    </TableCell>
+                    <TableCell className="font-mono text-sm">
+                      <Link
+                        href="/returns"
+                        className="text-terracotta underline-offset-2 hover:underline"
+                        title="Open the returns ledger"
+                      >
+                        {returnRecord.id.slice(0, 8).toUpperCase()}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="font-mono text-sm">
+                      <Link
+                        href={`/sales/${returnRecord.originalSaleId}`}
+                        className="text-terracotta underline-offset-2 hover:underline"
+                        title="Open the original sale"
+                      >
+                        {returnRecord.originalSaleId.slice(0, 8).toUpperCase()}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {returnItemCount(returnRecord)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {formatRupee(returnRecord.refundAmount)}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {REFUND_METHOD_LABELS[returnRecord.refundMethod] ??
+                        returnRecord.refundMethod}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">
+                        {returnRecord.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </div>
