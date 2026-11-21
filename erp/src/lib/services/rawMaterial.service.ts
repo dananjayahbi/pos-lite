@@ -5,10 +5,12 @@
  */
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
+import { lockForUpdate } from '@/lib/api/race-guard';
 import type { RawMaterial } from '@/generated/prisma/client';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
-  applyQuantityDelta,
+  applyQuantityDeltaDecimal,
+  roundRawMaterialQuantity,
   getRawMaterialCategoryLabel,
   getRawMaterialStockStatus,
   matchesRawMaterialStockStatus,
@@ -317,21 +319,30 @@ export async function adjustRawMaterialStock(
   tenantId: string,
   actorId: string,
   id: string,
-  quantityDelta: number,
+  quantityDelta: string | number,
   reason?: string,
 ) {
-  if (quantityDelta === 0) {
+  // ARGUS #245: Decimal arithmetic at the shared four-decimal scale. The delta
+  // is rounded first, so a sub-scale value is a no-op rather than a float leak.
+  const delta = roundRawMaterialQuantity(quantityDelta);
+  if (delta.isZero()) {
     throw new Error('DELTA_ZERO');
   }
 
   return prisma.$transaction(async (tx) => {
+    // Lock the material BEFORE reading its quantity. Two concurrent
+    // adjustments used to read the same snapshot and lose one update.
+    await lockForUpdate(tx, 'raw_materials', '"id" = $1 AND "tenantId" = $2', [
+      id,
+      tenantId,
+    ]);
     const material = await findOwnedMaterial(tx, tenantId, id);
-    const currentQuantity = material.quantity.toNumber();
-    const newQuantity = applyQuantityDelta(currentQuantity, quantityDelta);
+    const currentQuantity = roundRawMaterialQuantity(material.quantity);
+    const newQuantity = applyQuantityDeltaDecimal(currentQuantity, delta);
 
     const updated = await tx.rawMaterial.update({
       where: { id },
-      data: { quantity: new Prisma.Decimal(newQuantity) },
+      data: { quantity: newQuantity },
     });
 
     void createAuditLog({
@@ -341,10 +352,11 @@ export async function adjustRawMaterialStock(
       entityType: 'RawMaterial',
       entityId: id,
       action: AUDIT_ACTIONS.RAW_MATERIAL_STOCK_ADJUSTED,
+      before: { quantity: currentQuantity.toFixed(4) },
       after: {
-        quantityDelta,
-        quantityBefore: currentQuantity,
-        quantityAfter: newQuantity,
+        quantityDelta: delta.toFixed(4),
+        quantityBefore: currentQuantity.toFixed(4),
+        quantityAfter: newQuantity.toFixed(4),
         reason: reason?.trim() || null,
       },
     }).catch(() => {});

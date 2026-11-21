@@ -5,7 +5,82 @@
  * the service layer, API routes, and UI for consistent labels and stock-status
  * logic.
  */
+import Decimal from 'decimal.js';
 import type { RawMaterialCategory } from '@/generated/prisma/client';
+
+/**
+ * Raw-material quantity arithmetic (ARGUS #245).
+ *
+ * Quantities are persisted as Prisma `Decimal`. Doing the arithmetic in JS
+ * numbers first loses precision (`0.1 + 0.2 = 0.30000000000000004`). Every
+ * manual adjustment and BOM consumption now uses these helpers, with one
+ * explicit policy: four decimal places, round half-up. That resolves grams
+ * (0.0001 kg) and matches the four-decimal `unitCost` column.
+ */
+export const RAW_MATERIAL_QUANTITY_SCALE = 4;
+export const RAW_MATERIAL_QUANTITY_ROUNDING = Decimal.ROUND_HALF_UP;
+
+type Decimalish = number | string | { toString(): string };
+
+function quantityDecimal(value: Decimalish): Decimal {
+  const parsed = new Decimal(value.toString());
+  if (!parsed.isFinite()) {
+    throw new Error('Quantity must be a finite number');
+  }
+  return parsed;
+}
+
+/** Round any quantity to the shared four-decimal scale. */
+export function roundRawMaterialQuantity(value: Decimalish): Decimal {
+  return quantityDecimal(value).toDecimalPlaces(
+    RAW_MATERIAL_QUANTITY_SCALE,
+    RAW_MATERIAL_QUANTITY_ROUNDING,
+  );
+}
+
+/**
+ * Apply a signed delta with Decimal arithmetic and refuse a negative result.
+ * The returned value is already rounded to the shared scale.
+ */
+export function applyQuantityDeltaDecimal(
+  currentQuantity: Decimalish,
+  delta: Decimalish,
+): Decimal {
+  const roundedDelta = roundRawMaterialQuantity(delta);
+  const next = roundRawMaterialQuantity(quantityDecimal(currentQuantity).plus(roundedDelta));
+  if (next.isNegative()) {
+    throw new Error(
+      `Insufficient stock: attempting to reduce by ${roundedDelta.abs().toFixed(
+        RAW_MATERIAL_QUANTITY_SCALE,
+      )} but only ${roundRawMaterialQuantity(currentQuantity).toFixed(
+        RAW_MATERIAL_QUANTITY_SCALE,
+      )} available`,
+    );
+  }
+  return next;
+}
+
+/** True when `available` covers `required` at the shared scale. */
+export function isRawMaterialQuantitySufficient(
+  available: Decimalish,
+  required: Decimalish,
+): boolean {
+  return roundRawMaterialQuantity(available).greaterThanOrEqualTo(
+    roundRawMaterialQuantity(required),
+  );
+}
+
+/**
+ * Subtract a required consumption amount, returning the remaining quantity.
+ * The caller is expected to have checked `isRawMaterialQuantitySufficient`
+ * under the same row lock; the negative guard is the final backstop.
+ */
+export function consumeRawMaterialQuantity(
+  available: Decimalish,
+  required: Decimalish,
+): Decimal {
+  return applyQuantityDeltaDecimal(available, roundRawMaterialQuantity(required).negated());
+}
 
 export const RAW_MATERIAL_CATEGORY_LABELS: Record<RawMaterialCategory, string> = {
   OILS_LIQUIDS: 'Oils & Liquids',
@@ -160,11 +235,7 @@ export function matchesRawMaterialStockStatus(
  * quantity or throws if the adjustment would produce a negative result.
  */
 export function applyQuantityDelta(currentQuantity: number, delta: number): number {
-  const next = currentQuantity + delta;
-  if (next < 0) {
-    throw new Error(
-      `Insufficient stock: attempting to reduce by ${Math.abs(delta)} but only ${currentQuantity} available`,
-    );
-  }
-  return next;
+  // Kept for existing number-based callers/tests; the arithmetic is Decimal so
+  // it cannot produce 0.30000000000000004 on the way to the caller.
+  return applyQuantityDeltaDecimal(currentQuantity, delta).toNumber();
 }

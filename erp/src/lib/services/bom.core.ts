@@ -5,7 +5,13 @@
  * Kept free of Prisma/DB so it can be unit-tested in isolation and reused by
  * the service layer, validators, and UI.
  */
+import Decimal from 'decimal.js';
 import type { BillOfMaterialsItem, RawMaterial } from '@/generated/prisma/client';
+import {
+  RAW_MATERIAL_QUANTITY_ROUNDING,
+  RAW_MATERIAL_QUANTITY_SCALE,
+  roundRawMaterialQuantity,
+} from '@/lib/services/rawMaterial.core';
 
 /** A raw material ingredient line needed by a BOM (Decimal → number). */
 export interface BomIngredient {
@@ -32,7 +38,12 @@ export function computeIngredientRequirement(
   if (!Number.isInteger(unitsToProduce) || unitsToProduce <= 0) {
     throw new Error('unitsToProduce must be a positive integer');
   }
-  return quantityPerUnit * unitsToProduce;
+  // ARGUS #245: Decimal multiplication at the shared quantity scale, so
+  // 0.1 x 3 stores 0.3 rather than 0.30000000000000004.
+  return new Decimal(quantityPerUnit.toString())
+    .times(unitsToProduce)
+    .toDecimalPlaces(RAW_MATERIAL_QUANTITY_SCALE, RAW_MATERIAL_QUANTITY_ROUNDING)
+    .toNumber();
 }
 
 export interface ConsumptionLine {
@@ -66,7 +77,10 @@ export function computeConsumptionPlan(
       required,
       available: ingredient.available,
       unit: ingredient.unit,
-      insufficient: required > ingredient.available,
+      // Decimal comparison at the shared scale, not raw JS floats.
+      insufficient: roundRawMaterialQuantity(required).greaterThan(
+        roundRawMaterialQuantity(ingredient.available),
+      ),
     };
   });
 }

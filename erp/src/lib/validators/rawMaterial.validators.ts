@@ -37,11 +37,13 @@ export const UpdateRawMaterialSchema = z.object({
 });
 
 export const AdjustRawMaterialStockSchema = z.object({
+  // Keep the operator's decimal string: the service does the arithmetic in
+  // Decimal and the shared four-decimal scale, never in JS floats (ARGUS #245).
   quantityDelta: z
     .string()
-    .regex(/^-?\d+(\.\d+)?$/, 'Must be a decimal number (can be negative)')
-    .transform((value) => Number(value)),
-  /** Why the stock moved (consumption, write-off, recount, …). */
+    .trim()
+    .regex(/^-?\d+(\.\d+)?$/, 'Must be a decimal number (can be negative)'),
+  /** Why the stock moved (consumption, write-off, recount, ...). */
   reason: z.string().trim().max(200).optional(),
 });
 
