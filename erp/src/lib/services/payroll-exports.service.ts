@@ -13,6 +13,7 @@ import {
   buildPayrollExportProvenance,
   type PayrollExportProvenance,
 } from '@/lib/payroll/export-provenance';
+import { filterPayrollExportItems } from '@/lib/payroll/export-eligibility.core';
 import {
   buildExportPreflight,
   type PayrollExportKind,
@@ -63,7 +64,7 @@ export async function getPayrollExportContext(
 }
 
 export function toBankSheetRows(context: PayrollExportContext): BankSheetRow[] {
-  return context.run.items.map((item) => ({
+  return filterPayrollExportItems(context.run.items, 'bank-sheet').map((item) => ({
     staffName: item.staffName,
     nic: item.nic,
     bankName: item.bankName,
@@ -74,7 +75,7 @@ export function toBankSheetRows(context: PayrollExportContext): BankSheetRow[] {
 }
 
 export function toStatutoryRows(context: PayrollExportContext): StatutoryRow[] {
-  return context.run.items.map((item) => ({
+  return filterPayrollExportItems(context.run.items, 'statutory').map((item) => ({
     staffName: item.staffName,
     nic: item.nic,
     epfNumber: item.epfNumber,
@@ -131,8 +132,11 @@ export function formatExtension(value: string | null): 'xlsx' | 'pdf' {
 }
 
 /** Staff details needed by the bank sheet / C-form / ETF return checks. */
-export function toPreflightStaff(context: PayrollExportContext): PayrollExportStaffRow[] {
-  return context.run.items.map((item) => ({
+export function toPreflightStaff(
+  context: PayrollExportContext,
+  kind: PayrollExportKind,
+): PayrollExportStaffRow[] {
+  return filterPayrollExportItems(context.run.items, kind).map((item) => ({
     staffName: item.staffName,
     bankName: item.bankName,
     bankAccountNumber: item.bankAccountNumber,
@@ -152,7 +156,7 @@ export function buildPayrollExportPreflight(
 ): PayrollExportPreflight {
   return buildExportPreflight({
     kind,
-    staff: toPreflightStaff(context),
+    staff: toPreflightStaff(context, kind),
     employerEpfNumber: context.payrollSettings.employerEpfNumber,
     employerEtfNumber: context.payrollSettings.employerEtfNumber,
   });
