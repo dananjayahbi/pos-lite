@@ -7,7 +7,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReportContext } from "@/lib/reports/ReportContext";
 import { formatRupee } from "@/lib/format";
-import { expenseCategoryLabel } from "@/lib/reports/labels";
+import { expenseCategoryLabel, reportMonthLabel } from "@/lib/reports/labels";
+import { buildProfitLossExportRows } from "@/lib/reports/reportRows";
 import { paymentMethodLabel } from "@/lib/sales/payment-method-label";
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -31,12 +32,6 @@ function toYMD(d: Date): string {
 
 function fmtCurrency(val: string): string {
   return formatRupee(val);
-}
-
-function monthLabel(ym: string): string {
-  const [y, m] = ym.split("-");
-  const date = new Date(Number(y), Number(m) - 1);
-  return date.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
 }
 
 // ── Types ────────────────────────────────────────────────────────
@@ -141,76 +136,11 @@ export default function ProfitLossClient() {
     queryFn: () => fetchPL(from, to),
   });
 
-  // Push data to ReportContext for export
+  // Push data to ReportContext for export. ARGUS #441: one builder carries the
+  // visible statement rows (margins, COGS split), the monthly table and totals.
   useEffect(() => {
     if (!data) return;
-
-    const rows: Record<string, unknown>[] = [];
-
-    // Revenue section
-    for (const r of data.revenueByPaymentMethod) {
-      rows.push({
-        Section: "Revenue",
-        Item: paymentMethodLabel(r.method),
-        Amount: r.total,
-      });
-    }
-    rows.push({
-      Section: "Revenue",
-      Item: "Less: Returns",
-      Amount: `-${data.totalReturns}`,
-    });
-    rows.push({
-      Section: "Revenue",
-      Item: "Net Revenue",
-      Amount: data.netRevenue,
-    });
-
-    // COGS
-    rows.push({ Section: "COGS", Item: "Cost of Goods Sold", Amount: data.rawCOGS });
-    rows.push({
-      Section: "COGS",
-      Item: "Less: Returned COGS",
-      Amount: `-${data.returnedCOGS}`,
-    });
-    rows.push({ Section: "COGS", Item: "Net COGS", Amount: data.netCOGS });
-    if (data.cogsQuality.usesFallback) {
-      rows.push({
-        Section: "COGS",
-        Item: "COGS source warning",
-        Amount: data.cogsQuality.caveats.join(" "),
-      });
-    }
-
-    // Gross Profit
-    rows.push({
-      Section: "Profit",
-      Item: "Gross Profit",
-      Amount: data.grossProfit,
-    });
-
-    // Expenses
-    for (const e of data.expenseCategories) {
-      rows.push({
-        Section: "Expenses",
-        Item: expenseCategoryLabel(e.category),
-        Amount: e.total,
-      });
-    }
-    rows.push({
-      Section: "Expenses",
-      Item: "Total Expenses",
-      Amount: data.totalExpenses,
-    });
-
-    // Net Profit
-    rows.push({
-      Section: "Profit",
-      Item: "Net Profit",
-      Amount: data.netProfit,
-    });
-
-    setReportData(rows);
+    setReportData(buildProfitLossExportRows(data));
   }, [data, setReportData]);
 
   if (isLoading) return <LoadingSkeleton />;
@@ -399,7 +329,7 @@ export default function ProfitLossClient() {
                       className={i % 2 === 0 ? "bg-pearl/50" : ""}
                     >
                       <td className="px-2 py-1.5 text-espresso">
-                        {monthLabel(m.month)}
+                        {reportMonthLabel(m.month)}
                       </td>
                       <td className="px-2 py-1.5 text-right font-mono text-espresso">
                         {fmtCurrency(m.revenue)}
@@ -562,7 +492,7 @@ function MonthlyChart({ months }: { months: MonthlyRow[] }) {
                   <div
                     className="w-full max-w-10 rounded-t bg-green-500/70"
                     style={{ height: heightPx }}
-                    title={`${monthLabel(m.month)}: ${fmtCurrency(m.grossProfit)}`}
+                    title={`${reportMonthLabel(m.month)}: ${fmtCurrency(m.grossProfit)}`}
                   />
                 )}
               </div>
@@ -572,7 +502,7 @@ function MonthlyChart({ months }: { months: MonthlyRow[] }) {
                   <div
                     className="w-full max-w-10 rounded-b bg-red-400/70"
                     style={{ height: heightPx }}
-                    title={`${monthLabel(m.month)}: ${fmtCurrency(m.grossProfit)}`}
+                    title={`${reportMonthLabel(m.month)}: ${fmtCurrency(m.grossProfit)}`}
                   />
                 )}
               </div>
@@ -586,7 +516,7 @@ function MonthlyChart({ months }: { months: MonthlyRow[] }) {
             key={m.month}
             className="flex-1 text-center text-[10px] text-espresso/60"
           >
-            {monthLabel(m.month)}
+            {reportMonthLabel(m.month)}
           </span>
         ))}
       </div>

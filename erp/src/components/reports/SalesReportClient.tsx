@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReportContext } from "@/lib/reports/ReportContext";
 import { formatRupee } from "@/lib/format";
+import { buildSalesExportRows } from "@/lib/reports/reportRows";
 import { salesProductLabel, topRevenueProducts } from "@/lib/reports/sales-report";
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -153,18 +154,7 @@ export default function SalesReportClient() {
   // Push data to ReportContext for export
   useEffect(() => {
     if (!data) return;
-    const rows: Record<string, unknown>[] = data.products.map((p) => ({
-      Product: p.productName,
-      Variant: p.variantDescription,
-      "Units Sold": p.unitsSold,
-      "Returned Qty": p.returnedUnits,
-      "Net Units": p.netUnits,
-      "Gross Revenue": p.grossRevenue,
-      Returns: p.returns,
-      "Net Revenue": p.netRevenue,
-      "% of Total": p.pctOfTotal,
-    }));
-    setReportData(rows);
+    setReportData(buildSalesExportRows(data));
   }, [data, setReportData]);
 
   function toggleSort(key: SortKey) {

@@ -52,3 +52,13 @@ function formatDatePart(ymd: string): string {
 export function formatReportDateRange(from: string, to: string): string {
   return `${formatDatePart(from)} - ${formatDatePart(to)}`;
 }
+
+/** `2026-11` → `Nov 26`, the monthly-table heading. */
+export function reportMonthLabel(ym: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(ym);
+  if (!match) return ym;
+  const year = Number(match[1]);
+  const monthName = SHORT_MONTHS[Number(match[2]) - 1];
+  if (!monthName) return ym;
+  return `${monthName} ${String(year).slice(-2)}`;
+}
