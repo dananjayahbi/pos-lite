@@ -9,6 +9,7 @@ import {
 import type { PromotionType } from '@/generated/prisma/client';
 import type { CreatePromotionInput, UpdatePromotionInput } from '@/lib/validators/promotion.validators';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { planPromotionStatusChange } from '@/lib/services/promotionStatus.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -703,26 +704,53 @@ export async function updatePromotion(tenantId: string, id: string, data: Update
   return updated;
 }
 
-export async function togglePromotion(tenantId: string, id: string) {
+export async function setPromotionActive(
+  tenantId: string,
+  id: string,
+  isActive: boolean,
+  actorId?: string | undefined,
+) {
   const promo = await prisma.promotion.findFirst({ where: { id, tenantId } });
   if (!promo) throw new Error('Promotion not found');
+
+  const plan = planPromotionStatusChange(promo.isActive, isActive);
+  if (!plan.changed) return promo;
+
   const updated = await prisma.promotion.update({
     where: { id },
-    data: { isActive: !promo.isActive },
+    data: { isActive: plan.isActive },
   });
 
-  if (!updated.isActive) {
-    void createAuditLog({
-      tenantId,
-      actorId: null,
-      actorRole: 'SYSTEM',
-      entityType: 'Promotion',
-      entityId: id,
-      action: AUDIT_ACTIONS.PROMOTION_ARCHIVED,
-      before: { isActive: true },
-      after: { isActive: false },
-    }).catch(() => {});
-  }
+  void createAuditLog({
+    tenantId,
+    actorId: actorId ?? null,
+    actorRole: actorId ? 'USER' : 'SYSTEM',
+    entityType: 'Promotion',
+    entityId: id,
+    action: plan.auditAction === 'PROMOTION_ACTIVATED'
+      ? AUDIT_ACTIONS.PROMOTION_ACTIVATED
+      : AUDIT_ACTIONS.PROMOTION_ARCHIVED,
+    before: { isActive: promo.isActive },
+    after: { isActive: plan.isActive },
+  }).catch(() => {});
 
   return updated;
+}
+
+/** Idempotent: an already-inactive promotion stays inactive. */
+export async function deactivatePromotion(
+  tenantId: string,
+  id: string,
+  actorId?: string | undefined,
+) {
+  return setPromotionActive(tenantId, id, false, actorId);
+}
+
+/** Explicit reactivation; never reachable through the Deactivate action. */
+export async function activatePromotion(
+  tenantId: string,
+  id: string,
+  actorId?: string | undefined,
+) {
+  return setPromotionActive(tenantId, id, true, actorId);
 }

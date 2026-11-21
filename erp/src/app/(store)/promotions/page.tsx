@@ -20,6 +20,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -426,6 +428,8 @@ export default function PromotionsPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editPromo, setEditPromo] = useState<PromotionRow | null>(null);
+  // ARGUS #325: Deactivate and Activate are separate, explicit actions.
+  const [statusChange, setStatusChange] = useState<{ active: boolean } | null>(null);
 
   // Fetch promotions
   const { data, isLoading } = useQuery({
@@ -529,7 +533,7 @@ export default function PromotionsPage() {
     },
   });
 
-  // Deactivate mutation (DELETE = toggle off)
+  // Deactivate is a DELETE that always means off (idempotent server-side).
   const deactivateMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/store/promotions/${id}`, { method: 'DELETE' });
@@ -538,9 +542,31 @@ export default function PromotionsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['promotions'] });
+      setStatusChange(null);
       setEditPromo(null);
       toast.success('Promotion deactivated');
     },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  // Activate is an explicit status-only PATCH (writes PROMOTION_ACTIVATED).
+  const activateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/store/promotions/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: true }),
+      });
+      if (!res.ok) throw new Error('Failed to activate');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['promotions'] });
+      setStatusChange(null);
+      setEditPromo(null);
+      toast.success('Promotion activated');
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   return (
@@ -717,19 +743,72 @@ export default function PromotionsPage() {
                     submitLabel="Save Changes"
                   />
                   <div className="border-t border-mist/30 pt-4">
-                    <Button
-                      variant="ghost"
-                      className="w-full text-[#9B2226] hover:text-[#9B2226]/80 hover:bg-[#9B2226]/5 font-body"
-                      onClick={() => deactivateMutation.mutate(editPromo.id)}
-                      disabled={deactivateMutation.isPending}
-                    >
-                      {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate Promotion'}
-                    </Button>
+                    {editPromo.isActive ? (
+                      <Button
+                        variant="ghost"
+                        className="w-full text-[#9B2226] hover:text-[#9B2226]/80 hover:bg-[#9B2226]/5 font-body"
+                        onClick={() => setStatusChange({ active: false })}
+                      >
+                        Deactivate Promotion
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        className="w-full text-green-700 hover:text-green-800 hover:bg-green-50 font-body"
+                        onClick={() => setStatusChange({ active: true })}
+                      >
+                        Activate Promotion
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}
             </SheetContent>
           </Sheet>
+
+          <Dialog
+            open={statusChange !== null}
+            onOpenChange={(open) => {
+              if (!open) setStatusChange(null);
+            }}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="font-display text-espresso">
+                  {statusChange?.active ? 'Activate promotion?' : 'Deactivate promotion?'}
+                </DialogTitle>
+                <DialogDescription className="font-body text-mist-ink">
+                  {statusChange?.active
+                    ? 'The promotion will apply again at checkout according to its schedule.'
+                    : 'The promotion will stop applying immediately. Activate it again later if needed.'}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setStatusChange(null)}
+                  disabled={deactivateMutation.isPending || activateMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className={
+                    statusChange?.active
+                      ? 'bg-green-700 text-white hover:bg-green-800'
+                      : 'bg-[#9B2226] text-white hover:bg-[#9B2226]/90'
+                  }
+                  onClick={() => {
+                    if (!statusChange || !editPromo) return;
+                    if (statusChange.active) activateMutation.mutate(editPromo.id);
+                    else deactivateMutation.mutate(editPromo.id);
+                  }}
+                  disabled={deactivateMutation.isPending || activateMutation.isPending}
+                >
+                  {statusChange?.active ? 'Activate Promotion' : 'Deactivate Promotion'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         <TabsContent value="customer-pricing">
