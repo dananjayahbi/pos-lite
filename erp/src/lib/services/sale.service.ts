@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/lib/api/errors';
-import type { SaleStatus, TaxRule, PaymentMethod } from '@/generated/prisma/client';
+import type { Prisma, SaleStatus, TaxRule, PaymentMethod } from '@/generated/prisma/client';
 import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { createPayment } from '@/lib/services/payment.service';
@@ -15,6 +15,13 @@ import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
 import { buildSaleTenderLegs } from '@/lib/services/saleTender.core';
 import { assertSaleVoidable } from '@/lib/services/saleVoid.core';
+import {
+  assertDiscountsAuthorized,
+  cartDiscountPercent,
+  reconcileSaleDiscount,
+  sumClientPromotionDiscount,
+} from '@/lib/services/saleDiscountValidation.core';
+import { evaluatePromotions } from '@/lib/services/promotion.service';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -222,7 +229,92 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       .reduce((sum, l) => sum.plus(l.lineTotalAfterDiscount), new Decimal(0))
       .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
-    const cartDiscount = new Decimal(input.cartDiscountAmount);
+    // ── Discount / promotion authorization (ARGUS #321) ────────────────
+    // The cart sends one combined `cartDiscountAmount` (manual + promotions),
+    // and the promotion records are opaque. Re-evaluate promotions server-side
+    // and reject a stale/mismatched claim; enforce the cashier thresholds with
+    // a real manager override instead of trusting the client.
+    const cashier = await tx.user.findUnique({
+      where: { id: input.cashierId },
+      select: { role: true },
+    });
+    const hasManagerRole =
+      cashier?.role === 'MANAGER' || cashier?.role === 'OWNER' || cashier?.role === 'SUPER_ADMIN';
+
+    let hasValidOverride = false;
+    if (input.authorizingManagerId) {
+      const manager = await tx.user.findFirst({
+        where: {
+          id: input.authorizingManagerId,
+          tenantId,
+          isActive: true,
+          role: { in: ['MANAGER', 'OWNER', 'SUPER_ADMIN'] },
+        },
+        select: { id: true },
+      });
+      if (!manager) {
+        throw new ApiError(
+          400,
+          'INVALID_AUTHORIZING_MANAGER',
+          'The authorizing manager is not an active manager/owner in this store',
+          { path: ['authorizingManagerId'] },
+        );
+      }
+      hasValidOverride = true;
+    }
+    const canOverrideDiscounts = hasManagerRole || hasValidOverride;
+
+    let cartDiscount: Decimal;
+    let serverPromotions: unknown;
+    if (input.appliedPromotions !== undefined || input.promoCode !== undefined) {
+      const cartLines = lineData.map((line) => {
+        const manualDiscount = line.discountPercent.greaterThan(0)
+          ? line.lineTotalBeforeDiscount
+              .mul(line.discountPercent)
+              .div(100)
+              .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+          : new Decimal(0);
+        return {
+          variantId: line.variantId,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice.toString(),
+          ...(manualDiscount.greaterThan(0)
+            ? { manualDiscountAmount: manualDiscount.toString() }
+            : {}),
+        };
+      });
+      const evaluation = await evaluatePromotions(
+        tenantId,
+        cartLines,
+        input.customerId,
+        input.promoCode,
+      );
+      const reconciled = reconcileSaleDiscount({
+        subtotal,
+        submittedDiscount: input.cartDiscountAmount,
+        clientPromoTotal: sumClientPromotionDiscount(input.appliedPromotions),
+        serverPromoTotal: evaluation.totalDiscountAmount,
+      });
+      cartDiscount = reconciled.cartDiscount;
+      serverPromotions = evaluation.appliedDiscounts;
+
+      assertDiscountsAuthorized({
+        canOverride: canOverrideDiscounts,
+        lineDiscountPercents: lineData.map((line) => line.discountPercent.toNumber()),
+        cartDiscountPercent: cartDiscountPercent(reconciled.manualDiscount, subtotal),
+      });
+    } else {
+      cartDiscount = new Decimal(input.cartDiscountAmount).toDecimalPlaces(
+        2,
+        Decimal.ROUND_HALF_UP,
+      );
+      assertDiscountsAuthorized({
+        canOverride: canOverrideDiscounts,
+        lineDiscountPercents: lineData.map((line) => line.discountPercent.toNumber()),
+        cartDiscountPercent: cartDiscountPercent(cartDiscount, subtotal),
+      });
+    }
+
     if (cartDiscount.greaterThan(subtotal)) {
       throw new Error('Cart discount cannot exceed subtotal');
     }
@@ -433,8 +525,8 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
         ...(input.authorizingManagerId
           ? { authorizingManager: { connect: { id: input.authorizingManagerId } } }
           : {}),
-        ...(input.appliedPromotions !== undefined && {
-          appliedPromotions: input.appliedPromotions,
+        ...(serverPromotions !== undefined && {
+          appliedPromotions: serverPromotions as Prisma.InputJsonValue,
         }),
         ...(linkedReturn ? { linkedReturn: { connect: { id: linkedReturn.id } } } : {}),
         subtotal: subtotal.toNumber(),
@@ -528,6 +620,14 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
           ? payableAmount
           : payableAmount.minus(new Decimal(input.cardAmount!));
       const cashReceivedDec = new Decimal(input.cashReceived!);
+      if (cashReceivedDec.lessThan(cashPortionAmount)) {
+        throw new ApiError(
+          400,
+          'INSUFFICIENT_CASH',
+          'Cash received is less than the amount due after discounts, credit and change',
+          { path: ['cashReceived'] },
+        );
+      }
       const changeGiven = cashReceivedDec.minus(cashPortionAmount);
       if (changeGiven.greaterThan(0)) {
         await tx.sale.update({

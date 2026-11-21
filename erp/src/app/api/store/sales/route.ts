@@ -216,6 +216,30 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    if (message.startsWith('DISCOUNT_REQUIRES_MANAGER')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'DISCOUNT_REQUIRES_MANAGER', message } },
+        { status: 403 },
+      );
+    }
+    if (message.startsWith('PROMOTION_MISMATCH')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'PROMOTION_MISMATCH',
+            message: 'Promotions changed since the cart was priced - reload the cart and try again',
+          },
+        },
+        { status: 409 },
+      );
+    }
+    if (message.startsWith('INVALID_DISCOUNT')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'INVALID_DISCOUNT', message } },
+        { status: 400 },
+      );
+    }
 
     console.error('POST /api/store/sales error:', error);
     return NextResponse.json(
