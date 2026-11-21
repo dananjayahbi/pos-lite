@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import type { CashMovementType, ShiftStatus } from '@/generated/prisma/client';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { isShiftInAccessScope } from '@/lib/shifts/shift-access-scope';
+import { resolveShiftAccessForUser } from '@/lib/shifts/shift-access-request';
 
 const VALID_TYPES: CashMovementType[] = ['PETTY_CASH_OUT', 'MANUAL_IN', 'MANUAL_OUT'];
 
@@ -24,14 +26,24 @@ export async function GET(_request: Request, props: { params: Promise<{ id: stri
       );
     }
 
+    // ARGUS #111: petty-cash movements are shift data too — management may read
+    // any shift, everyone else only their own.
+    const scope = resolveShiftAccessForUser(session.user);
+    if (scope.kind === 'forbidden') {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
+      );
+    }
+
     const { id } = await props.params;
 
     const shift = await prisma.shift.findFirst({
       where: { id, tenantId },
-      select: { id: true },
+      select: { id: true, cashierId: true },
     });
 
-    if (!shift) {
+    if (!shift || !isShiftInAccessScope(scope, shift.cashierId)) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Shift not found' } },
         { status: 404 },
@@ -124,12 +136,20 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
       }
     }
 
+    const scope = resolveShiftAccessForUser(session.user);
+    if (scope.kind === 'forbidden') {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
+      );
+    }
+
     const shift = await prisma.shift.findFirst({
       where: { id, tenantId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, cashierId: true },
     });
 
-    if (!shift) {
+    if (!shift || !isShiftInAccessScope(scope, shift.cashierId)) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Shift not found' } },
         { status: 404 },

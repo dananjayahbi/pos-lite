@@ -287,9 +287,17 @@ export async function getCurrentShift(tenantId: string, cashierId: string) {
 
 // ── Get Shift By ID ──────────────────────────────────────────────────────────
 
-export async function getShiftById(tenantId: string, shiftId: string) {
+export async function getShiftById(
+  tenantId: string,
+  shiftId: string,
+  viewerCashierId?: string | undefined,
+) {
   const shift = await prisma.shift.findFirst({
-    where: { id: shiftId, tenantId },
+    where: {
+      id: shiftId,
+      tenantId,
+      ...(viewerCashierId ? { cashierId: viewerCashierId } : {}),
+    },
     include: {
       cashier: { select: { id: true, email: true, role: true } },
       closure: true,
@@ -464,9 +472,17 @@ export interface ZReportData {
   }>;
 }
 
-export async function buildZReportData(tenantId: string, shiftId: string): Promise<ZReportData> {
+export async function buildZReportData(
+  tenantId: string,
+  shiftId: string,
+  viewerCashierId?: string | undefined,
+): Promise<ZReportData> {
   const shift = await prisma.shift.findFirst({
-    where: { id: shiftId, tenantId },
+    where: {
+      id: shiftId,
+      tenantId,
+      ...(viewerCashierId ? { cashierId: viewerCashierId } : {}),
+    },
     include: {
       cashier: { select: { email: true } },
       closure: true,
