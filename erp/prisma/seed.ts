@@ -1610,7 +1610,9 @@ async function seedCRMData() {
 
   let po1Created = false;
   if (!existingPO1) {
-    await prisma.purchaseOrder.create({
+    const beforeA = variantA!.stockQuantity;
+    const beforeB = variantB!.stockQuantity;
+    const po1 = await prisma.purchaseOrder.create({
       data: {
         tenantId,
         supplierId: lankaTextile.id,
@@ -1619,6 +1621,8 @@ async function seedCRMData() {
         referenceNo: 'PO-SEED-0001',
         notes: po1Notes,
         expectedDeliveryDate: new Date(),
+        subtotalAmount: 35000,
+        discountAmount: 0,
         totalAmount: 35000,
         lines: {
           create: [
@@ -1657,6 +1661,35 @@ async function seedCRMData() {
       data: { stockQuantity: { increment: 15 } },
     });
 
+    // One receipt movement per line so the seeded stock is traceable to the PO
+    // (matches the real receive path; the old seed only incremented stock).
+    await prisma.stockMovement.createMany({
+      data: [
+        {
+          tenantId,
+          variantId: variantA!.id,
+          reason: 'PURCHASE_RECEIVED',
+          quantityDelta: 20,
+          quantityBefore: beforeA,
+          quantityAfter: beforeA + 20,
+          actorId: firstUser.id,
+          note: 'Demo PO receipt - line 1',
+          purchaseOrderId: po1.id,
+        },
+        {
+          tenantId,
+          variantId: variantB!.id,
+          reason: 'PURCHASE_RECEIVED',
+          quantityDelta: 15,
+          quantityBefore: beforeB,
+          quantityAfter: beforeB + 15,
+          actorId: firstUser.id,
+          note: 'Demo PO receipt - line 2',
+          purchaseOrderId: po1.id,
+        },
+      ],
+    });
+
     po1Created = true;
   }
   console.log(`PO 1 (RECEIVED): ${po1Created ? 'created' : 'skipped (already exists)'}`);
@@ -1681,6 +1714,8 @@ async function seedCRMData() {
         referenceNo: 'PO-SEED-0002',
         notes: po2Notes,
         expectedDeliveryDate: expectedDelivery,
+        subtotalAmount: 40500,
+        discountAmount: 0,
         totalAmount: 40500,
         lines: {
           create: [
