@@ -13,6 +13,7 @@ import type { StockMovementReason } from '@/generated/prisma/client';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { computeStockTakeApprovalPlan } from '@/lib/services/stockTakeApproval.core';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
+import { lockForUpdate } from '@/lib/api/race-guard';
 import { isManualAdjustmentReason } from '@/lib/services/manualAdjustment.core';
 
 // ── Transaction Client Type ──────────────────────────────────────────────────
@@ -77,6 +78,17 @@ export async function adjustStockInTx(
   actorId: string,
   options: AdjustStockOptions,
 ) {
+  // ARGUS #192: serialize every stock mutation on the variant row. Without
+  // this, two concurrent adjustments both read the same `stockQuantity`, both
+  // pass the negative-stock check, and their movement rows record the same
+  // false before→after chain. SELECT … FOR UPDATE makes the second writer
+  // wait, then re-read the committed value, so the ledger records the true
+  // before/after and stock can never cross zero.
+  await lockForUpdate(tx, 'product_variants', '"id" = $1 AND "tenantId" = $2', [
+    variantId,
+    tenantId,
+  ]);
+
   const variant = await tx.productVariant.findUnique({
     where: { id: variantId },
     select: { stockQuantity: true, tenantId: true },
@@ -169,6 +181,16 @@ export function recordManualAdjustmentSideEffects(input: AdjustStockInput): void
 
 export async function bulkAdjustStock(input: BulkAdjustStockInput) {
   return prisma.$transaction(async (tx) => {
+    // ARGUS #192: same stable lock order as the bulk route so overlapping
+    // batches cannot deadlock; adjustStockInTx then serializes per row.
+    const variantIds = [...new Set(input.adjustments.map((a) => a.variantId))].sort();
+    for (const variantId of variantIds) {
+      await lockForUpdate(tx, 'product_variants', '"id" = $1 AND "tenantId" = $2', [
+        variantId,
+        input.tenantId,
+      ]);
+    }
+
     const results = [];
     for (const adj of input.adjustments) {
       const result = await adjustStockInTx(tx, input.tenantId, adj.variantId, input.actorId, {

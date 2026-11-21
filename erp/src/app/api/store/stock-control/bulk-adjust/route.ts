@@ -11,6 +11,7 @@ import {
 } from '@/lib/validators/product.validators';
 import { isManualAdjustmentReason } from '@/lib/services/manualAdjustment.core';
 import { recordManualAdjustmentSideEffects } from '@/lib/services/inventory.service';
+import { lockForUpdate } from '@/lib/api/race-guard';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
 const BulkAdjustSchema = z.object({
@@ -126,6 +127,17 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      // ARGUS #192: lock all affected variants before reading their quantities
+      // (sorted ids keep a stable lock order so overlapping batches cannot
+      // deadlock). The fresh read below then sees committed values only, and
+      // each movement row records the true before/after.
+      for (const id of [...variantIds].sort()) {
+        await lockForUpdate(tx, 'product_variants', '"id" = $1 AND "tenantId" = $2', [
+          id,
+          tenantId,
+        ]);
+      }
+
       const movements: Array<{
         id: string;
         variantId: string;

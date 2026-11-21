@@ -889,6 +889,21 @@ test.describe.serial('Module 9 — Stock Movements & Adjustments (full-scope QA)
     );
     const raced = (ledger?.data ?? []).filter((m: any) => String(m.note ?? '').startsWith(`${RUN} race`));
     expect(raced).toHaveLength(3);
+    // ARGUS #192: with the variants row lock each writer records the committed
+    // before/after — three distinct, consecutive rungs, never three times 10.
+    for (const m of raced) {
+      expect(m.quantityAfter, 'movement chain is arithmetic-true').toBe(
+        m.quantityBefore + m.quantityDelta,
+      );
+    }
+    const beforeValues = raced
+      .map((m: any) => m.quantityBefore as number)
+      .sort((a: number, b: number) => a - b);
+    expect(beforeValues, 'each concurrent row records a distinct committed before').toEqual([
+      before,
+      before + 1,
+      before + 2,
+    ]);
     for (const m of raced) if (m.id) state.movementIds.push(m.id);
   });
 
