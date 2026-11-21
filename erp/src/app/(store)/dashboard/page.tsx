@@ -21,11 +21,27 @@ import { StockSummaryWidgets } from '@/components/dashboard/StockSummaryWidgets'
 import { RecentStockMovementsCard } from '@/components/dashboard/RecentStockMovementsCard';
 import { QuickNav } from '@/components/dashboard/QuickNav';
 import { AnalyticsSection } from '@/components/dashboard/AnalyticsSection';
+import { formatRecentSaleTimestamp } from '@/components/dashboard/recentSaleTime';
+import {
+  resolveRecentSalePayment,
+  type RecentSalePaymentTone,
+} from '@/components/dashboard/recentSalePayment';
 
 const lkr = new Intl.NumberFormat('en-LK', {
   style: 'currency',
   currency: 'LKR',
 });
+
+const PAYMENT_TONE_CLASS: Record<RecentSalePaymentTone, string> = {
+  cash: 'bg-green-100 text-green-800',
+  card: 'bg-blue-100 text-blue-800',
+  bank: 'bg-indigo-100 text-indigo-800',
+  qr: 'bg-purple-100 text-purple-800',
+  credit: 'bg-purple-100 text-purple-800',
+  split: 'bg-purple-100 text-purple-800',
+  zero: 'bg-gray-100 text-gray-700',
+  neutral: 'bg-gray-100 text-gray-700',
+};
 
 function StatCard({
   label,
@@ -158,8 +174,10 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
       id: true,
       totalAmount: true,
       paymentMethod: true,
+      zeroValueReason: true,
       completedAt: true,
       customer: { select: { name: true } },
+      payments: { select: { method: true, amount: true } },
       _count: { select: { lines: true } },
     },
   });
@@ -176,44 +194,28 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
           <TableHead>Items</TableHead>
           <TableHead>Payment</TableHead>
           <TableHead>Amount</TableHead>
-          <TableHead>Time</TableHead>
+          <TableHead>Date &amp; Time</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {sales.map((sale) => (
-          <TableRow key={sale.id}>
-            <TableCell className="text-espresso">{sale.customer?.name ?? 'Walk-in'}</TableCell>
-            <TableCell>{sale._count.lines}</TableCell>
-            <TableCell>
-              <Badge
-                className={
-                  sale.paymentMethod === 'CASH'
-                    ? 'bg-green-100 text-green-800'
-                    : sale.paymentMethod === 'CARD'
-                      ? 'bg-blue-100 text-blue-800'
-                      : 'bg-purple-100 text-purple-800'
-                }
-              >
-                {sale.paymentMethod === 'STORE_CREDIT'
-                  ? 'Store Credit'
-                  : sale.paymentMethod === 'EXCHANGE_CREDIT'
-                    ? 'Exchange Credit'
-                    : (sale.paymentMethod ?? '-')}
-              </Badge>
-            </TableCell>
-            <TableCell className="text-espresso font-medium">
-              {lkr.format(Number(sale.totalAmount))}
-            </TableCell>
-            <TableCell className="text-sand-ink text-sm">
-              {sale.completedAt
-                ? new Date(sale.completedAt).toLocaleTimeString('en-LK', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                : '-'}
-            </TableCell>
-          </TableRow>
-        ))}
+        {sales.map((sale) => {
+          const payment = resolveRecentSalePayment(sale);
+          return (
+            <TableRow key={sale.id}>
+              <TableCell className="text-espresso">{sale.customer?.name ?? 'Walk-in'}</TableCell>
+              <TableCell>{sale._count.lines}</TableCell>
+              <TableCell>
+                <Badge className={PAYMENT_TONE_CLASS[payment.tone]}>{payment.label}</Badge>
+              </TableCell>
+              <TableCell className="text-espresso font-medium">
+                {lkr.format(Number(sale.totalAmount))}
+              </TableCell>
+              <TableCell className="text-sand-ink text-sm">
+                {sale.completedAt ? formatRecentSaleTimestamp(sale.completedAt) : '-'}
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );
