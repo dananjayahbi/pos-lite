@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SavedReportOpenButton } from '@/components/reports/SavedReportOpenButton';
+import { savedReportsListMode } from '@/lib/reports/savedReportsList.core';
 import {
   buildReportHref,
   normalizeReportType,
@@ -72,7 +74,7 @@ export default function SavedReportsPage() {
   const [editing, setEditing] = useState<SavedReportRecord | null>(null);
   const [nextName, setNextName] = useState('');
 
-  const { data, isLoading } = useQuery<{ success: boolean; data: SavedReportRecord[] }>({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery<{ success: boolean; data: SavedReportRecord[] }>({
     queryKey: ['saved-reports-page'],
     queryFn: async () => {
       const res = await fetch('/api/reports/saved');
@@ -82,6 +84,11 @@ export default function SavedReportsPage() {
   });
 
   const reports = data?.data ?? [];
+  const mode = savedReportsListMode({
+    isLoading,
+    isError,
+    count: reports.length,
+  });
   const grouped = useMemo(() => {
     return reports.reduce<Record<string, SavedReportRecord[]>>((acc, report) => {
       const key = formatReportType(report.reportType);
@@ -129,13 +136,30 @@ export default function SavedReportsPage() {
         <p className="mt-1 text-sm text-sand-ink">Open, rename, or remove the report presets you’ve collected across the reporting suite.</p>
       </div>
 
-      {isLoading ? (
+      {mode === 'loading' ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, index) => (
             <Skeleton key={index} className="h-24 w-full" />
           ))}
         </div>
-      ) : reports.length === 0 ? (
+      ) : mode === 'error' ? (
+        <Card className="border-red-200">
+          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
+            <p className="font-medium text-red-700">Saved reports could not be loaded.</p>
+            <p className="text-sm text-red-600">This is a load failure, not an empty library.</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-red-300 text-red-700 hover:bg-red-50"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ) : mode === 'empty' ? (
         <Card className="border-mist">
           <CardContent className="py-16 text-center text-sand-ink">
             No saved reports yet. Save a preset from any report screen to manage it here.
