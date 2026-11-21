@@ -20,11 +20,15 @@ hook (same `['tax-rates']` query the POS cart uses). While the rates are still
 loading the label omits the number ("Standard VAT") rather than showing a wrong
 one. Rates are formatted without trailing zeros (`18`, `2.5`, `2.25`).
 
-Applied in the product detail card, the edit sheet and the new-product wizard.
-`TAX_RULE_OPTIONS` now carries neutral labels so no component re-introduces a
-fixed percentage.
+Applied in the product detail card, the edit sheet, the new-product wizard
+step 1 and the create review step (ARGUS #470 closed the last surface, which
+printed the raw `STANDARD_VAT` enum). `TAX_RULE_OPTIONS` now carries neutral
+labels so no component re-introduces a fixed percentage.
 
 ## Verification
 
 `src/lib/constants/__tests__/taxLabels.test.ts` covers the tenant VAT/SSCL
-labels, the not-loaded fallback, exempt/unknown rules and rate formatting.
+labels, the not-loaded fallback, exempt/unknown rules, rate formatting and the
+absence of the old fixed 15%. `taxLabelsSurfaces.test.ts` statically guards the
+four product surfaces: each imports `taxRuleLabel`, none embeds a rule
+percentage and the review step no longer prints the raw enum.

@@ -268,7 +268,9 @@ export function ReturnDetailModal({
               size="sm"
               onClick={() =>
                 window.open(
-                  `/api/store/returns/${returnData.id}/receipt`,
+                  // ARGUS #472: a return reprinted from history is marked as a
+                  // reprint because store identity is not snapshotted.
+                  `/api/store/returns/${returnData.id}/receipt?reprint=1`,
                   '_blank',
                   'noopener',
                 )

@@ -12,6 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { formatTaxRate } from '@/lib/constants/product-options';
+import { taxRulePreviewRows } from '@/lib/pricing/taxRules.core';
 
 type TaxSettingsValues = {
   vatRate: number;
@@ -35,11 +37,7 @@ export default function TaxSettingsForm({ initialValues }: Props) {
   const canSave = isDirty && isValid && !saving;
 
   const previewRules = useMemo(
-    () => [
-      { name: 'STANDARD_VAT', label: 'Standard VAT', rate: values.vatRate },
-      { name: 'SSCL', label: 'SSCL', rate: values.ssclRate },
-      { name: 'EXEMPT', label: 'Exempt', rate: 0 },
-    ],
+    () => taxRulePreviewRows({ vatRate: values.vatRate, ssclRate: values.ssclRate }),
     [values.ssclRate, values.vatRate],
   );
 
@@ -78,7 +76,8 @@ export default function TaxSettingsForm({ initialValues }: Props) {
         <CardHeader>
           <CardTitle className="font-display text-espresso">Tax rates</CardTitle>
           <CardDescription>
-            These percentages power sale tax calculations for products tagged with the corresponding tax rule.
+            Each product uses exactly one tax rule. VAT and SSCL are alternatives, not added
+            together; the matching percentage below is the only tax charged for that rule.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-5 md:grid-cols-2">
@@ -110,11 +109,15 @@ export default function TaxSettingsForm({ initialValues }: Props) {
 
           <div className="md:col-span-2 rounded-lg border border-mist bg-pearl/50 p-4">
             <p className="text-sm font-medium text-espresso">How product tax rules resolve</p>
+            <p className="mt-1 text-xs text-sand-ink">
+              One rule per product. Choosing VAT does not also charge SSCL, and choosing SSCL
+              does not also charge VAT.
+            </p>
             <div className="mt-3 space-y-2 text-sm text-sand-ink">
               {previewRules.map((rule) => (
-                <div key={rule.name} className="flex items-center justify-between rounded-md bg-white px-3 py-2">
-                  <span className="font-mono text-xs text-espresso">{rule.name}</span>
-                  <span>{rule.label} · {rule.rate.toFixed(2)}%</span>
+                <div key={rule.rule} className="flex items-center justify-between rounded-md bg-white px-3 py-2">
+                  <span className="font-mono text-xs text-espresso">{rule.rule}</span>
+                  <span>{rule.label} - {formatTaxRate(rule.rate)}%</span>
                 </div>
               ))}
             </div>

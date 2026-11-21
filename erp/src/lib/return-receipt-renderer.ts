@@ -1,4 +1,5 @@
 import { formatRupee } from '@/lib/format';
+import { reprintIdentityNotice } from '@/lib/receipt-identity.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,11 @@ export interface ReceiptTenant {
   name: string;
   logoUrl?: string | null;
   settings: unknown;
+}
+
+export interface ReturnReceiptOptions {
+  /** True when an already-completed return is being reprinted (ARGUS #472). */
+  isReprint?: boolean;
 }
 
 // ── Brand palette (matches globals.css) ──────────────────────────────────────
@@ -133,11 +139,13 @@ export function buildReturnReceiptHtml(
   tenant: ReceiptTenant,
   cashierName: string,
   managerName: string,
+  options: ReturnReceiptOptions = {},
 ): string {
   const s = getSettings(tenant.settings);
   const { date, time } = formatDate(returnData.createdAt);
   const returnRef = returnData.id.slice(0, 8).toUpperCase();
   const saleRef = returnData.originalSaleId.slice(0, 8).toUpperCase();
+  const identityNotice = reprintIdentityNotice(options.isReprint);
 
   const storeAddress = typeof s.address === 'string' ? s.address : '';
   const storePhone = typeof s.phoneNumber === 'string' ? s.phoneNumber : '';
@@ -552,6 +560,8 @@ export function buildReturnReceiptHtml(
       <div class="doc-date">${date} &middot; ${time}</div>
     </div>
   </header>
+
+  ${identityNotice ? `<div style="margin:4mm 0 0;padding:2mm 3mm;border:0.3mm dashed ${SAND};color:${MUTED_INK};font-size:8pt;">${esc(identityNotice)}</div>` : ''}
 
   <section class="summary">
     <div class="summary-cell">

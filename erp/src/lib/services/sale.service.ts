@@ -27,6 +27,7 @@ import {
 import { evaluatePromotions } from '@/lib/services/promotion.service';
 import { notifySaleVoided } from '@/lib/notifications/sale-alert-service';
 import { reconcileCommissionForSale } from '@/lib/services/commission.service';
+import { resolveTaxRate } from '@/lib/pricing/taxRules.core';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,16 +38,9 @@ function buildVariantDescription(form: string | null, packSize: string | null): 
   return 'Default';
 }
 
-function getTaxRate(taxRule: TaxRule, vatRate: number, ssclRate: number): Decimal {
-  switch (taxRule) {
-    case 'STANDARD_VAT':
-      return new Decimal(vatRate).div(100);
-    case 'SSCL':
-      return new Decimal(ssclRate).div(100);
-    case 'EXEMPT':
-      return new Decimal(0);
-  }
-}
+// Tax rules are mutually exclusive: exactly one of VAT, SSCL or exempt applies
+// per line (ARGUS #469). The shared pure resolver is also used by the cart
+// preview so the two can never drift.
 
 export function extractTenantRates(settings: unknown): { vatRate: number; ssclRate: number } {
   const s = settings as Record<string, unknown>;
@@ -341,7 +335,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     );
     lineData.forEach((line, index) => {
       const taxableLine = Decimal.max(line.lineTotalAfterDiscount.minus(discountShares[index]!), 0);
-      const taxRate = getTaxRate(line.taxRule, vatRate, ssclRate);
+      const taxRate = resolveTaxRate(line.taxRule, { vatRate, ssclRate });
       line.lineTax = taxableLine.mul(taxRate).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     });
 
