@@ -33,6 +33,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { formatRupee } from '@/lib/format';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { resolveCommissionPeriod } from '@/lib/utils/commission-period';
 
 interface CommissionSummary {
   userId: string;
@@ -79,13 +80,10 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 function getDefaultPeriod() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  return {
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10),
-  };
+  // ARGUS #343: format LOCAL calendar days. Slicing `toISOString()` shifted a
+  // UTC+05:30 month back a day (1 Nov -> 31 Oct, 30 Nov -> 29 Nov).
+  const period = resolveCommissionPeriod();
+  return { start: period.startDate, end: period.endDate };
 }
 
 export default function CommissionReportsPage() {
@@ -104,9 +102,10 @@ export default function CommissionReportsPage() {
   const { data, isLoading } = useQuery<{ success: boolean; data: CommissionSummary[] }>({
     queryKey: ['commission-summary', periodStart, periodEnd],
     queryFn: async () => {
+      const period = resolveCommissionPeriod(periodStart, periodEnd);
       const params = new URLSearchParams({
-        periodStart: new Date(periodStart).toISOString(),
-        periodEnd: new Date(periodEnd + 'T23:59:59.999Z').toISOString(),
+        periodStart: period.startIso,
+        periodEnd: period.endIso,
       });
       const res = await fetch(`/api/store/staff/commissions?${params}`);
       if (!res.ok) throw new Error('Failed to fetch commission summary');
@@ -120,9 +119,10 @@ export default function CommissionReportsPage() {
   }>({
     queryKey: ['commission-payout-history', periodStart, periodEnd],
     queryFn: async () => {
+      const period = resolveCommissionPeriod(periodStart, periodEnd);
       const params = new URLSearchParams({
-        periodStart: new Date(periodStart).toISOString(),
-        periodEnd: new Date(periodEnd + 'T23:59:59.999Z').toISOString(),
+        periodStart: period.startIso,
+        periodEnd: period.endIso,
       });
       const res = await fetch(`/api/store/staff/commissions/payouts?${params}`);
       if (!res.ok) throw new Error('Failed to fetch payout history');
@@ -145,13 +145,14 @@ export default function CommissionReportsPage() {
 
   const payoutMutation = useMutation({
     mutationFn: async (target: CommissionSummary) => {
+      const period = resolveCommissionPeriod(periodStart, periodEnd);
       const res = await fetch('/api/store/staff/commissions/payout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: target.userId,
-          periodStart: new Date(periodStart).toISOString(),
-          periodEnd: new Date(periodEnd + 'T23:59:59.999Z').toISOString(),
+          periodStart: period.startIso,
+          periodEnd: period.endIso,
           notes: payoutNotes.trim() || undefined,
           paymentAccountId,
           amount: Number(payoutAmount),

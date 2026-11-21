@@ -71,6 +71,14 @@ export const AUDIT_ACTIONS = {
   // Staff
   STAFF_ROLE_CHANGED: 'STAFF_ROLE_CHANGED',
   STAFF_PERMISSION_CHANGED: 'STAFF_PERMISSION_CHANGED',
+  // ARGUS #340: creation, HR/contact/salary/bank edits, deactivation and
+  // commission-rate changes now carry an explicit action. The legacy generic
+  // action is retained so historical rows stay filterable.
+  STAFF_CREATED: 'STAFF_CREATED',
+  STAFF_UPDATED: 'STAFF_UPDATED',
+  STAFF_DEACTIVATED: 'STAFF_DEACTIVATED',
+  STAFF_REACTIVATED: 'STAFF_REACTIVATED',
+  STAFF_COMMISSION_RATE_CHANGED: 'STAFF_COMMISSION_RATE_CHANGED',
   STAFF_DETAILS_UPDATED: 'STAFF_DETAILS_UPDATED',
   // Attendance / time clock
   ATTENDANCE_ADJUSTED: 'ATTENDANCE_ADJUSTED',

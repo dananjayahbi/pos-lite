@@ -14,6 +14,14 @@ import {
   canManageStaffRole,
   canResetStaffPassword,
 } from '@/lib/auth/staff-authorization';
+import {
+  STAFF_CREATED_AUDIT_FIELDS,
+  STAFF_PROFILE_AUDIT_FIELDS,
+  buildStaffAuditSnapshot,
+  diffStaffAuditFields,
+  formatCommissionRateForAudit,
+} from '@/lib/services/staffAudit.core';
+import { toStaffDetailDto } from '@/lib/services/staffPrivacy.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -84,6 +92,23 @@ const STAFF_SELECT = {
   epfNumber: true,
 } as const;
 
+/**
+ * ARGUS #341: the list only renders directory fields. Selecting the narrower
+ * shape here means salary, bank and HR PII never leave the database for a
+ * `staff:view` caller, even if a future response shaper regresses.
+ */
+const STAFF_LIST_SELECT = {
+  id: true,
+  email: true,
+  role: true,
+  isActive: true,
+  commissionRate: true,
+  clockedInAt: true,
+  createdAt: true,
+  fullName: true,
+  contactNumber: true,
+} as const;
+
 function cleanOptional(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
   const trimmed = value.trim();
@@ -132,14 +157,18 @@ export async function getStaffMembers(tenantId: string, options?: GetStaffOption
 
   return prisma.user.findMany({
     where,
-    select: STAFF_SELECT,
+    select: STAFF_LIST_SELECT,
     orderBy: { createdAt: 'desc' },
   });
 }
 
 // ── Get Staff By ID ──────────────────────────────────────────────────────────
 
-export async function getStaffById(tenantId: string, id: string) {
+export async function getStaffById(
+  tenantId: string,
+  id: string,
+  options: { includeSensitive?: boolean } = {},
+) {
   const user = await prisma.user.findFirst({
     where: { id, tenantId, deletedAt: null },
     select: STAFF_SELECT,
@@ -149,30 +178,12 @@ export async function getStaffById(tenantId: string, id: string) {
     throw new Error('Staff member not found');
   }
 
-  return {
-    id: user.id,
-    email: user.email,
-    role: user.role,
-    isActive: user.isActive,
-    permissions: Array.isArray(user.permissions)
-      ? user.permissions.filter((permission): permission is string => typeof permission === 'string')
-      : [],
-    commissionRate: user.commissionRate,
-    clockedInAt: user.clockedInAt,
-    lastLoginAt: user.lastLoginAt,
-    createdAt: user.createdAt,
-    fullName: user.fullName,
-    nic: user.nic,
-    contactNumber: user.contactNumber,
-    address: user.address,
-    basicSalary: user.basicSalary,
-    allowances: user.allowances,
-    bankName: user.bankName,
-    bankBranch: user.bankBranch,
-    bankAccountNumber: user.bankAccountNumber,
-    etfNumber: user.etfNumber,
-    epfNumber: user.epfNumber,
-  };
+  // ARGUS #341: HR/salary/bank fields are only returned to the stronger
+  // staff:manage permission. A plain staff:view caller still sees the
+  // directory identity/access data, but the account number is masked.
+  return toStaffDetailDto(user as unknown as Record<string, unknown>, {
+    includeSensitive: options.includeSensitive === true,
+  });
 }
 
 // ── Update Staff ─────────────────────────────────────────────────────────────
@@ -340,43 +351,59 @@ export async function updateStaff(
   }
 
   // HR / contact / salary / bank changes are security-sensitive too (ARGUS
-  // #336). Without this row an admin edit of a bank account or salary left no
-  // audit trail.
-  const detailFields = [
-    'email',
-    'isActive',
-    'commissionRate',
-    'fullName',
-    'nic',
-    'contactNumber',
-    'address',
-    'basicSalary',
-    'allowances',
-    'bankName',
-    'bankBranch',
-    'bankAccountNumber',
-    'etfNumber',
-    'epfNumber',
-  ] as const;
-  const changedDetailFields = detailFields.filter(
-    (key) => (data as Record<string, unknown>)[key] !== undefined,
+  // #340). Every snapshot is allow-listed and bounded: no password hash,
+  // session version or token can reach the audit ledger even though `existing`
+  // and `updated` are full user rows.
+  const profileDiff = diffStaffAuditFields(
+    existing as unknown as Record<string, unknown>,
+    updated as unknown as Record<string, unknown>,
+    STAFF_PROFILE_AUDIT_FIELDS,
   );
-  if (changedDetailFields.length > 0) {
-    const before: Record<string, unknown> = {};
-    const after: Record<string, unknown> = {};
-    for (const key of changedDetailFields) {
-      before[key] = (existing as Record<string, unknown>)[key] ?? null;
-      after[key] = updateData[key] ?? (data as Record<string, unknown>)[key] ?? null;
-    }
+  if (profileDiff.fields.length > 0) {
     await writeAuditLog({
       tenantId,
       actorId: actor.id,
       actorRole: actor.role,
       entityType: 'Staff',
       entityId: id,
-      action: AUDIT_ACTIONS.STAFF_DETAILS_UPDATED,
-      before: before as Prisma.InputJsonValue,
-      after: after as Prisma.InputJsonValue,
+      action: AUDIT_ACTIONS.STAFF_UPDATED,
+      before: profileDiff.before as Prisma.InputJsonValue,
+      after: profileDiff.after as Prisma.InputJsonValue,
+    });
+  }
+
+  // Deactivation is a distinct security event: the account loses access and
+  // its live sessions are revoked. Reactivation is recorded too so the trail
+  // explains how an inactive account came back.
+  if (activeChanged) {
+    await writeAuditLog({
+      tenantId,
+      actorId: actor.id,
+      actorRole: actor.role,
+      entityType: 'Staff',
+      entityId: id,
+      action: data.isActive
+        ? AUDIT_ACTIONS.STAFF_REACTIVATED
+        : AUDIT_ACTIONS.STAFF_DEACTIVATED,
+      before: { isActive: existing.isActive },
+      after: { isActive: updated.isActive },
+    });
+  }
+
+  // Commission rate changes alter future pay, so they get their own action
+  // even when the same PATCH also edits profile fields.
+  const beforeCommissionRate = formatCommissionRateForAudit(existing.commissionRate);
+  const afterCommissionRate = formatCommissionRateForAudit(updated.commissionRate);
+  if (beforeCommissionRate !== afterCommissionRate) {
+    await writeAuditLog({
+      tenantId,
+      actorId: actor.id,
+      actorRole: actor.role,
+      entityType: 'Staff',
+      entityId: id,
+      action: AUDIT_ACTIONS.STAFF_COMMISSION_RATE_CHANGED,
+      before: { commissionRate: beforeCommissionRate },
+      after: { commissionRate: afterCommissionRate },
     });
   }
 
@@ -421,7 +448,7 @@ export async function createStaffMember(
   const etfNumber = cleanOptional(data.etfNumber);
   const epfNumber = cleanOptional(data.epfNumber);
 
-  return withUniqueGuard(
+  const created = await withUniqueGuard(
     () =>
       prisma.user.create({
         data: {
@@ -451,6 +478,24 @@ export async function createStaffMember(
     // Non-race errors keep the Prisma mapping (typed 4xx, no raw dump).
     throw mapPrismaError(error) ?? error;
   });
+
+  // ARGUS #340: account creation is security-relevant. The snapshot is
+  // allow-listed (no passwordHash) and bounded. Durable write: an unaudited
+  // staff account must not report success.
+  await writeAuditLog({
+    tenantId,
+    actorId: actor.id,
+    actorRole: actor.role,
+    entityType: 'Staff',
+    entityId: created.id,
+    action: AUDIT_ACTIONS.STAFF_CREATED,
+    after: buildStaffAuditSnapshot(
+      created as unknown as Record<string, unknown>,
+      STAFF_CREATED_AUDIT_FIELDS,
+    ) as Prisma.InputJsonValue,
+  });
+
+  return created;
 }
 
 /**

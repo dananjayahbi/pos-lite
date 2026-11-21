@@ -40,8 +40,10 @@ The route used to require `staff:manage` only when the body contained email,
 role, status or commission; a payload with only `basicSalary`, bank details or
 PII bypassed the permission check entirely. The PATCH route now always requires
 `staff:manage` (plus `staff:permissions:assign` for a `permissions` array), and
-`updateStaff` writes a durable `STAFF_DETAILS_UPDATED` audit row for any HR,
-contact, salary or bank field it changes, recorded before/after.
+`updateStaff` writes a durable `STAFF_UPDATED` audit row for any HR, contact,
+salary or bank field it changes, recorded before/after. Deactivation,
+reactivation and commission-rate changes get their own actions — see
+`staff-audit-trail.md` (ARGUS #340).
 
 ## Verification
 

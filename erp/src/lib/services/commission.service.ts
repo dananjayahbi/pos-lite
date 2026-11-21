@@ -16,6 +16,11 @@ import {
   planPayrollCommission,
 } from '@/lib/services/payrollCommission.core';
 import { PaymentEntrySource, ReturnStatus } from '@/generated/prisma/client';
+import {
+  COMMISSION_RATE_BOUND_MESSAGE,
+  COMMISSION_RATE_MAX,
+  COMMISSION_RATE_MIN,
+} from '@/lib/constants/commission-rate';
 import Decimal from 'decimal.js';
 
 type CommissionPayoutMetadata = {
@@ -75,8 +80,9 @@ export async function createCommissionRecord(input: {
   const base = new Decimal(input.baseAmount.toString());
   const rate = new Decimal(input.commissionRate.toString());
 
-  if (rate.lt(0) || rate.gt(100)) {
-    throw new Error('Commission rate must be between 0 and 100');
+  // ARGUS #342: the same 0-100 contract as the staff API validator and form.
+  if (rate.lt(COMMISSION_RATE_MIN) || rate.gt(COMMISSION_RATE_MAX)) {
+    throw new ApiError(400, 'VALIDATION_ERROR', COMMISSION_RATE_BOUND_MESSAGE);
   }
 
   const earnedAmount = base.mul(rate).div(100);

@@ -11,6 +11,7 @@ import { buildSaleAccountLegs, postSaleToAccounts } from '@/lib/services/saleAcc
 import { extractTenantRates } from '@/lib/services/sale.service';
 import { computeAppointmentSalePricing, resolveAppointmentSaleOwner } from '@/lib/appointments/appointmentSale.core';
 import { createCommissionRecord } from '@/lib/services/commission.service';
+import { normalizeCommissionRate } from '@/lib/constants/commission-rate';
 import {
   appointmentCancellationBlockReason,
   appointmentDepositAmount,
@@ -939,13 +940,25 @@ export async function convertAppointmentToSale(
       where: { id: attributedUserId },
       select: { commissionRate: true },
     });
-    if (attributedStaff?.commissionRate) {
+    // ARGUS #342: only a rate inside 0-100 can earn; legacy out-of-range
+    // values are skipped with a signal instead of failing silently.
+    const rate = normalizeCommissionRate(attributedStaff?.commissionRate);
+    if (rate !== null && rate > 0) {
       await createCommissionRecord({
         tenantId,
         saleId: sale.id,
         userId: attributedUserId,
         baseAmount: sale.totalAmount,
-        commissionRate: attributedStaff.commissionRate,
+        commissionRate: rate.toString(),
+      });
+    } else if (
+      rate === null &&
+      attributedStaff?.commissionRate !== null &&
+      attributedStaff?.commissionRate !== undefined
+    ) {
+      console.warn('Skipping appointment commission: stored rate is outside 0-100', {
+        userId: attributedUserId,
+        commissionRate: String(attributedStaff.commissionRate),
       });
     }
   } catch (commissionError) {

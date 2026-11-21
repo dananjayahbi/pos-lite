@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { convertAppointmentToSale } from '@/lib/services/appointment.service';
 import { createCommissionRecord } from '@/lib/services/commission.service';
+import { normalizeCommissionRate } from '@/lib/constants/commission-rate';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(
@@ -48,14 +49,20 @@ export async function POST(
         where: { id: session.user.id },
         select: { commissionRate: true },
       });
-      const rate = cashier?.commissionRate;
-      if (rate && Number(rate) > 0) {
+      // ARGUS #342: keep the same 0-100 contract as the staff API and engine.
+      const rate = normalizeCommissionRate(cashier?.commissionRate);
+      if (rate !== null && rate > 0) {
         await createCommissionRecord({
           tenantId,
           saleId: sale.id,
           userId: session.user.id,
           baseAmount: sale.totalAmount,
-          commissionRate: rate,
+          commissionRate: rate.toString(),
+        });
+      } else if (rate === null && cashier?.commissionRate !== null && cashier?.commissionRate !== undefined) {
+        console.warn('Skipping commission: stored rate is outside 0-100', {
+          userId: session.user.id,
+          commissionRate: String(cashier.commissionRate),
         });
       }
     } catch (commissionError) {

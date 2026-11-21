@@ -282,6 +282,62 @@ describe('buildAttendanceCalendarRows', () => {
     expect(result.counts.absent).toBeGreaterThan(0);
     expect(result.counts.off).toBeGreaterThan(0); // weekends
   });
+
+  it('covers a whole no-punch past month: 21 working days absent, 9 weekend days off', () => {
+    // ARGUS #343: the monthly attendance/payslip report must walk the calendar
+    // for the entire month, not emit only punched/override dates.
+    const result = buildAttendanceCalendarRows({
+      from: '2026-11-01',
+      to: '2026-11-30',
+      today: '2026-12-01',
+      calendar: MON_FRI,
+      punchDates: new Set(),
+    });
+
+    expect(result.rows).toHaveLength(30);
+    expect(result.counts).toEqual({
+      present: 0,
+      absent: 21,
+      insufficient: 0,
+      leave: 0,
+      halfDay: 0,
+      holiday: 0,
+      off: 9,
+      scheduled: 0,
+    });
+  });
+
+  it('excludes a configured holiday from a no-punch month absence count', () => {
+    const result = buildAttendanceCalendarRows({
+      from: '2026-11-01',
+      to: '2026-11-30',
+      today: '2026-12-01',
+      calendar: { ...MON_FRI, holidays: ['2026-11-17'] },
+      punchDates: new Set(),
+    });
+
+    expect(result.counts.absent).toBe(20);
+    expect(result.counts.holiday).toBe(1);
+    expect(result.counts.present).toBe(0);
+    expect(result.counts.off).toBe(9);
+  });
+
+  it('keeps a no-punch current month from counting future days as absent', () => {
+    const result = buildAttendanceCalendarRows({
+      from: '2026-11-01',
+      to: '2026-11-30',
+      today: TODAY,
+      calendar: MON_FRI,
+      punchDates: new Set(),
+    });
+
+    // TODAY (2026-11-19) and later working days are not absences yet.
+    const futureAbsent = result.rows.filter(
+      (row) => row.date > TODAY && row.status === 'ABSENT',
+    );
+    expect(futureAbsent).toHaveLength(0);
+    expect(result.counts.scheduled).toBe(0);
+  });
 });
 
 /**

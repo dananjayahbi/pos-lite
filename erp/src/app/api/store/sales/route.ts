@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { CreateSaleSchema } from '@/lib/validators/sale.validators';
 import { createSale, getSales } from '@/lib/services/sale.service';
 import { createCommissionRecord } from '@/lib/services/commission.service';
+import { normalizeCommissionRate } from '@/lib/constants/commission-rate';
 import { parseQueryDate, parsePagination } from '@/lib/api/query-params';
 import { ApiError, isApiError } from '@/lib/api/errors';
 import { prisma } from '@/lib/prisma';
@@ -189,13 +190,21 @@ export async function POST(request: Request) {
         where: { id: session.user.id },
         select: { commissionRate: true },
       });
-      if (cashier?.commissionRate) {
+      // ARGUS #342: a legacy stored rate outside 0-100 can never earn. Skip it
+      // loudly instead of writing a record the commission engine will reject.
+      const rate = normalizeCommissionRate(cashier?.commissionRate);
+      if (rate !== null && rate > 0) {
         await createCommissionRecord({
           tenantId,
           saleId: sale.id,
           userId: session.user.id,
           baseAmount: sale.totalAmount,
-          commissionRate: cashier.commissionRate,
+          commissionRate: rate.toString(),
+        });
+      } else if (rate === null && cashier?.commissionRate !== null && cashier?.commissionRate !== undefined) {
+        console.warn('Skipping commission: stored rate is outside 0-100', {
+          userId: session.user.id,
+          commissionRate: String(cashier.commissionRate),
         });
       }
     } catch (commissionError) {
