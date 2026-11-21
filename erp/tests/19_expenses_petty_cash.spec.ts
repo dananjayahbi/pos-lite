@@ -255,8 +255,15 @@ test.describe('Module 19 - Expenses & Petty Cash', () => {
     expect(response.status()).toBe(200);
     const body = await json(response);
     expect(body?.success).toBe(true);
-    expect(body?.data?.tenantId).toBeTruthy();
-    expect(body?.data?.tenantId).not.toBeUndefined();
+    // ARGUS #408: GET is read-only, so a tenant that never ran explicit setup
+    // returns setupRequired instead of lazily creating a fund. Either outcome
+    // must stay tenant-scoped and must not expose another tenant's fund.
+    if (body?.data) {
+      expect(body.data.tenantId).toBeTruthy();
+      expect(body.data.tenantId).not.toBeUndefined();
+    } else {
+      expect(body?.setupRequired).toBe(true);
+    }
   });
 
   test('F9 accepts Unicode / XSS-safe descriptions in expense records without crashing', async ({ page }) => {
