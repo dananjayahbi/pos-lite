@@ -35,6 +35,10 @@ import type {
   PayrollExportKind,
   PayrollExportPreflight,
 } from '@/lib/payroll/export-preflight';
+import {
+  describePayrollRunStatus,
+  type PayrollRunPaymentInfo,
+} from '@/lib/payroll/payroll-run-status';
 import { formatRupee } from '@/lib/format';
 
 interface PayrollRunSummary {
@@ -91,6 +95,8 @@ interface PayrollRunDetail extends PayrollRunSummary {
   totalEmployerEpf: string;
   totalEmployerEtf: string;
   items: PayrollRunItem[];
+  /** ARGUS #385: derived from the PAYROLL_RUN_PAID audit entry. */
+  payment?: PayrollRunPaymentInfo | null;
 }
 
 function currentMonth(): string {
@@ -178,6 +184,9 @@ function PayrollReportsContent() {
   });
 
   const run = runQuery.data;
+  const runStatus = run
+    ? describePayrollRunStatus({ status: run.status, payment: run.payment })
+    : null;
 
   // ARGUS #378: completeness gate for the bank sheet and statutory exports.
   const preflightQuery = useQuery<Record<PayrollExportKind, PayrollExportPreflight>>({
@@ -277,10 +286,28 @@ function PayrollReportsContent() {
         </Card>
       ) : run ? (
         <>
+          {runStatus && (
+            <div
+              className={`rounded-lg border p-4 ${
+                runStatus.paid
+                  ? 'border-[#2D6A4F]/30 bg-[#E8F3ED]'
+                  : 'border-[#B7791F]/40 bg-[#FDF6E7]'
+              }`}
+            >
+              <p className="text-espresso text-sm font-semibold">
+                {runStatus.statusLabel} - {run.periodMonth}
+              </p>
+              <p className="text-sand-ink mt-1 text-xs">{runStatus.statusDetail}</p>
+            </div>
+          )}
+
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label="Employees" value={String(run.items.length)} />
             <Stat label="Gross salary" value={formatRupee(run.totalGross)} />
-            <Stat label="Net payable" value={formatRupee(run.totalNet)} />
+            <Stat
+              label={runStatus?.netLabel ?? 'Net payable'}
+              value={formatRupee(run.totalNet)}
+            />
             <Stat label="Total company cost" value={formatRupee(run.totalCompanyCost)} />
           </div>
 
@@ -305,7 +332,7 @@ function PayrollReportsContent() {
               <CostRow label="Employee EPF" value={run.totalEmployeeEpf} />
               <CostRow label="Employer EPF" value={run.totalEmployerEpf} />
               <CostRow label="Employer ETF" value={run.totalEmployerEtf} />
-              <CostRow label="Net salaries paid" value={run.totalNet} strong />
+              <CostRow label={runStatus?.netLabel ?? 'Net payable'} value={run.totalNet} strong />
               <CostRow label="Total company cost" value={run.totalCompanyCost} strong />
             </CardContent>
           </Card>

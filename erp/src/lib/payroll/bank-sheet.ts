@@ -1,6 +1,10 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import {
+  describePayrollRunStatus,
+  type PayrollRunPaymentInfo,
+} from '@/lib/payroll/payroll-run-status';
 
 export interface BankSheetRow {
   staffName: string;
@@ -17,6 +21,9 @@ export interface BankSheetMeta {
   periodLabel: string;
   periodMonth: string;
   generatedAt: Date;
+  /** ARGUS #385: generated runs are unpaid; never imply a completed payment. */
+  status?: string;
+  payment?: PayrollRunPaymentInfo | null;
 }
 
 /** Honest naming - this is not a bank-specific batch/upload format. */
@@ -43,9 +50,14 @@ function rupees(value: string): string {
 }
 
 export function generateBankSheetXlsx(meta: BankSheetMeta, rows: BankSheetRow[]): Buffer {
+  const status = describePayrollRunStatus({
+    status: meta.status ?? 'GENERATED',
+    payment: meta.payment ?? null,
+  });
   const aoa: (string | number)[][] = [
     [`${meta.companyName} - ${BANK_WORKSHEET_TITLE}`],
     [`Period: ${meta.periodLabel}`, `Generated: ${meta.generatedAt.toLocaleString('en-GB')}`],
+    [`Status: ${status.exportMarker}`],
     [BANK_WORKSHEET_DISCLAIMER],
     [],
     WORKSHEET_HEAD,
@@ -86,6 +98,11 @@ export function generateBankSheetPdf(meta: BankSheetMeta, rows: BankSheetRow[]):
   doc.setTextColor(59, 47, 47);
   doc.text(`${meta.companyName} - ${BANK_WORKSHEET_TITLE}`, 40, 42);
 
+  const status = describePayrollRunStatus({
+    status: meta.status ?? 'GENERATED',
+    payment: meta.payment ?? null,
+  });
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9.5);
   doc.setTextColor(107, 91, 91);
@@ -93,20 +110,22 @@ export function generateBankSheetPdf(meta: BankSheetMeta, rows: BankSheetRow[]):
   doc.text(`Generated: ${meta.generatedAt.toLocaleString('en-GB')}`, pageWidth - 40, 60, {
     align: 'right',
   });
+  doc.setFontSize(8);
+  doc.text(`Status: ${status.exportMarker}`, 40, 73);
   doc.setFontSize(7.5);
   doc.text(
     'Worksheet for manual bank upload - not a bank batch file. Confirm branch/account codes, account type, debit account, payment date, narration and transaction code with your bank.',
     40,
-    74,
+    85,
     { maxWidth: pageWidth - 80 },
   );
 
   doc.setDrawColor(200, 149, 108);
   doc.setLineWidth(1.5);
-  doc.line(40, 88, pageWidth - 40, 88);
+  doc.line(40, 100, pageWidth - 40, 100);
 
   autoTable(doc, {
-    startY: 98,
+    startY: 110,
     margin: { left: 40, right: 40, top: 40, bottom: 40 },
     head: [WORKSHEET_HEAD],
     body: rows.map((row, index) => [

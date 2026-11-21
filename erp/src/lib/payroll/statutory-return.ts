@@ -1,6 +1,10 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import {
+  describePayrollRunStatus,
+  type PayrollRunPaymentInfo,
+} from '@/lib/payroll/payroll-run-status';
 
 export interface StatutoryRow {
   staffName: string;
@@ -23,6 +27,9 @@ export interface StatutoryMeta {
   employerEpfRate: number;
   employerEtfRate: number;
   generatedAt: Date;
+  /** ARGUS #385: the return is generated from an unpaid run until marked paid. */
+  status?: string;
+  payment?: PayrollRunPaymentInfo | null;
 }
 
 function num(value: string): number {
@@ -51,11 +58,16 @@ function totals(rows: StatutoryRow[]) {
 
 function epfSheet(meta: StatutoryMeta, rows: StatutoryRow[]): XLSX.WorkSheet {
   const total = totals(rows);
+  const status = describePayrollRunStatus({
+    status: meta.status ?? 'GENERATED',
+    payment: meta.payment ?? null,
+  });
   const aoa: (string | number)[][] = [
     ['C FORM - CONTRIBUTIONS TO EMPLOYEES PROVIDENT FUND'],
     ['Employer', meta.companyName],
     ['Employer EPF Number', meta.employerEpfNumber || '-'],
     ['Month', meta.periodLabel],
+    [`Status: ${status.exportMarker}`],
     [],
     [
       'No.',
@@ -100,11 +112,16 @@ function epfSheet(meta: StatutoryMeta, rows: StatutoryRow[]): XLSX.WorkSheet {
 
 function etfSheet(meta: StatutoryMeta, rows: StatutoryRow[]): XLSX.WorkSheet {
   const total = totals(rows);
+  const status = describePayrollRunStatus({
+    status: meta.status ?? 'GENERATED',
+    payment: meta.payment ?? null,
+  });
   const aoa: (string | number)[][] = [
     ['EMPLOYEES TRUST FUND - MONTHLY RETURN'],
     ['Employer', meta.companyName],
     ['Employer ETF Number', meta.employerEtfNumber || '-'],
     ['Month', meta.periodLabel],
+    [`Status: ${status.exportMarker}`],
     [],
     [
       'No.',
@@ -153,6 +170,10 @@ export function generateStatutoryReturnPdf(
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const total = totals(rows);
+  const status = describePayrollRunStatus({
+    status: meta.status ?? 'GENERATED',
+    payment: meta.payment ?? null,
+  });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
@@ -166,9 +187,11 @@ export function generateStatutoryReturnPdf(
     40,
     60,
   );
+  doc.setFontSize(8);
+  doc.text(`Status: ${status.exportMarker}`, 40, 72);
 
   autoTable(doc, {
-    startY: 74,
+    startY: 84,
     margin: { left: 40, right: 40, top: 40, bottom: 40 },
     head: [
       [
@@ -212,9 +235,11 @@ export function generateStatutoryReturnPdf(
     40,
     60,
   );
+  doc.setFontSize(8);
+  doc.text(`Status: ${status.exportMarker}`, 40, 72);
 
   autoTable(doc, {
-    startY: 74,
+    startY: 84,
     margin: { left: 40, right: 40, top: 40, bottom: 40 },
     head: [
       [
@@ -247,7 +272,7 @@ export function generateStatutoryReturnPdf(
     doc.setFontSize(8);
     doc.setTextColor(153, 153, 153);
     doc.text(
-      `Generated ${meta.generatedAt.toLocaleString('en-GB')} • Page ${page} of ${pageCount}`,
+      `Generated ${meta.generatedAt.toLocaleString('en-GB')} • ${status.exportMarker} • Page ${page} of ${pageCount}`,
       pageWidth - 40,
       doc.internal.pageSize.getHeight() - 20,
       { align: 'right' },

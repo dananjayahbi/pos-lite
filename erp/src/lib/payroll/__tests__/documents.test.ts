@@ -121,8 +121,9 @@ describe('payroll documents', () => {
     expect(workbook.SheetNames).toEqual([BANK_WORKSHEET_SHEET_NAME]);
     const sheet = workbook.Sheets[BANK_WORKSHEET_SHEET_NAME]!;
     const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as unknown[][];
-    expect(String(aoa[2]?.[0])).toBe(BANK_WORKSHEET_DISCLAIMER);
-    expect(aoa[4]).toEqual([
+    expect(String(aoa[2]?.[0])).toContain('UNPAID');
+    expect(String(aoa[3]?.[0])).toBe(BANK_WORKSHEET_DISCLAIMER);
+    expect(aoa[5]).toEqual([
       'No.',
       'Employee Name',
       'NIC',
@@ -131,7 +132,7 @@ describe('payroll documents', () => {
       'Account Number',
       'Net Salary (LKR)',
     ]);
-    expect(aoa[5]).toEqual([
+    expect(aoa[6]).toEqual([
       1,
       item.staffName,
       item.nic,
@@ -160,8 +161,15 @@ describe('payroll documents', () => {
         employerEtf: item.employerEtf,
       },
     ];
-    expect(isZip(generateStatutoryReturnXlsx(statutoryMeta, rows))).toBe(true);
+    const xlsx = generateStatutoryReturnXlsx(statutoryMeta, rows);
+    expect(isZip(xlsx)).toBe(true);
     expect(isPdf(generateStatutoryReturnPdf(statutoryMeta, rows))).toBe(true);
+
+    const workbook = XLSX.read(xlsx, { type: 'buffer' });
+    const epf = XLSX.utils.sheet_to_json(workbook.Sheets['EPF C-Form']!, {
+      header: 1,
+    }) as unknown[][];
+    expect(String(epf[4]?.[0])).toContain('UNPAID');
   });
 
   it('renders the monthly summary in Excel and PDF', () => {
@@ -181,5 +189,52 @@ describe('payroll documents', () => {
     ];
     expect(isZip(generateSummaryReportXlsx(meta, summaryTotals, rows))).toBe(true);
     expect(isPdf(generateSummaryReportPdf(meta, summaryTotals, rows))).toBe(true);
+  });
+
+  it('labels the net amount as payable until the run is paid', () => {
+    const rows = [
+      {
+        staffName: item.staffName,
+        role: item.role,
+        basicSalary: item.basicSalary,
+        allowances: item.allowances,
+        overtimeAmount: item.overtimeAmount,
+        commissionAmount: item.commissionAmount,
+        grossSalary: item.grossSalary,
+        totalDeductions: item.totalDeductions,
+        employeeEpf: item.employeeEpf,
+        netSalary: item.netSalary,
+      },
+    ];
+    const unpaid = XLSX.read(generateSummaryReportXlsx(meta, summaryTotals, rows), {
+      type: 'buffer',
+    });
+    const unpaidRows = XLSX.utils.sheet_to_json(unpaid.Sheets['Summary']!, {
+      header: 1,
+    }) as unknown[][];
+    expect(unpaidRows.some((row) => row[0] === 'Net payable')).toBe(true);
+    expect(unpaidRows.some((row) => row[0] === 'Net salaries paid')).toBe(false);
+    expect(String(unpaidRows[2]?.[0])).toContain('UNPAID');
+
+    const paidMeta = {
+      ...meta,
+      status: 'PAID',
+      payment: {
+        paidAt: '2026-11-30T09:15:00.000Z',
+        approvedBy: 'Nimal Silva',
+        approvedByRole: 'OWNER',
+        source: 'audit-log' as const,
+      },
+    };
+    const paid = XLSX.read(generateSummaryReportXlsx(paidMeta, summaryTotals, rows), {
+      type: 'buffer',
+    });
+    const paidRows = XLSX.utils.sheet_to_json(paid.Sheets['Summary']!, {
+      header: 1,
+    }) as unknown[][];
+    expect(paidRows.some((row) => row[0] === 'Net salaries paid')).toBe(true);
+    expect(paidRows.some((row) => row[0] === 'Net payable')).toBe(false);
+    expect(String(paidRows[2]?.[0])).toContain('PAID');
+    expect(String(paidRows[2]?.[0])).toContain('Nimal Silva');
   });
 });

@@ -1,9 +1,13 @@
 import { prisma } from '@/lib/prisma';
-import { getPayrollRun } from '@/lib/services/payroll.service';
+import {
+  getPayrollRun,
+  getPayrollRunPaymentInfo,
+} from '@/lib/services/payroll.service';
 import { readPayrollSettingsFromTenantSettings } from '@/lib/payroll/payroll-settings';
 import type { BankSheetRow } from '@/lib/payroll/bank-sheet';
 import type { StatutoryRow } from '@/lib/payroll/statutory-return';
 import type { SummaryReportItem, SummaryReportTotals } from '@/lib/payroll/summary-report';
+import type { PayrollRunPaymentInfo } from '@/lib/payroll/payroll-run-status';
 import {
   buildExportPreflight,
   type PayrollExportKind,
@@ -16,6 +20,8 @@ export interface PayrollExportContext {
   companyName: string;
   payrollSettings: ReturnType<typeof readPayrollSettingsFromTenantSettings>;
   generatedAt: Date;
+  /** ARGUS #385: derived from the PAYROLL_RUN_PAID audit entry. */
+  payment: PayrollRunPaymentInfo;
 }
 
 export async function getPayrollExportContext(
@@ -35,6 +41,7 @@ export async function getPayrollExportContext(
     companyName: tenant.name,
     payrollSettings: readPayrollSettingsFromTenantSettings(tenant.settings),
     generatedAt: new Date(),
+    payment: await getPayrollRunPaymentInfo(tenantId, run.id, run.status),
   };
 }
 

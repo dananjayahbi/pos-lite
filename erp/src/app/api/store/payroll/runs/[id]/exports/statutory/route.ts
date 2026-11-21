@@ -68,6 +68,8 @@ export async function GET(
       employerEpfRate: Number(context.run.employerEpfRate),
       employerEtfRate: Number(context.run.employerEtfRate),
       generatedAt: context.generatedAt,
+      status: context.run.status,
+      payment: context.payment,
     };
     const rows = toStatutoryRows(context);
 

@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { ok, toErrorResponse, unauthorized } from '@/lib/api/error-envelope';
-import { getPayrollRun, voidPayrollRun } from '@/lib/services/payroll.service';
+import { getPayrollRun, getPayrollRunDetail, voidPayrollRun } from '@/lib/services/payroll.service';
 
 /**
  * GET /api/store/payroll/runs/[id] - one generated run (ARGUS #377 keeps the
@@ -27,7 +27,7 @@ export async function GET(
     }
 
     const { id } = await params;
-    return ok(await getPayrollRun(tenantId, id));
+    return ok(await getPayrollRunDetail(tenantId, id));
   } catch (error) {
     return toErrorResponse(error, 'GET /api/store/payroll/runs/[id]');
   }

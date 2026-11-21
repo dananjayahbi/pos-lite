@@ -1,6 +1,11 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import {
+  describePayrollRunStatus,
+  resolveNetLabel,
+  type PayrollRunPaymentInfo,
+} from '@/lib/payroll/payroll-run-status';
 
 export interface SummaryReportTotals {
   headcount: number;
@@ -35,6 +40,9 @@ export interface SummaryReportMeta {
   periodLabel: string;
   periodMonth: string;
   generatedAt: Date;
+  /** ARGUS #385: never label the net amount "paid" before the run is PAID. */
+  status?: string;
+  payment?: PayrollRunPaymentInfo | null;
 }
 
 function num(value: string): number {
@@ -63,19 +71,34 @@ const SUMMARY_ROWS: Array<[string, keyof SummaryReportTotals]> = [
   ['Total company cost', 'companyCost'],
 ];
 
+/** Swap the static net label for the status-correct one (ARGUS #385). */
+function summaryRows(
+  status: string,
+): Array<[string, keyof SummaryReportTotals]> {
+  return SUMMARY_ROWS.map(([label, key]) =>
+    key === 'net' ? ([resolveNetLabel(status), key] as [string, keyof SummaryReportTotals]) : [label, key],
+  );
+}
+
 export function generateSummaryReportXlsx(
   meta: SummaryReportMeta,
   totals: SummaryReportTotals,
   items: SummaryReportItem[],
 ): Buffer {
   const workbook = XLSX.utils.book_new();
+  const status = describePayrollRunStatus({
+    status: meta.status ?? 'GENERATED',
+    payment: meta.payment ?? null,
+  });
+  const rows = summaryRows(status.status);
 
   const summaryAoa: (string | number)[][] = [
     [`${meta.companyName} - Monthly Payroll Summary`],
     [`Period: ${meta.periodLabel}`, `Generated: ${meta.generatedAt.toLocaleString('en-GB')}`],
+    [`Status: ${status.exportMarker}`],
     [],
     ['Item', 'Amount (LKR)'],
-    ...SUMMARY_ROWS.map(([label, key]) => [
+    ...rows.map(([label, key]) => [
       label,
       key === 'headcount' ? totals.headcount : num(totals[key] as string),
     ]),
@@ -113,6 +136,11 @@ export function generateSummaryReportPdf(
 ): Buffer {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
+  const status = describePayrollRunStatus({
+    status: meta.status ?? 'GENERATED',
+    payment: meta.payment ?? null,
+  });
+  const rows = summaryRows(status.status);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
@@ -123,14 +151,16 @@ export function generateSummaryReportPdf(
   doc.setTextColor(107, 91, 91);
   doc.text(`Period: ${meta.periodLabel}`, 40, 60);
   doc.text(`Headcount: ${totals.headcount}`, pageWidth - 40, 60, { align: 'right' });
+  doc.setFontSize(8);
+  doc.text(`Status: ${status.exportMarker}`, 40, 73);
   doc.setDrawColor(200, 149, 108);
   doc.setLineWidth(1.5);
-  doc.line(40, 70, pageWidth - 40, 70);
+  doc.line(40, 84, pageWidth - 40, 84);
 
   autoTable(doc, {
-    startY: 82,
+    startY: 96,
     head: [['Company cost breakdown', 'Amount (LKR)']],
-    body: SUMMARY_ROWS.map(([label, key]) => [
+    body: rows.map(([label, key]) => [
       label,
       money(totals[key] as string),
     ]),
@@ -141,7 +171,7 @@ export function generateSummaryReportPdf(
     didParseCell: (hookData) => {
       const rawRow = hookData.row.raw as unknown[];
       const label = String(rawRow[0] ?? '');
-      if (label === 'Total company cost' || label === 'Net salaries paid') {
+      if (label === 'Total company cost' || label === status.netLabel) {
         hookData.cell.styles.fontStyle = 'bold';
         hookData.cell.styles.fillColor = [245, 236, 226];
       }
@@ -198,7 +228,7 @@ export function generateSummaryReportPdf(
     doc.setFontSize(8);
     doc.setTextColor(153, 153, 153);
     doc.text(
-      `Generated ${meta.generatedAt.toLocaleString('en-GB')} • Page ${page} of ${pageCount}`,
+      `Generated ${meta.generatedAt.toLocaleString('en-GB')} - ${status.exportMarker} - Page ${page} of ${pageCount}`,
       pageWidth - 40,
       doc.internal.pageSize.getHeight() - 20,
       { align: 'right' },
