@@ -188,7 +188,9 @@ export default function CashFlowPage() {
               }
             >
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-normal text-espresso">Net Cash Flow</CardTitle>
+                <CardTitle className="text-sm font-normal text-espresso">
+                  Net Cash Movement (ledger)
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <p
@@ -201,6 +203,43 @@ export default function CashFlowPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Cash reconciliation */}
+          <Card className="border-mist">
+            <CardHeader>
+              <CardTitle className="font-display text-espresso">Cash Reconciliation</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-sand-ink">Opening cash</span>
+                <span className="font-mono text-espresso">{formatRupee(data.openingCash)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sand-ink">Net movement in period</span>
+                <span className="font-mono text-espresso">{formatRupee(data.netCashFlow)}</span>
+              </div>
+              <div className="my-2 border-t border-mist" />
+              <div className="flex justify-between font-semibold">
+                <span className="text-espresso">Closing cash</span>
+                <span className="font-mono text-espresso">{formatRupee(data.closingCash)}</span>
+              </div>
+              {data.cashBridge.length > 0 && (
+                <div className="mt-3 space-y-1 border-t border-mist pt-3">
+                  <p className="text-xs uppercase tracking-wide text-mist-ink">
+                    Movement by source
+                  </p>
+                  {data.cashBridge.map((line) => (
+                    <div key={line.source} className="flex justify-between text-sm">
+                      <span className="text-sand-ink">
+                        {line.source.replaceAll('_', ' ').toLowerCase()}
+                      </span>
+                      <span className="font-mono text-espresso">{formatRupee(line.net)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Income Section */}
           <Card className="border-mist">

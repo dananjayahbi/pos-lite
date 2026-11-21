@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import Decimal from 'decimal.js';
+import { reconcileCash } from '@/lib/services/cashflow.core';
 
 export interface PaymentAccountActivityRow {
   accountId: string;
@@ -21,7 +22,14 @@ export interface CashFlowResult {
   totalExpenses: string;
   cashMovements: { type: string; count: number; total: string }[];
   netMovement: string;
+  /** Ledger-truth opening cash at dateFrom. */
+  openingCash: string;
+  /** Ledger-truth closing cash at dateTo (opening + net ledger movement). */
+  closingCash: string;
+  /** closingCash - openingCash. */
   netCashFlow: string;
+  /** Net movement per ledger source in the window (debit - credit). */
+  cashBridge: { source: string; debit: string; credit: string; net: string }[];
   /** Ledger activity per payment account for the same window. */
   paymentAccountActivity: PaymentAccountActivityRow[];
   paymentAccountTotals: {
@@ -44,6 +52,8 @@ export async function getCashFlowStatement(
     cashMovements,
     paymentsByMethod,
     accountEntryTotals,
+    openingLedger,
+    ledgerBySource,
     accounts,
   ] = await Promise.all([
     prisma.sale.aggregate({
@@ -74,6 +84,15 @@ export async function getCashFlowStatement(
     }),
     prisma.paymentAccountEntry.groupBy({
       by: ['accountId'],
+      where: { tenantId, entryDate: { gte: dateFrom, lte: dateTo } },
+      _sum: { debit: true, credit: true },
+    }),
+    prisma.paymentAccountEntry.aggregate({
+      where: { tenantId, entryDate: { lt: dateFrom } },
+      _sum: { debit: true, credit: true },
+    }),
+    prisma.paymentAccountEntry.groupBy({
+      by: ['source'],
       where: { tenantId, entryDate: { gte: dateFrom, lte: dateTo } },
       _sum: { debit: true, credit: true },
     }),
@@ -122,7 +141,25 @@ export async function getCashFlowStatement(
     return acc.minus(m.total);
   }, new Decimal(0));
 
-  const netCashFlow = totalIncome.minus(totalExpenses);
+  // Cash-flow reconciliation from the payment-account ledger: opening balance
+  // before the window plus every debit/credit in it = closing balance. The
+  // sales-minus-expenses figure is a period operating summary, not cash
+  // (purchase orders, transfers and petty cash were missing from it) - keep it
+  // available but do not label it net cash flow (ARGUS #416).
+  const openingCashDecimal = new Decimal(openingLedger._sum.debit?.toString() ?? '0').minus(
+    openingLedger._sum.credit?.toString() ?? '0',
+  );
+  const reconciliation = reconcileCash(
+    openingCashDecimal,
+    ledgerBySource.map((row) => ({
+      source: String(row.source),
+      debit: row._sum.debit?.toString() ?? '0',
+      credit: row._sum.credit?.toString() ?? '0',
+    })),
+  );
+  const netCashFlow = new Decimal(reconciliation.netMovement);
+  const closingCash = new Decimal(reconciliation.closingCash);
+  const cashBridge = reconciliation.bridge;
 
   const accountMap = new Map(accounts.map((account) => [account.id, account]));
   const paymentAccountActivity: PaymentAccountActivityRow[] = accountEntryTotals
@@ -166,7 +203,10 @@ export async function getCashFlowStatement(
     totalExpenses: totalExpenses.toFixed(2),
     cashMovements: movements,
     netMovement: netMovement.toFixed(2),
+    openingCash: openingCashDecimal.toFixed(2),
+    closingCash: closingCash.toFixed(2),
     netCashFlow: netCashFlow.toFixed(2),
+    cashBridge,
     paymentAccountActivity,
     paymentAccountTotals: {
       debit: accountDebit.toFixed(2),
