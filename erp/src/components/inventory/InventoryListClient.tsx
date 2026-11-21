@@ -22,6 +22,7 @@ import { ActiveFilterChips } from '@/components/inventory/ActiveFilterChips';
 import { useProducts } from '@/hooks/useProducts';
 import { LowStockAlertBadge } from '@/components/stock/LowStockAlertBadge';
 import { useInventorySelectionStore } from '@/stores/inventorySelectionStore';
+import { toast } from 'sonner';
 
 interface InventoryListClientProps {
   initialCount: number;
@@ -95,12 +96,20 @@ export function InventoryListClient({ initialCount, permissions }: InventoryList
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/store/products/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete product');
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        throw new Error(json?.error?.message ?? 'Failed to delete product');
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setDeleteTarget(null);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete product');
     },
   });
 
@@ -248,8 +257,10 @@ export function InventoryListClient({ initialCount, permissions }: InventoryList
           <DialogHeader>
             <DialogTitle className="font-display text-espresso">Delete Product</DialogTitle>
             <DialogDescription className="font-body text-mist-ink">
-              Are you sure you want to delete this product? It will be hidden from the catalog
-              and can be restored later from the Deleted filter in Inventory.
+              This hides the product from the catalog; it can be restored later
+              from the Deleted filter in Inventory. Products that still hold
+              stock cannot be deleted - adjust the stock to zero (or archive the
+              product) first.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

@@ -145,7 +145,12 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
       const res = await fetch(`/api/store/products/${productId}`, {
         method: 'DELETE',
       });
-      if (!res.ok) throw new Error('Failed to delete product');
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        throw new Error(json?.error?.message ?? 'Failed to delete product');
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -153,8 +158,8 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
       queryClient.invalidateQueries({ queryKey: ['products'] });
       router.push('/inventory');
     },
-    onError: () => {
-      toast.error('Failed to delete product');
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete product');
     },
   });
 
@@ -336,7 +341,10 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
           <DialogHeader>
             <DialogTitle className="font-display text-espresso">Delete Product</DialogTitle>
             <DialogDescription className="font-body text-mist-ink">
-              This action cannot be undone. Type <strong className="text-espresso">{product.name}</strong> to confirm.
+              This hides <strong className="text-espresso">{product.name}</strong> from the catalog;
+              it can be restored from the Deleted filter. A product with stock on hand cannot be
+              deleted - adjust the stock to zero or archive it first. Type the product name to
+              confirm.
             </DialogDescription>
           </DialogHeader>
           <Input

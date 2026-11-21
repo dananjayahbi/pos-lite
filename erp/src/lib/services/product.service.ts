@@ -12,6 +12,7 @@ import { Prisma } from '@/generated/prisma/client';
 import type { HealthConcern, ProductSource, TaxRule } from '@/generated/prisma/client';
 import { createAuditLog, writeAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { ApiError } from '@/lib/api/errors';
+import { assertProductHasNoStock } from '@/lib/services/productDelete.core';
 import { generateBarcode } from '@/lib/barcode';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -558,6 +559,16 @@ export async function softDeleteProduct(tenantId: string, productId: string, act
   if (!existing || existing.tenantId !== tenantId) {
     throw new Error('Product not found');
   }
+
+  // Deleting a product with stock on hand would silently remove those units
+  // from inventory/valuation without any stock movement (ARGUS #137). Refuse
+  // until the stock is explicitly adjusted to zero or the product is archived.
+  const stock = await prisma.productVariant.aggregate({
+    where: { productId, deletedAt: null },
+    _sum: { stockQuantity: true },
+  });
+  const unitsOnHand = stock._sum.stockQuantity ?? 0;
+  assertProductHasNoStock(unitsOnHand);
 
   const now = new Date();
 
