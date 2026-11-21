@@ -50,7 +50,7 @@ import { usePOPayments } from './usePOPayments';
  * receiving page) and the list key, so a settle or cancel updates both views.
  */
 
-const PAYABLE_STATUSES = new Set(['DRAFT', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED']);
+const PAYABLE_STATUSES = new Set(['PARTIALLY_RECEIVED', 'RECEIVED']);
 
 export function PurchaseOrderDetailClient({ poId, canApprove }: { poId: string; canApprove: boolean }) {
   const queryClient = useQueryClient();
@@ -154,7 +154,9 @@ export function PurchaseOrderDetailClient({ poId, canApprove }: { poId: string; 
   }
 
   const status = po.status;
-  const canCancel = status === 'DRAFT' || status === 'SENT' || status === 'PARTIALLY_RECEIVED';
+  const canCancel =
+    (status === 'DRAFT' || status === 'SENT' || status === 'PARTIALLY_RECEIVED') &&
+    Number(po.paidTotal ?? 0) <= 0;
   const canPay = PAYABLE_STATUSES.has(status) && paymentsState.outstanding > 0;
 
   return (

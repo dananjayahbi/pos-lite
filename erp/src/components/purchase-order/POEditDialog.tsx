@@ -21,6 +21,7 @@ import { POPaymentAccountField } from './POPaymentAccountField';
 import { POPaymentTermsField, type PaymentTermValue } from './POPaymentTermsField';
 import { POReferenceField } from './POReferenceField';
 import { updatePurchaseOrder } from './poApi';
+import { isPurchaseOrderFinanciallyLocked } from '@/lib/services/purchaseOrderPermissions.core';
 import { pinDayToNoonIso } from './poDates';
 import { poQueryKeys } from './poQueryKeys';
 import type { PODiscountType, PurchaseOrderDetail } from './poTypes';
@@ -50,6 +51,7 @@ interface POEditDialogProps {
     | 'paymentTermDays'
     | 'paymentAccountId'
     | 'linesEditable'
+    | 'paidTotal'
   >;
 }
 
@@ -118,6 +120,10 @@ export function POEditDialog({ open, onOpenChange, purchaseOrder }: POEditDialog
   const referenceError =
     referenceNo.trim().length < 3 ? 'Reference must be at least 3 characters' : undefined;
 
+  // Once money is applied the financial fields are frozen (ARGUS #226). The
+  // reference and dates remain editable for corrections.
+  const financialLocked = isPurchaseOrderFinanciallyLocked(purchaseOrder.paidTotal ?? 0);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
@@ -127,6 +133,9 @@ export function POEditDialog({ open, onOpenChange, purchaseOrder }: POEditDialog
             Correct the reference, dates, terms, discount or payment account.
             {purchaseOrder.linesEditable === false
               ? ' Lines are locked because goods have already been received.'
+              : ''}
+            {financialLocked
+              ? ' Financial fields are locked because money has already been applied - record a refund or adjustment instead.'
               : ''}
           </DialogDescription>
         </DialogHeader>
@@ -153,16 +162,26 @@ export function POEditDialog({ open, onOpenChange, purchaseOrder }: POEditDialog
             />
           </div>
 
-          <POPaymentTermsField value={termDays} onChange={setTermDays} orderDate={orderDate} />
+          <POPaymentTermsField
+            value={termDays}
+            onChange={setTermDays}
+            orderDate={orderDate}
+            disabled={financialLocked}
+          />
 
           <PODiscountField
             type={discountType}
             value={discountValue}
             onTypeChange={setDiscountType}
             onValueChange={setDiscountValue}
+            disabled={financialLocked}
           />
 
-          <POPaymentAccountField value={paymentAccountId} onChange={setPaymentAccountId} />
+          <POPaymentAccountField
+            value={paymentAccountId}
+            onChange={setPaymentAccountId}
+            disabled={financialLocked}
+          />
 
           {mutation.isError ? (
             <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">

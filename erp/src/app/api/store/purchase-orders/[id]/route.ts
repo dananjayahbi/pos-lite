@@ -149,7 +149,11 @@ export async function PATCH(
     }
 
     // Status/state guards that make the request valid but impossible right now.
-    if (message.startsWith('Lines cannot be edited') || message.startsWith('A cancelled purchase order')) {
+    if (
+      message.startsWith('Lines cannot be edited') ||
+      message.startsWith('A cancelled purchase order') ||
+      message.startsWith('A paid purchase order')
+    ) {
       return NextResponse.json(
         { success: false, error: { code: 'CONFLICT', message } },
         { status: 409 },

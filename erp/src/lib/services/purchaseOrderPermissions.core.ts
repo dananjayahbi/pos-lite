@@ -14,3 +14,13 @@ export function canCreatePurchaseOrderWithStatus(
 ): boolean {
   return status !== 'SENT' || canApprove;
 }
+
+/**
+ * A purchase order locks its financial fields and cancellation once money has
+ * been applied (ARGUS #226). Changing the discount/lines afterwards left the
+ * paid amount and `paidAt` describing a different order, and cancelling orphaned
+ * the payment and its ledger credit.
+ */
+export function isPurchaseOrderFinanciallyLocked(paidTotal: number | string): boolean {
+  return Number(paidTotal) > 0;
+}

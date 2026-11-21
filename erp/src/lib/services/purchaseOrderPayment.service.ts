@@ -75,6 +75,17 @@ export async function payPurchaseOrder(
       throw new ApiError(409, 'CONFLICT', 'A cancelled purchase order cannot be paid');
     }
 
+    // Pay for goods that were received. Paying a DRAFT/SENT order used to post
+    // money with no received value behind it, and then cancellation could
+    // orphan that payment (ARGUS #226).
+    if (po.status === POStatus.DRAFT || po.status === POStatus.SENT) {
+      throw new ApiError(
+        409,
+        'PO_NOT_RECEIVED',
+        'Record the goods receipt before paying this purchase order',
+      );
+    }
+
     const account = await tx.paymentAccount.findFirst({
       where: { id: input.paymentAccountId, tenantId },
       select: { id: true, name: true, status: true },

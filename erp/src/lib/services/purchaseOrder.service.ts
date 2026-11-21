@@ -6,6 +6,7 @@ import { adjustStockInTx } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { computePurchaseOrderTotals } from '@/lib/services/purchaseOrderTotals';
 import { computePurchaseOrderPayable } from '@/lib/services/purchaseOrderPayable.core';
+import { isPurchaseOrderFinanciallyLocked } from '@/lib/services/purchaseOrderPermissions.core';
 import {
   generatePurchaseOrderReference,
   isPurchaseOrderReferenceTaken,
@@ -181,6 +182,7 @@ export async function getPOById(tenantId: string, poId: string) {
       supplier: true,
       tenant: { select: { name: true } },
       createdBy: { select: { id: true, email: true } },
+      payments: { select: { amount: true } },
       lines: {
         include: {
           variant: {
@@ -204,9 +206,16 @@ export async function getPOById(tenantId: string, poId: string) {
   }
 
   const costing = computePurchaseOrderPayable(po.lines, po.discountAmount, po.totalAmount);
+  const paidTotal = po.payments
+    .reduce((sum, payment) => sum.plus(payment.amount), new Decimal(0))
+    .toDecimalPlaces(2)
+    .toNumber();
 
   return {
     ...po,
+    /** Money already applied to this order (ARGUS #226). */
+    paidTotal,
+    hasPayments: paidTotal > 0,
     /**
      * What the order owes right now: the received value once goods arrive,
      * otherwise the expected total (ARGUS #225). The payment API and UI use
@@ -357,6 +366,32 @@ export async function updatePO(
     throw new Error('A cancelled purchase order cannot be edited');
   }
 
+  // Once money has been applied, the figures a payment was based on are frozen.
+  // Changing the discount/lines/terms afterwards left `paidAt` and the paid
+  // amount describing a different order (ARGUS #226).
+  const paidAggregate = await prisma.purchaseOrderPayment.aggregate({
+    where: { tenantId, purchaseOrderId: poId },
+    _sum: { amount: true },
+  });
+  const paidTotal = new Decimal(paidAggregate._sum.amount ?? 0);
+  if (isPurchaseOrderFinanciallyLocked(paidTotal.toNumber())) {
+    const financialChanged =
+      (input.discountType !== undefined && (input.discountType ?? null) !== po.discountType) ||
+      (input.discountValue !== undefined &&
+        new Decimal(input.discountValue).toDecimalPlaces(4).toNumber() !==
+          Number(po.discountValue)) ||
+      (input.paymentTermDays !== undefined && input.paymentTermDays !== po.paymentTermDays) ||
+      (input.paymentAccountId !== undefined &&
+        (input.paymentAccountId ?? null) !== po.paymentAccountId) ||
+      input.lines !== undefined;
+
+    if (financialChanged) {
+      throw new Error(
+        'A paid purchase order cannot change its discount, lines, terms or payment account - record a refund or adjustment instead',
+      );
+    }
+  }
+
   if (input.lines) {
     // Receiving goods creates stock movements, batches and per-line received
     // quantities. Rewriting the ordered lines afterwards would leave those
@@ -479,6 +514,18 @@ export async function cancelPO(tenantId: string, poId: string) {
 
   if (po.status !== POStatus.DRAFT && po.status !== POStatus.SENT) {
     throw new Error(`Cannot cancel a purchase order with status ${po.status}`);
+  }
+
+  // Cancelling after money has been applied would leave the payment row and its
+  // ledger credit orphaned with no refund (ARGUS #226).
+  const paidAggregate = await prisma.purchaseOrderPayment.aggregate({
+    where: { tenantId, purchaseOrderId: poId },
+    _sum: { amount: true },
+  });
+  if (isPurchaseOrderFinanciallyLocked(Number(paidAggregate._sum.amount ?? 0))) {
+    throw new Error(
+      'Cannot cancel a purchase order with payments recorded - refund or reverse the payments first',
+    );
   }
 
   return prisma.purchaseOrder.update({

@@ -51,6 +51,9 @@ export interface PurchaseOrderDetail {
   /** Server-computed received value / payable once goods arrive (ARGUS #225). */
   payableAmount?: string | number;
   receivedValue?: string | number;
+  /** Money already applied (ARGUS #226). */
+  paidTotal?: string | number;
+  hasPayments?: boolean;
   paymentTermDays: number | null;
   paymentAccountId: string | null;
   paidAt: string | null;
