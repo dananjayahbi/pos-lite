@@ -30,6 +30,7 @@ import { useRawMaterials } from '@/hooks/useRawMaterials';
 import type { RawMaterialItem } from '@/hooks/useRawMaterials';
 import { useRawMaterialCategories } from '@/hooks/useRawMaterialCategories';
 import { RawMaterialCategoryManagerDialog } from '@/components/raw-materials/RawMaterialCategoryManagerDialog';
+import { invalidateRawMaterialSurfaces } from '@/lib/factory/factoryQueries';
 import {
   parseRawMaterialStockStatus,
   type RawMaterialStockStatus,
@@ -110,8 +111,7 @@ export function RawMaterialListClient({ permissions }: RawMaterialListClientProp
     },
     onSuccess: () => {
       toast.success('Raw material deleted');
-      queryClient.invalidateQueries({ queryKey: ['raw-materials'] });
-      queryClient.invalidateQueries({ queryKey: ['raw-material-stats'] });
+      void invalidateRawMaterialSurfaces(queryClient);
       setDeleteTarget(null);
     },
     onError: (err: Error) => toast.error(err.message),
