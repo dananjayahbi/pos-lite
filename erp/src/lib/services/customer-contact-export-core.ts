@@ -7,6 +7,7 @@
  * the render format can change without touching the query layer.
  */
 import * as XLSX from 'xlsx';
+import { csvCell, csvTextCell } from '@/lib/export';
 
 // ── Export contract ──────────────────────────────────────────────────────────
 
@@ -203,20 +204,11 @@ function toRecord(row: ContactRow): Record<string, string | number | null> {
   };
 }
 
-function escapeCSV(value: string | number | null): string {
-  if (value === null || value === undefined) return '';
-  const str = String(value);
-  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
-
 /** Render rows as CSV text (UTF-8 BOM for Excel compatibility). */
 export function renderContactsCSV(rows: ContactRow[]): string {
-  const header = EXPORT_HEADERS.map(escapeCSV).join(',');
+  const header = EXPORT_HEADERS.map(csvCell).join(',');
   const body = rows.map((row) =>
-    EXPORT_HEADERS.map((key) => escapeCSV(toRecord(row)[key] ?? null)).join(','),
+    EXPORT_HEADERS.map((key) => csvTextCell(toRecord(row)[key] ?? null)).join(','),
   );
   return '\uFEFF' + [header, ...body].join('\r\n');
 }
@@ -240,4 +232,49 @@ export function buildExportFilename(
     `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}` +
     `-${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}`;
   return `contacts-${stamp}.${format}`;
+}
+
+// ── Audit payload ────────────────────────────────────────────────────────────
+
+/** Who/what triggered an export run, recorded in the audit row. */
+export type ContactExportTrigger = 'ADHOC' | 'SCHEDULED';
+
+export interface ContactExportAuditInput {
+  trigger: ContactExportTrigger;
+  scope: string;
+  format: string;
+  totalCandidates: number;
+  included: number;
+  excluded: number;
+  destination: string;
+  deliveredTo: string | null;
+}
+
+/**
+ * Shared `after` payload for CONTACT_EXPORT_RUN audit rows (ARGUS #316).
+ *
+ * The scheduled path wrote this shape inline; the ad-hoc download path wrote
+ * nothing at all. Keeping one pure builder means both paths record the same
+ * fields, including the contact count (`included`) the auditor needs.
+ */
+export function buildContactExportAuditAfter(input: ContactExportAuditInput): {
+  trigger: ContactExportTrigger;
+  scope: string;
+  format: string;
+  totalCandidates: number;
+  included: number;
+  excluded: number;
+  destination: string;
+  deliveredTo: string | null;
+} {
+  return {
+    trigger: input.trigger,
+    scope: input.scope,
+    format: input.format,
+    totalCandidates: input.totalCandidates,
+    included: input.included,
+    excluded: input.excluded,
+    destination: input.destination,
+    deliveredTo: input.deliveredTo,
+  };
 }
