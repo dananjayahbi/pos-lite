@@ -17,9 +17,22 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Lock, RefreshCw } from 'lucide-react';
+import { usePermissions } from '@/hooks/usePermissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { formatRupee } from '@/lib/format';
+import { resolveCashFlowReportState } from '@/lib/reports/cashflowReportState';
 import type { CashFlowResult } from '@/lib/services/cashflow.service';
+
+class CashFlowRequestError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'CashFlowRequestError';
+    this.status = status;
+  }
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -98,31 +111,67 @@ export default function CashFlowPage() {
   const [dateFrom, setDateFrom] = useState(getMonthStart());
   const [dateTo, setDateTo] = useState(getToday());
   const [queryDates, setQueryDates] = useState<{ from: string; to: string } | null>(null);
+  const [runId, setRunId] = useState(0);
+  const { hasPermission, isLoading: permissionLoading } = usePermissions();
+  const canView = hasPermission(PERMISSIONS.REPORT.viewCashflowReport);
 
-  const { data, isLoading } = useQuery<CashFlowResult>({
-    queryKey: ['cash-flow', queryDates?.from, queryDates?.to],
+  const { data, isLoading, error, refetch } = useQuery<CashFlowResult>({
+    queryKey: ['cash-flow', queryDates?.from, queryDates?.to, runId],
     queryFn: async () => {
       if (!queryDates) throw new Error('No dates');
       const res = await fetch(
         `/api/store/expenses/cash-flow?dateFrom=${queryDates.from}&dateTo=${queryDates.to}`,
       );
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error?.message ?? 'Failed to fetch');
+      let json: {
+        success?: boolean;
+        data?: CashFlowResult;
+        error?: { message?: string };
+      };
+      try {
+        json = await res.json();
+      } catch {
+        throw new CashFlowRequestError(
+          `The report request failed (${res.status}).`,
+          res.status,
+        );
+      }
+      if (!res.ok || !json.success || !json.data) {
+        throw new CashFlowRequestError(
+          json.error?.message ?? `The report request failed (${res.status}).`,
+          res.status,
+        );
+      }
       return json.data;
     },
-    enabled: queryDates !== null,
+    enabled: queryDates !== null && canView && !permissionLoading,
   });
 
   function handleGenerate() {
     setQueryDates({ from: dateFrom, to: dateTo });
+    setRunId((current) => current + 1);
   }
 
-  const hasActivity =
+  const hasActivity = Boolean(
     data &&
-    (parseFloat(data.totalIncome) !== 0 ||
-      parseFloat(data.totalExpenses) !== 0 ||
-      data.cashMovements.length > 0 ||
-      data.paymentAccountActivity.length > 0);
+      (parseFloat(data.totalIncome) !== 0 ||
+        parseFloat(data.totalExpenses) !== 0 ||
+        data.cashMovements.length > 0 ||
+        data.paymentAccountActivity.length > 0),
+  );
+
+  const reportState = resolveCashFlowReportState({
+    canView,
+    isPermissionLoading: permissionLoading,
+    hasGenerated: queryDates !== null,
+    isLoading,
+    error: error
+      ? {
+          ...(error instanceof CashFlowRequestError ? { status: error.status } : {}),
+          ...(error instanceof Error ? { message: error.message } : {}),
+        }
+      : null,
+    hasActivity,
+  });
 
   const netCashFlowNum = data ? parseFloat(data.netCashFlow) : 0;
 
@@ -165,13 +214,47 @@ export default function CashFlowPage() {
             className="w-44 border-mist"
           />
         </div>
-        <Button onClick={handleGenerate} className="bg-espresso text-pearl hover:bg-espresso/90">
+        <Button
+          onClick={handleGenerate}
+          disabled={!reportState.canGenerate}
+          className="bg-espresso text-pearl hover:bg-espresso/90"
+        >
           Generate Report
         </Button>
       </div>
 
+      {/* Checking session / permission */}
+      {reportState.mode === 'permission-loading' && (
+        <div className="grid gap-4 md:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 w-full rounded-lg" />
+          ))}
+        </div>
+      )}
+
+      {/* Access denied */}
+      {reportState.mode === 'denied' && (
+        <Card className="mx-auto w-full max-w-md border-mist text-center">
+          <CardHeader>
+            <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-sand/30">
+              <Lock className="h-6 w-6 text-mist-ink" />
+            </div>
+            <CardTitle className="font-display text-xl text-espresso">Access Restricted</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="font-body text-sm text-mist-ink">{reportState.message}</p>
+            <Link
+              href="/dashboard"
+              className="mt-4 inline-block font-body text-sm text-espresso underline hover:text-terracotta"
+            >
+              Back to Dashboard
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Loading */}
-      {isLoading && (
+      {reportState.mode === 'loading' && (
         <div className="grid gap-4 md:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-28 w-full rounded-lg" />
@@ -180,21 +263,45 @@ export default function CashFlowPage() {
       )}
 
       {/* No query yet */}
-      {!queryDates && !isLoading && (
+      {reportState.mode === 'idle' && (
         <div className="py-16 text-center text-sand-ink">
           Select a date range and click &quot;Generate Report&quot; to view the cash flow statement.
         </div>
       )}
 
+      {/* Request failed - report stays hidden */}
+      {reportState.mode === 'error' && (
+        <Card className="mx-auto w-full max-w-lg border-terracotta/30 bg-terracotta/10">
+          <CardContent className="py-8 text-center">
+            <AlertTriangle className="mx-auto h-8 w-8 text-terracotta" />
+            <p className="mt-3 font-body text-sm text-terracotta">
+              {reportState.message ?? 'Could not generate the cash flow report.'}
+            </p>
+            {reportState.canRetry && (
+              <Button
+                variant="outline"
+                className="mt-4 border-terracotta/40 font-body text-espresso"
+                onClick={() => {
+                  void refetch();
+                }}
+              >
+                <RefreshCw className="mr-1 h-4 w-4" />
+                Try again
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Empty state */}
-      {queryDates && !isLoading && data && !hasActivity && (
+      {reportState.mode === 'empty' && (
         <div className="py-16 text-center text-sand-ink">
           No financial activity recorded for this period.
         </div>
       )}
 
       {/* Report */}
-      {data && hasActivity && (
+      {reportState.showReport && data && (
         <div className="space-y-6">
           {/* Metric Cards */}
           <div className="grid gap-4 md:grid-cols-3">
