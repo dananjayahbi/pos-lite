@@ -7,10 +7,17 @@
  * preview shows and what the printer emits is the classic label-printing bug.
  */
 
-/** Fixed A4 label grid: 3 columns × 8 rows = 24 labels per sheet. */
-export const BARCODE_SHEET_COLUMNS = 3;
-export const BARCODE_SHEET_ROWS = 8;
-export const BARCODE_LABELS_PER_SHEET = BARCODE_SHEET_COLUMNS * BARCODE_SHEET_ROWS;
+import { getBarcodeLabelTemplate } from '@/lib/barcode-label-templates.core';
+
+// The A4 grid comes from the shared template definition (ARGUS #157), so the
+// sheet maths, the dialog and the standalone page cannot drift apart again.
+const A4_TEMPLATE = getBarcodeLabelTemplate('a4-24up');
+
+/** Fixed A4 label grid: 3 columns x 8 rows = 24 labels per sheet. */
+export const BARCODE_SHEET_COLUMNS = A4_TEMPLATE.columns;
+export const BARCODE_SHEET_ROWS = A4_TEMPLATE.rows;
+export const BARCODE_LABELS_PER_SHEET =
+  A4_TEMPLATE.labelsPerPage ?? BARCODE_SHEET_COLUMNS * BARCODE_SHEET_ROWS;
 
 export interface SheetQueueItem {
   /** Number of copies to print for this variant. */

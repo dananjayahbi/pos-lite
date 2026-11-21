@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useCallback, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -16,9 +15,13 @@ import {
   type SheetLabelData,
 } from '@/components/inventory/BarcodeSheet';
 import {
+  BARCODE_LABEL_TEMPLATES,
+  barcodeLabelTemplateSummary,
+  getBarcodeLabelTemplate,
+  type BarcodeLabelTemplateId,
+} from '@/lib/barcode-label-templates.core';
+import {
   BARCODE_LABELS_PER_SHEET,
-  BARCODE_SHEET_COLUMNS,
-  BARCODE_SHEET_ROWS,
   paginateBarcodeSheet,
 } from '@/lib/barcode-sheet.core';
 import { PRINT_OVERLAY_CLASS, renderPrintOverlay } from '@/lib/print-overlay';
@@ -44,8 +47,6 @@ interface BarcodeLabelDialogProps {
   variants: LabelVariant[];
 }
 
-type PaperSize = 'thermal' | 'a4';
-
 const toNum = (v: number | string): number =>
   typeof v === 'string' ? parseFloat(v) : v;
 
@@ -56,14 +57,15 @@ export function BarcodeLabelDialog({
   onClose,
   variants,
 }: BarcodeLabelDialogProps) {
-  const [paperSize, setPaperSize] = useState<PaperSize>('thermal');
+  // Same two templates as the standalone Barcode Printing page (ARGUS #157).
+  // The dialog defaults to the thermal roll because that is the common case
+  // when printing straight from a product list.
+  const [templateId, setTemplateId] =
+    useState<BarcodeLabelTemplateId>('thermal-4x6');
+  const template = getBarcodeLabelTemplate(templateId);
+  const isA4 = !template.continuousRoll;
   const [quantities, setQuantities] = useState<Record<string, number>>(() =>
     Object.fromEntries(variants.map((v) => [v.id, 1])),
-  );
-  // Thermal print target. State (not a ref) so the portal re-renders when the
-  // off-screen container exists; refs must not be read during render.
-  const [printContainer, setPrintContainer] = useState<HTMLDivElement | null>(
-    null,
   );
 
   // Callers mount this dialog per selection, so the initializer above is
@@ -101,11 +103,21 @@ export function BarcodeLabelDialog({
 
   // ── Print ────────────────────────────────────────────────────────────────
 
+  // Expand the queue by copy count for the thermal roll.
+  const printLabels = useMemo<LabelVariant[]>(() => {
+    const labels: LabelVariant[] = [];
+    for (const variant of variants) {
+      const qty = quantities[variant.id] ?? 1;
+      for (let i = 0; i < qty; i++) labels.push(variant);
+    }
+    return labels;
+  }, [variants, quantities]);
+
   const handlePrint = useCallback(() => {
-    if (paperSize === 'a4') {
+    if (isA4) {
       if (a4SheetPages.length === 0) return;
 
-      // One fixed-size A4 sheet per page, explicit page breaks — never rely on
+      // One fixed-size A4 sheet per page, explicit page breaks - never rely on
       // browser auto-pagination. Same geometry/CSS as the dedicated page.
       renderPrintOverlay(
         <div>
@@ -126,75 +138,40 @@ export function BarcodeLabelDialog({
       return;
     }
 
-    // Thermal mode: one 4 × 6 cm label per row on a continuous roll.
-    // Create print container
-    const container = document.createElement('div');
-    container.id = 'barcode-print-container';
-    container.style.position = 'fixed';
-    container.style.left = '-9999px';
-    container.style.top = '0';
-    document.body.appendChild(container);
-    setPrintContainer(container);
+    // Thermal mode: one 40 x 60 mm label per page on a continuous roll, using
+    // the same overlay pipeline as the A4 sheet instead of a private portal.
+    if (printLabels.length === 0) return;
 
-    // Inject print styles
-    const style = document.createElement('style');
-    style.id = 'barcode-print-styles';
-    style.textContent = `
-      @media print {
-        body > *:not(#barcode-print-container) {
-          display: none !important;
-          visibility: hidden !important;
-        }
-        #barcode-print-container {
-          display: grid !important;
-          position: static !important;
-          left: auto !important;
-          top: auto !important;
-          visibility: visible !important;
-          grid-template-columns: 1fr;
-          gap: 0;
-        }
-      }
-    `;
-    document.head.appendChild(style);
-
-    // Set grid on the container itself (for rendering purposes)
-    container.style.display = 'grid';
-    container.style.gridTemplateColumns = '1fr';
-    container.style.gap = '0';
-
-    // After a brief delay to let React render, print
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.print();
-
-        // Cleanup
-        style.remove();
-        container.remove();
-        setPrintContainer(null);
-        onClose();
-      });
-    });
-  }, [paperSize, a4SheetPages, onClose]);
-
-  // ── Portal-based print rendering ──────────────────────────────────────────
-
-  // Ensure cleanup on unmount
-  useEffect(() => {
-    return () => {
-      document.getElementById('barcode-print-styles')?.remove();
-      document.getElementById('barcode-print-container')?.remove();
-    };
-  }, []);
-
-  // Build flat labels array for portal rendering
-  const printLabels: LabelVariant[] = [];
-  if (printContainer) {
-    for (const v of variants) {
-      const qty = quantities[v.id] ?? 1;
-      for (let i = 0; i < qty; i++) printLabels.push(v);
-    }
-  }
+    renderPrintOverlay(
+      <div>
+        {printLabels.map((variant, index) => (
+          <div key={`${variant.id}-${index}`} className="barcode-thermal-label">
+            <BarcodeLabel
+              brandName={variant.brandName}
+              productName={variant.productName}
+              sku={variant.sku}
+              barcode={variant.barcode}
+              form={variant.form}
+              packSize={variant.packSize}
+              retailPrice={toNum(variant.retailPrice)}
+              stockQuantity={variant.stockQuantity}
+              lowStockThreshold={variant.lowStockThreshold}
+            />
+          </div>
+        ))}
+      </div>,
+      {
+        printStyles: `
+          @page { size: ${template.widthMm}mm ${template.heightMm}mm; margin: 0; }
+          .${PRINT_OVERLAY_CLASS} { padding: 0 !important; }
+          .barcode-thermal-label { break-after: page; page-break-after: always; }
+          .barcode-thermal-label:last-child { break-after: auto; page-break-after: auto; }
+          .barcode-thermal-label .barcode-label { border: 0 !important; }
+        `,
+      },
+    );
+    onClose();
+  }, [isA4, template, a4SheetPages, printLabels, onClose]);
 
   const firstVariant = variants[0];
   const firstA4Page = a4SheetPages[0];
@@ -212,7 +189,7 @@ export function BarcodeLabelDialog({
           <div className="grid grid-cols-[1fr_300px] gap-6">
             {/* LEFT — Label preview */}
             <div className="flex items-start justify-center overflow-hidden rounded-lg border border-sand/30 bg-sand/10 p-6">
-              {paperSize === 'a4' ? (
+              {isA4 ? (
                 firstA4Page ? (
                   <div className="w-full max-w-[360px]">
                     <div className="mb-2 flex items-center justify-between font-body text-xs text-mist-ink">
@@ -245,42 +222,38 @@ export function BarcodeLabelDialog({
 
             {/* RIGHT — Settings */}
             <div className="flex flex-col gap-4">
-              {/* Paper size selector */}
+              {/* Label template selector */}
               <div>
                 <span className="font-body text-xs font-medium text-espresso mb-1.5 block">
-                  Paper Size
+                  Label template
                 </span>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className={`flex-1 rounded-md px-3 py-2 font-body text-xs transition-colors ${
-                      paperSize === 'thermal'
-                        ? 'bg-espresso text-pearl'
-                        : 'bg-pearl text-espresso border border-sand'
-                    }`}
-                    onClick={() => setPaperSize('thermal')}
-                  >
-                    Thermal (4 × 6 cm)
-                  </button>
-                  <button
-                    type="button"
-                    className={`flex-1 rounded-md px-3 py-2 font-body text-xs transition-colors ${
-                      paperSize === 'a4'
-                        ? 'bg-espresso text-pearl'
-                        : 'bg-pearl text-espresso border border-sand'
-                    }`}
-                    onClick={() => setPaperSize('a4')}
-                  >
-                    A4 Sheet
-                  </button>
+                <div className="flex flex-col gap-2">
+                  {BARCODE_LABEL_TEMPLATES.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      aria-pressed={option.id === templateId}
+                      className={`rounded-md px-3 py-2 text-left font-body text-xs transition-colors ${
+                        option.id === templateId
+                          ? 'bg-espresso text-pearl'
+                          : 'bg-pearl text-espresso border border-sand'
+                      }`}
+                      onClick={() => setTemplateId(option.id)}
+                    >
+                      {option.name}
+                    </button>
+                  ))}
                 </div>
-                {paperSize === 'a4' && (
-                  <p className="font-body text-xs text-mist-ink mt-1.5">
-                    A4 mode prints {BARCODE_SHEET_COLUMNS} labels per row,{' '}
-                    {BARCODE_SHEET_ROWS} rows per page - {BARCODE_LABELS_PER_SHEET}{' '}
-                    labels (63.5 × 33.9 mm) per sheet.
+                <p className="font-body text-xs text-mist-ink mt-1.5">
+                  {barcodeLabelTemplateSummary(template)}
+                </p>
+                {isA4 ? (
+                  <p className="font-body text-xs text-mist-ink mt-1">
+                    {a4SheetPages.length} page
+                    {a4SheetPages.length === 1 ? '' : 's'},{' '}
+                    {BARCODE_LABELS_PER_SHEET} labels per sheet.
                   </p>
-                )}
+                ) : null}
               </div>
 
               {/* Quantity stepper list */}
@@ -363,29 +336,6 @@ export function BarcodeLabelDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Print portal — renders thermal labels off-screen for window.print() */}
-      {printContainer &&
-        createPortal(
-          <>
-            {printLabels.map((v, idx) => (
-              <div key={`${v.id}-${idx}`}>
-                <BarcodeLabel
-                  brandName={v.brandName}
-                  productName={v.productName}
-                  sku={v.sku}
-                  barcode={v.barcode}
-                  form={v.form}
-                  packSize={v.packSize}
-                  retailPrice={toNum(v.retailPrice)}
-                  stockQuantity={v.stockQuantity}
-                  lowStockThreshold={v.lowStockThreshold}
-                />
-              </div>
-            ))}
-          </>,
-          printContainer,
-        )}
     </>
   );
 }
