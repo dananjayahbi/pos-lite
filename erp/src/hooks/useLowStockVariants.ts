@@ -15,6 +15,8 @@ interface LowStockVariant {
   pack_size: string | null;
   stock_quantity: number;
   low_stock_threshold: number;
+  /** ARGUS #214: override when active, else the variant's own threshold. */
+  effective_threshold: number;
   retail_price: string;
   product_name: string;
   category_name: string;

@@ -106,6 +106,35 @@ export function invalidCountedQuantityRows(
   return invalid;
 }
 
+/**
+ * ARGUS #209 - parse and scope the optional stock-take category.
+ *
+ * Creating a session with a foreign/deleted category used to persist the id,
+ * resolve its name without a tenant filter (leaking it) and produce an empty
+ * session. The route only accepts a string id and looks it up through these
+ * tenant-scoped predicates before creating anything.
+ */
+export type StockTakeCategoryParseResult =
+  | { ok: true; categoryId: string | null }
+  | { ok: false; message: string };
+
+export function parseStockTakeCategoryId(raw: unknown): StockTakeCategoryParseResult {
+  if (raw === undefined || raw === null) return { ok: true, categoryId: null };
+  if (typeof raw !== 'string') {
+    return { ok: false, message: 'categoryId must be a string' };
+  }
+  const trimmed = raw.trim();
+  return { ok: true, categoryId: trimmed === '' ? null : trimmed };
+}
+
+export function stockTakeCategoryLookupWhere(tenantId: string, categoryId: string) {
+  return { id: categoryId, tenantId, deletedAt: null };
+}
+
+export function stockTakeCategoryListWhere(tenantId: string, categoryIds: readonly string[]) {
+  return { id: { in: [...categoryIds] }, tenantId, deletedAt: null };
+}
+
 export type StockTakeCancelDisposition = 'discard' | 'reject';
 
 /**

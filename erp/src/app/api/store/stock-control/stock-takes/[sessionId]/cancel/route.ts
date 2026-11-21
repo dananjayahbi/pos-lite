@@ -6,6 +6,8 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StockTakeStatus } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
 import { canCancelStockTake, cancelDisposition } from '@/lib/services/stockTakePolicy.core';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
+import { stockAdjustmentRevalidationOptions } from '@/lib/website/storefront-revalidation.core';
 import { z } from 'zod/v4';
 
 const cancelSchema = z.object({
@@ -69,7 +71,12 @@ export async function POST(
       where: { id: sessionId, tenantId },
       include: {
         items: {
-          select: { countedQuantity: true, discrepancy: true },
+          select: {
+            countedQuantity: true,
+            discrepancy: true,
+            // ARGUS #210: product ids for storefront revalidation.
+            variant: { select: { product: { select: { id: true } } } },
+          },
         },
       },
     });
@@ -153,6 +160,20 @@ export async function POST(
         cancelledAt: new Date().toISOString(),
       },
     });
+
+    // ARGUS #210: revalidate the storefront on the same path as an adjustment
+    // (cancellation discards counts, but the route keeps the contract uniform).
+    // Failure is logged, never fatal.
+    try {
+      await revalidateTenantStorefront(
+        tenantId,
+        stockAdjustmentRevalidationOptions(
+          countedItems.map((item) => item.variant.product.id),
+        ),
+      );
+    } catch (revalidateError) {
+      console.warn('[POST stock-take cancel] Revalidation warning:', revalidateError);
+    }
 
     return NextResponse.json({
       success: true,

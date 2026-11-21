@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
+import { useInvalidateStockQueries } from '@/hooks/useInvalidateStockQueries';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -77,6 +78,9 @@ function DiscrepancyBadge({ value }: { value: number }) {
 export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  // ARGUS #210: approval applies stock corrections, so every stock cache and
+  // the storefront must refresh as well as the session record.
+  const invalidateStockQueries = useInvalidateStockQueries();
   const { data: sessionRes, isLoading } = useStockTakeSession(sessionId);
 
   const canManage = permissions.includes('stock:take');
@@ -245,6 +249,11 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
       await queryClient.invalidateQueries({
         queryKey: ['stock-take-session', sessionId],
       });
+      try {
+        await invalidateStockQueries();
+      } catch {
+        // Approval is committed; a cache refresh failure is not a failure.
+      }
       router.push('/stock-control/stock-takes');
     } catch {
       toast.error('Failed to approve stock take');

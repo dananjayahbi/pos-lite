@@ -8,13 +8,21 @@ import { z } from 'zod';
  * the approval → stock-correction path. The PATCH validates the body here so
  * the API (the source of truth) rejects bad counts with 400 VALIDATION_ERROR
  * before anything is written.
+ *
+ * ARGUS #208: `null` (or a blank string) is the explicit "not counted" state.
+ * The UI sends null when the operator clears a count, which clears both the
+ * stored count and its discrepancy; omitting the field leaves the row alone.
  */
 export const StockTakeItemUpdateSchema = z.object({
-  countedQuantity: z
-    .number()
-    .int('countedQuantity must be a whole number')
-    .min(0, 'countedQuantity cannot be negative')
-    .optional(),
+  countedQuantity: z.preprocess(
+    (value) => (value === '' ? null : value),
+    z
+      .number()
+      .int('countedQuantity must be a whole number')
+      .min(0, 'countedQuantity cannot be negative')
+      .nullable()
+      .optional(),
+  ),
   isRecounted: z.boolean().optional(),
 });
 

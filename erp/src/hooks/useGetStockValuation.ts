@@ -18,6 +18,9 @@ interface StockValuationData {
   retailValueInclTax: number;
   taxRates: { vatRate: number; ssclRate: number };
   costValue: number;
+  /** ARGUS #218: the cost figure is a current-cost snapshot. */
+  costBasis?: 'current-cost';
+  costBasisNote?: string;
   /** Raw-material stock value (ARGUS #243). */
   rawMaterialValue: number;
   rawMaterialCount: number;

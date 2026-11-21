@@ -155,7 +155,7 @@ export default function InventoryValuationClient() {
           value={fmtNumber(unfilteredTotals.totalUnits)}
         />
         <StatCard
-          label="Total Stock Value"
+          label="Total Stock Value (at current cost)"
           value={fmtCurrency(unfilteredTotals.totalStockValue)}
         />
       </div>
@@ -187,8 +187,8 @@ export default function InventoryValuationClient() {
               <TableHead>Product</TableHead>
               <TableHead>Variant</TableHead>
               <TableHead className="text-right">Stock Qty</TableHead>
-              <TableHead className="text-right">Cost Price</TableHead>
-              <TableHead className="text-right">Stock Value</TableHead>
+              <TableHead className="text-right">Cost Price (current)</TableHead>
+              <TableHead className="text-right">Stock Value (at current cost)</TableHead>
               <TableHead className="text-right">Last Sale</TableHead>
             </TableRow>
           </TableHeader>
