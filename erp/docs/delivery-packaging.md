@@ -47,19 +47,32 @@ because `db push` would drop and re-add the column and lose category data.
 | `sku`                                  | Optional, ≤ 60 chars                                                                                                                |
 | `autoGenerateSku`                      | Create-only. Derives `CATEGORY-NAME` (e.g. `BUBB-BUBBLE-WRAP-50M`) and suffix `-2`, `-3` on collision. On by default in the dialog. |
 | `unit`                                 | `PIECE`, `ROLL`, `BOX`, `METER`                                                                                                     |
-| `quantityOnHand` / `lowStockThreshold` | Non-negative integers, in the selected unit                                                                                         |
+| `quantityOnHand`                       | **Create-only** opening stock. PATCH rejects it with 400; use the Adjust Stock endpoint instead.                                     |
+| `lowStockThreshold`                    | Non-negative integer, in the selected unit                                                                                          |
 | `autoDeduct`                           | Include in per-parcel dispatch deduction                                                                                            |
 | `consumptionPerParcel`                 | Decimal (6,2); defaults to `1` at deduction time — pass `null` to clear                                                             |
 
-`DELETE /api/store/packaging/:id` soft-deletes the item, disables
-auto-deduction and keeps consumption history. Every create/update/delete and
-stock adjustment writes an audit row (`PACKAGING_*`).
+### Stock editing and deletion
+
+- **Stock moves only through `POST /api/store/packaging/:id`** (`{ delta, note? }`,
+  `delivery:packaging:dispatch`). The edit dialog shows On Hand as a read-only
+  value with an **Adjust stock** shortcut; PATCH with a `quantityOnHand` field is
+  rejected with a typed 400 pointing at Adjust Stock. The adjustment audit always
+  carries a reason — the operator note, or `Manual stock adjustment` when blank.
+- **DELETE is refused while stock remains** (`409 PACKAGING_HAS_STOCK`). A soft
+  delete would hide the remaining units from stock, stats and valuation without
+  writing them off, so the operator must adjust the item to zero first (the
+  delete dialog explains this and links to Adjust). The delete keeps consumption
+  history and does **not** silently flip `autoDeduct` off.
+
+`DELETE /api/store/packaging/:id` soft-deletes an empty item and keeps
+consumption history. Every create/update/delete and stock adjustment writes an
+audit row (`PACKAGING_*`).
 
 The Add/Edit dialog labels stock fields with the selected unit (e.g. "Low
-Stock At (m)" for `METER`). The three stock fields are bottom-aligned
-(`items-end`) so a unit suffix that wraps one label onto a second line no
-longer pushes its input out of line with the others. The Adjust dialog shows
-the **current stock** and
+Stock At (m)" for `METER`). The stock fields are bottom-aligned (`items-end`) so
+a unit suffix that wraps one label onto a second line no longer pushes its input
+out of line with the others. The Adjust dialog shows the **current stock** and
 accepts the **new level**; the API still receives the derived integer `delta`
 (`{ delta, note? }`), which stays the audited contract.
 

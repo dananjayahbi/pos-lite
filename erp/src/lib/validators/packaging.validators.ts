@@ -50,7 +50,8 @@ export const UpdatePackagingItemSchema = z.object({
   name: z.string().min(1, 'Name is required').max(120).optional(),
   sku: z.string().max(60).optional().or(z.literal('')),
   unit: z.enum(PACKAGING_UNITS).optional(),
-  quantityOnHand: z.coerce.number().int().min(0).optional(),
+  // Stock is intentionally absent: it may only move through the adjustment
+  // endpoint (`POST /api/store/packaging/:id`), which records a note/reason.
   lowStockThreshold: z.coerce.number().int().min(0).optional(),
   autoDeduct: z.boolean().optional(),
   // `null` clears the per-parcel rate.
