@@ -1,5 +1,7 @@
 import Decimal from 'decimal.js';
 
+import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
+
 type Decimalish = Decimal | { toString(): string } | number | string;
 
 export interface RefundSaleLine {
@@ -14,6 +16,11 @@ export interface RefundSaleForPricing {
   lines: RefundSaleLine[];
   /** Sale-level tax actually collected. */
   taxAmount?: Decimalish | null;
+  /**
+   * Combined cart-level discount (manual + promotions) applied to the sale.
+   * Omitted on legacy callers → treated as 0.
+   */
+  discountAmount?: Decimalish | null;
 }
 
 export interface RefundRequestLine {
@@ -79,7 +86,10 @@ function allocateProportionally(weights: Decimal[], total: Decimal): Decimal[] {
  * to apportioning the sale-level tax across the lines: by the recorded line tax
  * when some lines have it, otherwise by the post-discount line total.
  */
-function allocateLineTax(sale: RefundSaleForPricing): Map<string, Decimal> {
+function allocateLineTax(
+  sale: RefundSaleForPricing,
+  fallbackBases: Map<string, Decimal>,
+): Map<string, Decimal> {
   const saleTax = toDecimal(sale.taxAmount);
   const byLine = new Map<string, Decimal>();
 
@@ -93,7 +103,7 @@ function allocateLineTax(sale: RefundSaleForPricing): Map<string, Decimal> {
 
   const weights = recordedTotal.greaterThan(0)
     ? recorded
-    : sale.lines.map((line) => new Decimal(toDecimal(line.lineTotalAfterDiscount)));
+    : sale.lines.map((line) => fallbackBases.get(line.id) ?? new Decimal(0));
 
   const shares = allocateProportionally(weights, saleTax);
   sale.lines.forEach((line, index) => byLine.set(line.id, shares[index]!));
@@ -103,6 +113,11 @@ function allocateLineTax(sale: RefundSaleForPricing): Map<string, Decimal> {
 /**
  * Refund for the requested lines, including the tax that was collected.
  *
+ * The sale's cart-level discount (manual + promotions) is apportioned across
+ * the lines exactly as `createSale` did, so the refund is based on what the
+ * customer actually paid — never the list line value. A fully discounted
+ * (zero-value) sale therefore refunds zero (ARGUS #91).
+ *
  * Delivery charges are intentionally excluded: they cover a service already
  * rendered for the original sale and are not part of the returned goods.
  */
@@ -110,7 +125,18 @@ export function computeReturnRefund(
   sale: RefundSaleForPricing,
   requestLines: RefundRequestLine[],
 ): ComputedRefundAmounts {
-  const taxByLine = allocateLineTax(sale);
+  // The same proportional allocation the sale used, so the paid base per line
+  // matches what was charged (and what tax was computed on).
+  const lineTotals = sale.lines.map((line) => toDecimal(line.lineTotalAfterDiscount));
+  const discountShares = allocateCartDiscountShares(lineTotals, toDecimal(sale.discountAmount));
+  const paidBaseByLine = new Map<string, Decimal>();
+  sale.lines.forEach((line, index) => {
+    const paidBase = Decimal.max(lineTotals[index]!.minus(discountShares[index]!), 0);
+    paidBaseByLine.set(line.id, paidBase);
+  });
+
+  const taxByLine = allocateLineTax(sale, paidBaseByLine);
+
   const lines: ComputedRefundLineAmount[] = [];
   let totalRefund = new Decimal(0);
   let totalTaxRefund = new Decimal(0);
@@ -121,7 +147,7 @@ export function computeReturnRefund(
 
     const ratio = new Decimal(request.quantity).div(saleLine.quantity);
     const goodsRefund = ratio
-      .mul(toDecimal(saleLine.lineTotalAfterDiscount))
+      .mul(paidBaseByLine.get(saleLine.id) ?? new Decimal(0))
       .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     const taxRefund = ratio
       .mul(taxByLine.get(saleLine.id) ?? new Decimal(0))

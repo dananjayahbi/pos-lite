@@ -156,6 +156,7 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
     if (!saleData) return new Decimal(0);
     const sale = saleData as {
       taxAmount?: number | string;
+      discountAmount?: number | string;
       lines: Array<{
         id: string;
         quantity: number;
@@ -164,7 +165,11 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
       }>;
     };
     return computeReturnRefund(
-      { lines: sale.lines, taxAmount: sale.taxAmount ?? 0 },
+      {
+        lines: sale.lines,
+        taxAmount: sale.taxAmount ?? 0,
+        discountAmount: sale.discountAmount ?? 0,
+      },
       selectedLines.map((line) => ({
         saleLineId: line.saleLineId,
         quantity: line.quantity,

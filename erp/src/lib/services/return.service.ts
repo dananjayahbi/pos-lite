@@ -129,6 +129,7 @@ interface ComputedReturnLine {
 export function computeLineRefundAmounts(
   sale: {
     taxAmount?: Decimal | { toString(): string } | number | null;
+    discountAmount?: Decimal | { toString(): string } | number | null;
     lines: Array<{
       id: string;
       variantId: string;
@@ -143,7 +144,11 @@ export function computeLineRefundAmounts(
   requestLines: ReturnLineInput[],
 ): { lines: ComputedReturnLine[]; totalRefund: Decimal; totalTaxRefund: Decimal } {
   const refund = computeReturnRefund(
-    { lines: sale.lines, taxAmount: sale.taxAmount ?? 0 },
+    {
+      lines: sale.lines,
+      taxAmount: sale.taxAmount ?? 0,
+      discountAmount: sale.discountAmount ?? 0,
+    },
     requestLines,
   );
 
