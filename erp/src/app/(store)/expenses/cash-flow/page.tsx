@@ -23,6 +23,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { formatLocalDateInput } from '@/lib/dates/inclusiveRange';
 import { formatRupee } from '@/lib/format';
 import { resolveCashFlowReportState } from '@/lib/reports/cashflowReportState';
+import { validateCashFlowRange } from '@/lib/reports/cashflowRange';
 import type { CashFlowResult } from '@/lib/services/cashflow.service';
 
 class CashFlowRequestError extends Error {
@@ -147,6 +148,7 @@ export default function CashFlowPage() {
   });
 
   function handleGenerate() {
+    if (!rangeValidation.ok) return;
     setQueryDates({ from: dateFrom, to: dateTo });
     setRunId((current) => current + 1);
   }
@@ -174,6 +176,10 @@ export default function CashFlowPage() {
   });
 
   const netCashFlowNum = data ? parseFloat(data.netCashFlow) : 0;
+
+  // ARGUS #422: a reversed or incomplete range is a validation error, not an
+  // empty statement.
+  const rangeValidation = validateCashFlowRange(dateFrom, dateTo);
 
   // Expense bar widths
   const maxExpense =
@@ -216,12 +222,18 @@ export default function CashFlowPage() {
         </div>
         <Button
           onClick={handleGenerate}
-          disabled={!reportState.canGenerate}
+          disabled={!reportState.canGenerate || !rangeValidation.ok}
           className="bg-espresso text-pearl hover:bg-espresso/90"
         >
           Generate Report
         </Button>
       </div>
+
+      {!rangeValidation.ok && dateFrom && dateTo && (
+        <p role="alert" className="font-body text-sm text-terracotta">
+          {rangeValidation.message}
+        </p>
+      )}
 
       {/* Checking session / permission */}
       {reportState.mode === 'permission-loading' && (
