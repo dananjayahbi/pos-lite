@@ -8,6 +8,11 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { auditDetailMode } from '@/lib/audit/auditDetail.core';
+import {
+  formatAuditActionLabel,
+  formatAuditDateTime,
+  formatAuditRoleLabel,
+} from '@/lib/audit/auditPresentation.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,22 +39,6 @@ interface AuditLogDetailModalProps {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatActionName(action: string): string {
-  return action
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = d.toLocaleString('en-GB', { month: 'short' });
-  const year = d.getFullYear();
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  return `${day} ${month} ${year}, ${hours}:${minutes}`;
-}
-
 function displayValue(val: unknown): string {
   if (val === null || val === undefined) return '-';
   if (typeof val === 'object') return JSON.stringify(val);
@@ -75,9 +64,9 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="font-display text-espresso">
-            {formatActionName(entry.action)}
+            {formatAuditActionLabel(entry.action)}
           </DialogTitle>
-          <p className="text-sm text-sand-ink">{formatDate(entry.createdAt)}</p>
+          <p className="text-sm text-sand-ink">{formatAuditDateTime(entry.createdAt)}</p>
         </DialogHeader>
 
         {/* Summary */}
@@ -96,7 +85,7 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
               {entry.actorName}
               {entry.actorRole && (
                 <Badge variant="outline" className="ml-2 text-xs border-mist">
-                  {entry.actorRole.replace('_', ' ')}
+                  {formatAuditRoleLabel(entry.actorRole)}
                 </Badge>
               )}
             </span>
@@ -113,6 +102,12 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
               <span className="font-mono text-espresso text-xs">{entry.ipAddress}</span>
             </div>
           )}
+          <div className="flex gap-2">
+            <span className="text-sand-ink">User agent:</span>
+            <span className="break-all font-mono text-xs text-espresso">
+              {entry.userAgent ?? '-'}
+            </span>
+          </div>
         </div>
 
         {/* Diff / Detail */}

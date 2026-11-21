@@ -10,11 +10,13 @@ without exposing raw database identifiers as the primary label.
 | Entity Type | Badge for the affected entity |
 | Action | Humanized audit action |
 | User | Resolved actor email, or `System` for automated work |
-| Date | Local date/time |
+| Entity ID | Mono id, full value on hover (ARGUS #457) |
+| Date | Local date/time with seconds and timezone |
 
-The previous `Entity ID` and `Performed By` columns were removed from the
-table. Entity IDs remain available in the row detail modal (click a row), and
-the raw `actorId` is still returned by the API for filtering and integrations.
+The `Performed By` column was removed; the `User` column carries the resolved
+name and (since ARGUS #457) the actor role beneath it. Entity ID is back in the
+table for investigation, and the raw `actorId` is still returned by the API for
+filtering and integrations.
 
 ## Resolution rules
 
