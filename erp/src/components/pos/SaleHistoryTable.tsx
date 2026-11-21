@@ -435,7 +435,13 @@ export function SaleHistoryTable() {
                       <button
                         type="button"
                         onClick={() => setVoidSaleTarget(sale)}
-                        className="p-1 text-[#9B2226] hover:text-[#9B2226]/70 transition-colors"
+                        disabled={sale.lines.some((line) => (line.returnedQuantity ?? 0) > 0)}
+                        title={
+                          sale.lines.some((line) => (line.returnedQuantity ?? 0) > 0)
+                            ? 'This sale has returns and cannot be voided'
+                            : 'Void sale'
+                        }
+                        className="p-1 text-[#9B2226] hover:text-[#9B2226]/70 transition-colors disabled:cursor-not-allowed disabled:opacity-30"
                         aria-label="Void sale"
                       >
                         <Ban className="h-4 w-4" />

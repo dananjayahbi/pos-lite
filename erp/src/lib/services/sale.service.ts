@@ -14,6 +14,7 @@ import { setSentryTenantContext } from '@/lib/sentry/context';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
 import { buildSaleTenderLegs } from '@/lib/services/saleTender.core';
+import { assertSaleVoidable } from '@/lib/services/saleVoid.core';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -978,9 +979,12 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
     if (!sale) {
       throw new Error('Sale not found');
     }
-    if (sale.status !== 'COMPLETED') {
-      throw new Error('Only completed sales can be voided');
-    }
+    // A return already restocked/refunded part of this sale; voiding would
+    // double-restock and over-reverse the ledger (ARGUS #94).
+    const completedReturnCount = await tx.return.count({
+      where: { originalSaleId: saleId, tenantId, status: 'COMPLETED' },
+    });
+    assertSaleVoidable({ status: sale.status, completedReturnCount });
 
     // Shift-bound sales can only be voided while their shift is open.
     // Management sales have no shift and can be voided by an authorized actor.

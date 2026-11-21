@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { voidSale } from '@/lib/services/sale.service';
+import { isApiError } from '@/lib/api/errors';
 
 export async function POST(_request: Request, props: { params: Promise<{ id: string }> }) {
   try {
@@ -34,6 +35,13 @@ export async function POST(_request: Request, props: { params: Promise<{ id: str
 
     return NextResponse.json({ success: true, data: sale });
   } catch (error) {
+    if (isApiError(error)) {
+      return NextResponse.json(
+        { success: false, error: { code: error.code, message: error.message } },
+        { status: error.status },
+      );
+    }
+
     const message = error instanceof Error ? error.message : '';
 
     if (message === 'Sale not found') {
