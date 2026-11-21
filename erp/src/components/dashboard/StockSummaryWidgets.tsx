@@ -65,7 +65,7 @@ export function StockSummaryWidgets({ permissions }: StockSummaryWidgetsProps) {
     {
       label: 'Pending Stock Takes',
       value: summary?.pendingStockTakes ?? 0,
-      helper: 'Counts waiting for approval',
+      helper: 'Stock takes waiting for approval',
       href: '/stock-control/stock-takes',
       icon: <ClipboardList className="h-6 w-6" />,
     },
