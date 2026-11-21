@@ -33,6 +33,7 @@ import { useStockActors } from '@/hooks/useStockActors';
 import { stockActorLabel } from '@/lib/stock/actor-label';
 import { resolveStockMovementSource } from '@/lib/stock/movement-source';
 import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
+import { formatVariantLabel, VARIANT_LABEL_SEPARATOR } from '@/lib/products/variant-label';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -526,6 +527,7 @@ function StockMovementHistoryInner() {
                 : movements.map((m) => {
                     const isLow = m.quantityAfter <= m.variant.lowStockThreshold;
                     const source = resolveStockMovementSource(m);
+                    const variantLabel = formatVariantLabel(m.variant);
                     return (
                       <TableRow key={m.id}>
                         <TableCell className="whitespace-nowrap text-sm">
@@ -542,9 +544,9 @@ function StockMovementHistoryInner() {
                         </TableCell>
                         <TableCell>
                           <span className="font-mono text-xs">{m.variant.sku}</span>
-                          {(m.variant.form || m.variant.packSize) && (
+                          {variantLabel && (
                             <span className="ml-1.5 text-xs text-mist-ink">
-                              {[m.variant.form, m.variant.packSize].filter(Boolean).join(' / ')}
+                              {VARIANT_LABEL_SEPARATOR.trim()} {variantLabel}
                             </span>
                           )}
                         </TableCell>

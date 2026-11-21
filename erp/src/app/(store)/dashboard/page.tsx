@@ -28,6 +28,7 @@ import { QuickNav } from '@/components/dashboard/QuickNav';
 import { AnalyticsSection } from '@/components/dashboard/AnalyticsSection';
 import { endOfLocalDay, startOfLocalDay } from '@/components/dashboard/charts/analytics';
 import { formatRecentSaleTimestamp } from '@/components/dashboard/recentSaleTime';
+import { formatVariantLabel } from '@/lib/products/variant-label';
 import {
   resolveRecentSalePayment,
   type RecentSalePaymentTone,
@@ -255,39 +256,40 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((v) => (
-          <TableRow key={v.id}>
-            <TableCell className="text-espresso font-medium">
-              {v.productName}
-              {(v.form ?? v.packSize) && (
-                <span className="text-sand-ink ml-1 text-xs">
-                  {[v.form, v.packSize].filter(Boolean).join(' / ')}
+        {rows.map((v) => {
+          const variantLabel = formatVariantLabel(v);
+          return (
+            <TableRow key={v.id}>
+              <TableCell className="text-espresso font-medium">
+                {v.productName}
+                {variantLabel && (
+                  <span className="text-sand-ink ml-1 text-xs">· {variantLabel}</span>
+                )}
+              </TableCell>
+              <TableCell className="font-mono text-sm">{v.sku}</TableCell>
+              <TableCell>
+                <span
+                  className={
+                    v.stockQuantity === 0
+                      ? 'font-semibold text-red-600'
+                      : 'font-semibold text-amber-600'
+                  }
+                >
+                  {v.stockQuantity}
                 </span>
-              )}
-            </TableCell>
-            <TableCell className="font-mono text-sm">{v.sku}</TableCell>
-            <TableCell>
-              <span
-                className={
-                  v.stockQuantity === 0
-                    ? 'font-semibold text-red-600'
-                    : 'font-semibold text-amber-600'
-                }
-              >
-                {v.stockQuantity}
-              </span>
-            </TableCell>
-            <TableCell className="text-sand-ink">{v.lowStockThreshold}</TableCell>
-            <TableCell>
-              <Link
-                href={`/inventory/${v.productId}`}
-                className="text-terracotta text-sm hover:underline"
-              >
-                View
-              </Link>
-            </TableCell>
-          </TableRow>
-        ))}
+              </TableCell>
+              <TableCell className="text-sand-ink">{v.lowStockThreshold}</TableCell>
+              <TableCell>
+                <Link
+                  href={`/inventory/${v.productId}`}
+                  className="text-terracotta text-sm hover:underline"
+                >
+                  View
+                </Link>
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );

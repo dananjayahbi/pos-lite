@@ -31,6 +31,7 @@ import {
   variantEditSchema,
   type VariantEditFormData,
 } from '@/lib/validators/variant-edit.validators';
+import { barcodeEditError, generateBarcode, isValidEan13 } from '@/lib/barcode';
 import { useVariantMutation } from '@/hooks/useVariantMutation';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -60,13 +61,8 @@ interface Props {
 
 // ── Barcode generator ────────────────────────────────────────────────────────
 
-function generateBarcode(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const arr = new Uint8Array(12);
-  crypto.getRandomValues(arr);
-  const suffix = Array.from(arr, (b) => chars[b % chars.length]).join('');
-  return `VLV${suffix}`;
-}
+// Barcode generation uses the shared in-store EAN-13 generator so the wand
+// always produces a value the edit validator accepts (ARGUS #154).
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -94,6 +90,8 @@ export function VariantEditSheet({
     handleSubmit,
     reset,
     setValue,
+    setError,
+    clearErrors,
     watch,
     formState: { errors, isDirty, dirtyFields },
   } = useForm<VariantEditFormData>({
@@ -146,6 +144,16 @@ export function VariantEditSheet({
 
   const onSubmit = (data: VariantEditFormData) => {
     if (!variant) return;
+
+    // ARGUS #154: a new barcode must be a valid EAN-13, but the row's existing
+    // legacy value (e.g. a 12-character code) is allowed to stay as-is when the
+    // field was not changed.
+    const barcodeError = barcodeEditError(data.barcode, variant.barcode);
+    if (barcodeError) {
+      setError('barcode', { type: 'validate', message: barcodeError });
+      return;
+    }
+
     const payload: Record<string, unknown> = {};
     const dirtyKeys = Object.keys(dirtyFields) as (keyof VariantEditFormData)[];
     for (const key of dirtyKeys) {
@@ -206,20 +214,35 @@ export function VariantEditSheet({
               <Input
                 id="barcode"
                 className="font-mono flex-1"
-                {...register('barcode')}
+                inputMode="numeric"
+                maxLength={13}
+                aria-describedby="barcode-help"
+                aria-invalid={errors.barcode ? true : undefined}
+                {...register('barcode', {
+                  onChange: () => clearErrors('barcode'),
+                })}
               />
               <Button
                 type="button"
                 variant="outline"
                 size="icon"
                 className="border-sand text-mist-ink hover:text-espresso shrink-0"
-                onClick={() => setValue('barcode', generateBarcode(), { shouldDirty: true })}
+                onClick={() => setValue('barcode', generateBarcode(), { shouldDirty: true, shouldValidate: true })}
                 title="Auto-generate barcode"
                 aria-label="Auto-generate barcode"
               >
                 <Wand2 className="h-4 w-4" />
               </Button>
             </div>
+            <p id="barcode-help" className="text-xs text-mist-ink">
+              In-store barcode: 13 digits in the 200 prefix range.
+            </p>
+            {variant.barcode && !isValidEan13(variant.barcode) && (
+              <p className="text-xs text-amber-700">
+                This variant has a legacy barcode. You can keep it, or replace it
+                with a 13-digit EAN-13 code.
+              </p>
+            )}
             {errors.barcode && (
               <p className="text-xs text-red-600">{errors.barcode.message}</p>
             )}

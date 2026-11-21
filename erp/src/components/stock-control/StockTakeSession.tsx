@@ -41,6 +41,7 @@ import { useStockTakeSession, type StockTakeItemDetail } from '@/hooks/useStockT
 import { canCompleteStockTake, canEditStockTake } from '@/lib/services/stockTakePolicy.core';
 import { parseStockTakeCountInput } from '@/lib/services/stockTakeCount.core';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 
 interface StockTakeSessionProps {
   sessionId: string;
@@ -51,20 +52,7 @@ interface StockTakeSessionProps {
 const PAGE_SIZE = 25;
 
 function formatDateTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  return (
-    d.toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }) +
-    ', ' +
-    d.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
-  );
+  return formatStockMovementTimestamp(dateStr);
 }
 
 export function StockTakeSession({ sessionId, permissions, userId }: StockTakeSessionProps) {
@@ -596,12 +584,7 @@ export function StockTakeSession({ sessionId, permissions, userId }: StockTakeSe
           {lastSaved && (
             <span>
               Last saved:{' '}
-              {lastSaved.toLocaleTimeString('en-US', {
-                hour: 'numeric',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: true,
-              })}
+              {formatStockMovementTimestamp(lastSaved)}
             </span>
           )}
         </div>

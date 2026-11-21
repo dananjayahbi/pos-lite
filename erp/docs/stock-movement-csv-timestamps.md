@@ -24,3 +24,19 @@ Timezone note: the export uses the tenant's configured timezone; if none is
 configured it uses the ERP server's timezone. The UTC column is always UTC.
 
 Tests: `src/lib/stock/__tests__/movement-timestamp.test.ts`.
+
+## One stock date-time convention (ARGUS #151)
+
+The Products & Stock module had drifted into four conventions:
+
+| Surface | Old |
+| --- | --- |
+| Stock control dashboard, stock takes | `15 Nov 2026, 11:07 PM` |
+| Recent stock movements card | `15 Nov · 23:07` |
+| Stock valuation, product stock history | `15 Nov 2026, 23:07` |
+| Product detail created/modified, stock-take "Last saved" | `15 November 2026, 11:07` / `11:07:42 pm` |
+
+Every stock date-time now goes through `formatStockMovementTimestamp`, so the
+whole module renders `15 Nov 2026, 11:07 pm`. Date-only fields (batch expiry)
+stay date-only on purpose. The helper already returns `''` for invalid input.
+

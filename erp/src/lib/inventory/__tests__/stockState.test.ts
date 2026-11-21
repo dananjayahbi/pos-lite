@@ -4,6 +4,7 @@ import {
   getProductStockState,
   getVariantStockState,
   matchesStockStatusFilter,
+  resolveProductStatusBadge,
 } from '@/lib/inventory/stockState';
 
 /**
@@ -60,8 +61,16 @@ describe('stock state rule', () => {
     ).toBe('IN_STOCK');
   });
 
-  it('keeps a product without variants in stock (historical badge behaviour)', () => {
-    expect(getProductStockState([])).toBe('IN_STOCK');
+  it('classifies a product without variants as out of stock (ARGUS #153)', () => {
+    expect(getProductStockState([])).toBe('OUT_OF_STOCK');
+    expect(matchesStockStatusFilter([], 'out_of_stock')).toBe(true);
+    expect(matchesStockStatusFilter([], 'low_stock')).toBe(false);
+  });
+
+  it('classifies a product whose only variant has negative stock as out of stock', () => {
+    expect(
+      getProductStockState([{ stockQuantity: -4, lowStockThreshold: 5 }]),
+    ).toBe('OUT_OF_STOCK');
   });
 
   it('drives both inventory filters from the same rule', () => {
@@ -72,5 +81,65 @@ describe('stock state rule', () => {
     expect(matchesStockStatusFilter(low, 'out_of_stock')).toBe(false);
     expect(matchesStockStatusFilter(out, 'out_of_stock')).toBe(true);
     expect(matchesStockStatusFilter(out, 'low_stock')).toBe(false);
+  });
+});
+
+/**
+ * ARGUS #149: the Deleted view listed 37 soft-deleted products, all badged
+ * "Low Stock" because the badge ignored the row's lifecycle state.
+ */
+describe('product status badge', () => {
+  it('badges a soft-deleted row as Deleted, never Low Stock', () => {
+    expect(
+      resolveProductStatusBadge({
+        isDeleted: true,
+        isArchived: false,
+        variants: [{ stockQuantity: 1, lowStockThreshold: 5 }],
+      }),
+    ).toBe('DELETED');
+    expect(
+      resolveProductStatusBadge({
+        isDeleted: true,
+        isArchived: false,
+        variants: [{ stockQuantity: 0, lowStockThreshold: 5 }],
+      }),
+    ).toBe('DELETED');
+  });
+
+  it('keeps Deleted ahead of Archived for archived soft-deleted rows', () => {
+    expect(
+      resolveProductStatusBadge({
+        isDeleted: true,
+        isArchived: true,
+        variants: [{ stockQuantity: 9, lowStockThreshold: 5 }],
+      }),
+    ).toBe('DELETED');
+  });
+
+  it('still uses the shared stock rule for live rows', () => {
+    expect(
+      resolveProductStatusBadge({
+        isArchived: false,
+        variants: [{ stockQuantity: 9, lowStockThreshold: 5 }],
+      }),
+    ).toBe('ACTIVE');
+    expect(
+      resolveProductStatusBadge({
+        isArchived: false,
+        variants: [{ stockQuantity: 3, lowStockThreshold: 5 }],
+      }),
+    ).toBe('LOW_STOCK');
+    expect(
+      resolveProductStatusBadge({
+        isArchived: false,
+        variants: [{ stockQuantity: 0, lowStockThreshold: 5 }],
+      }),
+    ).toBe('OUT_OF_STOCK');
+    expect(
+      resolveProductStatusBadge({
+        isArchived: true,
+        variants: [{ stockQuantity: 0, lowStockThreshold: 5 }],
+      }),
+    ).toBe('ARCHIVED');
   });
 });

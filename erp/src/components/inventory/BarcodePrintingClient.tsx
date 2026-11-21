@@ -44,6 +44,7 @@ import {
   BARCODE_LABELS_PER_SHEET,
   countBarcodeLabels,
   paginateBarcodeSheet,
+  planBarcodeCopies,
 } from '@/lib/barcode-sheet.core';
 import { PRINT_OVERLAY_CLASS, renderPrintOverlay } from '@/lib/print-overlay';
 
@@ -88,6 +89,9 @@ export function BarcodePrintingClient() {
   const [page, setPage] = useState(1);
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [fillLastSheet, setFillLastSheet] = useState(false);
+  // ARGUS #162: clamping and queue changes must be stated, not silent.
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   // Both entry points offer exactly the same two templates (ARGUS #157).
   const [templateId, setTemplateId] =
     useState<BarcodeLabelTemplateId>('a4-24up');
@@ -161,15 +165,49 @@ export function BarcodePrintingClient() {
 
   const removeVariant = useCallback((variantId: string) => {
     setQueue((current) => current.filter((item) => item.variantId !== variantId));
+    setCopyNotice(null);
   }, []);
 
-  const setCopies = useCallback((variantId: string, copies: number) => {
-    setQueue((current) =>
-      current.map((item) =>
-        item.variantId === variantId ? { ...item, copies: clampCopies(copies) } : item,
-      ),
-    );
-  }, []);
+  /**
+   * ARGUS #162: copy counts are clamped to 1-99. Say so instead of silently
+   * turning 0 into 1 or 100 into 99.
+   */
+  const updateCopies = useCallback(
+    (variantId: string, sku: string, requested: number) => {
+      const next = clampCopies(requested);
+      if (!Number.isFinite(requested) || next !== requested) {
+        setCopyNotice(
+          `Copies for ${sku} must be between ${MIN_COPIES} and ${MAX_COPIES} - set to ${next}.`,
+        );
+      } else {
+        setCopyNotice(null);
+      }
+      setQueue((current) =>
+        current.map((item) =>
+          item.variantId === variantId ? { ...item, copies: next } : item,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handleAdd = useCallback(
+    (option: VariantOption) => {
+      const existing = queue.find((item) => item.variantId === option.variantId);
+      if (existing) {
+        const next = clampCopies(existing.copies + 1);
+        setCopyNotice(
+          next === existing.copies
+            ? `${option.sku} is already at the maximum of ${MAX_COPIES} copies.`
+            : `Added another copy of ${option.sku} - ${next} copies queued.`,
+        );
+      } else {
+        setCopyNotice(`Added ${option.sku} - 1 copy queued.`);
+      }
+      addVariant(option);
+    },
+    [queue, addVariant],
+  );
 
   const pages = useMemo(
     () => (isA4 ? paginateBarcodeSheet(queue, { fillLastSheet }) : []),
@@ -182,6 +220,14 @@ export function BarcodePrintingClient() {
         ? countBarcodeLabels(queue, { fillLastSheet })
         : countBarcodeLabels(queue),
     [isA4, queue, fillLastSheet],
+  );
+
+  // ARGUS #162: `fillLastSheet` pads the page with extra copies, so a row that
+  // requests 25 copies can print more. Plan per row so the queue tells the
+  // truth next to the total.
+  const copyPlan = useMemo(
+    () => planBarcodeCopies(queue, { fillLastSheet: isA4 && fillLastSheet }),
+    [queue, isA4, fillLastSheet],
   );
 
   const thermalLabels = useMemo(
@@ -441,11 +487,15 @@ export function BarcodePrintingClient() {
                               ? 'border-sand text-espresso'
                               : 'bg-espresso text-pearl hover:bg-espresso/90'
                           }
-                          aria-label={`Add ${option.sku}`}
-                          onClick={() => addVariant(option)}
+                          aria-label={
+                            added
+                              ? `Add another copy of ${option.sku}`
+                              : `Add ${option.sku}`
+                          }
+                          onClick={() => handleAdd(option)}
                         >
                           <Plus className="mr-1 h-3.5 w-3.5" />
-                          Add
+                          {added ? 'Add another' : 'Add'}
                         </Button>
                       </li>
                     );
@@ -503,20 +553,54 @@ export function BarcodePrintingClient() {
           </section>
 
           <section className="rounded-lg border border-sand/40 bg-pearl">
-            <div className="flex items-center justify-between border-b border-sand/40 px-3 py-2.5">
-              <span className="font-body text-sm font-medium text-espresso">
-                Selected variants
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-mist-ink hover:text-espresso"
-                onClick={() => setQueue([])}
-                disabled={queue.length === 0}
-              >
-                Clear all
-              </Button>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sand/40 px-3 py-2.5">
+              <div>
+                <span className="font-body text-sm font-medium text-espresso">
+                  Selected variants
+                </span>
+                <span className="ml-2 font-body text-xs text-mist-ink">
+                  {MIN_COPIES}-{MAX_COPIES} copies each
+                </span>
+              </div>
+              {showClearConfirm && queue.length > 0 ? (
+                <div className="flex items-center gap-2">
+                  <span className="font-body text-xs text-espresso">
+                    Clear {queue.length} variant{queue.length === 1 ? '' : 's'}?
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 border-sand px-2 text-espresso"
+                    onClick={() => setShowClearConfirm(false)}
+                  >
+                    Keep
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 bg-red-600 px-2 text-white hover:bg-red-700"
+                    onClick={() => {
+                      setQueue([]);
+                      setShowClearConfirm(false);
+                      setCopyNotice('Cleared the print queue.');
+                    }}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-mist-ink hover:text-espresso"
+                  onClick={() => setShowClearConfirm(true)}
+                  disabled={queue.length === 0}
+                >
+                  Clear all
+                </Button>
+              )}
             </div>
 
             {queue.length === 0 ? (
@@ -526,10 +610,11 @@ export function BarcodePrintingClient() {
               </p>
             ) : (
               <ul className="max-h-[360px] divide-y divide-sand/30 overflow-y-auto">
-                {queue.map((item) => {
+                {queue.map((item, index) => {
                   const variantText = [item.form, item.packSize]
                     .filter(Boolean)
                     .join(' · ');
+                  const printedCopies = copyPlan.printed[index] ?? item.copies;
                   return (
                     <li
                       key={item.variantId}
@@ -546,6 +631,16 @@ export function BarcodePrintingClient() {
                             {variantText ? `${variantText} · ` : ''}
                             <span className="font-mono">{item.sku}</span>
                           </div>
+                          <div
+                            data-testid="barcode-printed-labels"
+                            className="font-body text-xs text-mist-ink"
+                          >
+                            {printedCopies === item.copies
+                              ? `prints ${printedCopies} label${printedCopies === 1 ? '' : 's'}`
+                              : `prints ${printedCopies} labels (${item.copies} requested + ${
+                                  printedCopies - item.copies
+                                } sheet filler)`}
+                          </div>
                         </div>
                       </div>
 
@@ -554,7 +649,7 @@ export function BarcodePrintingClient() {
                           type="button"
                           className="flex h-7 w-7 items-center justify-center rounded border border-sand text-espresso hover:bg-sand/20"
                           aria-label={`Decrease copies for ${item.sku}`}
-                          onClick={() => setCopies(item.variantId, item.copies - 1)}
+                          onClick={() => updateCopies(item.variantId, item.sku, item.copies - 1)}
                         >
                           <Minus className="h-3 w-3" />
                         </button>
@@ -562,18 +657,27 @@ export function BarcodePrintingClient() {
                           type="number"
                           min={MIN_COPIES}
                           max={MAX_COPIES}
+                          step={1}
                           value={item.copies}
                           aria-label={`Copies for ${item.sku}`}
-                          onChange={(event) =>
-                            setCopies(item.variantId, Number(event.target.value))
-                          }
+                          onChange={(event) => {
+                            const raw = event.target.value;
+                            if (raw.trim() === '') {
+                              setCopyNotice(
+                                `Copy count for ${item.sku} cannot be blank - using ${MIN_COPIES}.`,
+                              );
+                              updateCopies(item.variantId, item.sku, MIN_COPIES);
+                              return;
+                            }
+                            updateCopies(item.variantId, item.sku, Number(raw));
+                          }}
                           className="h-7 w-12 rounded border border-sand bg-pearl text-center font-mono text-xs text-espresso focus:ring-1 focus:ring-espresso focus:outline-none"
                         />
                         <button
                           type="button"
                           className="flex h-7 w-7 items-center justify-center rounded border border-sand text-espresso hover:bg-sand/20"
                           aria-label={`Increase copies for ${item.sku}`}
-                          onClick={() => setCopies(item.variantId, item.copies + 1)}
+                          onClick={() => updateCopies(item.variantId, item.sku, item.copies + 1)}
                         >
                           <Plus className="h-3 w-3" />
                         </button>
@@ -593,6 +697,15 @@ export function BarcodePrintingClient() {
               </ul>
             )}
 
+            <div
+              role="status"
+              aria-live="polite"
+              data-testid="barcode-copy-notice"
+              className="min-h-[1.25rem] px-3 pt-2 font-body text-xs text-mist-ink"
+            >
+              {copyNotice ?? ''}
+            </div>
+
             <div className="flex items-center justify-between gap-3 border-t border-sand/40 px-3 py-2.5">
               {isA4 ? (
                 <label
@@ -602,7 +715,10 @@ export function BarcodePrintingClient() {
                   <Switch
                     id="fill-last-sheet"
                     checked={fillLastSheet}
-                    onCheckedChange={setFillLastSheet}
+                    onCheckedChange={(checked) => {
+                      setFillLastSheet(checked);
+                      setCopyNotice(null);
+                    }}
                     aria-label="Fill last sheet"
                   />
                   Fill the last sheet
@@ -614,7 +730,9 @@ export function BarcodePrintingClient() {
               )}
               <span className="font-body text-xs text-mist-ink">
                 {isA4
-                  ? `${totalLabels} / ${pages.length * BARCODE_LABELS_PER_SHEET} slots`
+                  ? `${totalLabels} / ${pages.length * BARCODE_LABELS_PER_SHEET} slots${
+                      copyPlan.filler > 0 ? ` · ${copyPlan.filler} filler` : ''
+                    }`
                   : `${totalLabels} label${totalLabels === 1 ? '' : 's'}`}
               </span>
             </div>

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRecentMovements } from '@/hooks/useRecentMovements';
 import { stockActorLabel } from '@/lib/stock/actor-label';
-import { formatDashboardDateTime } from '@/lib/dashboard/dateFormat';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 import { movementReasonBadge } from './movementReasonBadge';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/table';
 
 function formatDateTime(value: string) {
-  return formatDashboardDateTime(value);
+  return formatStockMovementTimestamp(value);
 }
 
 export function RecentStockMovementsCard() {

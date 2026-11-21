@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getVariantById, updateProductVariant } from '@/lib/services/product.service';
 import { UpdateVariantSchema } from '@/lib/validators/product.validators';
+import { barcodeEditError } from '@/lib/barcode';
 
 export async function GET(
   _request: Request,
@@ -100,8 +101,26 @@ export async function PATCH(
       );
     }
 
-    const updated = await updateProductVariant(tenantId, id, session.user.id, parsed.data);
+    // ARGUS #154: enforce the in-store EAN-13 format server-side. An unchanged
+    // legacy barcode (e.g. 12 characters) is still accepted so unrelated edits
+    // and re-saves do not fail.
+    const existing = await getVariantById(tenantId, id);
+    const barcodeError = barcodeEditError(parsed.data.barcode, existing.barcode);
+    if (barcodeError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Validation failed',
+            details: [{ path: 'barcode', message: barcodeError }],
+          },
+        },
+        { status: 400 },
+      );
+    }
 
+    const updated = await updateProductVariant(tenantId, id, session.user.id, parsed.data);
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';

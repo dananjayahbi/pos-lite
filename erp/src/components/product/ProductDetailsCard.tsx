@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { ImageViewerModal } from '@/components/product/ImageViewerModal';
 import { taxRuleLabel } from '@/lib/constants/product-options';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 import { useTaxRates } from '@/hooks/useTaxRates';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -15,14 +16,7 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
+  return formatStockMovementTimestamp(dateStr);
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────

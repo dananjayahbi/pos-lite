@@ -49,6 +49,7 @@ import { stockTakeAction } from '@/components/stock-control/stockTakeLinks';
 import { canCancelStockTake } from '@/lib/services/stockTakePolicy.core';
 import { isStaleStockTake } from '@/lib/services/stockTakeAge.core';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 
 interface StockTakeListProps {
   permissions: string[];
@@ -88,20 +89,7 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
 };
 
 function formatDateTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  return (
-    d.toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }) +
-    ', ' +
-    d.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
-  );
+  return formatStockMovementTimestamp(dateStr);
 }
 
 export function StockTakeList({ permissions, userId }: StockTakeListProps) {

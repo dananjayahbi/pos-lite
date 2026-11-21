@@ -266,6 +266,18 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
       .filter(([, productVariants]) => matchesStockStatusFilter(productVariants, stockStatus))
       .map(([productId]) => productId);
 
+    // A product with no live variants can never be sold, so the shared rule
+    // calls it out of stock. It has no variant rows to appear in the map above,
+    // so include it explicitly and keep the filter in step with the badge
+    // (ARGUS #153).
+    if (stockStatus === 'out_of_stock') {
+      const emptyProducts = await prisma.product.findMany({
+        where: { AND: [where, { variants: { none: { deletedAt: null } } }] },
+        select: { id: true },
+      });
+      for (const product of emptyProducts) matchingIds.push(product.id);
+    }
+
     const currentIds = (where.id as { in?: string[] } | undefined)?.in;
     const matchingSet = new Set(matchingIds);
     where.id = {

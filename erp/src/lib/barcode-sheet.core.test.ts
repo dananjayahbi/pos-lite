@@ -6,6 +6,7 @@ import {
   BARCODE_SHEET_ROWS,
   countBarcodeLabels,
   paginateBarcodeSheet,
+  planBarcodeCopies,
 } from '@/lib/barcode-sheet.core';
 
 const item = (copies: number, id = `v-${copies}`) => ({ id, copies });
@@ -73,5 +74,50 @@ describe('paginateBarcodeSheet', () => {
   it('honours a custom per-sheet capacity', () => {
     const pages = paginateBarcodeSheet([item(5)], { perSheet: 2 });
     expect(pages.map((page) => page.length)).toEqual([2, 2, 1]);
+  });
+});
+
+/**
+ * ARGUS #162: with Fill last sheet on, the header total jumped from 25 to 48
+ * while each queue row still said 25, so the row no longer stated how many
+ * labels it would print.
+ */
+describe('planBarcodeCopies', () => {
+  it('reports the requested count per row when no filling is needed', () => {
+    const plan = planBarcodeCopies([item(20, 'a'), item(5, 'b')]);
+    expect(plan.requested).toBe(25);
+    expect(plan.printed).toEqual([20, 5]);
+    expect(plan.total).toBe(25);
+    expect(plan.filler).toBe(0);
+  });
+
+  it('attributes sheet filler back to the rows that will print it', () => {
+    const plan = planBarcodeCopies([item(20, 'a'), item(5, 'b')], {
+      fillLastSheet: true,
+    });
+    expect(plan.requested).toBe(25);
+    expect(plan.filler).toBe(23);
+    expect(plan.total).toBe(48);
+    // Queue order: 20 a + 5 b, then the first 20 a and 3 b repeat.
+    expect(plan.printed).toEqual([40, 8]);
+    expect(plan.printed.reduce((sum, value) => sum + value, 0)).toBe(plan.total);
+  });
+
+  it('adds no filler for an exactly full sheet', () => {
+    const plan = planBarcodeCopies([item(BARCODE_LABELS_PER_SHEET, 'a')], {
+      fillLastSheet: true,
+    });
+    expect(plan.filler).toBe(0);
+    expect(plan.total).toBe(BARCODE_LABELS_PER_SHEET);
+    expect(plan.printed).toEqual([BARCODE_LABELS_PER_SHEET]);
+  });
+
+  it('handles an empty queue', () => {
+    expect(planBarcodeCopies([])).toEqual({
+      requested: 0,
+      printed: [],
+      total: 0,
+      filler: 0,
+    });
   });
 });

@@ -16,6 +16,7 @@ import {
 import { ChevronLeft, ChevronRight, History } from 'lucide-react';
 import { useStockMovements } from '@/hooks/useStockMovements';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 
 // ── Reason badge ─────────────────────────────────────────────────────────────
 
@@ -50,14 +51,7 @@ function ReasonBadge({ reason }: { reason: string }) {
 // ── Date formatting ──────────────────────────────────────────────────────────
 
 function formatDateTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  return new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
+  return formatStockMovementTimestamp(dateStr);
 }
 
 // ── Component ────────────────────────────────────────────────────────────────

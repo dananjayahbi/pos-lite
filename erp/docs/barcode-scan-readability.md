@@ -52,3 +52,23 @@ the sheet and asserts:
   `white-space: nowrap`, and occupies a single 12 px line;
 - every SVG bar has the same height (≥ 40 px), i.e. no EAN guard-bar spikes;
 - the page copy names the Code 128 print format.
+
+## Editing barcodes (ARGUS #154)
+
+The variant edit sheet used to accept any 8-20 alphanumeric barcode, so a saved
+EAN-13 could be replaced by a value no till scanner would match. Both the sheet
+and `PATCH /api/store/variants/[id]` now enforce the in-store EAN-13 format:
+
+- a changed value must be 13 digits with a valid GS1 check digit
+  (`isValidEan13`), otherwise the request fails with
+  `VALIDATION_ERROR` and the message
+  `Barcode must be a 13-digit EAN-13 in-store code (for example 2003424422401)`;
+- an **unchanged** legacy value (the five 12-character codes in the live data)
+  is accepted, so editing price/stock or re-saving does not force a re-barcode;
+- an explicit `null` clears the barcode through the API; the edit sheet itself
+  always requires a 13-digit value once the field is changed;
+- the wand button now calls the shared `generateBarcode()` (EAN-13 prefix 200)
+  instead of the old `VLV…` string.
+
+Logic: `barcodeEditError()` in `src/lib/barcode.ts`;
+tests: `src/lib/barcode.test.ts`.

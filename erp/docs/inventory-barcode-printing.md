@@ -14,7 +14,21 @@ Barcode Printing**.
 | Header | Total label count, page count and **Print A4**. |
 
 Adding a variant that is already queued increments its copy count instead of
-creating a duplicate row.
+creating a duplicate row, and the button changes to **Add another** with a
+status message stating the new copy count (ARGUS #162).
+
+## Copy and queue feedback (ARGUS #162)
+
+- Copy counts are explicitly limited to **1-99**. Values outside that range (or
+  a blank field) are clamped to the nearest bound, and a status line under the
+  queue says what happened instead of silently changing the number.
+- **Clear all** now asks `Clear N variants?` with **Keep** / **Clear** before it
+  empties the queue.
+- With **Fill the last sheet** on, each queue row states the labels it will
+  actually print (e.g. `prints 40 labels (20 requested + 20 sheet filler)`),
+  and the footer separates requested labels from sheet filler. The header total
+  and the row counts now agree; the maths lives in `planBarcodeCopies()` in
+  `src/lib/barcode-sheet.core.ts` and is unit-tested.
 
 ## Product picker loading
 
@@ -94,7 +108,8 @@ in print.
 ## Tests
 
 - `src/lib/barcode.test.ts` — check digit, EAN-13 validity, symbology fallback.
-- `src/lib/barcode-sheet.core.test.ts` — copy expansion, page overflow, fill-last-sheet.
+- `src/lib/barcode-sheet.core.test.ts` - copy expansion, page overflow, fill-last-sheet,
+  and per-row printed counts with filler.
 - `tests/37_barcode_printing.spec.ts` — navigation/empty state, demo barcodes,
   queue → pages → fill, Print A4 overlay page count, product image thumbnails,
   server-side pagination (10 per page, newest first), and creating a product in

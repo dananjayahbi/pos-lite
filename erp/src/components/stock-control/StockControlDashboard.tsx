@@ -19,6 +19,7 @@ import { stockActorLabel } from '@/lib/stock/actor-label';
 import { formatRupee } from '@/lib/format';
 import { LowStockAlertBadge } from '@/components/stock/LowStockAlertBadge';
 import { stockMovementReasonLabel } from '@/lib/constants/stock-movement';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 
 interface StockControlDashboardProps {
@@ -38,16 +39,7 @@ const REASON_BADGE: Record<string, { label: string; className: string }> = {
 };
 
 function formatDateTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }) + ', ' + d.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
+  return formatStockMovementTimestamp(dateStr);
 }
 
 export function StockControlDashboard({ permissions }: StockControlDashboardProps) {

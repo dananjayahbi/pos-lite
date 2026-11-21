@@ -67,3 +67,27 @@ export function generateBarcode(): string {
 export function barcodeSymbology(value: string): 'EAN13' | 'CODE128' {
   return isValidEan13(value) ? 'EAN13' : 'CODE128';
 }
+
+/** Operator-facing message for a barcode edit that is not an EAN-13. */
+export const BARCODE_EDIT_MESSAGE =
+  'Barcode must be a 13-digit EAN-13 in-store code (for example 2003424422401)';
+
+/**
+ * Validation for barcode edits (ARGUS #154).
+ *
+ * New values must be a valid EAN-13. A value that is unchanged is accepted so
+ * legacy 12-character / non-EAN barcodes keep working: editing another field,
+ * or re-saving the row, must not force an unrelated re-barcode. An explicit
+ * `null` clears the barcode; an empty string is treated as an invalid new value.
+ *
+ * Returns the message to show, or `null` when the edit is allowed.
+ */
+export function barcodeEditError(
+  nextBarcode: string | null | undefined,
+  currentBarcode: string | null | undefined,
+): string | null {
+  if (nextBarcode === undefined) return null;
+  if (nextBarcode === null) return null;
+  if (currentBarcode != null && nextBarcode === currentBarcode) return null;
+  return isValidEan13(nextBarcode) ? null : BARCODE_EDIT_MESSAGE;
+}
