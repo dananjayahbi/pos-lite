@@ -3,14 +3,22 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import {
-  getOrCreateFund,
+  getPettyCashReadState,
   updateFund,
   getBalanceEquation,
   getPettyCashTopUps,
+  getPettyCashLedgerTotals,
 } from '@/lib/services/petty-cash.service';
 import { UpdatePettyCashFundSchema } from '@/lib/validators/petty-cash.validators';
 import { toErrorResponse } from '@/lib/api/error-envelope';
+import { multiplePettyCashFundsMessage } from '@/lib/petty-cash/setup-state';
 
+/**
+ * GET /api/store/petty-cash is read-only (ARGUS #408). Opening the page must
+ * not create a fund, payment account or opening-balance ledger entry. When no
+ * fund exists the response carries `setupRequired`; duplicates carry
+ * `multipleFunds` instead of silently returning the first.
+ */
 export async function GET() {
   try {
     const session = await auth();
@@ -34,10 +42,46 @@ export async function GET() {
       );
     }
 
-    const fund = await getOrCreateFund(tenantId, session.user.id);
-    const balance = fund ? await getBalanceEquation(tenantId, fund.id) : null;
-    const topUps = fund ? await getPettyCashTopUps(tenantId, fund) : [];
-    return NextResponse.json({ success: true, data: fund, balance, topUps });
+    const state = await getPettyCashReadState(tenantId);
+    if (state.multipleFunds) {
+      return NextResponse.json({
+        success: true,
+        data: null,
+        balance: null,
+        topUps: [],
+        setupRequired: false,
+        multipleFunds: true,
+        fundCount: state.fundCount,
+        message: multiplePettyCashFundsMessage(state.fundCount),
+      });
+    }
+    if (!state.fund) {
+      return NextResponse.json({
+        success: true,
+        data: null,
+        balance: null,
+        topUps: [],
+        setupRequired: true,
+        multipleFunds: false,
+      });
+    }
+
+    const balance = await getBalanceEquation(tenantId, state.fund.id);
+    const topUps = await getPettyCashTopUps(tenantId, state.fund);
+    const totals = await getPettyCashLedgerTotals(tenantId, state.fund);
+    return NextResponse.json({
+      success: true,
+      data: state.fund,
+      balance,
+      topUps,
+      ledger: {
+        ...totals,
+        expenseShown: state.fund.expenses.length,
+        topUpShown: topUps.length,
+      },
+      setupRequired: false,
+      multipleFunds: false,
+    });
   } catch (error) {
     return toErrorResponse(error, 'GET /api/store/petty-cash');
   }

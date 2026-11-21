@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { buildPettyCashExportData } from '@/lib/services/petty-cash.service';
 import { toCsv, csvDownloadResponse, type CsvColumn } from '@/lib/export';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 const CATEGORY_LABEL: Record<string, string> = {
   RENT: 'Rent',
@@ -36,7 +37,7 @@ export async function GET(request: Request) {
         { status: 401 },
       );
     }
-    if (!hasPermission(session.user, PERMISSIONS.EXPENSE.viewExpense)) {
+    if (!hasPermission(session.user, PERMISSIONS.PETTY_CASH.viewPettyCash)) {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
@@ -129,10 +130,6 @@ export async function GET(request: Request) {
     const filename = `petty-cash-export-${new Date().toISOString().slice(0, 10)}.csv`;
     return csvDownloadResponse(csv, filename);
   } catch (error) {
-    console.error('GET /api/store/petty-cash/export error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to export petty cash' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'GET /api/store/petty-cash/export');
   }
 }

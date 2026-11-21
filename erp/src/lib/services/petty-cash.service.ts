@@ -13,6 +13,11 @@ import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/payment
 import { parseRangeEnd, parseRangeStart } from '@/lib/dates/inclusiveRange';
 import { computePettyCashPeriodStatement } from '@/lib/services/pettyCashReport.core';
 import type { TopUpPettyCashInput } from '@/lib/validators/petty-cash.validators';
+import {
+  multiplePettyCashFundsMessage,
+  resolvePettyCashReadiness,
+} from '@/lib/petty-cash/setup-state';
+import { PETTY_CASH_LEDGER_LIMIT } from '@/lib/petty-cash/ledger';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -127,6 +132,50 @@ export function buildTopUpDescription(
     : 'Petty Cash Replenished';
 }
 
+/**
+ * ARGUS #408 - serialize setup per tenant in this process. The database guard
+ * below is the cross-instance authority; this map avoids two local requests
+ * both racing into the advisory-lock transaction and then both ensuring the
+ * payment account.
+ */
+const setupLocks = new Map<string, Promise<unknown>>();
+
+async function withTenantSetupLock<T>(
+  tenantId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const previous = setupLocks.get(tenantId) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(fn);
+  setupLocks.set(tenantId, run);
+  try {
+    return await run;
+  } finally {
+    if (setupLocks.get(tenantId) === run) {
+      setupLocks.delete(tenantId);
+    }
+  }
+}
+
+/**
+ * PostgreSQL transaction-scoped advisory lock. This is the no-migration
+ * uniqueness guard: concurrent creators block until the winner commits, then
+ * re-read and stop. The key includes the tenant so stores never contend.
+ */
+async function lockFundSetup(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+): Promise<void> {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`petty-cash-fund:${tenantId}`}))`;
+}
+
+async function lockFundAccount(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  fundId: string,
+): Promise<void> {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`petty-cash-account:${tenantId}:${fundId}`}))`;
+}
+
 // ── Service ─────────────────────────────────────────────────────────────────
 
 /** Resolve an actor for service calls that can run outside a request hook. */
@@ -219,19 +268,33 @@ export async function ensureFundPaymentAccount(
 
   const actor = await resolveActorId(tenantId, actorId);
 
-  const byName = await prisma.paymentAccount.findFirst({
-    where: { tenantId, name: fund.name },
-    include: { pettyCashFund: { select: { id: true } } },
-  });
-  if (byName?.pettyCashFund && byName.pettyCashFund.id !== fund.id) {
-    throw new ApiError(
-      409,
-      'CONFLICT',
-      `A payment account named "${fund.name}" is already linked to another petty-cash fund`,
-    );
-  }
-
   const account = await prisma.$transaction(async (tx) => {
+    // ARGUS #408: concurrent setup across instances must not create two
+    // same-named payment accounts or two opening-balance entries.
+    await lockFundAccount(tx, tenantId, fund.id);
+
+    const fresh = await tx.pettyCashFund.findFirst({
+      where: { id: fund.id, tenantId },
+      select: { paymentAccountId: true },
+    });
+    if (fresh?.paymentAccountId) {
+      return tx.paymentAccount.findFirst({
+        where: { id: fresh.paymentAccountId, tenantId },
+      });
+    }
+
+    const byName = await tx.paymentAccount.findFirst({
+      where: { tenantId, name: fund.name },
+      include: { pettyCashFund: { select: { id: true } } },
+    });
+    if (byName?.pettyCashFund && byName.pettyCashFund.id !== fund.id) {
+      throw new ApiError(
+        409,
+        'CONFLICT',
+        `A payment account named "${fund.name}" is already linked to another petty-cash fund`,
+      );
+    }
+
     const created = !byName;
     const target =
       byName ??
@@ -342,51 +405,171 @@ export async function ensureDefaultPettyCashPaymentAccount(
 }
 
 /**
- * Return the standalone petty-cash fund for a tenant, lazily creating a default
- * fund if none exists (doc 36). One fund per store keeps the float accountable.
- * The fund is always backed by a default CASH payment account.
+ * The fund row the Petty Cash page renders: newest 20 linked expenses plus its
+ * payment account. Kept separate so reads and setup return the same shape.
  */
-export async function getOrCreateFund(tenantId: string, actorId?: string) {
-  const existing = await prisma.pettyCashFund.findFirst({
+async function loadFundWithLedger(tenantId: string, fundId: string) {
+  return prisma.pettyCashFund.findFirst({
+    where: { id: fundId, tenantId },
+    include: {
+      expenses: {
+        orderBy: { expenseDate: 'desc' },
+        take: PETTY_CASH_LEDGER_LIMIT,
+        include: { recordedBy: { select: { email: true } } },
+      },
+      paymentAccount: true,
+    },
+  });
+}
+
+/** Active funds for a tenant, oldest first. Read-only by design. */
+export async function findActivePettyCashFunds(tenantId: string) {
+  return prisma.pettyCashFund.findMany({
     where: { tenantId, isActive: true },
     orderBy: { createdAt: 'asc' },
+    select: { id: true },
   });
+}
 
-  let fund = existing;
-  if (!fund) {
-    fund = await prisma.pettyCashFund.create({
-      data: {
-        tenantId,
-        name: 'Main Petty Cash',
-        openingBalance: 0,
-        currentBalance: 0,
-        lowBalanceThreshold: DEFAULT_LOW_BALANCE_THRESHOLD,
-        activeCategories: DEFAULT_CATEGORIES,
-      },
-    });
+export interface PettyCashReadState {
+  fund: Awaited<ReturnType<typeof loadFundWithLedger>> | null;
+  setupRequired: boolean;
+  multipleFunds: boolean;
+  fundCount: number;
+}
 
-    if (actorId) {
+/**
+ * ARGUS #408 - GET must not create anything. This read-only state reports one
+ * of three outcomes: not configured (render a Setup button), ready, or
+ * multiple active funds (flag instead of silently using the first).
+ */
+export async function getPettyCashReadState(tenantId: string): Promise<PettyCashReadState> {
+  const funds = await findActivePettyCashFunds(tenantId);
+  const readiness = resolvePettyCashReadiness(funds);
+  if (readiness.status === 'not-configured') {
+    return { fund: null, setupRequired: true, multipleFunds: false, fundCount: 0 };
+  }
+  if (readiness.status === 'multiple') {
+    return {
+      fund: null,
+      setupRequired: false,
+      multipleFunds: true,
+      fundCount: readiness.fundCount,
+    };
+  }
+  return {
+    fund: await loadFundWithLedger(tenantId, readiness.fundId),
+    setupRequired: false,
+    multipleFunds: false,
+    fundCount: 1,
+  };
+}
+
+/**
+ * ARGUS #408 - explicit, idempotent setup. Serialized in-process and by a
+ * PostgreSQL advisory lock so two first loads cannot create two funds. If a
+ * tenant already has duplicates this refuses to guess and returns a conflict.
+ */
+export async function setupPettyCashFund(tenantId: string, actorId?: string) {
+  return withTenantSetupLock(tenantId, async () => {
+    const before = resolvePettyCashReadiness(
+      await findActivePettyCashFunds(tenantId),
+    );
+    if (before.status === 'multiple') {
+      throw new ApiError(
+        409,
+        'MULTIPLE_FUNDS',
+        multiplePettyCashFundsMessage(before.fundCount),
+      );
+    }
+
+    let created = false;
+    if (before.status === 'not-configured') {
+      const result = await prisma.$transaction(async (tx) => {
+        await lockFundSetup(tx, tenantId);
+
+        const again = resolvePettyCashReadiness(
+          await tx.pettyCashFund.findMany({
+            where: { tenantId, isActive: true },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true },
+          }),
+        );
+        if (again.status === 'multiple') {
+          throw new ApiError(
+            409,
+            'MULTIPLE_FUNDS',
+            multiplePettyCashFundsMessage(again.fundCount),
+          );
+        }
+        if (again.status === 'ready') {
+          return { created: false };
+        }
+
+        await tx.pettyCashFund.create({
+          data: {
+            tenantId,
+            name: 'Main Petty Cash',
+            openingBalance: 0,
+            currentBalance: 0,
+            lowBalanceThreshold: DEFAULT_LOW_BALANCE_THRESHOLD,
+            activeCategories: DEFAULT_CATEGORIES,
+          },
+        });
+        return { created: true };
+      });
+      created = result.created;
+    }
+
+    // Re-read after the cross-instance lock: a concurrent winner's fund is now
+    // visible and is the only one this call may configure.
+    const after = resolvePettyCashReadiness(
+      await findActivePettyCashFunds(tenantId),
+    );
+    if (after.status === 'multiple') {
+      throw new ApiError(
+        409,
+        'MULTIPLE_FUNDS',
+        multiplePettyCashFundsMessage(after.fundCount),
+      );
+    }
+    if (after.status !== 'ready') {
+      throw new ApiError(
+        500,
+        'INTERNAL_SERVER_ERROR',
+        'Petty cash setup did not produce a fund',
+      );
+    }
+
+    await ensureFundPaymentAccount(tenantId, after.fundId, actorId);
+
+    if (created && actorId) {
       void createAuditLog({
         tenantId,
         actorId,
         actorRole: 'USER',
         entityType: 'PettyCashFund',
-        entityId: fund.id,
+        entityId: after.fundId,
         action: AUDIT_ACTIONS.PETTY_CASH_FUND_CREATED,
         after: { openingBalance: 0, currentBalance: 0 },
       }).catch(() => {});
     }
-  }
 
-  await ensureFundPaymentAccount(tenantId, fund.id, actorId);
-
-  return prisma.pettyCashFund.findFirst({
-    where: { id: fund.id },
-    include: {
-      expenses: { orderBy: { expenseDate: 'desc' }, take: 20 },
-      paymentAccount: true,
-    },
+    const fund = await loadFundWithLedger(tenantId, after.fundId);
+    if (!fund) {
+      throw new ApiError(500, 'INTERNAL_SERVER_ERROR', 'Petty cash fund could not be loaded');
+    }
+    return { fund, created };
   });
+}
+
+/**
+ * Existing callers (top-up, legacy flows) still need a configured fund. They
+ * now go through the same locked setup path instead of racing a bare create.
+ */
+export async function getOrCreateFund(tenantId: string, actorId?: string) {
+  const { fund } = await setupPettyCashFund(tenantId, actorId);
+  return fund;
 }
 
 /** Fetch a fund by id (tenant-scoped) with its linked expenses and account. */
@@ -479,18 +662,22 @@ export async function getBalanceEquation(
 export interface PettyCashTopUpRow {
   id: string;
   entryDate: string;
+  createdAt: string;
   description: string;
   amount: string;
+  recordedByEmail: string | null;
 }
 
 /**
- * List the ledger debits that represent top-ups into the petty-cash account.
- * The ledger is the transaction record, so no extra table is needed: every
- * Add Cash In call writes one of these rows.
+ * List the latest ledger debits that represent top-ups into the petty-cash
+ * account. The list is intentionally capped, and the caller discloses
+ * "latest N of total" while the balance equation keeps using full totals
+ * (ARGUS #410).
  */
 export async function getPettyCashTopUps(
   tenantId: string,
   fund: { paymentAccountId: string | null },
+  limit: number = PETTY_CASH_LEDGER_LIMIT,
 ): Promise<PettyCashTopUpRow[]> {
   if (!fund.paymentAccountId) return [];
 
@@ -502,16 +689,80 @@ export async function getPettyCashTopUps(
       debit: { gt: 0 },
     },
     orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
-    take: 50,
-    select: { id: true, entryDate: true, description: true, debit: true },
+    take: limit,
+    select: {
+      id: true,
+      entryDate: true,
+      createdAt: true,
+      description: true,
+      debit: true,
+      createdById: true,
+    },
   });
+
+  const actorIds = Array.from(new Set(entries.map((entry) => entry.createdById)));
+  const actors = actorIds.length
+    ? await prisma.user.findMany({
+        where: { tenantId, id: { in: actorIds } },
+        select: { id: true, email: true },
+      })
+    : [];
+  const emailById = new Map(actors.map((actor) => [actor.id, actor.email]));
 
   return entries.map((entry) => ({
     id: entry.id,
     entryDate: entry.entryDate.toISOString(),
+    createdAt: entry.createdAt.toISOString(),
     description: entry.description,
     amount: entry.debit.toFixed(2),
+    recordedByEmail: emailById.get(entry.createdById) ?? null,
   }));
+}
+
+export interface PettyCashLedgerTotals {
+  expenseCount: number;
+  expenseTotal: number;
+  topUpCount: number;
+  topUpTotal: number;
+  limit: number;
+}
+
+/**
+ * Full totals for the linked-expense ledger, independent of the displayed
+ * page. These must agree with the balance equation: it sums every expense and
+ * every top-up, not just the visible rows.
+ */
+export async function getPettyCashLedgerTotals(
+  tenantId: string,
+  fund: { id: string; paymentAccountId: string | null },
+): Promise<PettyCashLedgerTotals> {
+  const [expenses, topUps] = await Promise.all([
+    prisma.expense.aggregate({
+      where: { tenantId, pettyCashFundId: fund.id },
+      _count: { _all: true },
+      _sum: { amount: true },
+    }),
+    fund.paymentAccountId
+      ? prisma.paymentAccountEntry.aggregate({
+          where: {
+            tenantId,
+            accountId: fund.paymentAccountId,
+            source: { in: [...TOP_UP_SOURCES] },
+            debit: { gt: 0 },
+          },
+          _count: { _all: true },
+          _sum: { debit: true },
+        })
+      : Promise.resolve({ _count: { _all: 0 }, _sum: { debit: null } }),
+  ]);
+
+  return {
+    expenseCount: expenses._count._all,
+    expenseTotal: expenses._sum.amount?.toNumber() ?? 0,
+    topUpCount: topUps._count._all,
+    topUpTotal: topUps._sum.debit?.toNumber() ?? 0,
+    limit: PETTY_CASH_LEDGER_LIMIT,
+  };
 }
 
 /**
@@ -769,9 +1020,21 @@ export async function buildPettyCashExportData(
   tenantId: string,
   filters: PettyCashExportFilters,
 ): Promise<PettyCashExportData | null> {
+  // ARGUS #408: never export the first of several active funds as if it were
+  // the store's fund. The page flags duplicates; the export refuses.
+  const activeFunds = await findActivePettyCashFunds(tenantId);
+  const readiness = resolvePettyCashReadiness(activeFunds);
+  if (readiness.status === 'multiple') {
+    throw new ApiError(
+      409,
+      'MULTIPLE_FUNDS',
+      multiplePettyCashFundsMessage(readiness.fundCount),
+    );
+  }
+  if (readiness.status === 'not-configured') return null;
+
   const fund = await prisma.pettyCashFund.findFirst({
-    where: { tenantId, isActive: true },
-    orderBy: { createdAt: 'asc' },
+    where: { id: readiness.fundId, tenantId },
   });
   if (!fund) return null;
 

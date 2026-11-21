@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
@@ -52,6 +52,7 @@ import { ExpenseExportButton } from '@/components/expenses/ExpenseExportButton';
 import { ExpenseAccountCell } from '@/components/expenses/ExpenseAccountCell';
 import { AccountSelect } from '@/components/payment-accounts/AccountSelect';
 import type { PaymentAccount } from '@/components/payment-accounts/paymentAccountTypes';
+import { selectFormExpenseCategories } from '@/lib/petty-cash/category-policy';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -122,12 +123,14 @@ interface ExpensesPageClientProps {
   canCreate: boolean;
   canApprove: boolean;
   approvalThreshold: number;
+  initialFundId?: string | null;
 }
 
 export default function ExpensesPageClient({
   canCreate,
   canApprove,
   approvalThreshold,
+  initialFundId = null,
 }: ExpensesPageClientProps) {
   const queryClient = useQueryClient();
 
@@ -138,7 +141,7 @@ export default function ExpensesPageClient({
   const [page, setPage] = useState(1);
 
   // Dialog / Sheet state
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(Boolean(initialFundId) && canCreate);
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
   const [viewExpense, setViewExpense] = useState<Expense | null>(null);
   // M19-01 (D2): explicit manager approval to let a linked expense overdraw the fund.
@@ -185,7 +188,10 @@ export default function ExpensesPageClient({
     queryFn: async () => {
       const res = await fetch('/api/store/petty-cash');
       const json = await res.json();
-      if (!json.success) return null;
+      // ARGUS #408: GET is read-only and returns data:null when the tenant is
+      // not configured or has duplicate funds. Do not build a fund picker from
+      // an absent fund.
+      if (!json.success || !json.data) return null;
       return json;
     },
     retry: false,
@@ -216,11 +222,33 @@ export default function ExpensesPageClient({
       amount: 0,
       description: '',
       expenseDate: new Date().toISOString().slice(0, 10),
-      pettyCashFundId: undefined,
+      pettyCashFundId: initialFundId ?? undefined,
       paymentAccountId: undefined,
     },
   });
   const createFundId = createForm.watch('pettyCashFundId');
+  // ARGUS #407: when a fund is selected the form offers only its enabled
+  // categories, mirroring the server-side allow-list.
+  const createCategoryOptions = selectFormExpenseCategories(
+    createFundId ? (fund?.activeCategories ?? null) : null,
+  );
+  // A fund always settles through its own account; show that account while the
+  // form has not explicitly written a paymentAccountId.
+  const createPaymentAccountValue = createFundId
+    ? (fund?.paymentAccount?.id ?? null)
+    : (createForm.watch('paymentAccountId') ?? null);
+
+  // A preselected fund may not enable the form's default category. Move to the
+  // first enabled option as soon as the fund configuration arrives.
+  useEffect(() => {
+    if (!createFundId || !fund?.activeCategories) return;
+    const enabled = selectFormExpenseCategories(fund.activeCategories);
+    const current = createForm.getValues('category');
+    const first = enabled[0];
+    if (first && !enabled.includes(current)) {
+      createForm.setValue('category', first as CreateExpenseInput['category']);
+    }
+  }, [createFundId, fund?.activeCategories, createForm]);
 
   const createMutation = useMutation({
     mutationFn: async (data: CreateExpenseInput) => {
@@ -253,6 +281,14 @@ export default function ExpensesPageClient({
     resolver: standardSchemaResolver(CreateExpenseSchema),
   });
   const editFundId = editForm.watch('pettyCashFundId');
+  // Keep the existing (possibly now-disabled) category selectable so a legacy
+  // row can still be edited, but only offer the fund's enabled set besides it.
+  const editCategoryOptions = (() => {
+    const current = editForm.watch('category');
+    const enabled = editFundId ? (fund?.activeCategories ?? null) : null;
+    const base = selectFormExpenseCategories(enabled);
+    return current && !base.includes(current) ? [current, ...base] : base;
+  })();
 
   const editMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<CreateExpenseInput> }) => {
@@ -377,7 +413,7 @@ export default function ExpensesPageClient({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CATEGORIES.map((c) => (
+                    {createCategoryOptions.map((c) => (
                       <SelectItem key={c} value={c}>{CATEGORY_LABEL[c] ?? c}</SelectItem>
                     ))}
                   </SelectContent>
@@ -416,7 +452,7 @@ export default function ExpensesPageClient({
                 <Label>Payment Account</Label>
                 <AccountSelect
                   accounts={paymentAccounts}
-                  value={createForm.watch('paymentAccountId') ?? null}
+                  value={createPaymentAccountValue}
                   onValueChange={(accountId) => createForm.setValue('paymentAccountId', accountId)}
                   placeholder="Select account"
                   noneLabel="No account (unlinked)"
@@ -656,7 +692,7 @@ export default function ExpensesPageClient({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CATEGORIES.map((c) => (
+                    {editCategoryOptions.map((c) => (
                       <SelectItem key={c} value={c}>{CATEGORY_LABEL[c] ?? c}</SelectItem>
                     ))}
                   </SelectContent>
