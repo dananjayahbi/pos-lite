@@ -37,6 +37,11 @@ import {
   visibleSelectedIds,
 } from '@/components/orders/selection';
 import { commonBulkStatusTargets } from '@/lib/services/dispatchStatus.core';
+import {
+  DEFAULT_DISPATCH_STATUS_SELECTION,
+  resolveDispatchStatuses,
+  type DispatchStatusSelection,
+} from '@/components/orders/dispatchQueue';
 import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
 import { waybillSenderDecision } from '@/lib/delivery/sender';
 import type { DeliveryListItem } from '@/types/delivery';
@@ -49,7 +54,9 @@ export function OrdersPageClient() {
   const canDispatch = hasPermission(PERMISSIONS.DELIVERY.dispatchDelivery);
 
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<DeliveryStatus | null>(null);
+  const [statusSelection, setStatusSelection] = useState<DispatchStatusSelection>(
+    DEFAULT_DISPATCH_STATUS_SELECTION,
+  );
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
@@ -57,8 +64,9 @@ export function OrdersPageClient() {
   const [printBusy, setPrintBusy] = useState<string | null>(null);
 
   const { data, isLoading, isError, error, isFetching, refetch } = useOrders({
-    status,
+    statuses: resolveDispatchStatuses(statusSelection),
     search,
+    includeCounts: true,
     page,
     limit: ORDERS_PAGE_SIZE,
   });
@@ -98,8 +106,8 @@ export function OrdersPageClient() {
     setSelectedIds(new Set());
   };
 
-  const handleStatusFilterChange = (value: DeliveryStatus | null) => {
-    setStatus(value);
+  const handleStatusFilterChange = (value: DispatchStatusSelection) => {
+    setStatusSelection(value);
     setPage(1);
     setSelectedIds(new Set());
   };
@@ -249,8 +257,13 @@ export function OrdersPageClient() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="font-display text-2xl font-bold text-espresso">Orders</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-espresso">Dispatch Orders</h1>
+          <p className="mt-1 font-body text-sm text-espresso/60">
+            New and pending orders first; per-status counts show the rest of the queue.
+          </p>
+        </div>
       </div>
 
       {templateState === 'error' && (
@@ -287,9 +300,10 @@ export function OrdersPageClient() {
 
       <OrderFilters
         search={search}
-        status={status}
+        selection={statusSelection}
+        counts={data?.statusCounts}
         onSearchChange={handleSearchChange}
-        onStatusChange={handleStatusFilterChange}
+        onSelectionChange={handleStatusFilterChange}
       />
 
       {listState !== 'error' && (

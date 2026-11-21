@@ -19,7 +19,10 @@ export const ORDERS_PAGE_SIZE = 50;
 export function useOrders(
   filters: {
     status?: DeliveryStatus | null;
+    /** Multiple statuses (dispatch queue default, ARGUS #269). */
+    statuses?: DeliveryStatus[] | null;
     search?: string;
+    includeCounts?: boolean;
     page?: number;
     limit?: number;
   } = {},
@@ -28,6 +31,10 @@ export function useOrders(
   const limit = filters.limit ?? ORDERS_PAGE_SIZE;
   const params = new URLSearchParams();
   if (filters.status) params.set('status', filters.status);
+  if (filters.statuses && filters.statuses.length > 0) {
+    params.set('statuses', filters.statuses.join(','));
+  }
+  if (filters.includeCounts) params.set('includeCounts', '1');
   if (filters.search) params.set('search', filters.search);
   // ARGUS #262: without an explicit page the API caps the response at its
   // default 50, making rows 51+ unreachable.
@@ -36,6 +43,8 @@ export function useOrders(
 
   const queryFilters = {
     status: filters.status ?? null,
+    statuses: filters.statuses ?? null,
+    includeCounts: filters.includeCounts ?? false,
     search: filters.search ?? '',
     page,
     limit,
@@ -52,6 +61,7 @@ export function useOrders(
         total: number;
         page: number;
         limit: number;
+        statusCounts?: Record<string, number>;
       };
     },
     placeholderData: keepPreviousData,
