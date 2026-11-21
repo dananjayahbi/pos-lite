@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RAW_MATERIAL_ADJUSTMENT_REASONS } from '@/lib/services/rawMaterialAdjustment.core';
 
 /**
  * Category and unit keys are tenant-defined strings. Built-in keys
@@ -43,8 +44,9 @@ export const AdjustRawMaterialStockSchema = z.object({
     .string()
     .trim()
     .regex(/^-?\d+(\.\d+)?$/, 'Must be a decimal number (can be negative)'),
-  /** Why the stock moved (consumption, write-off, recount, ...). */
-  reason: z.string().trim().max(200).optional(),
+  // ARGUS #246: a fixed reason is mandatory. Free text made the adjustment
+  // history unusable and was never required server-side.
+  reason: z.enum(RAW_MATERIAL_ADJUSTMENT_REASONS),
 });
 
 export const CreateRawMaterialCategorySchema = z.object({

@@ -7,7 +7,17 @@ import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import type { RawMaterial } from '@/generated/prisma/client';
-import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import {
+  attachAuditActorNames,
+  createAuditLog,
+  AUDIT_ACTIONS,
+} from '@/lib/services/audit.service';
+import {
+  isRawMaterialAdjustmentReason,
+  mapRawMaterialAdjustmentAudit,
+  type RawMaterialAdjustmentHistoryItem,
+  type RawMaterialAdjustmentReason,
+} from '@/lib/services/rawMaterialAdjustment.core';
 import {
   applyQuantityDeltaDecimal,
   roundRawMaterialQuantity,
@@ -320,8 +330,13 @@ export async function adjustRawMaterialStock(
   actorId: string,
   id: string,
   quantityDelta: string | number,
-  reason?: string,
+  reason: RawMaterialAdjustmentReason,
 ) {
+  // ARGUS #246: the route validator makes this required, but enforce the fixed
+  // vocabulary here too so no internal caller can write a free-text reason.
+  if (!isRawMaterialAdjustmentReason(reason)) {
+    throw new Error('INVALID_REASON');
+  }
   // ARGUS #245: Decimal arithmetic at the shared four-decimal scale. The delta
   // is rounded first, so a sub-scale value is a no-op rather than a float leak.
   const delta = roundRawMaterialQuantity(quantityDelta);
@@ -357,7 +372,7 @@ export async function adjustRawMaterialStock(
         quantityDelta: delta.toFixed(4),
         quantityBefore: currentQuantity.toFixed(4),
         quantityAfter: newQuantity.toFixed(4),
-        reason: reason?.trim() || null,
+        reason,
       },
     }).catch(() => {});
 
@@ -439,6 +454,49 @@ export async function getRawMaterialStats(tenantId: string) {
     totalMaterials: total,
     lowStockCount,
     outOfStockCount,
+  };
+}
+
+// ── Adjustment history ───────────────────────────────────────────────────────
+
+/**
+ * ARGUS #246: raw materials have no dedicated movement table, so the per-material
+ * history is the durable `RAW_MATERIAL_STOCK_ADJUSTED` audit trail. Newest first.
+ */
+export async function listRawMaterialAdjustments(
+  tenantId: string,
+  rawMaterialId: string,
+  limit = 50,
+): Promise<{ items: RawMaterialAdjustmentHistoryItem[] }> {
+  const material = await prisma.rawMaterial.findFirst({
+    where: { id: rawMaterialId, tenantId },
+    select: { id: true },
+  });
+  if (!material) {
+    throw new Error('NOT_FOUND');
+  }
+
+  const rows = await prisma.auditLog.findMany({
+    where: {
+      tenantId,
+      entityType: 'RawMaterial',
+      entityId: rawMaterialId,
+      action: AUDIT_ACTIONS.RAW_MATERIAL_STOCK_ADJUSTED,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: Math.min(Math.max(limit, 1), 200),
+  });
+
+  const withActors = await attachAuditActorNames(rows);
+  return {
+    items: withActors.map((row) =>
+      mapRawMaterialAdjustmentAudit({
+        id: row.id,
+        createdAt: row.createdAt,
+        actorName: row.actorName,
+        after: row.after,
+      }),
+    ),
   };
 }
 

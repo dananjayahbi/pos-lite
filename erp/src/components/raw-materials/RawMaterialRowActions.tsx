@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowUpDown, Pencil, Trash2 } from 'lucide-react';
+import { ArrowUpDown, History, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface RawMaterialRowActionsProps {
@@ -10,6 +10,7 @@ interface RawMaterialRowActionsProps {
   onEdit: () => void;
   onDelete: () => void;
   onAdjust: () => void;
+  onHistory: () => void;
 }
 
 export function RawMaterialRowActions({
@@ -19,11 +20,22 @@ export function RawMaterialRowActions({
   onEdit,
   onDelete,
   onAdjust,
+  onHistory,
 }: RawMaterialRowActionsProps) {
   const iconButton = 'h-8 w-8 text-espresso/60 transition-colors hover:text-espresso';
 
   return (
     <div className="flex items-center justify-end gap-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        className={iconButton}
+        aria-label="Adjustment history"
+        title="Adjustment history"
+        onClick={onHistory}
+      >
+        <History className="h-4 w-4" />
+      </Button>
       {canAdjust && (
         <Button
           variant="ghost"
