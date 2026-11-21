@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StockTakeStatus } from '@/generated/prisma/client';
+import { isStaleStockTake } from '@/lib/services/stockTakeAge.core';
 
 export async function GET() {
   try {
@@ -119,8 +120,16 @@ export async function POST(request: NextRequest) {
     });
 
     if (existing) {
+      const stale = isStaleStockTake(existing.startedAt, existing.status);
       return NextResponse.json(
-        { success: false, error: { code: 'CONFLICT', message: 'An in-progress stock take session already exists' } },
+        {
+          success: false,
+          error: {
+            code: 'CONFLICT',
+            message: `An in-progress stock take session (${existing.id.slice(0, 8)}, started ${existing.startedAt.toISOString().slice(0, 10)}) already exists. Complete or cancel it before starting a new one${stale ? ' - it is stale (older than 7 days)' : ''}.`,
+            details: { sessionId: existing.id, startedAt: existing.startedAt.toISOString(), stale },
+          },
+        },
         { status: 400 },
       );
     }

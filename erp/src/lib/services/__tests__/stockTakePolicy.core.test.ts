@@ -48,6 +48,16 @@ describe('stock-take policy (ARGUS #205/#206)', () => {
     expect(
       canCancelStockTake({ ...base, status: 'IN_PROGRESS', userId: 'other-clerk' }),
     ).toBe(false);
+    // An approver may discard a stale pending-approval session (ARGUS #147),
+    // but the initiator cannot bypass approval by cancelling it.
+    expect(
+      canCancelStockTake({
+        ...base,
+        status: 'PENDING_APPROVAL',
+        userId: 'manager',
+        canApprove: true,
+      }),
+    ).toBe(true);
     expect(canCancelStockTake({ ...base, status: 'PENDING_APPROVAL' })).toBe(false);
   });
 

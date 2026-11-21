@@ -39,9 +39,16 @@ export function canCompleteStockTake(input: StockTakePolicyInput): boolean {
  * in-progress session. Everyone else is refused.
  */
 export function canCancelStockTake(input: StockTakePolicyInput): boolean {
-  if (input.status !== 'IN_PROGRESS') return false;
-  if (input.canApprove) return true;
-  return input.canConduct && input.userId === input.initiatedById;
+  // An approver may discard a stale in-progress or pending-approval session
+  // (ARGUS #147); the initiator may discard their own in-progress session.
+  if (input.status === 'IN_PROGRESS') {
+    if (input.canApprove) return true;
+    return input.canConduct && input.userId === input.initiatedById;
+  }
+  if (input.status === 'PENDING_APPROVAL') {
+    return input.canApprove;
+  }
+  return false;
 }
 
 export type StockTakeCancelDisposition = 'discard' | 'reject';

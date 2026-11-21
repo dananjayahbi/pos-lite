@@ -81,11 +81,17 @@ export async function POST(
       );
     }
 
-    if (stockTakeSession.status !== StockTakeStatus.IN_PROGRESS) {
+    if (
+      stockTakeSession.status !== StockTakeStatus.IN_PROGRESS &&
+      stockTakeSession.status !== StockTakeStatus.PENDING_APPROVAL
+    ) {
       return NextResponse.json(
         {
           success: false,
-          error: { code: 'BAD_REQUEST', message: 'Only in-progress sessions can be cancelled' },
+          error: {
+            code: 'BAD_REQUEST',
+            message: 'Only an in-progress or pending-approval session can be cancelled',
+          },
         },
         { status: 400 },
       );

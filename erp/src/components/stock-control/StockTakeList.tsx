@@ -46,6 +46,7 @@ import { useStockTakeSessions } from '@/hooks/useStockTakeSessions';
 import { useCategories } from '@/hooks/useCategories';
 import { stockTakeAction } from '@/components/stock-control/stockTakeLinks';
 import { canCancelStockTake } from '@/lib/services/stockTakePolicy.core';
+import { isStaleStockTake } from '@/lib/services/stockTakeAge.core';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface StockTakeListProps {
@@ -405,6 +406,7 @@ export function StockTakeList({ permissions, userId }: StockTakeListProps) {
                   className: 'bg-gray-100 text-gray-800',
                 };
                 const action = stockTakeAction(s.id, s.status);
+                const stale = isStaleStockTake(s.startedAt, s.status);
                 return (
                   <TableRow key={s.id} className="hover:bg-pearl/50">
                     <TableCell className="font-mono text-xs text-espresso">
@@ -420,6 +422,11 @@ export function StockTakeList({ permissions, userId }: StockTakeListProps) {
                         )}
                         {badge.label}
                       </Badge>
+                      {stale ? (
+                        <Badge className="ml-1.5 bg-amber-100 text-amber-800 hover:bg-amber-100 font-body text-xs">
+                          Stale
+                        </Badge>
+                      ) : null}
                     </TableCell>
                     <TableCell className="font-body text-sm text-mist-ink">{staffDisplayName(s.initiatedBy)}</TableCell>
                     <TableCell className="font-body text-sm text-mist-ink">
@@ -443,7 +450,7 @@ export function StockTakeList({ permissions, userId }: StockTakeListProps) {
                         >
                           {action.label}
                         </Link>
-                        {s.status === 'IN_PROGRESS' &&
+                        {(s.status === 'IN_PROGRESS' || s.status === 'PENDING_APPROVAL') &&
                           canCancelStockTake({
                             status: s.status,
                             userId,
