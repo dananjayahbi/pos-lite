@@ -173,6 +173,9 @@ export default function AuditLogFilters({
           onChange={(e) => setLocal((s) => ({ ...s, userId: e.target.value }))}
           className="border-mist"
         />
+        <p className="mt-1 text-[10px] leading-tight text-sand-ink">
+          Paste the Actor ID shown in an entry&apos;s detail.
+        </p>
       </div>
 
       <Button

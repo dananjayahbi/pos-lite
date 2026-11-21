@@ -241,7 +241,10 @@ export default function AuditLogTable({ filters }: AuditLogTableProps) {
                 <TableCell className="text-sm text-espresso">
                   {formatActionName(entry.action)}
                 </TableCell>
-                <TableCell className="text-sm text-espresso">
+                <TableCell
+                  className="text-sm text-espresso"
+                  title={entry.actorId ? `Actor ID: ${entry.actorId}` : undefined}
+                >
                   {entry.actorName}
                 </TableCell>
                 <TableCell className="text-sm text-sand-ink">

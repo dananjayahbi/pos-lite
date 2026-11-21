@@ -354,6 +354,7 @@ export async function getAuditLogsForExport(
  */
 export async function attachAuditActorNames<T extends { actorId: string | null }>(
   entries: T[],
+  tenantId?: string | null,
 ): Promise<Array<T & { actorName: string }>> {
   const actorIds = Array.from(
     new Set(entries.map((entry) => entry.actorId).filter((id): id is string => Boolean(id))),
@@ -362,7 +363,10 @@ export async function attachAuditActorNames<T extends { actorId: string | null }
   const users =
     actorIds.length > 0
       ? await prisma.user.findMany({
-          where: { id: { in: actorIds } },
+          // Actor resolution must not leak another tenant's name when an audit
+          // row carries a foreign id (ARGUS #456). SUPER_ADMIN/cross-tenant
+          // views call without a tenant scope.
+          where: { id: { in: actorIds }, ...(tenantId ? { tenantId } : {}) },
           select: { id: true, email: true },
         })
       : [];

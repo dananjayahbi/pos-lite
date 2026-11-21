@@ -487,7 +487,7 @@ export async function listRawMaterialAdjustments(
     take: Math.min(Math.max(limit, 1), 200),
   });
 
-  const withActors = await attachAuditActorNames(rows);
+  const withActors = await attachAuditActorNames(rows, tenantId);
   return {
     items: withActors.map((row) =>
       mapRawMaterialAdjustmentAudit({

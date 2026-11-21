@@ -85,7 +85,8 @@ export async function GET(request: NextRequest) {
           pageSize,
         });
 
-    const entries = await attachAuditActorNames(result.data);
+    const actorTenantScope = isSuperAdmin ? null : tenantId;
+    const entries = await attachAuditActorNames(result.data, actorTenantScope);
 
     if (format === 'csv') {
       // ARGUS #453: export the complete filtered set (not the current page) and
@@ -94,7 +95,7 @@ export async function GET(request: NextRequest) {
         isSuperAdmin ? (searchParams.get('tenantId') ?? undefined) : (tenantId as string),
         { entityType, action, startDate, endDate, userId },
       );
-      const exportEntries = await attachAuditActorNames(exportRows);
+      const exportEntries = await attachAuditActorNames(exportRows, actorTenantScope);
 
       // M35-01 (BUG-79): the header row is emitted UNQUOTED and data cells are
       // quoted only when they need it, via the shared `toCsvLines` writer. The

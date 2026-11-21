@@ -101,6 +101,12 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
               )}
             </span>
           </div>
+          {entry.actorId && (
+            <div className="flex gap-2">
+              <span className="text-sand-ink">Actor ID:</span>
+              <span className="select-all font-mono text-xs text-espresso">{entry.actorId}</span>
+            </div>
+          )}
           {entry.ipAddress && (
             <div className="flex gap-2">
               <span className="text-sand-ink">IP:</span>
