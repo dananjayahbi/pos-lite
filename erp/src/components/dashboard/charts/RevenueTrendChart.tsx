@@ -22,14 +22,21 @@ interface RevenueTrendChartProps {
   data: DailyRevenue[];
 }
 
+// `date` is a local calendar day (YYYY-MM-DD). Parse the parts directly so the
+// label cannot slip a day in timezones behind UTC the way `new Date(str)` can.
+function formatDayLabel(date: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year!, month! - 1, day!).toLocaleDateString('en-LK', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
 export function RevenueTrendChart({ data }: RevenueTrendChartProps) {
   const formatted = data.map((d) => ({
     ...d,
-    label: new Date(d.date).toLocaleDateString('en-LK', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-    }),
+    label: formatDayLabel(d.date),
   }));
 
   return (

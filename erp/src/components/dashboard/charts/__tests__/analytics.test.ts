@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildDailyRevenue,
   buildPaymentBreakdown,
   buildTopProducts,
+  localDateKey,
+  startOfLocalDay,
 } from '@/components/dashboard/charts/analytics';
 import type { AnalyticsSale } from '@/components/dashboard/charts/analytics';
 
@@ -15,6 +18,78 @@ function sale(overrides: Partial<AnalyticsSale> = {}): AnalyticsSale {
     ...overrides,
   };
 }
+
+describe('localDateKey', () => {
+  it('uses the local calendar day, not the UTC day', () => {
+    // Late evening local time is already the next UTC day for negative
+    // offsets (and the previous UTC day for positive offsets like LK).
+    expect(localDateKey(new Date(2026, 10, 20, 23, 30))).toBe('2026-11-20');
+    expect(localDateKey(new Date(2026, 10, 20, 0, 5))).toBe('2026-11-20');
+  });
+
+  it('zero-pads month and day', () => {
+    expect(localDateKey(new Date(2026, 0, 5, 9, 0))).toBe('2026-01-05');
+  });
+});
+
+describe('startOfLocalDay', () => {
+  it('returns local midnight without mutating the input', () => {
+    const input = new Date(2026, 10, 20, 18, 45, 12, 500);
+    const start = startOfLocalDay(input);
+
+    expect(start.getHours()).toBe(0);
+    expect(start.getMinutes()).toBe(0);
+    expect(start.getSeconds()).toBe(0);
+    expect(start.getMilliseconds()).toBe(0);
+    expect(input.getHours()).toBe(18);
+  });
+});
+
+describe('buildDailyRevenue', () => {
+  const now = new Date(2026, 10, 20, 15, 0);
+
+  it('ends with today and covers exactly seven local days', () => {
+    const days = buildDailyRevenue([], 7, now);
+
+    expect(days).toHaveLength(7);
+    expect(days.map((d) => d.date)).toEqual([
+      '2026-11-14',
+      '2026-11-15',
+      '2026-11-16',
+      '2026-11-17',
+      '2026-11-18',
+      '2026-11-19',
+      '2026-11-20',
+    ]);
+  });
+
+  it("counts a sale just after local midnight on today's bucket (ARGUS #38)", () => {
+    const days = buildDailyRevenue(
+      [sale({ totalAmount: 1500, completedAt: new Date(2026, 10, 20, 0, 5) })],
+      7,
+      now,
+    );
+
+    const today = days[days.length - 1]!;
+    expect(today.date).toBe('2026-11-20');
+    expect(today.revenue).toBe(1500);
+    expect(today.salesCount).toBe(1);
+  });
+
+  it('drops sales before the seven-day window', () => {
+    const days = buildDailyRevenue(
+      [
+        sale({ totalAmount: 999, completedAt: new Date(2026, 10, 13, 23, 59) }),
+        sale({ totalAmount: 10, completedAt: new Date(2026, 10, 14, 0, 1) }),
+      ],
+      7,
+      now,
+    );
+
+    expect(days.reduce((sum, d) => sum + d.revenue, 0)).toBe(10);
+    expect(days[0]!.date).toBe('2026-11-14');
+  });
+});
 
 describe('buildPaymentBreakdown', () => {
   it('groups by payment method and treats a missing method as OTHER', () => {
