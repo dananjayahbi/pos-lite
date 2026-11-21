@@ -24,6 +24,8 @@ export interface RawMaterialUnitItem {
   shortLabel: string;
   isActive: boolean;
   usageCount: number;
+  /** Seeded default for every tenant; cannot be deactivated (ARGUS #479). */
+  isBuiltIn: boolean;
 }
 
 export interface RawMaterialUnitOption {
@@ -58,6 +60,7 @@ function toItem(
     shortLabel: row.shortLabel,
     isActive: row.isActive,
     usageCount,
+    isBuiltIn: DEFAULT_KEYS.has(row.key),
   };
 }
 
