@@ -1,6 +1,13 @@
 'use client';
 
+import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useProductionLogs } from '@/hooks/useBom';
+import {
+  factoryFeedErrorMessage,
+  resolveFactoryFeedState,
+} from '@/components/raw-materials/factoryDashboardState';
 
 interface ProductionHistoryPanelProps {
   compact?: boolean;
@@ -15,10 +22,57 @@ function formatDate(value: string): string {
 }
 
 export function ProductionHistoryPanel({ compact = false }: ProductionHistoryPanelProps) {
-  const { data } = useProductionLogs({ limit: compact ? 6 : 25 });
+  const { data, isError, isLoading, error, isFetching, refetch } = useProductionLogs({
+    limit: compact ? 6 : 25,
+  });
   const logs = data?.data ?? [];
 
-  if (logs.length === 0) {
+  // ARGUS #244 — error first: a failed history call must never claim there are
+  // no production runs, and cached rows are not shown as current.
+  const viewState = resolveFactoryFeedState({
+    isError,
+    isLoading,
+    itemCount: logs.length,
+  });
+
+  if (viewState === 'error') {
+    return (
+      <div
+        role="alert"
+        className={`flex flex-col items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 text-center ${
+          compact ? 'py-5' : 'py-12'
+        }`}
+      >
+        <AlertTriangle className="h-6 w-6 text-red-500" />
+        <p className="font-body text-sm font-medium text-red-800">Production history failed</p>
+        <p className="font-body text-xs text-red-600">
+          {factoryFeedErrorMessage(error, 'Production runs could not be loaded.')}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+          onClick={() => refetch()}
+          disabled={isFetching}
+        >
+          <RefreshCw className={`mr-2 h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+          {isFetching ? 'Retrying…' : 'Retry'}
+        </Button>
+      </div>
+    );
+  }
+
+  if (viewState === 'loading') {
+    return (
+      <div className={`space-y-2 ${compact ? 'py-1' : 'py-4'}`}>
+        {Array.from({ length: compact ? 3 : 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  if (viewState === 'empty') {
     return (
       <p className="py-4 text-center text-sm text-mist-ink">
         No production runs recorded yet.
