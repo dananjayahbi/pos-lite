@@ -11,6 +11,7 @@ import {
   CreateCustomerPricingRuleSchema,
   type CreateCustomerPricingRuleInput,
 } from '@/lib/validators/customer-pricing.validators';
+import { toWindowDate } from '@/lib/services/promotionWindow.core';
 import type { Prisma } from '@/generated/prisma/client';
 
 /**
@@ -203,8 +204,10 @@ export async function POST(request: Request) {
     const candidate: RuleWindow = {
       customerTag: data.customerTag,
       variantId: data.variantId ?? null,
-      startsAt: data.startsAt ? new Date(data.startsAt) : null,
-      endsAt: data.endsAt ? new Date(data.endsAt) : null,
+      // ARGUS #327: date-only input expands to the inclusive local day
+      // (00:00:00.000 start / 23:59:59.999 end), not UTC midnight.
+      startsAt: toWindowDate(data.startsAt, 'start') ?? null,
+      endsAt: toWindowDate(data.endsAt, 'end') ?? null,
     };
 
     const created = await lockingTx(async (tx) => {

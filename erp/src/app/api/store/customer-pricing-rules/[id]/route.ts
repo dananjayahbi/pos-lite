@@ -10,6 +10,7 @@ import {
   UpdateCustomerPricingRuleSchema,
   type UpdateCustomerPricingRuleInput,
 } from '@/lib/validators/customer-pricing.validators';
+import { toWindowDate } from '@/lib/services/promotionWindow.core';
 import type { Prisma } from '@/generated/prisma/client';
 
 /**
@@ -134,10 +135,12 @@ export async function PATCH(
     // Effective post-PATCH values (undefined = untouched → keep existing).
     const customerTag = data.customerTag ?? existing.customerTag;
     const variantId = data.variantId === undefined ? existing.variantId : data.variantId;
+    // ARGUS #327: date-only bounds are inclusive local days (see
+    // promotionWindow.core). Undefined keeps the stored instant untouched.
     const startsAt =
-      data.startsAt === undefined ? existing.startsAt : data.startsAt ? new Date(data.startsAt) : null;
+      data.startsAt === undefined ? existing.startsAt : (toWindowDate(data.startsAt, 'start') ?? null);
     const endsAt =
-      data.endsAt === undefined ? existing.endsAt : data.endsAt ? new Date(data.endsAt) : null;
+      data.endsAt === undefined ? existing.endsAt : (toWindowDate(data.endsAt, 'end') ?? null);
     const isActive = data.isActive ?? existing.isActive;
 
     if (data.variantId) {

@@ -10,6 +10,13 @@ import type { PromotionType } from '@/generated/prisma/client';
 import type { CreatePromotionInput, UpdatePromotionInput } from '@/lib/validators/promotion.validators';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { planPromotionStatusChange } from '@/lib/services/promotionStatus.core';
+import { ApiError } from '@/lib/api/errors';
+import { lockingTx, lockForUpdate } from '@/lib/api/race-guard';
+import {
+  normalizePromoCode,
+  promotionTypeIssues,
+} from '@/lib/services/promotionValidation.core';
+import { toWindowDate, windowIssues } from '@/lib/services/promotionWindow.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,6 +72,55 @@ interface PromotionRow {
   isActive: boolean;
   description: string | null;
   createdAt: Date;
+}
+
+/**
+ * ARGUS #330 — server-side required-field guard shared with the Zod schema.
+ * The route validates first, but direct service callers get the same typed
+ * 400 instead of storing an "active" promotion that can never apply.
+ */
+function assertPromotionRequirements(data: {
+  type?: string | null | undefined;
+  promoCode?: string | null | undefined;
+  targetCategoryId?: string | null | undefined;
+  targetProductId?: string | null | undefined;
+  startsAt?: string | null | undefined;
+  endsAt?: string | null | undefined;
+}): void {
+  const issues = [
+    ...promotionTypeIssues(data),
+    ...windowIssues(data.startsAt, data.endsAt),
+  ];
+  if (issues.length > 0) {
+    throw ApiError.validation(issues[0]!.message, issues);
+  }
+}
+
+/**
+ * ARGUS #330 — case-insensitive promo-code uniqueness per tenant. There is no
+ * DB unique on (tenantId, promoCode), so this check runs inside the same
+ * tenant-row lock as the write (`lockingTx` + `lockForUpdate`). Concurrent
+ * writers serialize on that lock and the loser sees the winner's row; a
+ * direct-SQL client bypassing this service can still race (documented in
+ * docs/promotion-code-and-targets.md).
+ */
+async function assertPromoCodeAvailable(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  promoCode: string,
+  excludeId?: string,
+): Promise<void> {
+  const clash = await tx.promotion.findFirst({
+    where: {
+      tenantId,
+      promoCode: { equals: promoCode, mode: 'insensitive' },
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { id: true },
+  });
+  if (clash) {
+    throw ApiError.conflict('A promotion with this promo code already exists.');
+  }
 }
 
 // ── Fetch Active Promotions ──────────────────────────────────────────────────
@@ -643,21 +699,34 @@ export async function getPromotions(tenantId: string) {
 }
 
 export async function createPromotion(tenantId: string, data: CreatePromotionInput) {
-  const promo = await prisma.promotion.create({
-    data: {
-      tenantId,
-      name: data.name,
-      type: data.type as PromotionType,
-      value: data.value,
-      ...(data.promoCode !== undefined && { promoCode: data.promoCode }),
-      ...(data.targetCategoryId !== undefined && { targetCategoryId: data.targetCategoryId }),
-      ...(data.targetProductId !== undefined && { targetProductId: data.targetProductId }),
-      ...(data.minQuantity !== undefined && { minQuantity: data.minQuantity }),
-      ...(data.startsAt !== undefined && { startsAt: new Date(data.startsAt) }),
-      ...(data.endsAt !== undefined && { endsAt: new Date(data.endsAt) }),
-      ...(data.isActive !== undefined && { isActive: data.isActive }),
-      ...(data.description !== undefined && { description: data.description }),
-    },
+  assertPromotionRequirements(data);
+
+  const promoCode = normalizePromoCode(data.promoCode);
+  const startsAt = toWindowDate(data.startsAt, 'start');
+  const endsAt = toWindowDate(data.endsAt, 'end');
+
+  const promo = await lockingTx(async (tx) => {
+    await lockForUpdate(tx, 'tenants', '"id" = $1', [tenantId]);
+    if (promoCode !== null) {
+      await assertPromoCodeAvailable(tx, tenantId, promoCode);
+    }
+
+    return tx.promotion.create({
+      data: {
+        tenantId,
+        name: data.name,
+        type: data.type as PromotionType,
+        value: data.value,
+        ...(promoCode !== null && { promoCode }),
+        ...(data.targetCategoryId !== undefined && { targetCategoryId: data.targetCategoryId }),
+        ...(data.targetProductId !== undefined && { targetProductId: data.targetProductId }),
+        ...(data.minQuantity !== undefined && { minQuantity: data.minQuantity }),
+        ...(startsAt !== undefined && { startsAt }),
+        ...(endsAt !== undefined && { endsAt }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
+        ...(data.description !== undefined && { description: data.description }),
+      },
+    });
   });
 
   void createAuditLog({
@@ -674,21 +743,71 @@ export async function createPromotion(tenantId: string, data: CreatePromotionInp
 }
 
 export async function updatePromotion(tenantId: string, id: string, data: UpdatePromotionInput) {
-  const updated = await prisma.promotion.update({
-    where: { id, tenantId },
-    data: {
-      ...(data.name !== undefined && { name: data.name }),
-      ...(data.type !== undefined && { type: data.type as PromotionType }),
-      ...(data.value !== undefined && { value: data.value }),
-      ...(data.promoCode !== undefined && { promoCode: data.promoCode }),
-      ...(data.targetCategoryId !== undefined && { targetCategoryId: data.targetCategoryId }),
-      ...(data.targetProductId !== undefined && { targetProductId: data.targetProductId }),
-      ...(data.minQuantity !== undefined && { minQuantity: data.minQuantity }),
-      ...(data.startsAt !== undefined && { startsAt: new Date(data.startsAt) }),
-      ...(data.endsAt !== undefined && { endsAt: new Date(data.endsAt) }),
-      ...(data.isActive !== undefined && { isActive: data.isActive }),
-      ...(data.description !== undefined && { description: data.description }),
-    },
+  const updated = await lockingTx(async (tx) => {
+    // Serialize promotion writes per tenant so the check-then-write for promo
+    // code uniqueness cannot race (ARGUS #330).
+    await lockForUpdate(tx, 'tenants', '"id" = $1', [tenantId]);
+
+    const existing = await tx.promotion.findFirst({ where: { id, tenantId } });
+    // ARGUS #328: a missing row and a foreign-tenant row are indistinguishable
+    // and both map to 404 NOT_FOUND, never a Prisma P2025-style 500.
+    if (!existing) throw ApiError.notFound('Promotion not found');
+
+    const nextType = data.type ?? existing.type;
+    const nextPromoCode = data.promoCode !== undefined
+      ? normalizePromoCode(data.promoCode)
+      : existing.promoCode;
+    const nextCategoryId = data.targetCategoryId === undefined
+      ? existing.targetCategoryId
+      : data.targetCategoryId;
+    const nextProductId = data.targetProductId === undefined
+      ? existing.targetProductId
+      : data.targetProductId;
+    const nextStartsAt = data.startsAt === undefined
+      ? (existing.startsAt ? existing.startsAt.toISOString() : null)
+      : data.startsAt;
+    const nextEndsAt = data.endsAt === undefined
+      ? (existing.endsAt ? existing.endsAt.toISOString() : null)
+      : data.endsAt;
+
+    // Validate the EFFECTIVE row, so a PATCH that only moves the end date is
+    // checked against the stored start date and stored type/targets.
+    assertPromotionRequirements({
+      type: nextType,
+      promoCode: nextPromoCode,
+      targetCategoryId: nextCategoryId,
+      targetProductId: nextProductId,
+      startsAt: nextStartsAt,
+      endsAt: nextEndsAt,
+    });
+
+    if (nextPromoCode !== null) {
+      await assertPromoCodeAvailable(tx, tenantId, nextPromoCode, id);
+    }
+
+    const startsAt = data.startsAt !== undefined
+      ? toWindowDate(data.startsAt, 'start')
+      : undefined;
+    const endsAt = data.endsAt !== undefined
+      ? toWindowDate(data.endsAt, 'end')
+      : undefined;
+
+    return tx.promotion.update({
+      where: { id },
+      data: {
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.type !== undefined && { type: data.type as PromotionType }),
+        ...(data.value !== undefined && { value: data.value }),
+        ...(data.promoCode !== undefined && { promoCode: nextPromoCode }),
+        ...(data.targetCategoryId !== undefined && { targetCategoryId: data.targetCategoryId }),
+        ...(data.targetProductId !== undefined && { targetProductId: data.targetProductId }),
+        ...(data.minQuantity !== undefined && { minQuantity: data.minQuantity }),
+        ...(startsAt !== undefined && { startsAt }),
+        ...(endsAt !== undefined && { endsAt }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
+        ...(data.description !== undefined && { description: data.description }),
+      },
+    });
   });
 
   void createAuditLog({
@@ -711,7 +830,7 @@ export async function setPromotionActive(
   actorId?: string | undefined,
 ) {
   const promo = await prisma.promotion.findFirst({ where: { id, tenantId } });
-  if (!promo) throw new Error('Promotion not found');
+  if (!promo) throw ApiError.notFound('Promotion not found');
 
   const plan = planPromotionStatusChange(promo.isActive, isActive);
   if (!plan.changed) return promo;

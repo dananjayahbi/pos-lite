@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { zPrice, zSafeShortText } from '@/lib/validators/shared';
+import { windowIssues } from '@/lib/services/promotionWindow.core';
 
 /**
  * M15-01 (BUG-46) — request validators for the `CustomerPricingRule` CRUD API
@@ -82,12 +83,11 @@ const CustomerPricingRuleUpdateBaseSchema = z.object({
 type RuleWindow = { startsAt?: string | null | undefined; endsAt?: string | null | undefined };
 
 function assertWindowOrder(data: RuleWindow, ctx: z.RefinementCtx): void {
-  if (
-    data.startsAt &&
-    data.endsAt &&
-    new Date(data.endsAt).getTime() <= new Date(data.startsAt).getTime()
-  ) {
-    ctx.addIssue({ code: 'custom', path: ['endsAt'], message: 'End must be after start' });
+  // ARGUS #327: same-day date-only windows are valid. `windowIssues` expands
+  // the start to local 00:00:00.000 and the end to local 23:59:59.999 before
+  // comparing, instead of treating both YYYY-MM-DD values as UTC midnight.
+  for (const issue of windowIssues(data.startsAt, data.endsAt)) {
+    ctx.addIssue({ code: 'custom', path: [issue.path], message: issue.message });
   }
 }
 
