@@ -257,7 +257,7 @@ export const storeNavGroups: NavGroup[] = [
       },
       {
         name: 'Failed Deliveries & Recovery',
-        href: '/reports/recovery-staff-performance',
+        href: '/delivery/failed',
         roles: ['OWNER', 'MANAGER', 'DISPATCH_STAFF'],
         permission: PERMISSIONS.REPORT.viewRecoveryReport,
         match: 'exact',
@@ -372,6 +372,12 @@ export const storeNavGroups: NavGroup[] = [
         href: '/reports/profit-loss',
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.REPORT.viewProfitReport,
+      },
+      {
+        name: 'Recovery Performance',
+        href: '/reports/recovery-staff-performance',
+        roles: ['OWNER', 'MANAGER', 'DISPATCH_STAFF'],
+        permission: PERMISSIONS.REPORT.viewRecoveryReport,
       },
       {
         name: 'Saved Reports',

@@ -44,6 +44,7 @@ const EXPECTED_HREFS = [
   '/factory',
   '/orders',
   '/delivery',
+  '/delivery/failed',
   '/delivery/packaging',
   '/delivery/settings',
   '/delivery/rate-card',
