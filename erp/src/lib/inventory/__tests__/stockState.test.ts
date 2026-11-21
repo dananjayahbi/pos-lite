@@ -61,8 +61,16 @@ describe('stock state rule', () => {
     ).toBe('IN_STOCK');
   });
 
-  it('keeps a product without variants in stock (historical badge behaviour)', () => {
-    expect(getProductStockState([])).toBe('IN_STOCK');
+  it('classifies a product without variants as out of stock (ARGUS #153)', () => {
+    expect(getProductStockState([])).toBe('OUT_OF_STOCK');
+    expect(matchesStockStatusFilter([], 'out_of_stock')).toBe(true);
+    expect(matchesStockStatusFilter([], 'low_stock')).toBe(false);
+  });
+
+  it('classifies a product whose only variant has negative stock as out of stock', () => {
+    expect(
+      getProductStockState([{ stockQuantity: -4, lowStockThreshold: 5 }]),
+    ).toBe('OUT_OF_STOCK');
   });
 
   it('drives both inventory filters from the same rule', () => {

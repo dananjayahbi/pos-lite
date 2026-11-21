@@ -27,12 +27,15 @@ export function getVariantStockState(variant: StockStateVariant): StockState {
 }
 
 /**
- * A product is out of stock only when no variant is sellable; it is low stock
- * when at least one sellable variant is at or below its threshold. A product
- * without variants keeps the historical "in stock" presentation.
+ * A product is out of stock when no variant is sellable. That includes
+ * negative legacy/import quantities (handled per variant) and products with no
+ * variants at all, which can never be sold (ARGUS #153).
+ *
+ * It is low stock when at least one sellable variant is at or below its
+ * threshold.
  */
 export function getProductStockState(variants: StockStateVariant[]): StockState {
-  if (variants.length === 0) return 'IN_STOCK';
+  if (variants.length === 0) return 'OUT_OF_STOCK';
 
   const states = variants.map(getVariantStockState);
   if (states.every((state) => state === 'OUT_OF_STOCK')) return 'OUT_OF_STOCK';

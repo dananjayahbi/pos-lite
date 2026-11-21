@@ -33,11 +33,20 @@ The status badge and both filters share `src/lib/inventory/stockState.ts`:
 | ------- | -------------------------------------------------------------------- |
 | Variant | OUT at `stockQuantity <= 0`; LOW at `0 < qty <= lowStockThreshold`    |
 | Product | OUT when **every** variant is OUT; LOW when any sellable variant is LOW |
-| Product | A product without variants keeps the historical "in stock" state     |
+| Product | A product without live variants is OUT (ARGUS #153)                  |
 
 Because Prisma cannot compare two columns, the service loads the tenant's live
 variant quantities (product id, stock, threshold), groups them and pushes the
 matching product ids into the product query. The badge renders the same
 `getProductStockState` result, so a row labelled Out of Stock is exactly what the
 Out of Stock filter returns. Tests: `src/lib/inventory/__tests__/stockState.test.ts`.
+
+## Latent stock states (ARGUS #153)
+
+Negative stock (legacy/import data) was already OUT at the variant level, but a
+product with **zero variants** still fell through to `IN_STOCK`, so its badge
+read Active and the Out of Stock filter never returned it. The shared rule now
+treats "no live variants" as OUT_OF_STOCK; `getAllProducts` adds those product
+ids to the out-of-stock match set, so badge, filter and totals stay aligned.
+
 
