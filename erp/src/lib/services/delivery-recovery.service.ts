@@ -167,6 +167,7 @@ export async function redeliverDelivery(
     {
       orderRef: existing.orderRef,
       codAmount: existing.codAmount,
+      shippingFee: existing.shippingFee,
       paymentStatus: existing.paymentStatus,
       notes: existing.notes,
       itemCount: existing.itemCount,

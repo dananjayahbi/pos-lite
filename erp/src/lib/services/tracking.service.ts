@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { updateShipmentStatus } from '@/lib/services/shipment.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { collectableCodAmount } from '@/lib/delivery/cod';
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
 import {
   TERMINAL_SHIPMENT_STATUSES,
@@ -108,16 +109,22 @@ export async function applyTrackingUpdate(
       });
 
       if (mapped.delivery === 'DELIVERED') {
-        // Only an unpaid COD parcel is a receivable. A CARD order that was
-        // already PAID must never inflate the COD aging report.
-        if (delivery.paymentMethod === 'COD' && delivery.paymentStatus !== 'PAID' && delivery.codAmount.gt(0)) {
+        // ARGUS #288: only an unpaid COD parcel is a receivable, and the
+        // receivable is the collectable total (goods + shipping) so the
+        // shipping fee is not deducted from the goods payout again.
+        const expectedCod = collectableCodAmount(delivery);
+        if (
+          delivery.paymentMethod === 'COD' &&
+          delivery.paymentStatus !== 'PAID' &&
+          expectedCod.gt(0)
+        ) {
           await tx.reconciliationLedgerEntry.upsert({
             where: { deliveryId },
             create: {
               tenantId,
               deliveryId,
               waybillId: shipment.waybillId,
-              expectedCod: delivery.codAmount,
+              expectedCod,
               status: 'PENDING_SETTLEMENT',
             },
             update: {},

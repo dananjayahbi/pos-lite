@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { formatRupee } from '@/lib/format';
+import { collectableCodAmount } from '@/lib/delivery/cod';
 import { StatusBadge } from './StatusBadge';
 import { FailureReasonTag } from './FailureReasonTag';
 import { DispatchSheet } from './DispatchSheet';
@@ -85,7 +86,7 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                     {d.address?.cityName ?? '-'}
                   </td>
                   <td className="px-4 py-3 text-sm text-espresso">
-                    {formatRupee(d.codAmount ?? 0)}
+                    {formatRupee(collectableCodAmount(d).toNumber())}
                   </td>
                   <td className="px-4 py-3 text-sm text-espresso/60">
                     {d.shippingFee != null ? formatRupee(d.shippingFee) : '-'}

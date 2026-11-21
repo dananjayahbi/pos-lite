@@ -64,6 +64,15 @@ export function CreateDeliverySheet({ open, onOpenChange }: CreateDeliverySheetP
   const weight = watch('totalWeightKg') as number | undefined;
   const cityId = watch('address.cityId') as number | undefined;
   const cityName = watch('address.cityName') as string | undefined;
+  // ARGUS #288: the COD field is the goods value; shipping is charged on top
+  // and collected with it. Show the collectable total so a zero-goods parcel
+  // does not look like a zero-COD delivery.
+  const goodsValue = Number(watch('codAmount') ?? 0) || 0;
+  const estimatedShipping =
+    Number(
+      ratePreview.data?.shippingFee ?? ratePreview.data?.total ?? ratePreview.data?.rate ?? 0,
+    ) || 0;
+  const collectableTotal = goodsValue + estimatedShipping;
 
   // Fetch a rate preview whenever the weight or destination city changes.
   useEffect(() => {
@@ -167,8 +176,11 @@ export function CreateDeliverySheet({ open, onOpenChange }: CreateDeliverySheetP
 
           {/* COD */}
           <div className="space-y-1.5">
-            <Label htmlFor="codAmount">COD Amount</Label>
+            <Label htmlFor="codAmount">Goods value (COD)</Label>
             <Input id="codAmount" type="number" step="0.01" {...register('codAmount')} placeholder="0.00" />
+            <p className="text-xs text-espresso/60">
+              Value of the goods. The shipping fee is added and collected on delivery.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -194,15 +206,21 @@ export function CreateDeliverySheet({ open, onOpenChange }: CreateDeliverySheetP
           {/* Rate preview */}
           {ratePreview.data && (
             <div className="rounded-lg border border-espresso/10 bg-espresso/5 px-3 py-2 text-sm">
-              <span className="text-espresso/60">Estimated shipping fee: </span>
-              <span className="font-medium text-espresso">
-                {formatRupee(
-                  ratePreview.data.shippingFee ??
-                    ratePreview.data.total ??
-                    ratePreview.data.rate ??
-                    0,
-                )}
-              </span>
+              <div>
+                <span className="text-espresso/60">Estimated shipping fee: </span>
+                <span className="font-medium text-espresso">
+                  {formatRupee(
+                    ratePreview.data.shippingFee ??
+                      ratePreview.data.total ??
+                      ratePreview.data.rate ??
+                      0,
+                  )}
+                </span>
+              </div>
+              <div className="mt-1 border-t border-espresso/10 pt-1">
+                <span className="text-espresso/60">Collectable on delivery (goods + shipping): </span>
+                <span className="font-medium text-espresso">{formatRupee(collectableTotal)}</span>
+              </div>
             </div>
           )}
 

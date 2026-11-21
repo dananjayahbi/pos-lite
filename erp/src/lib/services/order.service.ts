@@ -7,6 +7,7 @@ import { setSentryTenantContext } from '@/lib/sentry/context';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { cancelDelivery } from '@/lib/services/delivery.service';
 import { estimateWebsiteShippingFee } from '@/lib/services/shipping-fee.service';
+import { collectableCodAmount } from '@/lib/delivery/cod';
 import { bulkStatusRejection } from '@/lib/services/dispatchStatus.core';
 import type {
   BulkStatusChangeInput,
@@ -177,8 +178,10 @@ export async function createWebsiteOrder(
           source: 'WEBSITE_CHECKOUT',
           status: 'PLACED',
           orderRef,
-          // Server-computed when lines are supplied; the client scalar is only a
-          // fallback for legacy payloads that send no lines.
+          // ARGUS #288: `codAmount` stores the GOODS value only - it is the
+          // PayHere amount basis and the invoice subtotal fallback. The
+          // courier-facing collectable is goods + `shippingFee`, derived by
+          // `collectableCodAmount` at dispatch / waybill / reconciliation time.
           codAmount: (hasLines
             ? computedCodAmount
             : new Prisma.Decimal(input.codAmount ?? 0)
@@ -290,6 +293,7 @@ export async function bulkChangeOrderStatus(
       orderRef: true,
       status: true,
       codAmount: true,
+      shippingFee: true,
       paymentMethod: true,
       paymentStatus: true,
       shipments: {
@@ -353,10 +357,13 @@ export async function bulkChangeOrderStatus(
         });
 
         if (input.status === 'DELIVERED') {
+          // ARGUS #288: the receivable is the collectable total (goods +
+          // shipping), not the goods value alone.
+          const expectedCod = collectableCodAmount(delivery);
           if (
             delivery.paymentMethod === 'COD' &&
             delivery.paymentStatus !== 'PAID' &&
-            delivery.codAmount.gt(0)
+            expectedCod.gt(0)
           ) {
             // The shipment is guaranteed by bulkStatusRejection, so the COD
             // receivable always carries the real waybill (ARGUS #263).
@@ -366,7 +373,7 @@ export async function bulkChangeOrderStatus(
                 tenantId,
                 deliveryId: delivery.id,
                 waybillId: shipment!.waybillId,
-                expectedCod: delivery.codAmount,
+                expectedCod,
                 status: 'PENDING_SETTLEMENT',
               },
               update: {},
