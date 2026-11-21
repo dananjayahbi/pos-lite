@@ -3,12 +3,10 @@
 All 65 tasks below are claimed by `opencode-deepseek-v4.1-flash`. Atlas is the
 source of truth; this checklist exists so none is missed.
 
-Status: **45 submitted to review + merged**, 18 in the current agent batches,
+Status: **57 submitted to review + merged**, 6 in the final inventory batch,
 2 blocked by a missing Definition of Done (cannot be submitted by any agent).
 
 ## Submitted + merged
-
-Batch 1-3 (single-agent and main work)
 
 - #167 category create/update audit
 - #168 category archive-copy fix
@@ -33,10 +31,17 @@ Batch 1-3 (single-agent and main work)
 - #232 PO legacy totals/receipt repair script
 - #234 supplier list error state
 - #235 supplier duplicate-name warning
+- #236 supplier phone normalization
+- #237 supplier audit trail
+- #245 raw-material locks and Decimal
+- #246 raw-material reason/history
 - #248 BOM production lock
 - #249 BOM duplicate ingredients
 - #250 BOM eligible variants
 - #252 BOM error/retry states
+- #253 legacy production batch repair
+- #256 factory dashboard alert invalidation
+- #257 factory dashboard auto-refresh
 - #264 dispatch visible selection
 - #265 dispatch bulk failure reporting
 - #266 dispatch source/payment/total-to-collect
@@ -51,50 +56,47 @@ Batch 1-3 (single-agent and main work)
 - #283 explicit per-dispatch packaging selection
 - #284 packaging list error state
 - #290 name-based destination-only rate zones
+- #291 rate preview district/staleness
+- #292 missing rate card is unconfigured, not free
+- #293 VAT on service fees
+- #300 waybill recipient guard
+- #301 waybill sender identity
 - #311 customer purchase items count units
 - #315 customer audit trail
 - #317 broadcast no-contact opt-out
-- #322 promotions sequential stacking (fix was already merged; task re-submitted)
+- #322 promotions sequential stacking (already merged; re-submitted)
 
-Checkpoint after this batch: full suite green at **1,912 tests / 230 files**;
-`tsc` clean.
+Checkpoint after this batch: **2,008 tests / 242 files**, `tsc` clean.
 
-## In progress (current agent batches)
+## Final inventory batch (agent-reports)
 
-| Agent | ARGUS | Task id | State |
-| --- | --- | --- | --- |
-| supply | #236 supplier phone normalization | `a0aa045a-c029-4de6-b398-a9b9d68a61fc` | assigned |
-| supply | #237 supplier audit | `6d573776-d345-4377-a6a9-c8700bceb6be` | assigned |
-| supply | #245 raw-material locks/Decimal | `401cb4d6-6cb8-4f9a-8629-c38d35ed921d` | assigned |
-| supply | #246 raw-material adjustment reason/history | `1d3e1e59-e573-454a-a1ab-0cfd82730e88` | assigned |
-| factory | #253 legacy production batches | `eab0b6ad-5ad3-4963-a3a7-e5c8452ae236` | assigned |
-| factory | #256 factory dashboard alert invalidation | `e283fb3a-2823-4ee0-8a9d-15f518da56f4` | assigned |
-| factory | #257 factory dashboard auto refresh | `d6634eae-8497-45df-9093-cb09fc91baf4` | assigned |
-| inventory | #208 clear stock-take count | `a544671f-f681-4d04-a1fb-59292cd95d72` | assigned |
-| inventory | #209 stock-take category validation | `cc7098d7-3587-4b94-82b3-cd903f5e938d` | assigned |
-| inventory | #210 stock-take refresh/revalidation | `c98b64ae-df7a-4da5-a62d-cdaada2bcf18` | assigned |
-| inventory | #214 low-stock effective threshold | `2b86853e-517c-4b7a-8b2c-f5ed8a3527d5` | assigned |
-| inventory | #215 shared low-stock predicate | `9433e200-0fc2-4c3e-b712-a22afe0aed49` | assigned |
-| inventory | #218 valuation cost-basis label | `27ad61c0-c358-48e1-9028-3104131a278e` | assigned |
-| catalog | #291 rate-card delivery estimate | `beffc1e3-864e-408c-9535-f2225d8a3483` | assigned |
-| catalog | #292 no active rate card | `e0b397bf-d358-4669-8acd-20ea1babd6c6` | assigned |
-| catalog | #293 rate-card VAT basis | `499fa2b3-91b0-40c2-b6e6-b131a2934cd9` | assigned |
-| delivery | #300 waybill address guard | `543601ef-06a5-47ef-a0f4-a51febd55cee` | assigned |
-| delivery | #301 waybill sender identity | `0d69ef9c-b3d1-4a23-a75d-9df58440353b` | assigned |
+| ARGUS | Task id | State |
+| --- | --- | --- |
+| #208 clear stock-take count | `a544671f-f681-4d04-a1fb-59292cd95d72` | assigned |
+| #209 stock-take category validation | `cc7098d7-3587-4b94-82b3-cd903f5e938d` | assigned |
+| #210 stock-take refresh/revalidation | `c98b64ae-df7a-4da5-a62d-cdaada2bcf18` | assigned |
+| #214 low-stock effective threshold | `2b86853e-517c-4b7a-8b2c-f5ed8a3527d5` | assigned |
+| #215 shared low-stock predicate | `9433e200-0fc2-4c3e-b712-a22afe0aed49` | assigned |
+| #218 valuation cost-basis label | `27ad61c0-c358-48e1-9028-3104131a278e` | assigned |
+
+Note: the inventory batch above is the last one; nothing else is unassigned.
 
 ## Blocked (no Definition of Done items)
 
 | Item | Task id | State |
 | --- | --- | --- |
-| Baseline Prisma migrations (P3005) | `cf45521f-907c-4753-abd6-8124c70d0375` | work done + documented, cannot submit (0 DoD items) |
+| Baseline Prisma migrations (P3005) | `cf45521f-907c-4753-abd6-8124c70d0375` | **done**: schema diff empty, 54/54 baselined, `migrate status` says up to date; cannot submit (0 DoD items) |
 | Void credit restoration | `86a457ca-453f-4a2c-a172-6e7b1a9233df` | fix merged earlier, cannot submit (0 DoD items) |
 
 ## Database
 
-- Live schema diff is empty after applying the 7 never-run additive migrations
-  and the `sale_lines` FK action.
-- All 54 migrations are baselined with `migrate resolve --applied`; new
-  migrations can use `prisma migrate deploy`.
-- The DB host occasionally drops connections (P1001); retry commands.
+- `prisma migrate status`: **Database schema is up to date!**
+- Live schema diff: empty migration.
+- New migrations can use `prisma migrate deploy`; do not reset the live DB.
 
-Total: 45 submitted + 18 in progress + 2 blocked = 65.
+## Proposed for triage (not claimed)
+
+- Reports > Stock Movements still uses the old 11-reason list.
+- Seed creates demo POs without subtotal/receipt movements.
+- Soft-deleted BOMs cannot be restored/recreated.
+- Dispatch uploads to the courier before the DB transaction.
