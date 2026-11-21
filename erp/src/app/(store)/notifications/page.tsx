@@ -8,6 +8,7 @@ import {
   CheckCheck,
   XCircle,
 } from 'lucide-react';
+import { normalizeRupeeText } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -164,13 +165,14 @@ export default function NotificationsPage() {
               const title = isVoidedSale
                 ? SALE_VOIDED_TITLE
                 : (completedCopy?.title ?? notification.title);
-              const body =
+              const body = normalizeRupeeText(
                 isVoidedSale && notification.relatedSale
                   ? buildSaleVoidedCopy(
                       notification.relatedEntityId ?? '',
                       notification.relatedSale.totalAmount,
                     ).body
-                  : (completedCopy?.body ?? notification.body);
+                  : (completedCopy?.body ?? notification.body),
+              );
 
               return (
                 <div

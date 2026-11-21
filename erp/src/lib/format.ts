@@ -4,6 +4,31 @@ export function formatRupee(value: number | string): string {
   return `Rs. ${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/**
+ * Rupee amount with a leading minus for negatives, e.g. `-Rs. 1,156.70`.
+ * Keeps `formatRupee()`'s grouping and two decimals (ARGUS #57).
+ */
+export function formatSignedRupee(value: number | string): string {
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+  if (Number.isNaN(num)) return 'Rs. 0.00';
+  return `${num < 0 ? '-' : ''}${formatRupee(Math.abs(num))}`;
+}
+
+const RUPEE_TEXT_PATTERN = /Rs\.\s*(-?)([\d,]+(?:\.\d+)?)/g;
+
+/**
+ * Normalise `Rs. 2476.58` / `Rs. -1156.70` inside stored notification text to
+ * the app-wide `Rs. 2,476.58` / `-Rs. 1,156.70`. Historical bodies are never
+ * rewritten in the database, so display code passes them through here.
+ */
+export function normalizeRupeeText(text: string): string {
+  return text.replace(RUPEE_TEXT_PATTERN, (match, sign: string, amount: string) => {
+    const numeric = Number.parseFloat(amount.replace(/,/g, ''));
+    if (!Number.isFinite(numeric)) return match;
+    return formatSignedRupee(sign === '-' ? -numeric : numeric);
+  });
+}
+
 export function formatLKR(amount: number | { toNumber(): number }): string {
   const value = typeof amount === 'number' ? amount : amount.toNumber();
   return new Intl.NumberFormat('en-LK', {

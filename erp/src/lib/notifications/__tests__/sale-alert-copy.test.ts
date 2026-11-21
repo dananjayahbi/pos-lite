@@ -18,12 +18,16 @@ describe('sale alert void copy', () => {
   it('labels a void and states the reversed amount', () => {
     const copy = buildSaleVoidedCopy('abcdef123456', '1250.5');
     expect(copy.title).toBe(SALE_VOIDED_TITLE);
-    expect(copy.body).toBe('Sale #ABCDEF12 was voided. Rs. 1250.50 reversed.');
+    expect(copy.body).toBe('Sale #ABCDEF12 was voided. Rs. 1,250.50 reversed.');
   });
 
   it('formats a numeric amount and tolerates a non-numeric one', () => {
     expect(buildSaleVoidedCopy('sale', 99.999).body).toContain('Rs. 100.00 reversed.');
     expect(buildSaleVoidedCopy('sale', 'not-a-number').body).toContain('Rs. 0.00 reversed.');
+  });
+
+  it('puts the minus before the currency for a negative amount', () => {
+    expect(buildSaleVoidedCopy('sale', -1156.7).body).toContain('-Rs. 1,156.70 reversed.');
   });
 
   it('only marks SALE_COMPLETED alerts whose linked sale is VOIDED', () => {
@@ -39,11 +43,16 @@ describe('sale alert completed copy', () => {
   it('rebuilds the alert with the current total (delivery included)', () => {
     const copy = buildSaleCompletedCopy('abcdef123456', '1891.76');
     expect(copy.title).toBe(SALE_COMPLETED_TITLE);
-    expect(copy.body).toBe('Sale #ABCDEF12 completed for Rs. 1891.76.');
+    expect(copy.body).toBe('Sale #ABCDEF12 completed for Rs. 1,891.76.');
   });
 
   it('formats amounts consistently', () => {
-    expect(buildSaleCompletedCopy('sale', 1641.759).body).toContain('Rs. 1641.76.');
+    expect(buildSaleCompletedCopy('sale', 1641.759).body).toContain('Rs. 1,641.76.');
     expect(buildSaleCompletedCopy('sale', 'nope').body).toContain('Rs. 0.00.');
+  });
+
+  it('groups thousands and leads with the minus sign', () => {
+    expect(buildSaleCompletedCopy('sale', 2476.58).body).toContain('Rs. 2,476.58.');
+    expect(buildSaleCompletedCopy('sale', '-1156.70').body).toContain('-Rs. 1,156.70.');
   });
 });

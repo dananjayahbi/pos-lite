@@ -11,6 +11,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
+import { normalizeRupeeText } from '@/lib/format';
 import { useGetNotifications, useInvalidateNotifications } from '@/hooks/useGetNotifications';
 import { getNotificationIcon } from '@/lib/constants/notification-types';
 import { getNotificationHref } from '@/lib/notifications/notification-href';
@@ -95,10 +96,11 @@ export function NotificationPopover() {
               const title = isVoidedSale
                 ? SALE_VOIDED_TITLE
                 : (completedCopy?.title ?? n.title);
-              const body =
+              const body = normalizeRupeeText(
                 isVoidedSale && n.relatedSale
                   ? buildSaleVoidedCopy(n.relatedEntityId ?? '', n.relatedSale.totalAmount).body
-                  : (completedCopy?.body ?? n.body);
+                  : (completedCopy?.body ?? n.body),
+              );
 
               const href = getNotificationHref({
                 type: n.type,

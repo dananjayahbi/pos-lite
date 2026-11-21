@@ -14,6 +14,7 @@ import {
   resolveSaleHistoryScope,
 } from '@/lib/sales/sale-history-scope';
 import { parseSalePaymentMethod, parseSaleStatus } from '@/lib/sales/sale-list-filters';
+import { formatSignedRupee } from '@/lib/format';
 
 export async function GET(request: NextRequest) {
   try {
@@ -225,7 +226,7 @@ export async function POST(request: Request) {
             recipientId: r.id,
             type: 'SALE_COMPLETED' as const,
             title: 'Sale Completed',
-            body: `Sale #${shortId} completed for Rs. ${Number(sale.totalAmount).toFixed(2)}.`,
+            body: `Sale #${shortId} completed for ${formatSignedRupee(Number(sale.totalAmount))}.`,
             relatedEntityType: 'Sale',
             relatedEntityId: sale.id,
           })),

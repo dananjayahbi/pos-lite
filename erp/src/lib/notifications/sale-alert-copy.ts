@@ -8,6 +8,8 @@
  * current status instead of a new notification type.
  */
 
+import { formatSignedRupee } from '@/lib/format';
+
 export const SALE_VOIDED_TITLE = 'Sale Voided';
 
 export interface RelatedSaleAlert {
@@ -20,18 +22,13 @@ export function saleShortId(saleId: string): string {
   return saleId.slice(0, 8).toUpperCase();
 }
 
-function formatAmount(totalAmount: number | string): string {
-  const amount = Number(totalAmount);
-  return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
-}
-
 export function buildSaleVoidedCopy(
   saleId: string,
   totalAmount: number | string,
 ): { title: string; body: string } {
   return {
     title: SALE_VOIDED_TITLE,
-    body: `Sale #${saleShortId(saleId)} was voided. Rs. ${formatAmount(totalAmount)} reversed.`,
+    body: `Sale #${saleShortId(saleId)} was voided. ${formatSignedRupee(totalAmount)} reversed.`,
   };
 }
 
@@ -50,7 +47,7 @@ export function buildSaleCompletedCopy(
 ): { title: string; body: string } {
   return {
     title: SALE_COMPLETED_TITLE,
-    body: `Sale #${saleShortId(saleId)} completed for Rs. ${formatAmount(totalAmount)}.`,
+    body: `Sale #${saleShortId(saleId)} completed for ${formatSignedRupee(totalAmount)}.`,
   };
 }
 
