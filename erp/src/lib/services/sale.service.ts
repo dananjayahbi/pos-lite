@@ -27,6 +27,10 @@ import {
 } from '@/lib/services/saleDiscountValidation.core';
 import { evaluatePromotions } from '@/lib/services/promotion.service';
 import { notifySaleVoided } from '@/lib/notifications/sale-alert-service';
+import {
+  createLowStockAlerts,
+  type LowStockAlertCandidate,
+} from '@/lib/notifications/low-stock-alert';
 import { reconcileCommissionForSale } from '@/lib/services/commission.service';
 import { resolveTaxRate } from '@/lib/pricing/taxRules.core';
 
@@ -59,6 +63,10 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     userId: input.cashierId,
     userEmail: '',
   });
+
+  // Filled inside the transaction from the committed stock adjustments, used
+  // after commit for the low-stock inbox alert (ARGUS #55).
+  const lowStockCandidates: LowStockAlertCandidate[] = [];
 
   const result = await prisma.$transaction(async (tx: TxClient) => {
     // POS sales must belong to an open shift. Management sales may be
@@ -604,12 +612,24 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       include: { lines: true },
     });
 
-    // Adjust stock for each line
+    // Adjust stock for each line. Collect post-sale quantities for the
+    // low-stock inbox alert (ARGUS #55): the threshold rule lives in the shared
+    // notification producer, not here.
     for (const l of lineData) {
-      await adjustStockInTx(tx, tenantId, l.variantId, input.cashierId, {
+      const updatedVariant = await adjustStockInTx(tx, tenantId, l.variantId, input.cashierId, {
         quantityDelta: -l.quantity,
         reason: 'SALE',
         saleId: sale.id,
+      });
+      lowStockCandidates.push({
+        variantId: l.variantId,
+        productName: l.productNameSnapshot,
+        sku: updatedVariant.sku ?? l.sku,
+        stockQuantity: updatedVariant.stockQuantity,
+        lowStockThreshold: updatedVariant.lowStockThreshold,
+        // Crossing only: a sale that leaves an already-low variant low must not
+        // add another alert on every transaction.
+        previousQuantity: updatedVariant.stockQuantity + l.quantity,
       });
     }
 
@@ -735,6 +755,20 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     itemCount: result.lines.length,
     customerId: result.customerId ?? null,
   });
+
+  // ARGUS #55: a completed sale that drops a variant to/below its threshold
+  // must reach the inbox like a manual adjustment does. Best-effort and after
+  // commit - a notification failure never fails a paid sale.
+  if (lowStockCandidates.length > 0) {
+    void createLowStockAlerts(
+      prisma,
+      tenantId,
+      lowStockCandidates,
+      `Sold via sale ${result.id.slice(0, 8).toUpperCase()}`,
+    ).catch((notificationError) => {
+      console.warn('Sale low-stock notification failed:', notificationError);
+    });
+  }
 
   // Kick cash drawer for cash payments (fire-and-forget)
   if (input.paymentMethod === 'CASH' || input.paymentMethod === 'SPLIT') {
