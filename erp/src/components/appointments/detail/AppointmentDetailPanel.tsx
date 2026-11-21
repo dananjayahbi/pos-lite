@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { StatusBadge } from '../shared/StatusBadge';
 import { AppointmentStatusTimeline } from './AppointmentStatusTimeline';
 import { AppointmentActions } from './AppointmentActions';
-import { useAppointment } from '@/hooks/appointments';
+import { ReminderStatusBadge } from '../shared/ReminderStatusBadge';
+import { useAppointment, useAppointmentReminders } from '@/hooks/appointments';
 import {
   APPOINTMENT_OVERDUE_GRACE_MINUTES,
   appointmentDisplayStatus,
@@ -24,6 +25,9 @@ interface AppointmentDetailPanelProps {
 
 export function AppointmentDetailPanel({ appointmentId, open, onClose }: AppointmentDetailPanelProps) {
   const { data: appointment, isLoading } = useAppointment(appointmentId);
+  // ARGUS #135: the aggregate summary was visible but the individual reminder
+  // rows (and their PENDING/SENT/FAILED status) were not.
+  const { data: reminderList } = useAppointmentReminders(open ? appointmentId : null);
   const displayStatus = appointment
     ? appointmentDisplayStatus({
         status: appointment.status as AppointmentStatus,
@@ -210,6 +214,39 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
                     ) : null}
                   </>
                 )}
+                {reminderList && reminderList.reminders.length > 0 ? (
+                  <ul className="mt-2 space-y-1">
+                    {reminderList.reminders.map((reminder) => (
+                      <li
+                        key={reminder.id}
+                        className="flex items-start justify-between gap-2 rounded border border-espresso/10 p-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-espresso">
+                            {reminder.channel} ·{' '}
+                            {new Date(reminder.scheduledFor).toLocaleString('en-GB', {
+                              dateStyle: 'medium',
+                              timeStyle: 'short',
+                            })}
+                          </p>
+                          {reminder.sentAt ? (
+                            <p className="text-espresso/60 text-[11px]">
+                              Sent{' '}
+                              {new Date(reminder.sentAt).toLocaleString('en-GB', {
+                                dateStyle: 'medium',
+                                timeStyle: 'short',
+                              })}
+                            </p>
+                          ) : null}
+                          {reminder.errorMessage ? (
+                            <p className="text-[11px] text-red-700">{reminder.errorMessage}</p>
+                          ) : null}
+                        </div>
+                        <ReminderStatusBadge status={reminder.status} />
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
 
               {appointment.staff && (

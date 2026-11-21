@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_APPOINTMENT_SETTINGS,
+  enabledReminderOffsetsHours,
   isAppointmentTransitionAllowedBySettings,
   normalizeAppointmentSettings,
   parseAppointmentSettings,
@@ -77,8 +78,29 @@ describe('normalizeAppointmentSettings', () => {
   });
 });
 
-describe('resolveInitialAppointmentStatus', () => {
-  it('keeps new bookings SCHEDULED by default', () => {
+describe('enabledReminderOffsetsHours', () => {
+  it('schedules both offsets with the default settings', () => {
+    expect(enabledReminderOffsetsHours(DEFAULT_APPOINTMENT_SETTINGS)).toEqual([24, 2]);
+  });
+
+  it('honours the Settings switches', () => {
+    expect(
+      enabledReminderOffsetsHours({ ...DEFAULT_APPOINTMENT_SETTINGS, reminder24hEnabled: false }),
+    ).toEqual([2]);
+    expect(
+      enabledReminderOffsetsHours({ ...DEFAULT_APPOINTMENT_SETTINGS, reminder2hEnabled: false }),
+    ).toEqual([24]);
+    expect(
+      enabledReminderOffsetsHours({
+        ...DEFAULT_APPOINTMENT_SETTINGS,
+        reminder24hEnabled: false,
+        reminder2hEnabled: false,
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe('resolveInitialAppointmentStatus', () => {  it('keeps new bookings SCHEDULED by default', () => {
     expect(resolveInitialAppointmentStatus(DEFAULT_APPOINTMENT_SETTINGS)).toBe('SCHEDULED');
   });
 
