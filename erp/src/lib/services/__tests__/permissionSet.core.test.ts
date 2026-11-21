@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  deniedPermissions,
   effectivePermissions,
   extraPermissions,
   isStaffPermissionDraftUnchanged,
   normalizePermissionList,
+  permissionPayloadToSave,
   permissionsToSave,
   roleDefaultPermissions,
   samePermissionSet,
@@ -48,6 +50,58 @@ describe('permission set normalization', () => {
   it('strips inherited defaults when saving a draft', () => {
     const stored = [...cashierDefaults, 'report:view_sales'];
     expect(permissionsToSave(stored, 'CASHIER')).toEqual(['report:view_sales']);
+  });
+});
+
+describe('explicit revokes (ARGUS #464)', () => {
+  it('treats a !key entry as a deny, not an extra', () => {
+    const stored = ['!sale:create', 'report:view_sales'];
+    expect(extraPermissions(stored, 'CASHIER')).toEqual(['report:view_sales']);
+    expect(deniedPermissions(stored, 'CASHIER')).toEqual(['sale:create']);
+    expect(effectivePermissions('CASHIER', stored)).not.toContain('sale:create');
+    expect(effectivePermissions('CASHIER', stored)).toContain('report:view_sales');
+  });
+
+  it('only keeps denies that the selected role actually inherits', () => {
+    // report:view_sales is not a cashier default, so `!report:view_sales` is
+    // not a meaningful revoke.
+    expect(deniedPermissions(['!report:view_sales'], 'CASHIER')).toEqual([]);
+    expect(deniedPermissions(['!sale:create'], 'CASHIER')).toEqual(['sale:create']);
+  });
+
+  it('saves extras and revokes together, pruning stale denies', () => {
+    expect(
+      permissionPayloadToSave(
+        ['report:view_sales'],
+        'CASHIER',
+        ['sale:create', 'settings:manage'],
+      ),
+    ).toEqual(['report:view_sales', '!sale:create']);
+  });
+
+  it('detects a revoke as a change and de-duplicates repeated denies', () => {
+    const existing = { role: 'CASHIER', isActive: true, permissions: [...cashierDefaults] };
+    expect(
+      isStaffPermissionDraftUnchanged(existing, {
+        role: 'CASHIER',
+        isActive: true,
+        permissions: [...cashierDefaults, '!sale:create', '!sale:create'],
+      }),
+    ).toBe(false);
+    // Legacy duplicates of a deny are not a new change.
+    expect(
+      isStaffPermissionDraftUnchanged(
+        { ...existing, permissions: ['!sale:create', '!sale:create'] },
+        { role: 'CASHIER', isActive: true, permissions: ['!sale:create'] },
+      ),
+    ).toBe(true);
+  });
+
+  it('prunes a deny the selected role never inherited', () => {
+    // shift:open is a manager default but not a factory-manager one, so the
+    // deny only survives the role change that still inherits the key.
+    expect(permissionPayloadToSave([], 'MANAGER', ['shift:open'])).toEqual(['!shift:open']);
+    expect(permissionPayloadToSave([], 'FACTORY_MANAGER', ['shift:open'])).toEqual([]);
   });
 });
 

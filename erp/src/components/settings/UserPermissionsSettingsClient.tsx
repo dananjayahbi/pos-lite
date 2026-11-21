@@ -35,9 +35,11 @@ import {
 } from '@/lib/constants/permissions';
 import { grantablePermissions, canAssignRole, canManageStaffRole } from '@/lib/auth/staff-authorization';
 import {
+  deniedPermissions,
   effectivePermissions,
   extraPermissions,
   isStaffPermissionDraftUnchanged,
+  permissionPayloadToSave,
 } from '@/lib/services/permissionSet.core';
 import {
   getPermissionRisk,
@@ -128,6 +130,8 @@ export default function UserPermissionsSettingsClient({
   const [draftRole, setDraftRole] = useState<AssignableRole>('CASHIER');
   const [draftIsActive, setDraftIsActive] = useState(true);
   const [draftPermissions, setDraftPermissions] = useState<string[]>([]);
+  // ARGUS #464: role defaults the operator has revoked for this user.
+  const [draftDenied, setDraftDenied] = useState<string[]>([]);
   const [pendingHighRisk, setPendingHighRisk] = useState<
     Array<{ permission: string; reason: string }>
   >([]);
@@ -163,8 +167,13 @@ export default function UserPermissionsSettingsClient({
         throw new Error('No team member selected');
       }
 
-      // ARGUS #459: persist only the explicit extras relative to the new role.
-      const explicitPermissions = extraPermissions(draftPermissions, draftRole);
+      // ARGUS #459/#464: persist the explicit extras and revokes relative to
+      // the new role.
+      const permissionEntries = permissionPayloadToSave(
+        draftPermissions,
+        draftRole,
+        draftDenied,
+      );
 
       const res = await fetch(`/api/store/staff/${editingMember.id}`, {
         method: 'PATCH',
@@ -172,7 +181,7 @@ export default function UserPermissionsSettingsClient({
         body: JSON.stringify({
           role: draftRole,
           isActive: draftIsActive,
-          permissions: explicitPermissions,
+          permissions: permissionEntries,
         }),
       });
 
@@ -205,14 +214,23 @@ export default function UserPermissionsSettingsClient({
     setDraftIsActive(member.isActive);
     // Normalize on open: legacy rows may store inherited permissions too.
     setDraftPermissions(extraPermissions(member.permissions, member.role));
+    setDraftDenied(deniedPermissions(member.permissions, member.role));
     setPendingHighRisk([]);
   }
 
   function togglePermission(permission: string) {
-    if (inheritedPermissions.has(permission as PermissionKey)) {
+    if (!canAssignPermissions || !grantable.has(permission)) {
       return;
     }
-    if (!canAssignPermissions || !grantable.has(permission)) {
+
+    if (inheritedPermissions.has(permission as PermissionKey)) {
+      // Inherited by the role: toggling writes/clears a revoke instead of a
+      // grant, so one capability can be removed without changing the role.
+      setDraftDenied((current) =>
+        current.includes(permission)
+          ? current.filter((entry) => entry !== permission)
+          : [...current, permission],
+      );
       return;
     }
 
@@ -238,7 +256,7 @@ export default function UserPermissionsSettingsClient({
         {
           role: draftRole,
           isActive: draftIsActive,
-          permissions: draftPermissions,
+          permissions: permissionPayloadToSave(draftPermissions, draftRole, draftDenied),
         },
       )
     ) {
@@ -252,8 +270,9 @@ export default function UserPermissionsSettingsClient({
     const existingEffective = effectivePermissions(
       editingMember.role,
       editingMember.permissions,
+      deniedPermissions(editingMember.permissions, editingMember.role),
     );
-    const nextEffective = effectivePermissions(draftRole, draftPermissions);
+    const nextEffective = effectivePermissions(draftRole, draftPermissions, draftDenied);
     const highRisk = newHighRiskGrants(existingEffective, nextEffective);
     if (highRisk.length > 0) {
       setPendingHighRisk(highRisk);
@@ -276,7 +295,7 @@ export default function UserPermissionsSettingsClient({
         <CardHeader>
           <CardTitle className="font-display text-espresso">Permission model</CardTitle>
           <CardDescription>
-            Role permissions stay inherited automatically. The controls below only add explicit overrides when someone needs a little extra firepower.
+            Role permissions stay inherited automatically. Add explicit extras for extra firepower, or revoke a single inherited capability for one user without changing the whole role.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -337,7 +356,13 @@ export default function UserPermissionsSettingsClient({
                       </Badge>
                     </TableCell>
                     <TableCell className="font-mono text-xs text-espresso">
-                      {extraPermissions(member.permissions, member.role).length}
+                      {extraPermissions(member.permissions, member.role).length} extra
+                      {deniedPermissions(member.permissions, member.role).length > 0 && (
+                        <span className="text-terracotta">
+                          {' '}
+                          · {deniedPermissions(member.permissions, member.role).length} revoked
+                        </span>
+                      )}
                     </TableCell>
                     {canSave && (
                       <TableCell className="text-right">
@@ -402,7 +427,7 @@ export default function UserPermissionsSettingsClient({
               <div className="rounded-md border border-mist bg-white p-3 text-xs text-sand-ink">
                 <p className="font-semibold text-espresso">Inherited permissions</p>
                 <p className="mt-1">{ROLE_PERMISSIONS[draftRole].length} permissions come from the selected role automatically.</p>
-                <p className="mt-2">Explicit overrides are stored separately so you can keep the role clean and only sprinkle extras where necessary.</p>
+                <p className="mt-2">Uncheck an inherited permission to revoke it for this user only. Extras and revokes are stored separately so the role stays clean.</p>
               </div>
             </div>
 
@@ -414,34 +439,43 @@ export default function UserPermissionsSettingsClient({
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       {Object.values(groupPermissions).map((permission) => {
                         const inherited = inheritedPermissions.has(permission as PermissionKey);
-                        const checked = inherited || draftPermissions.includes(permission);
+                        const revoked = inherited && draftDenied.includes(permission);
+                        const explicit = !inherited && draftPermissions.includes(permission);
+                        const checked = inherited ? !revoked : explicit;
                         const risk = getPermissionRisk(permission);
                         const grantableHere = canAssignPermissions && grantable.has(permission);
-                        const disabled = inherited || !grantableHere;
+                        const disabled = !grantableHere;
 
                         return (
                           <label
                             key={permission}
                             title={risk.reason ?? undefined}
                             className={`flex items-start gap-3 rounded-md border p-3 ${
-                              inherited
-                                ? 'border-espresso/20 bg-pearl/50'
-                                : risk.highRisk
-                                  ? 'border-[#9B2226]/40 bg-[#9B2226]/5'
-                                  : 'border-mist bg-white'
+                              revoked
+                                ? 'border-terracotta/40 bg-terracotta/5'
+                                : inherited
+                                  ? 'border-espresso/20 bg-pearl/50'
+                                  : risk.highRisk
+                                    ? 'border-[#9B2226]/40 bg-[#9B2226]/5'
+                                    : 'border-mist bg-white'
                             }`}
                           >
                             <Checkbox
                               checked={checked}
                               disabled={disabled}
+                              aria-label={`${formatPermissionLabel(permission)} (${permission})`}
                               onCheckedChange={() => togglePermission(permission)}
                             />
                             <div>
                               <div className="flex flex-wrap items-center gap-2">
                                 <p className="text-sm font-medium text-espresso">{formatPermissionLabel(permission)}</p>
-                                {inherited ? (
+                                {revoked ? (
+                                  <Badge variant="secondary" className="bg-terracotta text-pearl">
+                                    Revoked
+                                  </Badge>
+                                ) : inherited ? (
                                   <Badge variant="secondary" className="bg-espresso text-pearl">Inherited</Badge>
-                                ) : checked ? (
+                                ) : explicit ? (
                                   <Badge variant="secondary">Explicit</Badge>
                                 ) : null}
                                 {risk.highRisk && (
@@ -449,11 +483,21 @@ export default function UserPermissionsSettingsClient({
                                     High risk
                                   </Badge>
                                 )}
-                                {!inherited && !grantableHere && (
+                                {!grantableHere && (
                                   <Badge variant="secondary">Not grantable by your role</Badge>
                                 )}
                               </div>
                               <p className="mt-1 font-mono text-[11px] text-sand-ink">{permission}</p>
+                              {inherited && !revoked && (
+                                <p className="mt-1 text-[11px] text-sand-ink">
+                                  Inherited from the role - uncheck to revoke just this capability.
+                                </p>
+                              )}
+                              {revoked && (
+                                <p className="mt-1 text-[11px] text-terracotta">
+                                  Revoked for this user only; the role itself is unchanged.
+                                </p>
+                              )}
                               {risk.highRisk && risk.reason && (
                                 <p className="mt-1 text-[11px] text-[#9B2226]">{risk.reason}</p>
                               )}
