@@ -16,9 +16,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Plus, Settings2, AlertTriangle } from 'lucide-react';
+import { Plus, Settings2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { formatPackagingQuantity } from '@/lib/constants/packaging';
 import { PackagingStockTable } from '@/components/delivery/packaging/PackagingStockTable';
+import { resolvePackagingListState } from '@/components/delivery/packaging/packagingListState';
 import { PackagingItemFormDialog } from '@/components/delivery/packaging/PackagingItemFormDialog';
 import { PackagingAdjustDialog } from '@/components/delivery/packaging/PackagingAdjustDialog';
 import { PackagingCategoryManagerDialog } from '@/components/delivery/packaging/PackagingCategoryManagerDialog';
@@ -27,7 +28,8 @@ import { PackagingConsumptionHistory } from '@/components/delivery/packaging/Pac
 export function PackagingPageClient() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const canManage = hasPermission(PERMISSIONS.DELIVERY.managePackaging);
-  const { data, isLoading, create, update, remove, adjust } = usePackaging();
+  const { data, isLoading, isError, error, isFetching, refetch, create, update, remove, adjust } =
+    usePackaging();
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<PackagingItemRow | null>(null);
@@ -56,6 +58,11 @@ export function PackagingPageClient() {
   }
 
   const items = data ?? [];
+  const listState = resolvePackagingListState({
+    isLoading,
+    isError,
+    itemCount: items.length,
+  });
   const deleteBlocked = (deleteTarget?.quantityOnHand ?? 0) > 0;
 
   const openCreate = () => {
@@ -94,15 +101,48 @@ export function PackagingPageClient() {
           <CardTitle className="font-display text-lg">Inventory</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {listState === 'loading' ? (
             <div className="space-y-2">
               {Array.from({ length: 6 }).map((_, index) => (
                 <Skeleton key={index} className="h-12 w-full" />
               ))}
             </div>
+          ) : listState === 'error' ? (
+            <div
+              role="alert"
+              className="border-terracotta/30 bg-terracotta/5 flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-start sm:justify-between"
+            >
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="text-terracotta mt-0.5 h-5 w-5 shrink-0" />
+                <div>
+                  <p className="text-espresso text-sm font-medium">
+                    Could not load packaging stock
+                  </p>
+                  <p className="text-espresso/70 mt-1 text-sm">
+                    {error instanceof Error
+                      ? error.message
+                      : 'The packaging list could not be fetched.'}
+                  </p>
+                  <p className="text-espresso/50 mt-1 text-xs">
+                    This is a load failure, not an empty inventory. Retry before adding or
+                    adjusting stock.
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void refetch()}
+                disabled={isFetching}
+                className="shrink-0"
+              >
+                <RefreshCw className="mr-1 h-4 w-4" />
+                {isFetching ? 'Retrying...' : 'Retry'}
+              </Button>
+            </div>
           ) : (
             <PackagingStockTable
-              items={items}
+              items={listState === 'empty' ? [] : items}
               canManage={canManage}
               onAdjust={(item) => setAdjustItem(item)}
               onEdit={openEdit}
@@ -227,12 +267,6 @@ export function PackagingPageClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {items.length === 0 && !isLoading ? (
-        <div className="border-espresso/20 text-espresso/50 flex items-center justify-center gap-2 rounded-lg border border-dashed py-8 text-sm">
-          No packaging items - add your first item above.
-        </div>
-      ) : null}
     </div>
   );
 }

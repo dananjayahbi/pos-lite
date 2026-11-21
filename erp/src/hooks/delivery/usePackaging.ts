@@ -107,6 +107,10 @@ export function usePackaging() {
   return {
     data: query.data as PackagingItemRow[] | undefined,
     isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
+    isFetching: query.isFetching,
+    refetch: query.refetch,
     create,
     update,
     remove,
