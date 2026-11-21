@@ -10,6 +10,7 @@ import {
 } from '@/lib/services/commission-allocation';
 import { describeCommissionBalance } from '@/lib/services/commissionSummary.core';
 import { planCommissionReversal } from '@/lib/services/commissionClawback.core';
+import { resolveStoredCommissionRate } from '@/lib/services/commissionRate.core';
 import type { TxClient } from '@/lib/services/inventory.service';
 import {
   PAYROLL_PENDING_ACCOUNT_PREFIX,
@@ -81,6 +82,9 @@ export async function createCommissionRecord(input: {
 
   const earnedAmount = base.mul(rate).div(100);
 
+  // `createdAt` is the entry timestamp. Period reports deliberately use the
+  // sale's accounting date (`Sale.saleDate`, falling back to `Sale.createdAt`)
+  // so a backdated sale still reports in its sale month (ARGUS #365).
   return prisma.commissionRecord.create({
     data: {
       tenantId: input.tenantId,
@@ -143,10 +147,9 @@ export async function reconcileCommissionForSale(input: ReconcileCommissionForSa
 
   // Preserve the rate that actually earned the commission. With duplicate or
   // mixed-rate records the weighted average keeps earned/base proportional.
-  const effectiveRate = originalEarned
-    .div(originalBase)
-    .mul(100)
-    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  // ARGUS #365: never read the staff member's *current* User.commissionRate.
+  const effectiveRate = resolveStoredCommissionRate(positive);
+  if (!effectiveRate) return null;
 
   const refunded = await client.return.aggregate({
     where: {
@@ -280,8 +283,15 @@ export async function getCommissionSummaryForUser(
     where: {
       tenantId,
       userId,
-      createdAt: { lte: periodEnd },
-      sale: { status: { not: 'VOIDED' } },
+      // ARGUS #365: pay outstanding commission whose sale accounting date is
+      // up to month-end; a backdated sale belongs to its sale month.
+      sale: {
+        status: { not: 'VOIDED' },
+        OR: [
+          { saleDate: { lte: periodEnd } },
+          { saleDate: null, createdAt: { lte: periodEnd } },
+        ],
+      },
       OR: [
         { payoutId: null },
         { payout: { paymentAccountName: null } },
@@ -357,7 +367,17 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
       where: {
         tenantId: input.tenantId,
         userId: input.userId,
-        createdAt: { gte: input.periodStart, lte: input.periodEnd },
+        // ARGUS #365: period reporting follows the sale's accounting date, not
+        // when the commission row happened to be inserted (backdated sales).
+        sale: {
+          OR: [
+            { saleDate: { gte: input.periodStart, lte: input.periodEnd } },
+            {
+              saleDate: null,
+              createdAt: { gte: input.periodStart, lte: input.periodEnd },
+            },
+          ],
+        },
         OR: [
           { payoutId: null },
           { payout: { paymentAccountName: null } },
@@ -618,7 +638,15 @@ export async function getCommissionSummaryForTenant(
       const where = {
         tenantId,
         userId: user.id,
-        createdAt: { gte: periodStart, lte: periodEnd },
+        // ARGUS #365: report commission in the period of the sale's accounting
+        // date. Backdated sales keep their date; pre-saleDate rows fall back
+        // to createdAt.
+        sale: {
+          OR: [
+            { saleDate: { gte: periodStart, lte: periodEnd } },
+            { saleDate: null, createdAt: { gte: periodStart, lte: periodEnd } },
+          ],
+        },
       };
       const [earned, paid] = await Promise.all([
         prisma.commissionRecord.aggregate({ where, _sum: { earnedAmount: true } }),
