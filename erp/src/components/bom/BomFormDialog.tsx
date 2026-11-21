@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -29,6 +29,9 @@ import {
   findDuplicateRawMaterialIds,
   INGREDIENT_DUPLICATE_MESSAGE,
 } from '@/lib/services/bom.core';
+import {
+  factoryFeedErrorMessage,
+} from '@/components/raw-materials/factoryDashboardState';
 
 interface BomFormDialogProps {
   open: boolean;
@@ -59,7 +62,13 @@ const EMPTY_FORM: FormState = {
 
 export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialogProps) {
   const isEdit = editingBomId !== null;
-  const { data: detailData } = useBom(editingBomId);
+  const {
+    data: detailData,
+    isError: detailError,
+    error: detailErrorObj,
+    isFetching: detailFetching,
+    refetch: refetchDetail,
+  } = useBom(editingBomId);
   // ARGUS #250: only manufactured variants without an existing BOM are offered.
   const { data: eligibleData } = useBomEligibleVariants(open && !isEdit);
   const { data: materialsData } = useRawMaterials({ limit: 100 });
@@ -160,6 +169,36 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
             Specify the finished product and the raw materials consumed per unit.
           </DialogDescription>
         </DialogHeader>
+        {isEdit && detailError ? (
+          <div
+            role="alert"
+            className="flex flex-col items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-8 text-center"
+          >
+            <AlertTriangle className="h-6 w-6 text-red-500" />
+            <p className="font-body text-sm font-medium text-red-800">
+              BOM details could not be loaded
+            </p>
+            <p className="font-body text-xs text-red-600">
+              {factoryFeedErrorMessage(detailErrorObj, 'The recipe request failed.')}
+            </p>
+            <p className="font-body text-xs text-red-600">
+              The form stays empty until the recipe loads, so Save cannot overwrite it.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+              onClick={() => refetchDetail()}
+              disabled={detailFetching}
+            >
+              <RefreshCw className={`mr-2 h-3.5 w-3.5 ${detailFetching ? 'animate-spin' : ''}`} />
+              {detailFetching ? 'Retrying…' : 'Retry'}
+            </Button>
+          </div>
+        ) : isEdit && !detailData?.data ? (
+          <p className="py-8 text-center text-sm text-mist-ink">Loading BOM details…</p>
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="bom-variant">Finished product variant</Label>
@@ -343,6 +382,7 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
             </Button>
           </DialogFooter>
         </form>
+        )}
       </DialogContent>
     </Dialog>
   );

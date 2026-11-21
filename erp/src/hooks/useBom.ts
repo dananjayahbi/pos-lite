@@ -81,6 +81,20 @@ interface ListResponse<T> {
   meta: { page: number; limit: number; total: number; totalPages: number };
 }
 
+/**
+ * ARGUS #252 - surface the server's error message so failed lists/details/plans
+ * can explain themselves instead of dropping to a generic fallback.
+ */
+async function apiErrorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const json = (await res.json()) as { error?: { message?: string } };
+    const message = json?.error?.message;
+    return typeof message === 'string' && message.trim() !== '' ? message : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 // ── List BOMs ────────────────────────────────────────────────────────────────
 
 export function useBoms(filters: { variantId?: string; search?: string; page?: number; limit?: number } = {}) {
@@ -94,7 +108,9 @@ export function useBoms(filters: { variantId?: string; search?: string; page?: n
     queryKey: ['boms', params.toString()],
     queryFn: async () => {
       const res = await fetch(`/api/store/bom?${params.toString()}`);
-      if (!res.ok) throw new Error('Failed to fetch bills of materials');
+      if (!res.ok) {
+        throw new Error(await apiErrorMessage(res, 'Failed to fetch bills of materials'));
+      }
       return res.json();
     },
     staleTime: 30_000,
@@ -119,7 +135,7 @@ export function useBomEligibleVariants(enabled = true) {
     queryKey: ['bom-eligible-variants'],
     queryFn: async () => {
       const res = await fetch('/api/store/bom/eligible-variants');
-      if (!res.ok) throw new Error('Failed to fetch eligible products');
+      if (!res.ok) throw new Error(await apiErrorMessage(res, 'Failed to fetch eligible products'));
       return res.json();
     },
     staleTime: 30_000,
@@ -133,7 +149,7 @@ export function useBom(id: string | null) {
     queryKey: ['bom', id],
     queryFn: async () => {
       const res = await fetch(`/api/store/bom/${id}`);
-      if (!res.ok) throw new Error('Failed to fetch BOM');
+      if (!res.ok) throw new Error(await apiErrorMessage(res, 'Failed to fetch BOM'));
       return res.json();
     },
     enabled: !!id,
@@ -225,7 +241,7 @@ export function useProductionPlan(bomId: string | null, quantity: number) {
       const res = await fetch(
         `/api/store/bom/produce?bomId=${bomId}&quantity=${quantity}`,
       );
-      if (!res.ok) throw new Error('Failed to fetch production plan');
+      if (!res.ok) throw new Error(await apiErrorMessage(res, 'Failed to fetch production plan'));
       return res.json();
     },
     enabled: !!bomId && quantity > 0,

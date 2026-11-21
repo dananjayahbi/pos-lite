@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { CheckCircle2, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,7 @@ import {
   useProduceGoods,
 } from '@/hooks/useBom';
 import { getUnitShortLabel } from '@/lib/services/rawMaterial.core';
+import { factoryFeedErrorMessage } from '@/components/raw-materials/factoryDashboardState';
 
 interface ProductionLogDialogProps {
   bomId: string | null;
@@ -28,7 +29,13 @@ interface ProductionLogDialogProps {
 }
 
 export function ProductionLogDialog({ bomId, onClose }: ProductionLogDialogProps) {
-  const { data: bomData } = useBom(bomId);
+  const {
+    data: bomData,
+    isError: bomError,
+    error: bomErrorObj,
+    isFetching: bomFetching,
+    refetch: refetchBom,
+  } = useBom(bomId);
   const produceMutation = useProduceGoods();
   const [quantity, setQuantity] = useState('1');
   const [note, setNote] = useState('');
@@ -37,7 +44,13 @@ export function ProductionLogDialog({ bomId, onClose }: ProductionLogDialogProps
   const qty = Number(quantity);
   const validQty = Number.isInteger(qty) && qty > 0;
 
-  const { data: planData } = useProductionPlan(bomId, validQty ? qty : 0);
+  const {
+    data: planData,
+    isError: planError,
+    error: planErrorObj,
+    isFetching: planFetching,
+    refetch: refetchPlan,
+  } = useProductionPlan(bomId, validQty ? qty : 0);
 
   useEffect(() => {
     if (bomId) {
@@ -79,10 +92,43 @@ export function ProductionLogDialog({ bomId, onClose }: ProductionLogDialogProps
         <DialogHeader>
           <DialogTitle>Log production</DialogTitle>
           <DialogDescription>
-            {bom ? `${bom.variantName} (${bom.variantSku})` : 'Loading BOM…'}
+            {bom
+              ? `${bom.variantName} (${bom.variantSku})`
+              : plan
+                ? `${plan.variantName} (${plan.variantSku})`
+                : bomError
+                  ? 'BOM details could not be loaded.'
+                  : 'Loading BOM…'}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {bomError ? (
+            <div
+              role="alert"
+              className="flex items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 p-3"
+            >
+              <div>
+                <p className="font-body text-sm font-medium text-red-800">
+                  BOM details could not be loaded
+                </p>
+                <p className="font-body text-xs text-red-600">
+                  {factoryFeedErrorMessage(bomErrorObj, 'The BOM request failed.')}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+                onClick={() => refetchBom()}
+                disabled={bomFetching}
+              >
+                <RefreshCw className={`mr-2 h-3.5 w-3.5 ${bomFetching ? 'animate-spin' : ''}`} />
+                {bomFetching ? 'Retrying…' : 'Retry'}
+              </Button>
+            </div>
+          ) : null}
+
           <div className="space-y-2">
             <Label htmlFor="prod-qty">Quantity produced</Label>
             <Input
@@ -96,7 +142,34 @@ export function ProductionLogDialog({ bomId, onClose }: ProductionLogDialogProps
             />
           </div>
 
-          {plan ? (
+          {planError ? (
+            <div
+              role="alert"
+              className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-3"
+            >
+              <p className="flex items-center gap-1 font-body text-sm font-medium text-red-800">
+                <AlertTriangle className="h-4 w-4 text-red-500" />
+                Consumption could not be calculated
+              </p>
+              <p className="font-body text-xs text-red-600">
+                {factoryFeedErrorMessage(planErrorObj, 'The production plan request failed.')}
+              </p>
+              <p className="font-body text-xs text-red-600">
+                Production cannot be logged until the plan loads.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+                onClick={() => refetchPlan()}
+                disabled={planFetching}
+              >
+                <RefreshCw className={`mr-2 h-3.5 w-3.5 ${planFetching ? 'animate-spin' : ''}`} />
+                {planFetching ? 'Retrying…' : 'Retry'}
+              </Button>
+            </div>
+          ) : plan ? (
             <div className="space-y-2 rounded-lg border p-3">
               <p className="text-xs font-medium uppercase tracking-wide text-mist-ink">
                 Raw material consumption
