@@ -46,3 +46,75 @@ export function factoryFeedErrorMessage(error: unknown, fallback: string): strin
   if (error instanceof Error && error.message.trim() !== '') return error.message;
   return fallback;
 }
+
+/** The minimum alert shape the dashboard population needs. */
+export interface FactoryStockAlertLike {
+  rawMaterialId: string;
+  name: string;
+  quantity: number;
+  lowStockThreshold: number;
+  severity: 'LOW' | 'CRITICAL';
+}
+
+export interface FactoryStockPopulation<T extends FactoryStockAlertLike> {
+  /** Every flagged material once, critical/out-of-stock first. */
+  items: T[];
+  /** Materials at or below a positive threshold but still above zero. */
+  lowCount: number;
+  /** Materials at zero (or below) regardless of the configured threshold. */
+  outOfStockCount: number;
+  /** The single population size shared by the KPIs, list and alert summary. */
+  flaggedCount: number;
+}
+
+/**
+ * ARGUS #258 - one low-stock population for the whole dashboard.
+ *
+ * The KPI counted LOW rows from `raw-material-stats`, the alerts panel counted
+ * LOW + CRITICAL from `raw-material-alerts`, and the list asked a third endpoint
+ * for `stockStatus=LOW&limit=5`. The three surfaces could therefore disagree
+ * (an out-of-stock row was critical in one place and absent from the list in
+ * another; a sixth low row never reached the list at all). The dashboard now
+ * derives the KPI figures and the list from the alert feed, so every surface
+ * describes the same rows in the same order.
+ *
+ * Severity is normalised from quantity: zero or negative stock is always
+ * CRITICAL, which also keeps this helper consistent with ARGUS #260's alert
+ * rule even if an older API response carried a stale severity.
+ */
+export function buildFactoryStockPopulation<T extends FactoryStockAlertLike>(
+  alerts: readonly T[],
+): FactoryStockPopulation<T> {
+  const byId = new Map<string, T & { severity: 'LOW' | 'CRITICAL' }>();
+  for (const alert of alerts) {
+    const severity = alert.quantity <= 0 ? 'CRITICAL' : 'LOW';
+    const normalised = { ...alert, severity } as T & { severity: 'LOW' | 'CRITICAL' };
+    if (!byId.has(alert.rawMaterialId)) byId.set(alert.rawMaterialId, normalised);
+  }
+
+  const items = [...byId.values()].sort(
+    (a, b) =>
+      (a.severity === 'CRITICAL' ? 0 : 1) - (b.severity === 'CRITICAL' ? 0 : 1) ||
+      a.quantity - b.quantity ||
+      a.name.localeCompare(b.name),
+  ) as T[];
+
+  let lowCount = 0;
+  let outOfStockCount = 0;
+  for (const item of items) {
+    if (item.severity === 'CRITICAL') outOfStockCount += 1;
+    else lowCount += 1;
+  }
+
+  return {
+    items,
+    lowCount,
+    outOfStockCount,
+    flaggedCount: items.length,
+  };
+}
+
+/** The status badge vocabulary the list rows use. */
+export function factoryAlertStockStatus(severity: 'LOW' | 'CRITICAL'): 'LOW' | 'OUT' {
+  return severity === 'CRITICAL' ? 'OUT' : 'LOW';
+}

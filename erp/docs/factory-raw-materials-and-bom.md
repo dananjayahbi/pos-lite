@@ -103,6 +103,19 @@ failed or loading stats feed never renders `0`, which would read as “none”.
 `src/components/raw-materials/__tests__/factoryDashboardState.test.ts` covers
 the precedence, the neutral KPI value and the error-message fallback.
 
+### One low-stock population (ARGUS #258)
+
+The Low-stock/Out-of-stock KPI cards and the **Low stock materials** list now
+derive from the same `raw-material-alerts` response as the alerts panel. The
+old page mixed three sources: a stats count, the alerts feed, and a
+`stockStatus=LOW&limit=5` list query (which also omitted out-of-stock rows and
+could hide the sixth low row). `buildFactoryStockPopulation()` normalises
+severity (zero stock is always `CRITICAL`), de-duplicates by material id, sorts
+critical/out-of-stock first, and returns the counts and rows used by every
+surface. The list header states both counts, so the KPI cards, alert summary
+and list cannot disagree. `raw-materials` is no longer requested by the
+dashboard itself.
+
 ## Migration
 
 - `prisma/migrations/20261101000000_add_raw_material_categories_and_units`
