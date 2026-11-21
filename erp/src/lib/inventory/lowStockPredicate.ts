@@ -26,3 +26,14 @@ export function isLowStockVariant({ stockQuantity, lowStockThreshold }: LowStock
 /** SQL fragment shared by the summary/dashboard queries (alias `pv`). */
 export const LOW_STOCK_SQL_PREDICATE =
   'pv."lowStockThreshold" > 0 AND pv."stockQuantity" <= pv."lowStockThreshold"';
+
+/**
+ * ARGUS #49 - product scope shared by every low-stock counter.
+ *
+ * Archived or soft-deleted products are not sellable, so their variants must
+ * not inflate a low-stock counter. The Low Stock page has always applied this
+ * scope; the dashboard KPI and the inventory snapshot now quote this constant
+ * instead of each carrying their own copy.
+ */
+export const LOW_STOCK_PRODUCT_SCOPE_SQL =
+  'p."isArchived" = false AND p."deletedAt" IS NULL';

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  LOW_STOCK_PRODUCT_SCOPE_SQL,
   LOW_STOCK_SQL_PREDICATE,
   isLowStockVariant,
 } from '@/lib/inventory/lowStockPredicate';
@@ -35,5 +36,10 @@ describe('low-stock predicate', () => {
   it('keeps the SQL predicate aligned with the JS rule', () => {
     expect(LOW_STOCK_SQL_PREDICATE).toContain('"lowStockThreshold" > 0');
     expect(LOW_STOCK_SQL_PREDICATE).toContain('"stockQuantity" <= pv."lowStockThreshold"');
+  });
+
+  it('excludes archived and deleted products from every low-stock counter (ARGUS #49)', () => {
+    expect(LOW_STOCK_PRODUCT_SCOPE_SQL).toContain('p."isArchived" = false');
+    expect(LOW_STOCK_PRODUCT_SCOPE_SQL).toContain('p."deletedAt" IS NULL');
   });
 });

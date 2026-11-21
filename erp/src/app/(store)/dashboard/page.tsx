@@ -5,7 +5,7 @@ import { auth } from '@/lib/auth';
 import { denialRouteFor } from '@/lib/auth/page-guards';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
-import { LOW_STOCK_SQL_PREDICATE } from '@/lib/inventory/lowStockPredicate';
+import { LOW_STOCK_PRODUCT_SCOPE_SQL, LOW_STOCK_SQL_PREDICATE } from '@/lib/inventory/lowStockPredicate';
 import { lowStockCardSubtitle } from '@/lib/dashboard/lowStockNote.core';
 import { formatRupee } from '@/lib/format';
 import { getDefaultRouteForRole } from '@/lib/utils/default-route';
@@ -109,8 +109,7 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
         JOIN "products" p ON pv."productId" = p."id"
         WHERE pv."tenantId" = ${tenantId}
           AND pv."deletedAt" IS NULL
-          AND p."isArchived" = false
-          AND p."deletedAt" IS NULL
+          AND ${Prisma.raw(LOW_STOCK_PRODUCT_SCOPE_SQL)}
           AND ${Prisma.raw(LOW_STOCK_SQL_PREDICATE)}
       `,
   ]);
@@ -230,8 +229,7 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
     JOIN "products" p ON pv."productId" = p."id"
     WHERE pv."tenantId" = ${tenantId}
       AND pv."deletedAt" IS NULL
-      AND p."isArchived" = false
-      AND p."deletedAt" IS NULL
+      AND ${Prisma.raw(LOW_STOCK_PRODUCT_SCOPE_SQL)}
       AND ${Prisma.raw(LOW_STOCK_SQL_PREDICATE)}
     ORDER BY pv."stockQuantity" ASC
     LIMIT 8
