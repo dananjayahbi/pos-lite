@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Printer } from 'lucide-react';
 import { CopyableText } from '@/components/shared/CopyableText';
+import { saleBreakdown } from '@/lib/pos/saleBreakdown';
 
 interface SaleLine {
   id: string;
@@ -38,6 +39,7 @@ interface Sale {
   subtotal: number;
   discountAmount: number;
   taxAmount: number;
+  deliveryCharge?: number;
   totalAmount: number;
   paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | 'STORE_CREDIT' | 'EXCHANGE_CREDIT' | 'NONE' | null;
   status: 'OPEN' | 'COMPLETED' | 'VOIDED';
@@ -73,10 +75,15 @@ export function SaleDetailModal({
   if (!sale) return null;
 
   const shortId = sale.id.slice(0, 8).toUpperCase();
-  const lineDiscountTotal = (sale.lines ?? []).reduce(
-    (sum, l) => sum + l.discountAmount,
-    0,
-  );
+  // Sub-total is already net of line discounts, so the breakdown shows only the
+  // cart discount, tax and delivery — the same rows as the sale detail page.
+  const breakdown = saleBreakdown({
+    subtotal: sale.subtotal,
+    discountAmount: sale.discountAmount,
+    taxAmount: sale.taxAmount,
+    deliveryCharge: sale.deliveryCharge,
+    totalAmount: sale.totalAmount,
+  });
 
   const handlePrint = () => {
     window.open(`/api/store/sales/${sale.id}/receipt`, '_blank', 'noopener');
@@ -174,30 +181,20 @@ export function SaleDetailModal({
 
         {/* Totals */}
         <div className="border-t border-mist/30 pt-3 space-y-1.5">
-          <div className="flex justify-between font-body text-sm text-espresso">
-            <span>Sub-total</span>
-            <span className="font-mono">{formatRupee(sale.subtotal)}</span>
-          </div>
-          {lineDiscountTotal > 0 && (
-            <div className="flex justify-between font-body text-sm text-[#9B2226]">
-              <span>Line Discounts</span>
+          {breakdown.rows.map((row) => (
+            <div
+              key={row.key}
+              className={`flex justify-between font-body text-sm ${
+                row.sign === -1 ? 'text-[#9B2226]' : 'text-espresso'
+              }`}
+            >
+              <span>{row.label}</span>
               <span className="font-mono">
-                -{formatRupee(lineDiscountTotal)}
+                {row.sign === -1 ? '-' : ''}
+                {formatRupee(row.amount)}
               </span>
             </div>
-          )}
-          {sale.discountAmount > 0 && (
-            <div className="flex justify-between font-body text-sm text-[#9B2226]">
-              <span>Cart Discount</span>
-              <span className="font-mono">
-                -{formatRupee(sale.discountAmount)}
-              </span>
-            </div>
-          )}
-          <div className="flex justify-between font-body text-sm text-espresso">
-            <span>Tax</span>
-            <span className="font-mono">{formatRupee(sale.taxAmount)}</span>
-          </div>
+          ))}
           <div className="flex justify-between items-baseline pt-1.5 border-t border-mist/30">
             <span className="font-display text-base text-espresso font-bold">
               Total
