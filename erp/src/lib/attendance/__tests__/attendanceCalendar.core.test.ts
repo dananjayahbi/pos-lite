@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_ATTENDANCE_CALENDAR,
   buildAttendanceCalendarRows,
+  countNoPayDays,
   deriveAttendanceStatus,
   enumerateDateRange,
   isWorkingDay,
@@ -10,6 +11,7 @@ import {
   parseAttendanceCalendar,
   type AttendanceCalendarSettings,
 } from '@/lib/attendance/attendanceCalendar.core';
+import { deriveNoPayDays } from '@/lib/payroll/calculations';
 
 /**
  * ARGUS #348 — weekends/holidays must never be Absent, future days must not be
@@ -25,12 +27,15 @@ const TODAY = '2026-11-20'; // Friday
 const MON_FRI: AttendanceCalendarSettings = {
   workingDays: [1, 2, 3, 4, 5],
   holidays: [],
+  fullDayMinutes: 480,
+  halfDayMinutes: 240,
 };
 
 function status(
   date: string,
   overrides: {
     hasPunches?: boolean;
+    workedMinutes?: number;
     override?: Parameters<typeof deriveAttendanceStatus>[0]['override'];
     calendar?: AttendanceCalendarSettings;
     today?: string;
@@ -41,6 +46,7 @@ function status(
     date,
     today: overrides.today ?? TODAY,
     hasPunches: overrides.hasPunches ?? false,
+    workedMinutes: overrides.workedMinutes,
     override: overrides.override ?? null,
     calendar: overrides.calendar ?? MON_FRI,
     employedFrom: overrides.employedFrom,
@@ -62,7 +68,25 @@ describe('parseAttendanceCalendar', () => {
     ).toEqual({
       workingDays: [1, 2, 3, 4, 5, 6],
       holidays: ['2026-04-13', '2026-12-25'],
+      fullDayMinutes: 480,
+      halfDayMinutes: 240,
     });
+  });
+
+  it('reads configurable full/half-day thresholds', () => {
+    expect(
+      parseAttendanceCalendar({
+        attendance: { workingDays: [1], holidays: [], fullDayMinutes: 420, halfDayMinutes: 180 },
+      }),
+    ).toMatchObject({ fullDayMinutes: 420, halfDayMinutes: 180 });
+  });
+
+  it('keeps the half-day threshold below the full-day threshold', () => {
+    expect(
+      parseAttendanceCalendar({
+        attendance: { workingDays: [1], fullDayMinutes: 300, halfDayMinutes: 400 },
+      }),
+    ).toMatchObject({ fullDayMinutes: 300, halfDayMinutes: 150 });
   });
 
   it('drops invalid weekdays/holidays and falls back for an empty working week', () => {
@@ -70,7 +94,7 @@ describe('parseAttendanceCalendar', () => {
       parseAttendanceCalendar({
         attendance: { workingDays: [0, 8, '2', 'x'], holidays: ['25-12-2026', '2026-12-25'] },
       }),
-    ).toEqual({ workingDays: [2], holidays: ['2026-12-25'] });
+    ).toMatchObject({ workingDays: [2], holidays: ['2026-12-25'] });
 
     expect(
       parseAttendanceCalendar({ attendance: { workingDays: [0, 9], holidays: [] } }),
@@ -80,7 +104,7 @@ describe('parseAttendanceCalendar', () => {
   it('normalizes a submitted calendar', () => {
     expect(
       normalizeAttendanceCalendar({ workingDays: [7, 7, 3], holidays: ['2026-01-01', 'bad'] }),
-    ).toEqual({ workingDays: [3, 7], holidays: ['2026-01-01'] });
+    ).toMatchObject({ workingDays: [3, 7], holidays: ['2026-01-01'] });
   });
 });
 
@@ -92,14 +116,14 @@ describe('working day + holiday calendar', () => {
     expect(isWorkingDay(SUNDAY, MON_FRI)).toBe(false);
   });
 
-  it('honours a tenant that works Saturdays', () => {
-    const monSat = { workingDays: [1, 2, 3, 4, 5, 6], holidays: [] };
+  it('treats a tenant that works Saturdays', () => {
+    const monSat = { ...MON_FRI, workingDays: [1, 2, 3, 4, 5, 6] };
     expect(isWorkingDay(SATURDAY, monSat)).toBe(true);
     expect(isWorkingDay(SUNDAY, monSat)).toBe(false);
   });
 
   it('treats a configured holiday as non-working', () => {
-    const calendar = { workingDays: [1, 2, 3, 4, 5], holidays: [MONDAY] };
+    const calendar = { ...MON_FRI, holidays: [MONDAY] };
     expect(status(MONDAY, { calendar })).toBe('HOLIDAY');
   });
 });
@@ -109,13 +133,19 @@ describe('deriveAttendanceStatus', () => {
     expect(status(MONDAY)).toBe('ABSENT');
   });
 
-  it('marks a working day with a punch present', () => {
-    expect(status(MONDAY, { hasPunches: true })).toBe('PRESENT');
+  it('marks a full working day with a punch present', () => {
+    expect(status(MONDAY, { hasPunches: true, workedMinutes: 480 })).toBe('PRESENT');
   });
 
   it('never marks weekends absent', () => {
     expect(status(SATURDAY)).toBe('OFF');
     expect(status(SUNDAY)).toBe('OFF');
+  });
+
+  it('grades a weekend someone actually worked by hours', () => {
+    const pastSaturday = '2026-11-14'; // Saturday before TODAY
+    expect(status(pastSaturday, { hasPunches: true, workedMinutes: 4 })).toBe('INSUFFICIENT');
+    expect(status(pastSaturday, { hasPunches: true, workedMinutes: 480 })).toBe('PRESENT');
   });
 
   it('never marks future working days absent', () => {
@@ -148,6 +178,10 @@ describe('buildAttendanceCalendarRows', () => {
     today: WEEK_TODAY,
     calendar: MON_FRI,
     punchDates: new Set([MONDAY, '2026-11-17']),
+    workedMinutesByDate: new Map([
+      [MONDAY, 480],
+      ['2026-11-17', 480],
+    ]),
   });
 
   it('emits every day of the range (weekends as OFF)', () => {
@@ -162,6 +196,7 @@ describe('buildAttendanceCalendarRows', () => {
           date: row.date,
           today: WEEK_TODAY,
           hasPunches: row.hasPunches,
+          workedMinutes: row.hasPunches ? 480 : 0,
           calendar: MON_FRI,
         }),
       );
@@ -172,6 +207,7 @@ describe('buildAttendanceCalendarRows', () => {
     expect(week.counts).toEqual({
       present: 2,
       absent: 3,
+      insufficient: 0,
       leave: 0,
       halfDay: 0,
       holiday: 0,
@@ -199,13 +235,14 @@ describe('buildAttendanceCalendarRows', () => {
   });
 
   it('counts a configured holiday as holiday and not absent', () => {
-    const calendar = { workingDays: [1, 2, 3, 4, 5], holidays: ['2026-11-17'] };
+    const calendar = { ...MON_FRI, holidays: ['2026-11-17'] };
     const result = buildAttendanceCalendarRows({
       from: MONDAY,
       to: '2026-11-18',
       today: TODAY,
       calendar,
       punchDates: new Set([MONDAY]),
+      workedMinutesByDate: new Map([[MONDAY, 480]]),
     });
 
     expect(result.rows.map((row) => row.status)).toEqual(['PRESENT', 'HOLIDAY', 'ABSENT']);
@@ -227,5 +264,89 @@ describe('buildAttendanceCalendarRows', () => {
     expect(result.counts.present).toBe(0);
     expect(result.counts.absent).toBeGreaterThan(0);
     expect(result.counts.off).toBeGreaterThan(0); // weekends
+  });
+});
+
+/**
+ * ARGUS #350 — any punch (even 0 minutes) used to count as a full Present day.
+ * Past days are now graded by worked minutes; today stays provisional.
+ */
+describe('hour-based status (ARGUS #350)', () => {
+  it('does not count a zero-minute punch as Present', () => {
+    expect(status(MONDAY, { hasPunches: true, workedMinutes: 0 })).toBe('INSUFFICIENT');
+  });
+
+  it('treats a day below the half-day threshold as insufficient hours', () => {
+    expect(status(MONDAY, { hasPunches: true, workedMinutes: 4 })).toBe('INSUFFICIENT');
+    expect(status(MONDAY, { hasPunches: true, workedMinutes: 239 })).toBe('INSUFFICIENT');
+  });
+
+  it('marks exactly the half-day threshold as Half Day', () => {
+    expect(status(MONDAY, { hasPunches: true, workedMinutes: 240 })).toBe('HALF_DAY');
+    expect(status(MONDAY, { hasPunches: true, workedMinutes: 479 })).toBe('HALF_DAY');
+  });
+
+  it('marks exactly the full-day threshold as Present', () => {
+    expect(status(MONDAY, { hasPunches: true, workedMinutes: 480 })).toBe('PRESENT');
+    expect(status(MONDAY, { hasPunches: true, workedMinutes: 600 })).toBe('PRESENT');
+  });
+
+  it('keeps an explicit override authoritative over the hours', () => {
+    expect(
+      status(MONDAY, { hasPunches: true, workedMinutes: 4, override: 'PRESENT' }),
+    ).toBe('PRESENT');
+    expect(
+      status(MONDAY, { hasPunches: true, workedMinutes: 600, override: 'HALF_DAY' }),
+    ).toBe('HALF_DAY');
+  });
+
+  it('keeps today provisional so an early clock-in is not penalised', () => {
+    expect(
+      status(TODAY, { hasPunches: true, workedMinutes: 30, today: TODAY }),
+    ).toBe('PRESENT');
+  });
+
+  it('honours tenant-configured thresholds', () => {
+    const calendar = { ...MON_FRI, fullDayMinutes: 420, halfDayMinutes: 180 };
+    expect(status(MONDAY, { hasPunches: true, workedMinutes: 180, calendar })).toBe('HALF_DAY');
+    expect(status(MONDAY, { hasPunches: true, workedMinutes: 200, calendar })).toBe('HALF_DAY');
+    expect(status(MONDAY, { hasPunches: true, workedMinutes: 420, calendar })).toBe('PRESENT');
+    expect(status(MONDAY, { hasPunches: true, workedMinutes: 179, calendar })).toBe('INSUFFICIENT');
+  });
+});
+
+describe('payroll consistency (ARGUS #350)', () => {
+  it('counts insufficient-hours days as no-pay days alongside true absences', () => {
+    const weekStart = '2026-11-16';
+    const result = buildAttendanceCalendarRows({
+      from: weekStart,
+      to: '2026-11-20',
+      today: '2026-11-23',
+      calendar: MON_FRI,
+      punchDates: new Set(['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-20']),
+      workedMinutesByDate: new Map([
+        ['2026-11-16', 480], // full
+        ['2026-11-17', 240], // half
+        ['2026-11-18', 0], // punched but zero minutes
+        ['2026-11-20', 100], // below half
+        // Thursday: no punch at all
+      ]),
+    });
+
+    expect(result.counts).toEqual({
+      present: 1,
+      absent: 1,
+      insufficient: 2,
+      leave: 0,
+      halfDay: 1,
+      holiday: 0,
+      off: 0,
+      scheduled: 0,
+    });
+    expect(countNoPayDays(result.counts)).toBe(3);
+    // Payroll deducts absent + 0.5 × half-day = 3.5 days.
+    expect(deriveNoPayDays(countNoPayDays(result.counts), result.counts.halfDay).toNumber()).toBe(
+      3.5,
+    );
   });
 });

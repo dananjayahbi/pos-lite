@@ -30,11 +30,43 @@ A **Date** picker and **Today** shortcut switch the day. Changing the date
 re-fetches the whole table. Summary cards show Present / Absent / On Leave /
 Half Day counts and total OT for the selected day.
 
-Status derivation:
+Status derivation (ARGUS #348 + #350):
 
 - An `AttendanceDay` override (Leave/Absent/Half Day/Holiday/Present) wins.
-- Otherwise any punch on that day means **Present**.
-- Otherwise **Absent**.
+- Weekends, configured holidays and days before the person joined are never
+  absent (Off / Holiday).
+- Future working days are Scheduled.
+- Today is provisional: any punch shows Present while the day is running.
+- Past working days are graded by worked minutes against the tenant calendar:
+  - `>= fullDayMinutes` (default 480) → **Present**
+  - `>= halfDayMinutes` (default 240) → **Half Day**
+  - below that (including a 0-minute punch) → **Insufficient hours**
+- A day with no punch at all is **Absent**.
+
+`Insufficient hours` is a no-pay day: the monthly report/payroll input counts
+it in `daysAbsent` (plus half a day per `HALF_DAY`), so the manager's daily
+count and payroll agree.
+
+### Attendance calendar settings
+
+Stored in the tenant settings JSON (no migration):
+
+```json
+{
+  "attendance": {
+    "workingDays": [1, 2, 3, 4, 5],
+    "holidays": ["2026-12-25"],
+    "fullDayMinutes": 480,
+    "halfDayMinutes": 240
+  }
+}
+```
+
+Configured from the attendance page's **Attendance calendar** card
+(`GET/PATCH /api/store/timeclock/settings`, `staff:attendance:view` /
+`staff:attendance:manage`). Every save is audited
+(`ATTENDANCE_CALENDAR_UPDATED`). The daily table, the monthly CSV/payslip and
+the payroll preview all read the same calendar.
 
 ## Overtime
 
@@ -111,3 +143,8 @@ without forcing a re-login.
 - open punch counted to now
 - negative-duration guard
 - `YYYY-MM-DD` date parsing/formatting
+
+`src/lib/attendance/__tests__/attendanceCalendar.core.test.ts` covers the shared
+calendar: weekends/holidays are never absent, future days stay scheduled,
+overrides win, hour-based Present/Half Day/Insufficient grading (including
+zero-minute punches) and the payroll no-pay consistency.

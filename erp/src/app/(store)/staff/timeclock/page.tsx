@@ -74,6 +74,7 @@ const STATUS_LABEL: Record<AttendanceDisplayStatus, string> = {
   HOLIDAY: 'Holiday',
   OFF: 'Off',
   SCHEDULED: 'Scheduled',
+  INSUFFICIENT: 'Insufficient hours',
 };
 
 const STATUS_CLASS: Record<AttendanceDisplayStatus, string> = {
@@ -84,6 +85,7 @@ const STATUS_CLASS: Record<AttendanceDisplayStatus, string> = {
   HOLIDAY: 'border border-slate-200 bg-slate-100 text-slate-700',
   OFF: 'border border-slate-200 bg-slate-50 text-slate-600',
   SCHEDULED: 'border border-sky-200 bg-sky-50 text-sky-700',
+  INSUFFICIENT: 'border border-orange-200 bg-orange-100 text-orange-800',
 };
 
 function todayYmd(): string {
@@ -187,13 +189,25 @@ export default function TimeclockPage() {
       (acc, row) => {
         if (row.status === 'PRESENT') acc.present += 1;
         else if (row.status === 'ABSENT') acc.absent += 1;
-        else if (row.status === 'LEAVE') acc.onLeave += 1;
+        else if (row.status === 'INSUFFICIENT') {
+          // ARGUS #350: below half a day is a no-pay day, not a full Present.
+          acc.absent += 1;
+          acc.insufficient += 1;
+        } else if (row.status === 'LEAVE') acc.onLeave += 1;
         else if (row.status === 'HALF_DAY') acc.halfDay += 1;
         else if (row.status === 'HOLIDAY' || row.status === 'OFF') acc.holidayOff += 1;
         acc.overtimeMinutes += row.overtimeMinutes;
         return acc;
       },
-      { present: 0, absent: 0, onLeave: 0, halfDay: 0, holidayOff: 0, overtimeMinutes: 0 },
+      {
+        present: 0,
+        absent: 0,
+        insufficient: 0,
+        onLeave: 0,
+        halfDay: 0,
+        holidayOff: 0,
+        overtimeMinutes: 0,
+      },
     );
   }, [rows]);
 
@@ -284,6 +298,11 @@ export default function TimeclockPage() {
           </CardHeader>
           <CardContent>
             <p className="font-display text-3xl font-bold text-red-700">{summary.absent}</p>
+            {summary.insufficient > 0 ? (
+              <p className="text-xs text-orange-700">
+                {summary.insufficient} insufficient hours
+              </p>
+            ) : null}
           </CardContent>
         </Card>
         <Card>
@@ -486,6 +505,8 @@ function AttendanceCalendarCard({
 }) {
   const [workingDays, setWorkingDays] = useState<number[]>(calendar.workingDays);
   const [holidaysText, setHolidaysText] = useState(calendar.holidays.join('\n'));
+  const [fullDayMinutes, setFullDayMinutes] = useState(String(calendar.fullDayMinutes));
+  const [halfDayMinutes, setHalfDayMinutes] = useState(String(calendar.halfDayMinutes));
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
@@ -497,7 +518,12 @@ function AttendanceCalendarCard({
       const res = await fetch('/api/store/timeclock/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workingDays, holidays }),
+        body: JSON.stringify({
+          workingDays,
+          holidays,
+          fullDayMinutes: Number(fullDayMinutes),
+          halfDayMinutes: Number(halfDayMinutes),
+        }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
@@ -545,6 +571,47 @@ function AttendanceCalendarCard({
               {label}
             </label>
           ))}
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="attendance-full-day">Full day (hours)</Label>
+            <Input
+              id="attendance-full-day"
+              type="number"
+              min={1}
+              max={24}
+              step={0.5}
+              value={fullDayMinutes === '' ? '' : Number(fullDayMinutes) / 60}
+              onChange={(event) => {
+                const hours = Number.parseFloat(event.target.value);
+                setFullDayMinutes(Number.isFinite(hours) ? String(Math.round(hours * 60)) : '');
+              }}
+              className="w-32 border-mist"
+            />
+            <p className="text-xs text-sand-ink">
+              Worked hours needed for a full Present day (default 8h).
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="attendance-half-day">Half day (hours)</Label>
+            <Input
+              id="attendance-half-day"
+              type="number"
+              min={0.5}
+              max={23}
+              step={0.5}
+              value={halfDayMinutes === '' ? '' : Number(halfDayMinutes) / 60}
+              onChange={(event) => {
+                const hours = Number.parseFloat(event.target.value);
+                setHalfDayMinutes(Number.isFinite(hours) ? String(Math.round(hours * 60)) : '');
+              }}
+              className="w-32 border-mist"
+            />
+            <p className="text-xs text-sand-ink">
+              Below this a punched day reads “Insufficient hours” (default 4h).
+            </p>
+          </div>
         </div>
 
         <div className="space-y-1.5">

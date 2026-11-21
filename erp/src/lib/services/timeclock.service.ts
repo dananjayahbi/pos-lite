@@ -11,6 +11,7 @@ import {
   parseAttendanceCalendar,
   todayAttendanceYmd,
   type AttendanceCalendarSettings,
+  type AttendanceCalendarUpdate,
   type AttendanceDisplayStatus,
 } from '@/lib/attendance/attendanceCalendar.core';
 import {
@@ -98,7 +99,7 @@ export async function readAttendanceCalendar(tenantId: string): Promise<Attendan
  */
 export async function saveAttendanceCalendar(
   tenantId: string,
-  input: Partial<AttendanceCalendarSettings>,
+  input: AttendanceCalendarUpdate,
   actorId: string,
   actorRole: string,
 ): Promise<AttendanceCalendarSettings> {
@@ -117,7 +118,9 @@ export async function saveAttendanceCalendar(
       : {};
 
   const previous = parseAttendanceCalendar(current);
-  const next = normalizeAttendanceCalendar(input);
+  // Merge over the current values so a working-day-only save does not reset the
+  // hour thresholds (and vice versa).
+  const next = normalizeAttendanceCalendar({ ...previous, ...input });
 
   await prisma.tenant.update({
     where: { id: tenantId },
@@ -406,6 +409,7 @@ export async function getDailyAttendance(
       date: dateKey,
       today,
       hasPunches: userRecords.length > 0,
+      workedMinutes: totals.totalMinutes,
       override: attendance?.status ?? null,
       calendar,
       employedFrom: formatAttendanceDate(user.createdAt),
@@ -471,7 +475,10 @@ export interface StaffAttendanceReport {
   userId: string;
   rows: StaffAttendanceReportRow[];
   daysPresent: number;
+  /** Real absences + insufficient-hours days (payroll no-pay days). */
   daysAbsent: number;
+  /** Subset of `daysAbsent`: punched but below the half-day threshold. */
+  daysInsufficient: number;
   daysLeave: number;
   daysHalfDay: number;
   daysHoliday: number;
@@ -537,19 +544,26 @@ export async function getStaffAttendanceReport(
     attendanceDays.map((row) => [formatAttendanceDate(row.date), row]),
   );
 
+  const now = new Date();
+  // Worked minutes per date drive the Present/Half Day/Insufficient grading.
+  const workedMinutesByDate = new Map<string, number>();
+  for (const [dateKey, dayRecords] of recordsByDate) {
+    workedMinutesByDate.set(dateKey, computeAttendanceTotals(dayRecords, now).totalMinutes);
+  }
+
   const calendarRows = buildAttendanceCalendarRows({
     from: formatAttendanceDate(from),
     to: formatAttendanceDate(to),
     today: todayAttendanceYmd(),
     calendar,
     punchDates: new Set(recordsByDate.keys()),
+    workedMinutesByDate,
     overrides: new Map(
       attendanceDays.map((row) => [formatAttendanceDate(row.date), row.status]),
     ),
     employedFrom: user ? formatAttendanceDate(user.createdAt) : null,
   });
 
-  const now = new Date();
   const rows: StaffAttendanceReportRow[] = calendarRows.rows.map((calendarRow) => {
     const dayRecords = recordsByDate.get(calendarRow.date) ?? [];
     const override = overrideByDate.get(calendarRow.date);
@@ -573,7 +587,10 @@ export async function getStaffAttendanceReport(
     userId,
     rows,
     daysPresent: calendarRows.counts.present,
-    daysAbsent: calendarRows.counts.absent,
+    // Payroll no-pay uses one derived absence rule: real absences plus days
+    // worked below the half-day threshold (ARGUS #350).
+    daysAbsent: calendarRows.counts.absent + calendarRows.counts.insufficient,
+    daysInsufficient: calendarRows.counts.insufficient,
     daysLeave: calendarRows.counts.leave,
     daysHalfDay: calendarRows.counts.halfDay,
     daysHoliday: calendarRows.counts.holiday,
