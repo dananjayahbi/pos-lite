@@ -24,8 +24,10 @@ filtering and integrations.
 
 1. `actorId == null` → `System` (cron jobs, webhooks, auth events without an
    actor).
-2. Known user → the user's email address.
-3. Deleted/unknown user id → `Unknown user` (never a bare CUID).
+2. Known user → a display name derived from the login mailbox, e.g.
+   `owner@dilani-ayurwellness.lk` → `Owner`, `cashier1@ayurpos.dev` →
+   `Cashier 1`.
+3. Deleted/unknown user id → `Unknown` (never a bare CUID).
 
 CSV export adds an `actorName` column next to `actorId`, so exports show the
 same friendly label. The `?userId=` filter still filters by actor id.

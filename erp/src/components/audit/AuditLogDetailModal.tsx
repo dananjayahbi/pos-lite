@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { auditDetailMode } from '@/lib/audit/auditDetail.core';
+import { auditDetailMode, auditSnapshotRows } from '@/lib/audit/auditDetail.core';
 import {
   formatAuditActionLabel,
   formatAuditDateTime,
@@ -153,10 +153,10 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
               </div>
               <table className="w-full text-sm">
                 <tbody>
-                  {Object.entries(entry.after!).map(([key, val]) => (
-                    <tr key={key} className="border-t border-mist/50">
-                      <td className="px-3 py-1.5 font-mono text-xs text-espresso">{key}</td>
-                      <td className="px-3 py-1.5 text-xs text-espresso">{displayValue(val)}</td>
+                  {auditSnapshotRows(entry.after).map((row) => (
+                    <tr key={row.field} className="border-t border-mist/50">
+                      <td className="px-3 py-1.5 font-mono text-xs text-espresso">{row.field}</td>
+                      <td className="px-3 py-1.5 text-xs text-espresso">{row.value}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -170,10 +170,10 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
               </div>
               <table className="w-full text-sm">
                 <tbody>
-                  {Object.entries(entry.before!).map(([key, val]) => (
-                    <tr key={key} className="border-t border-mist/50">
-                      <td className="px-3 py-1.5 font-mono text-xs text-espresso">{key}</td>
-                      <td className="px-3 py-1.5 text-xs text-espresso">{displayValue(val)}</td>
+                  {auditSnapshotRows(entry.before).map((row) => (
+                    <tr key={row.field} className="border-t border-mist/50">
+                      <td className="px-3 py-1.5 font-mono text-xs text-espresso">{row.field}</td>
+                      <td className="px-3 py-1.5 text-xs text-espresso">{row.value}</td>
                     </tr>
                   ))}
                 </tbody>
