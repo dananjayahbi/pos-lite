@@ -134,3 +134,17 @@ npx vitest run src/lib/payroll
 - `payroll-settings.test.ts` — parsing/defaults/working-day resolution.
 - `documents.test.ts` - payslip PDF, bank salary worksheet XLSX/PDF, EPF/ETF returns,
   summary report render without errors.
+
+## Payslip print vs download (ARGUS #380)
+
+Both actions stream the same generated PDF, but they now ask for different
+dispositions:
+
+- **Print** opens `/api/store/payroll/runs/<run>/payslips/<user>?disposition=inline`
+  in a new tab so the browser renders the PDF and the user can print it.
+- **Download** keeps `Content-Disposition: attachment` so it saves the file.
+
+The URL builder lives in `src/lib/payroll/payslip-links.core.ts` (unit tested),
+so the two buttons cannot collapse back into the same action. The route also
+sets `Cache-Control: private, no-store` for both modes.
+

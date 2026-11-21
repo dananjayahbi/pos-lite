@@ -41,6 +41,7 @@ import {
   type PayrollRunPaymentInfo,
 } from '@/lib/payroll/payroll-run-status';
 import { PAYROLL_EXPORT_PROVENANCE_CAVEAT } from '@/lib/payroll/export-provenance';
+import { payslipUrl } from '@/lib/payroll/payslip-links.core';
 import { summarizePayrollHeadcount } from '@/lib/payroll/export-eligibility.core';
 import { PAYROLL_TAX_NOT_CONFIGURED_MESSAGE } from '@/lib/payroll/tax-disclosure.core';
 import { formatRupee } from '@/lib/format';
@@ -116,8 +117,8 @@ function downloadUrl(
   return `/api/store/payroll/runs/${runId}/exports/${kind}?format=${format}`;
 }
 
-function payslipUrl(runId: string, userId: string) {
-  return `/api/store/payroll/runs/${runId}/payslips/${userId}`;
+function payslipDownloadUrl(runId: string, userId: string) {
+  return payslipUrl(runId, userId, 'download');
 }
 
 export default function PayrollReportsClient() {
@@ -159,7 +160,7 @@ function PayrollReportsContent() {
 
   const emailMutation = useMutation({
     mutationFn: async (userId: string) => {
-      const res = await fetch(`${payslipUrl(runQuery.data!.id, userId)}/email`, { method: 'POST' });
+      const res = await fetch(`${payslipDownloadUrl(runQuery.data!.id, userId)}/email`, { method: 'POST' });
       const json = (await res.json()) as {
         success: boolean;
         data?: { delivered: boolean; reason: string | null; status: string };
@@ -478,9 +479,10 @@ function PayrollReportsContent() {
                               size="sm"
                               variant="outline"
                               onClick={() =>
-                                window.open(payslipUrl(run.id, item.userId), '_blank', 'noopener')
+                                window.open(payslipUrl(run.id, item.userId, 'view'), '_blank', 'noopener')
                               }
-                              title="Print or download payslip"
+                              title="Open a print view of the payslip"
+                              aria-label={`Print payslip for ${item.staffName}`}
                             >
                               <Printer className="h-4 w-4" />
                             </Button>
@@ -488,9 +490,14 @@ function PayrollReportsContent() {
                               size="sm"
                               variant="outline"
                               onClick={() =>
-                                window.open(payslipUrl(run.id, item.userId), '_blank', 'noopener')
+                                window.open(
+                                  payslipDownloadUrl(run.id, item.userId),
+                                  '_blank',
+                                  'noopener',
+                                )
                               }
-                              title="Download payslip PDF"
+                              title="Download the payslip PDF"
+                              aria-label={`Download payslip for ${item.staffName}`}
                             >
                               <Download className="h-4 w-4" />
                             </Button>

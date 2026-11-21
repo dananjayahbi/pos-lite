@@ -8,9 +8,10 @@ import {
   buildPayrollPayslip,
   payslipFilename,
 } from '@/lib/services/payroll-payslip.service';
+import { wantsInlinePayslip } from '@/lib/payroll/payslip-links.core';
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string; userId: string }> },
 ) {
   try {
@@ -32,11 +33,18 @@ export async function GET(
     const run = await getPayrollRun(tenantId, id);
     const { pdf, item } = await buildPayrollPayslip(tenantId, run, userId);
 
+    // ARGUS #380: "Print" asks for an inline PDF, "Download" for an attachment.
+    // Both stream the same generated document; only the disposition differs.
+    const inline = wantsInlinePayslip(
+      new URL(request.url).searchParams.get('disposition'),
+    );
+
     return new Response(new Uint8Array(pdf), {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${payslipFilename(run.periodMonth, item.staffName)}"`,
+        'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${payslipFilename(run.periodMonth, item.staffName)}"`,
         'Content-Length': String(pdf.byteLength),
+        'Cache-Control': 'private, no-store',
       },
     });
   } catch (error) {
