@@ -102,8 +102,32 @@ export function useBoms(filters: { variantId?: string; search?: string; page?: n
   });
 }
 
-// ── BOM detail ───────────────────────────────────────────────────────────────
+// ── Eligible variants (New BOM picker) ───────────────────────────────────────
 
+export interface BomEligibleVariant {
+  id: string;
+  sku: string;
+  productName: string;
+}
+
+/**
+ * ARGUS #250 - only manufactured variants without an existing BOM are offered
+ * when creating a recipe. The server enforces the same rule again on save.
+ */
+export function useBomEligibleVariants(enabled = true) {
+  return useQuery<{ success: boolean; data: BomEligibleVariant[] }>({
+    queryKey: ['bom-eligible-variants'],
+    queryFn: async () => {
+      const res = await fetch('/api/store/bom/eligible-variants');
+      if (!res.ok) throw new Error('Failed to fetch eligible products');
+      return res.json();
+    },
+    staleTime: 30_000,
+    enabled,
+  });
+}
+
+// ── BOM detail ───────────────────────────────────────────────────────────────
 export function useBom(id: string | null) {
   return useQuery<{ success: boolean; data: BomDetailView }>({
     queryKey: ['bom', id],
@@ -144,7 +168,10 @@ export function useCreateBom() {
       if (!res.ok) throw new Error(json?.error?.message ?? 'Failed to create BOM');
       return json;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['boms'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['boms'] });
+      qc.invalidateQueries({ queryKey: ['bom-eligible-variants'] });
+    },
   });
 }
 
@@ -182,7 +209,10 @@ export function useDeleteBom() {
       if (!res.ok) throw new Error(json?.error?.message ?? 'Failed to delete BOM');
       return json;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['boms'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['boms'] });
+      qc.invalidateQueries({ queryKey: ['bom-eligible-variants'] });
+    },
   });
 }
 

@@ -148,6 +148,33 @@ export function isSourceEligibleForProduction(source: ProductSourceValue): boole
 }
 
 /**
+ * ARGUS #250 - the New BOM picker offered every variant, including traded goods
+ * and variants that already own a BOM, so Save failed with 409/422 after the
+ * operator had filled in the ingredients.
+ */
+export type BomVariantIneligibilityReason = 'NOT_MANUFACTURED' | 'BOM_EXISTS';
+
+export interface BomVariantEligibilityInput {
+  productSource: ProductSourceValue;
+  /** True when a BOM row exists for the variant (including a soft-deleted one). */
+  hasExistingBom: boolean;
+}
+
+/** The reason this variant cannot receive a new BOM, or null when eligible. */
+export function bomVariantIneligibilityReason(
+  input: BomVariantEligibilityInput,
+): BomVariantIneligibilityReason | null {
+  if (!isSourceEligibleForProduction(input.productSource)) return 'NOT_MANUFACTURED';
+  if (input.hasExistingBom) return 'BOM_EXISTS';
+  return null;
+}
+
+/** True when the variant may be offered in the New BOM picker. */
+export function isVariantEligibleForBom(input: BomVariantEligibilityInput): boolean {
+  return bomVariantIneligibilityReason(input) === null;
+}
+
+/**
  * ARGUS #248 - a BOM is immutable once production has used it.
  *
  * Editing the ingredient rows after a run would rewrite the recipe behind

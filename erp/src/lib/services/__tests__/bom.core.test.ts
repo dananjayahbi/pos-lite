@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  bomVariantIneligibilityReason,
   buildProductionBatchNumber,
   canModifyBom,
   computeConsumptionPlan,
@@ -8,6 +9,7 @@ import {
   getInsufficientIngredients,
   hasInsufficientIngredients,
   isSourceEligibleForProduction,
+  isVariantEligibleForBom,
   toBomIngredient,
   type BomIngredient,
 } from '@/lib/services/bom.core';
@@ -145,6 +147,47 @@ describe('bom.core - isSourceEligibleForProduction', () => {
 
   it('returns false for traded goods', () => {
     expect(isSourceEligibleForProduction('TRADED')).toBe(false);
+  });
+});
+
+describe('bom.core - isVariantEligibleForBom', () => {
+  it('accepts a manufactured variant with no BOM', () => {
+    expect(
+      isVariantEligibleForBom({ productSource: 'MANUFACTURED', hasExistingBom: false }),
+    ).toBe(true);
+    expect(
+      bomVariantIneligibilityReason({
+        productSource: 'MANUFACTURED',
+        hasExistingBom: false,
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects traded goods', () => {
+    expect(
+      isVariantEligibleForBom({ productSource: 'TRADED', hasExistingBom: false }),
+    ).toBe(false);
+    expect(
+      bomVariantIneligibilityReason({ productSource: 'TRADED', hasExistingBom: false }),
+    ).toBe('NOT_MANUFACTURED');
+  });
+
+  it('rejects a variant that already owns a BOM', () => {
+    expect(
+      isVariantEligibleForBom({ productSource: 'MANUFACTURED', hasExistingBom: true }),
+    ).toBe(false);
+    expect(
+      bomVariantIneligibilityReason({
+        productSource: 'MANUFACTURED',
+        hasExistingBom: true,
+      }),
+    ).toBe('BOM_EXISTS');
+  });
+
+  it('reports the source reason before the existing-BOM reason', () => {
+    expect(
+      bomVariantIneligibilityReason({ productSource: 'TRADED', hasExistingBom: true }),
+    ).toBe('NOT_MANUFACTURED');
   });
 });
 

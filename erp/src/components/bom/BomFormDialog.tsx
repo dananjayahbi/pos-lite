@@ -22,9 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useBom, useCreateBom, useUpdateBom, type BomIngredientView } from '@/hooks/useBom';
+import { useBom, useBomEligibleVariants, useCreateBom, useUpdateBom, type BomIngredientView } from '@/hooks/useBom';
 import { useRawMaterials } from '@/hooks/useRawMaterials';
-import { useProducts } from '@/hooks/useProducts';
 import { getUnitLabel, getUnitShortLabel } from '@/lib/services/rawMaterial.core';
 import {
   findDuplicateRawMaterialIds,
@@ -61,7 +60,8 @@ const EMPTY_FORM: FormState = {
 export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialogProps) {
   const isEdit = editingBomId !== null;
   const { data: detailData } = useBom(editingBomId);
-  const { data: productsData } = useProducts({ limit: 100 });
+  // ARGUS #250: only manufactured variants without an existing BOM are offered.
+  const { data: eligibleData } = useBomEligibleVariants(open && !isEdit);
   const { data: materialsData } = useRawMaterials({ limit: 100 });
 
   const createMutation = useCreateBom();
@@ -92,15 +92,13 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
     setError(null);
   }, [open, isEdit, detailData]);
 
-  const products = productsData?.data ?? [];
   const materials = materialsData?.data ?? [];
 
-  const variants = products.flatMap((product) =>
-    (product.variants ?? []).map((variant) => ({
-      id: variant.id,
-      label: `${product.name} - ${variant.sku}`,
-    })),
-  );
+  const variants = (eligibleData?.data ?? []).map((variant) => ({
+    id: variant.id,
+    label: `${variant.productName} - ${variant.sku}`,
+  }));
+  const noEligibleVariants = !isEdit && eligibleData !== undefined && variants.length === 0;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,21 +163,39 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="bom-variant">Finished product variant</Label>
-            <Select
-              value={form.variantId}
-              onValueChange={(value) => setForm({ ...form, variantId: value })}
-            >
-              <SelectTrigger id="bom-variant" disabled={isEdit}>
-                <SelectValue placeholder="Select a product variant" />
-              </SelectTrigger>
-              <SelectContent>
-                {variants.map((variant) => (
-                  <SelectItem key={variant.id} value={variant.id}>
-                    {variant.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {isEdit ? (
+              <Input
+                id="bom-variant"
+                disabled
+                value={
+                  detailData?.data
+                    ? `${detailData.data.variantName} - ${detailData.data.variantSku}`
+                    : ''
+                }
+              />
+            ) : (
+              <Select
+                value={form.variantId}
+                onValueChange={(value) => setForm({ ...form, variantId: value })}
+              >
+                <SelectTrigger id="bom-variant">
+                  <SelectValue placeholder="Select a product variant" />
+                </SelectTrigger>
+                <SelectContent>
+                  {variants.map((variant) => (
+                    <SelectItem key={variant.id} value={variant.id}>
+                      {variant.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {noEligibleVariants ? (
+              <p className="text-xs text-mist-ink">
+                No variants are available for a new BOM. Manufactured products
+                either already have a recipe, or the product is traded.
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-2">
@@ -314,7 +330,15 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+            <Button
+              type="submit"
+              disabled={
+                createMutation.isPending ||
+                updateMutation.isPending ||
+                noEligibleVariants ||
+                (!isEdit && !form.variantId)
+              }
+            >
               {createMutation.isPending || updateMutation.isPending ? 'Saving…' : 'Save BOM'}
             </Button>
           </DialogFooter>
