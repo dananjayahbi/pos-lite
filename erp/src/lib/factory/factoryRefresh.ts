@@ -2,7 +2,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { FACTORY_DASHBOARD_QUERY_KEYS } from '@/lib/factory/factoryQueries';
 
 /**
- * ARGUS #257 - the Factory Dashboard never refreshed itself. Its four feeds
+ * ARGUS #257 - the Factory Dashboard never refreshed itself. Its feeds
  * cache for 20-30s, so a screen left open could show hours-old stock. A
  * periodic refresh (aligned with the cache), a manual Refresh button and a
  * visible last-updated stamp keep it current without stealing focus or

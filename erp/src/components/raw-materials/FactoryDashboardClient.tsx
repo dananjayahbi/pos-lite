@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Boxes, PackageX, FlaskConical, RefreshCw } from 'lucide-react';
+import {
+  AlertTriangle,
+  Boxes,
+  Coins,
+  Factory,
+  FlaskConical,
+  PackageCheck,
+  PackageX,
+  RefreshCw,
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -12,6 +21,8 @@ import { RawMaterialAlertsPanel } from '@/components/raw-materials/RawMaterialAl
 import { ProductionHistoryPanel } from '@/components/bom/ProductionHistoryPanel';
 import { useRawMaterialStats } from '@/hooks/useRawMaterials';
 import { useRawMaterialAlerts } from '@/hooks/useRawMaterialAlerts';
+import { useFactoryStats } from '@/hooks/useFactoryStats';
+import { formatRupee } from '@/lib/format';
 import {
   FACTORY_REFRESH_INTERVAL_MS,
   FACTORY_REFRESH_TICK_MS,
@@ -55,6 +66,15 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
     isFetching: alertsIsFetching,
     refetch: refetchAlerts,
   } = useRawMaterialAlerts();
+  const {
+    data: outputData,
+    dataUpdatedAt: outputUpdatedAt,
+    isError: outputIsError,
+    isLoading: outputIsLoading,
+    error: outputError,
+    isFetching: outputIsFetching,
+    refetch: refetchOutput,
+  } = useFactoryStats();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshCompletedAt, setLastRefreshCompletedAt] = useState<number | null>(null);
@@ -106,10 +126,12 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
   const lastUpdatedAt = latestUpdatedAt([
     statsUpdatedAt,
     alertsUpdatedAt,
+    outputUpdatedAt,
     lastRefreshCompletedAt,
   ]);
 
   const stats = statsData?.data;
+  const output = outputData?.data;
   const stockPopulation = buildFactoryStockPopulation(alertsData?.data ?? []);
 
   // ARGUS #244 — resolve each feed explicitly (error → loading → empty → data)
@@ -123,6 +145,11 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
     isError: alertsIsError,
     isLoading: alertsIsLoading,
     itemCount: stockPopulation.flaggedCount,
+  });
+  const outputState = resolveFactoryFeedState({
+    isError: outputIsError,
+    isLoading: outputIsLoading,
+    itemCount: output ? 1 : 0,
   });
 
   return (
@@ -218,6 +245,88 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
             <div className="text-2xl font-bold text-red-600">
               {factoryKpiValue(stockState, stockPopulation.outOfStockCount)}
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {outputState === 'error' && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3"
+        >
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+            <div>
+              <p className="font-body text-sm font-medium text-red-800">Output metrics failed</p>
+              <p className="font-body text-xs text-red-600">
+                {factoryFeedErrorMessage(outputError, 'The production metrics could not be loaded.')}
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+            onClick={() => refetchOutput()}
+            disabled={outputIsFetching}
+          >
+            <RefreshCw className={`mr-2 h-3.5 w-3.5 ${outputIsFetching ? 'animate-spin' : ''}`} />
+            {outputIsFetching ? 'Retrying…' : 'Retry'}
+          </Button>
+        </div>
+      )}
+
+      {/* ARGUS #261 - production output and finished-goods stock alongside input stock. */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-mist-ink">Production runs</CardTitle>
+            <Factory className="h-4 w-4 text-mist-ink" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-espresso">
+              {factoryKpiValue(outputState, output?.productionRunCount)}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-mist-ink">Units produced</CardTitle>
+            <FlaskConical className="h-4 w-4 text-terracotta" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-espresso">
+              {factoryKpiValue(outputState, output?.totalProduced)}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-mist-ink">Finished goods</CardTitle>
+            <PackageCheck className="h-4 w-4 text-mist-ink" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-espresso">
+              {factoryKpiValue(outputState, output?.finishedGoodsUnits)}
+            </div>
+            <p className="font-body text-xs text-mist-ink">units in stock</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-mist-ink">Finished-goods value</CardTitle>
+            <Coins className="h-4 w-4 text-amber-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-espresso">
+              {outputState === 'data' && output
+                ? formatRupee(output.finishedGoodsValue)
+                : '-'}
+            </div>
+            <p className="font-body text-xs text-mist-ink">at recorded cost</p>
           </CardContent>
         </Card>
       </div>

@@ -24,6 +24,8 @@ export const FACTORY_DASHBOARD_QUERY_KEYS = [
   ['raw-materials'],
   ['raw-material-alerts'],
   ['production-logs'],
+  // ARGUS #261 - production/finished-goods KPIs refresh with the input KPIs.
+  ['factory-output-stats'],
 ] as const;
 
 /** The key prefixes invalidated after any raw-material mutation. */
