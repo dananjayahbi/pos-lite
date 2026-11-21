@@ -25,6 +25,9 @@ export interface AuditLogFilterState {
 interface AuditLogFiltersProps {
   value: AuditLogFilterState;
   onFilterChange: (filters: AuditLogFilterState) => void;
+  /** Distinct values actually present in the ledger (ARGUS #451). */
+  entityTypes?: Array<{ value: string; count: number }> | undefined;
+  actions?: Array<{ value: string; count: number }> | undefined;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -62,9 +65,23 @@ const ACTIONS = [
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function AuditLogFilters({ value, onFilterChange }: AuditLogFiltersProps) {
+export default function AuditLogFilters({
+  value,
+  onFilterChange,
+  entityTypes,
+  actions,
+}: AuditLogFiltersProps) {
   const [local, setLocal] = useState<AuditLogFilterState>(value);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const entityOptions =
+    entityTypes && entityTypes.length > 0
+      ? entityTypes
+      : ENTITY_TYPES.map((entityType) => ({ value: entityType, count: 0 }));
+  const actionOptions =
+    actions && actions.length > 0
+      ? actions
+      : ACTIONS.map((action) => ({ value: action, count: 0 }));
 
   useEffect(() => {
     clearTimeout(timerRef.current);
@@ -88,9 +105,10 @@ export default function AuditLogFilters({ value, onFilterChange }: AuditLogFilte
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">All Types</SelectItem>
-            {ENTITY_TYPES.map((t) => (
-              <SelectItem key={t} value={t}>
-                {t.replace(/([a-z])([A-Z])/g, '$1 $2')}
+            {entityOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.value.replace(/([a-z])([A-Z])/g, '$1 $2')}
+                {option.count > 0 ? ` (${option.count})` : ''}
               </SelectItem>
             ))}
           </SelectContent>
@@ -108,9 +126,10 @@ export default function AuditLogFilters({ value, onFilterChange }: AuditLogFilte
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">All Actions</SelectItem>
-            {ACTIONS.map((action) => (
-              <SelectItem key={action} value={action}>
-                {action.replace(/_/g, ' ')}
+            {actionOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.value.replace(/_/g, ' ')}
+                {option.count > 0 ? ` (${option.count})` : ''}
               </SelectItem>
             ))}
           </SelectContent>
