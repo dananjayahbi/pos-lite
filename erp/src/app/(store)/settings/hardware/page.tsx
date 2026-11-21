@@ -4,44 +4,9 @@ import { prisma } from '@/lib/prisma';
 import { redirect } from 'next/navigation';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import HardwareSettingsForm from '@/components/settings/HardwareSettingsForm';
+import { readHardwareSettings } from '@/lib/settings/hardwareSettings.core';
 
 export const metadata = { title: 'Hardware Settings | AyurPOS' };
-
-type HardwareSettings = {
-  printerType: 'NETWORK' | 'USB';
-  host: string;
-  port: number;
-  cashDrawerEnabled: boolean;
-  cfdEnabled: boolean;
-};
-
-function parseHardwareSettings(settings: unknown): HardwareSettings {
-  const raw = (settings as Record<string, unknown> | null)?.hardware as
-    | Record<string, unknown>
-    | undefined;
-
-  return {
-    printerType:
-      raw?.printer &&
-      typeof raw.printer === 'object' &&
-      (raw.printer as Record<string, unknown>).type === 'USB'
-        ? 'USB'
-        : 'NETWORK',
-    host: String(
-      (raw?.printer &&
-        typeof raw.printer === 'object' &&
-        (raw.printer as Record<string, unknown>).host) ||
-        '',
-    ),
-    port: Number(
-      (raw?.printer &&
-        typeof raw.printer === 'object' &&
-        (raw.printer as Record<string, unknown>).port) || 9100,
-    ),
-    cashDrawerEnabled: Boolean(raw?.cashDrawerEnabled),
-    cfdEnabled: Boolean(raw?.cfdEnabled),
-  };
-}
 
 export default async function HardwareSettingsPage() {
   const session = await auth();
@@ -57,7 +22,7 @@ export default async function HardwareSettingsPage() {
     select: { settings: true },
   });
 
-  const initialValues = parseHardwareSettings(tenant.settings);
+  const initialValues = readHardwareSettings(tenant.settings);
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6 p-6">
