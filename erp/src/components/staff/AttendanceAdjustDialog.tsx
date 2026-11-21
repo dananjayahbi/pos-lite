@@ -21,7 +21,7 @@ export interface AdjustableClockRecord {
   clockedOutAt: string | null;
   durationMinutes: number;
   isOpen: boolean;
-  /** Open beyond the maximum shift — capped and waiting for a real clock-out. */
+  /** Open beyond the maximum shift  -  capped and waiting for a real clock-out. */
   needsReview?: boolean;
 }
 
@@ -374,7 +374,7 @@ function ClockRecordEditor({
           }`}
         >
           {record.needsReview
-            ? 'Open beyond the maximum shift — the duration is capped. Set the real clock-out time.'
+            ? 'Open beyond the maximum shift  -  the duration is capped. Set the real clock-out time.'
             : 'Clock-out is empty. Set the actual end time to close this punch.'}
         </p>
       )}

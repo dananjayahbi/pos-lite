@@ -89,7 +89,7 @@ export function TimeClockWidget({ variant = 'default' }: TimeClockWidgetProps) {
   const clockedInAt = statusData?.data?.clockedInAt ?? null;
   const maxShiftMinutes = statusData?.data?.maxShiftMinutes ?? 960;
   const needsReview = statusData?.data?.needsReview ?? false;
-  // ARGUS #351: never show an unbounded timer — the display stops at the cap.
+  // ARGUS #351: never show an unbounded timer  -  the display stops at the cap.
   const cappedNowMs = clockedInAt
     ? Math.min(nowMs, new Date(clockedInAt).getTime() + maxShiftMinutes * 60_000)
     : nowMs;
@@ -200,7 +200,7 @@ export function TimeClockWidget({ variant = 'default' }: TimeClockWidgetProps) {
           <DialogTitle className="font-display">Close previous clock-in</DialogTitle>
           <DialogDescription>
             {conflict
-              ? `You are still clocked in from ${new Date(conflict.clockedInAt).toLocaleString()}. Close that punch before starting a new shift — open shifts are capped at ${Math.round(conflict.maxShiftMinutes / 60)} hours.`
+              ? `You are still clocked in from ${new Date(conflict.clockedInAt).toLocaleString()}. Close that punch before starting a new shift  -  open shifts are capped at ${Math.round(conflict.maxShiftMinutes / 60)} hours.`
               : ''}
           </DialogDescription>
         </DialogHeader>

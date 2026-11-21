@@ -290,7 +290,7 @@ export default function TimeclockPage() {
         <p className="rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-sm text-orange-800">
           {reviewCount} staff member{reviewCount === 1 ? '' : 's'} have an open punch longer than
           the maximum shift ({Math.round((dayInfo?.maxShiftMinutes ?? 960) / 60)}h). The duration
-          is capped — use Adjust to set the real clock-out.
+          is capped  -  use Adjust to set the real clock-out.
         </p>
       )}
 
