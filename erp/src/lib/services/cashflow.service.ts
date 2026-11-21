@@ -7,10 +7,12 @@ import {
   reconcilePaymentMethods,
   splitCashRefunds,
   summarizeAccountLedger,
+  summarizeShiftCashMovements,
   type IncomeStatementBridge,
   type LedgerBreakdownLine,
   type PaymentMethodReconciliation,
   type SaleRefundLedgerEntry,
+  type ShiftCashSummary,
 } from '@/lib/services/cashflow.core';
 
 export interface PaymentAccountActivityRow {
@@ -56,6 +58,20 @@ export interface CashFlowResult {
   expensesByCategory: { category: string; total: string }[];
   totalExpenses: string;
   cashMovements: { type: string; count: number; total: string }[];
+  /** Shift cash movements; opening float is a transfer, not income (ARGUS #420). */
+  shiftCash: ShiftCashSummary;
+  /**
+   * Bridge from the ledger net movement to the shift-only summary. Shift
+   * movements are not posted to payment accounts, so the operating net is an
+   * explicit reconciling item rather than an unexplained difference.
+   */
+  shiftCashBridge: {
+    ledgerNetCashFlow: string;
+    shiftOperatingNet: string;
+    shiftOpeningFloatTransfer: string;
+    combinedNetCashFlow: string;
+  };
+  /** As recorded on the shift (opening float + manual in - outflows). */
   netMovement: string;
   /** Ledger-truth opening cash at dateFrom. */
   openingCash: string;
@@ -270,12 +286,8 @@ export async function getCashFlowStatement(
     total: new Decimal(m._sum.amount?.toString() ?? '0').toFixed(2),
   }));
 
-  const netMovement = movements.reduce((acc, m) => {
-    if (m.type === 'MANUAL_IN' || m.type === 'OPENING_FLOAT') {
-      return acc.plus(m.total);
-    }
-    return acc.minus(m.total);
-  }, new Decimal(0));
+  const shiftCash = summarizeShiftCashMovements(movements);
+  const netMovement = new Decimal(shiftCash.recordedNet);
 
   // Cash-flow reconciliation from the payment-account ledger: opening balance
   // before the window plus every debit/credit in it = closing balance. The
@@ -296,6 +308,8 @@ export async function getCashFlowStatement(
   const netCashFlow = new Decimal(reconciliation.netMovement);
   const closingCash = new Decimal(reconciliation.closingCash);
   const cashBridge = reconciliation.bridge;
+  const shiftOperatingNet = new Decimal(shiftCash.operatingNet);
+  const combinedNetCashFlow = netCashFlow.plus(shiftOperatingNet);
 
   const accountMap = new Map(accounts.map((account) => [account.id, account]));
   const accountSources = new Map<string, Array<{ source: string; debit: string; credit: string }>>();
@@ -387,6 +401,13 @@ export async function getCashFlowStatement(
     expensesByCategory: expCategories,
     totalExpenses: totalExpenses.toFixed(2),
     cashMovements: movements,
+    shiftCash,
+    shiftCashBridge: {
+      ledgerNetCashFlow: netCashFlow.toFixed(2),
+      shiftOperatingNet: shiftOperatingNet.toFixed(2),
+      shiftOpeningFloatTransfer: new Decimal(shiftCash.openingFloatTransfer).toFixed(2),
+      combinedNetCashFlow: combinedNetCashFlow.toFixed(2),
+    },
     netMovement: netMovement.toFixed(2),
     openingCash: openingCashDecimal.toFixed(2),
     closingCash: closingCash.toFixed(2),

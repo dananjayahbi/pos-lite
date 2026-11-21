@@ -423,6 +423,75 @@ export function buildIncomeStatementBridge(
   };
 }
 
+// ── Shift cash movements (ARGUS #420) ───────────────────────────────────────
+
+export interface ShiftCashMovementRow {
+  type: string;
+  count: number;
+  total: Decimalish;
+}
+
+export interface ShiftCashSummary {
+  openingFloat: number;
+  manualIn: number;
+  pettyCashOut: number;
+  manualOut: number;
+  /** As recorded on the shift: opening float + manual in - outflows. */
+  recordedNet: number;
+  /** Cash impact excluding the opening float, which is a transfer. */
+  operatingNet: number;
+  /** Opening float is cash moved into the drawer, not income. */
+  openingFloatTransfer: number;
+}
+
+/**
+ * Summarise shift cash movements so they can be reconciled to the ledger.
+ *
+ * The old page showed "Net Movement 165" (opening float 200 - petty cash out
+ * 35) beside a ledger Net Cash Flow that did not include either, with no bridge
+ * and no explanation that the 35 never reached expenses. Opening float is a
+ * transfer from the safe: it is recorded on the shift but excluded from the
+ * operating movement that bridges to the report (ARGUS #420).
+ */
+export function summarizeShiftCashMovements(
+  rows: ShiftCashMovementRow[],
+): ShiftCashSummary {
+  const totals = {
+    openingFloat: new Decimal(0),
+    manualIn: new Decimal(0),
+    pettyCashOut: new Decimal(0),
+    manualOut: new Decimal(0),
+  };
+
+  for (const row of rows) {
+    const amount = new Decimal(row.total.toString());
+    if (row.type === 'OPENING_FLOAT') totals.openingFloat = totals.openingFloat.plus(amount);
+    else if (row.type === 'MANUAL_IN') totals.manualIn = totals.manualIn.plus(amount);
+    else if (row.type === 'PETTY_CASH_OUT') totals.pettyCashOut = totals.pettyCashOut.plus(amount);
+    else if (row.type === 'MANUAL_OUT') totals.manualOut = totals.manualOut.plus(amount);
+  }
+
+  const openingFloat = totals.openingFloat.toDecimalPlaces(2);
+  const manualIn = totals.manualIn.toDecimalPlaces(2);
+  const pettyCashOut = totals.pettyCashOut.toDecimalPlaces(2);
+  const manualOut = totals.manualOut.toDecimalPlaces(2);
+
+  return {
+    openingFloat: openingFloat.toNumber(),
+    manualIn: manualIn.toNumber(),
+    pettyCashOut: pettyCashOut.toNumber(),
+    manualOut: manualOut.toNumber(),
+    recordedNet: openingFloat
+      .plus(manualIn)
+      .minus(pettyCashOut)
+      .minus(manualOut)
+      .toDecimalPlaces(2)
+      .toNumber(),
+    operatingNet: manualIn.minus(pettyCashOut).minus(manualOut).toDecimalPlaces(2).toNumber(),
+    openingFloatTransfer: openingFloat.toNumber(),
+  };
+}
+
 // ── Payment-method allocation (ARGUS #419) ──────────────────────────────────
 
 export type PaymentAllocationStatus = 'BALANCED' | 'UNALLOCATED' | 'OVERALLOCATED';

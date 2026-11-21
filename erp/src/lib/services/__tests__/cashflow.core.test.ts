@@ -7,6 +7,7 @@ import {
   reconcilePaymentMethods,
   splitCashRefunds,
   summarizeAccountLedger,
+  summarizeShiftCashMovements,
 } from '@/lib/services/cashflow.core';
 
 /** ARGUS #416: net cash flow must reconcile opening cash to closing cash. */
@@ -72,6 +73,40 @@ describe('splitCashRefunds', () => {
     const result = splitCashRefunds([{ method: 'CASH', total: 100 }]);
     expect(result.cash).toBe(100);
     expect(result.nonCash).toBe(0);
+  });
+});
+
+/** ARGUS #420: shift cash movements must bridge to the report. */
+describe('summarizeShiftCashMovements', () => {
+  it('treats the opening float as a transfer and keeps petty cash out visible', () => {
+    const result = summarizeShiftCashMovements([
+      { type: 'OPENING_FLOAT', count: 1, total: '200.00' },
+      { type: 'PETTY_CASH_OUT', count: 1, total: '35.00' },
+    ]);
+
+    expect(result.openingFloat).toBe(200);
+    expect(result.pettyCashOut).toBe(35);
+    expect(result.recordedNet).toBe(165);
+    expect(result.operatingNet).toBe(-35);
+    expect(result.openingFloatTransfer).toBe(200);
+  });
+
+  it('includes manual in/out in the operating movement', () => {
+    const result = summarizeShiftCashMovements([
+      { type: 'OPENING_FLOAT', count: 1, total: 100 },
+      { type: 'MANUAL_IN', count: 1, total: 20 },
+      { type: 'MANUAL_OUT', count: 1, total: 5 },
+      { type: 'PETTY_CASH_OUT', count: 1, total: 10 },
+    ]);
+
+    expect(result.recordedNet).toBe(105);
+    expect(result.operatingNet).toBe(5);
+  });
+
+  it('handles a shift with no movements', () => {
+    const result = summarizeShiftCashMovements([]);
+    expect(result.recordedNet).toBe(0);
+    expect(result.operatingNet).toBe(0);
   });
 });
 

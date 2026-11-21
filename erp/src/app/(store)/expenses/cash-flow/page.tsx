@@ -278,6 +278,40 @@ export default function CashFlowPage() {
                   ))}
                 </div>
               )}
+              {(data.shiftCash.openingFloat !== 0 ||
+                data.shiftCash.operatingNet !== 0) && (
+                <div className="mt-3 space-y-1 border-t border-mist pt-3">
+                  <p className="text-xs uppercase tracking-wide text-mist-ink">
+                    Shift cash not posted to payment accounts
+                  </p>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-sand-ink">Ledger net cash flow</span>
+                    <span className="font-mono text-espresso">
+                      {formatRupee(data.shiftCashBridge.ledgerNetCashFlow)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-sand-ink">
+                      Shift operating movement (excludes opening float)
+                    </span>
+                    <span className="font-mono text-terracotta">
+                      {formatRupee(data.shiftCashBridge.shiftOperatingNet)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm font-semibold">
+                    <span className="text-espresso">Net movement including shift cash</span>
+                    <span className="font-mono text-espresso">
+                      {formatRupee(data.shiftCashBridge.combinedNetCashFlow)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs text-mist-ink">
+                    <span>Opening float (transfer, not income)</span>
+                    <span className="font-mono">
+                      {formatRupee(data.shiftCashBridge.shiftOpeningFloatTransfer)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -650,9 +684,16 @@ export default function CashFlowPage() {
           {data.cashMovements.length > 0 && (
             <Card className="border-mist">
               <CardHeader>
-                <CardTitle className="font-display text-espresso">Cash Movement Summary</CardTitle>
+                <CardTitle className="font-display text-espresso">
+                  Shift Cash Movements (not posted to payment accounts)
+                </CardTitle>
               </CardHeader>
               <CardContent>
+                <p className="mb-3 text-xs text-sand-ink">
+                  These entries belong to shifts and are not posted to the ledger. Opening float is
+                  a transfer into the drawer - not income - so the operating impact below excludes
+                  it and is reconciled in Cash Reconciliation above.
+                </p>
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-linen/40">
@@ -681,7 +722,7 @@ export default function CashFlowPage() {
                       </TableRow>
                     ))}
                     <TableRow className="bg-linen/40 font-semibold">
-                      <TableCell>Net Movement</TableCell>
+                      <TableCell>Net Movement (as recorded)</TableCell>
                       <TableCell />
                       <TableCell
                         className={`text-right font-mono ${
@@ -689,6 +730,24 @@ export default function CashFlowPage() {
                         }`}
                       >
                         {formatRupee(data.netMovement)}
+                      </TableCell>
+                    </TableRow>
+                    <TableRow className="font-semibold">
+                      <TableCell>Operating impact (excl. opening float)</TableCell>
+                      <TableCell />
+                      <TableCell
+                        className={`text-right font-mono ${
+                          data.shiftCash.operatingNet >= 0 ? 'text-green-700' : 'text-terracotta'
+                        }`}
+                      >
+                        {formatRupee(data.shiftCash.operatingNet)}
+                      </TableCell>
+                    </TableRow>
+                    <TableRow className="text-xs text-mist-ink">
+                      <TableCell>Opening float (transfer, excluded)</TableCell>
+                      <TableCell />
+                      <TableCell className="text-right font-mono">
+                        {formatRupee(data.shiftCash.openingFloatTransfer)}
                       </TableCell>
                     </TableRow>
                   </TableBody>
