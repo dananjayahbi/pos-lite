@@ -28,6 +28,7 @@ import { OrdersTable } from '@/components/orders/OrdersTable';
 import { BulkActionBar } from '@/components/orders/BulkActionBar';
 import { BulkStatusDialog } from '@/components/orders/BulkStatusDialog';
 import { paginationSummary } from '@/components/orders/pagination';
+import { ordersListState } from '@/components/orders/listState';
 import { retainFailedSelection, summarizeBulkResults } from '@/components/orders/bulkResult';
 import {
   pruneSelection,
@@ -53,7 +54,7 @@ export function OrdersPageClient() {
   /** Which print action is currently running (`bulk-*` or `<kind>:<id>`). */
   const [printBusy, setPrintBusy] = useState<string | null>(null);
 
-  const { data, isLoading } = useOrders({
+  const { data, isLoading, isError, error, isFetching, refetch } = useOrders({
     status,
     search,
     page,
@@ -72,6 +73,11 @@ export function OrdersPageClient() {
 
   const orders = useMemo(() => (data?.items ?? []) as DeliveryListItem[], [data]);
   const total = data?.total ?? 0;
+  const listState = ordersListState({
+    isLoading,
+    isError,
+    itemCount: orders.length,
+  });
   const summary = paginationSummary(page, data?.limit ?? ORDERS_PAGE_SIZE, total);
   const templateState = resolveLabelTemplateViewState({
     isError: templateError,
@@ -246,25 +252,27 @@ export function OrdersPageClient() {
         onStatusChange={handleStatusFilterChange}
       />
 
-      <BulkActionBar
-        count={selectedVisibleIds.length}
-        canEdit={canEdit}
-        canDispatch={canDispatch}
-        onStatusChange={() => setStatusDialogOpen(true)}
-        onCreateDelivery={handleCreateDelivery}
-        onPrint={handlePrint}
-        onPrintInvoices={handlePrintInvoices}
-        isCreatingDelivery={bulkCreate.isPending}
-        isPrintingWaybills={printBusy === 'bulk-waybills'}
-        isPrintingInvoices={printBusy === 'bulk-invoices'}
-        isBusy={printBusy !== null || bulkCreate.isPending || bulkStatus.isPending}
-        waybillPrintDisabled={!canPrintWaybillNow}
-      />
+      {listState !== 'error' && (
+        <BulkActionBar
+          count={selectedVisibleIds.length}
+          canEdit={canEdit}
+          canDispatch={canDispatch}
+          onStatusChange={() => setStatusDialogOpen(true)}
+          onCreateDelivery={handleCreateDelivery}
+          onPrint={handlePrint}
+          onPrintInvoices={handlePrintInvoices}
+          isCreatingDelivery={bulkCreate.isPending}
+          isPrintingWaybills={printBusy === 'bulk-waybills'}
+          isPrintingInvoices={printBusy === 'bulk-invoices'}
+          isBusy={printBusy !== null || bulkCreate.isPending || bulkStatus.isPending}
+          waybillPrintDisabled={!canPrintWaybillNow}
+        />
+      )}
 
-      {total > 0 && (
+      {total > 0 && listState !== 'error' && (
         <div className="flex flex-wrap items-center justify-between gap-3 font-body text-sm text-espresso/60">
           <span>
-            Showing {summary.start}–{summary.end} of {total} order{total === 1 ? '' : 's'}
+            Showing {summary.start}-{summary.end} of {total} order{total === 1 ? '' : 's'}
           </span>
           <div className="flex items-center gap-2">
             <Button
@@ -294,7 +302,7 @@ export function OrdersPageClient() {
         </div>
       )}
 
-      {isLoading && (
+      {listState === 'loading' && (
         <div className="space-y-2">
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
@@ -302,13 +310,39 @@ export function OrdersPageClient() {
         </div>
       )}
 
-      {!isLoading && orders.length === 0 && (
+      {listState === 'error' && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 font-body text-sm text-red-700"
+        >
+          <div>
+            <p className="font-medium">Could not load orders.</p>
+            <p className="text-xs text-red-700/80">
+              {error instanceof Error
+                ? error.message
+                : 'The order list could not be loaded. Check your connection or permissions and try again.'}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            data-testid="orders-retry"
+          >
+            {isFetching ? 'Retrying...' : 'Retry'}
+          </Button>
+        </div>
+      )}
+
+      {listState === 'empty' && (
         <div className="rounded-lg border border-espresso/10 py-16 text-center">
           <p className="text-espresso/60">No orders found.</p>
         </div>
       )}
 
-      {!isLoading && orders.length > 0 && (
+      {listState === 'ready' && (
         <OrdersTable
           orders={orders}
           selectedIds={selectedIds}
