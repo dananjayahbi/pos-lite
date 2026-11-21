@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
-import { PERMISSIONS } from '@/lib/constants/permissions';
 import { downloadFile } from '@/lib/storage';
 import { getExtensionFromKey, buildDisplayFilename } from '@/lib/reports/saved-report-storage';
+import { savedReportPermission } from '@/lib/reports/savedReportAccess.core';
 
 /** MIME map keyed by saved-report file extension. */
 const MIME_BY_EXT: Record<string, string> = {
@@ -42,9 +42,6 @@ export async function GET(
       );
     }
 
-    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewSalesReport);
-    if (forbidden) return forbidden;
-
     const { id } = await params;
 
     const savedReport = await prisma.savedReport.findFirst({
@@ -57,6 +54,12 @@ export async function GET(
         { status: 404 },
       );
     }
+
+    const typeForbidden = requirePermissionResponse(
+      session.user,
+      savedReportPermission(savedReport.reportType),
+    );
+    if (typeForbidden) return typeForbidden;
 
     if (!savedReport.storageKey) {
       return NextResponse.json(

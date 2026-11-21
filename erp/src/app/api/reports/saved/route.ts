@@ -4,9 +4,15 @@ import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 import type { Prisma } from '@/generated/prisma/client';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { generateReportFile, type GeneratedFormat } from '@/lib/reports/generate-report';
 import { REPORT_SLUGS, resolveReportColumns, resolveReportTitle } from '@/lib/reports/report-config';
+import {
+  SAVED_REPORT_SNAPSHOT_KEY,
+  filterSnapshotColumns,
+  savedReportPermission,
+} from '@/lib/reports/savedReportAccess.core';
 import { buildSavedReportKey } from '@/lib/reports/saved-report-storage';
 import type { ReportColumn } from '@/lib/reports/export';
 import { zSafeShortText } from '@/lib/validators/shared';
@@ -71,9 +77,6 @@ export async function GET() {
       );
     }
 
-    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewSalesReport);
-    if (forbidden) return forbidden;
-
     const reports = await prisma.savedReport.findMany({
       where: {
         tenantId,
@@ -82,7 +85,13 @@ export async function GET() {
       orderBy: { createdAt: 'desc' },
     });
 
-    return NextResponse.json({ success: true, data: reports });
+    // A saved report is only listed when the user can view its report type
+    // (ARGUS #446), not merely the sales-report key.
+    const visible = reports.filter((report) =>
+      hasPermission(session.user, savedReportPermission(report.reportType)),
+    );
+
+    return NextResponse.json({ success: true, data: visible });
   } catch (error) {
     console.error('GET /api/reports/saved error:', error);
     return NextResponse.json(
@@ -125,6 +134,14 @@ export async function POST(request: NextRequest) {
 
     const data = parsed.data;
 
+    // Authorize the artifact by the report type it actually contains
+    // (ARGUS #446), not by the sales key.
+    const typeForbidden = requirePermissionResponse(
+      session.user,
+      savedReportPermission(data.reportType),
+    );
+    if (typeForbidden) return typeForbidden;
+
     // → Generate the artifact file (CSV / XLSX / PDF) as a Buffer.
     // The key is namespaced under `saved_reports/{tenant}/{user}/`.
     const title = data.title ?? resolveReportTitle(data.reportType);
@@ -132,15 +149,26 @@ export async function POST(request: NextRequest) {
     const format: GeneratedFormat = data.format === 'xlsx' ? 'xlsx' : data.format;
 
     // Normalise client-supplied columns to the ReportColumn shape (drop any
-    // `undefined` width so `exactOptionalPropertyTypes` is satisfied).
+    // `undefined` width so `exactOptionalPropertyTypes` is satisfied) and keep
+    // only columns the report definition owns (ARGUS #446).
+    const serverColumns = resolveReportColumns(data.reportType, data.rows);
+    const allowedClientColumns = filterSnapshotColumns(data.columns, serverColumns);
     const columns: ReportColumn[] =
-      data.columns.length > 0
-        ? data.columns.map<ReportColumn>((c) =>
+      allowedClientColumns.length > 0
+        ? allowedClientColumns.map<ReportColumn>((c) =>
             c.width === undefined
               ? { key: c.key, header: c.header }
               : { key: c.key, header: c.header, width: c.width },
           )
-        : resolveReportColumns(data.reportType, data.rows);
+        : serverColumns;
+
+    const snapshotFilters = {
+      ...data.filters,
+      [SAVED_REPORT_SNAPSHOT_KEY]: {
+        asOf: new Date().toISOString(),
+        source: 'CLIENT_SNAPSHOT',
+      },
+    };
 
     const generated = generateReportFile(format, data.rows, columns, title, dateRange);
 
@@ -162,7 +190,7 @@ export async function POST(request: NextRequest) {
         userId: session.user.id,
         name: data.name,
         reportType: data.reportType,
-        filters: data.filters as unknown as Prisma.InputJsonValue,
+        filters: snapshotFilters as unknown as Prisma.InputJsonValue,
         format: generated.extension,
         storageKey: uploadResult.path,
         fileUrl: uploadResult.url,

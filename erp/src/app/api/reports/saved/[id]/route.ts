@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
-import { PERMISSIONS } from '@/lib/constants/permissions';
+import { savedReportPermission } from '@/lib/reports/savedReportAccess.core';
 import { deleteFile } from '@/lib/storage';
 
 export async function GET(
@@ -26,9 +26,6 @@ export async function GET(
       );
     }
 
-    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewSalesReport);
-    if (forbidden) return forbidden;
-
     const { id } = await params;
 
     const savedReport = await prisma.savedReport.findFirst({
@@ -41,6 +38,12 @@ export async function GET(
         { status: 404 },
       );
     }
+
+    const typeForbidden = requirePermissionResponse(
+      session.user,
+      savedReportPermission(savedReport.reportType),
+    );
+    if (typeForbidden) return typeForbidden;
 
     return NextResponse.json({ success: true, data: savedReport });
   } catch (error) {
@@ -73,9 +76,6 @@ export async function PUT(
       );
     }
 
-    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewSalesReport);
-    if (forbidden) return forbidden;
-
     const body = (await request.json()) as { name?: string };
     const name = body.name?.trim();
     if (!name) {
@@ -86,6 +86,23 @@ export async function PUT(
     }
 
     const { id } = await params;
+    const existing = await prisma.savedReport.findFirst({
+      where: { id, tenantId, userId: session.user.id },
+      select: { reportType: true },
+    });
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_FOUND', message: 'Saved report not found' } },
+        { status: 404 },
+      );
+    }
+
+    const typeForbidden = requirePermissionResponse(
+      session.user,
+      savedReportPermission(existing.reportType),
+    );
+    if (typeForbidden) return typeForbidden;
+
     const updated = await prisma.savedReport.updateMany({
       where: { id, tenantId, userId: session.user.id },
       data: { name },
@@ -129,16 +146,26 @@ export async function DELETE(
       );
     }
 
-    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewSalesReport);
-    if (forbidden) return forbidden;
-
     const { id } = await params;
 
     // Delete the stored artifact from object storage first, then the DB record.
     const existing = await prisma.savedReport.findFirst({
       where: { id, tenantId, userId: session.user.id },
-      select: { storageKey: true },
+      select: { storageKey: true, reportType: true },
     });
+
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_FOUND', message: 'Saved report not found' } },
+        { status: 404 },
+      );
+    }
+
+    const typeForbidden = requirePermissionResponse(
+      session.user,
+      savedReportPermission(existing.reportType),
+    );
+    if (typeForbidden) return typeForbidden;
 
     const deleted = await prisma.savedReport.deleteMany({
       where: {

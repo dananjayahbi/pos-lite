@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SavedReportOpenButton } from '@/components/reports/SavedReportOpenButton';
 import { savedReportsListMode } from '@/lib/reports/savedReportsList.core';
 import { hasSavedReportArtifact } from '@/lib/reports/savedReportArtifact.core';
+import { savedReportSnapshotMeta } from '@/lib/reports/savedReportAccess.core';
 import {
   buildReportHref,
   normalizeReportType,
@@ -187,6 +188,16 @@ export default function SavedReportsPage() {
                       <p className="font-mono text-[11px] text-sand-ink break-all">
                         {Object.keys(report.filters ?? {}).length === 0 ? 'No filters saved' : JSON.stringify(report.filters)}
                       </p>
+                      {(() => {
+                        const snapshot = savedReportSnapshotMeta(report.filters);
+                        if (!snapshot.asOf) return null;
+                        return (
+                          <p className="text-xs text-amber-700">
+                            Snapshot as of {new Date(snapshot.asOf).toLocaleString()} - Open in App
+                            shows current data.
+                          </p>
+                        );
+                      })()}
                     </div>
                     <div className="flex flex-wrap gap-2 lg:justify-end">
                       {hasSavedReportArtifact(report) ? (
