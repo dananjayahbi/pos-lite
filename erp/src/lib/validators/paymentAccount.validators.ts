@@ -100,7 +100,11 @@ export const PaymentAccountListQuerySchema = z.object({
 export const AccountBookQuerySchema = z.object({
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
-  source: z.nativeEnum(PaymentEntrySource).optional(),
+  // SALE_VOID is a derived display/filter source for void reversals, which
+  // share the SALE_REFUND enum value in the database (ARGUS #430).
+  source: z
+    .union([z.nativeEnum(PaymentEntrySource), z.literal('SALE_VOID')])
+    .optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });

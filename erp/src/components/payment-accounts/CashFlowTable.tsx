@@ -177,7 +177,7 @@ export function CashFlowTable({ accounts }: CashFlowTableProps) {
                       {entry.description}
                     </TableCell>
                     <TableCell className="font-body text-xs text-sand-ink">
-                      {ENTRY_SOURCE_LABELS[entry.source]}
+                      {ENTRY_SOURCE_LABELS[entry.ledgerKind ?? entry.source]}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs">
                       {parseMoney(entry.debit) === 0 ? '-' : formatRupee(entry.debit)}

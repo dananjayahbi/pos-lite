@@ -119,7 +119,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewSalesReport);
+    // Creating a saved report generates and uploads an artifact, which is an
+    // export operation (ARGUS #438).
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.exportReport);
     if (forbidden) return forbidden;
 
     const body: unknown = await request.json();

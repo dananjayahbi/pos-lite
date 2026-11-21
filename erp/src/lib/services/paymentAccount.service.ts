@@ -5,6 +5,11 @@ import { ApiError } from '@/lib/api/errors';
 import { AUDIT_ACTIONS, createAuditLogInTransaction } from '@/lib/services/audit.service';
 import { evaluatePaymentAccountPolicy } from '@/lib/services/paymentAccountPolicy';
 import {
+  SALE_VOID_SOURCE,
+  classifyLedgerSource,
+  type RefundSourceIds,
+} from '@/lib/services/paymentAccountLedger.core';
+import {
   PaymentAccountStatus,
   PaymentAccountType,
   PaymentEntrySource,
@@ -74,6 +79,71 @@ function assertPaymentAccountPolicy(
   if (!decision.allowed) {
     throw new ApiError(403, 'FORBIDDEN', decision.reason ?? 'Owner approval is required');
   }
+}
+
+/**
+ * Resolve which SALE_REFUND sourceIds belong to returns vs sales so void
+ * reversals can be labelled/filtered separately (ARGUS #430). Only distinct
+ * ids present in the same ledger window are queried.
+ */
+async function resolveRefundSourceIds(
+  tenantId: string,
+  baseWhere: Prisma.PaymentAccountEntryWhereInput,
+): Promise<RefundSourceIds> {
+  const rows = await prisma.paymentAccountEntry.findMany({
+    where: { ...baseWhere, source: PaymentEntrySource.SALE_REFUND },
+    select: { sourceId: true },
+    distinct: ['sourceId'],
+  });
+  const sourceIds = Array.from(
+    new Set(rows.map((row) => row.sourceId).filter((id): id is string => Boolean(id))),
+  );
+
+  if (sourceIds.length === 0) {
+    return { returnIds: new Set(), saleIds: new Set() };
+  }
+
+  const [returns, sales] = await Promise.all([
+    prisma.return.findMany({
+      where: { tenantId, id: { in: sourceIds } },
+      select: { id: true },
+    }),
+    prisma.sale.findMany({
+      where: { tenantId, id: { in: sourceIds } },
+      select: { id: true },
+    }),
+  ]);
+
+  return {
+    returnIds: new Set(returns.map((row) => row.id)),
+    saleIds: new Set(sales.map((row) => row.id)),
+  };
+}
+
+function applyLedgerSourceFilter(
+  where: Prisma.PaymentAccountEntryWhereInput,
+  source: string | undefined,
+  ids: RefundSourceIds,
+): void {
+  if (!source) return;
+
+  if (source === SALE_VOID_SOURCE) {
+    where.source = PaymentEntrySource.SALE_REFUND;
+    where.sourceId = { in: Array.from(ids.saleIds) };
+    return;
+  }
+
+  if (source === 'SALE_REFUND') {
+    where.source = PaymentEntrySource.SALE_REFUND;
+    // Everything not tied to a sale: return refunds, cancelled-return
+    // reversals and legacy null ids. This excludes every void reversal.
+    if (ids.saleIds.size > 0) {
+      where.NOT = { sourceId: { in: Array.from(ids.saleIds) } };
+    }
+    return;
+  }
+
+  where.source = source as PaymentEntrySource;
 }
 
 // ── Ledger primitives ────────────────────────────────────────────────────────
@@ -817,7 +887,7 @@ export async function getAccountBook(
   query: {
     dateFrom?: string | undefined;
     dateTo?: string | undefined;
-    source?: PaymentEntrySource | undefined;
+    source?: PaymentEntrySource | 'SALE_VOID' | undefined;
     page: number;
     pageSize: number;
   },
@@ -835,7 +905,11 @@ export async function getAccountBook(
       ...(range.to ? { lte: range.to } : {}),
     };
   }
-  if (query.source) where.source = query.source;
+
+  // ARGUS #430: the source filter must match the displayed label. SALE_VOID
+  // and SALE_REFUND are derived from the originating document id.
+  const refundIds = await resolveRefundSourceIds(tenantId, where);
+  applyLedgerSourceFilter(where, query.source, refundIds);
 
   const [entries, total] = await Promise.all([
     prisma.paymentAccountEntry.findMany({
@@ -854,7 +928,10 @@ export async function getAccountBook(
 
   return {
     account,
-    entries,
+    entries: entries.map((entry) => ({
+      ...entry,
+      ledgerKind: classifyLedgerSource(entry.source, entry.sourceId, refundIds),
+    })),
     total,
     page: query.page,
     pageSize: query.pageSize,
@@ -888,6 +965,8 @@ export async function getCashFlow(
     };
   }
 
+  const refundIds = await resolveRefundSourceIds(tenantId, where);
+
   const [entries, total] = await Promise.all([
     prisma.paymentAccountEntry.findMany({
       where,
@@ -905,7 +984,10 @@ export async function getCashFlow(
   });
 
   return {
-    entries,
+    entries: entries.map((entry) => ({
+      ...entry,
+      ledgerKind: classifyLedgerSource(entry.source, entry.sourceId, refundIds),
+    })),
     total,
     page: query.page,
     pageSize: query.pageSize,

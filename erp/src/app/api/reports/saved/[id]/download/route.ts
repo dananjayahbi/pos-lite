@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { downloadFile } from '@/lib/storage';
 import { getExtensionFromKey, buildDisplayFilename } from '@/lib/reports/saved-report-storage';
 import { savedReportPermission } from '@/lib/reports/savedReportAccess.core';
@@ -41,6 +42,10 @@ export async function GET(
         { status: 401 },
       );
     }
+
+    // Downloading a generated artifact is report:export (ARGUS #438).
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.exportReport);
+    if (forbidden) return forbidden;
 
     const { id } = await params;
 

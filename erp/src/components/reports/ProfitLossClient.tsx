@@ -63,6 +63,25 @@ interface MonthlyRow {
   saleCount: number;
 }
 
+interface CogsSourceSummary {
+  total: number;
+  snapshotCogs: number;
+  fallbackCogs: number;
+  snapshotLines: number;
+  fallbackLines: number;
+  totalLines: number;
+  usesFallback: boolean;
+  fallbackPercent: number;
+  caveat: string | null;
+}
+
+interface CogsQuality {
+  sales: CogsSourceSummary;
+  returned: CogsSourceSummary;
+  usesFallback: boolean;
+  caveats: string[];
+}
+
 interface PLData {
   period: { from: string; to: string };
   grossRevenue: string;
@@ -80,6 +99,7 @@ interface PLData {
   expenseCategories: ExpenseCategoryRow[];
   netProfit: string;
   netMargin: string;
+  cogsQuality: CogsQuality;
   monthlyData: MonthlyRow[];
 }
 
@@ -152,6 +172,13 @@ export default function ProfitLossClient() {
       Amount: `-${data.returnedCOGS}`,
     });
     rows.push({ Section: "COGS", Item: "Net COGS", Amount: data.netCOGS });
+    if (data.cogsQuality.usesFallback) {
+      rows.push({
+        Section: "COGS",
+        Item: "COGS source warning",
+        Amount: data.cogsQuality.caveats.join(" "),
+      });
+    }
 
     // Gross Profit
     rows.push({
@@ -214,6 +241,17 @@ export default function ProfitLossClient() {
         <StatCard label="Net Margin" value={`${data.netMargin}%`} />
       </div>
 
+      {data.cogsQuality.usesFallback && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">COGS includes current-cost fallback</p>
+          {data.cogsQuality.caveats.map((caveat) => (
+            <p key={caveat} className="mt-1">
+              {caveat}
+            </p>
+          ))}
+        </div>
+      )}
+
       {/* ── P&L Statement Table ───────────────────────────── */}
       <Card>
         <CardContent className="overflow-x-auto p-0">
@@ -243,7 +281,33 @@ export default function ProfitLossClient() {
 
               {/* COGS section */}
               <SectionHeader label="Cost of Goods Sold" />
+              {data.cogsQuality.sales.usesFallback && (
+                <>
+                  <Row
+                    label="COGS - snapshot cost"
+                    amount={data.cogsQuality.sales.snapshotCogs.toFixed(2)}
+                  />
+                  <Row
+                    label={`COGS - current-cost fallback (${data.cogsQuality.sales.fallbackLines} lines)`}
+                    amount={data.cogsQuality.sales.fallbackCogs.toFixed(2)}
+                  />
+                </>
+              )}
               <Row label="COGS (Sales)" amount={data.rawCOGS} />
+              {data.cogsQuality.returned.usesFallback && (
+                <>
+                  <Row
+                    label="Returned COGS - snapshot cost"
+                    amount={`-${data.cogsQuality.returned.snapshotCogs.toFixed(2)}`}
+                    negative
+                  />
+                  <Row
+                    label={`Returned COGS - current-cost fallback (${data.cogsQuality.returned.fallbackLines} lines)`}
+                    amount={`-${data.cogsQuality.returned.fallbackCogs.toFixed(2)}`}
+                    negative
+                  />
+                </>
+              )}
               <Row
                 label="Less: Returned COGS"
                 amount={`-${data.returnedCOGS}`}
@@ -290,7 +354,7 @@ export default function ProfitLossClient() {
         <Card>
           <CardContent className="p-4">
             <h3 className="mb-4 text-sm font-semibold text-espresso">
-              Monthly Gross Profit (Last 12 Months)
+              Monthly Gross Profit (Selected Period)
             </h3>
             <MonthlyChart months={data.monthlyData} />
 

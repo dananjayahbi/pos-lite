@@ -1,5 +1,5 @@
 import type {
-  PaymentEntrySource,
+  LedgerEntrySource,
 } from './paymentAccountTypes';
 
 /**
@@ -14,7 +14,7 @@ interface AccountBookFilters {
   accountId: string;
   dateFrom: string;
   dateTo: string;
-  source: PaymentEntrySource | 'ALL';
+  source: LedgerEntrySource | 'ALL';
   page: number;
 }
 

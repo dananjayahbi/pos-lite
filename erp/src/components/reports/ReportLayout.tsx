@@ -238,6 +238,9 @@ function ReportLayoutInner({
   const searchParams = useSearchParams();
   const { reportData } = useReportContext();
   const { hasPermission } = usePermissions();
+  // ARGUS #438: exporting/saving a generated artifact is report:export,
+  // separate from merely viewing the report.
+  const canExport = hasPermission(PERMISSIONS.REPORT.exportReport);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveFormat, setSaveFormat] = useState<ReportFormat>("pdf");
@@ -285,6 +288,11 @@ function ReportLayoutInner({
   // ── Export handlers ─────────────────────────────────────────
 
   async function handleExport(format: "pdf" | "csv" | "excel") {
+    if (!canExport) {
+      toast.error("You do not have permission to export reports");
+      setExportOpen(false);
+      return;
+    }
     if (isExporting || !resolvedColumns || resolvedColumns.length === 0) {
       setExportOpen(false);
       return;
@@ -491,6 +499,7 @@ function ReportLayoutInner({
 
             <div className="ml-auto flex items-center gap-2">
               {/* Export popover */}
+              {canExport && (
               <Popover open={exportOpen} onOpenChange={setExportOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -530,8 +539,10 @@ function ReportLayoutInner({
                   </button>
                 </PopoverContent>
               </Popover>
+              )}
 
               {/* Save report dialog */}
+              {canExport && (
               <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
                 <DialogTrigger asChild>
                   <Button
@@ -611,6 +622,7 @@ function ReportLayoutInner({
                   </form>
                 </DialogContent>
               </Dialog>
+              )}
 
               <Dialog open={savedReportsOpen} onOpenChange={handleSavedReportsOpenChange}>
                 <DialogTrigger asChild>
