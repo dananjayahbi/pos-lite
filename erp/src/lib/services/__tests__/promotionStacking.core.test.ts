@@ -49,4 +49,18 @@ describe('promotion stacking', () => {
     expect(remainingAfterDiscounts(100, [60, 60])).toBe(0);
     expect(remainingAfterDiscounts(100, [])).toBe(100);
   });
+
+  it('applies cart/code after customer pricing, not the original price (ARGUS #326)', () => {
+    // 2 x 2,098.80 with a 50% customer-pricing rule.
+    const subtotal = 4197.6;
+    const customerPriceDiscount = 2098.8;
+    const afterCustomerPricing = remainingAfterDiscounts(subtotal, [customerPriceDiscount]);
+
+    // The seeded 10% cart promotion applies to the customer-priced remainder.
+    const cart = applyPercentageToRemaining(afterCustomerPricing, 10);
+
+    expect(afterCustomerPricing).toBe(2098.8);
+    expect(cart).toBe(209.88);
+    expect(remainingAfterDiscounts(afterCustomerPricing, [cart])).toBe(1888.92);
+  });
 });

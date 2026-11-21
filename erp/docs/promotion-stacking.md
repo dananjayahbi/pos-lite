@@ -42,3 +42,13 @@ stacked offers combine.
 `src/lib/services/__tests__/promotionStacking.core.test.ts` covers the reported
 example, sequential 10% + 10%, percentage/fixed caps and a non-negative
 remainder.
+
+## Customer pricing (ARGUS #326)
+
+Customer pricing is one of the line-level discounts included in step 1, so the
+cart promotion and promo code already compute from the customer-priced
+remainder. Example: 2 x Rs 2,098.80 with a 50% customer-pricing rule leaves
+Rs 2,098.80; the seeded 10% cart promotion takes Rs 209.88, leaving Rs 1,888.92
+due (not Rs 1,679.04, which double-counted the 10% on the original price). The
+regression case is in the same test file.
+
