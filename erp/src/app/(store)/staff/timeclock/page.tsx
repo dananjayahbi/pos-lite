@@ -175,7 +175,7 @@ export default function TimeclockPage() {
       return json;
     },
     onSuccess: () => {
-      toast.success(`${date} is now a holiday — no absences were recorded.`);
+      toast.success(`${date} is now a holiday  -  no absences were recorded.`);
       queryClient.invalidateQueries({ queryKey: ['attendance'] });
       queryClient.invalidateQueries({ queryKey: ['attendance-settings'] });
     },
@@ -255,17 +255,17 @@ export default function TimeclockPage() {
 
       {dayInfo && !dayInfo.isWorkingDay && !dayInfo.isHoliday && (
         <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
-          Weekend — non-working day. Nobody is marked absent.
+          Weekend  -  non-working day. Nobody is marked absent.
         </p>
       )}
       {dayInfo?.isHoliday && (
         <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
-          Holiday — no absences are recorded for this date.
+          Holiday  -  no absences are recorded for this date.
         </p>
       )}
       {dayInfo?.isFuture && (
         <p className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-700">
-          Future date — absences are not recorded until the day has passed.
+          Future date  -  absences are not recorded until the day has passed.
         </p>
       )}
 
@@ -529,7 +529,7 @@ function AttendanceCalendarCard({
       <CardContent className="space-y-4">
         <p className="text-sm text-sand-ink">
           Working days decide who is marked absent. Weekends and holidays are never absent, and
-          future days are only scheduled — the daily view, monthly report, CSV and payslip all use
+          future days are only scheduled  -  the daily view, monthly report, CSV and payslip all use
           this calendar.
         </p>
 
