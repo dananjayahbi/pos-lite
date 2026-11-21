@@ -22,6 +22,7 @@ import {
   sumClientPromotionDiscount,
 } from '@/lib/services/saleDiscountValidation.core';
 import { evaluatePromotions } from '@/lib/services/promotion.service';
+import { notifySaleVoided } from '@/lib/notifications/sale-alert-service';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1146,6 +1147,15 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
     before: { status: 'COMPLETED' },
     after: { status: 'VOIDED', voidedById: actorId },
   }).catch(() => {});
+
+  // ARGUS #52: the "Sale Completed" alert must not keep advertising a voided
+  // sale. Best-effort — a notification failure never fails the void.
+  void notifySaleVoided(tenantId, {
+    id: result.id,
+    totalAmount: result.totalAmount.toString(),
+  }).catch((notifError) => {
+    console.warn('Sale void notification update failed:', notifError);
+  });
 
   return result;
 }

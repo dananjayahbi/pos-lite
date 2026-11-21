@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import {
   Bell,
+  XCircle,
 } from 'lucide-react';
 import {
   Popover,
@@ -12,6 +13,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { useGetNotifications, useInvalidateNotifications } from '@/hooks/useGetNotifications';
 import { getNotificationIcon } from '@/lib/constants/notification-types';
+import {
+  SALE_VOIDED_TITLE,
+  buildSaleVoidedCopy,
+  isVoidedSaleAlert,
+} from '@/lib/notifications/sale-alert-copy';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -43,7 +49,8 @@ function getNotificationHref(type: string, relatedEntityId: string | null): stri
         ? `/stock-control/stock-takes/${relatedEntityId}/review`
         : null;
     case 'SALE_COMPLETED':
-      return '/sales';
+      // ARGUS #52: open the sale itself so the operator can confirm the void.
+      return relatedEntityId ? `/sales/${relatedEntityId}` : '/sales';
     case 'RETURN_PROCESSED':
       return '/returns';
     case 'SHIFT_CLOSED':
@@ -121,7 +128,14 @@ export function NotificationPopover() {
             </div>
           ) : (
             notifications.map((n) => {
-              const Icon = getNotificationIcon(n.type);
+              const isVoidedSale = isVoidedSaleAlert(n.type, n.relatedSale);
+              const Icon = isVoidedSale ? XCircle : getNotificationIcon(n.type);
+              const title = isVoidedSale ? SALE_VOIDED_TITLE : n.title;
+              const body =
+                isVoidedSale && n.relatedSale
+                  ? buildSaleVoidedCopy(n.relatedEntityId ?? '', n.relatedSale.totalAmount).body
+                  : n.body;
+
               return (
                 <button
                   key={n.id}
@@ -136,11 +150,16 @@ export function NotificationPopover() {
                     <Icon className="h-4 w-4 text-terracotta" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-body text-sm font-medium text-espresso">
-                      {n.title}
+                    <p className="flex items-center gap-1.5 truncate font-body text-sm font-medium text-espresso">
+                      {title}
+                      {isVoidedSale && (
+                        <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 font-body text-[10px] font-semibold uppercase tracking-wide text-red-800">
+                          Voided
+                        </span>
+                      )}
                     </p>
                     <p className="mt-0.5 line-clamp-2 font-body text-xs text-mist-ink">
-                      {n.body}
+                      {body}
                     </p>
                     <p className="mt-1 font-mono text-[10px] text-mist-ink/70">
                       {formatRelativeTime(n.createdAt)}
