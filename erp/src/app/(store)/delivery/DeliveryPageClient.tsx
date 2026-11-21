@@ -52,6 +52,13 @@ export function DeliveryPageClient() {
 
   return (
     <div className="space-y-4">
+      <div>
+        <h1 className="font-display text-2xl font-bold text-espresso">Deliveries &amp; Tracking</h1>
+        <p className="mt-1 font-body text-sm text-sand-ink">
+          Track parcels from order creation through dispatch, delivery and recovery.
+        </p>
+      </div>
+
       {/* Toolbar */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">

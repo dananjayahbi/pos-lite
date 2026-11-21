@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { formatRupee } from '@/lib/format';
+import { formatRupee, formatShortDateTime } from '@/lib/format';
 import { collectableCodAmount } from '@/lib/delivery/cod';
 import {
   deliveryLinesTotal,
@@ -195,13 +195,7 @@ function ShipmentStatusCard({
         </div>
         {shipment?.carrierLastSyncedAt && (
           <p className="text-xs text-espresso/40">
-            Last synced:{' '}
-            {new Date(shipment.carrierLastSyncedAt).toLocaleString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
+            Last synced: {formatShortDateTime(shipment.carrierLastSyncedAt)}
           </p>
         )}
         {waybill && (

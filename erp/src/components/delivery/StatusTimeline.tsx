@@ -1,19 +1,14 @@
 'use client';
 
 import type { DeliveryEvent } from '@/types/delivery';
+import { formatShortDateTime } from '@/lib/format';
 
 interface StatusTimelineProps {
   events: DeliveryEvent[];
 }
 
 function formatDate(value: string) {
-  if (!value) return '-';
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatShortDateTime(value);
 }
 
 export function StatusTimeline({ events }: StatusTimelineProps) {
