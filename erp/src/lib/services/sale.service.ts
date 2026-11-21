@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/lib/api/errors';
-import type { SaleStatus, TaxRule } from '@/generated/prisma/client';
+import type { SaleStatus, TaxRule, PaymentMethod } from '@/generated/prisma/client';
 import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { createPayment } from '@/lib/services/payment.service';
@@ -13,6 +13,7 @@ import type { CreateSaleInput, HoldSaleInput, UpdateSaleInput } from '@/lib/vali
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
+import { buildSaleTenderLegs } from '@/lib/services/saleTender.core';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     }
     // `isGuestSale` without an open shift is a management back-office sale; it
     // is persisted as customerId = null exactly like a shiftless one.
+    let linkedCreditBalance: Decimal | null = null;
     if (input.customerId) {
       const linkedCustomer = await tx.customer.findFirst({
         where: { id: input.customerId, tenantId, deletedAt: null },
@@ -91,6 +93,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       if (!linkedCustomer.name || !linkedCustomer.phone) {
         throw new Error('Linked customer must have a name and a mobile number');
       }
+      linkedCreditBalance = new Decimal(linkedCustomer.creditBalance.toString());
     }
 
     // Get tenant settings for tax
@@ -217,6 +220,59 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       .plus(deliveryCharge)
       .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
+    // ── Store credit (ARGUS #61) ─────────────────────────────────────────
+    // Credit is a tender, not a display-only deduction: it settles part (or
+    // all) of the sale and moves no cash. Payment legs carry it so
+    // `sum(payments) === totalAmount` and the shift drawer reconciles against
+    // what was actually collected instead of the full sale value.
+    const creditAmount = new Decimal(input.appliedStoreCredit ?? '0').toDecimalPlaces(
+      2,
+      Decimal.ROUND_HALF_UP,
+    );
+    if (creditAmount.isNegative()) {
+      throw new ApiError(400, 'INVALID_STORE_CREDIT', 'Store credit cannot be negative', {
+        path: ['appliedStoreCredit'],
+      });
+    }
+    if (creditAmount.greaterThan(0)) {
+      if (!input.customerId) {
+        throw new ApiError(
+          400,
+          'STORE_CREDIT_REQUIRES_CUSTOMER',
+          'Store credit cannot be applied to a guest sale - link a customer first',
+          { path: ['appliedStoreCredit'] },
+        );
+      }
+      if (creditAmount.greaterThan(totalAmount)) {
+        throw new ApiError(
+          400,
+          'STORE_CREDIT_EXCEEDS_TOTAL',
+          'Store credit cannot exceed the sale total',
+          { path: ['appliedStoreCredit'] },
+        );
+      }
+      if (linkedCreditBalance && creditAmount.greaterThan(linkedCreditBalance)) {
+        throw new ApiError(
+          400,
+          'STORE_CREDIT_EXCEEDS_BALANCE',
+          'Store credit cannot exceed the customer\u2019s available balance',
+          { path: ['appliedStoreCredit'] },
+        );
+      }
+    }
+    // What the cashier still has to collect after the credit.
+    const payableAmount = totalAmount
+      .minus(creditAmount)
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    if (input.paymentMethod === 'STORE_CREDIT' && payableAmount.greaterThan(0)) {
+      throw new ApiError(
+        400,
+        'STORE_CREDIT_DOES_NOT_COVER_TOTAL',
+        'Store credit does not cover the whole sale - choose a tender for the remaining amount',
+        { path: ['paymentMethod'] },
+      );
+    }
+
     // ── Zero-value verification (doc 33 / 34) ───────────────────────────
     // A zero (or negative) total is only permitted with a recorded reason; a
     // non-zero total must never carry a zero-value reason. PRODUCT_REPLACEMENT
@@ -231,7 +287,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       throw new ApiError(
         422,
         'NONE_PAYMENT_REQUIRES_ZERO_VALUE',
-        'A non-zero sale requires CASH/CARD/SPLIT/LANKAQR - NONE is reserved for zero-value sales',
+        'A non-zero sale requires CASH/CARD/SPLIT/LANKAQR or store credit - NONE is reserved for zero-value sales',
       );
     }
     if (isZeroValue && !input.zeroValueReason) {
@@ -282,8 +338,14 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       }
     }
 
-    // Zero-value sales settle with no payment leg.
-    const effectivePaymentMethod = isZeroValue ? 'NONE' : input.paymentMethod;
+    // Zero-value sales settle with no payment leg. A sale fully settled by
+    // store credit is NOT a zero-value sale: it has a real total and a credit
+    // tender, and must never require a zero-value reason.
+    const effectivePaymentMethod: PaymentMethod = isZeroValue
+      ? 'NONE'
+      : payableAmount.lte(0) && creditAmount.greaterThan(0)
+        ? 'STORE_CREDIT'
+        : input.paymentMethod;
 
     // Create Sale
     const sale = await tx.sale.create({
@@ -342,57 +404,50 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       });
     }
 
-    // Create Payment records
-    if (input.paymentMethod === 'CASH') {
-      await createPayment({ saleId: sale.id, method: 'CASH', amount: totalAmount }, tx);
-    } else if (input.paymentMethod === 'CARD') {
-      await createPayment(
-        {
-          saleId: sale.id,
-          method: 'CARD',
-          amount: totalAmount,
-          ...(input.cardReferenceNumber !== undefined && {
-            cardReferenceNumber: input.cardReferenceNumber,
-          }),
-        },
-        tx,
-      );
-    } else if (input.paymentMethod === 'LANKAQR') {
-      await createPayment(
-        {
-          saleId: sale.id,
-          method: 'LANKAQR',
-          amount: totalAmount,
-          ...(input.cardReferenceNumber !== undefined && {
-            cardReferenceNumber: input.cardReferenceNumber,
-          }),
-        },
-        tx,
-      );
-    } else if (input.paymentMethod === 'SPLIT') {
+    // Create Payment records. The credit leg settles whatever the customer's
+    // balance covers; the chosen tender settles only the remaining payable.
+    if (input.paymentMethod === 'SPLIT' && payableAmount.greaterThan(0)) {
       const digitalAmt = new Decimal(input.cardAmount!);
-      const cashAmt = totalAmount.minus(digitalAmt);
-      const digitalLegMethod = input.splitLegMethod ?? 'CARD';
+      if (digitalAmt.greaterThan(payableAmount)) {
+        throw new ApiError(
+          400,
+          'CARD_AMOUNT_EXCEEDS_PAYABLE',
+          'The card portion cannot exceed the amount still payable after store credit',
+          { path: ['cardAmount'] },
+        );
+      }
+    }
+    const tenderLegs = buildSaleTenderLegs({
+      paymentMethod: input.paymentMethod,
+      payableAmount,
+      creditAmount,
+      ...(input.cardAmount !== undefined ? { cardAmount: new Decimal(input.cardAmount) } : {}),
+      ...(input.splitLegMethod !== undefined ? { splitLegMethod: input.splitLegMethod } : {}),
+    });
+    for (const leg of tenderLegs) {
       await createPayment(
         {
           saleId: sale.id,
-          method: digitalLegMethod,
-          amount: digitalAmt,
-          ...(input.cardReferenceNumber !== undefined && {
-            cardReferenceNumber: input.cardReferenceNumber,
-          }),
+          method: leg.method,
+          amount: leg.amount,
+          ...(input.cardReferenceNumber !== undefined &&
+            leg.method !== 'CASH' &&
+            leg.method !== 'STORE_CREDIT' && { cardReferenceNumber: input.cardReferenceNumber }),
         },
         tx,
       );
-      await createPayment({ saleId: sale.id, method: 'CASH', amount: cashAmt }, tx);
     }
 
-    // Compute and save change given for CASH / SPLIT
-    if (input.paymentMethod === 'CASH' || input.paymentMethod === 'SPLIT') {
+    // Compute and save change given for CASH / SPLIT (on the cash portion of
+    // the payable amount, never on the credit-covered part).
+    if (
+      (input.paymentMethod === 'CASH' || input.paymentMethod === 'SPLIT') &&
+      payableAmount.greaterThan(0)
+    ) {
       const cashPortionAmount =
         input.paymentMethod === 'CASH'
-          ? totalAmount
-          : totalAmount.minus(new Decimal(input.cardAmount!));
+          ? payableAmount
+          : payableAmount.minus(new Decimal(input.cardAmount!));
       const cashReceivedDec = new Decimal(input.cashReceived!);
       const changeGiven = cashReceivedDec.minus(cashPortionAmount);
       if (changeGiven.greaterThan(0)) {
@@ -407,16 +462,17 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     // this block: with no customerId there is no ledger to touch, so a walk-in
     // bill accrues no loyalty spend and consumes no store credit.
     if (input.customerId) {
-      const creditAmount = new Decimal(input.appliedStoreCredit ?? '0');
       if (creditAmount.greaterThan(0)) {
         await redeemCredit(tenantId, input.customerId, creditAmount, tx);
       }
       await addToSpendTotal(tenantId, input.customerId, totalAmount, tx);
     }
 
-    // Route the collected money into payment accounts. Inside the transaction
-    // so the sale and the money commit together; a tenant with no accounts yet
-    // simply writes nothing and the sale still completes.
+    // Route the collected money into payment accounts. Only the payable part
+    // was collected; the credit leg reduces the customer's balance instead of
+    // landing in a cash/bank account. Inside the transaction so the sale and
+    // the money commit together; a tenant with no accounts yet simply writes
+    // nothing and the sale still completes.
     await postSaleToAccounts(
       tx,
       tenantId,
@@ -425,7 +481,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       sale.id.slice(0, 8).toUpperCase(),
       buildSaleAccountLegs({
         paymentMethod: effectivePaymentMethod,
-        totalAmount,
+        totalAmount: payableAmount,
         ...(input.cardAmount !== undefined && { cardAmount: input.cardAmount }),
         ...(input.splitLegMethod !== undefined && { splitLegMethod: input.splitLegMethod }),
       }),
@@ -1012,21 +1068,46 @@ export async function updateSale(
     // Re-scale existing tender legs so they still sum to the new total. The
     // split shape (how many legs, which methods, which card references) is
     // preserved; only the amounts follow the total.
+    //
+    // A STORE_CREDIT leg is a fixed redemption — its amount is pinned to the
+    // customer's balance and cannot move with a delivery charge — so only the
+    // cash/card/QR legs absorb the delta.
     if (
       !nextTotal.equals(previousTotal) &&
       before.payments.length > 0 &&
       previousTotal.greaterThan(0)
     ) {
-      const legs = before.payments;
+      const creditTotal = before.payments
+        .filter((p) => p.method === 'STORE_CREDIT')
+        .reduce((sum, p) => sum.plus(new Decimal(p.amount.toString())), new Decimal(0));
+      const moneyLegs = before.payments.filter((p) => p.method !== 'STORE_CREDIT');
+      const previousMoney = previousTotal.minus(creditTotal);
+      const targetMoney = nextTotal.minus(creditTotal);
+
+      if (targetMoney.isNegative()) {
+        throw new ApiError(
+          400,
+          'INVALID_DELIVERY_CHARGE',
+          'This delivery charge would reduce the total below the store credit already redeemed - void the sale instead',
+        );
+      }
+      if (moneyLegs.length === 0 && targetMoney.greaterThan(0)) {
+        throw new ApiError(
+          400,
+          'INVALID_DELIVERY_CHARGE',
+          'This delivery charge cannot be collected on a store-credit-only sale - void the sale instead',
+        );
+      }
+
       let allocated = new Decimal(0);
-      for (let i = 0; i < legs.length; i += 1) {
-        const leg = legs[i]!;
-        const isLast = i === legs.length - 1;
+      for (let i = 0; i < moneyLegs.length; i += 1) {
+        const leg = moneyLegs[i]!;
+        const isLast = i === moneyLegs.length - 1;
         const amount = isLast
-          ? nextTotal.minus(allocated)
+          ? targetMoney.minus(allocated)
           : new Decimal(leg.amount.toString())
-              .mul(nextTotal)
-              .div(previousTotal)
+              .mul(targetMoney)
+              .div(previousMoney)
               .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
         if (amount.isNegative()) {
           throw new ApiError(

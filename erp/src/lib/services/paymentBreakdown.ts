@@ -33,6 +33,9 @@ export function sumPaymentBreakdown(
       case 'LANKAQR':
         total.lankaqr = total.lankaqr.plus(amount);
         break;
+      case 'STORE_CREDIT':
+        // Redeemed from the customer's balance: no cash/bank money moved.
+        break;
     }
   }
   return total;

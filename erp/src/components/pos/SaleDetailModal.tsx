@@ -39,7 +39,7 @@ interface Sale {
   discountAmount: number;
   taxAmount: number;
   totalAmount: number;
-  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | null;
+  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | 'STORE_CREDIT' | 'NONE' | null;
   status: 'OPEN' | 'COMPLETED' | 'VOIDED';
   authorizingManagerId: string | null;
   createdAt: string;
@@ -107,7 +107,7 @@ export function SaleDetailModal({
           )}
           {sale.paymentMethod && (
             <Badge variant="secondary" className="text-[10px]">
-              {sale.paymentMethod}
+              {sale.paymentMethod === 'STORE_CREDIT' ? 'Store Credit' : sale.paymentMethod}
             </Badge>
           )}
         </div>

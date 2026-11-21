@@ -19,6 +19,7 @@ import { CardPaymentModal } from '@/components/pos/CardPaymentModal';
 import { SplitPaymentModal } from '@/components/pos/SplitPaymentModal';
 import { LankaQRPaymentModal } from '@/components/pos/LankaQRPaymentModal';
 import { ZeroValuePaymentModal } from '@/components/pos/ZeroValuePaymentModal';
+import { StoreCreditPaymentModal } from '@/components/pos/StoreCreditPaymentModal';
 import { AddCustomerDialog } from '@/components/pos/AddCustomerDialog';
 import { ReceiptPreviewDialog } from '@/components/pos/ReceiptPreviewDialog';
 import type { CreateSalePayload, CompletedSale } from '@/types/pos.types';
@@ -97,6 +98,7 @@ export function CartPanel({
   const [paymentMethodOpen, setPaymentMethodOpen] = useState(false);
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
   const [zeroValueOpen, setZeroValueOpen] = useState(false);
+  const [storeCreditOpen, setStoreCreditOpen] = useState(false);
   const [completedSale, setCompletedSale] = useState<CompletedSale | null>(null);
   const [changeAmount, setChangeAmount] = useState<Decimal | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -161,9 +163,11 @@ export function CartPanel({
   // `total` already nets the manual cart discount, promotions and the tax on
   // what is actually charged, so only store credit is still deducted here.
   const amountDue = total.minus(appliedCreditDec).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-  // Zero-value gate (doc 33): a cart whose total is zero or negative must be
-  // completed through the reason-selection flow instead of a payment modal.
-  const isZeroValue = hasItems && amountDue.lte(0);
+  // Zero-value gate (doc 33): only a genuinely zero (or negative) SALE value
+  // needs the reason-selection flow. A sale fully covered by store credit is a
+  // paid sale — it is confirmed through the store-credit tender instead.
+  const isZeroValue = hasItems && total.lte(0);
+  const isCreditCovered = hasItems && !isZeroValue && appliedCreditDec.greaterThan(0) && amountDue.lte(0);
   const promoCodeError = appliedPromoCode
     ? skippedPromotions.find((s) => !appliedPromotions.some((a) => a.promotionId === s.promotionId))?.reason
     : undefined;
@@ -193,7 +197,6 @@ export function CartPanel({
       discountEffective,
       promoDiscountDec,
     ).toNumber(),
-    ...(authorizingManagerId ? { authorizingManagerId } : {}),
     ...(authorizingManagerId ? { authorizingManagerId } : {}),
     ...(linkedCustomerId ? { customerId: linkedCustomerId } : { isGuestSale: true }),
     ...(appliedCreditDec.greaterThan(0) ? { appliedStoreCredit } : {}),
@@ -279,6 +282,10 @@ export function CartPanel({
     if (!hasItems || !hasValidCustomer) return;
     if (isZeroValue) {
       setZeroValueOpen(true);
+      return;
+    }
+    if (isCreditCovered) {
+      setStoreCreditOpen(true);
       return;
     }
     setPaymentMethodOpen(true);
@@ -626,6 +633,17 @@ export function CartPanel({
               >
                 Zero-Value Sale
               </button>
+            ) : isCreditCovered ? (
+              <button
+                type="button"
+                disabled={!hasItems || !hasValidCustomer}
+                onClick={() => setStoreCreditOpen(true)}
+                aria-keyshortcuts="F4"
+                title="Complete with store credit (F4)"
+                className="min-h-12 w-full rounded-lg bg-[#2D6A4F] py-3 font-body text-base font-bold text-pearl transition-colors hover:bg-[#2D6A4F]/90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Complete with Store Credit
+              </button>
             ) : (
               <button
                 type="button"
@@ -697,6 +715,17 @@ export function CartPanel({
         }}
         onSaleComplete={handleSaleComplete}
         totalAmount={amountDue}
+        salePayload={salePayload}
+      />
+      <StoreCreditPaymentModal
+        open={storeCreditOpen}
+        onClose={() => {
+          setStoreCreditOpen(false);
+          focusPOSBarcodeInput();
+        }}
+        onSaleComplete={handleSaleComplete}
+        saleTotal={total}
+        creditAmount={appliedCreditDec}
         salePayload={salePayload}
       />
       <AddCustomerDialog

@@ -159,12 +159,16 @@ enum PaymentMethod {
   SPLIT
   LANKAQR
   NONE
+  // Fully settled by the customer's store-credit balance (no cash collected).
+  STORE_CREDIT
 }
 
 enum PaymentLegMethod {
   CASH
   CARD
   LANKAQR
+  // Credit redeemed from the customer's balance; moves no money into an account.
+  STORE_CREDIT
 }
 
 // Why a POS sale was completed with a zero (or negative) total. Drives the

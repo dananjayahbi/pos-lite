@@ -145,6 +145,26 @@ export const CreateSaleSchema = z
         });
       }
     }
+    // STORE_CREDIT is the "credit covers the whole sale" tender: it needs a
+    // linked customer and a positive credit amount. The service additionally
+    // checks that the credit really covers the computed total.
+    if (data.paymentMethod === 'STORE_CREDIT') {
+      if (!data.customerId) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['customerId'],
+          message: 'Store credit requires a linked customer',
+        });
+      }
+      const credit = Number.parseFloat(data.appliedStoreCredit ?? '0');
+      if (!Number.isFinite(credit) || credit <= 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['appliedStoreCredit'],
+          message: 'Store credit amount is required when paying by store credit',
+        });
+      }
+    }
     // Doc 34: a replacement must point at an original order reference.
     // M14-04 (req 3.11 / D14 = BOTH): and must carry the defective item barcode.
     if (data.zeroValueReason === 'PRODUCT_REPLACEMENT') {

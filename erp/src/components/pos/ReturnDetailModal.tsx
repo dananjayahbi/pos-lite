@@ -47,7 +47,7 @@ interface ReturnData {
     discountAmount: number;
     taxAmount: number;
     totalAmount: number;
-    paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | null;
+    paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | 'STORE_CREDIT' | 'NONE' | null;
     status: 'OPEN' | 'COMPLETED' | 'VOIDED';
     authorizingManagerId: string | null;
     createdAt: string;

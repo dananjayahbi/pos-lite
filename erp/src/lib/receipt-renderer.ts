@@ -110,10 +110,16 @@ export function buildThermalReceiptHtml(
 
   // ── Payments ──
   let paymentsHtml = '';
+  const paymentLabels: Record<string, string> = {
+    CASH: 'Cash',
+    CARD: 'Card',
+    LANKAQR: 'LankaQR',
+    STORE_CREDIT: 'Store Credit',
+  };
   for (const p of sale.payments) {
     paymentsHtml += `
       <div class="item-row">
-        <span>${esc(p.method)}</span>
+        <span>${esc(paymentLabels[p.method] ?? p.method)}</span>
         <span>${formatRupee(n(p.amount))}</span>
       </div>`;
     if (p.cardReferenceNumber) {

@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
-import type { ShiftStatus, SaleStatus, PaymentMethod, ReturnRefundMethod } from '@/generated/prisma/client';
+import type { ShiftStatus, SaleStatus, ReturnRefundMethod } from '@/generated/prisma/client';
 import { sumPaymentBreakdown } from '@/lib/services/paymentBreakdown';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
@@ -98,47 +98,31 @@ export async function closeShift(
     },
   });
 
-  // Aggregate COMPLETED sales
-  const [salesAggregate, cashAggregate, cardAggregate, qrAggregate, salesCount] = await Promise.all([
+  // Aggregate COMPLETED sales. Tender totals come from the payment legs, not
+  // `Sale.paymentMethod`: a sale may be settled by a mix of tenders (SPLIT) or
+  // by store credit, and only the legs know how much money actually moved.
+  const [salesAggregate, shiftPayments, salesCount] = await Promise.all([
     prisma.sale.aggregate({
       where: { shiftId, status: 'COMPLETED' satisfies SaleStatus },
       _sum: { totalAmount: true },
     }),
-    prisma.sale.aggregate({
+    prisma.payment.findMany({
       where: {
-        shiftId,
-        status: 'COMPLETED' satisfies SaleStatus,
-        paymentMethod: 'CASH' satisfies PaymentMethod,
+        sale: { shiftId, tenantId, status: 'COMPLETED' satisfies SaleStatus },
       },
-      _sum: { totalAmount: true },
-    }),
-    prisma.sale.aggregate({
-      where: {
-        shiftId,
-        status: 'COMPLETED' satisfies SaleStatus,
-        paymentMethod: 'CARD' satisfies PaymentMethod,
-      },
-      _sum: { totalAmount: true },
-    }),
-    prisma.sale.aggregate({
-      where: {
-        shiftId,
-        status: 'COMPLETED' satisfies SaleStatus,
-        paymentMethod: 'LANKAQR' satisfies PaymentMethod,
-      },
-      _sum: { totalAmount: true },
+      select: { method: true, amount: true },
     }),
     prisma.sale.count({
       where: { shiftId, status: 'COMPLETED' satisfies SaleStatus },
     }),
   ]);
 
-  // NOTE: SPLIT payments are NOT included in cash/card totals until SubPhase 03.02
+  const paymentBreakdown = sumPaymentBreakdown(shiftPayments);
 
   const totalSalesAmount = new Decimal(salesAggregate._sum.totalAmount?.toString() ?? '0');
-  const totalCashAmount = new Decimal(cashAggregate._sum.totalAmount?.toString() ?? '0');
-  const totalCardAmount = new Decimal(cardAggregate._sum.totalAmount?.toString() ?? '0');
-  const totalQrAmount = new Decimal(qrAggregate._sum.totalAmount?.toString() ?? '0');
+  const totalCashAmount = paymentBreakdown.cash;
+  const totalCardAmount = paymentBreakdown.card;
+  const totalQrAmount = paymentBreakdown.lankaqr;
 
   const now = new Date();
 
@@ -263,7 +247,7 @@ export async function getShiftById(tenantId: string, shiftId: string) {
     throw new Error('Shift not found');
   }
 
-  const [salesTotal, cashSalesTotal, shiftReturns, shiftCashMovements] = await Promise.all([
+  const [salesTotal, shiftPayments, shiftReturns, shiftCashMovements] = await Promise.all([
     prisma.sale.aggregate({
       where: {
         shiftId,
@@ -271,13 +255,11 @@ export async function getShiftById(tenantId: string, shiftId: string) {
       },
       _sum: { totalAmount: true },
     }),
-    prisma.sale.aggregate({
+    prisma.payment.findMany({
       where: {
-        shiftId,
-        status: 'COMPLETED' satisfies SaleStatus,
-        paymentMethod: 'CASH' satisfies PaymentMethod,
+        sale: { shiftId, tenantId, status: 'COMPLETED' satisfies SaleStatus },
       },
-      _sum: { totalAmount: true },
+      select: { method: true, amount: true },
     }),
     prisma.return.findMany({
       where: {
@@ -314,7 +296,7 @@ export async function getShiftById(tenantId: string, shiftId: string) {
 
   const openingFloat = new Decimal(shift.openingFloat.toString());
   const expectedCash = openingFloat
-    .plus(new Decimal(cashSalesTotal._sum.totalAmount?.toString() ?? '0'))
+    .plus(sumPaymentBreakdown(shiftPayments).cash)
     .minus(cashRefundsTotal)
     .plus(cashDeposited)
     .minus(pettyCashOut);
