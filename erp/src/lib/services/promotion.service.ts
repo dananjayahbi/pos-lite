@@ -173,6 +173,22 @@ export async function evaluateCustomerPricing(
 
 // ── Evaluate Category Discounts ──────────────────────────────────────────────
 
+/**
+ * ARGUS #323 — replace every client-supplied category with the category the
+ * variant really belongs to. A cart payload can claim any categoryId; only the
+ * server-resolved map is trusted. Unknown/foreign variants get `undefined`, so
+ * they cannot claim a category promotion.
+ */
+export function applyResolvedCategories(
+  cartLines: CartLine[],
+  categoryByVariantId: ReadonlyMap<string, string | null | undefined>,
+): CartLine[] {
+  return cartLines.map((line) => ({
+    ...line,
+    categoryId: categoryByVariantId.get(line.variantId) ?? undefined,
+  }));
+}
+
 export function evaluateCategoryDiscounts(
   cartLines: CartLine[],
   promos: PromotionRow[],
@@ -462,6 +478,19 @@ export async function evaluatePromotions(
   // 2. Fetch automatic promotions
   const grouped = await fetchActivePromotions(tenantId);
 
+  // ARGUS #323: resolve product/category from the database once. The client's
+  // categoryId is never trusted — a spoofed category cannot claim a promotion.
+  const variantIds = [...new Set(cartLines.map((line) => line.variantId))];
+  const variants = await prisma.productVariant.findMany({
+    where: { id: { in: variantIds }, product: { tenantId } },
+    select: { id: true, productId: true, product: { select: { categoryId: true } } },
+  });
+  const productByVariantId = new Map(variants.map((variant) => [variant.id, variant.productId]));
+  const categoryByVariantId = new Map(
+    variants.map((variant) => [variant.id, variant.product.categoryId]),
+  );
+  const resolvedCartLines = applyResolvedCategories(cartLines, categoryByVariantId);
+
   // 3. Product discounts (most specific first: product beats category/cart).
   // Percentage and fixed product promotions share the same target-product
   // contract and precedence; the newer fixed type wins its target first because
@@ -471,15 +500,8 @@ export async function evaluatePromotions(
     ...grouped.PRODUCT_FIXED,
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   if (productPromotions.length > 0) {
-    const variantIds = [...new Set(cartLines.map((line) => line.variantId))];
-    const variants = await prisma.productVariant.findMany({
-      where: { id: { in: variantIds }, product: { tenantId } },
-      select: { id: true, productId: true },
-    });
-    const productByVariantId = new Map(variants.map((variant) => [variant.id, variant.productId]));
-
     const productResult = evaluateProductDiscounts(
-      cartLines,
+      resolvedCartLines,
       productPromotions,
       alreadyDiscounted,
       productByVariantId,
@@ -489,29 +511,29 @@ export async function evaluatePromotions(
   }
 
   // 4. Category discounts
-  const catResult = evaluateCategoryDiscounts(cartLines, grouped.CATEGORY_PERCENTAGE, alreadyDiscounted);
+  const catResult = evaluateCategoryDiscounts(resolvedCartLines, grouped.CATEGORY_PERCENTAGE, alreadyDiscounted);
   appliedDiscounts.push(...catResult.applied);
   skippedPromotions.push(...catResult.skipped);
 
   // 5. BOGO / Mix & Match
-  const bogoResult = evaluateBOGO(cartLines, [...grouped.BOGO, ...grouped.MIX_AND_MATCH], alreadyDiscounted);
+  const bogoResult = evaluateBOGO(resolvedCartLines, [...grouped.BOGO, ...grouped.MIX_AND_MATCH], alreadyDiscounted);
   appliedDiscounts.push(...bogoResult.applied);
   skippedPromotions.push(...bogoResult.skipped);
 
   // 6. Cart-level promotions
-  const subtotal = cartLines.reduce((sum, l) => {
+  const subtotal = resolvedCartLines.reduce((sum, l) => {
     const lineTotal = new Decimal(l.unitPrice).times(l.quantity);
     const manualDisc = l.manualDiscountAmount ? new Decimal(l.manualDiscountAmount) : new Decimal(0);
     return sum.plus(lineTotal.minus(manualDisc));
   }, new Decimal(0));
 
-  const cartResult = evaluateCartPromotions(cartLines, subtotal, [...grouped.CART_PERCENTAGE, ...grouped.CART_FIXED]);
+  const cartResult = evaluateCartPromotions(resolvedCartLines, subtotal, [...grouped.CART_PERCENTAGE, ...grouped.CART_FIXED]);
   appliedDiscounts.push(...cartResult.applied);
   skippedPromotions.push(...cartResult.skipped);
 
   // 7. Promo code
   if (promoCode) {
-    const codeResult = await validatePromoCode(tenantId, promoCode, cartLines);
+    const codeResult = await validatePromoCode(tenantId, promoCode, resolvedCartLines);
     if ('error' in codeResult) {
       skippedPromotions.push({ promotionId: 'promo_code', reason: codeResult.error.message });
     } else {

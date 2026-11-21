@@ -267,6 +267,7 @@ export function VariantSelectionModal({
                   quantity,
                   stockQuantity: selectedVariant.stockQuantity,
                   taxRule: product.taxRule ?? 'STANDARD_VAT',
+                  ...(product.category?.id ? { categoryId: product.category.id } : {}),
                 });
                 if (result.limited) {
                   toast.warning(

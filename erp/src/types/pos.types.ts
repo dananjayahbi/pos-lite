@@ -7,6 +7,8 @@ export interface CreateSalePayload {
     variantId: string;
     quantity: number;
     discountPercent: number;
+    /** Server re-resolves this; sent for diagnostics/evaluate parity. */
+    categoryId?: string | undefined;
   }>;
   cartDiscountAmount: number;
   authorizingManagerId?: string;

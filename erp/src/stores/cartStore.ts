@@ -15,6 +15,8 @@ export interface CartItem {
   unitPrice: number;       // serialized as number, Decimal used internally for math
   quantity: number;
   discountPercent: number;  // 0-100
+  /** Real product category, used by category promotions/UI. */
+  categoryId?: string | undefined;
   /** Available stock when the line was added; caps the cart quantity. */
   stockQuantity?: number | undefined;
   /** Product tax rule; drives the per-line VAT/SSCL/exempt preview. */
@@ -190,7 +192,12 @@ export const useCartStore = create<CartState>((set, get) => ({
       if (current) {
         return {
           items: [
-            { ...current, quantity: nextQty, stockQuantity: item.stockQuantity ?? current.stockQuantity },
+            {
+              ...current,
+              quantity: nextQty,
+              stockQuantity: item.stockQuantity ?? current.stockQuantity,
+              ...(item.categoryId !== undefined ? { categoryId: item.categoryId } : {}),
+            },
             ...state.items.filter((i) => i.variantId !== item.variantId),
           ],
         };
@@ -369,6 +376,7 @@ export const useCartStore = create<CartState>((set, get) => ({
         variantId: item.variantId,
         quantity: item.quantity,
         unitPrice: String(item.unitPrice),
+        ...(item.categoryId !== undefined && { categoryId: item.categoryId }),
         ...(manualDisc !== undefined && { manualDiscountAmount: manualDisc }),
       };
     });
