@@ -5,6 +5,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StockTakeStatus } from '@/generated/prisma/client';
 import { isStaleStockTake } from '@/lib/services/stockTakeAge.core';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
   parseStockTakeCategoryId,
   stockTakeCategoryListWhere,
@@ -220,6 +221,24 @@ export async function POST(request: NextRequest) {
       }
 
       return newSession.id;
+    });
+
+    // ARGUS #211: creation is a stock-take lifecycle event. Approval,
+    // rejection and cancellation already write an audit row; without this the
+    // trail began only once someone acted on the session.
+    await createAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      actorRole: session.user.role,
+      entityType: 'StockTakeSession',
+      entityId: result,
+      action: AUDIT_ACTIONS.STOCK_TAKE_CREATED,
+      after: {
+        scope: categoryId ? 'category' : 'all',
+        categoryId,
+        initiatedBy: session.user.id,
+        startedAt: new Date().toISOString(),
+      },
     });
 
     return NextResponse.json({ success: true, data: { id: result } }, { status: 201 });
