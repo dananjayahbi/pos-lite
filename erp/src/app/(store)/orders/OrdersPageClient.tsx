@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -28,6 +28,12 @@ import { OrdersTable } from '@/components/orders/OrdersTable';
 import { BulkActionBar } from '@/components/orders/BulkActionBar';
 import { BulkStatusDialog } from '@/components/orders/BulkStatusDialog';
 import { paginationSummary } from '@/components/orders/pagination';
+import {
+  pruneSelection,
+  toggleAllVisible,
+  toggleSelection,
+  visibleSelectedIds,
+} from '@/components/orders/selection';
 import { commonBulkStatusTargets } from '@/lib/services/dispatchStatus.core';
 import type { DeliveryListItem } from '@/types/delivery';
 import type { DeliveryStatus } from '@/generated/prisma/client';
@@ -93,21 +99,28 @@ export function OrdersPageClient() {
     setSelectedIds(new Set());
   };
 
-  const toggle = (id: string) =>
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const toggle = (id: string) => setSelectedIds((prev) => toggleSelection(prev, id));
 
-  const toggleAll = () =>
-    setSelectedIds((prev) => {
-      if (orders.length > 0 && orders.every((o) => prev.has(o.id))) return new Set();
-      return new Set(orders.map((o) => o.id));
-    });
+  const toggleAll = () => setSelectedIds((prev) => toggleAllVisible(prev, orders));
 
-  const selectedOrders = orders.filter((o) => selectedIds.has(o.id));
+  // ARGUS #264: every action reads the same visible selection. Ids left over
+  // from a previous page/filter are pruned here, so the bulk count and the ids
+  // sent to status/prepare/print can never disagree.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = pruneSelection(prev, orders);
+      return next.size === prev.size ? prev : next;
+    });
+  }, [orders]);
+
+  const selectedVisibleIds = useMemo(
+    () => visibleSelectedIds(selectedIds, orders),
+    [selectedIds, orders],
+  );
+  const selectedOrders = useMemo(
+    () => orders.filter((o) => selectedIds.has(o.id)),
+    [selectedIds, orders],
+  );
 
   // ARGUS #263: only offer statuses legal for every selected order. A mixed
   // pre-dispatch/dispatched selection gets an empty list instead of a menu
@@ -120,7 +133,7 @@ export function OrdersPageClient() {
   );
 
   const handleStatusChange = (newStatus: DeliveryStatus) => {
-    const ids = Array.from(selectedIds);
+    const ids = selectedVisibleIds;
     bulkStatus.mutate(
       { deliveryIds: ids, status: newStatus },
       {
@@ -133,7 +146,7 @@ export function OrdersPageClient() {
   };
 
   const handleCreateDelivery = () => {
-    const ids = Array.from(selectedIds);
+    const ids = selectedVisibleIds;
     bulkCreate.mutate(ids, {
       onSuccess: () => setSelectedIds(new Set()),
     });
@@ -225,7 +238,7 @@ export function OrdersPageClient() {
       />
 
       <BulkActionBar
-        count={selectedIds.size}
+        count={selectedVisibleIds.length}
         canEdit={canEdit}
         canDispatch={canDispatch}
         onStatusChange={() => setStatusDialogOpen(true)}
@@ -308,7 +321,7 @@ export function OrdersPageClient() {
 
       {statusDialogOpen && (
         <BulkStatusDialog
-          count={selectedIds.size}
+          count={selectedVisibleIds.length}
           allowedStatuses={allowedBulkStatuses}
           onCancel={() => setStatusDialogOpen(false)}
           onConfirm={handleStatusChange}
