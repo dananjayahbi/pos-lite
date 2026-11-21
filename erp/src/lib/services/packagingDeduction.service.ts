@@ -1,10 +1,15 @@
 import Decimal from 'decimal.js';
 
 import { prisma } from '@/lib/prisma';
+import { ApiError } from '@/lib/api/errors';
 import { AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import type { PrismaClient } from '@/generated/prisma/client';
 import type { TxClient } from '@/lib/services/inventory.service';
-import { planPackagingDeduction } from '@/lib/services/packaging.core';
+import {
+  decidePackagingShortfall,
+  planPackagingDeduction,
+  type PackagingShortfallItem,
+} from '@/lib/services/packaging.core';
 
 /**
  * Packaging-consumption writes (ARGUS #279).
@@ -52,33 +57,185 @@ export async function changePackagingStock(
   return { before: existing.quantityOnHand, after: updated.quantityOnHand };
 }
 
+/**
+ * Resolve which items a dispatch consumes.
+ *
+ * ARGUS #283: `itemIds` is the explicit per-delivery selection (an empty array
+ * means "use no packaging"). When omitted, auto-deduct items remain the default
+ * suggestion for older callers. Every explicitly selected id must exist for the
+ * tenant, so a stale browser cannot silently consume an unrelated/foreign item.
+ */
+async function resolveDeductionItems(
+  client: PackagingStockClient,
+  tenantId: string,
+  itemIds?: string[],
+) {
+  if (itemIds !== undefined) {
+    const ids = [...new Set(itemIds)];
+    if (ids.length === 0) return [];
+    const items = await client.packagingItem.findMany({
+      where: { tenantId, deletedAt: null, id: { in: ids } },
+    });
+    if (items.length !== ids.length) throw new Error('PACKAGING_ITEM_NOT_FOUND');
+    return items;
+  }
+
+  return client.packagingItem.findMany({
+    where: { tenantId, deletedAt: null, autoDeduct: true },
+  });
+}
+
 export interface DeductionResult {
   itemId: string;
   name: string;
   consumed: Decimal;
+  /** Whole units the dispatch called for (before the stock cap). */
+  required: number;
+  /** Stock on hand before this deduction. */
+  available: number;
+  insufficient: boolean;
+}
+
+export interface PackagingDeductionPreviewItem {
+  itemId: string;
+  name: string;
+  unit: string;
+  unitsPerParcel: number;
+  missingParcels: number;
+  requiredUnits: number;
+  availableUnits: number;
+  insufficient: boolean;
+}
+
+export interface PackagingDeductionPreview {
+  parcelCount: number;
+  items: PackagingDeductionPreviewItem[];
   insufficient: boolean;
 }
 
 /**
- * Deduct configured auto-deduct packaging for every parcel (courier shipment)
- * that does not have a consumption row yet.
+ * ARGUS #282: preflight the same plan the transaction will apply, with NO
+ * writes. `pendingParcels` lets dispatch include the parcel it is about to
+ * create (the shipment row does not exist yet when this runs).
+ */
+export async function previewPackagingDeduction(
+  tenantId: string,
+  deliveryId: string,
+  opts: { tx?: TxClient; itemIds?: string[]; pendingParcels?: number } = {},
+): Promise<PackagingDeductionPreview> {
+  const client = (opts.tx ?? prisma) as PackagingStockClient;
+  const items = await resolveDeductionItems(client, tenantId, opts.itemIds);
+  if (items.length === 0) {
+    const parcelCount = await client.courierShipment.count({ where: { deliveryId, tenantId } });
+    return { parcelCount, items: [], insufficient: false };
+  }
+
+  const recordedParcels = await client.courierShipment.count({
+    where: { deliveryId, tenantId },
+  });
+  const parcelCount = recordedParcels + Math.max(Math.floor(opts.pendingParcels ?? 0), 0);
+
+  const previewItems: PackagingDeductionPreviewItem[] = [];
+  for (const item of items) {
+    const existingConsumptions = await client.packagingConsumption.count({
+      where: { deliveryId, packagingItemId: item.id },
+    });
+    const plan = planPackagingDeduction({
+      perParcel: item.consumptionPerParcel?.toString() ?? '1',
+      quantityOnHand: item.quantityOnHand,
+      existingConsumptions,
+      parcelCount,
+    });
+    if (plan.missingParcels === 0) continue;
+
+    previewItems.push({
+      itemId: item.id,
+      name: item.name,
+      unit: item.unit,
+      unitsPerParcel: plan.unitsPerParcel,
+      missingParcels: plan.missingParcels,
+      requiredUnits: plan.unitsPerParcel * plan.missingParcels,
+      availableUnits: item.quantityOnHand,
+      insufficient: plan.insufficient,
+    });
+  }
+
+  return {
+    parcelCount,
+    items: previewItems,
+    insufficient: previewItems.some((item) => item.insufficient),
+  };
+}
+
+/** Typed 409 used by both the preflight and the in-transaction enforcement. */
+export function packagingShortfallError(
+  shortItems: PackagingShortfallItem[],
+  deliveryId: string,
+): ApiError {
+  const summary = shortItems
+    .map((item) => `${item.name} (need ${item.requiredUnits}, have ${item.availableUnits})`)
+    .join('; ');
+  return new ApiError(
+    409,
+    'PACKAGING_SHORTFALL',
+    `Not enough packaging stock to dispatch: ${summary}. Reassign the packaging items or confirm the shortfall override.`,
+    { deliveryId, items: shortItems },
+  );
+}
+
+/**
+ * Throw when the configured packaging is short, unless the caller explicitly
+ * overrides. Runs before the courier upload so a doomed dispatch never issues a
+ * waybill.
+ */
+export async function assertPackagingAvailableForDispatch(
+  tenantId: string,
+  deliveryId: string,
+  opts: { itemIds?: string[]; allowShortfall?: boolean } = {},
+): Promise<PackagingDeductionPreview> {
+  const preview = await previewPackagingDeduction(tenantId, deliveryId, {
+    ...(opts.itemIds !== undefined ? { itemIds: opts.itemIds } : {}),
+    pendingParcels: 1,
+  });
+  const decision = decidePackagingShortfall(
+    preview.items.map((item) => ({
+      name: item.name,
+      requiredUnits: item.requiredUnits,
+      availableUnits: item.availableUnits,
+      insufficient: item.insufficient,
+    })),
+    { allowOverride: opts.allowShortfall === true },
+  );
+  if (decision.blocked) throw packagingShortfallError(decision.shortItems, deliveryId);
+  return preview;
+}
+
+/**
+ * Deduct configured packaging for every parcel (courier shipment) that does not
+ * have a consumption row yet.
  *
  * One `PackagingConsumption` row and one audited stock decrement per parcel +
  * item. Idempotent: a retry/replay sees `missingParcels = 0`; a redelivery (new
  * shipment) fills exactly the new parcel. Writes through `changePackagingStock`
  * and the caller's transaction client, so dispatch and deduction commit
  * together.
+ *
+ * ARGUS #282: a shortfall throws a typed `PACKAGING_SHORTFALL` (rolling the
+ * transaction back) unless `allowShortfall` is explicitly set.
  */
 export async function autoDeductPackaging(
   tenantId: string,
   deliveryId: string,
-  opts?: { tx?: TxClient; actorId?: string },
+  opts?: {
+    tx?: TxClient;
+    actorId?: string;
+    itemIds?: string[];
+    allowShortfall?: boolean;
+  },
 ): Promise<DeductionResult[]> {
   const client = (opts?.tx ?? prisma) as PackagingStockClient;
 
-  const items = await client.packagingItem.findMany({
-    where: { tenantId, deletedAt: null, autoDeduct: true },
-  });
+  const items = await resolveDeductionItems(client, tenantId, opts?.itemIds);
   if (items.length === 0) return [];
 
   // One parcel = one CourierShipment. Counting all shipment rows (including a
@@ -116,8 +273,8 @@ export async function autoDeductPackaging(
       const change = await changePackagingStock(client, tenantId, item.id, -take).catch(
         (error: unknown) => {
           // Concurrent consumption can empty the shelf between the plan and
-          // the write. Insufficient packaging never blocks a dispatch, so stop
-          // at what was available instead of failing the status transition.
+          // the write. Stop at what was available; the shortfall decision below
+          // decides whether that is acceptable for this caller.
           if (error instanceof Error && error.message === 'INSUFFICIENT_PACKAGING_STOCK') {
             return null;
           }
@@ -162,9 +319,22 @@ export async function autoDeductPackaging(
       itemId: item.id,
       name: item.name,
       consumed,
+      required: wanted.toNumber(),
+      available: item.quantityOnHand,
       insufficient: consumed.lessThan(wanted),
     });
   }
+
+  const decision = decidePackagingShortfall(
+    results.map((result) => ({
+      name: result.name,
+      requiredUnits: result.required,
+      availableUnits: result.available,
+      insufficient: result.insufficient,
+    })),
+    { allowOverride: opts?.allowShortfall === true },
+  );
+  if (decision.blocked) throw packagingShortfallError(decision.shortItems, deliveryId);
 
   return results;
 }

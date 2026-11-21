@@ -2,6 +2,11 @@ export { useDeliveries } from './useDeliveries';
 export { useDelivery } from './useDelivery';
 export { useCreateDelivery } from './useCreateDelivery';
 export { useDispatchDelivery } from './useDispatchDelivery';
+export { DispatchRequestError } from './useDispatchDelivery';
+export type {
+  DispatchDeliveryPayload,
+  DispatchShortfallItem,
+} from './useDispatchDelivery';
 export { useCancelDelivery } from './useCancelDelivery';
 export { useShipmentTracking } from './useShipmentTracking';
 export { useRateCard } from './useRateCard';

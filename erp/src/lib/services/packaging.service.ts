@@ -25,7 +25,10 @@ import {
 } from '@/lib/services/packagingDeduction.service';
 export {
   autoDeductPackaging,
+  assertPackagingAvailableForDispatch,
+  previewPackagingDeduction,
   type DeductionResult,
+  type PackagingDeductionPreview,
 } from '@/lib/services/packagingDeduction.service';
 import {
   assertPackagingCategoryExists,

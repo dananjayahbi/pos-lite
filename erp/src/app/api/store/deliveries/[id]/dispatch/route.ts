@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 
 import { requireDeliveryAuth, validationError, internalError, mapDeliveryError } from '@/lib/api/delivery-route';
+import { envelopeError } from '@/lib/api/error-envelope';
+import { isApiError } from '@/lib/api/errors';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { dispatchDelivery } from '@/lib/services/delivery.service';
 import { DispatchDeliverySchema } from '@/lib/validators/delivery.validators';
@@ -29,6 +31,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ success: true, data: delivery });
   } catch (error) {
     console.error('POST /api/store/deliveries/[id]/dispatch error:', error);
+    // ARGUS #282: the typed PACKAGING_SHORTFALL error carries the per-item
+    // details the dispatch UI needs for its override prompt.
+    if (isApiError(error)) return envelopeError(error);
     const mapped = mapDeliveryError(error);
     if (mapped) return mapped;
     return internalError('An unexpected error occurred');

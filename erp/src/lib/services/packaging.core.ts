@@ -69,6 +69,36 @@ export function planPackagingDeduction(
 }
 
 /**
+ * ARGUS #282 - should a dispatch be blocked by short packaging stock?
+ *
+ * The planner already reports `insufficient` per item. This decision reuses
+ * that flag: any shortage blocks unless the caller explicitly overrides. Pure
+ * so the service preflight and the UI explanation share the exact rule.
+ */
+export interface PackagingShortfallItem {
+  name: string;
+  requiredUnits: number;
+  availableUnits: number;
+  insufficient: boolean;
+}
+
+export interface PackagingShortfallDecision {
+  blocked: boolean;
+  shortItems: PackagingShortfallItem[];
+}
+
+export function decidePackagingShortfall(
+  items: PackagingShortfallItem[],
+  opts: { allowOverride?: boolean } = {},
+): PackagingShortfallDecision {
+  const shortItems = items.filter((item) => item.insufficient);
+  return {
+    blocked: shortItems.length > 0 && opts.allowOverride !== true,
+    shortItems,
+  };
+}
+
+/**
  * Derive the human-readable SKU stem for a packaging item, e.g. "Bubble Wrap
  * 50m" in BUBBLE_WRAP becomes `BUBB-BUBBLE-WRAP-50M`.
  */

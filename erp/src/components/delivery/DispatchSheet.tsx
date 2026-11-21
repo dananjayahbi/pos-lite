@@ -13,6 +13,7 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -26,6 +27,7 @@ import {
   DispatchDeliverySchema,
 } from '@/lib/validators/delivery.validators';
 import { useDispatchDelivery, useLabelTemplate } from '@/hooks/delivery';
+import { DispatchRequestError, type DispatchShortfallItem } from '@/hooks/delivery';
 import { printShippingLabel } from './labels/ShippingLabel';
 import {
   canPrintWaybill,
@@ -58,6 +60,10 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
   const waybillTemplate = resolveLabelTemplate(labelTemplate, branding);
   const canPrintWaybillNow = canPrintWaybill(templateState, waybillTemplate);
   const [printing, setPrinting] = useState(false);
+  // ARGUS #282: the server rejects a short packaging plan until the operator
+  // explicitly acknowledges it; the details come from the typed 409.
+  const [shortfall, setShortfall] = useState<DispatchShortfallItem[] | null>(null);
+  const [allowShortfall, setAllowShortfall] = useState(false);
 
   const {
     register,
@@ -74,7 +80,11 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
   const waybillMode = watch('waybillMode');
 
   useEffect(() => {
-    if (open) reset({ waybillMode: 'AUTO', manualWaybillId: undefined });
+    if (open) {
+      reset({ waybillMode: 'AUTO', manualWaybillId: undefined });
+      setShortfall(null);
+      setAllowShortfall(false);
+    }
   }, [open, reset]);
 
   const onSubmit = (data: z.output<typeof DispatchDeliverySchema>) => {
@@ -87,9 +97,19 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
           ...(data.waybillMode === 'MANUAL' && data.manualWaybillId
             ? { manualWaybillId: data.manualWaybillId }
             : {}),
+          ...(allowShortfall ? { allowPackagingShortfall: true } : {}),
         },
       },
-      { onSuccess: onClose },
+      {
+        onSuccess: onClose,
+        onError: (error: Error) => {
+          if (error instanceof DispatchRequestError && error.code === 'PACKAGING_SHORTFALL') {
+            const details = error.details as { items?: DispatchShortfallItem[] } | null;
+            setShortfall(details?.items ?? []);
+            setAllowShortfall(false);
+          }
+        },
+      },
     );
   };
 
@@ -152,6 +172,33 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
                 {errors.manualWaybillId && (
                   <p className="text-sm text-terracotta">{errors.manualWaybillId.message}</p>
                 )}
+              </div>
+            )}
+
+            {shortfall && shortfall.length > 0 && (
+              <div
+                role="alert"
+                className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+              >
+                <p className="font-medium">Not enough packaging stock for this dispatch</p>
+                <ul className="mt-2 space-y-1 text-xs">
+                  {shortfall.map((item) => (
+                    <li key={item.name}>
+                      {item.name}: need {item.requiredUnits}, have {item.availableUnits}
+                    </li>
+                  ))}
+                </ul>
+                <label className="mt-3 flex items-start gap-2 text-xs">
+                  <Checkbox
+                    checked={allowShortfall}
+                    onCheckedChange={(checked) => setAllowShortfall(checked === true)}
+                    aria-label="Dispatch anyway with short packaging stock"
+                  />
+                  <span>
+                    Dispatch anyway with short packaging stock. The available units are deducted
+                    and the shortage is flagged as low stock.
+                  </span>
+                </label>
               </div>
             )}
 

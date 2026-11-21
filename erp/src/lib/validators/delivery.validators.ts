@@ -81,6 +81,8 @@ export const DispatchDeliverySchema = z.object({
     .min(8, 'Manual waybill id is required (at least 8 characters)')
     .max(40)
     .optional(),
+  // ARGUS #282: an explicit acknowledgement that packaging stock is short.
+  allowPackagingShortfall: z.boolean().optional(),
 });
 
 export const CancelDeliverySchema = z.object({
