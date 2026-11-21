@@ -2,6 +2,7 @@
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
+import Link from 'next/link';
 import { StatusBadge } from '../shared/StatusBadge';
 import { AppointmentStatusTimeline } from './AppointmentStatusTimeline';
 import { AppointmentActions } from './AppointmentActions';
@@ -10,6 +11,7 @@ import {
   APPOINTMENT_OVERDUE_GRACE_MINUTES,
   appointmentDisplayStatus,
 } from '@/lib/appointments/appointmentOverdue.core';
+import { buildAppointmentDetailView } from '@/lib/appointments/appointmentDetail.core';
 import type { AppointmentStatus } from '@/generated/prisma/client';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { formatRupee } from '@/lib/format';
@@ -29,6 +31,21 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
       })
     : null;
   const overdue = displayStatus === 'OVERDUE';
+  const view = appointment
+    ? buildAppointmentDetailView({
+        status: appointment.status as AppointmentStatus,
+        price: appointment.price,
+        depositAmount: appointment.depositAmount,
+        isPaid: appointment.isPaid,
+        saleId: appointment.saleId,
+        sale: appointment.sale ?? null,
+        serviceName: appointment.service?.name ?? null,
+        cancellationReason: appointment.cancellationReason,
+        cancelledAt: appointment.cancelledAt,
+        cancelledByEmail: appointment.cancelledBy?.email ?? null,
+        reminders: appointment.reminders ?? [],
+      })
+    : null;
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -45,7 +62,7 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
           <div className="py-8 text-center text-espresso/40">Appointment not found</div>
         )}
 
-        {appointment && (
+        {appointment && view && (
           <div className="mt-6 space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-espresso">{appointment.title}</h2>
@@ -102,49 +119,96 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
                 </div>
               )}
 
-              {appointment.service && (
-                <div>
-                  <span className="text-espresso/50">Service</span>
-                  <p className="text-espresso font-medium">{appointment.service.name}</p>
+              <div>
+                <span className="text-espresso/50">Service</span>
+                <p className="text-espresso font-medium">{view.serviceLabel}</p>
+                {appointment.service ? (
                   <p className="text-espresso/60 text-xs">{appointment.service.durationMins} min</p>
-                </div>
-              )}
+                ) : null}
+              </div>
 
-              {/* ARGUS #121: price, deposit, paid state and the linked sale used
-                  to be invisible here, so a settled visit looked unpaid. */}
+              {/* ARGUS #128: price is always shown (service is optional), and
+                  deposit/paid/balance/sale state stay visible. */}
               <div>
                 <span className="text-espresso/50">Payment</span>
-                <p className="text-espresso font-medium">{formatRupee(appointment.price)}</p>
+                <p className="text-espresso font-medium">{formatRupee(view.price)}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  {appointment.saleId ? (
-                    <Badge variant="success" className="text-[10px]">
-                      Sale recorded
-                    </Badge>
-                  ) : appointment.isPaid ? (
-                    <Badge variant="success" className="text-[10px]">
-                      Paid
-                    </Badge>
-                  ) : (
-                    <Badge variant="warning" className="text-[10px]">
-                      Unpaid
-                    </Badge>
-                  )}
-                  {Number(appointment.depositAmount ?? 0) > 0 && (
+                  <Badge
+                    variant={view.paymentState === 'UNPAID' ? 'warning' : 'success'}
+                    className="text-[10px]"
+                  >
+                    {view.paymentLabel}
+                  </Badge>
+                  {view.depositAmount > 0 ? (
                     <span className="text-espresso/60 text-xs">
-                      Deposit {formatRupee(Number(appointment.depositAmount))}
+                      Deposit {formatRupee(view.depositAmount)}
                     </span>
-                  )}
-                  {appointment.saleId && (
-                    <span className="text-espresso/60 font-mono text-xs">
-                      Sale {appointment.saleId.slice(0, 8).toUpperCase()}
-                    </span>
-                  )}
+                  ) : null}
+                  {view.saleId ? (
+                    <Link
+                      href={`/sales/${view.saleId}`}
+                      className="text-espresso/70 font-mono text-xs underline"
+                    >
+                      Sale {view.saleShortId}
+                    </Link>
+                  ) : null}
                 </div>
-                {!appointment.isPaid && !appointment.saleId && Number(appointment.depositAmount ?? 0) > 0 && (
+                {view.balanceDue > 0 ? (
                   <p className="text-espresso/50 mt-1 text-xs">
-                    Balance {formatRupee(Math.max(Number(appointment.price) - Number(appointment.depositAmount), 0))}{' '}
-                    due on completion.
+                    Balance {formatRupee(view.balanceDue)} due on completion.
                   </p>
+                ) : null}
+              </div>
+
+              {view.cancellation ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">
+                  <span className="text-xs font-semibold uppercase tracking-wide">Cancellation</span>
+                  <p className="mt-1 text-sm">{view.cancellation.reason ?? 'No reason recorded.'}</p>
+                  {view.cancellation.at ? (
+                    <p className="mt-1 text-xs">
+                      Cancelled{' '}
+                      {new Date(view.cancellation.at).toLocaleString('en-US', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })}
+                    </p>
+                  ) : null}
+                  {view.cancellation.byEmail ? (
+                    <p className="text-xs">By {staffDisplayName(view.cancellation.byEmail)}</p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div>
+                <span className="text-espresso/50">Reminders</span>
+                {view.reminders.total === 0 ? (
+                  <p className="text-espresso/70">No reminders scheduled.</p>
+                ) : (
+                  <>
+                    <p className="text-espresso font-medium">
+                      {view.reminders.total} scheduled · {view.reminders.sent} sent ·{' '}
+                      {view.reminders.pending} pending
+                      {view.reminders.failed > 0 ? ` · ${view.reminders.failed} failed` : ''}
+                    </p>
+                    {view.reminders.nextScheduledFor ? (
+                      <p className="text-espresso/60 text-xs">
+                        Next{' '}
+                        {new Date(view.reminders.nextScheduledFor).toLocaleString('en-US', {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })}
+                      </p>
+                    ) : null}
+                    {view.reminders.lastSentAt ? (
+                      <p className="text-espresso/60 text-xs">
+                        Last sent{' '}
+                        {new Date(view.reminders.lastSentAt).toLocaleString('en-US', {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })}
+                      </p>
+                    ) : null}
+                  </>
                 )}
               </div>
 

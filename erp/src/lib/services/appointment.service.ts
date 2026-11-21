@@ -26,6 +26,12 @@ import {
   APPOINTMENT_OVERDUE_STATUSES,
   appointmentOverdueCutoff,
 } from '@/lib/appointments/appointmentOverdue.core';
+import { appointmentAvailabilityIssue } from '@/lib/appointments/appointmentAvailability.core';
+import { APPOINTMENT_OPEN_STATUSES } from '@/lib/appointments/appointmentList.core';
+import {
+  parseAppointmentDateEnd,
+  parseAppointmentDateStart,
+} from '@/lib/appointments/appointmentDateFilters.core';
 import {
   appointmentActionBlockReason,
   type AppointmentLifecycleAction,
@@ -79,6 +85,53 @@ async function assertBackdateAllowed(
   throw new Error('BACKDATE_NOT_ALLOWED');
 }
 
+/**
+ * ARGUS #127: a specific staff member can only be booked inside their
+ * configured availability and outside approved time off / blocked slots.
+ * The issue code is the API's typed 422 reason.
+ */
+async function assertStaffAvailability(
+  tenantId: string,
+  staffId: string,
+  startTime: Date,
+  endTime: Date,
+): Promise<void> {
+  const dayStart = new Date(startTime);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(startTime);
+  dayEnd.setHours(23, 59, 59, 999);
+
+  const [availability, timeOff, blockedSlots] = await Promise.all([
+    prisma.staffAvailability.findMany({ where: { tenantId, staffId } }),
+    prisma.staffTimeOff.findMany({
+      where: {
+        tenantId,
+        staffId,
+        isApproved: true,
+        date: { gte: dayStart, lte: dayEnd },
+      },
+    }),
+    prisma.appointmentSlot.findMany({
+      where: {
+        tenantId,
+        staffId,
+        isBlocked: true,
+        startTime: { lt: endTime },
+        endTime: { gt: startTime },
+      },
+    }),
+  ]);
+
+  const issue = appointmentAvailabilityIssue({
+    startTime,
+    endTime,
+    availability,
+    timeOff,
+    blockedSlots,
+  });
+  if (issue) throw new Error(issue.code);
+}
+
 const appointmentInclude = {
   customer: true,
   service: true,
@@ -101,8 +154,8 @@ export async function getAppointments(tenantId: string, filters: Partial<Appoint
   } = filters as AppointmentFilters;
 
   const startTimeFilter: { gte?: Date; lte?: Date } = {};
-  if (dateFrom) startTimeFilter.gte = new Date(dateFrom);
-  if (dateTo) startTimeFilter.lte = new Date(dateTo);
+  if (dateFrom) startTimeFilter.gte = parseAppointmentDateStart(dateFrom);
+  if (dateTo) startTimeFilter.lte = parseAppointmentDateEnd(dateTo);
   if (status === 'OVERDUE') {
     // ARGUS #126: derived filter — active rows whose start is past the grace
     // window. This only restricts the query; it never writes status.
@@ -125,16 +178,64 @@ export async function getAppointments(tenantId: string, filters: Partial<Appoint
     ...(Object.keys(startTimeFilter).length > 0 ? { startTime: startTimeFilter } : {}),
   };
 
-  const [appointments, total] = await Promise.all([
-    prisma.appointment.findMany({
+  // ARGUS #129: upcoming active rows first (nearest first), then past/terminal
+  // rows (most recent first). Pagination is applied across that global order,
+  // so cancelled QA rows cannot occupy page 1 ahead of upcoming bookings.
+  const now = new Date();
+  const upcomingWhere: Prisma.AppointmentWhereInput = {
+    AND: [
       where,
-      include: appointmentInclude,
-      orderBy: { startTime: 'asc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
+      { status: { in: [...APPOINTMENT_OPEN_STATUSES] } },
+      { startTime: { gte: now } },
+    ],
+  };
+  const pastWhere: Prisma.AppointmentWhereInput = {
+    AND: [
+      where,
+      {
+        OR: [
+          { status: { notIn: [...APPOINTMENT_OPEN_STATUSES] } },
+          { startTime: { lt: now } },
+        ],
+      },
+    ],
+  };
+
+  const skip = (page - 1) * limit;
+  const [total, upcomingCount] = await Promise.all([
     prisma.appointment.count({ where }),
+    prisma.appointment.count({ where: upcomingWhere }),
   ]);
+
+  let appointments;
+  if (skip < upcomingCount) {
+    const fromUpcoming = await prisma.appointment.findMany({
+      where: upcomingWhere,
+      include: appointmentInclude,
+      orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
+      skip,
+      take: limit,
+    });
+    const remaining = limit - fromUpcoming.length;
+    const fromPast =
+      remaining > 0
+        ? await prisma.appointment.findMany({
+            where: pastWhere,
+            include: appointmentInclude,
+            orderBy: [{ startTime: 'desc' }, { id: 'asc' }],
+            take: remaining,
+          })
+        : [];
+    appointments = [...fromUpcoming, ...fromPast];
+  } else {
+    appointments = await prisma.appointment.findMany({
+      where: pastWhere,
+      include: appointmentInclude,
+      orderBy: [{ startTime: 'desc' }, { id: 'asc' }],
+      skip: skip - upcomingCount,
+      take: limit,
+    });
+  }
 
   return { appointments, total, page, limit };
 }
@@ -176,6 +277,11 @@ export async function createAppointment(
 
   // M27-04/OBS-79: reject far-past bookings unless the actor may manage settings.
   await assertBackdateAllowed(startTime, canManageSettings);
+
+  // ARGUS #127: booking a specific staff member must respect their roster.
+  if (input.staffId) {
+    await assertStaffAvailability(tenantId, input.staffId, startTime, endTime);
+  }
 
   // ARGUS #124: the tenant decides whether new bookings arrive already
   // confirmed; defaults keep the historical SCHEDULED behaviour.
@@ -266,6 +372,26 @@ export async function updateAppointment(
   input: UpdateAppointmentInput,
 ) {
   const existing = await assertAppointmentBelongsToTenant(tenantId, id);
+
+  // ARGUS #127: re-validate the roster only when the schedule/staff actually
+  // changes. Status/notes edits on an existing row (including legacy rows that
+  // predate enforcement) must remain possible.
+  const scheduleTouched =
+    input.staffId !== undefined ||
+    input.startTime !== undefined ||
+    input.endTime !== undefined ||
+    input.durationMins !== undefined;
+  if (scheduleTouched) {
+    const effectiveStaffId = input.staffId !== undefined ? input.staffId : existing.staffId;
+    if (effectiveStaffId) {
+      await assertStaffAvailability(
+        tenantId,
+        effectiveStaffId,
+        input.startTime ? new Date(input.startTime) : existing.startTime,
+        input.endTime ? new Date(input.endTime) : existing.endTime,
+      );
+    }
+  }
 
   // M27-04/BUG-88: the PATCH path used to write any status the client sent
   // (SCHEDULED→COMPLETED skipping check-in, COMPLETED→CANCELLED erasing revenue).

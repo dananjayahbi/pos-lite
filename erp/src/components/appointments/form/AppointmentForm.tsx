@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,14 @@ import { ServiceSelector } from './ServiceSelector';
 import { StaffSelector } from './StaffSelector';
 import { NotesField } from './NotesField';
 import { fromDatetimeLocalValue, toDatetimeLocalValue } from '@/lib/appointments/datetime-local';
+import { useStaffAvailability, useStaffTimeOff } from '@/hooks/appointments';
+import {
+  appointmentAvailabilityIssue,
+  type AppointmentAvailabilityWindow,
+  type AppointmentTimeOffWindow,
+} from '@/lib/appointments/appointmentAvailability.core';
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 interface AppointmentFormData {
   title: string;
@@ -78,6 +86,43 @@ export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting,
     setForm((prev) => ({ ...prev, [key]: value }));
   }, []);
 
+  // ARGUS #127: advisory availability check. The create/update API is still the
+  // authority; this prevents the operator from selecting a slot the server will
+  // reject and explains why.
+  const availabilityQuery = useStaffAvailability(form.staffId ?? undefined);
+  const timeOffQuery = useStaffTimeOff(form.staffId ?? undefined);
+  const availabilityWindows = useMemo(
+    () => (availabilityQuery.data ?? []) as AppointmentAvailabilityWindow[],
+    [availabilityQuery.data],
+  );
+  const availabilityReady = availabilityQuery.data !== undefined && timeOffQuery.data !== undefined;
+
+  const availabilitySummary = useMemo(
+    () =>
+      availabilityWindows
+        .filter((window) => window.isAvailable !== false)
+        .map((window) => `${DAY_NAMES[window.dayOfWeek] ?? '?'} ${window.startTime}-${window.endTime}`)
+        .join(', '),
+    [availabilityWindows],
+  );
+
+  const availabilityIssue = useMemo(() => {
+    if (!form.staffId || !form.startTime || !form.endTime || !availabilityReady) return null;
+    return appointmentAvailabilityIssue({
+      startTime: form.startTime,
+      endTime: form.endTime,
+      availability: availabilityWindows,
+      timeOff: (timeOffQuery.data ?? []) as AppointmentTimeOffWindow[],
+    });
+  }, [
+    availabilityReady,
+    availabilityWindows,
+    form.endTime,
+    form.staffId,
+    form.startTime,
+    timeOffQuery.data,
+  ]);
+
   const handleServiceChange = (serviceId: string | null, durationMins?: number, price?: number) => {
     setForm((prev) => {
       const next = { ...prev, serviceId };
@@ -111,6 +156,7 @@ export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting,
 
   const isValid =
     !depositError &&
+    !availabilityIssue &&
     form.startTime &&
     form.endTime &&
     (form.customerId || (form.walkInName && form.walkInPhone));
@@ -128,6 +174,19 @@ export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting,
       <ServiceSelector value={form.serviceId} onChange={handleServiceChange} />
 
       <StaffSelector value={form.staffId} onChange={(v) => update('staffId', v)} />
+
+      {form.staffId && availabilityReady ? (
+        <div className="space-y-1 text-xs">
+          <p className="text-espresso/60">
+            Availability: {availabilitySummary || 'No availability configured for this staff member.'}
+          </p>
+          {availabilityIssue ? (
+            <p role="alert" className="text-red-600">
+              {availabilityIssue.message}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="space-y-1.5">
         <Label className="text-sm font-medium">Title</Label>
