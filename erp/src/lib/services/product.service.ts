@@ -17,6 +17,10 @@ import { adjustStockInTx } from '@/lib/services/inventory.service';
 import { resolveOpeningStockQuantity } from '@/lib/services/openingStock.core';
 import { matchesStockStatusFilter, type StockStateVariant } from '@/lib/inventory/stockState';
 import { generateBarcode } from '@/lib/barcode';
+import {
+  categoryAuditSnapshot,
+  changedAuditFields,
+} from '@/lib/catalog/catalogAudit.core';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -900,7 +904,7 @@ export async function getAllCategories(tenantId: string) {
   });
 }
 
-export async function createCategory(tenantId: string, data: CreateCategoryInput) {
+export async function createCategory(tenantId: string, actorId: string, data: CreateCategoryInput) {
   // M04-01 (D4 policy): the name is reserved while ANY row carries it — live
   // or soft-deleted — because @@unique([tenantId, name]) keeps archived rows
   // holding the name. A deletedAt-agnostic pre-check surfaces the friendly
@@ -919,7 +923,7 @@ export async function createCategory(tenantId: string, data: CreateCategoryInput
     );
   }
 
-  return prisma.category.create({
+  const created = await prisma.category.create({
     data: {
       tenantId,
       name: data.name,
@@ -928,11 +932,25 @@ export async function createCategory(tenantId: string, data: CreateCategoryInput
       imageUrl: data.imageUrl ?? null,
     },
   });
+
+  // Non-blocking: an audit hiccup must never fail the create (ARGUS #167).
+  await createAuditLog({
+    tenantId,
+    actorId,
+    actorRole: 'SYSTEM',
+    entityType: 'Category',
+    entityId: created.id,
+    action: 'CATEGORY_CREATED',
+    after: categoryAuditSnapshot(created) as unknown as Prisma.InputJsonValue,
+  });
+
+  return created;
 }
 
 export async function updateCategory(
   tenantId: string,
   categoryId: string,
+  actorId: string,
   data: UpdateCategoryInput,
 ) {
   const existing = await prisma.category.findUnique({
@@ -968,10 +986,29 @@ export async function updateCategory(
   if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
   if (data.imageUrl !== undefined) updateData.imageUrl = data.imageUrl;
 
-  return prisma.category.update({
+  const updated = await prisma.category.update({
     where: { id: categoryId },
     data: updateData,
   });
+
+  // Non-blocking write with a before/after snapshot (ARGUS #167). A PATCH that
+  // repeats the stored values has nothing to audit, so it is skipped.
+  const before = categoryAuditSnapshot(existing);
+  const after = categoryAuditSnapshot(updated);
+  if (changedAuditFields(before, after).length > 0) {
+    await createAuditLog({
+      tenantId,
+      actorId,
+      actorRole: 'SYSTEM',
+      entityType: 'Category',
+      entityId: categoryId,
+      action: 'CATEGORY_UPDATED',
+      before: before as unknown as Prisma.InputJsonValue,
+      after: after as unknown as Prisma.InputJsonValue,
+    });
+  }
+
+  return updated;
 }
 
 export async function softDeleteCategory(tenantId: string, categoryId: string, actorId: string) {

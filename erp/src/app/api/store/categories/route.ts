@@ -78,7 +78,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const category = await createCategory(tenantId, parsed.data as CreateCategoryInput);
+    const category = await createCategory(tenantId, session.user.id, parsed.data as CreateCategoryInput);
 
     // Revalidate so the new category shows as a storefront filter immediately.
     try {
