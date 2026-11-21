@@ -194,23 +194,44 @@ export function StockValuationClient() {
 
       {/* KPI cards */}
       {isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-32 w-full rounded-xl" />
           ))}
         </div>
       ) : valuation ? (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="font-body text-sm font-medium text-mist-ink">Total Retail Value</CardTitle>
+                <CardTitle className="font-body text-sm font-medium text-mist-ink">
+                  Till Value (Incl. Tax)
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="font-display text-2xl font-semibold text-espresso">
-                  {formatRupee(valuation.retailValue)}
+                  {formatRupee(valuation.retailValueInclTax)}
                 </p>
-                <p className="mt-1 font-body text-xs text-mist-ink">What your stock could sell for</p>
+                <p className="mt-1 font-body text-xs text-mist-ink">
+                  Retail excl. tax {formatRupee(valuation.retailValue)}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="font-body text-sm font-medium text-mist-ink">
+                  VAT / SSCL
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="font-display text-2xl font-semibold text-espresso">
+                  {formatRupee(valuation.taxAmount)}
+                </p>
+                <p className="mt-1 font-body text-xs text-mist-ink">
+                  VAT {formatRupee(valuation.vatAmount)}
+                  {valuation.ssclAmount > 0 ? ` · SSCL ${formatRupee(valuation.ssclAmount)}` : ''}
+                </p>
               </CardContent>
             </Card>
 
@@ -235,9 +256,11 @@ export function StockValuationClient() {
               </CardHeader>
               <CardContent>
                 <p className={`font-display text-2xl font-semibold ${marginColor(valuation.estimatedMarginPercent)}`}>
-                  {valuation.estimatedMarginPercent.toFixed(1)}%
+                  {valuation.estimatedMarginPercent.toFixed(2)}%
                 </p>
-                <p className="mt-1 font-body text-xs text-mist-ink">{formatRupee(valuation.estimatedMargin)}</p>
+                <p className="mt-1 font-body text-xs text-mist-ink">
+                  {formatRupee(valuation.estimatedMargin)} on retail excl. tax
+                </p>
               </CardContent>
             </Card>
 
@@ -257,8 +280,9 @@ export function StockValuationClient() {
           {/* Info note */}
           <div className="rounded-lg border border-sand bg-linen px-4 py-3">
             <p className="font-body text-xs text-mist-ink">
-              Values are based on current stock quantities multiplied by retail and cost prices. Actual margins may differ
-              due to discounts, promotions, or price changes.
+              Retail prices are shown excluding tax. The till value adds VAT/SSCL per line
+              using each product&apos;s tax rule; exempt products add nothing. Actual margins may
+              differ due to discounts, promotions, or price changes.
             </p>
           </div>
 
@@ -293,8 +317,14 @@ export function StockValuationClient() {
                         className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist-ink hover:text-espresso"
                         onClick={() => handleSort('retailValue')}
                       >
-                        Retail Value <ArrowUpDown className="h-3 w-3" />
+                        Retail (Excl. Tax) <ArrowUpDown className="h-3 w-3" />
                       </button>
+                    </TableHead>
+                    <TableHead className="text-right font-body text-xs font-medium text-mist-ink">
+                      Tax
+                    </TableHead>
+                    <TableHead className="text-right font-body text-xs font-medium text-mist-ink">
+                      Retail (Incl. Tax)
                     </TableHead>
                     <TableHead className="text-right">
                       <button
@@ -328,7 +358,7 @@ export function StockValuationClient() {
                 <TableBody>
                   {sortedCategories.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-8 text-center font-body text-sm text-mist-ink">
+                      <TableCell colSpan={8} className="py-8 text-center font-body text-sm text-mist-ink">
                         No category data available
                       </TableCell>
                     </TableRow>
@@ -341,14 +371,20 @@ export function StockValuationClient() {
                           {formatRupee(cat.retailValue)}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm text-espresso">
+                          {formatRupee(cat.taxAmount)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm text-espresso">
+                          {formatRupee(cat.retailValueInclTax)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm text-espresso">
                           {formatRupee(cat.costValue)}
                         </TableCell>
                         <TableCell className={`text-right font-mono text-sm ${marginColor(cat.marginPercent)}`}>
-                          {cat.marginPercent.toFixed(1)}%
+                          {cat.marginPercent.toFixed(2)}%
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <span className="font-mono text-sm text-espresso">{cat.share.toFixed(1)}%</span>
+                            <span className="font-mono text-sm text-espresso">{cat.share.toFixed(2)}%</span>
                             <div className="h-2 w-16 overflow-hidden rounded-full bg-sand/30">
                               <div
                                 className="h-full rounded-full bg-espresso"
