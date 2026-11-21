@@ -368,10 +368,10 @@ export const storeNavGroups: NavGroup[] = [
     label: 'Reports & Audit',
     items: [
       {
-        name: 'Sales & Profit Reports',
+        name: 'Profit & Loss',
         href: '/reports/profit-loss',
         roles: ['OWNER', 'MANAGER'],
-        permission: PERMISSIONS.REPORT.viewSalesReport,
+        permission: PERMISSIONS.REPORT.viewProfitReport,
       },
       {
         name: 'Saved Reports',

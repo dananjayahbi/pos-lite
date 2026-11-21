@@ -42,7 +42,8 @@ export async function GET(
       );
     }
 
-    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewSalesReport);
+    // Downloading a generated artifact is report:export (ARGUS #438).
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.exportReport);
     if (forbidden) return forbidden;
 
     const { id } = await params;
