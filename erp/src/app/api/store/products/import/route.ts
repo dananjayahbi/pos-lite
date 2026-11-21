@@ -4,30 +4,36 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
-import { TaxRule, Prisma } from '@/generated/prisma/client';
+import { Prisma } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
-import { allocateBarcode } from '@/lib/services/product.service';
+import {
+  allocateBarcode,
+  createProduct,
+  createProductVariants,
+  type CreateVariantInput,
+} from '@/lib/services/product.service';
 import { revalidateTenantStorefront } from '@/lib/revalidate-website';
-
-const ImportRowSchema = z.object({
-  productName: z.string().min(1),
-  category: z.string().min(1),
-  retailPrice: z.number().positive(),
-  sku: z.string().optional(),
-  barcode: z.string().optional(),
-  brand: z.string().optional(),
-  description: z.string().optional(),
-  tags: z.string().optional(),
-  costPrice: z.number().positive().optional(),
-  form: z.string().optional(),
-  packSize: z.string().optional(),
-  lowStockThreshold: z.number().int().min(0).optional(),
-  wholesalePrice: z.number().positive().optional(),
-});
+import {
+  summarizeProductImportRows,
+  validateProductImportRow,
+  type ProductImportRowData,
+  type ProductImportRowResult,
+} from '@/lib/products/csv-import';
 
 const ImportPayloadSchema = z.object({
-  rows: z.array(ImportRowSchema).min(1).max(5000),
+  rows: z.array(z.record(z.string(), z.unknown())).min(1).max(5000),
 });
+
+type ValidRow = ProductImportRowResult & { data: ProductImportRowData };
+
+function readRowNumber(row: Record<string, unknown>, fallback: number): number {
+  const raw = row.rowNumber;
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw > 0) return raw;
+  if (typeof raw === 'string' && /^\d+$/.test(raw.trim())) {
+    return Number(raw.trim());
+  }
+  return fallback;
+}
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -66,140 +72,247 @@ export async function POST(req: NextRequest) {
   const actorId = session.user.id;
   const { rows } = parsed.data;
 
+  // ARGUS #146: validate EVERY row first. Invalid rows are reported with their
+  // CSV row number; they do not silently become 0-cost / STANDARD_VAT rows.
+  const validatedRows = rows.map((row, index) =>
+    validateProductImportRow(row, readRowNumber(row, index + 1)),
+  );
+  const validation = summarizeProductImportRows(validatedRows);
+
+  const validRows = validatedRows.filter(
+    (row): row is ValidRow => row.ok && row.data !== undefined,
+  );
+
+  if (validRows.length === 0) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'No importable rows. Fix the reported rows and retry.',
+          details: validation.rejected,
+        },
+        data: {
+          productsCreated: 0,
+          variantsCreated: 0,
+          rowsReceived: validation.rowsReceived,
+          rowsCreated: 0,
+          rowsImported: 0,
+          rowsRejected: validation.rowsRejected,
+          rejected: validation.rejected,
+          defaults: validation.defaults,
+          taxRuleCounts: validation.taxRuleCounts,
+          partial: true,
+          message: 'No rows were imported.',
+        },
+      },
+      { status: 400 },
+    );
+  }
+
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const existingCategories = await tx.category.findMany({
-        where: { tenantId, deletedAt: null },
-      });
-      const existingBrands = await tx.brand.findMany({
-        where: { tenantId, deletedAt: null },
-      });
+    const [existingCategories, existingBrands] = await Promise.all([
+      prisma.category.findMany({ where: { tenantId, deletedAt: null } }),
+      prisma.brand.findMany({ where: { tenantId, deletedAt: null } }),
+    ]);
 
-      const categoryMap = new Map(
-        existingCategories.map((c) => [c.name.toLowerCase().trim(), c.id]),
-      );
-      const brandMap = new Map(
-        existingBrands.map((b) => [b.name.toLowerCase().trim(), b.id]),
-      );
+    const categoryMap = new Map(
+      existingCategories.map((c) => [c.name.toLowerCase().trim(), c.id]),
+    );
+    const brandMap = new Map(
+      existingBrands.map((b) => [b.name.toLowerCase().trim(), b.id]),
+    );
 
-      // Group rows by productName
-      const groups = new Map<string, typeof rows>();
-      for (const row of rows) {
-        const key = row.productName.toLowerCase().trim();
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key)!.push(row);
-      }
+    // Group valid rows by product name: one product, many variants.
+    const groups = new Map<string, ValidRow[]>();
+    for (const row of validRows) {
+      const key = row.data.productName.toLowerCase().trim();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(row);
+    }
 
-      let productsCreated = 0;
-      let variantsCreated = 0;
-      let skuCounter = 0;
-      // Shared across the whole import so two generated barcodes in the same
-      // CSV can never collide with each other before they reach the DB.
-      const takenBarcodes = new Set<string>();
+    let productsCreated = 0;
+    let variantsCreated = 0;
+    let skuCounter = 0;
+    // Counts of defaults actually applied to imported rows (not to rows that
+    // were rejected or whose product group failed).
+    const appliedDefaults = { taxRule: 0, initialStock: 0 };
+    const appliedTaxRuleCounts: Record<'STANDARD_VAT' | 'SSCL' | 'EXEMPT', number> = {
+      STANDARD_VAT: 0,
+      SSCL: 0,
+      EXEMPT: 0,
+    };
+    // Shared across the whole import so two generated barcodes in the same
+    // CSV can never collide with each other before they reach the DB.
+    const takenBarcodes = new Set<string>();
+    const productFailures: Array<{ rowNumber: number; reasons: string[] }> = [];
 
-      for (const [, groupRows] of groups) {
-        const firstRow = groupRows[0];
-        if (!firstRow) continue;
+    for (const groupRows of groups.values()) {
+      const first = groupRows[0];
+      if (!first) continue;
 
+      let createdProductId: string | null = null;
+      try {
         // Find or create category
-        let categoryId = categoryMap.get(firstRow.category.toLowerCase().trim());
+        let categoryId = categoryMap.get(first.data.category.toLowerCase().trim());
         if (!categoryId) {
-          const newCat = await tx.category.create({
-            data: { tenantId, name: firstRow.category.trim() },
+          const newCat = await prisma.category.create({
+            data: { tenantId, name: first.data.category.trim() },
           });
           categoryId = newCat.id;
-          categoryMap.set(firstRow.category.toLowerCase().trim(), categoryId);
+          categoryMap.set(first.data.category.toLowerCase().trim(), categoryId);
         }
 
         // Find or create brand
         let brandId: string | null = null;
-        if (firstRow.brand) {
-          brandId = brandMap.get(firstRow.brand.toLowerCase().trim()) ?? null;
+        if (first.data.brand) {
+          brandId = brandMap.get(first.data.brand.toLowerCase().trim()) ?? null;
           if (!brandId) {
-            const newBrand = await tx.brand.create({
-              data: { tenantId, name: firstRow.brand.trim() },
+            const newBrand = await prisma.brand.create({
+              data: { tenantId, name: first.data.brand.trim() },
             });
             brandId = newBrand.id;
-            brandMap.set(firstRow.brand.toLowerCase().trim(), brandId);
+            brandMap.set(first.data.brand.toLowerCase().trim(), brandId);
           }
         }
 
-        const tags = firstRow.tags
-          ? firstRow.tags.split(',').map((t) => t.trim()).filter(Boolean)
+        const tags = first.data.tags
+          ? first.data.tags.split(',').map((t) => t.trim()).filter(Boolean)
           : [];
 
-        const product = await tx.product.create({
-          data: {
-            tenantId,
-            name: firstRow.productName.trim(),
-            description: firstRow.description?.trim() || null,
-            categoryId,
-            brandId,
-            tags,
-            taxRule: 'STANDARD_VAT' satisfies TaxRule,
-          },
+        // Service path: createProductVariants records opening stock as an
+        // INITIAL_STOCK movement (ARGUS #139) instead of writing the quantity
+        // straight onto the variant.
+        const product = await createProduct(tenantId, actorId, {
+          name: first.data.productName.trim(),
+          categoryId,
+          tags,
+          taxRule: first.data.taxRule,
+          ...(first.data.description ? { description: first.data.description } : {}),
+          ...(brandId ? { brandId } : {}),
         });
-        productsCreated++;
+        createdProductId = product.id;
 
-        const variantData: Array<{
-          productId: string;
-          tenantId: string;
-          sku: string;
-          barcode: string;
-          form: string | null;
-          packSize: string | null;
-          costPrice: Prisma.Decimal;
-          retailPrice: Prisma.Decimal;
-          wholesalePrice: Prisma.Decimal | null;
-          stockQuantity: number;
-          lowStockThreshold: number;
-          imageUrls: string[];
-          thumbnailImageUrls: string[];
-        }> = [];
-
+        const variants: CreateVariantInput[] = [];
         for (const row of groupRows) {
+          const data = row.data;
           skuCounter++;
           const sku =
-            row.sku?.trim() ||
-            `IMP-${firstRow!.productName.substring(0, 3).toUpperCase()}-${skuCounter.toString().padStart(4, '0')}`;
-          // Client requirement 03: imported rows without a barcode get one too.
-          const supplied = row.barcode?.trim();
-          const barcode = supplied || (await allocateBarcode(tx, tenantId, takenBarcodes));
+            data.sku?.trim() ||
+            `IMP-${first.data.productName.substring(0, 3).toUpperCase()}-${skuCounter
+              .toString()
+              .padStart(4, '0')}`;
+          const supplied = data.barcode?.trim();
+          const barcode =
+            supplied || (await allocateBarcode(prisma, tenantId, takenBarcodes));
 
-          variantData.push({
-            productId: product.id,
-            tenantId,
+          variants.push({
             sku,
             barcode,
-            form: row.form?.trim() || null,
-            packSize: row.packSize?.trim() || null,
-            costPrice: new Prisma.Decimal(row.costPrice ?? 0),
-            retailPrice: new Prisma.Decimal(row.retailPrice),
-            wholesalePrice: row.wholesalePrice
-              ? new Prisma.Decimal(row.wholesalePrice)
-              : null,
-            stockQuantity: 0,
-            lowStockThreshold: row.lowStockThreshold ?? 5,
-            imageUrls: [] as string[],
-            thumbnailImageUrls: [] as string[],
+            costPrice: data.costPrice,
+            retailPrice: data.retailPrice,
+            initialStock: data.initialStock,
+            lowStockThreshold: data.lowStockThreshold,
+            ...(data.form ? { form: data.form } : {}),
+            ...(data.packSize ? { packSize: data.packSize } : {}),
+            ...(data.wholesalePrice !== undefined
+              ? { wholesalePrice: data.wholesalePrice }
+              : {}),
           });
         }
 
-        await tx.productVariant.createMany({ data: variantData });
-        variantsCreated += variantData.length;
+        const created = await createProductVariants(
+          tenantId,
+          actorId,
+          product.id,
+          variants,
+        );
+        productsCreated++;
+        variantsCreated += created.length;
+
+        if (first.defaults.taxRule) appliedDefaults.taxRule++;
+        for (const row of groupRows) {
+          if (row.defaults.initialStock) appliedDefaults.initialStock++;
+        }
+        appliedTaxRuleCounts[first.data.taxRule]++;
+      } catch (error) {
+        // createProductVariants is transactional, so a failed group leaves the
+        // just-created product empty. Remove it so a rejected row does not
+        // leave a stray product behind.
+        if (createdProductId) {
+          await prisma.product
+            .delete({ where: { id: createdProductId } })
+            .catch(() => undefined);
+        }
+        const reason =
+          error instanceof Error && error.message.trim() !== ''
+            ? error.message
+            : 'Could not import this product';
+        for (const row of groupRows) {
+          productFailures.push({ rowNumber: row.rowNumber, reasons: [reason] });
+        }
       }
+    }
 
-      await createAuditLog({
-        tenantId,
-        actorId,
-        actorRole: 'SYSTEM',
-        entityType: 'Product',
-        entityId: 'BULK_IMPORT',
-        action: 'PRODUCTS_IMPORTED',
-        after: { productsCreated, variantsCreated } as unknown as Prisma.InputJsonValue,
-      });
+    const rejected = [...validation.rejected, ...productFailures];
+    const rowsRejected = rejected.length;
+    const defaults = {
+      taxRule: appliedDefaults.taxRule,
+      initialStock: appliedDefaults.initialStock,
+      // Missing cost rows are rejected too; the count keeps the old silent
+      // default visible rather than hiding that decision.
+      costPrice: validation.defaults.costPrice,
+    };
+    const defaultsApplied = defaults.taxRule + defaults.initialStock + defaults.costPrice;
+    const partial = rowsRejected > 0 || defaultsApplied > 0;
 
-      return { productsCreated, variantsCreated };
+    const messageParts = [
+      `${productsCreated} product${productsCreated === 1 ? '' : 's'} and ` +
+        `${variantsCreated} variant${variantsCreated === 1 ? '' : 's'} imported`,
+    ];
+    if (rowsRejected > 0) {
+      messageParts.push(`${rowsRejected} row${rowsRejected === 1 ? '' : 's'} rejected`);
+    }
+    if (defaultsApplied > 0) {
+      messageParts.push(
+        `${defaultsApplied} default${defaultsApplied === 1 ? '' : 's'} applied`,
+      );
+    }
+    const message = `${messageParts.join('; ')}.`;
+
+    const summary = {
+      productsCreated,
+      variantsCreated,
+      rowsReceived: validation.rowsReceived,
+      rowsCreated: variantsCreated,
+      rowsImported: variantsCreated,
+      rowsRejected,
+      rejected,
+      defaults,
+      taxRuleCounts: appliedTaxRuleCounts,
+      partial,
+      message,
+    };
+
+    if (variantsCreated === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message, details: rejected },
+          data: summary,
+        },
+        { status: 400 },
+      );
+    }
+
+    await createAuditLog({
+      tenantId,
+      actorId,
+      actorRole: 'SYSTEM',
+      entityType: 'Product',
+      entityId: 'BULK_IMPORT',
+      action: 'PRODUCTS_IMPORTED',
+      after: summary as unknown as Prisma.InputJsonValue,
     });
 
     // Revalidate the catalog so imported products appear on the storefront immediately.
@@ -209,7 +322,7 @@ export async function POST(req: NextRequest) {
       console.warn('[POST /api/store/products/import] Revalidation warning:', revalidateErr);
     }
 
-    return NextResponse.json({ success: true, data: result }, { status: 201 });
+    return NextResponse.json({ success: true, data: summary }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Import failed';
     if (message.includes('Unique constraint')) {

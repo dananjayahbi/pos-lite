@@ -26,7 +26,9 @@ const EXPECTED_FIELDS = [
   { key: 'brand', label: 'Brand', required: false },
   { key: 'description', label: 'Description', required: false },
   { key: 'tags', label: 'Tags', required: false },
-  { key: 'costPrice', label: 'Cost Price', required: false },
+  { key: 'costPrice', label: 'Cost Price', required: true },
+  { key: 'taxRule', label: 'Tax Rule', required: false },
+  { key: 'initialStock', label: 'Initial Stock', required: false },
   { key: 'form', label: 'Form', required: false },
   { key: 'packSize', label: 'Pack Size', required: false },
   { key: 'lowStockThreshold', label: 'Low Stock Threshold', required: false },
@@ -35,12 +37,19 @@ const EXPECTED_FIELDS = [
 
 const NOT_MAPPED = '__not_mapped__';
 
+/** Header aliases so the inventory export (`Stock Quantity`) also re-imports. */
+const FIELD_ALIASES: Record<string, string[]> = {
+  initialStock: ['Initial Stock', 'Stock Quantity', 'Stock'],
+  taxRule: ['Tax Rule', 'Tax'],
+};
+
 function autoDetect(headers: string[]): Record<string, string> {
   const mapping: Record<string, string> = {};
   for (const field of EXPECTED_FIELDS) {
-    const match = headers.find(
-      (h) => h.toLowerCase().trim() === field.label.toLowerCase(),
+    const candidates = [field.label, ...(FIELD_ALIASES[field.key] ?? [])].map((c) =>
+      c.toLowerCase().trim(),
     );
+    const match = headers.find((h) => candidates.includes(h.toLowerCase().trim()));
     if (match) mapping[field.key] = match;
   }
   return mapping;
