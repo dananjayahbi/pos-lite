@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { useAppointments } from '@/hooks/appointments';
 import { selectMonthViewAppointments } from '@/lib/appointments/appointmentCalendar.core';
+import { formatAppointmentTime } from '@/lib/appointments/appointmentDisplay.core';
 
 const STATUS_DOT_COLORS: Record<string, string> = {
   SCHEDULED: 'bg-blue-500',
@@ -109,7 +110,7 @@ export function MonthView({ currentDate, onDayClick, onAppointmentClick }: Month
                     className={`text-[10px] truncate mt-0.5 px-1 rounded border-l-2 ${STATUS_DOT_COLORS[appt.status]?.replace('bg-', 'border-l-') ?? 'border-l-gray-400'}`}
                     onClick={(e) => { e.stopPropagation(); onAppointmentClick(appt.id); }}
                   >
-                    {new Date(appt.startTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })} {appt.title}
+                    {formatAppointmentTime(appt.startTime)} {appt.title}
                   </div>
                 ))}
                 {visibleAppts.length > 3 && (

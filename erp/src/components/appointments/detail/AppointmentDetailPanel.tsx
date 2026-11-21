@@ -13,6 +13,12 @@ import {
   appointmentDisplayStatus,
 } from '@/lib/appointments/appointmentOverdue.core';
 import { buildAppointmentDetailView } from '@/lib/appointments/appointmentDetail.core';
+import {
+  appointmentCustomerLabel,
+  formatAppointmentDate,
+  formatAppointmentDateTime,
+  formatAppointmentTimeRange,
+} from '@/lib/appointments/appointmentDisplay.core';
 import type { AppointmentStatus } from '@/generated/prisma/client';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { formatRupee } from '@/lib/format';
@@ -49,6 +55,10 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
         cancelledByEmail: appointment.cancelledBy?.email ?? null,
         reminders: appointment.reminders ?? [],
       })
+    : null;
+  // ARGUS #136: hide the "Walk-in Customer" name when it just repeats the title.
+  const walkInLabel = appointment
+    ? appointmentCustomerLabel({ title: appointment.title, walkInName: appointment.walkInName })
     : null;
 
   return (
@@ -88,21 +98,16 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
                 <div>
                   <span className="text-espresso/50">Date</span>
                   <p className="text-espresso font-medium">
-                    {new Date(appointment.startTime).toLocaleDateString('en-US', {
-                      weekday: 'long', month: 'long', day: 'numeric',
+                    {formatAppointmentDate(appointment.startTime, {
+                      weekday: true,
+                      month: 'long',
                     })}
                   </p>
                 </div>
                 <div>
                   <span className="text-espresso/50">Time</span>
                   <p className="text-espresso font-medium">
-                    {new Date(appointment.startTime).toLocaleTimeString('en-US', {
-                      hour: '2-digit', minute: '2-digit',
-                    })}
-                    {' - '}
-                    {new Date(appointment.endTime).toLocaleTimeString('en-US', {
-                      hour: '2-digit', minute: '2-digit',
-                    })}
+                    {formatAppointmentTimeRange(appointment.startTime, appointment.endTime)}
                   </p>
                 </div>
               </div>
@@ -115,10 +120,12 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
                 </div>
               )}
 
-              {(appointment.walkInName || appointment.walkInPhone) && (
+              {(walkInLabel || appointment.walkInPhone) && (
                 <div>
                   <span className="text-espresso/50">Walk-in Customer</span>
-                  <p className="text-espresso font-medium">{appointment.walkInName}</p>
+                  {walkInLabel ? (
+                    <p className="text-espresso font-medium">{walkInLabel}</p>
+                  ) : null}
                   {appointment.walkInPhone && <p className="text-espresso/60 text-xs">{appointment.walkInPhone}</p>}
                 </div>
               )}
@@ -170,11 +177,7 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
                   <p className="mt-1 text-sm">{view.cancellation.reason ?? 'No reason recorded.'}</p>
                   {view.cancellation.at ? (
                     <p className="mt-1 text-xs">
-                      Cancelled{' '}
-                      {new Date(view.cancellation.at).toLocaleString('en-US', {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      })}
+                      Cancelled {formatAppointmentDateTime(view.cancellation.at)}
                     </p>
                   ) : null}
                   {view.cancellation.byEmail ? (
@@ -196,20 +199,12 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
                     </p>
                     {view.reminders.nextScheduledFor ? (
                       <p className="text-espresso/60 text-xs">
-                        Next{' '}
-                        {new Date(view.reminders.nextScheduledFor).toLocaleString('en-US', {
-                          dateStyle: 'medium',
-                          timeStyle: 'short',
-                        })}
+                        Next {formatAppointmentDateTime(view.reminders.nextScheduledFor)}
                       </p>
                     ) : null}
                     {view.reminders.lastSentAt ? (
                       <p className="text-espresso/60 text-xs">
-                        Last sent{' '}
-                        {new Date(view.reminders.lastSentAt).toLocaleString('en-US', {
-                          dateStyle: 'medium',
-                          timeStyle: 'short',
-                        })}
+                        Last sent {formatAppointmentDateTime(view.reminders.lastSentAt)}
                       </p>
                     ) : null}
                   </>
@@ -223,19 +218,11 @@ export function AppointmentDetailPanel({ appointmentId, open, onClose }: Appoint
                       >
                         <div className="min-w-0">
                           <p className="text-xs font-medium text-espresso">
-                            {reminder.channel} ·{' '}
-                            {new Date(reminder.scheduledFor).toLocaleString('en-GB', {
-                              dateStyle: 'medium',
-                              timeStyle: 'short',
-                            })}
+                            {reminder.channel} · {formatAppointmentDateTime(reminder.scheduledFor)}
                           </p>
                           {reminder.sentAt ? (
                             <p className="text-espresso/60 text-[11px]">
-                              Sent{' '}
-                              {new Date(reminder.sentAt).toLocaleString('en-GB', {
-                                dateStyle: 'medium',
-                                timeStyle: 'short',
-                              })}
+                              Sent {formatAppointmentDateTime(reminder.sentAt)}
                             </p>
                           ) : null}
                           {reminder.errorMessage ? (

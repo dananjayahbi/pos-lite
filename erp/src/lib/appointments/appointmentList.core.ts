@@ -1,4 +1,5 @@
 import type { AppointmentStatus } from '@/generated/prisma/client';
+import { formatAppointmentRelativeDate } from './appointmentDisplay.core';
 
 /**
  * ARGUS #129 — list formatting and ordering.
@@ -20,59 +21,20 @@ export interface AppointmentListSortable {
   startTime: string | Date;
 }
 
-const MONTHS = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-] as const;
-
 function toDate(value: string | Date): Date {
   return value instanceof Date ? value : new Date(value);
 }
 
-function sameLocalDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
 /**
- * "Today, 10:00 AM", "Tomorrow, 2:30 PM", otherwise
- * "Sep 7, 2029, 10:00 AM" — the year is never omitted for a dated row.
+ * "Today, 10:00", "Tomorrow, 14:30", otherwise "07 Sep 2029, 10:00" — the
+ * year is never omitted for a dated row. ARGUS #136 switched this from the
+ * old en-US month-first 12-hour copy to the app's en-GB convention.
  */
 export function formatAppointmentListDate(
   value: string | Date,
   now: Date = new Date(),
 ): string {
-  const date = toDate(value);
-  if (Number.isNaN(date.getTime())) return 'Unknown date';
-
-  const time = formatTime(date);
-  if (sameLocalDay(date, now)) return `Today, ${time}`;
-
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  if (sameLocalDay(date, tomorrow)) return `Tomorrow, ${time}`;
-
-  return `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}, ${time}`;
+  return formatAppointmentRelativeDate(value, now);
 }
 
 /** An active booking at or after `now` belongs to the upcoming bucket. */

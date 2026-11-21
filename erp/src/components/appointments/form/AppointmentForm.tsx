@@ -9,6 +9,7 @@ import { ServiceSelector } from './ServiceSelector';
 import { StaffSelector } from './StaffSelector';
 import { NotesField } from './NotesField';
 import { fromDatetimeLocalValue, toDatetimeLocalValue } from '@/lib/appointments/datetime-local';
+import { formatAppointmentDateTime } from '@/lib/appointments/appointmentDisplay.core';
 import { useStaffAvailability, useStaffTimeOff } from '@/hooks/appointments';
 import {
   appointmentAvailabilityIssue,
@@ -215,6 +216,11 @@ export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting,
               update('endTime', end.toISOString());
             }}
           />
+          {form.startTime ? (
+            <p className="text-xs text-espresso/60">
+              {formatAppointmentDateTime(form.startTime)}
+            </p>
+          ) : null}
         </div>
         <div className="space-y-1.5">
           <Label className="text-sm font-medium">Duration (mins)</Label>

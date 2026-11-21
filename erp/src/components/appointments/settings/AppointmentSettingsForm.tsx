@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { useAppointmentSettings, useTenantReminders, useUpdateAppointmentSettings } from '@/hooks/appointments';
+import { formatAppointmentDateTime } from '@/lib/appointments/appointmentDisplay.core';
 import { ReminderStatusBadge } from '../shared/ReminderStatusBadge';
 import {
   APPOINTMENT_SLOT_DURATION_MAX,
@@ -184,11 +185,7 @@ export function AppointmentSettingsForm() {
                           {reminder.channel}
                         </p>
                         <p className="text-espresso/60 text-[11px]">
-                          Scheduled{' '}
-                          {new Date(reminder.scheduledFor).toLocaleString('en-GB', {
-                            dateStyle: 'medium',
-                            timeStyle: 'short',
-                          })}
+                          Scheduled {formatAppointmentDateTime(reminder.scheduledFor)}
                         </p>
                         {reminder.errorMessage ? (
                           <p className="text-[11px] text-red-700">{reminder.errorMessage}</p>

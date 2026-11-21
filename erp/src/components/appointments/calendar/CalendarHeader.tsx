@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { formatAppointmentDate, formatAppointmentMonthYear } from '@/lib/appointments/appointmentDisplay.core';
 import type { CalendarView } from '@/stores/appointmentStore';
 
 interface CalendarHeaderProps {
@@ -15,19 +16,17 @@ interface CalendarHeaderProps {
 }
 
 function formatHeader(date: Date, view: CalendarView): string {
-  const opts: Intl.DateTimeFormatOptions = {};
   if (view === 'day') {
-    opts.weekday = 'long'; opts.month = 'long'; opts.day = 'numeric'; opts.year = 'numeric';
-  } else if (view === 'week') {
+    return formatAppointmentDate(date, { weekday: true, month: 'long' });
+  }
+  if (view === 'week') {
     const start = new Date(date);
     start.setDate(start.getDate() - start.getDay());
     const end = new Date(start);
     end.setDate(end.getDate() + 6);
-    return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  } else {
-    opts.month = 'long'; opts.year = 'numeric';
+    return `${formatAppointmentDate(start, { year: false })} - ${formatAppointmentDate(end)}`;
   }
-  return date.toLocaleDateString('en-US', opts);
+  return formatAppointmentMonthYear(date);
 }
 
 export function CalendarHeader({
