@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { RevenueTrendChart } from './charts/RevenueTrendChart';
 import { SalesByPaymentChart } from './charts/SalesByPaymentChart';
 import { TopProductsChart } from './charts/TopProductsChart';
+import { buildTopProducts } from './charts/analytics';
 import type { ChartAnalytics } from './charts/types';
 
 function daysAgo(n: number): Date {
@@ -24,7 +25,7 @@ async function fetchChartAnalytics(tenantId: string): Promise<ChartAnalytics> {
       lines: {
         select: {
           quantity: true,
-          unitPrice: true,
+          lineTotalAfterDiscount: true,
           productNameSnapshot: true,
         },
       },
@@ -64,25 +65,11 @@ async function fetchChartAnalytics(tenantId: string): Promise<ChartAnalytics> {
     ...v,
   }));
 
-  // --- Top products ---
-  const productMap = new Map<string, { quantity: number; revenue: number }>();
-  for (const sale of sales) {
-    for (const line of sale.lines) {
-      const existing = productMap.get(line.productNameSnapshot) ?? {
-        quantity: 0,
-        revenue: 0,
-      };
-      existing.quantity += line.quantity;
-      existing.revenue += Number(line.unitPrice) * line.quantity;
-      productMap.set(line.productNameSnapshot, existing);
-    }
-  }
-  const topProducts = Array.from(productMap.entries())
-    .map(([name, v]) => ({ name, ...v }))
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 7);
-
-  return { dailyRevenue, paymentBreakdown, topProducts };
+  return {
+    dailyRevenue,
+    paymentBreakdown,
+    topProducts: buildTopProducts(sales),
+  };
 }
 
 export async function AnalyticsSection({
