@@ -50,7 +50,7 @@ describe('payroll calculations', () => {
     expect(result.grossSalary).toBe('64326.92');
   });
 
-  it('deducts no-pay days and salary advances before EPF', () => {
+  it('deducts no-pay days and salary advances, and applies EPF to the reduced base', () => {
     const result = calculatePayroll({
       basicSalary: 52000,
       allowances: 0,
@@ -62,13 +62,51 @@ describe('payroll calculations', () => {
       advanceDeduction: 5000,
     });
 
-    // Day rate = 2,000; 2 no-pay days = 4,000
+    // Day rate = 2,000; 2 no-pay days = 4,000. Statutory base = 48,000.
     expect(result.noPayDeduction).toBe('4000.00');
     expect(result.totalDeductions).toBe('9000.00');
-    // Employee EPF still applies to gross (52,000 × 8% = 4,160)
+    expect(result.employeeEpf).toBe('3840.00');
+    expect(result.employerEpf).toBe('5760.00');
+    expect(result.employerEtf).toBe('1440.00');
+    // Net = 52,000 - 9,000 - 3,840
+    expect(result.netSalary).toBe('39160.00');
+  });
+
+  it('keeps allowances/OT/commission in the no-pay-adjusted statutory base', () => {
+    const result = calculatePayroll({
+      basicSalary: 52000,
+      allowances: 10000,
+      overtimeMinutes: 0,
+      overtimeMultiplier: 1.5,
+      workingDays: 26,
+      commissionAmount: 0,
+      noPayDays: 2,
+      advanceDeduction: 0,
+    });
+
+    // Gross = 62,000; no-pay = 4,000; statutory base = 58,000.
+    expect(result.grossSalary).toBe('62000.00');
+    expect(result.employeeEpf).toBe('4640.00');
+    expect(result.employerEpf).toBe('6960.00');
+    expect(result.employerEtf).toBe('1740.00');
+    expect(result.netSalary).toBe('53360.00');
+  });
+
+  it('regression: no no-pay days keeps EPF/ETF on the full gross', () => {
+    const result = calculatePayroll({
+      basicSalary: 52000,
+      allowances: 0,
+      overtimeMinutes: 0,
+      overtimeMultiplier: 1.5,
+      workingDays: 26,
+      commissionAmount: 0,
+      noPayDays: 0,
+      advanceDeduction: 0,
+    });
+
     expect(result.employeeEpf).toBe('4160.00');
-    // Net = 52,000 - 9,000 - 4,160
-    expect(result.netSalary).toBe('38840.00');
+    expect(result.employerEpf).toBe('6240.00');
+    expect(result.employerEtf).toBe('1560.00');
   });
 
   it('never produces a negative net salary', () => {

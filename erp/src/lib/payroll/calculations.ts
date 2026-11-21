@@ -104,8 +104,13 @@ function nonNegative(value: Decimal.Value): Decimal {
  * here; only no-pay days and advance deductions are caller-controlled.
  *
  *   gross = basic + allowances + overtime + commission
+ *   statutory base = gross - no-pay deduction (the no-pay-adjusted earnings)
  *   deductions = no-pay + advances
  *   net = gross - deductions - employee EPF (8%)
+ *
+ * ARGUS #371: EPF/ETF are computed on the reduced earnings after unpaid days,
+ * not on the pre-no-pay gross. Allowances/OT/commission remain part of the
+ * statutory base exactly as before; only the unpaid portion is removed.
  */
 export function calculatePayroll(input: PayrollCalculationInput): PayrollCalculationResult {
   const basicSalary = money(nonNegative(input.basicSalary));
@@ -131,13 +136,16 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   const advanceDeduction = money(nonNegative(input.advanceDeduction));
   const totalDeductions = money(noPayDeduction.plus(advanceDeduction));
 
+  // Statutory contributions follow the no-pay-adjusted earnings (ARGUS #371).
+  const statutoryBase = money(Decimal.max(grossSalary.minus(noPayDeduction), 0));
+
   const employeeEpfRate = nonNegative(input.employeeEpfRate ?? PAYROLL_STATUTORY_RATES.employeeEpf);
   const employerEpfRate = nonNegative(input.employerEpfRate ?? PAYROLL_STATUTORY_RATES.employerEpf);
   const employerEtfRate = nonNegative(input.employerEtfRate ?? PAYROLL_STATUTORY_RATES.employerEtf);
 
-  const employeeEpf = money(grossSalary.times(employeeEpfRate).div(100));
-  const employerEpf = money(grossSalary.times(employerEpfRate).div(100));
-  const employerEtf = money(grossSalary.times(employerEtfRate).div(100));
+  const employeeEpf = money(statutoryBase.times(employeeEpfRate).div(100));
+  const employerEpf = money(statutoryBase.times(employerEpfRate).div(100));
+  const employerEtf = money(statutoryBase.times(employerEtfRate).div(100));
 
   const netSalary = money(
     Decimal.max(grossSalary.minus(totalDeductions).minus(employeeEpf), 0),
