@@ -12,7 +12,10 @@
  */
 import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
-import { computeShiftClosureFigures } from '@/lib/services/shiftCash.core';
+import {
+  computeShiftClosureFigures,
+  filterReturnsForShift,
+} from '@/lib/services/shiftCash.core';
 
 const apply = process.argv.includes('--apply');
 
@@ -32,23 +35,56 @@ async function main() {
     const closure = shift.closure;
     if (!closure) continue;
 
-    const [payments, returns, cashMovements] = await Promise.all([
+    const closureEnd = shift.closedAt ?? closure.closedAt;
+    const [payments, returnRows, cashMovements, cashierShifts] = await Promise.all([
       prisma.payment.findMany({
         where: { sale: { shiftId: shift.id, tenantId: shift.tenantId, status: 'COMPLETED' } },
         select: { method: true, amount: true },
       }),
+      // Same attribution as shift.service (ARGUS #109): the shift that
+      // recorded the original sale owns the refund. Legacy shiftless sales
+      // fall back to the initiator's covering shift, resolved below.
       prisma.return.findMany({
         where: {
           tenantId: shift.tenantId,
-          createdAt: { gte: shift.openedAt, lte: closure.closedAt },
+          OR: [
+            { originalSale: { shiftId: shift.id } },
+            {
+              originalSale: { shiftId: null },
+              initiatedById: shift.cashierId,
+              createdAt: { gte: shift.openedAt, lte: closureEnd },
+            },
+          ],
         },
-        select: { refundAmount: true, refundMethod: true },
+        select: {
+          refundAmount: true,
+          refundMethod: true,
+          initiatedById: true,
+          createdAt: true,
+          originalSale: { select: { shiftId: true } },
+        },
       }),
       prisma.cashMovement.findMany({
         where: { shiftId: shift.id, tenantId: shift.tenantId },
         select: { amount: true, type: true },
       }),
+      prisma.shift.findMany({
+        where: { tenantId: shift.tenantId, cashierId: shift.cashierId },
+        select: { id: true, cashierId: true, openedAt: true, closedAt: true },
+      }),
     ]);
+
+    const returns = filterReturnsForShift(
+      returnRows.map((ret) => ({
+        refundAmount: ret.refundAmount,
+        refundMethod: ret.refundMethod,
+        originalSaleShiftId: ret.originalSale.shiftId,
+        initiatedById: ret.initiatedById,
+        createdAt: ret.createdAt,
+      })),
+      cashierShifts,
+      shift.id,
+    );
 
     const figures = computeShiftClosureFigures({
       payments,

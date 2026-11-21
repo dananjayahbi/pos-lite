@@ -2,7 +2,13 @@ import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import type { ShiftStatus, SaleStatus, ReturnRefundMethod } from '@/generated/prisma/client';
 import { sumPaymentBreakdown } from '@/lib/services/paymentBreakdown';
-import { computeExpectedCash, sumShiftCashMovements, sumShiftRefunds } from '@/lib/services/shiftCash.core';
+import {
+  computeExpectedCash,
+  filterReturnsForShift,
+  sumShiftCashMovements,
+  sumShiftRefunds,
+  type ShiftRefundRow,
+} from '@/lib/services/shiftCash.core';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { staffDisplayName } from '@/lib/utils/staff-name';
@@ -55,6 +61,65 @@ export async function openShift(tenantId: string, cashierId: string, openingFloa
 }
 
 // ── Close Shift ──────────────────────────────────────────────────────────────
+
+/**
+ * Returns owned by a shift (ARGUS #109).
+ *
+ * Primary attribution is the shift that recorded the original sale, so an
+ * overlapping shift can no longer claim the same refund by `createdAt`.
+ * Legacy returns with a shiftless original sale fall back to the initiator's
+ * covering shift (deterministic, single owner). The shared pure rule lives in
+ * `shiftCash.core.ts` and is also used by the closure-recompute script.
+ */
+async function getShiftReturns(
+  tenantId: string,
+  shift: { id: string; cashierId: string; openedAt: Date },
+  endAt: Date,
+): Promise<ShiftRefundRow[]> {
+  const [returns, cashierShifts] = await Promise.all([
+    prisma.return.findMany({
+      where: {
+        tenantId,
+        OR: [
+          { originalSale: { shiftId: shift.id } },
+          {
+            originalSale: { shiftId: null },
+            initiatedById: shift.cashierId,
+            createdAt: { gte: shift.openedAt, lte: endAt },
+          },
+        ],
+      },
+      select: {
+        refundAmount: true,
+        refundMethod: true,
+        initiatedById: true,
+        createdAt: true,
+        originalSale: { select: { shiftId: true } },
+      },
+    }),
+    prisma.shift.findMany({
+      where: { tenantId, cashierId: shift.cashierId },
+      select: { id: true, cashierId: true, openedAt: true, closedAt: true },
+    }),
+  ]);
+
+  const attributed = filterReturnsForShift(
+    returns.map((ret) => ({
+      refundAmount: ret.refundAmount,
+      refundMethod: ret.refundMethod,
+      originalSaleShiftId: ret.originalSale.shiftId,
+      initiatedById: ret.initiatedById,
+      createdAt: ret.createdAt,
+    })),
+    cashierShifts,
+    shift.id,
+  );
+
+  return attributed.map((ret) => ({
+    refundAmount: ret.refundAmount,
+    refundMethod: ret.refundMethod,
+  }));
+}
 
 export async function closeShift(
   tenantId: string,
@@ -127,14 +192,10 @@ export async function closeShift(
 
   const now = new Date();
 
-  // Aggregate returns during shift period
-  const shiftReturns = await prisma.return.findMany({
-    where: {
-      tenantId,
-      createdAt: { gte: shift.openedAt, lte: now },
-    },
-    select: { refundAmount: true, refundMethod: true },
-  });
+  // Aggregate the returns this shift owns. Attribution is by the shift that
+  // recorded the original sale, not by the return's createdAt window: an
+  // overlapping shift must never count the same refund (ARGUS #109).
+  const shiftReturns = await getShiftReturns(tenantId, shift, now);
 
   const refunds = sumShiftRefunds(shiftReturns);
   const totalReturnsAmount = refunds.total;
@@ -250,16 +311,7 @@ export async function getShiftById(tenantId: string, shiftId: string) {
       },
       select: { method: true, amount: true },
     }),
-    prisma.return.findMany({
-      where: {
-        tenantId,
-        createdAt: {
-          gte: shift.openedAt,
-          lte: shift.closedAt ?? new Date(),
-        },
-      },
-      select: { refundAmount: true, refundMethod: true },
-    }),
+    getShiftReturns(tenantId, shift, shift.closedAt ?? new Date()),
     prisma.cashMovement.findMany({
       where: { shiftId, tenantId },
       select: { amount: true, type: true },
@@ -447,16 +499,9 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
     .slice(0, 10)
     .map((p) => ({ ...p, totalRevenue: p.totalRevenue.toDecimalPlaces(2).toNumber() }));
 
-  // Returns aggregation — by time range
-  const shiftStart = shift.openedAt;
-  const shiftEnd = shift.closedAt ?? new Date();
-
-  const returns = await prisma.return.findMany({
-    where: {
-      tenantId,
-      createdAt: { gte: shiftStart, lte: shiftEnd },
-    },
-  });
+  // Returns aggregation — attributed to the shift that recorded the original
+  // sale (ARGUS #109), never by overlapping createdAt windows.
+  const returns = await getShiftReturns(tenantId, shift, shift.closedAt ?? new Date());
 
   let totalRefundAmount = new Decimal(0);
   let cashRefundAmount = new Decimal(0);
