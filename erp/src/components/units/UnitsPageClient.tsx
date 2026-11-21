@@ -32,6 +32,10 @@ import {
   type RawMaterialUnitItem,
 } from '@/hooks/useRawMaterialUnits';
 import { unitCapabilities } from '@/lib/services/rawMaterialUnitCapabilities.core';
+import {
+  unitDisplayChanged,
+  unitRenameWarning,
+} from '@/lib/services/rawMaterialUnitRename.core';
 
 interface UnitsPageClientProps {
   canCreate: boolean;
@@ -56,18 +60,28 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
   const [editing, setEditing] = useState<RawMaterialUnitItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RawMaterialUnitItem | null>(null);
   const [form, setForm] = useState<UnitFormState>(EMPTY_FORM);
+  /** Rename is display-only; a changed label needs an explicit acknowledgement. */
+  const [renameConfirmed, setRenameConfirmed] = useState(false);
 
   const units = data?.data ?? [];
+  const renameNeedsConfirmation =
+    editing !== null &&
+    unitDisplayChanged(
+      { name: editing.name, shortLabel: editing.shortLabel },
+      form,
+    );
 
   const openCreate = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
+    setRenameConfirmed(false);
     setFormOpen(true);
   };
 
   const openEdit = (unit: RawMaterialUnitItem) => {
     setEditing(unit);
     setForm({ name: unit.name, shortLabel: unit.shortLabel });
+    setRenameConfirmed(false);
     setFormOpen(true);
   };
 
@@ -75,6 +89,7 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
     const name = form.name.trim();
     const shortLabel = form.shortLabel.trim();
     if (!name) return;
+    if (renameNeedsConfirmation && !renameConfirmed) return;
 
     try {
       if (editing) {
@@ -93,6 +108,7 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
       }
       setFormOpen(false);
       setEditing(null);
+      setRenameConfirmed(false);
     } catch (submitError) {
       toast.error(submitError instanceof Error ? submitError.message : 'Could not save unit');
     }
@@ -256,7 +272,10 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
         open={formOpen}
         onOpenChange={(open) => {
           setFormOpen(open);
-          if (!open) setEditing(null);
+          if (!open) {
+            setEditing(null);
+            setRenameConfirmed(false);
+          }
         }}
       >
         <DialogContent className="sm:max-w-sm">
@@ -272,7 +291,10 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
               <Input
                 id="unit-name"
                 value={form.name}
-                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                onChange={(event) => {
+                  setForm((prev) => ({ ...prev, name: event.target.value }));
+                  setRenameConfirmed(false);
+                }}
                 placeholder="e.g. Bottles"
                 maxLength={80}
                 required
@@ -283,13 +305,31 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
               <Input
                 id="unit-short-label"
                 value={form.shortLabel}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, shortLabel: event.target.value }))
-                }
+                onChange={(event) => {
+                  setForm((prev) => ({ ...prev, shortLabel: event.target.value }));
+                  setRenameConfirmed(false);
+                }}
                 placeholder="e.g. bottle"
                 maxLength={20}
               />
             </div>
+            {renameNeedsConfirmation && editing && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="text-sm font-medium text-amber-900">Display change only</p>
+                <p className="mt-1 text-xs text-amber-800">
+                  {unitRenameWarning(editing.key)}
+                </p>
+                <label className="mt-2 flex items-start gap-2 text-xs text-amber-900">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={renameConfirmed}
+                    onChange={(event) => setRenameConfirmed(event.target.checked)}
+                  />
+                  <span>I understand existing quantities will not be converted.</span>
+                </label>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFormOpen(false)}>
@@ -300,7 +340,8 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
               disabled={
                 !form.name.trim() ||
                 createMutation.isPending ||
-                updateMutation.isPending
+                updateMutation.isPending ||
+                (renameNeedsConfirmation && !renameConfirmed)
               }
             >
               {editing ? 'Save changes' : 'Add unit'}

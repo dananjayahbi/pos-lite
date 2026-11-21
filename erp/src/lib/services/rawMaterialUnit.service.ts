@@ -199,6 +199,9 @@ export async function updateRawMaterialUnit(
 ): Promise<RawMaterialUnitItem> {
   const existing = await findOwnedUnit(tenantId, id);
 
+  // ARGUS #480: a rename changes display labels only. The stable `key` on raw
+  // materials and BOM lines is never rewritten and quantities are not
+  // converted; the UI requires an explicit acknowledgement before sending one.
   const name = input.name !== undefined ? input.name.trim() : undefined;
   const shortLabel = input.shortLabel !== undefined ? input.shortLabel.trim() : undefined;
   if (name !== undefined && !name) {
@@ -229,8 +232,8 @@ export async function updateRawMaterialUnit(
     entityType: 'RawMaterialUnit',
     entityId: id,
     action: AUDIT_ACTIONS.RAW_MATERIAL_UNIT_UPDATED,
-    before: { name: existing.name, shortLabel: existing.shortLabel, isActive: existing.isActive },
-    after: { name: row.name, shortLabel: row.shortLabel, isActive: row.isActive },
+    before: { key: existing.key, name: existing.name, shortLabel: existing.shortLabel, isActive: existing.isActive },
+    after: { key: row.key, name: row.name, shortLabel: row.shortLabel, isActive: row.isActive },
   }).catch(() => {});
 
   const usage = await prisma.rawMaterial.count({
