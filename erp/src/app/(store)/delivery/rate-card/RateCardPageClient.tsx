@@ -5,9 +5,10 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
 import { AlertTriangle } from 'lucide-react';
-import { useRateCard } from '@/hooks/delivery';
+import { useRateCard, useLocations } from '@/hooks/delivery';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { originSpecificEntryCount, withoutOriginSpecificEntries } from '@/lib/delivery/rateZone.core';
 import {
   UpsertRateCardSchema,
 } from '@/lib/validators/ratecard.validators';
@@ -100,6 +101,9 @@ export function RateCardPageClient() {
   const canManage = hasPermission(PERMISSIONS.DELIVERY.manageRateCard);
   const { data, isLoading, isError, error, isFetching, refetch, save, saveEntries } =
     useRateCard();
+  const { data: locations } = useLocations();
+  const districts = locations?.districts ?? [];
+  const cities = locations?.cities ?? [];
 
   const card = useMemo(() => (data as RateCardData | undefined) ?? null, [data]);
   const loadState = rateCardLoadState({ isLoading, isError, data: data ?? null });
@@ -108,6 +112,7 @@ export function RateCardPageClient() {
   const hydrated = useRef(false);
 
   const [entries, setEntries] = useState<RateEntry[]>(initialEntries);
+  const originSpecificCount = originSpecificEntryCount(entries);
 
   // Hydrate the zone matrix once from the loaded rate card.
   useEffect(() => {
@@ -347,13 +352,57 @@ export function RateCardPageClient() {
           <CardHeader>
             <CardTitle className="font-display text-lg">Zone Overrides</CardTitle>
             <CardDescription>
-              Origin → destination specific rates. Leave a field empty to fall back to the base rate.
+              Destination-specific rates. Leave a field empty to fall back to the base rate.
+              Origin-based pricing is not supported.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <RateMatrixTable entries={entries} onChange={setEntries} />
+            {originSpecificCount > 0 ? (
+              <div
+                role="alert"
+                className="mb-4 flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 sm:flex-row sm:items-start sm:justify-between"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <p className="font-medium">
+                      {originSpecificCount} row{originSpecificCount === 1 ? '' : 's'} target a
+                      specific origin
+                    </p>
+                    <p className="mt-1 text-xs">
+                      Origin-specific rates are not supported and no longer apply. Remove these
+                      rows to keep the matrix valid before saving.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setEntries(withoutOriginSpecificEntries(entries))}
+                >
+                  Remove origin rows
+                </Button>
+              </div>
+            ) : null}
+            {districts.length === 0 && cities.length === 0 ? (
+              <p className="mb-3 text-xs text-espresso/50">
+                Location names are unavailable. Sync courier locations in Delivery settings to
+                pick districts and cities by name.
+              </p>
+            ) : null}
+            <RateMatrixTable
+              entries={entries}
+              onChange={setEntries}
+              districts={districts}
+              cities={cities}
+            />
             <div className="mt-4 flex justify-end">
-              <Button onClick={onSaveEntries} disabled={saveEntries.isPending}>
+              <Button
+                onClick={onSaveEntries}
+                disabled={saveEntries.isPending || originSpecificCount > 0}
+              >
                 {saveEntries.isPending ? 'Saving...' : 'Save Zone Overrides'}
               </Button>
             </div>

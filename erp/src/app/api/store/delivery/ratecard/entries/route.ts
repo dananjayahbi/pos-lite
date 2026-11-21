@@ -4,6 +4,8 @@ import { requireDeliveryAuth, validationError, internalError, mapDeliveryError }
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { getCachedLocations } from '@/lib/services/location-sync.service';
+import { validateRateZoneEntries } from '@/lib/delivery/rateZone.core';
 import { UpsertRateCardEntriesSchema } from '@/lib/validators/ratecard.validators';
 import type { UpsertRateCardEntriesInput } from '@/lib/validators/ratecard.validators';
 
@@ -24,6 +26,24 @@ export async function PUT(request: Request) {
   }
 
   const input = parsed.data as UpsertRateCardEntriesInput;
+
+  // ARGUS #290: destination ids must come from the synced courier master list
+  // (when one exists). Unknown ids are rejected instead of silently never
+  // matching a delivery.
+  const locations = await getCachedLocations(guard.tenantId);
+  const zoneErrors = validateRateZoneEntries(input.entries, {
+    districtIds: locations?.districts.map((district) => district.id) ?? [],
+    cityIds: locations?.cities.map((city) => city.id) ?? [],
+  });
+  if (zoneErrors.length > 0) {
+    return validationError(
+      zoneErrors.map((error) => ({
+        path: `entries.${error.index}.${error.field}`,
+        message: error.message,
+      })),
+      'Validation failed',
+    );
+  }
 
   const card = await prisma.rateCard.findFirst({ where: { tenantId: guard.tenantId, isActive: true } });
   if (!card) {
