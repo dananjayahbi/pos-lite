@@ -21,6 +21,7 @@ import { StockSummaryWidgets } from '@/components/dashboard/StockSummaryWidgets'
 import { RecentStockMovementsCard } from '@/components/dashboard/RecentStockMovementsCard';
 import { QuickNav } from '@/components/dashboard/QuickNav';
 import { AnalyticsSection } from '@/components/dashboard/AnalyticsSection';
+import { formatRecentSaleTimestamp } from '@/components/dashboard/recentSaleTime';
 
 const lkr = new Intl.NumberFormat('en-LK', {
   style: 'currency',
@@ -176,7 +177,7 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
           <TableHead>Items</TableHead>
           <TableHead>Payment</TableHead>
           <TableHead>Amount</TableHead>
-          <TableHead>Time</TableHead>
+          <TableHead>Date &amp; Time</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -205,12 +206,7 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
               {lkr.format(Number(sale.totalAmount))}
             </TableCell>
             <TableCell className="text-sand-ink text-sm">
-              {sale.completedAt
-                ? new Date(sale.completedAt).toLocaleTimeString('en-LK', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                : '-'}
+              {sale.completedAt ? formatRecentSaleTimestamp(sale.completedAt) : '-'}
             </TableCell>
           </TableRow>
         ))}
