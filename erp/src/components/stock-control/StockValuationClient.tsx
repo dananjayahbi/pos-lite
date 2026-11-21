@@ -19,6 +19,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useGetStockValuation, useInvalidateStockValuation } from '@/hooks/useGetStockValuation';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { formatRupee } from '@/lib/format';
+import { VALUATION_COST_BASIS_NOTE } from '@/lib/pricing/valuationBasis';
 
 type SortColumn = 'categoryName' | 'variantCount' | 'retailValue' | 'costValue' | 'marginPercent' | 'share';
 type SortDirection = 'asc' | 'desc';
@@ -242,7 +243,9 @@ export function StockValuationClient() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="font-body text-sm font-medium text-mist-ink">Total Cost Value</CardTitle>
+                <CardTitle className="font-body text-sm font-medium text-mist-ink">
+                  Total Cost Value (at current cost)
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="font-display text-2xl font-semibold text-espresso">
@@ -251,6 +254,9 @@ export function StockValuationClient() {
                 <p className="mt-1 font-body text-xs text-mist-ink">
                   Products {formatRupee(valuation.costValue)} + raw materials{' '}
                   {formatRupee(valuation.rawMaterialValue ?? 0)}
+                </p>
+                <p className="mt-1 font-body text-xs text-mist-ink">
+                  {VALUATION_COST_BASIS_NOTE}
                 </p>
               </CardContent>
             </Card>
@@ -337,7 +343,7 @@ export function StockValuationClient() {
                         className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist-ink hover:text-espresso"
                         onClick={() => handleSort('costValue')}
                       >
-                        Cost Value <ArrowUpDown className="h-3 w-3" />
+                        Cost Value (at current cost) <ArrowUpDown className="h-3 w-3" />
                       </button>
                     </TableHead>
                     <TableHead className="text-right">

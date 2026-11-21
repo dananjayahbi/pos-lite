@@ -11,6 +11,10 @@ import {
   valuationMarginPercent,
   type ValuationTaxLineInput,
 } from '@/lib/pricing/valuation-tax.core';
+import {
+  VALUATION_COST_BASIS,
+  VALUATION_COST_BASIS_NOTE,
+} from '@/lib/pricing/valuationBasis';
 
 interface VariantValuationRow {
   category_id: string;
@@ -153,15 +157,17 @@ export async function GET(request: NextRequest) {
         linesOut.push(`SSCL (${taxRates.ssclRate}%),${csvCell(totals.ssclAmount.toFixed(2))}`);
       }
       linesOut.push(`Total Retail Value (Incl. Tax),${csvCell(totals.retailValueInclTax.toFixed(2))}`);
-      linesOut.push(`Total Cost Value,${csvCell(costValue.toFixed(2))}`);
+      linesOut.push(`Total Cost Value (At Current Cost),${csvCell(costValue.toFixed(2))}`);
       linesOut.push(`Raw Material Value,${csvCell(rawMaterialValue.toFixed(2))}`);
       linesOut.push(`Total Inventory Cost Value,${csvCell(totalCostValue.toFixed(2))}`);
+      // ARGUS #218: the figure is a current-cost snapshot, not acquisition cost.
+      linesOut.push(`Cost Basis,${csvCell(VALUATION_COST_BASIS_NOTE)}`);
       linesOut.push(`Estimated Margin (Rs.),${csvCell(estimatedMargin.toFixed(2))}`);
       linesOut.push(`Estimated Margin (%),${csvCell(roundedMarginPercent.toFixed(2))}`);
       linesOut.push('');
       linesOut.push('Category Breakdown');
       linesOut.push(
-        'Category,Variants in Stock,Retail Value Excl. Tax (Rs.),Tax (Rs.),Retail Value Incl. Tax (Rs.),Cost Value (Rs.),Margin %,Share of Total',
+        'Category,Variants in Stock,Retail Value Excl. Tax (Rs.),Tax (Rs.),Retail Value Incl. Tax (Rs.),Cost Value - At Current Cost (Rs.),Margin %,Share of Total',
       );
       for (const cat of breakdown) {
         const catMargin = valuationMarginPercent(cat.retailValue, cat.costValue);
@@ -203,6 +209,9 @@ export async function GET(request: NextRequest) {
         retailValueInclTax: totals.retailValueInclTax.toNumber(),
         taxRates,
         costValue: costValue.toNumber(),
+        // ARGUS #218: explicit contract for consumers that render the figure.
+        costBasis: VALUATION_COST_BASIS,
+        costBasisNote: VALUATION_COST_BASIS_NOTE,
         rawMaterialValue,
         rawMaterialCount,
         totalCostValue: totalCostValue.toNumber(),
