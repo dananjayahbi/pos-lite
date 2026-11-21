@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { hasPermission } from '@/lib/utils/permissions';
-import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getShiftById } from '@/lib/services/shift.service';
+import { resolveShiftAccessForUser } from '@/lib/shifts/shift-access-request';
 
 export async function GET(_request: Request, props: { params: Promise<{ id: string }> }) {
   try {
@@ -22,7 +21,11 @@ export async function GET(_request: Request, props: { params: Promise<{ id: stri
       );
     }
 
-    if (!hasPermission(session.user, PERMISSIONS.STAFF.viewShift)) {
+    // ARGUS #111: non-managers may only read their own shift. Scoping the query
+    // (rather than fetching then checking) also returns 404 for someone else's
+    // shift, so the endpoint cannot be used to probe ids.
+    const scope = resolveShiftAccessForUser(session.user);
+    if (scope.kind === 'forbidden') {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
@@ -30,7 +33,11 @@ export async function GET(_request: Request, props: { params: Promise<{ id: stri
     }
 
     const { id } = await props.params;
-    const shift = await getShiftById(tenantId, id);
+    const shift = await getShiftById(
+      tenantId,
+      id,
+      scope.kind === 'own' ? scope.cashierId : undefined,
+    );
 
     return NextResponse.json({ success: true, data: shift });
   } catch (error) {

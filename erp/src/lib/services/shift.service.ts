@@ -16,6 +16,7 @@ import {
   emptyShiftSales,
   groupShiftSalesByShift,
 } from '@/lib/shifts/shift-sales-count';
+import { buildZReportTopItems } from '@/lib/shifts/z-report-top-items';
 
 // ── Open Shift ───────────────────────────────────────────────────────────────
 
@@ -287,9 +288,17 @@ export async function getCurrentShift(tenantId: string, cashierId: string) {
 
 // ── Get Shift By ID ──────────────────────────────────────────────────────────
 
-export async function getShiftById(tenantId: string, shiftId: string) {
+export async function getShiftById(
+  tenantId: string,
+  shiftId: string,
+  viewerCashierId?: string | undefined,
+) {
   const shift = await prisma.shift.findFirst({
-    where: { id: shiftId, tenantId },
+    where: {
+      id: shiftId,
+      tenantId,
+      ...(viewerCashierId ? { cashierId: viewerCashierId } : {}),
+    },
     include: {
       cashier: { select: { id: true, email: true, role: true } },
       closure: true,
@@ -464,9 +473,17 @@ export interface ZReportData {
   }>;
 }
 
-export async function buildZReportData(tenantId: string, shiftId: string): Promise<ZReportData> {
+export async function buildZReportData(
+  tenantId: string,
+  shiftId: string,
+  viewerCashierId?: string | undefined,
+): Promise<ZReportData> {
   const shift = await prisma.shift.findFirst({
-    where: { id: shiftId, tenantId },
+    where: {
+      id: shiftId,
+      tenantId,
+      ...(viewerCashierId ? { cashierId: viewerCashierId } : {}),
+    },
     include: {
       cashier: { select: { email: true } },
       closure: true,
@@ -478,9 +495,19 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
   // Sales aggregation
   const completedSales = await prisma.sale.findMany({
     where: { shiftId, status: 'COMPLETED' satisfies SaleStatus },
-    include: {
+    select: {
+      status: true,
+      totalAmount: true,
+      discountAmount: true,
       payments: true,
-      lines: true,
+      lines: {
+        select: {
+          productNameSnapshot: true,
+          variantDescriptionSnapshot: true,
+          quantity: true,
+          lineTotalAfterDiscount: true,
+        },
+      },
     },
   });
 
@@ -503,30 +530,11 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
   const cardSalesAmount = paymentBreakdown.card;
   const lankaqrSalesAmount = paymentBreakdown.lankaqr;
 
-  // Top products sold
-  const productSalesMap = new Map<string, { productName: string; variantDescription: string; totalQtySold: number; totalRevenue: Decimal }>();
-  for (const sale of completedSales) {
-    for (const line of sale.lines) {
-      const key = `${line.productNameSnapshot}|${line.variantDescriptionSnapshot}`;
-      const existing = productSalesMap.get(key);
-      if (existing) {
-        existing.totalQtySold += line.quantity;
-        existing.totalRevenue = existing.totalRevenue.plus(new Decimal(line.lineTotalAfterDiscount.toString()));
-      } else {
-        productSalesMap.set(key, {
-          productName: line.productNameSnapshot,
-          variantDescription: line.variantDescriptionSnapshot,
-          totalQtySold: line.quantity,
-          totalRevenue: new Decimal(line.lineTotalAfterDiscount.toString()),
-        });
-      }
-    }
-  }
-
-  const topProductsSold = Array.from(productSalesMap.values())
-    .sort((a, b) => b.totalQtySold - a.totalQtySold)
-    .slice(0, 10)
-    .map((p) => ({ ...p, totalRevenue: p.totalRevenue.toDecimalPlaces(2).toNumber() }));
+  // Top products sold — collected revenue after the cart discount (ARGUS #112).
+  // The old code summed lineTotalAfterDiscount (pre-cart-discount), so
+  // promotions and zero-value bank sales inflated the report above the
+  // completed-sales total.
+  const topProductsSold = buildZReportTopItems(completedSales);
 
   // Returns aggregation — attributed to the shift that recorded the original
   // sale (ARGUS #109), never by overlapping createdAt windows.

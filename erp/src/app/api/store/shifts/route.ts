@@ -6,6 +6,10 @@ import { OpenShiftSchema } from '@/lib/validators/shift.validators';
 import { openShift, getShifts } from '@/lib/services/shift.service';
 import { clockIn } from '@/lib/services/timeclock.service';
 import { prisma } from '@/lib/prisma';
+import {
+  applyShiftListScope,
+} from '@/lib/shifts/shift-access-scope';
+import { resolveShiftAccessForUser } from '@/lib/shifts/shift-access-request';
 import type { ShiftStatus } from '@/generated/prisma/client';
 
 export async function GET(request: NextRequest) {
@@ -26,7 +30,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!hasPermission(session.user, PERMISSIONS.STAFF.viewShift)) {
+    // ARGUS #111: `shift:view` is a cashier capability (their own POS shift),
+    // so it is not a management gate. Non-managers can only read their own
+    // shifts; the tenant-wide ledger stays with OWNER/MANAGER (view history).
+    const scope = resolveShiftAccessForUser(session.user);
+    if (scope.kind === 'forbidden') {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
@@ -41,7 +49,10 @@ export async function GET(request: NextRequest) {
     const page = url.searchParams.get('page') ? Number(url.searchParams.get('page')) : 1;
     const limit = url.searchParams.get('limit') ? Number(url.searchParams.get('limit')) : 20;
 
-    const result = await getShifts(tenantId, { cashierId, status, from, to, page, limit });
+    const result = await getShifts(
+      tenantId,
+      applyShiftListScope({ cashierId, status, from, to, page, limit }, scope),
+    );
 
     return NextResponse.json({
       success: true,
