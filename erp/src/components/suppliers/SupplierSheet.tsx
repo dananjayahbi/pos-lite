@@ -34,6 +34,11 @@ interface SupplierFromAPI {
   notes?: string | null;
 }
 
+/** Create/update both return the soft duplicate-name flag (ARGUS #235). */
+interface SupplierMutationResult {
+  duplicateName?: boolean;
+}
+
 interface SupplierSheetProps {
   supplier?: SupplierFromAPI | undefined;
   open: boolean;
@@ -112,7 +117,16 @@ export function SupplierSheet({ supplier, open, onOpenChange, onSuccess }: Suppl
         return;
       }
 
-      toast.success(isEditing ? 'Supplier updated' : 'Supplier created');
+      // ARGUS #235: the write succeeded, but a same-name live supplier is a
+      // soft warning the operator must see instead of a plain success toast.
+      const result = json.data as SupplierMutationResult | undefined;
+      if (result?.duplicateName) {
+        toast.warning(
+          `${data.name} saved - another live supplier already uses this name. Check for duplicates.`,
+        );
+      } else {
+        toast.success(isEditing ? 'Supplier updated' : 'Supplier created');
+      }
       handleOpenChange(false);
       onSuccess();
     } catch {

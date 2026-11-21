@@ -24,10 +24,11 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { Plus, Pencil, Archive, ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react';
+import { Plus, Pencil, Archive, ChevronLeft, ChevronRight, ArrowRight, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { SupplierSheet } from '@/components/suppliers/SupplierSheet';
 import { RestoreSupplierButton } from '@/components/suppliers/RestoreSupplierButton';
+import { getSuppliersListState } from '@/lib/services/supplierListState.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,14 +87,31 @@ export default function SuppliersPage() {
   queryParams.set('limit', '20');
   if (includeArchived) queryParams.set('includeArchived', 'true');
 
-  const { data, isLoading } = useQuery<{ success: boolean; data: SuppliersResponse }>({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery<{
+    success: boolean;
+    data: SuppliersResponse;
+  }>({
     queryKey: ['suppliers', debouncedSearch, page, includeArchived],
-    queryFn: () =>
-      fetch(`/api/store/suppliers?${queryParams.toString()}`).then((r) => r.json()),
+    queryFn: async () => {
+      const response = await fetch(`/api/store/suppliers?${queryParams.toString()}`);
+      const json = await response.json().catch(() => null);
+      // ARGUS #234: a `{ success:false }` envelope is a load failure, not an
+      // empty list. Throwing also puts React Query into its error state.
+      if (!response.ok || !json || json.success !== true) {
+        throw new Error(json?.error?.message ?? 'Failed to load suppliers');
+      }
+      return json as { success: true; data: SuppliersResponse };
+    },
   });
 
   const suppliers = data?.data?.suppliers ?? [];
   const totalPages = data?.data?.totalPages ?? 1;
+  const listState = getSuppliersListState({
+    isLoading,
+    isError,
+    success: data?.success,
+    count: suppliers.length,
+  });
 
   const handleSuccess = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['suppliers'] });
@@ -176,6 +194,24 @@ export default function SuppliersPage() {
       </div>
 
       {/* Table */}
+      {listState === 'error' ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+          <p className="text-sm font-medium text-red-700">Failed to load suppliers.</p>
+          <p className="mt-1 text-sm text-red-700">
+            The list could not be loaded. Check your connection and try again.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => void refetch()}
+            disabled={isFetching}
+          >
+            <RotateCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+            {isFetching ? 'Retrying...' : 'Retry'}
+          </Button>
+        </div>
+      ) : (
       <div className="rounded-lg border border-sand/30 bg-white">
         <Table>
           <TableHeader>
@@ -190,7 +226,7 @@ export default function SuppliersPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
+            {listState === 'loading' ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
                   {Array.from({ length: 7 }).map((_, j) => (
@@ -200,7 +236,7 @@ export default function SuppliersPage() {
                   ))}
                 </TableRow>
               ))
-            ) : suppliers.length === 0 ? (
+            ) : listState === 'empty' ? (
               <TableRow>
                 <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                   No suppliers found
@@ -270,9 +306,10 @@ export default function SuppliersPage() {
           </TableBody>
         </Table>
       </div>
+      )}
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {listState !== 'error' && totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
             Page {page} of {totalPages}

@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { SL_PHONE_REGEX } from '@/lib/constants/supplier';
 import { ApiError } from '@/lib/api/errors';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { findDuplicateSupplierName } from '@/lib/services/supplierDuplicateName.core';
 
 // ── Phone Regex ──────────────────────────────────────────────────────────────
 
@@ -61,10 +62,13 @@ export async function createSupplier(tenantId: string, data: CreateSupplierData)
 
   // M06-01 (D5): name is NOT unique — a live same-name row only raises a
   // duplicateName warning flag on the 201 response (warn-only, never 409).
-  const nameClash = await prisma.supplier.findFirst({
-    where: { tenantId, name: data.name, isActive: true },
-    select: { id: true },
+  // ARGUS #235: compare normalised names, not just an exact DB match, so case
+  // and extra whitespace cannot slip a duplicate past the warning.
+  const liveSuppliers = await prisma.supplier.findMany({
+    where: { tenantId, isActive: true },
+    select: { id: true, name: true },
   });
+  const duplicate = findDuplicateSupplierName(data.name, liveSuppliers);
 
   const supplier = await prisma.supplier.create({
     data: {
@@ -82,7 +86,7 @@ export async function createSupplier(tenantId: string, data: CreateSupplierData)
     },
   });
 
-  return { ...supplier, duplicateName: nameClash !== null };
+  return { ...supplier, duplicateName: duplicate.duplicateName };
 }
 
 // ── Update ───────────────────────────────────────────────────────────────────
@@ -130,10 +134,24 @@ export async function updateSupplier(
   if (data.leadTimeDays !== undefined) updateData.leadTimeDays = data.leadTimeDays;
   if (data.notes !== undefined) updateData.notes = data.notes;
 
-  return prisma.supplier.update({
+  // ARGUS #235: renaming onto another live supplier's name is a soft warning,
+  // exactly like create. Only compute it when the name actually changes, and
+  // always exclude the row being edited so it never matches itself.
+  let duplicateName = false;
+  if (data.name !== undefined && data.name !== existing.name) {
+    const liveSuppliers = await prisma.supplier.findMany({
+      where: { tenantId, isActive: true },
+      select: { id: true, name: true },
+    });
+    duplicateName = findDuplicateSupplierName(data.name, liveSuppliers, supplierId).duplicateName;
+  }
+
+  const updated = await prisma.supplier.update({
     where: { id: supplierId },
     data: updateData,
   });
+
+  return { ...updated, duplicateName };
 }
 
 // ── Get by ID ────────────────────────────────────────────────────────────────

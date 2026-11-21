@@ -2,6 +2,7 @@ import Decimal from 'decimal.js';
 
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/lib/api/errors';
+import { lockForUpdate } from '@/lib/api/race-guard';
 import { AUDIT_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
 import { PaymentEntrySource, POStatus } from '@/generated/prisma/client';
 import type { PayPurchaseOrderInput } from '@/lib/validators/purchaseOrder.validators';
@@ -10,6 +11,7 @@ import {
   postLedgerEntries,
 } from '@/lib/services/paymentAccount.service';
 import { computePurchaseOrderPayable } from '@/lib/services/purchaseOrderPayable.core';
+import { evaluatePurchaseOrderPayment } from '@/lib/services/purchaseOrderPaymentGuard.core';
 
 /**
  * Settling a purchase order from a payment account.
@@ -46,6 +48,16 @@ export async function payPurchaseOrder(
 ) {
   return prisma.$transaction(
     async (tx) => {
+    // ARGUS #231: serialise instalments on the PO row BEFORE reading the paid
+    // total. Two concurrent payments used to read the same "already paid" sum
+    // through the global client, both pass the outstanding check and each post
+    // a ledger credit. The second caller now waits here, re-reads the committed
+    // payments and fails its own check instead of overpaying.
+    await lockForUpdate(tx, 'purchase_orders', '"id" = $1 AND "tenantId" = $2', [
+      purchaseOrderId,
+      tenantId,
+    ]);
+
     const po = await tx.purchaseOrder.findFirst({
       where: { id: purchaseOrderId, tenantId },
       select: {
@@ -98,16 +110,34 @@ export async function payPurchaseOrder(
       throw new ApiError(409, 'CONFLICT', `Account "${account.name}" is closed`);
     }
 
-    const alreadyPaid = await getPurchaseOrderPaidAmount(tenantId, po.id);
+    // Read the paid total through THIS transaction, after the row lock, so the
+    // outstanding check sees every payment that committed before it.
+    const paidAggregate = await tx.purchaseOrderPayment.aggregate({
+      where: { tenantId, purchaseOrderId: po.id },
+      _sum: { amount: true },
+    });
+    const alreadyPaid = money(new Decimal(paidAggregate._sum.amount ?? 0));
+
     // The payable is the received value once goods arrive; before that it is
     // the expected total (ARGUS #225). Paying the expected total after a
     // cheaper/higher actual invoice used to overpay or become impossible.
     const costing = computePurchaseOrderPayable(po.lines, po.discountAmount, po.totalAmount);
     const payable = costing.payable;
-    const outstanding = money(new Decimal(payable).minus(alreadyPaid));
-    const requested = money(new Decimal(input.amount));
+    const paymentCheck = evaluatePurchaseOrderPayment(payable, alreadyPaid, input.amount);
+    const requested = paymentCheck.requested;
+    const outstanding = paymentCheck.outstanding;
 
-    if (requested > outstanding) {
+    if (!paymentCheck.allowed) {
+      if (paymentCheck.rejection === 'NOT_POSITIVE') {
+        throw new ApiError(422, 'VALIDATION_ERROR', 'Payment amount must be greater than zero');
+      }
+      if (paymentCheck.rejection === 'ALREADY_SETTLED') {
+        throw new ApiError(
+          422,
+          'VALIDATION_ERROR',
+          'This purchase order has nothing outstanding to pay',
+        );
+      }
       throw new ApiError(
         422,
         'VALIDATION_ERROR',
@@ -143,8 +173,9 @@ export async function payPurchaseOrder(
       },
     ]);
 
-    // Stamp the PO as fully settled once nothing is outstanding.
-    const newPaid = money(new Decimal(alreadyPaid).plus(requested));
+    // Stamp the PO as fully settled once nothing is outstanding. The guard above
+    // proves newPaid <= payable, so an instalment can never overpay the order.
+    const newPaid = paymentCheck.newPaidTotal;
     if (newPaid >= payable) {
       await tx.purchaseOrder.update({
         where: { id: po.id },
