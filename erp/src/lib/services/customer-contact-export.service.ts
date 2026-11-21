@@ -24,6 +24,10 @@ import {
   getContactExportConfig,
   type ContactExportConfig,
 } from '@/lib/services/customer-contact-export.config';
+import {
+  getCompletedSpendByCustomer,
+  completedSpendFor,
+} from '@/lib/services/customerSpend.service';
 
 /** Audit action recorded for every scheduled or ad-hoc export run. */
 export const CONTACT_EXPORT_ACTION = 'CONTACT_EXPORT_RUN';
@@ -86,25 +90,35 @@ export async function compileCustomerContactExport(
   const customers = await prisma.customer.findMany({
     where: { tenantId: options.tenantId },
     include: {
-      _count: { select: { sales: true } },
       tenant: { select: { name: true } },
     },
   });
 
-  const candidates: ContactCandidate[] = customers.map((customer) => ({
-    id: customer.id,
-    name: customer.name,
-    phone: customer.phone,
-    email: customer.email,
-    tags: customer.tags,
-    isActive: customer.isActive,
-    deletedAt: customer.deletedAt,
-    createdAt: customer.createdAt,
-    totalSpend: customer.totalSpend,
-    lastPurchaseAt: customer.lastPurchaseAt,
-    orderCount: customer._count.sales,
-    tenantName: customer.tenant.name,
-  }));
+  // Segments and exported spend/order history must reflect COMPLETED sales only
+  // (ARGUS #309); Customer.totalSpend / lastPurchaseAt and the sales relation
+  // include voided and seeded values.
+  const spendByCustomer = await getCompletedSpendByCustomer(
+    options.tenantId,
+    customers.map((customer) => customer.id),
+  );
+
+  const candidates: ContactCandidate[] = customers.map((customer) => {
+    const spend = completedSpendFor(spendByCustomer, customer.id);
+    return {
+      id: customer.id,
+      name: customer.name,
+      phone: customer.phone,
+      email: customer.email,
+      tags: customer.tags,
+      isActive: customer.isActive,
+      deletedAt: customer.deletedAt,
+      createdAt: customer.createdAt,
+      totalSpend: { toNumber: () => spend.totalSpend },
+      lastPurchaseAt: spend.lastPurchaseAt,
+      orderCount: spend.orderCount,
+      tenantName: customer.tenant.name,
+    };
+  });
 
   const { rows, included, excluded } = buildContactRows(candidates, scopeOptions);
 

@@ -5,6 +5,8 @@ import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import { sendWhatsAppTextMessage } from '@/lib/whatsapp';
+import { getCompletedSpendByCustomer } from '@/lib/services/customerSpend.service';
+import { filterCustomerIdsBySpend } from '@/lib/services/customerSpend.core';
 
 const BroadcastSchema = z.object({
   message: z.string().min(1).max(1000),
@@ -68,7 +70,9 @@ export async function POST(request: Request) {
       where.tags = { has: filters.tag };
     }
     if (filters?.spendMin !== undefined) {
-      where.totalSpend = { gte: filters.spendMin };
+      // Completed-sale spend only (ARGUS #309).
+      const spendByCustomer = await getCompletedSpendByCustomer(tenantId);
+      where.id = { in: filterCustomerIdsBySpend(spendByCustomer, filters.spendMin) };
     }
 
     // Fetch matching customers

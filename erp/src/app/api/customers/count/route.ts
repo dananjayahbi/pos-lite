@@ -7,7 +7,7 @@ import { ApiError } from '@/lib/api/errors';
 import { parseQueryInt, parseQueryNumber } from '@/lib/api/query-params';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { Gender, type Prisma } from '@/generated/prisma/client';
-import { fetchBroadcastAudience, buildBroadcastWhere } from '@/lib/services/broadcast.service';
+import { fetchBroadcastAudience, buildBroadcastWhere, resolveBroadcastFilters } from '@/lib/services/broadcast.service';
 
 // M05-05 (BUG-74 + OBS-51): audience count is part of the broadcast composer,
 // so it requires `broadcast:send` (client decision D15) and validates params
@@ -59,13 +59,13 @@ export async function GET(request: Request) {
       throw ApiError.validation('Query parameter "gender" must be one of MALE, FEMALE, OTHER');
     }
 
-    const audienceFilters = {
+    const audienceFilters = await resolveBroadcastFilters(tenantId, {
       tags: tagsParam ?? undefined,
       gender: gender ?? undefined,
       minSpend,
       maxSpend,
       birthdayMonth,
-    };
+    });
 
     // Channel-aware count: only customers reachable on the selected channel.
     if (channelParam) {
@@ -100,18 +100,10 @@ export async function GET(request: Request) {
       where.gender = gender as Gender;
     }
 
-    if (minSpend !== undefined) {
-      where.totalSpend = {
-        ...(typeof where.totalSpend === 'object' ? where.totalSpend : {}),
-        gte: minSpend,
-      } as Prisma.DecimalFilter;
-    }
-
-    if (maxSpend !== undefined) {
-      where.totalSpend = {
-        ...(typeof where.totalSpend === 'object' ? where.totalSpend : {}),
-        lte: maxSpend,
-      } as Prisma.DecimalFilter;
+    if (minSpend !== undefined || maxSpend !== undefined) {
+      // Completed-sale spend only (ARGUS #309); the stored column includes
+      // voided/seed values.
+      where.id = { in: audienceFilters.spendCustomerIds ?? [] };
     }
 
     // birthdayMonth requires JS filtering since Prisma doesn't support EXTRACT.

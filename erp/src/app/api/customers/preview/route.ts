@@ -7,7 +7,8 @@ import { ApiError } from '@/lib/api/errors';
 import { parseQueryInt, parseQueryNumber } from '@/lib/api/query-params';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { Gender, type Prisma } from '@/generated/prisma/client';
-import { buildBroadcastWhere } from '@/lib/services/broadcast.service';
+import { buildBroadcastWhere, resolveBroadcastFilters } from '@/lib/services/broadcast.service';
+import { getCompletedSpendByCustomer, completedSpendFor } from '@/lib/services/customerSpend.service';
 
 // M05-05 (BUG-74 + OBS-51): this endpoint exists to serve the broadcast
 // composer, so it now requires the composer's own permission (`broadcast:send`,
@@ -59,17 +60,19 @@ export async function GET(request: Request) {
       throw ApiError.validation('Query parameter "gender" must be one of MALE, FEMALE, OTHER');
     }
 
+    const audienceFilters = await resolveBroadcastFilters(tenantId, {
+      tags: tagsParam ?? undefined,
+      gender: gender ?? undefined,
+      minSpend,
+      maxSpend,
+      birthdayMonth,
+    });
+
     const where: Prisma.CustomerWhereInput = channelParam
       ? buildBroadcastWhere(
           tenantId,
           channelParam as 'EMAIL' | 'SMS' | 'WHATSAPP',
-          {
-            tags: tagsParam ?? undefined,
-            gender: gender ?? undefined,
-            minSpend,
-            maxSpend,
-            birthdayMonth,
-          },
+          audienceFilters,
         )
       : { tenantId, deletedAt: null, isActive: true };
 
@@ -85,18 +88,8 @@ export async function GET(request: Request) {
         where.gender = gender as Gender;
       }
 
-      if (minSpend !== undefined) {
-        where.totalSpend = {
-          ...(typeof where.totalSpend === 'object' ? where.totalSpend : {}),
-          gte: minSpend,
-        } as Prisma.DecimalFilter;
-      }
-
-      if (maxSpend !== undefined) {
-        where.totalSpend = {
-          ...(typeof where.totalSpend === 'object' ? where.totalSpend : {}),
-          lte: maxSpend,
-        } as Prisma.DecimalFilter;
+      if (minSpend !== undefined || maxSpend !== undefined) {
+        where.id = { in: audienceFilters.spendCustomerIds ?? [] };
       }
     }
 
@@ -122,6 +115,13 @@ export async function GET(request: Request) {
         ? customers.filter((c) => c.birthday && c.birthday.getMonth() + 1 === birthdayMonth)
         : customers;
 
+    // Show the real completed-purchase spend, not the denormalised column
+    // (ARGUS #309).
+    const spendByCustomer = await getCompletedSpendByCustomer(
+      tenantId,
+      filtered.map((customer) => customer.id),
+    );
+
     return NextResponse.json({
       success: true,
       data: filtered.map((c) => ({
@@ -130,7 +130,7 @@ export async function GET(request: Request) {
         phone: c.phone,
         email: c.email,
         tags: c.tags,
-        totalSpend: c.totalSpend.toString(),
+        totalSpend: completedSpendFor(spendByCustomer, c.id).totalSpend.toFixed(2),
         gender: c.gender,
       })),
     });

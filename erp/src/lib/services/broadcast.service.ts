@@ -12,6 +12,8 @@ import type {
   BroadcastChannelName,
   BroadcastRecipient,
 } from '@/lib/services/broadcast-dispatch.service';
+import { getCompletedSpendByCustomer } from '@/lib/services/customerSpend.service';
+import { filterCustomerIdsBySpend } from '@/lib/services/customerSpend.core';
 
 export interface BroadcastAudienceFilters {
   tags?: string | undefined;
@@ -19,6 +21,12 @@ export interface BroadcastAudienceFilters {
   minSpend?: number | undefined;
   maxSpend?: number | undefined;
   birthdayMonth?: number | undefined;
+  /**
+   * Customer ids whose COMPLETED-sale spend matches min/maxSpend (ARGUS #309).
+   * When a spend filter is present the caller resolves this from real sales;
+   * the stored Customer.totalSpend column is not used.
+   */
+  spendCustomerIds?: string[] | undefined;
 }
 
 /**
@@ -57,7 +65,10 @@ export function buildBroadcastWhere(
     where.gender = filters.gender as Gender;
   }
 
-  if (filters.minSpend !== undefined || filters.maxSpend !== undefined) {
+  if (filters.spendCustomerIds !== undefined) {
+    // Empty list is meaningful: no customer met the completed-spend range.
+    where.id = { in: filters.spendCustomerIds };
+  } else if (filters.minSpend !== undefined || filters.maxSpend !== undefined) {
     where.totalSpend = {
       ...(filters.minSpend !== undefined ? { gte: filters.minSpend } : {}),
       ...(filters.maxSpend !== undefined ? { lte: filters.maxSpend } : {}),
@@ -70,6 +81,29 @@ export function buildBroadcastWhere(
 export interface BroadcastAudience {
   recipients: BroadcastRecipient[];
   total: number;
+}
+
+/**
+ * Resolve a spend filter against COMPLETED sales before building the customer
+ * where clause (ARGUS #309). Other filters pass through unchanged.
+ */
+export async function resolveBroadcastFilters(
+  tenantId: string,
+  filters: BroadcastAudienceFilters,
+): Promise<BroadcastAudienceFilters> {
+  if (filters.minSpend === undefined && filters.maxSpend === undefined) {
+    return filters;
+  }
+
+  const spendByCustomer = await getCompletedSpendByCustomer(tenantId);
+  return {
+    ...filters,
+    spendCustomerIds: filterCustomerIdsBySpend(
+      spendByCustomer,
+      filters.minSpend,
+      filters.maxSpend,
+    ),
+  };
 }
 
 /**
