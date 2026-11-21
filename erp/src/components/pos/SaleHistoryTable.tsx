@@ -314,7 +314,7 @@ export function SaleHistoryTable() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="font-body text-xs">Invoice No</TableHead>
+              <TableHead className="font-body text-xs">Reference</TableHead>
               <TableHead className="font-body text-xs">Date</TableHead>
               <TableHead className="font-body text-xs">Customer</TableHead>
               <TableHead className="font-body text-xs text-center">
