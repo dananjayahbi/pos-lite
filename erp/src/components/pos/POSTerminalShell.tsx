@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Clock, LayoutDashboard, LogOut, RotateCcw, WifiOff, Loader2 } from 'lucide-react';
+import { Clock, LayoutDashboard, LogOut, RotateCcw, WifiOff, Loader2, AlertTriangle } from 'lucide-react';
 import { ShiftCloseModal } from '@/components/pos/ShiftCloseModal';
 import { CartPanel } from '@/components/pos/CartPanel';
 import { POSShortcutHelp } from '@/components/pos/POSShortcutHelp';
@@ -12,6 +12,7 @@ import { KeyboardPOSWorkspace } from '@/components/pos/KeyboardPOSWorkspace';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { usePOSInputMode } from '@/hooks/usePOSInputMode';
+import { isLongOpenShift, longShiftWarning, shiftOpenHours } from '@/lib/shifts/shift-age';
 import type { LankaQrSettings } from '@/lib/payments/lanka-qr-config';
 
 function formatElapsed(ms: number): string {
@@ -35,17 +36,40 @@ function ShiftIndicator({
   const [elapsed, setElapsed] = useState(() =>
     formatElapsed(Date.now() - new Date(shiftOpenedAt).getTime()),
   );
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const tick = () =>
-      setElapsed(formatElapsed(Date.now() - new Date(shiftOpenedAt).getTime()));
+    const tick = () => {
+      const current = Date.now();
+      setNow(current);
+      setElapsed(formatElapsed(current - new Date(shiftOpenedAt).getTime()));
+    };
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [shiftOpenedAt]);
 
+  // ARGUS #115: the elapsed clock alone is too quiet. Once the shift has been
+  // open longer than the 12h tolerance, say so explicitly and tell the cashier
+  // to close it (the drawer is not reconciled until that happens).
+  const isLongShift = isLongOpenShift(shiftOpenedAt, now);
+  const longShiftHours = Math.floor(shiftOpenHours(shiftOpenedAt, now) ?? 0);
+  const warning = longShiftWarning(shiftOpenedAt, now);
+
   return (
-    <span className="font-body text-sm text-pearl/80">
-      {cashierName} • {elapsed}
+    <span className="flex flex-wrap items-center gap-2">
+      <span className="font-body text-sm text-pearl/80">
+        {cashierName} • {elapsed}
+      </span>
+      {isLongShift && warning && (
+        <span
+          role="status"
+          className="inline-flex items-center gap-1 rounded-full border border-amber-400/70 bg-amber-400/15 px-2 py-0.5 font-body text-[11px] font-semibold text-amber-200"
+          title={warning}
+        >
+          <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+          Long shift ({longShiftHours}h) - close to reconcile
+        </span>
+      )}
     </span>
   );
 }
