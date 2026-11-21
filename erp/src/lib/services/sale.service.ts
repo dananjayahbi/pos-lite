@@ -878,7 +878,14 @@ export async function getSales(tenantId: string, filters: GetSalesFilters) {
         // response carries the minimum identity fields (never the full record).
         customer: { select: { id: true, name: true, phone: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        // ARGUS #82: the ledger is ordered by the same accounting date the row
+        // displays, not the entry timestamp, so a backdated sale sits in its
+        // recorded period and the Date column stays monotonic. Legacy rows
+        // without a saleDate fall back to createdAt and sort after dated rows.
+        { saleDate: { sort: 'desc', nulls: 'last' } },
+        { createdAt: 'desc' },
+      ],
       skip,
       take: limit,
     }),

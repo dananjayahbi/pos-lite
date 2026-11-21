@@ -106,7 +106,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
           )}
         </div>
         <div className="border-mist rounded-xl border bg-white px-4 py-3">
-          <p className="text-sand-ink text-xs">Date</p>
+          <p className="text-sand-ink text-xs">Selling date</p>
           <p className="text-espresso mt-1 text-sm font-medium">
             {formatDateTime(sale.saleDate ?? sale.createdAt)}
           </p>

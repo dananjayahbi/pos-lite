@@ -361,24 +361,15 @@ export function SaleHistoryTable() {
                   </div>
                 </TableCell>
                 <TableCell className="font-body text-xs text-espresso whitespace-nowrap">
-                  {sale.saleDate ? (
-                    <div>
-                      <p>{formatDate(sale.saleDate)}</p>
-                      {/* A backdated sale carries a synthetic 12:00 anchor (the
-                          date input is day-granular), so the real clock time only
-                          exists for same-day entries â€” show createdAt's time. */}
-                      <p className="font-mono text-[10px] text-mist-ink">
-                        {formatTime(sale.createdAt)}
-                      </p>
-                    </div>
-                  ) : (
-                    <div>
-                      <p>{formatDate(sale.createdAt)}</p>
-                      <p className="font-mono text-[10px] text-mist-ink">
-                        {formatTime(sale.createdAt)}
-                      </p>
-                    </div>
-                  )}
+                  {/* ARGUS #82: show the accounting date the row is sorted by.
+                      The clock time is explicitly the entry time because a
+                      backdated sale carries a synthetic 12:00 anchor. */}
+                  <div>
+                    <p>{formatDate(saleAccountingDate(sale))}</p>
+                    <p className="font-mono text-[10px] text-mist-ink">
+                      Entered {formatTime(sale.createdAt)}
+                    </p>
+                  </div>
                 </TableCell>
                 <TableCell className="font-body text-xs text-espresso">
                   {sale.customer?.name ? (

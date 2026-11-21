@@ -44,6 +44,8 @@ interface Sale {
   paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | 'STORE_CREDIT' | 'EXCHANGE_CREDIT' | 'NONE' | null;
   status: 'OPEN' | 'COMPLETED' | 'VOIDED';
   authorizingManagerId: string | null;
+  /** Accounting date; pre-migration rows fall back to createdAt (ARGUS #82). */
+  saleDate?: string | null;
   createdAt: string;
   lines: SaleLine[];
 }
@@ -99,7 +101,13 @@ export function SaleDetailModal({
             Sale {shortId}
           </DialogTitle>
           <p className="font-body text-xs text-mist-ink">
-            {formatDateTime(sale.createdAt)}
+            {formatDateTime(sale.saleDate ?? sale.createdAt)}
+          </p>
+          <p className="font-body text-[11px] text-mist-ink">
+            Entered {new Date(sale.createdAt).toLocaleTimeString('en-GB', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
           </p>
           <CopyableText value={sale.id} label="Sale ID" className="text-xs text-espresso" />
         </DialogHeader>
