@@ -46,6 +46,8 @@ interface AppointmentActionSubject {
   title: string;
   price: number | string;
   saleId?: string | null;
+  /** Loaded sale relation, used as a fallback for the scalar id. */
+  sale?: { id: string } | null;
   customerId?: string | null;
   serviceId?: string | null;
   staffId?: string | null;
@@ -107,7 +109,8 @@ export function AppointmentActions({ appointment }: AppointmentActionsProps) {
       status === 'IN_PROGRESS') &&
     can('cancel');
   const showRebook = can('rebook');
-  const showConvert = can('convert_to_sale') && !appointment.saleId;
+  const saleId = appointment.saleId ?? appointment.sale?.id ?? null;
+  const showConvert = can('convert_to_sale') && !saleId;
 
   const handleNoShow = () => {
     if (
@@ -232,7 +235,7 @@ export function AppointmentActions({ appointment }: AppointmentActionsProps) {
         </Button>
       )}
       {status === 'COMPLETED' &&
-        (appointment.saleId ? (
+        (saleId ? (
           <span className="text-xs text-espresso/60 py-2">Sale recorded</span>
         ) : showConvert ? (
           <Button
