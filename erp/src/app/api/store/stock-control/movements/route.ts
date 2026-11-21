@@ -7,6 +7,7 @@ import type { Prisma } from '@/generated/prisma/client';
 import { StockMovementReason } from '@/generated/prisma/client';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { parseQueryInt, parseQueryDate } from '@/lib/api/query-params';
+import { resolveInclusiveDateRange } from '@/lib/api/inclusive-date-range';
 import { toCsvLines } from '@/lib/export';
 import { stockMovementReasonLabel } from '@/lib/constants/stock-movement';
 
@@ -43,8 +44,14 @@ export async function GET(request: NextRequest) {
     // now validated ISO dates — garbage no longer reaches Prisma (BUG-40).
     const page = parseQueryInt(searchParams, 'page', { default: 1, min: 1 }) ?? 1;
     const limit = parseQueryInt(searchParams, 'limit', { default: 25, min: 1, max: 100 }) ?? 25;
-    const fromDate = parseQueryDate(searchParams, 'from');
-    const toDate = parseQueryDate(searchParams, 'to');
+    // ARGUS #184: validate with the shared parser (garbage still 400s) but
+    // build the filter as inclusive local calendar days. `to` used to be UTC
+    // midnight, which excluded everything written later that day.
+    const fromParam = searchParams.get('from');
+    const toParam = searchParams.get('to');
+    parseQueryDate(searchParams, 'from');
+    parseQueryDate(searchParams, 'to');
+    const { from: fromDate, to: toDate } = resolveInclusiveDateRange(fromParam, toParam);
     const reasonsParam = searchParams.get('reasons');
     const search = searchParams.get('search');
     const actorId = searchParams.get('actorId');
@@ -142,8 +149,10 @@ export async function GET(request: NextRequest) {
         ]),
       );
 
-      const fromStr = fromDate ? fromDate.toISOString().slice(0, 10) : '';
-      const toStr = toDate ? toDate.toISOString().slice(0, 10) : '';
+      // Use the caller's calendar labels, not `toISOString()` - a local
+      // end-of-day can fall on the previous UTC date.
+      const fromStr = fromParam ? fromParam.trim().slice(0, 10) : '';
+      const toStr = toParam ? toParam.trim().slice(0, 10) : '';
       const filename = fromDate || toDate
         ? `stock-movements-${fromStr}-to-${toStr}.csv`
         : 'stock-movements-all.csv';
