@@ -27,6 +27,13 @@ export const SETTINGS_CATALOG: SettingsCatalogEntry[] = [
     permission: PERMISSIONS.SETTINGS.manageTax,
   },
   {
+    // ARGUS #484: the sidebar lists Units under Settings but the hub omitted it.
+    href: '/settings/units',
+    label: 'Units',
+    description: 'Tenant-wide units of measure used by raw materials and BOMs.',
+    permission: PERMISSIONS.RAW_MATERIAL.viewRawMaterial,
+  },
+  {
     href: '/settings/payments',
     label: 'Payments & LankaQR',
     description: 'LankaQR merchant identity, static QR image and cashier instructions.',
