@@ -90,12 +90,73 @@ The linked account shows a **Petty Cash** badge and its balance. Close (and the
 money-movement actions) are hidden for managed accounts; rename/type changes are
 rejected in favour of the fund settings modal. Account Book remains available.
 
+## Filtered export statement (ARGUS #395)
+
+`GET /api/store/petty-cash/export` is a **period statement**, not an all-time
+balance with a filtered expense list:
+
+```
+Opening (period start) + Cash In (in period) − Expenses (in period) = Closing
+```
+
+- Opening = fund opening allocation + top-up ledger debits before the window −
+  expenses before the window.
+- Date bounds are inclusive: a `YYYY-MM-DD` `dateTo` expands to 23:59:59.999
+  (`parseRangeStart` / `parseRangeEnd`, reused from #394).
+- A top-up outside the window is never shown as cash-in. If it predates the
+  window it is baked into opening; if it follows the window it is ignored.
+- The balance statement covers the **whole fund**; the optional category filter
+  applies only to the expense rows and category totals. The CSV writes a
+  `Basis:` line so the period and filter scope are explicit.
+- The unfiltered export still shows the all-time opening/closing, now labelled
+  `Closing Balance (all time)` rather than `Current Balance`.
+
+## Ledger reconciliation (ARGUS #406)
+
+`topUpPettyCash` writes the top-up audit row **inside the same transaction** as
+the fund-account debit, and records `after.ledgerEntryIds` / `after.entryDate`.
+A top-up can no longer exist as an audit without its ledger movement.
+
+The read-only audit + repair CLI (never automatic) is:
+
+```bash
+cd erp
+node --env-file=.env --import tsx scripts/petty-cash-reconcile.ts
+node --env-file=.env --import tsx scripts/petty-cash-reconcile.ts --apply
+node --env-file=.env --import tsx scripts/petty-cash-reconcile.ts --apply --rebuild-balance-after
+node --env-file=.env --import tsx scripts/petty-cash-reconcile.ts --tenant=<id>
+```
+
+- It walks the fund account's entries in date/id order and reports every
+  `balanceAfter` break (`expected = previous actual + debit − credit`).
+- It matches `PETTY_CASH_TOP_UP` audits to the fund account's top-up debits
+  (explicit ledger ids when present, otherwise amount + UTC day) and reports
+  missing audits and missing ledger lines.
+- `--apply` appends one explicit `DEPOSIT` correction for each unmatched top-up
+  audit (idempotent via `sourceId = pc_correction_<auditId>`), then recomputes
+  `PettyCashFund.currentBalance` from opening + all ledger top-ups − expenses.
+  It does **not** touch the source account; the output names it for review.
+- `--rebuild-balance-after` (only with `--apply`) rewrites the historical
+  `balanceAfter` column in one transaction and writes a
+  `PETTY_CASH_LEDGER_BALANCE_REBUILT` audit row. Debits, credits and amounts are
+  never changed. This is the only way to make earlier rows chain correctly, so
+  it is explicit and documented rather than automatic.
+- A missing top-up changes the fund equation when applied (the audited money is
+  added); always run the read-only mode and review the output first.
+
+Pure helpers/tests: `src/lib/services/pettyCashReconciliation.core.ts`,
+`src/lib/services/__tests__/pettyCashReconciliation.core.test.ts`.
+
 ## Tests
 
 - `src/lib/validators/__tests__/petty-cash.validators.test.ts` — Add Cash In
   payload contract (amount, source, date, description bounds).
 - `src/lib/services/__tests__/petty-cash-alert.test.ts` — top-up description
   naming and low-balance alert behaviour.
+- `src/lib/services/__tests__/pettyCashReport.core.test.ts` — period
+  opening/closing arithmetic and out-of-window top-ups.
+- `src/lib/services/__tests__/pettyCashReconciliation.core.test.ts` — ledger
+  trail breaks, balanceAfter rebuild, top-up audit matching.
 
 Manual verification covered a Rs. 10,000 top-up from a BANK account
 (fund/account/source balances all moved), the green `Cash In` row, owner

@@ -62,12 +62,36 @@ export async function GET(request: Request) {
       { header: 'Amount', value: (r) => r.value },
     ];
     const statementRows = [
-      { label: 'Opening Balance', value: data.balance.openingBalance.toFixed(2) },
-      { label: 'Cash In (Top-ups)', value: data.balance.totalTopUps.toFixed(2) },
-      { label: 'Total Expenses', value: data.balance.totalExpenses.toFixed(2) },
-      { label: 'Current Balance', value: data.balance.currentBalance.toFixed(2) },
+      {
+        label: data.period.filtered
+          ? 'Opening Balance (period start)'
+          : 'Opening Balance (all time)',
+        value: data.balance.openingBalance.toFixed(2),
+      },
+      {
+        label: data.period.filtered ? 'Cash In (Top-ups) (period)' : 'Cash In (Top-ups)',
+        value: data.balance.totalTopUps.toFixed(2),
+      },
+      {
+        label: data.period.filtered ? 'Total Expenses (period)' : 'Total Expenses',
+        value: data.balance.totalExpenses.toFixed(2),
+      },
+      {
+        label: data.period.filtered
+          ? 'Closing Balance (period end)'
+          : 'Closing Balance (all time)',
+        value: data.balance.closingBalance.toFixed(2),
+      },
     ];
     const statementCsv = toCsv(statementColumns, statementRows);
+    const basisLines = [
+      `Basis: ${data.period.label}`,
+      ...(data.period.categoryFiltered
+        ? [
+            'The balance statement covers the whole fund; the category filter applies only to the expenses and category totals below.',
+          ]
+        : []),
+    ];
 
     const expenseColumns: CsvColumn<(typeof data.expenses)[number]>[] = [
       { header: 'Date', value: (r) => r.expenseDate.slice(0, 10) },
@@ -88,6 +112,8 @@ export async function GET(request: Request) {
 
     const sections = [
       `${data.fund.name} - Petty Cash Audit Trail`,
+      '',
+      ...basisLines,
       '',
       'BALANCE STATEMENT',
       statementCsv,

@@ -10,6 +10,8 @@ import {
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { ApiError } from '@/lib/api/errors';
 import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/paymentAccount.service';
+import { parseRangeEnd, parseRangeStart } from '@/lib/dates/inclusiveRange';
+import { computePettyCashPeriodStatement } from '@/lib/services/pettyCashReport.core';
 import type { TopUpPettyCashInput } from '@/lib/validators/petty-cash.validators';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -44,6 +46,15 @@ export interface ExpenseCategoryTotal {
   total: number;
 }
 
+/** Period metadata for a filtered petty-cash export (ARGUS #395). */
+export interface PettyCashExportPeriod {
+  dateFrom: string | null;
+  dateTo: string | null;
+  filtered: boolean;
+  categoryFiltered: boolean;
+  label: string;
+}
+
 /** Structured dataset ready for serialization into the export file. */
 export interface PettyCashExportData {
   fund: {
@@ -54,7 +65,9 @@ export interface PettyCashExportData {
     currentBalance: number;
     lowBalanceThreshold: number | null;
   };
-  balance: BalanceEquation;
+  /** Period statement: opening + cash-in(in period) − expenses(in period). */
+  balance: BalanceEquation & { closingBalance: number };
+  period: PettyCashExportPeriod;
   expenses: {
     id: string;
     expenseDate: string;
@@ -598,6 +611,31 @@ export async function topUpPettyCash(
       data: { currentBalance: { increment: amount.toNumber() } },
     });
 
+    // The audit row commits with the ledger debit, so a top-up can never exist
+    // as an audit without its money movement (ARGUS #406). Record the ledger
+    // entry ids so later reconciliation matches exactly.
+    const ledgerEntries = await tx.paymentAccountEntry.findMany({
+      where: { tenantId, accountId: fundAccountId, sourceId: groupId },
+      select: { id: true },
+    });
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        actorId,
+        actorRole,
+        entityType: 'PettyCashFund',
+        entityId: fund.id,
+        action: AUDIT_ACTIONS.PETTY_CASH_TOP_UP,
+        after: {
+          amount: amount.toNumber(),
+          sourceAccountId: input.sourceAccountId ?? null,
+          description: buildTopUpDescription(sourceName, input.description),
+          entryDate: (entryDate ?? new Date()).toISOString(),
+          ledgerEntryIds: ledgerEntries.map((entry) => entry.id),
+        },
+      },
+    });
+
     return {
       fund: updated,
       amount: amount.toNumber(),
@@ -606,19 +644,7 @@ export async function topUpPettyCash(
     };
   });
 
-  void createAuditLog({
-    tenantId,
-    actorId,
-    actorRole,
-    entityType: 'PettyCashFund',
-    entityId: fund.id,
-    action: AUDIT_ACTIONS.PETTY_CASH_TOP_UP,
-    after: {
-      amount: amount.toNumber(),
-      sourceAccountId: input.sourceAccountId ?? null,
-      description: result.description,
-    },
-  }).catch(() => {});
+  // A top-up can lift the fund back above its threshold and clear the alert.
 
   // A top-up can lift the fund back above its threshold and clear the alert.
   await checkFundLowBalance(tenantId, fund.id);
@@ -749,16 +775,24 @@ export async function buildPettyCashExportData(
   });
   if (!fund) return null;
 
-  const where: Record<string, unknown> = { tenantId, pettyCashFundId: fund.id };
-  if (filters.category) where.category = filters.category as ExpenseCategory;
+  // Inclusive day bounds (#394): a YYYY-MM-DD `dateTo` means the whole day.
+  const start = filters.dateFrom ? parseRangeStart(filters.dateFrom) : null;
+  const end = filters.dateTo ? parseRangeEnd(filters.dateTo) : null;
+  const periodFiltered = start !== null || end !== null;
 
-  const dateFilter: Record<string, Date> = {};
-  if (filters.dateFrom) dateFilter.gte = new Date(filters.dateFrom);
-  if (filters.dateTo) dateFilter.lte = new Date(filters.dateTo);
-  if (Object.keys(dateFilter).length > 0) where.expenseDate = dateFilter;
+  // Expense list/category totals honour the category filter; the balance
+  // statement never does — the fund's opening/closing does not depend on which
+  // categories are shown.
+  const expenseDateFilter = {
+    ...(start ? { gte: start } : {}),
+    ...(end ? { lte: end } : {}),
+  };
+  const expenseWhere: Record<string, unknown> = { tenantId, pettyCashFundId: fund.id };
+  if (filters.category) expenseWhere.category = filters.category as ExpenseCategory;
+  if (periodFiltered) expenseWhere.expenseDate = expenseDateFilter;
 
   const expenses = await prisma.expense.findMany({
-    where,
+    where: expenseWhere,
     include: { recordedBy: { select: { email: true } } },
     orderBy: { expenseDate: 'desc' },
   });
@@ -775,9 +809,62 @@ export async function buildPettyCashExportData(
   for (const entry of categoryMap.values()) byCategory.push(entry);
   byCategory.sort((a, b) => b.total - a.total);
 
-  const agg = await prisma.expense.aggregate({ where, _sum: { amount: true } });
-  const totalExpenses = agg._sum.amount ? agg._sum.amount.toNumber() : 0;
-  const totalTopUps = (await sumTopUps(tenantId, fund)).toNumber();
+  const statementExpenseWhere = {
+    tenantId,
+    pettyCashFundId: fund.id,
+    ...(periodFiltered ? { expenseDate: expenseDateFilter } : {}),
+  };
+  const beforeExpenseWhere = start
+    ? { tenantId, pettyCashFundId: fund.id, expenseDate: { lt: start } }
+    : null;
+
+  const accountId = fund.paymentAccountId;
+  const topUpBase = accountId
+    ? {
+        tenantId,
+        accountId,
+        source: { in: [...TOP_UP_SOURCES] },
+        debit: { gt: 0 },
+      }
+    : null;
+
+  const [periodExpensesAgg, beforeExpensesAgg, topUpsInPeriodAgg, topUpsBeforeAgg] =
+    await Promise.all([
+      prisma.expense.aggregate({ where: statementExpenseWhere, _sum: { amount: true } }),
+      beforeExpenseWhere
+        ? prisma.expense.aggregate({ where: beforeExpenseWhere, _sum: { amount: true } })
+        : Promise.resolve({ _sum: { amount: null } }),
+      topUpBase
+        ? prisma.paymentAccountEntry.aggregate({
+            where: {
+              ...topUpBase,
+              ...(periodFiltered
+                ? {
+                    entryDate: {
+                      ...(start ? { gte: start } : {}),
+                      ...(end ? { lte: end } : {}),
+                    },
+                  }
+                : {}),
+            },
+            _sum: { debit: true },
+          })
+        : Promise.resolve({ _sum: { debit: null } }),
+      topUpBase && start
+        ? prisma.paymentAccountEntry.aggregate({
+            where: { ...topUpBase, entryDate: { lt: start } },
+            _sum: { debit: true },
+          })
+        : Promise.resolve({ _sum: { debit: null } }),
+    ]);
+
+  const periodStatement = computePettyCashPeriodStatement({
+    fundOpeningBalance: fund.openingBalance,
+    topUpsBefore: topUpsBeforeAgg._sum.debit ?? 0,
+    expensesBefore: beforeExpensesAgg._sum.amount ?? 0,
+    topUpsInPeriod: topUpsInPeriodAgg._sum.debit ?? 0,
+    expensesInPeriod: periodExpensesAgg._sum.amount ?? 0,
+  });
 
   return {
     fund: {
@@ -791,13 +878,22 @@ export async function buildPettyCashExportData(
         : null,
     },
     balance: {
-      openingBalance: fund.openingBalance.toNumber(),
-      totalTopUps,
-      totalExpenses,
-      currentBalance: new Decimal(fund.openingBalance.toNumber())
-        .plus(totalTopUps)
-        .minus(totalExpenses)
-        .toNumber(),
+      openingBalance: periodStatement.openingBalance.toNumber(),
+      totalTopUps: periodStatement.totalTopUps.toNumber(),
+      totalExpenses: periodStatement.totalExpenses.toNumber(),
+      closingBalance: periodStatement.closingBalance.toNumber(),
+      // All-time live fund balance (kept for API compatibility); the CSV uses
+      // the period closing balance instead of calling this "current".
+      currentBalance: fund.currentBalance.toNumber(),
+    },
+    period: {
+      dateFrom: filters.dateFrom ?? null,
+      dateTo: filters.dateTo ?? null,
+      filtered: periodFiltered,
+      categoryFiltered: Boolean(filters.category),
+      label: periodFiltered
+        ? `${filters.dateFrom ?? 'earliest'} to ${filters.dateTo ?? 'latest'} (inclusive)`
+        : 'All time',
     },
     expenses: expenses.map((e) => ({
       id: e.id,
