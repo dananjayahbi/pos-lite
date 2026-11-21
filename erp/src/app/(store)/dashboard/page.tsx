@@ -8,6 +8,7 @@ import { Prisma } from '@/generated/prisma/client';
 import { LOW_STOCK_PRODUCT_SCOPE_SQL, LOW_STOCK_SQL_PREDICATE } from '@/lib/inventory/lowStockPredicate';
 import { lowStockCardSubtitle } from '@/lib/dashboard/lowStockNote.core';
 import { formatRupee } from '@/lib/format';
+import { saleAccountingDateWhere } from '@/lib/reports/accounting';
 import { getDefaultRouteForRole } from '@/lib/utils/default-route';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -25,6 +26,7 @@ import { StockSummaryWidgets } from '@/components/dashboard/StockSummaryWidgets'
 import { RecentStockMovementsCard } from '@/components/dashboard/RecentStockMovementsCard';
 import { QuickNav } from '@/components/dashboard/QuickNav';
 import { AnalyticsSection } from '@/components/dashboard/AnalyticsSection';
+import { endOfLocalDay, startOfLocalDay } from '@/components/dashboard/charts/analytics';
 import { formatRecentSaleTimestamp } from '@/components/dashboard/recentSaleTime';
 import {
   resolveRecentSalePayment,
@@ -88,15 +90,17 @@ function TableSkeleton() {
 }
 
 async function TodayStats({ tenantId }: { tenantId: string }) {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  const todayStart = startOfLocalDay(new Date());
+  const todayEnd = endOfLocalDay(todayStart);
 
   const [todaySales, totalCustomers, lowStockResult] = await Promise.all([
     prisma.sale.findMany({
       where: {
         tenantId,
         status: 'COMPLETED',
-        completedAt: { gte: todayStart },
+        // ARGUS #50: today's revenue follows the recorded sale date, so a
+        // backdated sale counted on its own day and not on completion time.
+        ...saleAccountingDateWhere(todayStart, todayEnd),
       },
       select: { totalAmount: true },
     }),

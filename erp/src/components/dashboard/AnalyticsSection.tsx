@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { saleAccountingDateWhere } from '@/lib/reports/accounting';
 import { RevenueTrendChart } from './charts/RevenueTrendChart';
 import { SalesByPaymentChart } from './charts/SalesByPaymentChart';
 import { TopProductsChart } from './charts/TopProductsChart';
@@ -6,6 +7,7 @@ import {
   buildDailyRevenue,
   buildPaymentBreakdown,
   buildTopProducts,
+  endOfLocalDay,
   startOfLocalDay,
 } from './charts/analytics';
 import type { ChartAnalytics } from './charts/types';
@@ -18,13 +20,17 @@ function daysAgo(n: number): Date {
 
 async function fetchChartAnalytics(tenantId: string): Promise<ChartAnalytics> {
   // Six days back + today = the 7 local calendar days shown in the charts.
+  const today = new Date();
   const since = daysAgo(6);
+  const until = endOfLocalDay(today);
 
   const sales = await prisma.sale.findMany({
     where: {
       tenantId,
       status: 'COMPLETED',
-      completedAt: { gte: since },
+      // ARGUS #50: select on the recorded sale date (falling back to createdAt),
+      // not the till completion time.
+      ...saleAccountingDateWhere(since, until),
     },
     include: {
       lines: {
