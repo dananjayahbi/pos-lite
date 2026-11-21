@@ -7,6 +7,7 @@ import {
   buildWaybillDescription,
   formatWaybillAmount,
   formatWaybillDate,
+  isDraftWaybill,
   waybillBarcodeValue,
 } from '@/lib/delivery/waybill';
 import type { DeliveryLabelTemplate } from '@/types/delivery-label';
@@ -112,11 +113,8 @@ export function ShippingLabel({ template, address, delivery, waybillId }: Shippi
     .filter(Boolean)
     .join(', ');
 
-  const barcodeValue = waybillBarcodeValue({
-    waybillId,
-    orderRef: delivery.orderRef,
-    showOrderRef: true,
-  });
+  const barcodeValue = waybillBarcodeValue({ waybillId });
+  const draft = isDraftWaybill(waybillId);
   const branchParts = [address.cityName, address.districtName].filter(
     (part): part is string => Boolean(part),
   );
@@ -161,6 +159,13 @@ export function ShippingLabel({ template, address, delivery, waybillId }: Shippi
             <p className="mt-[1mm] font-mono text-[10pt] font-bold tracking-wide">
               {barcodeValue}
             </p>
+          </div>
+        )}
+        {draft && (
+          <div className="border-2 border-black px-[3mm] py-[1.5mm] text-center text-[10pt] font-extrabold uppercase leading-tight">
+            Draft
+            <br />
+            No courier waybill
           </div>
         )}
       </header>

@@ -3,6 +3,7 @@ import {
   buildWaybillDescription,
   formatWaybillAmount,
   formatWaybillDate,
+  isDraftWaybill,
   waybillBarcodeValue,
 } from '@/lib/delivery/waybill';
 
@@ -77,17 +78,22 @@ describe('buildWaybillDescription', () => {
 });
 
 describe('waybillBarcodeValue', () => {
-  it('prefers the courier waybill', () => {
+  it('uses the courier waybill when present', () => {
     expect(waybillBarcodeValue({ waybillId: 'BA123456', orderRef: 'ORD-1', showOrderRef: true })).toBe(
       'BA123456',
     );
   });
 
-  it('falls back to the order ref only when enabled, otherwise null', () => {
-    expect(waybillBarcodeValue({ waybillId: null, orderRef: 'ORD-1', showOrderRef: true })).toBe(
-      'ORD-1',
-    );
-    expect(waybillBarcodeValue({ waybillId: null, orderRef: 'ORD-1', showOrderRef: false })).toBeNull();
+  it('never substitutes the internal order ref as a courier barcode', () => {
+    expect(waybillBarcodeValue({ waybillId: null, orderRef: 'ORD-1', showOrderRef: true })).toBeNull();
     expect(waybillBarcodeValue({ waybillId: null, orderRef: null, showOrderRef: true })).toBeNull();
+  });
+});
+
+describe('isDraftWaybill', () => {
+  it('marks a pre-dispatch label as a draft', () => {
+    expect(isDraftWaybill(null)).toBe(true);
+    expect(isDraftWaybill(undefined)).toBe(true);
+    expect(isDraftWaybill('BA123456')).toBe(false);
   });
 });

@@ -54,19 +54,22 @@ export function buildWaybillDescription({
 }
 
 /**
- * The header barcode shows the courier waybill when present; otherwise it
- * falls back to the order reference only when order refs are enabled.
+ * The header barcode is the courier waybill only. A pre-dispatch delivery has
+ * no courier-issued code, so printing the internal order reference in the
+ * barcode position made an unofficial label look like a courier POD (ARGUS
+ * #299). Such labels must be rendered as an explicit draft instead.
  */
 export function waybillBarcodeValue({
   waybillId,
-  orderRef,
-  showOrderRef,
 }: {
-  waybillId: string | null | undefined;
-  orderRef: string | null | undefined;
-  showOrderRef: boolean;
+  waybillId?: string | null | undefined;
+  orderRef?: string | null | undefined;
+  showOrderRef?: boolean | undefined;
 }): string | null {
-  if (waybillId) return waybillId;
-  if (showOrderRef && orderRef) return orderRef;
-  return null;
+  return waybillId || null;
+}
+
+/** True when there is no courier waybill yet, so the label is a draft. */
+export function isDraftWaybill(waybillId: string | null | undefined): boolean {
+  return !waybillId;
 }
