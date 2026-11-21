@@ -52,7 +52,7 @@ export interface PayrollExportPreflight {
 }
 
 const EXPORT_LABELS: Record<PayrollExportKind, string> = {
-  'bank-sheet': 'Bank salary sheet',
+  'bank-sheet': 'Bank salary worksheet',
   statutory: 'EPF/ETF monthly returns',
   summary: 'Monthly payroll summary',
 };

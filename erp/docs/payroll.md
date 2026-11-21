@@ -53,7 +53,7 @@ applied.
 4. **Generate payroll** — creates an immutable `PayrollRun` + `PayrollItem`
    snapshot. A month can only be generated once.
 5. Open **Payroll Reports & Bank Sheets** to print/email payslips and download
-   the bank and statutory files.
+   the bank salary worksheet and statutory files.
 
 Generating a run also creates a `CommissionPayout` for the unpaid commission
 records included in the run and marks them paid, so the Staff Commissions page
@@ -79,13 +79,13 @@ Actions on `/payroll/reports`:
   `NOT_CONFIGURED` and the UI shows a warning — it is never silently marked as
   sent.
 
-## Reports & bank sheets
+## Reports & bank worksheets
 
 All exports use the generated (immutable) run for the selected month:
 
 | Export | Formats | Contents |
 | --- | --- | --- |
-| Bank salary sheet | XLSX, PDF | Employee name, bank, branch, account number, net salary, total — ready for corporate-banking batch upload |
+| Bank salary worksheet | XLSX, PDF | Employee name, NIC, bank, branch, account number, net salary, total - for manual bank upload, not a bank batch file |
 | EPF / ETF monthly returns | XLSX (2 sheets), PDF (2 pages) | C-Form style: NIC, EPF/ETF number, total earnings, employee 8%, employer 12%, employer ETF 3% |
 | Monthly payroll summary | PDF, XLSX | Company cost breakdown + per-employee table |
 
@@ -132,5 +132,5 @@ npx vitest run src/lib/payroll
 
 - `calculations.test.ts` — gross/net/EPF/ETF, OT, no-pay, advances, caps.
 - `payroll-settings.test.ts` — parsing/defaults/working-day resolution.
-- `documents.test.ts` — payslip PDF, bank sheet XLSX/PDF, EPF/ETF returns,
+- `documents.test.ts` - payslip PDF, bank salary worksheet XLSX/PDF, EPF/ETF returns,
   summary report render without errors.

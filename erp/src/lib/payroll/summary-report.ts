@@ -1,6 +1,11 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import {
+  describePayrollRunStatus,
+  resolveNetLabel,
+  type PayrollRunPaymentInfo,
+} from '@/lib/payroll/payroll-run-status';
 
 export interface SummaryReportTotals {
   headcount: number;
@@ -9,8 +14,11 @@ export interface SummaryReportTotals {
   overtime: string;
   commission: string;
   gross: string;
+  /** No-pay + advances (excludes employee EPF). */
   deductions: string;
   employeeEpf: string;
+  /** No-pay + advances + employee EPF, so gross - this = net. */
+  deductionsIncludingEpf: string;
   employerEpf: string;
   employerEtf: string;
   net: string;
@@ -35,6 +43,11 @@ export interface SummaryReportMeta {
   periodLabel: string;
   periodMonth: string;
   generatedAt: Date;
+  /** ARGUS #385: never label the net amount "paid" before the run is PAID. */
+  status?: string;
+  payment?: PayrollRunPaymentInfo | null;
+  /** ARGUS #387: explicit current-profile caveat for regenerated exports. */
+  provenanceNote?: string;
 }
 
 function num(value: string): number {
@@ -55,13 +68,30 @@ const SUMMARY_ROWS: Array<[string, keyof SummaryReportTotals]> = [
   ['Overtime', 'overtime'],
   ['Sales commission', 'commission'],
   ['Gross salary', 'gross'],
-  ['Deductions (no-pay + advances)', 'deductions'],
+  ['No-pay + advances', 'deductions'],
   ['Employee EPF', 'employeeEpf'],
+  ['Total deductions incl. employee EPF', 'deductionsIncludingEpf'],
   ['Employer EPF', 'employerEpf'],
   ['Employer ETF', 'employerEtf'],
   ['Net salaries paid', 'net'],
   ['Total company cost', 'companyCost'],
 ];
+
+/** No-pay + advances + employee EPF; gross minus this equals net. */
+export function totalDeductionsIncludingEpf(
+  totals: Pick<SummaryReportTotals, 'deductions' | 'employeeEpf'>,
+): string {
+  return (num(totals.deductions) + num(totals.employeeEpf)).toFixed(2);
+}
+
+/** Swap the static net label for the status-correct one (ARGUS #385). */
+function summaryRows(
+  status: string,
+): Array<[string, keyof SummaryReportTotals]> {
+  return SUMMARY_ROWS.map(([label, key]) =>
+    key === 'net' ? ([resolveNetLabel(status), key] as [string, keyof SummaryReportTotals]) : [label, key],
+  );
+}
 
 export function generateSummaryReportXlsx(
   meta: SummaryReportMeta,
@@ -69,13 +99,20 @@ export function generateSummaryReportXlsx(
   items: SummaryReportItem[],
 ): Buffer {
   const workbook = XLSX.utils.book_new();
+  const status = describePayrollRunStatus({
+    status: meta.status ?? 'GENERATED',
+    payment: meta.payment ?? null,
+  });
+  const rows = summaryRows(status.status);
 
   const summaryAoa: (string | number)[][] = [
     [`${meta.companyName} - Monthly Payroll Summary`],
     [`Period: ${meta.periodLabel}`, `Generated: ${meta.generatedAt.toLocaleString('en-GB')}`],
+    [`Status: ${status.exportMarker}`],
+    ...(meta.provenanceNote ? [[meta.provenanceNote]] : []),
     [],
     ['Item', 'Amount (LKR)'],
-    ...SUMMARY_ROWS.map(([label, key]) => [
+    ...rows.map(([label, key]) => [
       label,
       key === 'headcount' ? totals.headcount : num(totals[key] as string),
     ]),
@@ -85,7 +122,7 @@ export function generateSummaryReportXlsx(
   XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
 
   const detailAoa: (string | number)[][] = [
-    ['Employee', 'Role', 'Basic', 'Allowances', 'OT', 'Commission', 'Gross', 'Deductions', 'Employee EPF', 'Net'],
+    ['Employee', 'Role', 'Basic', 'Allowances', 'OT', 'Commission', 'Gross', 'No-pay + advances', 'Employee EPF', 'Net'],
     ...items.map((item) => [
       item.staffName,
       item.role,
@@ -98,6 +135,8 @@ export function generateSummaryReportXlsx(
       num(item.employeeEpf),
       num(item.netSalary),
     ]),
+    [],
+    ['Net = Gross - No-pay + advances - Employee EPF'],
   ];
   const detailSheet = XLSX.utils.aoa_to_sheet(detailAoa);
   detailSheet['!cols'] = new Array(10).fill({ wch: 16 });
@@ -113,6 +152,11 @@ export function generateSummaryReportPdf(
 ): Buffer {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
+  const status = describePayrollRunStatus({
+    status: meta.status ?? 'GENERATED',
+    payment: meta.payment ?? null,
+  });
+  const rows = summaryRows(status.status);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
@@ -123,14 +167,20 @@ export function generateSummaryReportPdf(
   doc.setTextColor(107, 91, 91);
   doc.text(`Period: ${meta.periodLabel}`, 40, 60);
   doc.text(`Headcount: ${totals.headcount}`, pageWidth - 40, 60, { align: 'right' });
+  doc.setFontSize(8);
+  doc.text(`Status: ${status.exportMarker}`, 40, 73);
+  if (meta.provenanceNote) {
+    doc.setFontSize(7);
+    doc.text(meta.provenanceNote, 40, 84, { maxWidth: pageWidth - 80 });
+  }
   doc.setDrawColor(200, 149, 108);
   doc.setLineWidth(1.5);
-  doc.line(40, 70, pageWidth - 40, 70);
+  doc.line(40, meta.provenanceNote ? 96 : 84, pageWidth - 40, meta.provenanceNote ? 96 : 84);
 
   autoTable(doc, {
-    startY: 82,
+    startY: meta.provenanceNote ? 106 : 96,
     head: [['Company cost breakdown', 'Amount (LKR)']],
-    body: SUMMARY_ROWS.map(([label, key]) => [
+    body: rows.map(([label, key]) => [
       label,
       money(totals[key] as string),
     ]),
@@ -141,7 +191,7 @@ export function generateSummaryReportPdf(
     didParseCell: (hookData) => {
       const rawRow = hookData.row.raw as unknown[];
       const label = String(rawRow[0] ?? '');
-      if (label === 'Total company cost' || label === 'Net salaries paid') {
+      if (label === 'Total company cost' || label === status.netLabel) {
         hookData.cell.styles.fontStyle = 'bold';
         hookData.cell.styles.fillColor = [245, 236, 226];
       }
@@ -161,7 +211,7 @@ export function generateSummaryReportPdf(
         'OT',
         'Commission',
         'Gross',
-        'Deductions',
+        'No-pay + advances',
         'EPF (8%)',
         'Net',
       ],
@@ -192,13 +242,25 @@ export function generateSummaryReportPdf(
     },
   });
 
+  const afterDetail =
+    (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 500;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(107, 91, 91);
+  doc.text(
+    'Per employee: Net = Gross - (No-pay + advances) - Employee EPF. The summary total deductions row includes employee EPF.',
+    40,
+    afterDetail + 14,
+    { maxWidth: pageWidth - 80 },
+  );
+
   const pageCount = doc.getNumberOfPages();
   for (let page = 1; page <= pageCount; page += 1) {
     doc.setPage(page);
     doc.setFontSize(8);
     doc.setTextColor(153, 153, 153);
     doc.text(
-      `Generated ${meta.generatedAt.toLocaleString('en-GB')} • Page ${page} of ${pageCount}`,
+      `Generated ${meta.generatedAt.toLocaleString('en-GB')} - ${status.exportMarker} - Page ${page} of ${pageCount}`,
       pageWidth - 40,
       doc.internal.pageSize.getHeight() - 20,
       { align: 'right' },

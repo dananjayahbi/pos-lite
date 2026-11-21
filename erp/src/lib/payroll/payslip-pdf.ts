@@ -197,7 +197,7 @@ export async function generatePayrollPayslipPdf(
       ],
       ['Salary Advances', rupees(data.item.advanceDeduction)],
       [`Employee EPF (${data.rates.employeeEpf}%)`, rupees(data.item.employeeEpf)],
-      ['Total Deductions', rupees(data.item.totalDeductions)],
+      ['Total (no-pay + advances)', rupees(data.item.totalDeductions)],
     ],
     styles: { font: 'helvetica', fontSize: 9.5, cellPadding: 4, textColor: ESPRESSO },
     headStyles: { fillColor: ESPRESSO, textColor: [255, 255, 255] },

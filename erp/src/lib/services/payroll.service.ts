@@ -34,6 +34,7 @@ import {
   assessAttendanceCompleteness,
   summarizeAttendanceCompleteness,
 } from '@/lib/payroll/attendance-completeness.core';
+import type { PayrollRunPaymentInfo } from '@/lib/payroll/payroll-run-status';
 import type {
   PayrollPreview,
   PayrollPreviewRow,
@@ -711,6 +712,65 @@ export async function getPayrollRun(tenantId: string, runId: string) {  const ru
   });
   if (!run) throw ApiError.notFound('Payroll run not found');
   return run;
+}
+
+/**
+ * ARGUS #385: payment date/approver without new columns. The PAID audit entry
+ * written by markPayrollRunPaid already carries paidAt and the actor, so read
+ * the latest one instead of adding paidAt/paidById to the schema.
+ */
+export async function getPayrollRunPaymentInfo(
+  tenantId: string,
+  runId: string,
+  status: string,
+): Promise<PayrollRunPaymentInfo> {
+  if (status !== 'PAID') {
+    return { paidAt: null, approvedBy: null, approvedByRole: null, source: 'not-paid' };
+  }
+
+  const entry = await prisma.auditLog.findFirst({
+    where: {
+      tenantId,
+      entityType: 'PayrollRun',
+      entityId: runId,
+      action: AUDIT_ACTIONS.PAYROLL_RUN_PAID,
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { actorId: true, actorRole: true, after: true },
+  });
+
+  if (!entry) {
+    return { paidAt: null, approvedBy: null, approvedByRole: null, source: 'unavailable' };
+  }
+
+  const after =
+    typeof entry.after === 'object' && entry.after !== null && !Array.isArray(entry.after)
+      ? (entry.after as Record<string, unknown>)
+      : {};
+  const paidAt = typeof after.paidAt === 'string' ? after.paidAt : null;
+
+  let approvedBy: string | null = null;
+  if (entry.actorId) {
+    const actor = await prisma.user.findFirst({
+      where: { id: entry.actorId, tenantId },
+      select: { fullName: true, email: true },
+    });
+    approvedBy = actor?.fullName?.trim() || actor?.email || null;
+  }
+
+  return {
+    paidAt,
+    approvedBy,
+    approvedByRole: entry.actorRole ?? null,
+    source: 'audit-log',
+  };
+}
+
+/** Run detail for the Reports page, including derived payment metadata. */
+export async function getPayrollRunDetail(tenantId: string, runId: string) {
+  const run = await getPayrollRun(tenantId, runId);
+  const payment = await getPayrollRunPaymentInfo(tenantId, run.id, run.status);
+  return { ...run, payment };
 }
 
 export async function getPayrollRunForMonth(tenantId: string, month: string) {

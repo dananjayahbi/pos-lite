@@ -41,6 +41,9 @@ export async function GET(
       periodLabel: periodLabel(new Date(context.run.periodStart)),
       periodMonth: context.run.periodMonth,
       generatedAt: context.generatedAt,
+      status: context.run.status,
+      payment: context.payment,
+      provenanceNote: context.provenance.caveat,
     };
     const totals = summaryTotals(context);
     const items = toSummaryItems(context);
