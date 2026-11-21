@@ -126,10 +126,16 @@ For each agent commit:
 - In flight: #101 (return receipt transparency) and #110 (shift sales count);
   #102 (return reversal) and #111 (shift data RBAC) are held to avoid
   return/shift-service conflicts while those run.
-- DB migration `20261121160000_raw_material_costing` is committed but the remote
-  Postgres host (140.238.145.221:5432) is unreachable (P1001); deploy with
-  `cd erp && npx prisma migrate deploy` when it is back.
-- Checkpoint after batch 6: full suite green at 1,518 tests.
+- Batch 7 merged: #101 (receipt transparency), #102 (required reason + audited
+  return reversal with ReturnStatus.CANCELLED), #110 (shift completed-sales
+  count), #113 (POS shift report standalone/print).
+- In flight: #111/#112 (shift access + Z-report top items), #125/#126
+  (appointment lifecycle/overdue); #127/#128/#129 (appointment availability,
+  detail, list dates) queued for the appointments agent to avoid conflicts.
+- Checkpoint: full suite green at 1,537 tests.
+- DB still unreachable at 140.238.145.221:5432 (P1001); migrations
+  20261121160000_raw_material_costing and 20261121170000_return_cancellation
+  are pending deployment.
 - Worktrees are reset with `git -C <wt> reset --hard argus_qa` between batches;
   their old commits are already merged, so this is safe.
 - Every agent task must call `log_task_progress` before `submit_for_review`
