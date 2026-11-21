@@ -12,6 +12,8 @@ interface BarcodeLabelProps {
   form?: string | null | undefined;
   packSize?: string | null | undefined;
   retailPrice: number;
+  /** "incl. VAT" / "incl. SSCL" / "VAT exempt" (ARGUS #160). */
+  priceQualifier?: string | null | undefined;
   stockQuantity: number;
   lowStockThreshold: number;
   isPreview?: boolean | undefined;
@@ -33,6 +35,7 @@ export function BarcodeLabel({
   form,
   packSize,
   retailPrice,
+  priceQualifier,
   stockQuantity,
   lowStockThreshold,
   isPreview = false,
@@ -66,6 +69,7 @@ export function BarcodeLabel({
           hasBarcodeValue={hasBarcodeValue}
           formPackText={formPackText}
           retailPrice={retailPrice}
+          priceQualifier={priceQualifier}
           isLowStock={isLowStock}
         />
       </div>
@@ -105,6 +109,7 @@ function LabelContent({
   hasBarcodeValue,
   formPackText,
   retailPrice,
+  priceQualifier,
   isLowStock,
 }: {
   brandName?: string | null | undefined;
@@ -114,6 +119,7 @@ function LabelContent({
   hasBarcodeValue: boolean;
   formPackText: string;
   retailPrice: number;
+  priceQualifier?: string | null | undefined;
   isLowStock: boolean;
 }) {
   return (
@@ -176,8 +182,15 @@ function LabelContent({
             style={{ width: 8, height: 8, backgroundColor: '#B7791F' }}
           />
         )}
-        <span className="font-display text-[14px] font-bold text-espresso text-right">
-          {formatPrice(retailPrice)}
+        <span className="flex flex-col items-end leading-none">
+          <span className="font-display text-[14px] font-bold text-espresso text-right">
+            {formatPrice(retailPrice)}
+          </span>
+          {priceQualifier ? (
+            <span className="font-body text-[7px] text-mist-ink mt-0.5">
+              {priceQualifier}
+            </span>
+          ) : null}
         </span>
       </div>
     </>

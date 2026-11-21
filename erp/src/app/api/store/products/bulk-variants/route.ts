@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     },
     include: {
       product: {
-        select: { name: true, brand: { select: { name: true } } },
+        select: { name: true, taxRule: true, brand: { select: { name: true } } },
       },
     },
     orderBy: [{ productId: 'asc' }, { sku: 'asc' }],

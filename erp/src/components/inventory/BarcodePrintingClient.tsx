@@ -38,6 +38,8 @@ import {
   formatBarcodeVariantRange,
 } from '@/lib/barcode-printing.core';
 import { selectBarcodeSearchRows } from '@/lib/barcode-printing-search.core';
+import { labelPriceDisplay } from '@/lib/pricing/label-price.core';
+import { useTaxRates } from '@/hooks/useTaxRates';
 import {
   BARCODE_LABELS_PER_SHEET,
   countBarcodeLabels,
@@ -57,6 +59,8 @@ interface VariantOption {
   form: string | null;
   packSize: string | null;
   retailPrice: number;
+  /** Product tax rule; labels print the tax-inclusive shelf price (ARGUS #160). */
+  taxRule: string | null;
   stockQuantity: number;
   lowStockThreshold: number;
   imageUrl: string | null;
@@ -89,6 +93,9 @@ export function BarcodePrintingClient() {
     useState<BarcodeLabelTemplateId>('a4-24up');
   const template = getBarcodeLabelTemplate(templateId);
   const isA4 = !template.continuousRoll;
+  const { data: taxRates } = useTaxRates();
+  const vatRate = taxRates?.vatRate ?? 0;
+  const ssclRate = taxRates?.ssclRate ?? 0;
 
   const { data, isLoading, isFetching } = useProducts({
     search: deferredSearch.trim() || undefined,
@@ -121,6 +128,7 @@ export function BarcodePrintingClient() {
           form: variant.form,
           packSize: variant.packSize,
           retailPrice: Number(variant.retailPrice),
+          taxRule: product.taxRule ?? null,
           stockQuantity: variant.stockQuantity,
           lowStockThreshold: variant.lowStockThreshold,
           imageUrl: resolveProductThumbnail(
@@ -179,28 +187,47 @@ export function BarcodePrintingClient() {
   const thermalLabels = useMemo(
     () =>
       queue.flatMap((item) =>
-        Array.from({ length: clampCopies(item.copies) }, (_, index) => ({
-          ...item,
-          key: `${item.variantId}-${index}`,
-        })),
+        Array.from({ length: clampCopies(item.copies) }, (_, index) => {
+          const price = labelPriceDisplay({
+            retailPrice: item.retailPrice,
+            taxRule: item.taxRule,
+            vatRate,
+            ssclRate,
+          });
+          return {
+            ...item,
+            key: `${item.variantId}-${index}`,
+            retailPrice: price.amount,
+            priceQualifier: price.qualifier,
+          };
+        }),
       ),
-    [queue],
+    [queue, vatRate, ssclRate],
   );
 
   const sheetPages = useMemo<SheetLabelData[][]>(
     () =>
       pages.map((page, pageIndex) =>
-        page.map((item, labelIndex) => ({
-          key: `${pageIndex}-${labelIndex}-${item.variantId}`,
-          productName: item.productName,
-          sku: item.sku,
-          barcode: item.barcode,
-          form: item.form,
-          packSize: item.packSize,
-          retailPrice: item.retailPrice,
-        })),
+        page.map((item, labelIndex) => {
+          const price = labelPriceDisplay({
+            retailPrice: item.retailPrice,
+            taxRule: item.taxRule,
+            vatRate,
+            ssclRate,
+          });
+          return {
+            key: `${pageIndex}-${labelIndex}-${item.variantId}`,
+            productName: item.productName,
+            sku: item.sku,
+            barcode: item.barcode,
+            form: item.form,
+            packSize: item.packSize,
+            retailPrice: price.amount,
+            priceQualifier: price.qualifier,
+          };
+        }),
       ),
-    [pages],
+    [pages, vatRate, ssclRate],
   );
 
   const handlePrint = useCallback(() => {
@@ -219,6 +246,7 @@ export function BarcodePrintingClient() {
                 form={label.form}
                 packSize={label.packSize}
                 retailPrice={label.retailPrice}
+                priceQualifier={label.priceQualifier}
                 stockQuantity={label.stockQuantity}
                 lowStockThreshold={label.lowStockThreshold}
               />
@@ -660,6 +688,7 @@ export function BarcodePrintingClient() {
                       form={label.form}
                       packSize={label.packSize}
                       retailPrice={label.retailPrice}
+                      priceQualifier={label.priceQualifier}
                       stockQuantity={label.stockQuantity}
                       lowStockThreshold={label.lowStockThreshold}
                     />

@@ -32,6 +32,8 @@ export interface SheetLabelData {
   form?: string | null;
   packSize?: string | null;
   retailPrice?: number | null;
+  /** "incl. VAT" / "incl. SSCL" / "VAT exempt" (ARGUS #160). */
+  priceQualifier?: string | null;
 }
 
 function formatPrice(value: number): string {
@@ -160,8 +162,22 @@ export function BarcodeSheetLabel({ label }: { label: SheetLabelData }) {
           {label.sku}
         </span>
         {typeof label.retailPrice === 'number' ? (
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#2f2418' }}>
-            {formatPrice(label.retailPrice)}
+          <span
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-end',
+              lineHeight: 1.05,
+            }}
+          >
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#2f2418' }}>
+              {formatPrice(label.retailPrice)}
+            </span>
+            {label.priceQualifier ? (
+              <span style={{ fontSize: 7, color: '#6b5a45' }}>
+                {label.priceQualifier}
+              </span>
+            ) : null}
           </span>
         ) : null}
       </div>

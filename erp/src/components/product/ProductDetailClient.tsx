@@ -321,6 +321,7 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
           permissions={permissions}
           productName={product.name ?? ''}
           brandName={product.brand?.name ?? null}
+          taxRule={(product.taxRule as string | null | undefined) ?? null}
         />
       )}
       {activeTab === 'stock-history' && (

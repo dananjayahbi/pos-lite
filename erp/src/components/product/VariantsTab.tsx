@@ -71,6 +71,8 @@ interface VariantsTabProps {
   permissions: string[];
   productName: string;
   brandName?: string | null | undefined;
+  /** Product tax rule so printed labels show the tax-inclusive price. */
+  taxRule?: 'STANDARD_VAT' | 'SSCL' | 'EXEMPT' | string | null | undefined;
 }
 
 // ── Stock badge ──────────────────────────────────────────────────────────────
@@ -101,7 +103,7 @@ function formatPrice(value: string | number | null | undefined): string {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export function VariantsTab({ productId, variants, permissions, productName, brandName }: VariantsTabProps) {
+export function VariantsTab({ productId, variants, permissions, productName, brandName, taxRule }: VariantsTabProps) {
   const queryClient = useQueryClient();
   const [deleteTarget, setDeleteTarget] = useState<Variant | null>(null);
   const [editTarget, setEditTarget] = useState<Variant | null>(null);
@@ -189,6 +191,7 @@ export function VariantsTab({ productId, variants, permissions, productName, bra
       stockQuantity: v.stockQuantity,
       lowStockThreshold: v.lowStockThreshold,
       brandName,
+      taxRule,
       productName,
     }));
 

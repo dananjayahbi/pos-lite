@@ -56,6 +56,23 @@ filters the fetched rows through `barcode-printing-search.core.ts`:
 - the range switches to "N matching variants" while a search is active
   (ARGUS #159).
 
+## Tax-inclusive shelf price
+
+Retail prices are stored pre-tax and the till adds VAT/SSCL, so a label showing
+the bare catalogue figure understated the amount payable (ARGUS #160). Both
+templates now print the tax-inclusive amount plus a qualifier:
+
+- `STANDARD_VAT` -> catalogue price + tenant VAT, qualified **incl. VAT**;
+- `SSCL` -> catalogue price + tenant SSCL, qualified **incl. SSCL**;
+- `EXEMPT` -> catalogue price, qualified **VAT exempt**;
+- a standard product with no configured rate keeps the catalogue price and is
+  explicitly qualified **excl. VAT**.
+
+The product's `taxRule` flows into `LabelVariant` (bulk-variants API and the
+product detail tab) and is priced by `pricing/label-price.core.ts` with the
+tenant rates from `/api/settings/taxes`, so the A4 sheet, the thermal label and
+the previews agree.
+
 ## Verification
 
 `barcode-label-templates.core.test.ts` asserts the two template ids, the A4

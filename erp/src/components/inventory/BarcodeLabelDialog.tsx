@@ -25,6 +25,8 @@ import {
   paginateBarcodeSheet,
 } from '@/lib/barcode-sheet.core';
 import { PRINT_OVERLAY_CLASS, renderPrintOverlay } from '@/lib/print-overlay';
+import { labelPriceDisplay } from '@/lib/pricing/label-price.core';
+import { useTaxRates } from '@/hooks/useTaxRates';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +40,8 @@ export interface LabelVariant {
   stockQuantity: number;
   lowStockThreshold: number;
   brandName?: string | null | undefined;
+  /** Product tax rule; labels print the tax-inclusive shelf price (ARGUS #160). */
+  taxRule?: 'STANDARD_VAT' | 'SSCL' | 'EXEMPT' | string | null | undefined;
   productName: string;
 }
 
@@ -64,6 +68,9 @@ export function BarcodeLabelDialog({
     useState<BarcodeLabelTemplateId>('thermal-4x6');
   const template = getBarcodeLabelTemplate(templateId);
   const isA4 = !template.continuousRoll;
+  const { data: taxRates } = useTaxRates();
+  const vatRate = taxRates?.vatRate ?? 0;
+  const ssclRate = taxRates?.ssclRate ?? 0;
   const [quantities, setQuantities] = useState<Record<string, number>>(() =>
     Object.fromEntries(variants.map((v) => [v.id, 1])),
   );
@@ -89,17 +96,26 @@ export function BarcodeLabelDialog({
       variants.map((variant) => ({ variant, copies: quantities[variant.id] ?? 1 })),
     );
     return pages.map((page) =>
-      page.map((entry, index) => ({
-        key: `${entry.variant.id}-${index}`,
-        productName: entry.variant.productName,
-        sku: entry.variant.sku,
-        barcode: entry.variant.barcode ?? entry.variant.sku,
-        form: entry.variant.form,
-        packSize: entry.variant.packSize,
-        retailPrice: toNum(entry.variant.retailPrice),
-      })),
+      page.map((entry, index) => {
+        const price = labelPriceDisplay({
+          retailPrice: entry.variant.retailPrice,
+          taxRule: entry.variant.taxRule,
+          vatRate,
+          ssclRate,
+        });
+        return {
+          key: `${entry.variant.id}-${index}`,
+          productName: entry.variant.productName,
+          sku: entry.variant.sku,
+          barcode: entry.variant.barcode ?? entry.variant.sku,
+          form: entry.variant.form,
+          packSize: entry.variant.packSize,
+          retailPrice: price.amount,
+          priceQualifier: price.qualifier,
+        };
+      }),
     );
-  }, [variants, quantities]);
+  }, [variants, quantities, vatRate, ssclRate]);
 
   // ── Print ────────────────────────────────────────────────────────────────
 
@@ -144,21 +160,30 @@ export function BarcodeLabelDialog({
 
     renderPrintOverlay(
       <div>
-        {printLabels.map((variant, index) => (
-          <div key={`${variant.id}-${index}`} className="barcode-thermal-label">
-            <BarcodeLabel
-              brandName={variant.brandName}
-              productName={variant.productName}
-              sku={variant.sku}
-              barcode={variant.barcode}
-              form={variant.form}
-              packSize={variant.packSize}
-              retailPrice={toNum(variant.retailPrice)}
-              stockQuantity={variant.stockQuantity}
-              lowStockThreshold={variant.lowStockThreshold}
-            />
-          </div>
-        ))}
+        {printLabels.map((variant, index) => {
+          const price = labelPriceDisplay({
+            retailPrice: variant.retailPrice,
+            taxRule: variant.taxRule,
+            vatRate,
+            ssclRate,
+          });
+          return (
+            <div key={`${variant.id}-${index}`} className="barcode-thermal-label">
+              <BarcodeLabel
+                brandName={variant.brandName}
+                productName={variant.productName}
+                sku={variant.sku}
+                barcode={variant.barcode}
+                form={variant.form}
+                packSize={variant.packSize}
+                retailPrice={price.amount}
+                priceQualifier={price.qualifier}
+                stockQuantity={variant.stockQuantity}
+                lowStockThreshold={variant.lowStockThreshold}
+              />
+            </div>
+          );
+        })}
       </div>,
       {
         printStyles: `
@@ -171,9 +196,17 @@ export function BarcodeLabelDialog({
       },
     );
     onClose();
-  }, [isA4, template, a4SheetPages, printLabels, onClose]);
+  }, [isA4, template, a4SheetPages, printLabels, onClose, vatRate, ssclRate]);
 
   const firstVariant = variants[0];
+  const firstVariantPrice = firstVariant
+    ? labelPriceDisplay({
+        retailPrice: firstVariant.retailPrice,
+        taxRule: firstVariant.taxRule,
+        vatRate,
+        ssclRate,
+      })
+    : null;
   const firstA4Page = a4SheetPages[0];
 
   return (
@@ -211,7 +244,8 @@ export function BarcodeLabelDialog({
                     barcode={firstVariant.barcode}
                     form={firstVariant.form}
                     packSize={firstVariant.packSize}
-                    retailPrice={toNum(firstVariant.retailPrice)}
+                    retailPrice={firstVariantPrice?.amount ?? toNum(firstVariant.retailPrice)}
+                    priceQualifier={firstVariantPrice?.qualifier ?? null}
                     stockQuantity={firstVariant.stockQuantity}
                     lowStockThreshold={firstVariant.lowStockThreshold}
                     isPreview

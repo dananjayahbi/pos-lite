@@ -48,7 +48,7 @@ export function BulkActionBar({ permissions }: BulkActionBarProps) {
           retailPrice: string | number;
           stockQuantity: number;
           lowStockThreshold: number;
-          product: { name: string; brand: { name: string } | null };
+          product: { name: string; taxRule?: string | null; brand: { name: string } | null };
         }): LabelVariant => ({
           id: v.id,
           sku: v.sku,
@@ -62,6 +62,7 @@ export function BulkActionBar({ permissions }: BulkActionBarProps) {
           stockQuantity: v.stockQuantity,
           lowStockThreshold: v.lowStockThreshold,
           brandName: v.product.brand?.name ?? null,
+          taxRule: v.product.taxRule ?? null,
           productName: v.product.name,
         }),
       );
