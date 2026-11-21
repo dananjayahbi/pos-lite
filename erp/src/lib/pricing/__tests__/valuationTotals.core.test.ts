@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { sumValuationBreakdown } from '@/lib/pricing/valuationTotals.core';
+import { sumValuationBreakdown, isVariantInStock } from '@/lib/pricing/valuationTotals.core';
 
 describe('sumValuationBreakdown (ARGUS #220)', () => {
   const rows = [
@@ -52,5 +52,28 @@ describe('sumValuationBreakdown (ARGUS #220)', () => {
       retailValueInclTax: '0.00',
       costValue: '0.00',
     });
+  });
+});
+
+describe('isVariantInStock (ARGUS #222)', () => {
+  it('counts only variants holding units', () => {
+    expect(isVariantInStock(12)).toBe(true);
+    expect(isVariantInStock(0)).toBe(false);
+    expect(isVariantInStock(-3)).toBe(false);
+  });
+
+  it('ignores non-finite quantities', () => {
+    expect(isVariantInStock(Number.NaN)).toBe(false);
+    expect(isVariantInStock(Number.POSITIVE_INFINITY)).toBe(false);
+  });
+
+  it('gives the same count as filtering the live rows', () => {
+    const rows = [
+      { stockQuantity: 4 },
+      { stockQuantity: 0 },
+      { stockQuantity: 1 },
+      { stockQuantity: -1 },
+    ];
+    expect(rows.filter((row) => isVariantInStock(row.stockQuantity))).toHaveLength(2);
   });
 });

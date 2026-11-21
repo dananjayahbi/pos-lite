@@ -52,3 +52,12 @@ export function sumValuationBreakdown(
     costValue: sumField(rows, 'costValue').toFixed(2),
   };
 }
+
+/**
+ * ARGUS #222: "Variants in Stock" counts variants holding units, not every live
+ * variant. A sold-out variant carries no value, so including it made the label
+ * and the arithmetic diverge as soon as one variant hit zero.
+ */
+export function isVariantInStock(stockQuantity: number): boolean {
+  return Number.isFinite(stockQuantity) && stockQuantity > 0;
+}

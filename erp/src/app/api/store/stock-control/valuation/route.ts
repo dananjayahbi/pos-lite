@@ -17,7 +17,7 @@ import {
   VALUATION_COST_BASIS_NOTE,
 } from '@/lib/pricing/valuationBasis';
 import { STOCK_SCOPE_SQL } from '@/lib/inventory/stockScope';
-import { sumValuationBreakdown } from '@/lib/pricing/valuationTotals.core';
+import { sumValuationBreakdown, isVariantInStock } from '@/lib/pricing/valuationTotals.core';
 
 interface VariantValuationRow {
   category_id: string;
@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
         lines: [],
         cost: new Decimal(0),
       };
-      category.variantCount += 1;
+      category.variantCount += isVariantInStock(variant.stock_quantity) ? 1 : 0;
       category.lines.push(line);
       category.cost = category.cost.plus(cost);
       categoryMap.set(variant.category_id, category);

@@ -294,7 +294,7 @@ export function StockValuationClient() {
                 <p className="font-display text-2xl font-semibold text-espresso">
                   {valuation.variantCount.toLocaleString()}
                 </p>
-                <p className="mt-1 font-body text-xs text-mist-ink">Active product variants with stock</p>
+                <p className="mt-1 font-body text-xs text-mist-ink">Active product variants holding stock</p>
               </CardContent>
             </Card>
           </div>
@@ -330,7 +330,7 @@ export function StockValuationClient() {
                         className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist-ink hover:text-espresso"
                         onClick={() => handleSort('variantCount')}
                       >
-                        Variants <ArrowUpDown className="h-3 w-3" />
+                        Variants in Stock <ArrowUpDown className="h-3 w-3" />
                       </button>
                     </TableHead>
                     <TableHead className="text-right">
