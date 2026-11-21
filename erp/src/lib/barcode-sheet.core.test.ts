@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BARCODE_LABELS_PER_SHEET,
+  BARCODE_SHEET_COLUMNS,
+  BARCODE_SHEET_ROWS,
   countBarcodeLabels,
   paginateBarcodeSheet,
 } from '@/lib/barcode-sheet.core';
@@ -32,6 +34,17 @@ describe('paginateBarcodeSheet', () => {
     expect(pages).toHaveLength(2);
     expect(pages[0]).toHaveLength(24);
     expect(pages[1]).toHaveLength(1);
+  });
+
+  it('splits the dialog 32-label A4 job after 24, not 32 (ARGUS #156)', () => {
+    // The print dialog used to claim 4 × 8 = 32 labels per sheet, but 4 × 6 cm
+    // labels only fit 4 rows on A4. The shared 3 × 8 grid is the truthful one.
+    expect(BARCODE_SHEET_COLUMNS).toBe(3);
+    expect(BARCODE_SHEET_ROWS).toBe(8);
+    expect(BARCODE_LABELS_PER_SHEET).toBe(24);
+
+    const pages = paginateBarcodeSheet([item(32, 'dialog')]);
+    expect(pages.map((page) => page.length)).toEqual([24, 8]);
   });
 
   it('spreads many variants across pages in queue order', () => {
