@@ -24,6 +24,14 @@ export async function GET() {
       );
     }
 
+    // ARGUS #205 — stock-take reads use the same permission as counting.
+    if (!hasPermission(session.user, PERMISSIONS.STOCK.conductStockTake)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
+      );
+    }
+
     const sessions = await prisma.stockTakeSession.findMany({
       where: { tenantId },
       orderBy: { startedAt: 'desc' },
@@ -55,6 +63,7 @@ export async function GET() {
       categoryId: s.categoryId,
       categoryName: s.categoryId ? (categoryMap.get(s.categoryId) ?? null) : null,
       status: s.status,
+      initiatedById: s.initiatedById,
       initiatedBy: s.initiatedBy.email,
       startedAt: s.startedAt.toISOString(),
       completedAt: s.completedAt?.toISOString() ?? null,

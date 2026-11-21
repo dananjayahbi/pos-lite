@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { hasPermission } from '@/lib/utils/permissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StockTakeItemUpdateSchema } from '@/lib/validators/stock-take.validators';
+import { canEditStockTake } from '@/lib/services/stockTakePolicy.core';
 
 export async function PATCH(
   request: NextRequest,
@@ -27,16 +30,43 @@ export async function PATCH(
 
     const { sessionId, itemId } = await props.params;
 
+    if (!hasPermission(session.user, PERMISSIONS.STOCK.conductStockTake)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
+      );
+    }
+
     // Verify session belongs to tenant
     const stockTakeSession = await prisma.stockTakeSession.findFirst({
       where: { id: sessionId, tenantId },
-      select: { id: true },
+      select: { id: true, status: true },
     });
 
     if (!stockTakeSession) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Stock take session not found' } },
         { status: 404 },
+      );
+    }
+
+    // Counts are only editable while counting is in progress (ARGUS #205).
+    // PENDING_APPROVAL / APPROVED / CANCELLED sessions are immutable.
+    if (
+      !canEditStockTake({
+        status: stockTakeSession.status,
+        canConduct: true,
+      })
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'CONFLICT',
+            message: 'Counted quantities can only be changed while the session is in progress',
+          },
+        },
+        { status: 409 },
       );
     }
 
