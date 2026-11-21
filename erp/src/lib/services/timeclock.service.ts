@@ -30,6 +30,7 @@ import {
   summarizeTimeClockHours,
 } from '@/lib/attendance/timeclockSummary.core';
 import { buildSelfPunchAuditAfter } from '@/lib/attendance/selfPunchAudit.core';
+import { applyStatusOverrideToMinutes } from '@/lib/attendance/attendanceMinutes.core';
 
 /** A standard full day. Anything beyond this is overtime (OT). */
 export const STANDARD_WORKDAY_MINUTES = 8 * 60;
@@ -56,6 +57,8 @@ export interface DailyAttendanceRow {
   totalMinutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
+  /** True when an explicit status cleared/capped the punched minutes. */
+  hoursAdjusted: boolean;
   /** At least one open punch is beyond the maximum shift (ARGUS #351). */
   needsReview: boolean;
   records: AttendanceClockRecord[];
@@ -619,6 +622,12 @@ export async function getDailyAttendance(
       calendar,
       employedFrom: formatAttendanceDate(user.createdAt),
     });
+    // ARGUS #358: an explicit status decides whether the punched minutes count.
+    const adjusted = applyStatusOverrideToMinutes({
+      override: attendance?.status ?? null,
+      minutes: totals,
+      calendar,
+    });
 
     return {
       userId: user.id,
@@ -628,9 +637,10 @@ export async function getDailyAttendance(
       status,
       clockInAt: totals.clockInAt?.toISOString() ?? null,
       clockOutAt: totals.clockOutAt?.toISOString() ?? null,
-      totalMinutes: totals.totalMinutes,
-      regularMinutes: totals.regularMinutes,
-      overtimeMinutes: totals.overtimeMinutes,
+      totalMinutes: adjusted.totalMinutes,
+      regularMinutes: adjusted.regularMinutes,
+      overtimeMinutes: adjusted.overtimeMinutes,
+      hoursAdjusted: adjusted.adjustment !== 'NONE',
       needsReview: totals.hasOverdue,
       records: userRecords.map((record) => {
         const isOpen = record.clockedOutAt === null;
@@ -676,6 +686,8 @@ export interface StaffAttendanceReportRow {
   totalMinutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
+  /** True when an explicit status cleared/capped the punched minutes. */
+  hoursAdjusted: boolean;
   status: AttendanceDisplayStatus;
   notes: string | null;
   punches: number;
@@ -787,13 +799,21 @@ export async function getStaffAttendanceReport(
     const dayRecords = recordsByDate.get(calendarRow.date) ?? [];
     const override = overrideByDate.get(calendarRow.date);
     const totals = computeAttendanceTotals(dayRecords, now, calendar.maxShiftMinutes);
+    // ARGUS #358: monthly report/payroll inputs follow the same override rule
+    // as the daily page (Leave/Absent/Holiday clear, Half Day caps).
+    const adjusted = applyStatusOverrideToMinutes({
+      override: override?.status ?? null,
+      minutes: totals,
+      calendar,
+    });
     return {
       date: calendarRow.date,
       clockInAt: totals.clockInAt?.toISOString() ?? null,
       clockOutAt: totals.clockOutAt?.toISOString() ?? null,
-      totalMinutes: totals.totalMinutes,
-      regularMinutes: totals.regularMinutes,
-      overtimeMinutes: totals.overtimeMinutes,
+      totalMinutes: adjusted.totalMinutes,
+      regularMinutes: adjusted.regularMinutes,
+      overtimeMinutes: adjusted.overtimeMinutes,
+      hoursAdjusted: adjusted.adjustment !== 'NONE',
       status: calendarRow.status,
       notes: override?.notes ?? null,
       punches: dayRecords.length,

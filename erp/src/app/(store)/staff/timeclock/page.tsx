@@ -63,6 +63,8 @@ interface AttendanceRow {
   totalMinutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
+  /** Explicit status cleared or capped the punched minutes (ARGUS #358). */
+  hoursAdjusted: boolean;
   needsReview: boolean;
   records: AttendanceRecord[];
   attendance: { id: string; status: AttendanceStatusValue; notes: string | null } | null;
@@ -494,7 +496,12 @@ export default function TimeclockPage() {
                             )}
                           </TableCell>
                           <TableCell className="text-right font-mono text-sm">
-                            {row.totalMinutes > 0 ? formatMinutes(row.totalMinutes) : '-'}
+                            <p>{row.totalMinutes > 0 ? formatMinutes(row.totalMinutes) : '-'}</p>
+                            {row.hoursAdjusted ? (
+                              <p className="text-[10px] font-body text-sand-ink">
+                                by {STATUS_LABEL[row.status]}
+                              </p>
+                            ) : null}
                           </TableCell>
                           <TableCell
                             className={`text-right font-mono text-sm ${

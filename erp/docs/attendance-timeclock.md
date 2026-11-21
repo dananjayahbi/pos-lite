@@ -133,6 +133,8 @@ case).
 Upserts one `AttendanceDay` row per tenant/user/date. Statuses: `PRESENT`,
 `ABSENT`, `LEAVE`, `HALF_DAY`, `HOLIDAY`. The row is an overlay — the punches
 remain intact, so switching back to Present still shows the worked time.
+Leave/Absent/Holiday clear the derived worked/OT minutes and Half Day caps them
+at the tenant threshold; see `attendance-status-hours.md` (ARGUS #358).
 Status changes are audited (`ATTENDANCE_STATUS_SET`).
 
 ## Data model
