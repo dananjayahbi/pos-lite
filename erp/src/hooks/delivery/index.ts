@@ -14,6 +14,7 @@ export { useRatePreview } from './useRatePreview';
 export {
   usePackaging,
   usePackagingHistory,
+  usePackagingDispatchOptions,
   usePackagingCategories,
   useCreatePackagingCategory,
   useUpdatePackagingCategory,
@@ -23,6 +24,7 @@ export type {
   PackagingItemRow,
   PackagingCategoryItem,
   PackagingHistoryPage,
+  PackagingDispatchOption,
 } from './usePackaging';
 export { useReconciliation } from './useReconciliation';
 export { useCourierSettings } from './useCourierSettings';

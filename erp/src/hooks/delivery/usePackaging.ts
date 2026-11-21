@@ -159,6 +159,28 @@ export function usePackagingHistory(input: {
   });
 }
 
+/** ARGUS #283: packaging items selectable on the dispatch sheet. */
+export interface PackagingDispatchOption {
+  id: string;
+  name: string;
+  unit: string;
+  quantityOnHand: number;
+  autoDeduct: boolean;
+  consumptionPerParcel: string | null;
+}
+
+export function usePackagingDispatchOptions(enabled = true) {
+  return useQuery<PackagingDispatchOption[]>({
+    queryKey: ['packaging', 'dispatch-options'],
+    queryFn: async () => {
+      const res = await fetch('/api/store/deliveries/packaging-options');
+      return readJson(res);
+    },
+    staleTime: 30_000,
+    enabled,
+  });
+}
+
 export function usePackagingCategories() {
   return useQuery<PackagingCategoryItem[]>({
     queryKey: ['packaging-categories'],

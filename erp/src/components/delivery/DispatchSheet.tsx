@@ -26,8 +26,14 @@ import {
 import {
   DispatchDeliverySchema,
 } from '@/lib/validators/delivery.validators';
-import { useDispatchDelivery, useLabelTemplate } from '@/hooks/delivery';
+import { useDispatchDelivery, useLabelTemplate, usePackagingDispatchOptions } from '@/hooks/delivery';
 import { DispatchRequestError, type DispatchShortfallItem } from '@/hooks/delivery';
+import {
+  packagingSelectionTotals,
+  suggestedPackagingItemIds,
+  togglePackagingItemId,
+} from '@/lib/packaging/packagingSelection.core';
+import { formatPackagingQuantity } from '@/lib/constants/packaging';
 import { printShippingLabel } from './labels/ShippingLabel';
 import {
   canPrintWaybill,
@@ -64,6 +70,17 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
   // explicitly acknowledges it; the details come from the typed 409.
   const [shortfall, setShortfall] = useState<DispatchShortfallItem[] | null>(null);
   const [allowShortfall, setAllowShortfall] = useState(false);
+  // ARGUS #283: null means "use the auto-deduct suggestion"; an array (even
+  // empty) is the operator's explicit selection for this dispatch.
+  const [selectedPackagingIds, setSelectedPackagingIds] = useState<string[] | null>(null);
+  const {
+    data: packagingOptions,
+    isLoading: packagingLoading,
+    isError: packagingError,
+  } = usePackagingDispatchOptions(open);
+  const options = packagingOptions ?? [];
+  const selectedIds = selectedPackagingIds ?? suggestedPackagingItemIds(options);
+  const selectionTotals = packagingSelectionTotals(options, selectedIds);
 
   const {
     register,
@@ -84,6 +101,7 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
       reset({ waybillMode: 'AUTO', manualWaybillId: undefined });
       setShortfall(null);
       setAllowShortfall(false);
+      setSelectedPackagingIds(null);
     }
   }, [open, reset]);
 
@@ -97,6 +115,7 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
           ...(data.waybillMode === 'MANUAL' && data.manualWaybillId
             ? { manualWaybillId: data.manualWaybillId }
             : {}),
+          ...(packagingOptions !== undefined ? { packagingItemIds: selectedIds } : {}),
           ...(allowShortfall ? { allowPackagingShortfall: true } : {}),
         },
       },
@@ -174,6 +193,59 @@ export function DispatchSheet({ delivery, open, onClose }: DispatchSheetProps) {
                 )}
               </div>
             )}
+
+            {/* ARGUS #283: explicit packaging selection for this parcel. */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Packaging for this parcel</Label>
+                <span className="text-espresso/50 text-xs">
+                  {selectionTotals.selectedCount} selected, {selectionTotals.unitsPerParcel} unit
+                  {selectionTotals.unitsPerParcel === 1 ? '' : 's'} per parcel
+                </span>
+              </div>
+              <p className="text-espresso/50 text-xs">
+                Auto-deduct items are preselected. Uncheck anything this delivery does not use.
+              </p>
+              {packagingLoading ? (
+                <p className="text-espresso/50 text-xs">Loading packaging items...</p>
+              ) : packagingError ? (
+                <p className="text-terracotta text-xs">
+                  Could not load packaging items. Dispatch will use the auto-deduct defaults.
+                </p>
+              ) : options.length === 0 ? (
+                <p className="text-espresso/50 text-xs">No packaging items are configured.</p>
+              ) : (
+                <div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border border-sand p-2">
+                  {options.map((option) => (
+                    <label
+                      key={option.id}
+                      className="hover:bg-espresso/5 flex cursor-pointer items-start gap-2 rounded px-1 py-1 text-sm"
+                    >
+                      <Checkbox
+                        checked={selectedIds.includes(option.id)}
+                        onCheckedChange={() => {
+                          setSelectedPackagingIds(
+                            togglePackagingItemId(selectedIds, option.id, options),
+                          );
+                          setShortfall(null);
+                          setAllowShortfall(false);
+                        }}
+                        aria-label={`Use ${option.name} for this parcel`}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="text-espresso block truncate">{option.name}</span>
+                        <span className="text-espresso/50 block text-xs">
+                          {formatPackagingQuantity(option.quantityOnHand, option.unit)} on hand,
+                          {' '}
+                          {Number(option.consumptionPerParcel ?? 1)} per parcel
+                          {option.autoDeduct ? ' (auto)' : ''}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {shortfall && shortfall.length > 0 && (
               <div

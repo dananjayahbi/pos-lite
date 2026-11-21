@@ -139,6 +139,48 @@ export async function getPackagingConsumptionHistory(
   return { rows, total, page, pageSize };
 }
 
+/** One selectable packaging item on the dispatch sheet (ARGUS #283). */
+export interface PackagingDispatchOptionDto {
+  id: string;
+  name: string;
+  unit: string;
+  quantityOnHand: number;
+  autoDeduct: boolean;
+  consumptionPerParcel: string | null;
+}
+
+/**
+ * Minimal packaging options for the dispatch sheet. Readable by anyone allowed
+ * to dispatch (not only packaging managers), and deliberately excludes cost /
+ * audit fields. `autoDeduct` is the default suggestion; the operator sends the
+ * explicit `packagingItemIds` selection with the dispatch request.
+ */
+export async function getPackagingDispatchOptions(
+  tenantId: string,
+): Promise<PackagingDispatchOptionDto[]> {
+  const items = await prisma.packagingItem.findMany({
+    where: { tenantId, deletedAt: null },
+    orderBy: [{ name: 'asc' }],
+    select: {
+      id: true,
+      name: true,
+      unit: true,
+      quantityOnHand: true,
+      autoDeduct: true,
+      consumptionPerParcel: true,
+    },
+  });
+
+  return items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    unit: item.unit,
+    quantityOnHand: item.quantityOnHand,
+    autoDeduct: item.autoDeduct,
+    consumptionPerParcel: serializeMoneyOrNull(item.consumptionPerParcel),
+  }));
+}
+
 /**
  * Derive a stable SKU from the category + name, e.g. "Bubble Wrap 50m" in
  * POLYMAILER becomes `POLY-BUBBLE-WRAP-50M`. A numeric suffix is appended when

@@ -83,6 +83,9 @@ export const DispatchDeliverySchema = z.object({
     .optional(),
   // ARGUS #282: an explicit acknowledgement that packaging stock is short.
   allowPackagingShortfall: z.boolean().optional(),
+  // ARGUS #283: packaging chosen for this dispatch. `undefined` means the
+  // legacy auto-deduct suggestion; `[]` means consume no packaging.
+  packagingItemIds: z.array(z.string().cuid()).max(100).optional(),
 });
 
 export const CancelDeliverySchema = z.object({

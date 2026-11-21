@@ -26,6 +26,8 @@ export interface DispatchDeliveryPayload {
   waybillMode: string;
   manualWaybillId?: string | undefined;
   allowPackagingShortfall?: boolean | undefined;
+  /** ARGUS #283: explicit packaging selection; `[]` consumes none. */
+  packagingItemIds?: string[] | undefined;
 }
 
 export function useDispatchDelivery() {

@@ -447,6 +447,7 @@ export async function dispatchDelivery(
   // ARGUS #282: short packaging blocks the dispatch before a courier waybill is
   // issued. The API caller must send the explicit shortfall override to proceed.
   await assertPackagingAvailableForDispatch(tenantId, id, {
+    ...(input.packagingItemIds !== undefined ? { itemIds: input.packagingItemIds } : {}),
     allowShortfall: input.allowPackagingShortfall === true,
   });
 
@@ -538,6 +539,7 @@ export async function dispatchDelivery(
     const deductions = await autoDeductPackaging(tenantId, id, {
       tx,
       actorId: userId,
+      ...(input.packagingItemIds !== undefined ? { itemIds: input.packagingItemIds } : {}),
       allowShortfall: input.allowPackagingShortfall === true,
     });
 
