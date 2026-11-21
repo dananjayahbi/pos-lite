@@ -30,6 +30,43 @@ export interface CommissionAllocation {
   isPaid: boolean;
 }
 
+export interface CommissionAllocationSummary {
+  recordCount: number;
+  /** Paid against positive earning records (includes netted adjustments). */
+  grossAllocated: string;
+  /** Absolute negative return adjustments settled in this payout. */
+  adjustmentsSettled: string;
+  /** Cash paid: grossAllocated - adjustmentsSettled. */
+  netAllocated: string;
+}
+
+export function summarizeCommissionAllocation(
+  records: readonly OpenCommissionRecord[],
+  allocations: readonly CommissionAllocation[],
+): CommissionAllocationSummary {
+  const byId = new Map(records.map((record) => [record.id, record]));
+  let gross = new Decimal(0);
+  let adjustments = new Decimal(0);
+  let count = 0;
+
+  for (const allocation of allocations) {
+    const record = byId.get(allocation.id);
+    if (!record) continue;
+    count += 1;
+    const delta = new Decimal(allocation.newPaid).minus(record.paid);
+    if (record.earned.gt(0)) gross = gross.plus(delta);
+    else if (record.earned.lt(0)) adjustments = adjustments.plus(delta.abs());
+  }
+
+  const net = gross.minus(adjustments);
+  return {
+    recordCount: count,
+    grossAllocated: gross.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2),
+    adjustmentsSettled: adjustments.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2),
+    netAllocated: net.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2),
+  };
+}
+
 export function summarizeOpenCommission(records: CommissionRecordBalance[]): {
   netOutstanding: Decimal;
   records: OpenCommissionRecord[];
@@ -56,12 +93,18 @@ export function summarizeOpenCommission(records: CommissionRecordBalance[]): {
 }
 
 /**
- * Allocate `amount` against the open records.
+ * Allocate `amount` against the open records using a documented net model.
  *
- * - Full settlement (amount ≥ net outstanding) settles every record, including
- *   negative commission adjustments created by refunds.
- * - A partial payment walks positive outstanding records oldest-first; negative
- *   adjustments stay open until a full settlement.
+ * Negative return adjustments are settled first against positive earnings:
+ * they do not consume cash but reduce what the positive records owe. The cash
+ * payment is then allocated to positive records oldest-first. Algebraically:
+ *
+ *   gross allocated = cash payment + negative adjustments settled
+ *   net paid        = gross allocated - negative adjustments settled
+ *
+ * so the sum of per-record paidAmount changes always equals the cash payout,
+ * and partial payouts keep receipts tied to the net liability instead of
+ * leaving negatives open until a full settlement.
  */
 export function allocateCommissionPayment(
   records: OpenCommissionRecord[],
@@ -73,30 +116,39 @@ export function allocateCommissionPayment(
     new Decimal(0),
   );
 
-  if (payment.gte(netOutstanding.minus(0.005))) {
-    return records.map((record) => ({
+  if (payment.lte(0) || netOutstanding.lte(0)) return [];
+
+  const allocated = new Map<string, CommissionAllocation>();
+  let adjustmentCapacity = new Decimal(0);
+
+  for (const record of records) {
+    if (record.outstanding.gte(0)) continue;
+    // Settle the remaining negative adjustment against the positive side.
+    allocated.set(record.id, {
       id: record.id,
       newPaid: record.earned.toFixed(2),
       isPaid: true,
-    }));
+    });
+    adjustmentCapacity = adjustmentCapacity.plus(record.outstanding.abs());
   }
 
-  const allocations: CommissionAllocation[] = [];
-  let remaining = payment;
-
+  let remaining = payment.plus(adjustmentCapacity);
   for (const record of records) {
-    if (remaining.lte(0)) break;
     if (record.outstanding.lte(0)) continue;
+    if (remaining.lte(0)) break;
 
     const take = Decimal.min(record.outstanding, remaining);
     const newPaid = record.paid.plus(take);
-    allocations.push({
+    allocated.set(record.id, {
       id: record.id,
       newPaid: newPaid.toFixed(2),
-      isPaid: newPaid.gte(record.earned),
+      isPaid: newPaid.gte(record.earned.minus(0.005)),
     });
     remaining = remaining.minus(take);
   }
 
-  return allocations;
+  // Preserve the caller's oldest-first order for deterministic writes/tests.
+  return records
+    .filter((record) => allocated.has(record.id))
+    .map((record) => allocated.get(record.id)!);
 }
