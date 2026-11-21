@@ -9,7 +9,8 @@ import { createPayment } from '@/lib/services/payment.service';
 import { addToSpendTotal, issueCredit } from '@/lib/services/customer.service';
 import { buildSaleAccountLegs, postSaleToAccounts } from '@/lib/services/saleAccounts';
 import { extractTenantRates } from '@/lib/services/sale.service';
-import { computeAppointmentSalePricing } from '@/lib/appointments/appointmentSale.core';
+import { computeAppointmentSalePricing, resolveAppointmentSaleOwner } from '@/lib/appointments/appointmentSale.core';
+import { createCommissionRecord } from '@/lib/services/commission.service';
 import {
   appointmentCancellationBlockReason,
   appointmentDepositAmount,
@@ -817,9 +818,16 @@ export async function convertAppointmentToSale(
     throw new Error('ALREADY_CONVERTED');
   }
 
-  // M27-01/BUG-85: resolve the acting cashier's OPEN shift (same lookup POS
+  // Attribute the converted sale to the appointment's staff/doctor; if none is
+  // set, fall back to the operator who clicked Convert (ARGUS #132).
+  const attributedUserId = resolveAppointmentSaleOwner({
+    staffId: appointment.staffId,
+    operatorId: userId,
+  });
+
+  // M27-01/BUG-85: resolve the attributable user's OPEN shift (same lookup POS
   // checkout uses); when there is none we link the sale shift-lessly.
-  const activeShift = await getCurrentShift(tenantId, userId);
+  const activeShift = await getCurrentShift(tenantId, attributedUserId);
 
   // Price the service like a sale: the tenant VAT rate applies to the
   // appointment price, so the persisted sale carries a tax amount and a line
@@ -862,7 +870,7 @@ export async function convertAppointmentToSale(
         ...(appointment.customerId
           ? { customer: { connect: { id: appointment.customerId } } }
           : {}),
-        cashier: { connect: { id: userId } },
+        cashier: { connect: { id: attributedUserId } },
         subtotal: subtotal.toNumber(),
         discountAmount: 0,
         taxAmount: lineTax.toNumber(),
@@ -923,6 +931,26 @@ export async function convertAppointmentToSale(
       include: { lines: true, payments: true },
     });
   }, { maxWait: 10_000, timeout: 30_000 });
+
+  // Commission belongs to the appointment's staff/doctor, not the operator who
+  // clicked Convert (ARGUS #132). Non-blocking like the normal sale route.
+  try {
+    const attributedStaff = await prisma.user.findUnique({
+      where: { id: attributedUserId },
+      select: { commissionRate: true },
+    });
+    if (attributedStaff?.commissionRate) {
+      await createCommissionRecord({
+        tenantId,
+        saleId: sale.id,
+        userId: attributedUserId,
+        baseAmount: sale.totalAmount,
+        commissionRate: attributedStaff.commissionRate,
+      });
+    }
+  } catch (commissionError) {
+    console.warn('Appointment conversion commission failed:', commissionError);
+  }
 
   await createAuditLog({
     tenantId,

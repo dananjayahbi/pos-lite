@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import Decimal from 'decimal.js';
 
-import { computeAppointmentSalePricing } from '@/lib/appointments/appointmentSale.core';
+import { computeAppointmentSalePricing, resolveAppointmentSaleOwner } from '@/lib/appointments/appointmentSale.core';
 
 /**
  * ARGUS #119: the conversion used to write a bare CASH sale at the service
@@ -76,5 +76,17 @@ describe('computeAppointmentSalePricing', () => {
       computeAppointmentSalePricing({ price: 1000, vatRate: 18, taxRule: 'EXEMPT' })
         .taxAmount.toNumber(),
     ).toBe(0);
+  });
+
+  it('attributes the converted sale to the appointment staff first (ARGUS #132)', () => {
+    expect(resolveAppointmentSaleOwner({ staffId: 'doctor-1', operatorId: 'cashier-1' })).toBe(
+      'doctor-1',
+    );
+    expect(resolveAppointmentSaleOwner({ staffId: null, operatorId: 'cashier-1' })).toBe(
+      'cashier-1',
+    );
+    expect(resolveAppointmentSaleOwner({ staffId: '  ', operatorId: 'cashier-1' })).toBe(
+      'cashier-1',
+    );
   });
 });

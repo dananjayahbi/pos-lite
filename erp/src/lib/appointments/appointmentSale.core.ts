@@ -48,3 +48,14 @@ export function computeAppointmentSalePricing(input: {
 
   return { subtotal, taxAmount, totalAmount, depositApplied, balanceDue };
 }
+
+/**
+ * Who gets credit for a converted appointment (ARGUS #132): the assigned
+ * staff/doctor when set, otherwise the operator who clicked Convert.
+ */
+export function resolveAppointmentSaleOwner(input: {
+  staffId?: string | null | undefined;
+  operatorId: string;
+}): string {
+  return input.staffId?.trim() || input.operatorId;
+}
