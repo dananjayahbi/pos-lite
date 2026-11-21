@@ -9,6 +9,10 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StatusBadge } from './StatusBadge';
 import { StatusTimeline } from './StatusTimeline';
+import {
+  summarizeShipmentDeliveryStatus,
+  type ShipmentDeliverySummary,
+} from './shipmentStatusSummary';
 import { RecoverySection } from './recovery/RecoverySection';
 import type { DeliveryAddress, DeliveryDetail } from '@/types/delivery';
 
@@ -67,10 +71,17 @@ function OrderInfoCard({ delivery }: { delivery: DeliveryDetail }) {
   );
 }
 
-function ShipmentStatusCard({ delivery }: { delivery: DeliveryDetail }) {
+function ShipmentStatusCard({
+  delivery,
+  tracking,
+  summary,
+}: {
+  delivery: DeliveryDetail;
+  tracking: ReturnType<typeof useShipmentTracking>;
+  summary: ShipmentDeliverySummary;
+}) {
   const shipment = delivery.shipments?.[0];
   const waybill = delivery.waybill ?? shipment?.waybillId;
-  const tracking = useShipmentTracking(shipment?.id ?? null);
 
   return (
     <Card>
@@ -78,12 +89,36 @@ function ShipmentStatusCard({ delivery }: { delivery: DeliveryDetail }) {
         <CardTitle className="text-espresso">Shipment</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-xs text-espresso/50">Shipment status</p>
+            <div className="mt-1">
+              {shipment ? (
+                <StatusBadge status={shipment.status} />
+              ) : (
+                <span className="text-sm text-espresso/50">No shipment</span>
+              )}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs text-espresso/50">Delivery status</p>
+            <div className="mt-1">
+              <StatusBadge status={delivery.status} />
+            </div>
+          </div>
+        </div>
+
+        {summary.hint && (
+          <p className="rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-700">
+            {summary.hint}
+          </p>
+        )}
+
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs text-espresso/50">Waybill</p>
             <p className="text-sm font-medium text-espresso">{waybill ?? '-'}</p>
           </div>
-          <StatusBadge status={delivery.status} />
         </div>
         {shipment?.carrierLastSyncedAt && (
           <p className="text-xs text-espresso/40">
@@ -101,19 +136,24 @@ function ShipmentStatusCard({ delivery }: { delivery: DeliveryDetail }) {
             variant="outline"
             size="sm"
             onClick={() => tracking.refresh()}
-            disabled={tracking.isLoading}
-            aria-busy={tracking.isLoading}
+            disabled={tracking.isRefreshing}
+            aria-busy={tracking.isRefreshing}
           >
-            {tracking.isLoading ? (
+            {tracking.isRefreshing ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" data-testid="loading-spinner" />
             ) : null}
-            {tracking.isLoading ? 'Tracking…' : 'Track'}
+            {tracking.isRefreshing ? 'Tracking…' : 'Track'}
           </Button>
         )}
-        {tracking.data && (
+        {tracking.data?.currentStatus && (
           <div className="rounded-lg bg-espresso/5 px-3 py-2 text-sm text-espresso/70">
-            {tracking.data.status ?? 'No tracking updates'}
+            Carrier reports: {tracking.data.currentStatus}
           </div>
+        )}
+        {tracking.error && (
+          <p role="alert" className="text-xs text-red-600">
+            {tracking.error.message}
+          </p>
         )}
       </CardContent>
     </Card>
@@ -126,11 +166,15 @@ export function DeliveryDetailPanel({ delivery }: DeliveryDetailPanelProps) {
   const canCancel = hasPermission(PERMISSIONS.DELIVERY.cancelDelivery);
   const isPending = delivery.status === 'PENDING_DISPATCH';
 
+  const shipment = delivery.shipments?.[0] ?? null;
+  const tracking = useShipmentTracking(shipment?.id ?? null, delivery.id);
+  const summary = summarizeShipmentDeliveryStatus(shipment?.status, delivery.status);
+
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="space-y-6">
         <OrderInfoCard delivery={delivery} />
-        <ShipmentStatusCard delivery={delivery} />
+        <ShipmentStatusCard delivery={delivery} tracking={tracking} summary={summary} />
       </div>
 
       <div className="space-y-6">

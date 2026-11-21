@@ -529,7 +529,7 @@ export async function dispatchDelivery(
     // status flip, so a parcel can never be marked DISPATCHED with its
     // packaging stock left un-deducted. The low-stock notification stays
     // outside the transaction (notifications must not roll stock back).
-    const deductions = await autoDeductPackaging(tenantId, id, { tx });
+    const deductions = await autoDeductPackaging(tenantId, id, { tx, actorId: userId });
 
     return { dispatched: updated, deductions };
   });
