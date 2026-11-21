@@ -33,6 +33,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { formatRupee } from '@/lib/format';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import {
+  fetchCommissionEnvelope,
+  resolveCommissionReportState,
+} from '@/lib/services/commission-report-state';
 
 interface CommissionSummary {
   userId: string;
@@ -101,47 +105,52 @@ export default function CommissionReportsPage() {
   const [proofReference, setProofReference] = useState('');
   const [selectedHistory, setSelectedHistory] = useState<CommissionPayoutHistoryRecord | null>(null);
 
-  const { data, isLoading } = useQuery<{ success: boolean; data: CommissionSummary[] }>({
+  const {
+    data: summaryData,
+    isLoading,
+    isError: summaryError,
+    error: summaryErrorObject,
+    refetch: refetchSummary,
+  } = useQuery<CommissionSummary[]>({
     queryKey: ['commission-summary', periodStart, periodEnd],
-    queryFn: async () => {
+    queryFn: () => {
       const params = new URLSearchParams({
         periodStart: new Date(periodStart).toISOString(),
         periodEnd: new Date(periodEnd + 'T23:59:59.999Z').toISOString(),
       });
-      const res = await fetch(`/api/store/staff/commissions?${params}`);
-      if (!res.ok) throw new Error('Failed to fetch commission summary');
-      return res.json();
+      return fetchCommissionEnvelope<CommissionSummary[]>(
+        `/api/store/staff/commissions?${params}`,
+      );
     },
   });
 
-  const { data: payoutHistoryData, isLoading: payoutHistoryLoading } = useQuery<{
-    success: boolean;
-    data: { records: CommissionPayoutHistoryRecord[] };
-  }>({
+  const {
+    data: payoutHistoryData,
+    isLoading: payoutHistoryLoading,
+    isError: payoutHistoryError,
+    error: payoutHistoryErrorObject,
+    refetch: refetchPayoutHistory,
+  } = useQuery<{ records: CommissionPayoutHistoryRecord[] }>({
     queryKey: ['commission-payout-history', periodStart, periodEnd],
-    queryFn: async () => {
+    queryFn: () => {
       const params = new URLSearchParams({
         periodStart: new Date(periodStart).toISOString(),
         periodEnd: new Date(periodEnd + 'T23:59:59.999Z').toISOString(),
       });
-      const res = await fetch(`/api/store/staff/commissions/payouts?${params}`);
-      if (!res.ok) throw new Error('Failed to fetch payout history');
-      return res.json();
+      return fetchCommissionEnvelope<{ records: CommissionPayoutHistoryRecord[] }>(
+        `/api/store/staff/commissions/payouts?${params}`,
+      );
     },
   });
 
-  const { data: accountsData } = useQuery<{
-    success: boolean;
-    data: { accounts: PaymentAccountOption[] };
-  }>({
+  const { data: accountsData } = useQuery<{ accounts: PaymentAccountOption[] }>({
     queryKey: ['payment-accounts', 'active'],
-    queryFn: async () => {
-      const res = await fetch('/api/store/payment-accounts?status=ACTIVE');
-      if (!res.ok) throw new Error('Failed to fetch payment accounts');
-      return res.json();
-    },
+    queryFn: () =>
+      fetchCommissionEnvelope<{ accounts: PaymentAccountOption[] }>(
+        '/api/store/payment-accounts?status=ACTIVE',
+      ),
   });
-  const paymentAccounts = accountsData?.data.accounts ?? [];
+  const paymentAccounts = accountsData?.accounts ?? [];
 
   const payoutMutation = useMutation({
     mutationFn: async (target: CommissionSummary) => {
@@ -183,8 +192,18 @@ export default function CommissionReportsPage() {
     },
   });
 
-  const summaries = data?.data ?? [];
-  const payoutHistory = payoutHistoryData?.data.records ?? [];
+  const summaries = summaryData ?? [];
+  const payoutHistory = payoutHistoryData?.records ?? [];
+  const summaryState = resolveCommissionReportState({
+    isLoading,
+    isError: summaryError,
+    hasData: summaries.length > 0,
+  });
+  const payoutHistoryState = resolveCommissionReportState({
+    isLoading: payoutHistoryLoading,
+    isError: payoutHistoryError,
+    hasData: payoutHistory.length > 0,
+  });
   const totalUnpaid = useMemo(
     () => summaries.reduce((sum, summary) => sum + Number(summary.unpaid), 0),
     [summaries],
@@ -245,13 +264,19 @@ export default function CommissionReportsPage() {
         <div className="flex items-center gap-3">
           <div className="rounded-lg border border-mist bg-pearl/40 px-4 py-3 text-right">
             <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Open liability</p>
-            <p className="font-display text-2xl text-espresso">{formatRupee(totalUnpaid.toFixed(2))}</p>
+            <p className="font-display text-2xl text-espresso">
+              {summaryState === 'error'
+                ? 'Unavailable'
+                : summaryState === 'loading'
+                  ? '-'
+                  : formatRupee(totalUnpaid.toFixed(2))}
+            </p>
           </div>
           <Button
             variant="outline"
             size="sm"
             onClick={downloadCSV}
-            disabled={isLoading || summaries.length === 0}
+            disabled={summaryState !== 'ready'}
             className="gap-1.5"
           >
             <Download className="h-4 w-4" />
@@ -293,13 +318,27 @@ export default function CommissionReportsPage() {
       </Card>
 
       {/* Summary Table */}
-      {isLoading ? (
+      {summaryState === 'loading' ? (
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : summaries.length === 0 ? (
+      ) : summaryState === 'error' ? (
+        <Card>
+          <CardContent className="py-8 text-center text-sm">
+            <p className="text-sand-ink">
+              Could not load commission summary:{' '}
+              {summaryErrorObject instanceof Error
+                ? summaryErrorObject.message
+                : 'the request failed'}
+            </p>
+            <Button variant="outline" className="mt-4" onClick={() => void refetchSummary()}>
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ) : summaryState === 'empty' ? (
         <Card>
           <CardContent className="py-8 text-center text-sand-ink text-sm">
             No commission data for this period.
@@ -371,13 +410,29 @@ export default function CommissionReportsPage() {
           <CardTitle className="text-lg font-display text-espresso">Payout History for the Selected Commission Period</CardTitle>
         </CardHeader>
         <CardContent>
-          {payoutHistoryLoading ? (
+          {payoutHistoryState === 'loading' ? (
             <div className="space-y-3">
               {Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : payoutHistory.length === 0 ? (
+          ) : payoutHistoryState === 'error' ? (
+            <div className="rounded-lg border border-dashed border-mist bg-pearl/50 px-4 py-8 text-center text-sm">
+              <p className="text-sand-ink">
+                Could not load payout history:{' '}
+                {payoutHistoryErrorObject instanceof Error
+                  ? payoutHistoryErrorObject.message
+                  : 'the request failed'}
+              </p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => void refetchPayoutHistory()}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : payoutHistoryState === 'empty' ? (
             <div className="rounded-lg border border-dashed border-mist bg-pearl/50 px-4 py-8 text-center text-sm text-sand-ink">
               No payouts recorded for commission period {periodStart} to {periodEnd}.
             </div>
