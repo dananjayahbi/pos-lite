@@ -6,11 +6,13 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowDown,
   ArrowUp,
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   Download,
   Loader2,
   PackageSearch,
+  RefreshCw,
   Search,
   ShieldX,
   X,
@@ -170,7 +172,7 @@ function StockMovementHistoryInner() {
     [page, from, to, reasonFilter, search, actorId, sortOrder],
   );
 
-  const { data, isLoading } = useGlobalStockMovements(filters);
+  const { data, isLoading, isError, error, isFetching, refetch } = useGlobalStockMovements(filters);
   const { data: actorsData } = useStockActors();
 
   const movements = data?.data ?? [];
@@ -530,7 +532,41 @@ function StockMovementHistoryInner() {
                     ))}
                   </TableRow>
                 ))
-              : movements.length === 0
+              : isError
+                ? (
+                    <TableRow>
+                      <TableCell colSpan={10} className="h-40">
+                        <div
+                          role="alert"
+                          className="flex flex-col items-center justify-center gap-2 text-center"
+                        >
+                          <AlertTriangle className="h-8 w-8 text-red-500" />
+                          <p className="text-sm font-medium text-red-800">
+                            Stock movements could not be loaded
+                          </p>
+                          <p className="max-w-md text-xs text-red-600">
+                            {error instanceof Error && error.message
+                              ? error.message
+                              : 'The movement query failed.'}{' '}
+                            This is a load failure, not an empty ledger.
+                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+                            onClick={() => void refetch()}
+                            disabled={isFetching}
+                          >
+                            <RefreshCw
+                              className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`}
+                            />
+                            {isFetching ? 'Retrying…' : 'Retry'}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                : movements.length === 0
                 ? (
                     <TableRow>
                       <TableCell colSpan={10} className="h-40">
@@ -628,7 +664,7 @@ function StockMovementHistoryInner() {
       </div>
 
       {/* Pagination */}
-      {meta && meta.totalPages > 0 && (
+      {meta && !isError && meta.totalPages > 0 && (
         <div className="flex items-center justify-between text-sm">
           <p className="text-mist-ink">
             Showing {startItem}–{endItem} of {meta.total}
