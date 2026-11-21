@@ -7,8 +7,16 @@ import {
   deleteRawMaterialUnit,
 } from '@/lib/services/rawMaterialUnit.service';
 import { UpdateRawMaterialUnitSchema } from '@/lib/validators/rawMaterial.validators';
+import { isApiError } from '@/lib/api/errors';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 function errorResponse(error: unknown, fallback: string) {
+  // Duplicate-name/label and name-quality guards throw ApiError from the
+  // service (ARGUS #482); let the shared envelope carry their status/code.
+  if (isApiError(error)) {
+    return toErrorResponse(error, fallback);
+  }
+
   if (error instanceof Error) {
     switch (error.message) {
       case 'NOT_FOUND':

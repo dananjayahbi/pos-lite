@@ -10,6 +10,7 @@
  * displayed, so a rename immediately applies to the list, BOM and alerts.
  */
 import { prisma } from '@/lib/prisma';
+import { ApiError } from '@/lib/api/errors';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
   DEFAULT_RAW_MATERIAL_UNITS,
@@ -20,6 +21,11 @@ import {
   buildRawMaterialUnitCatalog,
   type RawMaterialUnitCatalog,
 } from '@/lib/services/rawMaterialUnitCatalog.core';
+import {
+  findDuplicateUnitLabel,
+  hasAlphanumeric,
+  type UnitLabelConflict,
+} from '@/lib/units/unitValidation.core';
 
 export interface RawMaterialUnitItem {
   id: string;
@@ -166,6 +172,14 @@ async function nextAvailableKey(tenantId: string, base: string): Promise<string>
   return `${base}_${suffix}`;
 }
 
+function unitDuplicateError(conflict: UnitLabelConflict): ApiError {
+  return conflict.field === 'name'
+    ? ApiError.conflict(`A unit named "${conflict.existingName}" already exists.`)
+    : ApiError.conflict(
+        `That short label is already used by "${conflict.existingName}".`,
+      );
+}
+
 export async function createRawMaterialUnit(
   tenantId: string,
   actorId: string,
@@ -175,6 +189,25 @@ export async function createRawMaterialUnit(
   const name = input.name.trim();
   if (!name) {
     throw new Error('VALIDATION_ERROR');
+  }
+  // ARGUS #482: a name with no letters/digits used to collapse to the hidden
+  // key "CATEGORY"; reject it instead of creating a meaningless unit.
+  if (!hasAlphanumeric(name)) {
+    throw ApiError.validation(
+      'Unit name must include at least one letter or number.',
+    );
+  }
+
+  const existingRows = await prisma.rawMaterialUnit.findMany({
+    where: { tenantId, deletedAt: null },
+    select: { id: true, name: true, shortLabel: true },
+  });
+  const duplicate = findDuplicateUnitLabel(
+    { name, shortLabel: input.shortLabel?.trim() || undefined },
+    existingRows,
+  );
+  if (duplicate) {
+    throw unitDuplicateError(duplicate);
   }
 
   const key = await nextAvailableKey(tenantId, slugifyRawMaterialCategoryKey(name));
@@ -236,9 +269,33 @@ export async function updateRawMaterialUnit(
   if (name !== undefined && !name) {
     throw new Error('VALIDATION_ERROR');
   }
+  if (name !== undefined && !hasAlphanumeric(name)) {
+    throw ApiError.validation(
+      'Unit name must include at least one letter or number.',
+    );
+  }
   if (shortLabel !== undefined && !shortLabel) {
     throw new Error('VALIDATION_ERROR');
   }
+
+  // ARGUS #482: names/short labels are unique per tenant after normalisation,
+  // so the material selector and quantity suffix cannot show two "Kilograms"
+  // or two "kg" rows. The unit being edited is excluded.
+  if (name !== undefined || shortLabel !== undefined) {
+    const rows = await prisma.rawMaterialUnit.findMany({
+      where: { tenantId, deletedAt: null },
+      select: { id: true, name: true, shortLabel: true },
+    });
+    const duplicate = findDuplicateUnitLabel(
+      { name, shortLabel },
+      rows,
+      existing.id,
+    );
+    if (duplicate) {
+      throw unitDuplicateError(duplicate);
+    }
+  }
+
   if (input.isActive === false && DEFAULT_KEYS.has(existing.key)) {
     // Built-ins can be renamed but not deactivated, otherwise brand-new
     // tenants lose their default choice set.
