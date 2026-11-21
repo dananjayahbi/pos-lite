@@ -44,6 +44,7 @@ export async function PATCH(
       session.user.tenantId,
       id,
       parsed.data as unknown as Record<string, unknown>,
+      { id: session.user.id, role: session.user.role },
     );
 
     // Revalidate the storefront config so the ad change appears immediately.
@@ -79,7 +80,10 @@ export async function DELETE(
 
     const { id } = await params;
     // M29-01/BUG-68: tenant-scoped delete — see PATCH above.
-    await deleteAd(session.user.tenantId, id);
+    await deleteAd(session.user.tenantId, id, {
+      id: session.user.id,
+      role: session.user.role,
+    });
 
     // Revalidate the storefront config so the removed ad disappears immediately.
     try {
