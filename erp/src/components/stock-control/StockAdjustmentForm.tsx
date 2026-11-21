@@ -8,10 +8,9 @@ import { z } from 'zod';
 import { toast } from 'sonner';
 import { Search, Plus, Minus, Lock, Loader2, ChevronRight } from 'lucide-react';
 import {
-  STOCK_MOVEMENT_REASON,
-  STOCK_MOVEMENT_REASONS,
-  type StockMovementReasonValue,
-} from '@/lib/constants/stock-movement';
+  MANUAL_ADJUSTMENT_REASONS,
+  type ManualAdjustmentReason,
+} from '@/lib/services/manualAdjustment.core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -56,18 +55,12 @@ interface VariantData {
 
 // ── Reason labels ────────────────────────────────────────────────────────────
 
-const REASON_LABELS: Record<StockMovementReasonValue, string> = {
+const REASON_LABELS: Record<ManualAdjustmentReason, string> = {
   FOUND: 'Found',
   DAMAGED: 'Damaged',
   STOLEN: 'Stolen',
   DATA_ERROR: 'Data Error',
   RETURNED_TO_SUPPLIER: 'Returned to Supplier',
-  INITIAL_STOCK: 'Initial Stock',
-  SALE_RETURN: 'Sale Return',
-  PURCHASE_RECEIVED: 'Purchase Received',
-  STOCK_TAKE_ADJUSTMENT: 'Stock Take Adjustment',
-  SALE: 'Sale',
-  VOID_REVERSAL: 'Void Reversal',
 };
 
 // ── Form schema ──────────────────────────────────────────────────────────────
@@ -77,7 +70,7 @@ const FormSchema = z.object({
   variantId: z.string().min(1, { error: 'Select a variant' }),
   adjustmentType: z.enum(['add', 'remove'], { error: 'Select adjustment type' }),
   quantity: z.number().int().min(1, { error: 'Min quantity is 1' }),
-  reason: z.enum(STOCK_MOVEMENT_REASONS, { error: 'Select a reason' }),
+  reason: z.enum(MANUAL_ADJUSTMENT_REASONS, { error: 'Select a reason' }),
   note: z.string().max(500).optional(),
 });
 
@@ -740,7 +733,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
               <Select
                 value={form.watch('reason') || undefined}
                 onValueChange={(val) =>
-                  form.setValue('reason', val as StockMovementReasonValue, {
+                  form.setValue('reason', val as ManualAdjustmentReason, {
                     shouldValidate: true,
                   })
                 }
@@ -749,12 +742,9 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                   <SelectValue placeholder="Select a reason" />
                 </SelectTrigger>
                 <SelectContent>
-                  {STOCK_MOVEMENT_REASONS.map((r) => (
+                  {MANUAL_ADJUSTMENT_REASONS.map((r) => (
                     <SelectItem key={r} value={r}>
                       {REASON_LABELS[r]}
-                      {r === STOCK_MOVEMENT_REASON.STOCK_TAKE_ADJUSTMENT && (
-                        <span className="ml-1 text-xs text-mist-ink">(used by stock takes)</span>
-                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>
