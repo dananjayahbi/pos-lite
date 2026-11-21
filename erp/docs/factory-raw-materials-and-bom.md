@@ -79,6 +79,30 @@ dedicated columns:
 Selecting a raw material fills the available stock and unit automatically; the
 quantity input shows the selected unit as a suffix.
 
+## Factory dashboard feed states
+
+The dashboard's KPI strip, alerts panel, low-stock list and production history
+each resolve an explicit state (ARGUS #244):
+
+```
+error -> loading -> empty -> data
+```
+
+`resolveFactoryFeedState()` (`src/components/raw-materials/factoryDashboardState.ts`)
+makes an error outrank every data-dependent state. A failed alerts request can
+therefore never render “All raw materials are above their low-stock
+thresholds”, a failed list cannot render “No materials are currently low on
+stock”, and a failed production feed cannot render “No production runs recorded
+yet”. Each failed panel shows the feed message and a **Retry** button; KPI
+values stay neutral (`-`) until the stats feed succeeds.
+
+Cached/last-known rows are not presented as current: an error replaces the
+panel rather than silently showing stale data. `factoryKpiValue()` guarantees a
+failed or loading stats feed never renders `0`, which would read as “none”.
+
+`src/components/raw-materials/__tests__/factoryDashboardState.test.ts` covers
+the precedence, the neutral KPI value and the error-message fallback.
+
 ## Migration
 
 - `prisma/migrations/20261101000000_add_raw_material_categories_and_units`

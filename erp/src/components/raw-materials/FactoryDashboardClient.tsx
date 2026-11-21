@@ -1,25 +1,58 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertTriangle, Boxes, PackageX, FlaskConical } from 'lucide-react';
+import { AlertTriangle, Boxes, PackageX, FlaskConical, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { RawMaterialStatusBadge } from '@/components/raw-materials/RawMaterialStatusBadge';
 import { RawMaterialAlertsPanel } from '@/components/raw-materials/RawMaterialAlertsPanel';
 import { ProductionHistoryPanel } from '@/components/bom/ProductionHistoryPanel';
 import { useRawMaterialStats, useRawMaterials } from '@/hooks/useRawMaterials';
 import { getUnitShortLabel } from '@/lib/services/rawMaterial.core';
+import {
+  factoryFeedErrorMessage,
+  factoryKpiValue,
+  resolveFactoryFeedState,
+} from '@/components/raw-materials/factoryDashboardState';
 
 interface FactoryDashboardClientProps {
   permissions: string[];
 }
 
 export function FactoryDashboardClient({ permissions }: FactoryDashboardClientProps) {
-  const { data: statsData } = useRawMaterialStats();
-  const { data: lowStockData } = useRawMaterials({ stockStatus: 'LOW', limit: 5 });
+  const {
+    data: statsData,
+    isError: statsIsError,
+    isLoading: statsIsLoading,
+    error: statsError,
+    isFetching: statsIsFetching,
+    refetch: refetchStats,
+  } = useRawMaterialStats();
+  const {
+    data: lowStockData,
+    isError: lowStockIsError,
+    isLoading: lowStockIsLoading,
+    error: lowStockError,
+    isFetching: lowStockIsFetching,
+    refetch: refetchLowStock,
+  } = useRawMaterials({ stockStatus: 'LOW', limit: 5 });
 
   const stats = statsData?.data;
   const lowStock = lowStockData?.data ?? [];
+
+  // ARGUS #244 — resolve each feed explicitly (error → loading → empty → data)
+  // so a failed request cannot masquerade as an all-clear or an empty panel.
+  const statsState = resolveFactoryFeedState({
+    isError: statsIsError,
+    isLoading: statsIsLoading,
+    itemCount: stats ? 1 : 0,
+  });
+  const lowStockState = resolveFactoryFeedState({
+    isError: lowStockIsError,
+    isLoading: lowStockIsLoading,
+    itemCount: lowStock.length,
+  });
 
   return (
     <div className="space-y-6 p-6">
@@ -30,6 +63,36 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
         </p>
       </div>
 
+      {statsState === 'error' && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3"
+        >
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+            <div>
+              <p className="font-body text-sm font-medium text-red-800">Factory metrics failed</p>
+              <p className="font-body text-xs text-red-600">
+                {factoryFeedErrorMessage(statsError, 'The factory metrics could not be loaded.')}
+              </p>
+              <p className="font-body text-xs text-red-600">
+                KPI values are neutral until the feed loads.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+            onClick={() => refetchStats()}
+            disabled={statsIsFetching}
+          >
+            <RefreshCw className={`mr-2 h-3.5 w-3.5 ${statsIsFetching ? 'animate-spin' : ''}`} />
+            {statsIsFetching ? 'Retrying…' : 'Retry'}
+          </Button>
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -37,7 +100,9 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
             <Boxes className="h-4 w-4 text-mist-ink" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-espresso">{stats?.totalMaterials ?? '-'}</div>
+            <div className="text-2xl font-bold text-espresso">
+              {factoryKpiValue(statsState, stats?.totalMaterials)}
+            </div>
           </CardContent>
         </Card>
 
@@ -47,7 +112,9 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
             <AlertTriangle className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-amber-600">{stats?.lowStockCount ?? '-'}</div>
+            <div className="text-2xl font-bold text-amber-600">
+              {factoryKpiValue(statsState, stats?.lowStockCount)}
+            </div>
           </CardContent>
         </Card>
 
@@ -57,7 +124,9 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
             <PackageX className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats?.outOfStockCount ?? '-'}</div>
+            <div className="text-2xl font-bold text-red-600">
+              {factoryKpiValue(statsState, stats?.outOfStockCount)}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -91,7 +160,42 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
             </Button>
           )}
         </div>
-        {lowStock.length === 0 ? (
+        {lowStockState === 'error' ? (
+          <div
+            role="alert"
+            className="flex flex-col items-center gap-2 px-4 py-8 text-center"
+          >
+            <AlertTriangle className="h-6 w-6 text-red-500" />
+            <p className="font-body text-sm font-medium text-red-800">Low-stock list failed</p>
+            <p className="font-body text-xs text-red-600">
+              {factoryFeedErrorMessage(
+                lowStockError,
+                'The low-stock materials could not be loaded.',
+              )}
+            </p>
+            <p className="font-body text-xs text-red-600">
+              The low-stock status is unknown until the list loads.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+              onClick={() => refetchLowStock()}
+              disabled={lowStockIsFetching}
+            >
+              <RefreshCw
+                className={`mr-2 h-3.5 w-3.5 ${lowStockIsFetching ? 'animate-spin' : ''}`}
+              />
+              {lowStockIsFetching ? 'Retrying…' : 'Retry'}
+            </Button>
+          </div>
+        ) : lowStockState === 'loading' ? (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+        ) : lowStockState === 'empty' ? (
           <p className="px-4 py-8 text-center text-sm text-mist-ink">
             No materials are currently low on stock.
           </p>
