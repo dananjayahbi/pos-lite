@@ -6,14 +6,13 @@ import { CreateSaleSchema } from '@/lib/validators/sale.validators';
 import { createSale, getSales } from '@/lib/services/sale.service';
 import { createCommissionRecord } from '@/lib/services/commission.service';
 import { parseQueryDate, parsePagination } from '@/lib/api/query-params';
-import { isApiError } from '@/lib/api/errors';
+import { ApiError, isApiError } from '@/lib/api/errors';
 import { prisma } from '@/lib/prisma';
-import { PaymentMethod } from '@/generated/prisma/client';
-import type { SaleStatus } from '@/generated/prisma/client';
 import {
   applySaleHistoryScope,
   resolveSaleHistoryScope,
 } from '@/lib/sales/sale-history-scope';
+import { parseSalePaymentMethod, parseSaleStatus } from '@/lib/sales/sale-list-filters';
 
 export async function GET(request: NextRequest) {
   try {
@@ -59,13 +58,18 @@ export async function GET(request: NextRequest) {
     const url = request.nextUrl;
     const shiftId = url.searchParams.get('shiftId') ?? undefined;
     const cashierId = url.searchParams.get('cashierId') ?? undefined;
-    const status = (url.searchParams.get('status') as SaleStatus) ?? undefined;
-    const paymentMethodParam = url.searchParams.get('paymentMethod');
-    const paymentMethod =
-      paymentMethodParam &&
-      Object.values(PaymentMethod).includes(paymentMethodParam as PaymentMethod)
-        ? (paymentMethodParam as PaymentMethod)
-        : undefined;
+    // ARGUS #79: enum filters are validated before Prisma — an unknown status
+    // used to reach the query and surface as a 500.
+    const statusParsed = parseSaleStatus(url.searchParams.get('status'));
+    if (!statusParsed.ok) {
+      throw new ApiError(400, 'VALIDATION_ERROR', statusParsed.message);
+    }
+    const paymentParsed = parseSalePaymentMethod(url.searchParams.get('paymentMethod'));
+    if (!paymentParsed.ok) {
+      throw new ApiError(400, 'VALIDATION_ERROR', paymentParsed.message);
+    }
+    const status = statusParsed.value;
+    const paymentMethod = paymentParsed.value;
     // M14-02 (BUG-45): XC-01 parsing — malformed from/to/page/limit now 400
     // VALIDATION_ERROR naming the param instead of leaking an Invalid Date /
     // NaN into Prisma and surfacing as an unhandled 500.
