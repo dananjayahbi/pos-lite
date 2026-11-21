@@ -70,10 +70,14 @@ function BrandEditForm({
       if (isEdit && !brand) throw new Error('Brand is required');
       const url = isEdit ? `/api/store/brands/${brand!.id}` : '/api/store/brands';
       const method = isEdit ? 'PATCH' : 'POST';
-      const body: Record<string, string | null> = { name: name.trim() };
-      if (description.trim()) body.description = description.trim();
-      // Always send logoUrl so explicit removals (null) persist.
-      body.logoUrl = logoUrl;
+      const body: Record<string, string | null> = {
+        name: name.trim(),
+        // Always send the description: an empty textarea clears the stored text
+        // instead of leaving the old description untouched (ARGUS #174).
+        description: description.trim() ? description.trim() : null,
+        // Always send logoUrl so explicit removals (null) persist.
+        logoUrl,
+      };
 
       const res = await fetch(url, {
         method,

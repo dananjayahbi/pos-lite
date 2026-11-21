@@ -162,13 +162,13 @@ export interface UpdateCategoryInput {
 
 export interface CreateBrandInput {
   name: string;
-  description?: string;
+  description?: string | null;
   logoUrl?: string;
 }
 
 export interface UpdateBrandInput {
   name?: string;
-  description?: string;
+  description?: string | null;
   logoUrl?: string | null;
 }
 
