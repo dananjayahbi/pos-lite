@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import Decimal from "decimal.js";
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { isLowStockVariant } from '@/lib/inventory/lowStockPredicate';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -139,9 +140,8 @@ export async function GET(request: NextRequest) {
     let filtered = allRows;
 
     if (lowStock) {
-      filtered = filtered.filter(
-        (r) => r.stockQuantity <= r.lowStockThreshold,
-      );
+      // ARGUS #215: threshold 0 disables low-stock alerting everywhere.
+      filtered = filtered.filter((r) => isLowStockVariant(r));
     }
 
     if (deadStock) {

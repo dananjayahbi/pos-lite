@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { auth } from '@/lib/auth';
 import { denialRouteFor } from '@/lib/auth/page-guards';
 import { prisma } from '@/lib/prisma';
+import { Prisma } from '@/generated/prisma/client';
+import { LOW_STOCK_SQL_PREDICATE } from '@/lib/inventory/lowStockPredicate';
 import { getDefaultRouteForRole } from '@/lib/utils/default-route';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -112,7 +114,7 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
           AND pv."deletedAt" IS NULL
           AND p."isArchived" = false
           AND p."deletedAt" IS NULL
-          AND pv."stockQuantity" <= pv."lowStockThreshold"
+          AND ${Prisma.raw(LOW_STOCK_SQL_PREDICATE)}
       `,
     prisma.shift.findFirst({
       where: { tenantId, status: 'OPEN' },
@@ -249,7 +251,7 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
       AND pv."deletedAt" IS NULL
       AND p."isArchived" = false
       AND p."deletedAt" IS NULL
-      AND pv."stockQuantity" <= pv."lowStockThreshold"
+      AND ${Prisma.raw(LOW_STOCK_SQL_PREDICATE)}
     ORDER BY pv."stockQuantity" ASC
     LIMIT 8
   `;

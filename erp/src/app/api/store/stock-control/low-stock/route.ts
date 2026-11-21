@@ -6,6 +6,8 @@ import { parseQueryInt } from '@/lib/api/query-params';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { toCsvLines } from '@/lib/export';
+import { Prisma } from '@/generated/prisma/client';
+import { LOW_STOCK_SQL_PREDICATE } from '@/lib/inventory/lowStockPredicate';
 
 interface LowStockRow {
   id: string;
@@ -78,8 +80,7 @@ export async function GET(request: NextRequest) {
                 AND pv."deletedAt" IS NULL
                 AND p."deletedAt" IS NULL
                 AND p."isArchived" = false
-                AND pv."lowStockThreshold" > 0
-                AND pv."stockQuantity" <= pv."lowStockThreshold"
+                AND ${Prisma.raw(LOW_STOCK_SQL_PREDICATE)}
             `;
 
       return NextResponse.json({
@@ -107,8 +108,7 @@ export async function GET(request: NextRequest) {
             AND pv."deletedAt" IS NULL
             AND p."deletedAt" IS NULL
             AND p."isArchived" = false
-            AND pv."lowStockThreshold" > 0
-            AND pv."stockQuantity" <= pv."lowStockThreshold"
+            AND ${Prisma.raw(LOW_STOCK_SQL_PREDICATE)}
         `;
 
     const total = Number(countResult[0].count);
@@ -152,8 +152,7 @@ export async function GET(request: NextRequest) {
             AND pv."deletedAt" IS NULL
             AND p."deletedAt" IS NULL
             AND p."isArchived" = false
-            AND pv."lowStockThreshold" > 0
-            AND pv."stockQuantity" <= pv."lowStockThreshold"
+            AND ${Prisma.raw(LOW_STOCK_SQL_PREDICATE)}
           ORDER BY shortfall DESC
           LIMIT ${queryLimit} OFFSET ${queryOffset}
         `;
