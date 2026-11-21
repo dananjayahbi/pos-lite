@@ -27,6 +27,7 @@ import {
   type AttendanceCalendarSettings,
   type AttendanceDisplayStatus,
 } from '@/lib/attendance/attendanceCalendar.core';
+import { summarizeDailyAttendance } from '@/lib/attendance/attendanceSummary.core';
 import {
   AttendanceStatusDialog,
   type AttendanceStatusValue,
@@ -214,32 +215,9 @@ export default function TimeclockPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const summary = useMemo(() => {
-    return rows.reduce(
-      (acc, row) => {
-        if (row.status === 'PRESENT') acc.present += 1;
-        else if (row.status === 'ABSENT') acc.absent += 1;
-        else if (row.status === 'INSUFFICIENT') {
-          // ARGUS #350: below half a day is a no-pay day, not a full Present.
-          acc.absent += 1;
-          acc.insufficient += 1;
-        } else if (row.status === 'LEAVE') acc.onLeave += 1;
-        else if (row.status === 'HALF_DAY') acc.halfDay += 1;
-        else if (row.status === 'HOLIDAY' || row.status === 'OFF') acc.holidayOff += 1;
-        acc.overtimeMinutes += row.overtimeMinutes;
-        return acc;
-      },
-      {
-        present: 0,
-        absent: 0,
-        insufficient: 0,
-        onLeave: 0,
-        halfDay: 0,
-        holidayOff: 0,
-        overtimeMinutes: 0,
-      },
-    );
-  }, [rows]);
+  // ARGUS #354: one pure summary counts every row once, including Holiday,
+  // Off and Scheduled, so the cards reconcile to the active headcount.
+  const summary = useMemo(() => summarizeDailyAttendance(rows), [rows]);
   const reviewCount = rows.filter((row) => row.needsReview).length;
 
   const invalidate = () => {
@@ -345,13 +323,13 @@ export default function TimeclockPage() {
           </CardContent>
         </Card>
       ) : isLoading || !dayInfo ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, index) => (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, index) => (
             <Skeleton key={index} className="h-24 w-full" />
           ))}
         </div>
       ) : (
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-normal text-sand-ink">Present</CardTitle>
@@ -385,10 +363,20 @@ export default function TimeclockPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-normal text-sand-ink">Holiday / Off</CardTitle>
+            <CardTitle className="text-sm font-normal text-sand-ink">Holiday</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="font-display text-3xl font-bold text-slate-600">{summary.holidayOff}</p>
+            <p className="font-display text-3xl font-bold text-slate-600">{summary.holiday}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-normal text-sand-ink">Off / Scheduled</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="font-display text-3xl font-bold text-slate-600">
+              {summary.off + summary.scheduled}
+            </p>
           </CardContent>
         </Card>
         <Card>
