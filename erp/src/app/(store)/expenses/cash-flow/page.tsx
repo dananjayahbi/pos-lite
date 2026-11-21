@@ -452,12 +452,49 @@ export default function CashFlowPage() {
                 <span className="text-espresso">Net cash income</span>
                 <span className="font-mono text-espresso">{formatRupee(data.totalIncome)}</span>
               </div>
-              {data.incomeByMethod.length > 0 && (
-                <p className="mt-2 text-sm text-sand-ink">
-                  {data.incomeByMethod
-                    .map((m) => `${METHOD_LABELS[m.method] ?? m.method}: ${formatRupee(m.total)}`)
-                    .join(' · ')}
-                </p>
+              {(data.incomeByMethod.length > 0 ||
+                data.paymentMethodReconciliation.status !== 'BALANCED') && (
+                <div className="mt-3 space-y-1 border-t border-mist pt-3">
+                  <p className="text-xs uppercase tracking-wide text-mist-ink">
+                    Payment method allocation
+                  </p>
+                  {data.incomeByMethod.map((m) => (
+                    <div key={m.method} className="flex justify-between text-sm">
+                      <span className="text-sand-ink">{METHOD_LABELS[m.method] ?? m.method}</span>
+                      <span className="font-mono text-espresso">{formatRupee(m.total)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-sand-ink">Unallocated / no payment record</span>
+                    <span className="font-mono text-terracotta">
+                      {formatRupee(data.paymentMethodReconciliation.unallocated)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-t border-mist pt-1 text-sm font-semibold">
+                    <span className="text-espresso">Method total + unallocated</span>
+                    <span className="font-mono text-espresso">
+                      {formatRupee(
+                        data.paymentMethodReconciliation.allocated +
+                          data.paymentMethodReconciliation.unallocated,
+                      )}
+                    </span>
+                  </div>
+                  {data.paymentMethodReconciliation.status !== 'BALANCED' && (
+                    <div className="mt-2 rounded-md border border-terracotta/30 bg-terracotta/10 px-3 py-2 text-xs text-terracotta">
+                      {data.paymentMethodReconciliation.status === 'UNALLOCATED'
+                        ? `Payment methods are ${formatRupee(
+                            data.paymentMethodReconciliation.unallocated,
+                          )} short of Gross Sales. ${
+                            data.missingPaymentSales.count
+                          } completed sale(s) totalling ${formatRupee(
+                            data.missingPaymentSales.total,
+                          )} have no payment rows.`
+                        : `Payment rows exceed Gross Sales by ${formatRupee(
+                            Math.abs(data.paymentMethodReconciliation.unallocated),
+                          )}.`}
+                    </div>
+                  )}
+                </div>
               )}
               {data.refundsByMethod.length > 0 && (
                 <p className="mt-1 text-sm text-sand-ink">

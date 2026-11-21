@@ -4,6 +4,7 @@ import {
   buildIncomeStatementBridge,
   classifySaleRefundEntries,
   reconcileCash,
+  reconcilePaymentMethods,
   splitCashRefunds,
   summarizeAccountLedger,
 } from '@/lib/services/cashflow.core';
@@ -71,6 +72,32 @@ describe('splitCashRefunds', () => {
     const result = splitCashRefunds([{ method: 'CASH', total: 100 }]);
     expect(result.cash).toBe(100);
     expect(result.nonCash).toBe(0);
+  });
+});
+
+/** ARGUS #419: the method split must reconcile to Gross Sales. */
+describe('reconcilePaymentMethods', () => {
+  it('reports completed sales with no payment rows as unallocated', () => {
+    const result = reconcilePaymentMethods('138834.03', [
+      { method: 'CASH', total: '118834.03' },
+      { method: 'CARD', total: '10000.00' },
+    ]);
+
+    expect(result.allocated).toBe(128834.03);
+    expect(result.unallocated).toBe(10000);
+    expect(result.status).toBe('UNALLOCATED');
+  });
+
+  it('is balanced when every rupee has a method row', () => {
+    const result = reconcilePaymentMethods(100, [{ method: 'CASH', total: 100 }]);
+    expect(result.unallocated).toBe(0);
+    expect(result.status).toBe('BALANCED');
+  });
+
+  it('flags payment rows that exceed Gross Sales', () => {
+    const result = reconcilePaymentMethods(100, [{ method: 'CASH', total: 125 }]);
+    expect(result.unallocated).toBe(-25);
+    expect(result.status).toBe('OVERALLOCATED');
   });
 });
 

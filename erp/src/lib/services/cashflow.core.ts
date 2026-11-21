@@ -423,6 +423,55 @@ export function buildIncomeStatementBridge(
   };
 }
 
+// ── Payment-method allocation (ARGUS #419) ──────────────────────────────────
+
+export type PaymentAllocationStatus = 'BALANCED' | 'UNALLOCATED' | 'OVERALLOCATED';
+
+export interface PaymentMethodReconciliation {
+  grossSales: number;
+  allocated: number;
+  /** Positive when completed sales have no payment rows. */
+  unallocated: number;
+  status: PaymentAllocationStatus;
+  methods: Array<{ method: string; total: string }>;
+}
+
+/**
+ * Reconcile the payment-method split to Gross Sales. A completed sale can have
+ * no Payment rows (for example a cash sale recorded before payment capture was
+ * wired up), and the old page silently showed method totals Rs 10,000 short of
+ * Gross Sales. The gap is now an explicit unallocated line plus a status the
+ * UI turns into a warning (ARGUS #419).
+ */
+export function reconcilePaymentMethods(
+  grossSales: Decimalish,
+  methods: RefundMethodTotal[],
+): PaymentMethodReconciliation {
+  const sales = new Decimal(grossSales.toString());
+  let allocated = new Decimal(0);
+  const byMethod = methods.map((row) => {
+    const amount = new Decimal(row.total.toString());
+    allocated = allocated.plus(amount);
+    return { method: row.method, total: amount.toFixed(2) };
+  });
+
+  allocated = allocated.toDecimalPlaces(2);
+  const unallocated = sales.minus(allocated).toDecimalPlaces(2);
+  const status: PaymentAllocationStatus = unallocated.abs().lessThanOrEqualTo(0.005)
+    ? 'BALANCED'
+    : unallocated.greaterThan(0)
+      ? 'UNALLOCATED'
+      : 'OVERALLOCATED';
+
+  return {
+    grossSales: sales.toDecimalPlaces(2).toNumber(),
+    allocated: allocated.toNumber(),
+    unallocated: unallocated.toNumber(),
+    status,
+    methods: byMethod,
+  };
+}
+
 /**
  * Split refunds into cash-impacting (CASH, CARD_REVERSAL) and non-cash
  * (STORE_CREDIT, EXCHANGE) so a cash-flow report never deducts credit refunds

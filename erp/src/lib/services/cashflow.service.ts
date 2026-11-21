@@ -4,10 +4,12 @@ import {
   buildIncomeStatementBridge,
   classifySaleRefundEntries,
   reconcileCash,
+  reconcilePaymentMethods,
   splitCashRefunds,
   summarizeAccountLedger,
   type IncomeStatementBridge,
   type LedgerBreakdownLine,
+  type PaymentMethodReconciliation,
   type SaleRefundLedgerEntry,
 } from '@/lib/services/cashflow.core';
 
@@ -47,6 +49,10 @@ export interface CashFlowResult {
   refundsByMethod: { method: string; total: string }[];
   totalIncome: string;
   incomeByMethod: { method: string; total: string }[];
+  /** Payment-method totals reconciled to Gross Sales (ARGUS #419). */
+  paymentMethodReconciliation: PaymentMethodReconciliation;
+  /** Completed, non-zero sales in the window that have no Payment rows. */
+  missingPaymentSales: { count: number; total: string };
   expensesByCategory: { category: string; total: string }[];
   totalExpenses: string;
   cashMovements: { type: string; count: number; total: string }[];
@@ -96,6 +102,7 @@ export async function getCashFlowStatement(
     expensesByCategory,
     cashMovements,
     paymentsByMethod,
+    missingPaymentSales,
     accountLedgerBySource,
     openingLedger,
     ledgerBySource,
@@ -128,6 +135,17 @@ export async function getCashFlowStatement(
         sale: { tenantId, status: 'COMPLETED', completedAt: { gte: dateFrom, lte: dateTo } },
       },
       _sum: { amount: true },
+    }),
+    prisma.sale.aggregate({
+      where: {
+        tenantId,
+        status: 'COMPLETED',
+        completedAt: { gte: dateFrom, lte: dateTo },
+        totalAmount: { gt: 0 },
+        payments: { none: {} },
+      },
+      _sum: { totalAmount: true },
+      _count: { _all: true },
     }),
     prisma.paymentAccountEntry.groupBy({
       by: ['accountId', 'source'],
@@ -230,6 +248,10 @@ export async function getCashFlowStatement(
     method: p.method,
     total: new Decimal(p._sum.amount?.toString() ?? '0').toFixed(2),
   }));
+  const paymentMethodReconciliation = reconcilePaymentMethods(
+    grossIncome.toFixed(2),
+    incomeByMethod,
+  );
 
   const expCategories = expensesByCategory.map((e) => ({
     category: e.category,
@@ -357,6 +379,11 @@ export async function getCashFlowStatement(
     refundsByMethod,
     totalIncome: totalIncome.toFixed(2),
     incomeByMethod,
+    paymentMethodReconciliation,
+    missingPaymentSales: {
+      count: missingPaymentSales._count._all,
+      total: new Decimal(missingPaymentSales._sum.totalAmount?.toString() ?? '0').toFixed(2),
+    },
     expensesByCategory: expCategories,
     totalExpenses: totalExpenses.toFixed(2),
     cashMovements: movements,
