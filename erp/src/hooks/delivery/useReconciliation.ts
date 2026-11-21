@@ -2,6 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import {
+  describeImportResult,
+  summarizeStatementImport,
+  type StatementImportCounts,
+} from '@/lib/services/reconciliation-import.core';
 
 export function useReconciliation() {
   const queryClient = useQueryClient();
@@ -29,9 +34,16 @@ export function useReconciliation() {
       if (!json.success) throw new Error(json.error?.message ?? 'Failed to import statement');
       return json.data;
     },
-    onSuccess: () => {
+    onSuccess: (data: unknown) => {
       queryClient.invalidateQueries({ queryKey: ['reconciliation'] });
-      toast.success('Remittance statement imported');
+      // ARGUS #512: report what actually happened instead of a blanket
+      // "imported" toast. A zero-match statement must say so.
+      const counts = data as Partial<StatementImportCounts> | null;
+      if (counts && typeof counts.rowCount === 'number') {
+        toast.success(describeImportResult(summarizeStatementImport(counts as StatementImportCounts)));
+      } else {
+        toast.success('Remittance statement imported');
+      }
     },
     onError: (error: Error) => {
       toast.error(error.message);

@@ -5,6 +5,7 @@ import { setSentryTenantContext } from '@/lib/sentry/context';
 import { updateShipmentStatus } from '@/lib/services/shipment.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
+import { decryptCourierAccount } from '@/lib/courier/credentials';
 import {
   TERMINAL_SHIPMENT_STATUSES,
   isDeliveryStatusAdvance,
@@ -176,11 +177,12 @@ export async function processDueTrackingChecks(): Promise<{ processed: number; f
     const account = await prisma.courierAccount.findFirst({ where: { tenantId, isActive: true } });
     if (!account) continue;
     const adapter = resolveAdapterForAccount(account);
+    const credentials = decryptCourierAccount(account);
     const auth = await adapter.authenticate({
-      email: account.email ?? undefined,
-      password: account.password ?? undefined,
-      apiKey: account.apiKey ?? undefined,
-      env: account.env,
+      email: credentials.email ?? undefined,
+      password: credentials.password ?? undefined,
+      apiKey: credentials.apiKey ?? undefined,
+      env: credentials.env,
     });
     if (auth.ok) tokensByTenant.set(tenantId, { token: auth.data, adapter });
   }

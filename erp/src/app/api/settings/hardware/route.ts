@@ -3,7 +3,14 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { HardwareSettingsSchema } from '@/lib/validators/settings.validators';
+import {
+  hardwareSettingsAuditPayload,
+  mergeHardwareSettings,
+  readHardwareSettings,
+  validateHardwareSettings,
+} from '@/lib/settings/hardwareSettings.core';
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -34,17 +41,6 @@ export async function PATCH(request: NextRequest) {
     if (forbidden) return forbidden;
 
     const body = (await request.json()) as Record<string, unknown>;
-    const { printerType, host } = body;
-
-    if (printerType === 'NETWORK' && (typeof host !== 'string' || host.trim() === '')) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: { code: 'VALIDATION_ERROR', message: 'Host is required for network printers' },
-        },
-        { status: 400 },
-      );
-    }
 
     // M07-03 (OBS-82): typed validation replaces the hand-parsing that silently
     // coerced bad values (invalid port → 9100, Boolean("false") → true).
@@ -73,28 +69,66 @@ export async function PATCH(request: NextRequest) {
     const currentHardware = (currentSettings.hardware as Record<string, unknown>) ?? {};
     const currentPrinter = (currentHardware.printer as Record<string, unknown>) ?? {};
 
+    // ARGUS #510: the seed and legacy rows store the printer flat
+    // (`hardware.host`), while PATCH writes nested (`hardware.printer.host`).
+    // Normalise on read so the saved host is visible and stay PATCH-shaped.
+    const before = readHardwareSettings(currentSettings);
+    const after = mergeHardwareSettings(before, parsed.data);
+
+    // The network host is required only when the effective type is NETWORK.
+    const validationError = validateHardwareSettings(after);
+    if (validationError) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: validationError } },
+        { status: 400 },
+      );
+    }
+
+    const printer = {
+      ...currentPrinter,
+      type: after.printerType,
+      host: after.host,
+      port: after.port,
+    };
+
     const updatedSettings = {
       ...currentSettings,
       hardware: {
         ...currentHardware,
-        printer: {
-          ...currentPrinter,
-          type: parsed.data.printerType,
-          host: parsed.data.host,
-          // PATCH semantics: an omitted port keeps the stored value (falling
-          // back to the standard 9100 only when none was ever configured).
-          // Invalid/explicit ports are rejected above — no silent coercion.
-          port: parsed.data.port ?? (typeof currentPrinter.port === 'number' ? currentPrinter.port : 9100),
-        },
-        cashDrawerEnabled: parsed.data.cashDrawerEnabled,
-        cfdEnabled: parsed.data.cfdEnabled,
+        // Mirror flat fields for legacy readers; nested remains canonical.
+        type: after.printerType,
+        host: after.host,
+        port: after.port,
+        printer,
+        cashDrawerEnabled: after.cashDrawerEnabled,
+        cfdEnabled: after.cfdEnabled,
       },
     };
 
-    const updated = await prisma.tenant.update({
-      where: { id: tenantId },
-      data: { settings: updatedSettings },
-      select: { settings: true },
+    // The write and its audit row commit together: a changed printer address
+    // without an audit row is the defect this fixes.
+    const audit = hardwareSettingsAuditPayload(before, after);
+    const updated = await prisma.$transaction(async (tx) => {
+      const next = await tx.tenant.update({
+        where: { id: tenantId },
+        data: { settings: updatedSettings },
+        select: { settings: true },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          actorId: session.user.id,
+          actorRole: session.user.role,
+          entityType: 'TenantSettings',
+          entityId: tenantId,
+          action: AUDIT_ACTIONS.SETTINGS_CHANGED,
+          before: { ...audit.before },
+          after: { ...audit.after },
+        },
+      });
+
+      return next;
     });
 
     return NextResponse.json({ success: true, data: updated.settings });

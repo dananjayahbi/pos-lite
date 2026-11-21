@@ -17,6 +17,7 @@ import { resolveShippingChargeDecision } from '@/lib/delivery/shippingConfig.cor
 import { createShipment } from '@/lib/services/shipment.service';
 import { autoDeductPackaging, assertPackagingAvailableForDispatch, notifyLowStock } from '@/lib/services/packaging.service';
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
+import { decryptCourierAccount } from '@/lib/courier/credentials';
 import { toCourierOrderPayload } from '@/lib/courier/mappers';
 import { HOLD_BUFFER_DURATION_MS, TERMINAL_SHIPMENT_STATUSES } from '@/lib/constants/courier';
 import type {
@@ -481,11 +482,13 @@ export async function dispatchDelivery(
   const adapter = resolveAdapterForAccount(account);
 
   // Authenticate (API key for prod, or login for staging).
+  // ARGUS #514: the stored row is ciphertext; decrypt only for the request.
+  const credentials = decryptCourierAccount(account);
   const auth = await adapter.authenticate({
-    email: account.email ?? undefined,
-    password: account.password ?? undefined,
-    apiKey: account.apiKey ?? undefined,
-    env: account.env,
+    email: credentials.email ?? undefined,
+    password: credentials.password ?? undefined,
+    apiKey: credentials.apiKey ?? undefined,
+    env: credentials.env,
   });
   if (!auth.ok) throw new Error(`COURIER_AUTH_FAILED:${auth.error.message}`);
 
@@ -620,11 +623,12 @@ export async function trackShipment(tenantId: string, shipmentId: string, userId
 
   const adapter = resolveAdapterForAccount(account);
 
+  const trackCredentials = decryptCourierAccount(account);
   const auth = await adapter.authenticate({
-    email: account.email ?? undefined,
-    password: account.password ?? undefined,
-    apiKey: account.apiKey ?? undefined,
-    env: account.env,
+    email: trackCredentials.email ?? undefined,
+    password: trackCredentials.password ?? undefined,
+    apiKey: trackCredentials.apiKey ?? undefined,
+    env: trackCredentials.env,
   });
   if (!auth.ok) throw new Error(`COURIER_AUTH_FAILED:${auth.error.message}`);
 
