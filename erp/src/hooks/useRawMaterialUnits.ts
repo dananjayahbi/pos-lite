@@ -63,7 +63,7 @@ export function useUpdateRawMaterialUnit() {
     }: {
       id: string;
       name?: string;
-      shortLabel?: string;
+      shortLabel?: string | null;
       isActive?: boolean;
     }) => {
       const res = await fetch(`/api/store/units/${id}`, {

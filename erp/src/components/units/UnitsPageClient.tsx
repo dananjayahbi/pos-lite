@@ -37,6 +37,7 @@ import {
   unitRenameWarning,
 } from '@/lib/services/rawMaterialUnitRename.core';
 import { formatUnitUsage } from '@/lib/units/unitUsage.core';
+import { deriveUnitShortLabel } from '@/lib/units/unitValidation.core';
 
 interface UnitsPageClientProps {
   canCreate: boolean;
@@ -65,11 +66,16 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
   const [renameConfirmed, setRenameConfirmed] = useState(false);
 
   const units = data?.data ?? [];
+  const derivedShortLabel = deriveUnitShortLabel(form.name);
+  const nextDisplay = {
+    name: form.name,
+    shortLabel: form.shortLabel.trim() || derivedShortLabel,
+  };
   const renameNeedsConfirmation =
     editing !== null &&
     unitDisplayChanged(
       { name: editing.name, shortLabel: editing.shortLabel },
-      form,
+      nextDisplay,
     );
 
   const openCreate = () => {
@@ -97,7 +103,9 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
         await updateMutation.mutateAsync({
           id: editing.id,
           name,
-          ...(shortLabel ? { shortLabel } : {}),
+          // Always send the field so a cleared label is honoured: null derives
+          // a complete label from the (possibly renamed) name (ARGUS #486).
+          shortLabel: shortLabel || null,
         });
         toast.success('Unit updated');
       } else {
@@ -313,7 +321,12 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
                 }}
                 placeholder="e.g. bottle"
                 maxLength={20}
+                aria-describedby="unit-short-label-hint"
               />
+              <p id="unit-short-label-hint" className="text-[11px] text-mist-ink">
+                Leave blank to derive a label from the name
+                {form.shortLabel.trim() ? '.' : ` (${derivedShortLabel}).`}
+              </p>
             </div>
             {renameNeedsConfirmation && editing && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">

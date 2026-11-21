@@ -14,7 +14,6 @@ import { ApiError } from '@/lib/api/errors';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
   DEFAULT_RAW_MATERIAL_UNITS,
-  humanizeUnitKey,
   slugifyRawMaterialCategoryKey,
 } from '@/lib/services/rawMaterial.core';
 import {
@@ -22,6 +21,7 @@ import {
   type RawMaterialUnitCatalog,
 } from '@/lib/services/rawMaterialUnitCatalog.core';
 import {
+  deriveUnitShortLabel,
   findDuplicateUnitLabel,
   hasAlphanumeric,
   type UnitLabelConflict,
@@ -257,8 +257,9 @@ export async function createRawMaterialUnit(
 
   const key = await nextAvailableKey(tenantId, slugifyRawMaterialCategoryKey(name));
   // A short label is optional in the API. When omitted, derive something
-  // readable instead of showing a bare key in the quantity column.
-  const shortLabel = input.shortLabel?.trim() || humanizeUnitKey(key).slice(0, 12);
+  // readable instead of showing a bare key in the quantity column. ARGUS #486:
+  // the derivation keeps whole words under the 20-character cap.
+  const shortLabel = input.shortLabel?.trim() || deriveUnitShortLabel(name);
 
   // Re-use a previously soft-deleted unit when the key matches so history and
   // material references stay intact.
@@ -302,7 +303,7 @@ export async function updateRawMaterialUnit(
   tenantId: string,
   actorId: string,
   id: string,
-  input: { name?: string | undefined; shortLabel?: string | undefined; isActive?: boolean | undefined },
+  input: { name?: string | undefined; shortLabel?: string | null | undefined; isActive?: boolean | undefined },
 ): Promise<RawMaterialUnitItem> {
   const existing = await findOwnedUnit(tenantId, id);
 
@@ -310,7 +311,15 @@ export async function updateRawMaterialUnit(
   // materials and BOM lines is never rewritten and quantities are not
   // converted; the UI requires an explicit acknowledgement before sending one.
   const name = input.name !== undefined ? input.name.trim() : undefined;
-  const shortLabel = input.shortLabel !== undefined ? input.shortLabel.trim() : undefined;
+  // ARGUS #486: `null` (cleared Short label) is a real instruction - derive a
+  // complete label from the (new) name instead of silently keeping the old one.
+  const shortLabelInput = input.shortLabel;
+  const shortLabel =
+    shortLabelInput === null
+      ? deriveUnitShortLabel(name ?? existing.name)
+      : shortLabelInput !== undefined
+        ? shortLabelInput.trim()
+        : undefined;
   if (name !== undefined && !name) {
     throw new Error('VALIDATION_ERROR');
   }

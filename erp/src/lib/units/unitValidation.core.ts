@@ -36,6 +36,29 @@ export interface UnitLabelConflict {
 }
 
 /**
+ * Derive a complete short label from a unit name (ARGUS #486).
+ *
+ * The old fallback was `humanizeUnitKey(key).slice(0, 12)`, which cut mid-word
+ * ("Bottles Of 500ml" became "Bottles Of 5"). This keeps whole words within the
+ * 20-character API cap; only a single word longer than the cap is hard-cut.
+ */
+export function deriveUnitShortLabel(name: string): string {
+  const words = name.trim().replace(/\s+/g, ' ').split(' ').filter(Boolean);
+  if (words.length === 0) return 'unit';
+
+  let label = '';
+  for (const word of words) {
+    const candidate = label ? `${label} ${word}` : word;
+    if (candidate.length > 20) break;
+    label = candidate;
+  }
+
+  if (label) return label;
+  // A single word longer than the cap: no word boundary exists to cut on.
+  return words[0]!.slice(0, 20);
+}
+
+/**
  * Find a live unit whose name or short label matches the input after
  * normalisation. `excludeId` skips the unit being edited. Name is checked
  * first so the clearest message wins.

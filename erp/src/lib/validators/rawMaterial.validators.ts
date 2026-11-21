@@ -83,7 +83,9 @@ export const CreateRawMaterialUnitSchema = z.object({
 export const UpdateRawMaterialUnitSchema = z
   .object({
     name: rawMaterialUnitName.optional(),
-    shortLabel: z.string().trim().min(1).max(20).optional(),
+    // ARGUS #486: `null` means "clear and derive from the name" instead of the
+    // old silent no-op where omitting the field kept the stale label.
+    shortLabel: z.string().trim().min(1).max(20).nullable().optional(),
     isActive: z.boolean().optional(),
   })
   .refine(

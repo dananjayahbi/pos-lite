@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  deriveUnitShortLabel,
   findDuplicateUnitLabel,
   hasAlphanumeric,
   normalizeUnitLabel,
@@ -48,5 +49,28 @@ describe('unit label validation', () => {
 
   it('never reports a blank input as a duplicate', () => {
     expect(findDuplicateUnitLabel({ name: '   ', shortLabel: '' }, rows)).toBeNull();
+  });
+});
+
+/** ARGUS #486: the derived short label must be a complete label, not cut mid-word. */
+describe('deriveUnitShortLabel', () => {
+  it('keeps a short name complete', () => {
+    expect(deriveUnitShortLabel('Bottles Of 500ml')).toBe('Bottles Of 500ml');
+  });
+
+  it('drops whole words at the 20-character boundary', () => {
+    expect(deriveUnitShortLabel('Bottles Of 500ml Assorted')).toBe('Bottles Of 500ml');
+  });
+
+  it('collapses extra whitespace and trims', () => {
+    expect(deriveUnitShortLabel('  Bottles   Of 500ml  ')).toBe('Bottles Of 500ml');
+  });
+
+  it('hard-cuts only a single word longer than the cap', () => {
+    expect(deriveUnitShortLabel('Supercalifragilisticexpialidocious')).toHaveLength(20);
+  });
+
+  it('falls back to "unit" for a blank name', () => {
+    expect(deriveUnitShortLabel('   ')).toBe('unit');
   });
 });
