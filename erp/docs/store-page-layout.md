@@ -13,6 +13,10 @@ column created by `StoreLayoutClient`.
   the design.
 - Tables and dashboards should stretch edge-to-edge inside the `p-6` gutter;
   use internal grid columns for density instead of narrowing the page.
+- Do **not** render another `<main>` (or `role="main"`) inside a page. The
+  layout already provides the single main landmark; `/inventory/new` used to
+  add a second one, so assistive technology announced two main regions
+  (ARGUS #152). Use a plain `<div>` wrapper instead.
 
 ## Promotions
 
