@@ -49,6 +49,7 @@ import { getCommissionRecordStatus } from '@/lib/services/commissionSummary.core
 import { maskBankAccountNumber } from '@/lib/services/staffPrivacy.core';
 import { TimeClockHistoryPanel } from '@/components/staff/TimeClockHistoryPanel';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { extraPermissions } from '@/lib/services/permissionSet.core';
 import type { UpdateStaffInput } from '@/lib/validators/staff.validators';
 
 
@@ -456,6 +457,8 @@ function ProfileTab({
 }) {
   const [forceLogoutOpen, setForceLogoutOpen] = useState(false);
   const [isForceLoggingOut, setIsForceLoggingOut] = useState(false);
+  // ARGUS #459: show extras only, not the role defaults some legacy rows store.
+  const explicitPermissions = extraPermissions(staffMember.permissions, staffMember.role);
 
   const handleForceLogout = useCallback(async () => {
     setIsForceLoggingOut(true);
@@ -623,9 +626,9 @@ function ProfileTab({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {staffMember.permissions.length > 0 ? (
+            {explicitPermissions.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
-                {staffMember.permissions.map((permission) => (
+                {explicitPermissions.map((permission) => (
                   <Badge
                     key={permission}
                     variant="secondary"

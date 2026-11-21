@@ -33,10 +33,31 @@ import {
   type AssignableRole,
   type PermissionKey,
 } from '@/lib/constants/permissions';
+import { grantablePermissions, canAssignRole, canManageStaffRole } from '@/lib/auth/staff-authorization';
+import {
+  effectivePermissions,
+  extraPermissions,
+  isStaffPermissionDraftUnchanged,
+} from '@/lib/services/permissionSet.core';
+import {
+  getPermissionRisk,
+  newHighRiskGrants,
+} from '@/lib/services/permissionRisk.core';
+import { resolveStaffRosterState } from '@/lib/services/staffRosterState.core';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
-// M03-01 (BUG-3): AssignableRole + ASSIGNABLE_ROLES now come from the shared
-// constant — the same list the API validator builds its enum from.
+/**
+ * Team & Permissions editor.
+ *
+ * ARGUS #459: the table and editor show EXPLICIT extras (stored permissions
+ * minus role defaults), and Save is a no-op when the normalized extras and the
+ * role/status are unchanged - no sessionVersion bump, audit row or logout.
+ * ARGUS #460: controls only render when the actor holds the same keys the PATCH
+ * route requires.
+ * ARGUS #461: high-risk keys are badged, non-grantable keys are disabled, and
+ * newly granted high-risk keys need an explicit confirmation.
+ * ARGUS #462: loading/error/empty/ready are distinct; error is never "empty".
+ */
 
 interface StaffMember {
   id: string;
@@ -54,8 +75,6 @@ const ROLE_COLORS: Record<AssignableRole, string> = {
   DISPATCH_STAFF: 'bg-pearl text-espresso',
   FACTORY_MANAGER: 'bg-mist text-espresso',
 };
-
-// M03-01 (BUG-3): shared source of truth (imported above) — no local list.
 
 const GROUP_LABELS: Record<keyof typeof PERMISSIONS, string> = {
   SALE: 'Sales',
@@ -91,23 +110,52 @@ function RoleBadge({ role }: { role: AssignableRole }) {
   return <Badge className={ROLE_COLORS[role]}>{role.replace(/_/g, ' ')}</Badge>;
 }
 
-export default function UserPermissionsSettingsClient() {
+interface UserPermissionsSettingsClientProps {
+  canManage: boolean;
+  canAssignPermissions: boolean;
+  canSave: boolean;
+  actorRole: string;
+}
+
+export default function UserPermissionsSettingsClient({
+  canManage,
+  canAssignPermissions,
+  canSave,
+  actorRole,
+}: UserPermissionsSettingsClientProps) {
   const queryClient = useQueryClient();
   const [editingMember, setEditingMember] = useState<StaffMember | null>(null);
   const [draftRole, setDraftRole] = useState<AssignableRole>('CASHIER');
   const [draftIsActive, setDraftIsActive] = useState(true);
   const [draftPermissions, setDraftPermissions] = useState<string[]>([]);
+  const [pendingHighRisk, setPendingHighRisk] = useState<
+    Array<{ permission: string; reason: string }>
+  >([]);
 
-  const { data, isLoading } = useQuery<{ success: boolean; data: StaffMember[] }>({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<{
+    success: boolean;
+    data: StaffMember[];
+  }>({
     queryKey: ['staff', 'settings-users'],
     queryFn: async () => {
       const res = await fetch('/api/store/staff');
-      if (!res.ok) throw new Error('Failed to fetch team members');
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message ?? `Failed to fetch team members (${res.status})`);
+      }
       return res.json();
     },
   });
 
   const staff = data?.data ?? [];
+  const rosterState = resolveStaffRosterState({
+    isLoading,
+    isError,
+    rowCount: staff.length,
+  });
+
+  const grantable = grantablePermissions(actorRole);
+  const assignableRoles = ASSIGNABLE_ROLES.filter((role) => canAssignRole(actorRole, role));
 
   const updateMutation = useMutation({
     mutationFn: async () => {
@@ -115,10 +163,8 @@ export default function UserPermissionsSettingsClient() {
         throw new Error('No team member selected');
       }
 
-      const inherited = new Set(ROLE_PERMISSIONS[draftRole]);
-      const explicitPermissions = draftPermissions.filter(
-        (permission) => !inherited.has(permission as PermissionKey),
-      );
+      // ARGUS #459: persist only the explicit extras relative to the new role.
+      const explicitPermissions = extraPermissions(draftPermissions, draftRole);
 
       const res = await fetch(`/api/store/staff/${editingMember.id}`, {
         method: 'PATCH',
@@ -143,9 +189,11 @@ export default function UserPermissionsSettingsClient() {
       void queryClient.invalidateQueries({ queryKey: ['staff'] });
       toast.success('User permissions updated');
       setEditingMember(null);
+      setPendingHighRisk([]);
     },
-    onError: (error: Error) => {
-      toast.error(error.message);
+    onError: (mutationError: Error) => {
+      toast.error(mutationError.message);
+      setPendingHighRisk([]);
     },
   });
 
@@ -155,11 +203,16 @@ export default function UserPermissionsSettingsClient() {
     setEditingMember(member);
     setDraftRole(member.role);
     setDraftIsActive(member.isActive);
-    setDraftPermissions(Array.isArray(member.permissions) ? member.permissions : []);
+    // Normalize on open: legacy rows may store inherited permissions too.
+    setDraftPermissions(extraPermissions(member.permissions, member.role));
+    setPendingHighRisk([]);
   }
 
   function togglePermission(permission: string) {
     if (inheritedPermissions.has(permission as PermissionKey)) {
+      return;
+    }
+    if (!canAssignPermissions || !grantable.has(permission)) {
       return;
     }
 
@@ -170,12 +223,52 @@ export default function UserPermissionsSettingsClient() {
     );
   }
 
+  function requestSave() {
+    if (!editingMember) return;
+
+    // ARGUS #459: no-op saves must not PATCH (which bumps sessionVersion and
+    // writes an audit row even when nothing changed).
+    if (
+      isStaffPermissionDraftUnchanged(
+        {
+          role: editingMember.role,
+          isActive: editingMember.isActive,
+          permissions: editingMember.permissions,
+        },
+        {
+          role: draftRole,
+          isActive: draftIsActive,
+          permissions: draftPermissions,
+        },
+      )
+    ) {
+      toast.info('No changes to save.');
+      setEditingMember(null);
+      return;
+    }
+
+    // Compare EFFECTIVE permissions: promoting a role can implicitly grant a
+    // high-risk inherited key even when the explicit extras do not change.
+    const existingEffective = effectivePermissions(
+      editingMember.role,
+      editingMember.permissions,
+    );
+    const nextEffective = effectivePermissions(draftRole, draftPermissions);
+    const highRisk = newHighRiskGrants(existingEffective, nextEffective);
+    if (highRisk.length > 0) {
+      setPendingHighRisk(highRisk);
+      return;
+    }
+
+    updateMutation.mutate();
+  }
+
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 p-6">
       <div>
         <h1 className="font-display text-2xl font-bold text-espresso">Team &amp; permissions</h1>
         <p className="mt-1 text-sm text-sand-ink">
-          Adjust roles, keep accounts active, and grant extra permissions on top of each role’s defaults.
+          Adjust roles, keep accounts active, and grant extra permissions on top of each role's defaults.
         </p>
       </div>
 
@@ -190,11 +283,30 @@ export default function UserPermissionsSettingsClient() {
 
       <Card className="border-mist">
         <CardContent className="p-0">
-          {isLoading ? (
+          {rosterState === 'loading' ? (
             <div className="space-y-2 p-4">
               {Array.from({ length: 6 }).map((_, index) => (
                 <Skeleton key={index} className="h-12 w-full" />
               ))}
+            </div>
+          ) : rosterState === 'error' ? (
+            <div className="p-6">
+              <p className="text-sm text-[#9B2226]">
+                Team members could not be loaded.{' '}
+                {error instanceof Error ? error.message : 'Try again.'}
+              </p>
+              <Button
+                variant="outline"
+                className="mt-3"
+                onClick={() => refetch()}
+                disabled={isFetching}
+              >
+                {isFetching ? 'Retrying...' : 'Retry'}
+              </Button>
+            </div>
+          ) : rosterState === 'empty' ? (
+            <div className="p-8 text-center text-sm text-sand-ink">
+              No team members yet. Create a staff member from the Staff page.
             </div>
           ) : (
             <Table>
@@ -204,7 +316,7 @@ export default function UserPermissionsSettingsClient() {
                   <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Extra permissions</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  {canSave && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -225,13 +337,19 @@ export default function UserPermissionsSettingsClient() {
                       </Badge>
                     </TableCell>
                     <TableCell className="font-mono text-xs text-espresso">
-                      {Array.isArray(member.permissions) ? member.permissions.length : 0}
+                      {extraPermissions(member.permissions, member.role).length}
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="outline" size="sm" onClick={() => openEditor(member)}>
-                        Manage
-                      </Button>
-                    </TableCell>
+                    {canSave && (
+                      <TableCell className="text-right">
+                        {canManageStaffRole(actorRole, member.role) ? (
+                          <Button variant="outline" size="sm" onClick={() => openEditor(member)}>
+                            Manage
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-sand-ink">Above your role</span>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -239,6 +357,13 @@ export default function UserPermissionsSettingsClient() {
           )}
         </CardContent>
       </Card>
+
+      {!canSave && (
+        <p className="text-sm text-sand-ink">
+          You can view the team directory. Changing roles, status or permissions requires
+          {canManage ? ' the permission-assignment key.' : ' staff management and permission-assignment keys.'}
+        </p>
+      )}
 
       <Dialog open={editingMember !== null} onOpenChange={(open) => !open && setEditingMember(null)}>
         <DialogContent className="sm:max-w-4xl">
@@ -257,7 +382,7 @@ export default function UserPermissionsSettingsClient() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ASSIGNABLE_ROLES.map((role) => (
+                    {assignableRoles.map((role) => (
                       <SelectItem key={role} value={role}>
                         {role.replace(/_/g, ' ')}
                       </SelectItem>
@@ -290,29 +415,48 @@ export default function UserPermissionsSettingsClient() {
                       {Object.values(groupPermissions).map((permission) => {
                         const inherited = inheritedPermissions.has(permission as PermissionKey);
                         const checked = inherited || draftPermissions.includes(permission);
+                        const risk = getPermissionRisk(permission);
+                        const grantableHere = canAssignPermissions && grantable.has(permission);
+                        const disabled = inherited || !grantableHere;
 
                         return (
                           <label
                             key={permission}
+                            title={risk.reason ?? undefined}
                             className={`flex items-start gap-3 rounded-md border p-3 ${
-                              inherited ? 'border-espresso/20 bg-pearl/50' : 'border-mist bg-white'
+                              inherited
+                                ? 'border-espresso/20 bg-pearl/50'
+                                : risk.highRisk
+                                  ? 'border-[#9B2226]/40 bg-[#9B2226]/5'
+                                  : 'border-mist bg-white'
                             }`}
                           >
                             <Checkbox
                               checked={checked}
-                              disabled={inherited}
+                              disabled={disabled}
                               onCheckedChange={() => togglePermission(permission)}
                             />
                             <div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <p className="text-sm font-medium text-espresso">{formatPermissionLabel(permission)}</p>
                                 {inherited ? (
                                   <Badge variant="secondary" className="bg-espresso text-pearl">Inherited</Badge>
                                 ) : checked ? (
                                   <Badge variant="secondary">Explicit</Badge>
                                 ) : null}
+                                {risk.highRisk && (
+                                  <Badge className="bg-[#9B2226] text-white hover:bg-[#9B2226]">
+                                    High risk
+                                  </Badge>
+                                )}
+                                {!inherited && !grantableHere && (
+                                  <Badge variant="secondary">Not grantable by your role</Badge>
+                                )}
                               </div>
                               <p className="mt-1 font-mono text-[11px] text-sand-ink">{permission}</p>
+                              {risk.highRisk && risk.reason && (
+                                <p className="mt-1 text-[11px] text-[#9B2226]">{risk.reason}</p>
+                              )}
                             </div>
                           </label>
                         );
@@ -326,11 +470,53 @@ export default function UserPermissionsSettingsClient() {
                 <Button variant="outline" onClick={() => setEditingMember(null)}>
                   Cancel
                 </Button>
-                <Button onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending}>
-                  {updateMutation.isPending ? 'Saving…' : 'Save changes'}
+                <Button onClick={requestSave} disabled={updateMutation.isPending || !canSave}>
+                  {updateMutation.isPending ? 'Saving...' : 'Save changes'}
                 </Button>
               </div>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={pendingHighRisk.length > 0}
+        onOpenChange={(open) => {
+          if (!open) setPendingHighRisk([]);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display text-espresso">
+              Confirm high-risk permission{pendingHighRisk.length === 1 ? '' : 's'}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-sand-ink">
+            You are about to grant {pendingHighRisk.length} high-risk permission
+            {pendingHighRisk.length === 1 ? '' : 's'} to {editingMember ? staffDisplayName(editingMember.email) : 'this user'}:
+          </p>
+          <ul className="space-y-2">
+            {pendingHighRisk.map((entry) => (
+              <li key={entry.permission} className="rounded-md border border-[#9B2226]/30 bg-[#9B2226]/5 p-3">
+                <p className="font-mono text-xs text-espresso">{entry.permission}</p>
+                <p className="mt-1 text-xs text-sand-ink">{entry.reason}</p>
+              </li>
+            ))}
+          </ul>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setPendingHighRisk([])}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#9B2226] text-white hover:bg-[#9B2226]/90"
+              onClick={() => {
+                setPendingHighRisk([]);
+                updateMutation.mutate();
+              }}
+              disabled={updateMutation.isPending}
+            >
+              Grant and save
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

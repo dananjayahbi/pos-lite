@@ -38,9 +38,11 @@ import { Plus, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { CreateStaffSchema } from '@/lib/validators/staff.validators';
 import type { CreateStaffInput } from '@/lib/validators/staff.validators';
-import { ASSIGNABLE_ROLES, type AssignableRole } from '@/lib/constants/permissions';
+import { ASSIGNABLE_ROLES, PERMISSIONS, type AssignableRole } from '@/lib/constants/permissions';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { usePermissions } from '@/hooks/usePermissions';
+import { resolveStaffRosterState } from '@/lib/services/staffRosterState.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,6 +93,8 @@ function RoleBadge({ role }: { role: string }) {
 
 export default function StaffPage() {
   const queryClient = useQueryClient();
+  const { hasPermission } = usePermissions();
+  const canManage = hasPermission(PERMISSIONS.STAFF.manageStaff);
 
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -108,16 +112,24 @@ export default function StaffPage() {
   if (debouncedSearch) queryParams.set('search', debouncedSearch);
   if (roleFilter !== 'ALL') queryParams.set('role', roleFilter);
 
-  const { data, isLoading } = useQuery<{ success: boolean; data: StaffMember[] }>({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<{ success: boolean; data: StaffMember[] }>({
     queryKey: ['staff', debouncedSearch, roleFilter],
     queryFn: async () => {
       const res = await fetch(`/api/store/staff?${queryParams.toString()}`);
-      if (!res.ok) throw new Error('Failed to fetch staff');
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message ?? `Failed to fetch staff (${res.status})`);
+      }
       return res.json();
     },
   });
 
   const staff = data?.data ?? [];
+  const rosterState = resolveStaffRosterState({
+    isLoading,
+    isError,
+    rowCount: staff.length,
+  });
 
   // ── Toggle Active ──────────────────────────────────────────────────────────
 
@@ -217,18 +229,23 @@ export default function StaffPage() {
         <div>
           <h1 className="text-2xl font-display font-bold text-espresso">Staff</h1>
           <p className="text-sm text-sand-ink mt-1">
-            {isLoading ? '...' : `${staff.length} team member${staff.length !== 1 ? 's' : ''}`}
+            {rosterState === 'loading'
+              ? '...'
+              : rosterState === 'error'
+                ? 'Team list unavailable'
+                : `${staff.length} team member${staff.length !== 1 ? 's' : ''}`}
           </p>
         </div>
 
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              New Staff Member
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        {canManage && (
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                New Staff Member
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle className="font-display">Create Staff Member</DialogTitle>
             </DialogHeader>
@@ -445,7 +462,8 @@ export default function StaffPage() {
               </Button>
             </form>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        )}
       </div>
 
       {/* Filters */}
@@ -499,7 +517,7 @@ export default function StaffPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
+            {rosterState === 'loading' ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
                   <TableCell><Skeleton className="h-4 w-40" /></TableCell>
@@ -510,7 +528,25 @@ export default function StaffPage() {
                   <TableCell><Skeleton className="h-8 w-16 ml-auto" /></TableCell>
                 </TableRow>
               ))
-            ) : staff.length === 0 ? (
+            ) : rosterState === 'error' ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center">
+                  <p className="text-sm text-[#9B2226]">
+                    Staff could not be loaded.{' '}
+                    {error instanceof Error ? error.message : 'Try again.'}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => refetch()}
+                    disabled={isFetching}
+                  >
+                    {isFetching ? 'Retrying...' : 'Retry'}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ) : rosterState === 'empty' ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-8 text-sand-ink">
                   No staff members found
@@ -529,12 +565,18 @@ export default function StaffPage() {
                     <RoleBadge role={member.role} />
                   </TableCell>
                   <TableCell>
-                    <Switch
-                      checked={member.isActive}
-                      onCheckedChange={(checked) =>
-                        toggleMutation.mutate({ id: member.id, isActive: checked })
-                      }
-                    />
+                    {canManage ? (
+                      <Switch
+                        checked={member.isActive}
+                        onCheckedChange={(checked) =>
+                          toggleMutation.mutate({ id: member.id, isActive: checked })
+                        }
+                      />
+                    ) : (
+                      <Badge variant={member.isActive ? 'default' : 'secondary'}>
+                        {member.isActive ? 'Active' : 'Inactive'}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="font-mono text-sm">
                     {member.commissionRate !== null
