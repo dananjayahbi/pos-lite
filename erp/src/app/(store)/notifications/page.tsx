@@ -6,6 +6,7 @@ import {
   Bell,
   Check,
   CheckCheck,
+  XCircle,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useGetNotifications, useInvalidateNotifications } from '@/hooks/useGetNotifications';
 import { getNotificationIcon } from '@/lib/constants/notification-types';
+import {
+  SALE_VOIDED_TITLE,
+  buildSaleVoidedCopy,
+  isVoidedSaleAlert,
+} from '@/lib/notifications/sale-alert-copy';
 
 type NotificationStatusFilter = 'all' | 'read' | 'unread';
 
@@ -54,6 +60,13 @@ function getNotificationHref(type: string, relatedEntityId: string | null): stri
     case 'STOCK_TAKE_APPROVED':
     case 'STOCK_TAKE_REJECTED':
       return relatedEntityId ? `/stock-control/stock-takes/${relatedEntityId}/review` : null;
+    case 'SALE_COMPLETED':
+      // ARGUS #52: open the sale itself so the operator can confirm the void.
+      return relatedEntityId ? `/sales/${relatedEntityId}` : '/sales';
+    case 'RETURN_PROCESSED':
+      return '/returns';
+    case 'SHIFT_CLOSED':
+      return relatedEntityId ? `/staff/shifts/${relatedEntityId}` : '/staff/shifts';
     default:
       return null;
   }
@@ -169,8 +182,17 @@ export default function NotificationsPage() {
             </div>
           ) : (
             notifications.map((notification) => {
-              const Icon = getNotificationIcon(notification.type);
+              const isVoidedSale = isVoidedSaleAlert(notification.type, notification.relatedSale);
+              const Icon = isVoidedSale ? XCircle : getNotificationIcon(notification.type);
               const href = getNotificationHref(notification.type, notification.relatedEntityId);
+              const title = isVoidedSale ? SALE_VOIDED_TITLE : notification.title;
+              const body =
+                isVoidedSale && notification.relatedSale
+                  ? buildSaleVoidedCopy(
+                      notification.relatedEntityId ?? '',
+                      notification.relatedSale.totalAmount,
+                    ).body
+                  : notification.body;
 
               return (
                 <div
@@ -184,10 +206,13 @@ export default function NotificationsPage() {
                       </div>
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-medium text-espresso">{notification.title}</p>
+                          <p className="font-medium text-espresso">{title}</p>
+                          {isVoidedSale && (
+                            <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Voided</Badge>
+                          )}
                           {!notification.isRead && <Badge className="bg-terracotta text-pearl">Unread</Badge>}
                         </div>
-                        <p className="text-sm text-sand-ink">{notification.body}</p>
+                        <p className="text-sm text-sand-ink">{body}</p>
                         <p className="font-mono text-xs text-mist-ink">{formatRelativeTime(notification.createdAt)}</p>
                       </div>
                     </div>
@@ -201,7 +226,7 @@ export default function NotificationsPage() {
                       )}
                       {href && (
                         <Button size="sm" onClick={() => handleOpen(notification.id, notification.type, notification.relatedEntityId, notification.isRead)}>
-                          Open
+                          {isVoidedSale ? 'View sale' : 'Open'}
                         </Button>
                       )}
                     </div>

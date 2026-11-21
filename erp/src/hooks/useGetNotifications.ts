@@ -10,6 +10,12 @@ interface NotificationData {
   relatedEntityId: string | null;
   isRead: boolean;
   createdAt: string;
+  /** ARGUS #52: present for SALE_COMPLETED alerts; status drives the Voided label. */
+  relatedSale?: {
+    id: string;
+    status: string;
+    totalAmount: number | string;
+  } | null;
 }
 
 interface NotificationsResponse {

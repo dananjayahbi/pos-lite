@@ -60,9 +60,41 @@ export async function GET(request: NextRequest) {
       prisma.notificationRecord.count({ where }),
     ]);
 
+    // ARGUS #52: a sale alert is stored as SALE_COMPLETED, but the sale may
+    // have been voided since. Join the linked sale so the client can label the
+    // row as voided (and show the reversed amount) without a schema change.
+    const saleIds = Array.from(
+      new Set(
+        notifications
+          .filter(
+            (notification) =>
+              notification.type === 'SALE_COMPLETED' &&
+              notification.relatedEntityType === 'Sale' &&
+              notification.relatedEntityId,
+          )
+          .map((notification) => notification.relatedEntityId as string),
+      ),
+    );
+
+    const relatedSales = saleIds.length
+      ? await prisma.sale.findMany({
+          where: { tenantId, id: { in: saleIds } },
+          select: { id: true, status: true, totalAmount: true },
+        })
+      : [];
+    const saleById = new Map(relatedSales.map((sale) => [sale.id, sale]));
+
+    const enrichedNotifications = notifications.map((notification) => ({
+      ...notification,
+      relatedSale:
+        notification.type === 'SALE_COMPLETED' && notification.relatedEntityId
+          ? saleById.get(notification.relatedEntityId) ?? null
+          : null,
+    }));
+
     return NextResponse.json({
       success: true,
-      data: { notifications, unreadCount },
+      data: { notifications: enrichedNotifications, unreadCount },
       meta: {
         page,
         limit,
