@@ -18,7 +18,7 @@ describe('aggregateRecoveryStaff', () => {
       totalAssignedFailed: 0,
       totalRedelivered: 0,
       totalCancelled: 0,
-      overallRecoveryRate: 0,
+      overallRecoveryRate: null,
     });
   });
 
@@ -53,11 +53,11 @@ describe('aggregateRecoveryStaff', () => {
     expect(result.totals.overallRecoveryRate).toBe(50);
   });
 
-  it('gives a 0 recovery rate when there are no actionable outcomes', () => {
+  it('leaves the recovery rate undefined when there are no actionable outcomes (ARGUS #517)', () => {
     const result = aggregateRecoveryStaff([attempt('FOLLOW_UP_CALL'), attempt('RESCHEDULED')], []);
     const row = result.staff[0];
-    expect(row?.recoveryRate).toBe(0);
-    expect(result.totals.overallRecoveryRate).toBe(0);
+    expect(row?.recoveryRate).toBeNull();
+    expect(result.totals.overallRecoveryRate).toBeNull();
   });
 
   it('aggregates across multiple staff members', () => {

@@ -15,6 +15,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useReportContext } from '@/lib/reports/ReportContext';
 import type { RecoveryStaffPerformance, RecoveryStaffRow } from '@/lib/services/recovery-stats.service';
+import {
+  compareRecoveryRate,
+  formatRecoveryRate,
+} from '@/lib/reports/recoveryRate.core';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
 function defaultFrom(): string {
@@ -55,6 +59,10 @@ type SortKey = 'assignedFailed' | 'totalAttempts' | 'redelivered' | 'cancelled' 
 
 function sortRows(rows: RecoveryStaffRow[], key: SortKey, dir: 'asc' | 'desc') {
   return [...rows].sort((a, b) => {
+    if (key === 'recoveryRate') {
+      // ARGUS #517: an undefined rate stays last instead of sorting as 0%.
+      return compareRecoveryRate(a.recoveryRate, b.recoveryRate, dir);
+    }
     const av = a[key];
     const bv = b[key];
     return dir === 'asc' ? av - bv : bv - av;
@@ -91,7 +99,7 @@ export default function RecoveryPerformanceClient() {
       Rescheduled: s.rescheduled,
       Redelivered: s.redelivered,
       Cancelled: s.cancelled,
-      'Recovery Rate %': s.recoveryRate,
+      'Recovery Rate %': formatRecoveryRate(s.recoveryRate),
     }));
     setReportData(rows);
   }, [data, setReportData]);
@@ -139,7 +147,7 @@ export default function RecoveryPerformanceClient() {
         <StatCard label="Failed Orders Assigned" value={String(t.totalAssignedFailed)} />
         <StatCard label="Total Attempts" value={String(t.totalAttempts)} />
         <StatCard label="Redelivered" value={String(t.totalRedelivered)} />
-        <StatCard label="Recovery Rate" value={`${t.overallRecoveryRate}%`} />
+        <StatCard label="Recovery Rate" value={formatRecoveryRate(t.overallRecoveryRate)} />
       </div>
 
       <Card>
@@ -182,7 +190,7 @@ export default function RecoveryPerformanceClient() {
                       <TableCell>{row.rescheduled}</TableCell>
                       <TableCell className="text-green-700">{row.redelivered}</TableCell>
                       <TableCell className="text-red-700">{row.cancelled}</TableCell>
-                      <TableCell>{row.recoveryRate}%</TableCell>
+                      <TableCell>{formatRecoveryRate(row.recoveryRate)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
