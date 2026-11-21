@@ -7,6 +7,7 @@ import { setSentryTenantContext } from '@/lib/sentry/context';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { cancelDelivery } from '@/lib/services/delivery.service';
 import { estimateWebsiteShippingFee } from '@/lib/services/shipping-fee.service';
+import { resolveShippingChargeDecision } from '@/lib/delivery/shippingConfig.core';
 import { ensureDeliveredCodEntry } from '@/lib/services/reconciliation-cod.service';
 import { bulkStatusRejection } from '@/lib/services/dispatchStatus.core';
 import type {
@@ -83,6 +84,16 @@ export async function createWebsiteOrder(
     cityName: input.cityName,
     districtName: input.districtName ?? undefined,
   });
+
+  // ARGUS #292: a missing rate card must not become a free-shipping order.
+  if (
+    resolveShippingChargeDecision({
+      configured: shipping.configured,
+      shippingFee: shipping.shippingFee,
+    }).blocked
+  ) {
+    throw new Error('SHIPPING_NOT_CONFIGURED');
+  }
 
   // ARGUS #287: the catalogue has no per-unit weight, so the parcel weight has
   // to come from checkout. When it is missing the quote silently falls back to

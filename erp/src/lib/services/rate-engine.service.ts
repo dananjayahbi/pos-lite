@@ -31,6 +31,11 @@ export interface RateCalcResult {
   extraKgRate: Decimal;
   extraKg: Decimal;
   freeBaseWeightKg: Decimal;
+  /**
+   * False when the tenant has no active rate card (ARGUS #292). `shippingFee` is
+   * zero in that case, but callers must not treat it as free shipping.
+   */
+  configured: boolean;
 }
 
 export async function calculateShippingFee(input: RateCalcInput): Promise<RateCalcResult> {
@@ -52,6 +57,7 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
       shippingFee: new Decimal(0),
       ...defaultCard,
       extraKg: new Decimal(0),
+      configured: false,
     };
   }
 
@@ -117,7 +123,10 @@ export async function calculateShippingFee(input: RateCalcInput): Promise<RateCa
     ? new Decimal(0)
     : new Decimal(input.weightKg.toString());
 
-  return computeShippingFeeFromTerms(weight, { baseRate, extraKgRate, freeBaseWeightKg });
+  return {
+    ...computeShippingFeeFromTerms(weight, { baseRate, extraKgRate, freeBaseWeightKg }),
+    configured: true,
+  };
 }
 
 /** Compute net payout for reconciliation: Net = GrossCOD − (fee + COD% + VAT%). */

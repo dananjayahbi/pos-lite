@@ -50,6 +50,7 @@ export async function POST(request: Request) {
         baseRate: result.baseRate.toFixed(2),
         extraKgRate: result.extraKgRate.toFixed(2),
         freeBaseWeightKg: result.freeBaseWeightKg.toFixed(2),
+        configured: result.configured,
       },
     });
   } catch (error) {
