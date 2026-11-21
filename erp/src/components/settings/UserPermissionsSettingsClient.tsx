@@ -6,7 +6,8 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -46,6 +47,10 @@ import {
   newHighRiskGrants,
 } from '@/lib/services/permissionRisk.core';
 import { resolveStaffRosterState } from '@/lib/services/staffRosterState.core';
+import {
+  filterStaffRoster,
+  paginateStaffRoster,
+} from '@/lib/services/staffRosterFilter.core';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
 /**
@@ -64,10 +69,13 @@ import { staffDisplayName } from '@/lib/utils/staff-name';
 interface StaffMember {
   id: string;
   email: string;
+  fullName?: string | null;
   role: AssignableRole;
   isActive: boolean;
   permissions: string[];
 }
+
+const ROSTER_PAGE_SIZE = 10;
 
 const ROLE_COLORS: Record<AssignableRole, string> = {
   OWNER: 'bg-espresso text-pearl',
@@ -127,6 +135,11 @@ export default function UserPermissionsSettingsClient({
 }: UserPermissionsSettingsClientProps) {
   const queryClient = useQueryClient();
   const [editingMember, setEditingMember] = useState<StaffMember | null>(null);
+  // ARGUS #465: identity/scale - search, role/status filters and paging.
+  const [rosterSearch, setRosterSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [rosterPage, setRosterPage] = useState(1);
   const [draftRole, setDraftRole] = useState<AssignableRole>('CASHIER');
   const [draftIsActive, setDraftIsActive] = useState(true);
   const [draftPermissions, setDraftPermissions] = useState<string[]>([]);
@@ -157,6 +170,19 @@ export default function UserPermissionsSettingsClient({
     isError,
     rowCount: staff.length,
   });
+
+  // ARGUS #465: filter on the loaded roster. The list endpoint is small (one
+  // tenant's staff), so local filtering keeps search instant and lets the same
+  // view filter by status, which the API does not expose.
+  const filteredStaff = filterStaffRoster(staff, {
+    search: rosterSearch,
+    role: roleFilter,
+    status: statusFilter,
+  });
+  const rosterPageResult = paginateStaffRoster(filteredStaff, rosterPage, ROSTER_PAGE_SIZE);
+  const pagedStaff = rosterPageResult.rows;
+  const rosterPageCount = rosterPageResult.pageCount;
+  const currentRosterPage = rosterPageResult.page;
 
   const grantable = grantablePermissions(actorRole);
   const assignableRoles = ASSIGNABLE_ROLES.filter((role) => canAssignRole(actorRole, role));
@@ -300,6 +326,64 @@ export default function UserPermissionsSettingsClient({
         </CardHeader>
       </Card>
 
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-56 flex-1">
+          <Label htmlFor="roster-search" className="text-sm text-sand-ink">Search team</Label>
+          <Input
+            id="roster-search"
+            type="search"
+            value={rosterSearch}
+            onChange={(event) => {
+              setRosterSearch(event.target.value);
+              setRosterPage(1);
+            }}
+            placeholder="Search by name or email..."
+            className="mt-1 border-mist"
+          />
+        </div>
+        <div className="w-44">
+          <Label htmlFor="roster-role" className="text-sm text-sand-ink">Role</Label>
+          <Select
+            value={roleFilter}
+            onValueChange={(value) => {
+              setRoleFilter(value);
+              setRosterPage(1);
+            }}
+          >
+            <SelectTrigger id="roster-role" className="mt-1 border-mist">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All roles</SelectItem>
+              {ASSIGNABLE_ROLES.map((role) => (
+                <SelectItem key={role} value={role}>
+                  {role.replace(/_/g, ' ')}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="w-40">
+          <Label htmlFor="roster-status" className="text-sm text-sand-ink">Status</Label>
+          <Select
+            value={statusFilter}
+            onValueChange={(value) => {
+              setStatusFilter(value);
+              setRosterPage(1);
+            }}
+          >
+            <SelectTrigger id="roster-status" className="mt-1 border-mist">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All statuses</SelectItem>
+              <SelectItem value="ACTIVE">Active</SelectItem>
+              <SelectItem value="INACTIVE">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       <Card className="border-mist">
         <CardContent className="p-0">
           {rosterState === 'loading' ? (
@@ -332,6 +416,7 @@ export default function UserPermissionsSettingsClient({
               <TableHeader>
                 <TableRow>
                   <TableHead>User</TableHead>
+                  <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Extra permissions</TableHead>
@@ -339,14 +424,24 @@ export default function UserPermissionsSettingsClient({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {staff.map((member) => (
+                {pagedStaff.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={canSave ? 6 : 5} className="py-8 text-center text-sand-ink">
+                      No team members match these filters.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  pagedStaff.map((member) => (
                   <TableRow key={member.id}>
                     <TableCell>
                       <div>
-                        <p className="font-medium text-espresso" title={member.email}>{staffDisplayName(member.email)}</p>
+                        <p className="font-medium text-espresso" title={member.email}>
+                          {member.fullName?.trim() || staffDisplayName(member.email)}
+                        </p>
                         <p className="text-xs text-sand-ink">{ROLE_PERMISSIONS[member.role].length} inherited defaults</p>
                       </div>
                     </TableCell>
+                    <TableCell className="font-mono text-xs text-espresso">{member.email}</TableCell>
                     <TableCell>
                       <RoleBadge role={member.role} />
                     </TableCell>
@@ -355,7 +450,7 @@ export default function UserPermissionsSettingsClient({
                         {member.isActive ? 'Active' : 'Inactive'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-espresso">
+                    <TableCell className="text-xs text-espresso">
                       {extraPermissions(member.permissions, member.role).length} extra
                       {deniedPermissions(member.permissions, member.role).length > 0 && (
                         <span className="text-terracotta">
@@ -367,7 +462,12 @@ export default function UserPermissionsSettingsClient({
                     {canSave && (
                       <TableCell className="text-right">
                         {canManageStaffRole(actorRole, member.role) ? (
-                          <Button variant="outline" size="sm" onClick={() => openEditor(member)}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            aria-label={`Manage ${member.email}`}
+                            onClick={() => openEditor(member)}
+                          >
                             Manage
                           </Button>
                         ) : (
@@ -376,12 +476,48 @@ export default function UserPermissionsSettingsClient({
                       </TableCell>
                     )}
                   </TableRow>
-                ))}
+                  ))
+                )}
               </TableBody>
             </Table>
           )}
         </CardContent>
       </Card>
+
+      {rosterState === 'ready' && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-sand-ink">
+          <p>
+            Showing {pagedStaff.length} of {filteredStaff.length} team member
+            {filteredStaff.length === 1 ? '' : 's'}
+            {filteredStaff.length !== staff.length ? ` (of ${staff.length})` : ''}
+          </p>
+          {rosterPageCount > 1 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-mist"
+                disabled={currentRosterPage <= 1}
+                onClick={() => setRosterPage((page) => Math.max(1, page - 1))}
+              >
+                Previous
+              </Button>
+              <span>
+                Page {currentRosterPage} of {rosterPageCount}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-mist"
+                disabled={currentRosterPage >= rosterPageCount}
+                onClick={() => setRosterPage((page) => Math.min(rosterPageCount, page + 1))}
+              >
+                Next
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       {!canSave && (
         <p className="text-sm text-sand-ink">
@@ -394,8 +530,13 @@ export default function UserPermissionsSettingsClient({
         <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle className="font-display text-espresso">
-              {editingMember ? `Manage ${staffDisplayName(editingMember.email)}` : 'Manage user'}
+              {editingMember ? `Manage ${editingMember.email}` : 'Manage user'}
             </DialogTitle>
+            <DialogDescription>
+              {editingMember
+                ? `${editingMember.fullName?.trim() || staffDisplayName(editingMember.email)} · role and explicit permission overrides`
+                : 'Role and explicit permission overrides'}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
@@ -537,7 +678,7 @@ export default function UserPermissionsSettingsClient({
           </DialogHeader>
           <p className="text-sm text-sand-ink">
             You are about to grant {pendingHighRisk.length} high-risk permission
-            {pendingHighRisk.length === 1 ? '' : 's'} to {editingMember ? staffDisplayName(editingMember.email) : 'this user'}:
+            {pendingHighRisk.length === 1 ? '' : 's'} to {editingMember ? editingMember.email : 'this user'}:
           </p>
           <ul className="space-y-2">
             {pendingHighRisk.map((entry) => (
