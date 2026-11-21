@@ -144,7 +144,27 @@ For each agent commit:
   (tax-inclusive label price), #161 (dialog variant/page previews), #165
   (detail-panel delete blocked for in-use categories), #166 (clear a category
   description).
-- Checkpoint: full suite green at 1,665 tests (196 files).
+- Batch 12 merged in parallel module agents: #167/#168/#174-#176 (category and
+  brand audit, description clearing, accurate delete locks), #183-#187/#194/
+  #195/#199-#201 (movement reasons/dates/sources/CSV safety, valuation
+  permission, adjustment audit/cache/storefront, stock-take maker-checker),
+  #227-#232/#234/#235 (PO cancel/payment/audit/date/concurrency/repair, supplier
+  errors/duplicates), #248-#250/#252 (BOM production lock, duplicate
+  ingredients, eligible variants, error states), #264-#267/#271-#275 (dispatch
+  selection/bulk results/amounts/errors, delivery items/cancel/load/print/
+  prepare), #281-#284/#290 (packaging history/shortfall/selection/errors,
+  destination-only rate zones), #311/#315/#317 (customer items/audit/no-contact)
+  and the re-submission of #322.
+- Checkpoint after batch 12: full suite green at 1,912 tests (230 files);
+  `tsc` clean.
+- Batch 13 in flight on the same five agents: #208-#210/#214/#215/#218,
+  #236/#237/#245/#246, #253/#256/#257, #291-#293, #300/#301.
+- Prisma baseline completed: live schema diff is empty, all 54 migrations
+  recorded; `migrate status` is blocked only by intermittent P1001/P1017 host
+  connection drops. The baseline task and the older void-credit task have no
+  Definition-of-Done items, so Atlas rejects their submission; both are
+  documented in `REFERENCES/ACTIVE_TASK_QUEUE.md`.
+- Checkpoint: full suite green at 1,912 tests (230 files).
 - DB reachable again; the three pending migrations were applied as raw SQL with
   `prisma db execute` and verified (`RawMaterial.unitCost`,
   `ProductionLog.materialCost`, `ReturnStatus.CANCELLED`,
