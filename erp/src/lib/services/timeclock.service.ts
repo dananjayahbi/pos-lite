@@ -13,6 +13,10 @@ import {
   type AttendanceCalendarSettings,
   type AttendanceDisplayStatus,
 } from '@/lib/attendance/attendanceCalendar.core';
+import {
+  findOverlappingPunch,
+  validatePunchTimes,
+} from '@/lib/attendance/punchTimes.core';
 
 /** A standard full day. Anything beyond this is overtime (OT). */
 export const STANDARD_WORKDAY_MINUTES = 8 * 60;
@@ -611,14 +615,43 @@ export async function updateTimeClockRecord(
         ? null
         : new Date(input.clockedOutAt);
 
-  if (Number.isNaN(nextClockedInAt.getTime())) {
-    throw new ApiError(400, 'VALIDATION_ERROR', 'Invalid clock-in time');
+  const now = new Date();
+  const validation = validatePunchTimes(
+    { clockedInAt: nextClockedInAt, clockedOutAt: nextClockedOutAt },
+    now,
+  );
+  if (validation) {
+    throw new ApiError(400, 'VALIDATION_ERROR', validation.message);
   }
-  if (nextClockedOutAt && Number.isNaN(nextClockedOutAt.getTime())) {
-    throw new ApiError(400, 'VALIDATION_ERROR', 'Invalid clock-out time');
-  }
-  if (nextClockedOutAt && nextClockedOutAt.getTime() <= nextClockedInAt.getTime()) {
-    throw new ApiError(400, 'VALIDATION_ERROR', 'Clock-out must be after clock-in');
+
+  // ARGUS #349: edits must not create an overlapping punch either.
+  const dayStart = new Date(nextClockedInAt);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setHours(23, 59, 59, 999);
+  const otherPunches = await prisma.timeClock.findMany({
+    where: {
+      tenantId,
+      userId: existing.userId,
+      id: { not: id },
+      OR: [
+        { clockedInAt: { gte: dayStart, lte: dayEnd } },
+        { clockedOutAt: null },
+      ],
+    },
+    select: { id: true, clockedInAt: true, clockedOutAt: true },
+  });
+  const overlap = findOverlappingPunch(
+    { clockedInAt: nextClockedInAt, clockedOutAt: nextClockedOutAt },
+    otherPunches,
+    now,
+  );
+  if (overlap) {
+    throw new ApiError(
+      409,
+      'PUNCH_OVERLAP',
+      'This time overlaps another punch for the same staff member',
+    );
   }
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -674,6 +707,123 @@ export async function updateTimeClockRecord(
     durationMinutes: Math.max(
       0,
       Math.round((end.getTime() - updated.clockedInAt.getTime()) / 60_000),
+    ),
+  };
+}
+
+export interface CreateTimeClockInput {
+  userId: string;
+  clockedInAt: string;
+  clockedOutAt?: string | null | undefined;
+  /** Reason for the manual entry (becomes the punch note + audit detail). */
+  notes?: string | null | undefined;
+}
+
+/**
+ * Add a missing clock punch for a staff member (ARGUS #349).
+ *
+ * Manual entries obey the live clock rules: clock-out after clock-in, no future
+ * times, no overlap with another punch, and an open punch only for today. The
+ * entry is audited with the actor and the reason.
+ */
+export async function createTimeClockRecord(
+  tenantId: string,
+  input: CreateTimeClockInput,
+  actorId: string,
+  actorRole: string,
+) {
+  const user = await prisma.user.findFirst({
+    where: { id: input.userId, tenantId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!user) {
+    throw new ApiError(404, 'NOT_FOUND', 'Staff member not found');
+  }
+
+  const clockedInAt = new Date(input.clockedInAt);
+  const clockedOutAt =
+    input.clockedOutAt === null || input.clockedOutAt === undefined || input.clockedOutAt === ''
+      ? null
+      : new Date(input.clockedOutAt);
+  const now = new Date();
+
+  const validation = validatePunchTimes({ clockedInAt, clockedOutAt }, now);
+  if (validation) {
+    throw new ApiError(400, 'VALIDATION_ERROR', validation.message);
+  }
+
+  const dayStart = new Date(clockedInAt);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setHours(23, 59, 59, 999);
+
+  // Same-day punches plus any other open punch (an open interval runs to now).
+  const existing = await prisma.timeClock.findMany({
+    where: {
+      tenantId,
+      userId: input.userId,
+      OR: [
+        { clockedInAt: { gte: dayStart, lte: dayEnd } },
+        { clockedOutAt: null },
+      ],
+    },
+    select: { id: true, clockedInAt: true, clockedOutAt: true },
+  });
+
+  const overlap = findOverlappingPunch({ clockedInAt, clockedOutAt }, existing, now);
+  if (overlap) {
+    throw new ApiError(
+      409,
+      'PUNCH_OVERLAP',
+      'This time overlaps another punch for the same staff member',
+    );
+  }
+
+  const notes = input.notes?.trim() ? input.notes.trim() : null;
+
+  const record = await prisma.$transaction(async (tx) => {
+    const created = await tx.timeClock.create({
+      data: {
+        tenantId,
+        userId: user.id,
+        clockedInAt,
+        clockedOutAt,
+        notes,
+      },
+    });
+
+    // Only an open punch updates the "currently clocked in" flag.
+    if (!clockedOutAt) {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { clockedInAt },
+      });
+    }
+
+    return created;
+  });
+
+  void createAuditLog({
+    tenantId,
+    actorId,
+    actorRole,
+    entityType: 'TimeClock',
+    entityId: record.id,
+    action: AUDIT_ACTIONS.ATTENDANCE_PUNCH_ADDED,
+    after: {
+      userId: user.id,
+      clockedInAt: record.clockedInAt.toISOString(),
+      clockedOutAt: record.clockedOutAt?.toISOString() ?? null,
+      notes,
+    },
+  }).catch(() => {});
+
+  const end = record.clockedOutAt ?? now;
+  return {
+    ...record,
+    durationMinutes: Math.max(
+      0,
+      Math.round((end.getTime() - record.clockedInAt.getTime()) / 60_000),
     ),
   };
 }

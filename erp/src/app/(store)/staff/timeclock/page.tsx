@@ -406,7 +406,6 @@ export default function TimeclockPage() {
                                   variant="ghost"
                                   size="sm"
                                   className="text-espresso"
-                                  disabled={row.records.length === 0}
                                   onClick={() => setAdjustRow(row)}
                                 >
                                   <Pencil className="mr-1 h-3.5 w-3.5" />
