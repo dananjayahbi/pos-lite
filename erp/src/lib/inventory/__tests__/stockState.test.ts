@@ -1,0 +1,76 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  getProductStockState,
+  getVariantStockState,
+  matchesStockStatusFilter,
+} from '@/lib/inventory/stockState';
+
+/**
+ * ARGUS #142: the badge and the low/out-of-stock filters used to disagree
+ * (any-zero vs all-zero, and whether 0 counts as low). These tests pin the
+ * single shared rule.
+ */
+describe('stock state rule', () => {
+  it('classifies a variant at or below zero as out of stock', () => {
+    expect(getVariantStockState({ stockQuantity: 0, lowStockThreshold: 5 })).toBe('OUT_OF_STOCK');
+    expect(getVariantStockState({ stockQuantity: -2, lowStockThreshold: 5 })).toBe('OUT_OF_STOCK');
+  });
+
+  it('classifies a positive variant within its threshold as low stock', () => {
+    expect(getVariantStockState({ stockQuantity: 5, lowStockThreshold: 5 })).toBe('LOW_STOCK');
+    expect(getVariantStockState({ stockQuantity: 1, lowStockThreshold: 5 })).toBe('LOW_STOCK');
+  });
+
+  it('classifies a variant above its threshold as in stock', () => {
+    expect(getVariantStockState({ stockQuantity: 6, lowStockThreshold: 5 })).toBe('IN_STOCK');
+  });
+
+  it('only marks a product out of stock when every variant is out', () => {
+    expect(
+      getProductStockState([
+        { stockQuantity: 0, lowStockThreshold: 5 },
+        { stockQuantity: 0, lowStockThreshold: 5 },
+      ]),
+    ).toBe('OUT_OF_STOCK');
+
+    expect(
+      getProductStockState([
+        { stockQuantity: 0, lowStockThreshold: 5 },
+        { stockQuantity: 20, lowStockThreshold: 5 },
+      ]),
+    ).toBe('IN_STOCK');
+  });
+
+  it('marks a product low when a sellable variant is at its threshold', () => {
+    expect(
+      getProductStockState([
+        { stockQuantity: 2, lowStockThreshold: 5 },
+        { stockQuantity: 8, lowStockThreshold: 5 },
+      ]),
+    ).toBe('LOW_STOCK');
+  });
+
+  it('does not treat a zero variant as low stock', () => {
+    expect(
+      getProductStockState([
+        { stockQuantity: 0, lowStockThreshold: 5 },
+        { stockQuantity: 20, lowStockThreshold: 5 },
+      ]),
+    ).toBe('IN_STOCK');
+  });
+
+  it('keeps a product without variants in stock (historical badge behaviour)', () => {
+    expect(getProductStockState([])).toBe('IN_STOCK');
+  });
+
+  it('drives both inventory filters from the same rule', () => {
+    const low = [{ stockQuantity: 3, lowStockThreshold: 5 }];
+    const out = [{ stockQuantity: 0, lowStockThreshold: 5 }];
+
+    expect(matchesStockStatusFilter(low, 'low_stock')).toBe(true);
+    expect(matchesStockStatusFilter(low, 'out_of_stock')).toBe(false);
+    expect(matchesStockStatusFilter(out, 'out_of_stock')).toBe(true);
+    expect(matchesStockStatusFilter(out, 'low_stock')).toBe(false);
+  });
+});

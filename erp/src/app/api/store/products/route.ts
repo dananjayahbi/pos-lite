@@ -58,11 +58,16 @@ export async function GET(request: NextRequest) {
     const brandIds = brands?.split(',').filter(Boolean);
     const formValues = forms?.split(',').map((form) => form.trim()).filter(Boolean);
 
-    // Map status to isArchived
+    // Map status to isArchived + the shared stock-state filter. Stock status is
+    // applied in the service BEFORE pagination so totals/pages are correct
+    // (ARGUS #142).
     let isArchived = filters.isArchived;
+    const stockStatus =
+      status === 'low_stock' || status === 'out_of_stock' ? status : undefined;
+
     if (status === 'active') isArchived = false;
     else if (status === 'archived') isArchived = true;
-    else if (status === 'low_stock' || status === 'out_of_stock') isArchived = false;
+    else if (stockStatus) isArchived = false;
 
     const result = await getAllProducts(tenantId, {
       ...filters,
@@ -70,14 +75,15 @@ export async function GET(request: NextRequest) {
       includeDeleted,
       categoryIds,
       brandIds,
-      forms: formValues,
+      ...(formValues ? { forms: formValues } : {}),
+      ...(stockStatus ? { stockStatus } : {}),
       page,
       limit,
     });
 
     const canViewCost = hasPermission(session.user, PERMISSIONS.PRODUCT.viewCostPrice);
 
-    let filteredProducts = canViewCost
+    const filteredProducts = canViewCost
       ? result.products
       : result.products.map((p) => ({
           ...p,
@@ -85,19 +91,6 @@ export async function GET(request: NextRequest) {
             ? p.variants.map(({ costPrice: _cost, ...rest }) => rest)
             : undefined,
         }));
-
-    // Post-filter for stock status (can't compare two columns in Prisma)
-    if (status === 'low_stock') {
-      filteredProducts = filteredProducts.filter((p) =>
-        'variants' in p && Array.isArray(p.variants) &&
-        p.variants.some((v) => v.stockQuantity > 0 && v.stockQuantity <= v.lowStockThreshold),
-      );
-    } else if (status === 'out_of_stock') {
-      filteredProducts = filteredProducts.filter((p) =>
-        'variants' in p && Array.isArray(p.variants) &&
-        p.variants.every((v) => v.stockQuantity <= 0),
-      );
-    }
 
     const totalPages = Math.ceil(result.total / limit);
 

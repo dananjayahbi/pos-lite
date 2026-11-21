@@ -1,5 +1,7 @@
 'use client';
 
+import { getProductStockState } from '@/lib/inventory/stockState';
+
 interface ProductStatusBadgeProps {
   isArchived: boolean;
   variants: Array<{ stockQuantity: number; lowStockThreshold: number }>;
@@ -14,8 +16,11 @@ export function ProductStatusBadge({ isArchived, variants }: ProductStatusBadgeP
     );
   }
 
-  const hasOutOfStock = variants.some((v) => v.stockQuantity === 0);
-  if (hasOutOfStock) {
+  // One shared rule with the low/out-of-stock filters (ARGUS #142), so the
+  // badge always agrees with the filter that produced the row.
+  const state = getProductStockState(variants);
+
+  if (state === 'OUT_OF_STOCK') {
     return (
       <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium text-pearl" style={{ backgroundColor: '#9B2226' }}>
         Out of Stock
@@ -23,8 +28,7 @@ export function ProductStatusBadge({ isArchived, variants }: ProductStatusBadgeP
     );
   }
 
-  const hasLowStock = variants.some((v) => v.stockQuantity <= v.lowStockThreshold);
-  if (hasLowStock) {
+  if (state === 'LOW_STOCK') {
     return (
       <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium text-pearl" style={{ backgroundColor: '#B7791F' }}>
         Low Stock

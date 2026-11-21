@@ -15,6 +15,7 @@ import { ApiError } from '@/lib/api/errors';
 import { assertProductHasNoStock } from '@/lib/services/productDelete.core';
 import { adjustStockInTx } from '@/lib/services/inventory.service';
 import { resolveOpeningStockQuantity } from '@/lib/services/openingStock.core';
+import { matchesStockStatusFilter, type StockStateVariant } from '@/lib/inventory/stockState';
 import { generateBarcode } from '@/lib/barcode';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -62,6 +63,8 @@ export interface ProductFilters {
   brandIds?: string[] | undefined;
   /** Variant forms to match (OIL, POWDER, ...); a product matches when any live variant has one. */
   forms?: string[] | undefined;
+  /** Inventory stock-state filter, applied before pagination (shared rule). */
+  stockStatus?: 'low_stock' | 'out_of_stock' | undefined;
   /** Fetch a specific set of products by ID (used to hydrate pickers). */
   ids?: string[] | undefined;
   isArchived?: boolean | undefined;
@@ -178,7 +181,7 @@ function generateSku(brandName: string | null, form: string | undefined | null, 
 // ── Product Functions ────────────────────────────────────────────────────────
 
 export async function getAllProducts(tenantId: string, filters: ProductFilters = {}) {
-  const { search, categoryId, categoryIds, brandId, brandIds, forms, ids, isArchived, includeDeleted, page = 1, limit = 20 } = filters;
+  const { search, categoryId, categoryIds, brandId, brandIds, forms, stockStatus, ids, isArchived, includeDeleted, page = 1, limit = 20 } = filters;
 
   // M02-03: `includeDeleted` flips the hard filter into the "Deleted" view —
   // ONLY soft-deleted rows. Default behavior (deletedAt: null) is unchanged.
@@ -231,6 +234,38 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
 
   if (isArchived !== undefined) {
     where.isArchived = isArchived;
+  }
+
+  if (stockStatus) {
+    // Prisma cannot compare two columns, so the shared stock-state rule is
+    // evaluated over the tenant's live variants and the matching product IDs
+    // are pushed into the query BEFORE pagination. This keeps `total`,
+    // `totalPages` and the page rows consistent (ARGUS #142).
+    const variants = await prisma.productVariant.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        product: { tenantId, deletedAt: null },
+      },
+      select: { productId: true, stockQuantity: true, lowStockThreshold: true },
+    });
+
+    const variantsByProduct = new Map<string, StockStateVariant[]>();
+    for (const variant of variants) {
+      const list = variantsByProduct.get(variant.productId);
+      if (list) list.push(variant);
+      else variantsByProduct.set(variant.productId, [variant]);
+    }
+
+    const matchingIds = [...variantsByProduct.entries()]
+      .filter(([, productVariants]) => matchesStockStatusFilter(productVariants, stockStatus))
+      .map(([productId]) => productId);
+
+    const currentIds = (where.id as { in?: string[] } | undefined)?.in;
+    const matchingSet = new Set(matchingIds);
+    where.id = {
+      in: currentIds ? currentIds.filter((id) => matchingSet.has(id)) : matchingIds,
+    };
   }
 
   const [products, total] = await Promise.all([
