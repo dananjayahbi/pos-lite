@@ -24,6 +24,11 @@ import {
   describeClockInConflict,
   isPunchOverdue,
 } from '@/lib/attendance/openPunch.core';
+import {
+  startOfLocalMonth,
+  startOfLocalWeek,
+  summarizeTimeClockHours,
+} from '@/lib/attendance/timeclockSummary.core';
 
 /** A standard full day. Anything beyond this is overtime (OT). */
 export const STANDARD_WORKDAY_MINUTES = 8 * 60;
@@ -436,7 +441,7 @@ export async function getTimeClockHistory(
   page: number,
   pageSize: number,
 ) {
-  const [records, total] = await Promise.all([
+  const [records, total, summary] = await Promise.all([
     prisma.timeClock.findMany({
       where: { tenantId, userId },
       orderBy: { clockedInAt: 'desc' },
@@ -447,6 +452,9 @@ export async function getTimeClockHistory(
       },
     }),
     prisma.timeClock.count({ where: { tenantId, userId } }),
+    // ARGUS #352: week/month hours must come from the FULL history, not the
+    // current page. Pagination no longer changes the badges.
+    getTimeClockSummary(tenantId, userId),
   ]);
 
   const data = records.map((r: typeof records[number]) => {
@@ -456,47 +464,41 @@ export async function getTimeClockHistory(
     return { ...r, durationMinutes };
   });
 
-  return { records: data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+  return {
+    records: data,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+    summary,
+  };
 }
 
 export async function getTimeClockSummary(tenantId: string, userId: string) {
   const now = new Date();
+  const weekStart = startOfLocalWeek(now);
+  const monthStart = startOfLocalMonth(now);
+  // One query from the earlier boundary covers both windows; a week can begin
+  // in the previous month (e.g. Monday 26 Oct while today is 1 Nov).
+  const queryStart = weekStart.getTime() < monthStart.getTime() ? weekStart : monthStart;
 
-  // Start of current week (Monday)
-  const weekStart = new Date(now);
-  const day = weekStart.getDay();
-  const diff = day === 0 ? 6 : day - 1;
-  weekStart.setDate(weekStart.getDate() - diff);
-  weekStart.setHours(0, 0, 0, 0);
-
-  // Start of current month
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  const [weekRecords, monthRecords, calendar] = await Promise.all([
+  const [records, calendar] = await Promise.all([
     prisma.timeClock.findMany({
-      where: { tenantId, userId, clockedInAt: { gte: weekStart } },
-      select: { clockedInAt: true, clockedOutAt: true },
-    }),
-    prisma.timeClock.findMany({
-      where: { tenantId, userId, clockedInAt: { gte: monthStart } },
+      where: { tenantId, userId, clockedInAt: { gte: queryStart } },
       select: { clockedInAt: true, clockedOutAt: true },
     }),
     readAttendanceCalendar(tenantId),
   ]);
 
-  function sumHours(records: { clockedInAt: Date; clockedOutAt: Date | null }[]): number {
-    return records.reduce((total, r) => {
-      // ARGUS #351: a forgotten clock-out contributes at most the max shift.
-      const end =
-        r.clockedOutAt ?? capPunchEnd(r.clockedInAt, now, calendar.maxShiftMinutes);
-      return total + (end.getTime() - r.clockedInAt.getTime()) / 3600000;
-    }, 0);
-  }
-
-  return {
-    hoursThisWeek: Math.round(sumHours(weekRecords) * 100) / 100,
-    hoursThisMonth: Math.round(sumHours(monthRecords) * 100) / 100,
-  };
+  // ARGUS #351/#352: open punches are capped at the maximum shift and the
+  // total is computed over every record, independent of page size.
+  return summarizeTimeClockHours({
+    records,
+    weekStart,
+    monthStart,
+    now,
+    maxShiftMinutes: calendar.maxShiftMinutes,
+  });
 }
 
 /**

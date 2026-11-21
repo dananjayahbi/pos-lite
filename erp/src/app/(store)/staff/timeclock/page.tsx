@@ -21,11 +21,13 @@ import {
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { describeApiFailure, readJsonBody } from '@/lib/api/safe-response';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import {
   type AttendanceCalendarSettings,
   type AttendanceDisplayStatus,
 } from '@/lib/attendance/attendanceCalendar.core';
+import { summarizeDailyAttendance } from '@/lib/attendance/attendanceSummary.core';
 import {
   AttendanceStatusDialog,
   type AttendanceStatusValue,
@@ -128,7 +130,7 @@ export default function TimeclockPage() {
   const [adjustRow, setAdjustRow] = useState<AttendanceRow | null>(null);
   const [statusRow, setStatusRow] = useState<AttendanceRow | null>(null);
 
-  const { data, isLoading, error } = useQuery<{
+  const { data, isLoading, error, refetch } = useQuery<{
     success: boolean;
     data: AttendanceResponse;
   }>({
@@ -137,11 +139,24 @@ export default function TimeclockPage() {
       const res = await fetch(
         `/api/store/timeclock/attendance?date=${encodeURIComponent(date)}`,
       );
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.error?.message ?? 'Failed to load attendance');
+      // ARGUS #353: check the status before parsing. A non-JSON error body is
+      // tolerated and becomes a human message, never a raw parser error.
+      const parsed = await readJsonBody<{
+        success: boolean;
+        data: AttendanceResponse;
+        error?: { message?: string };
+      }>(res);
+      if (!res.ok || !parsed.ok || !parsed.value?.success) {
+        throw new Error(
+          describeApiFailure({
+            ok: res.ok,
+            status: res.status,
+            body: parsed.ok ? parsed.value : null,
+            fallback: 'Attendance could not be loaded',
+          }),
+        );
       }
-      return json;
+      return parsed.value;
     },
   });
 
@@ -153,9 +168,22 @@ export default function TimeclockPage() {
     queryKey: ['attendance-settings'],
     queryFn: async () => {
       const res = await fetch('/api/store/timeclock/settings');
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error?.message ?? 'Failed to load calendar');
-      return json;
+      const parsed = await readJsonBody<{
+        success: boolean;
+        data: AttendanceCalendarSettings;
+        error?: { message?: string };
+      }>(res);
+      if (!res.ok || !parsed.ok || !parsed.value?.success) {
+        throw new Error(
+          describeApiFailure({
+            ok: res.ok,
+            status: res.status,
+            body: parsed.ok ? parsed.value : null,
+            fallback: 'Attendance calendar could not be loaded',
+          }),
+        );
+      }
+      return parsed.value;
     },
     enabled: canManage,
   });
@@ -187,32 +215,9 @@ export default function TimeclockPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const summary = useMemo(() => {
-    return rows.reduce(
-      (acc, row) => {
-        if (row.status === 'PRESENT') acc.present += 1;
-        else if (row.status === 'ABSENT') acc.absent += 1;
-        else if (row.status === 'INSUFFICIENT') {
-          // ARGUS #350: below half a day is a no-pay day, not a full Present.
-          acc.absent += 1;
-          acc.insufficient += 1;
-        } else if (row.status === 'LEAVE') acc.onLeave += 1;
-        else if (row.status === 'HALF_DAY') acc.halfDay += 1;
-        else if (row.status === 'HOLIDAY' || row.status === 'OFF') acc.holidayOff += 1;
-        acc.overtimeMinutes += row.overtimeMinutes;
-        return acc;
-      },
-      {
-        present: 0,
-        absent: 0,
-        insufficient: 0,
-        onLeave: 0,
-        halfDay: 0,
-        holidayOff: 0,
-        overtimeMinutes: 0,
-      },
-    );
-  }, [rows]);
+  // ARGUS #354: one pure summary counts every row once, including Holiday,
+  // Off and Scheduled, so the cards reconcile to the active headcount.
+  const summary = useMemo(() => summarizeDailyAttendance(rows), [rows]);
   const reviewCount = rows.filter((row) => row.needsReview).length;
 
   const invalidate = () => {
@@ -271,22 +276,22 @@ export default function TimeclockPage() {
         </CardContent>
       </Card>
 
-      {dayInfo && !dayInfo.isWorkingDay && !dayInfo.isHoliday && (
+      {!error && dayInfo && !dayInfo.isWorkingDay && !dayInfo.isHoliday && (
         <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
           Weekend  -  non-working day. Nobody is marked absent.
         </p>
       )}
-      {dayInfo?.isHoliday && (
+      {!error && dayInfo?.isHoliday && (
         <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
           Holiday  -  no absences are recorded for this date.
         </p>
       )}
-      {dayInfo?.isFuture && (
+      {!error && dayInfo?.isFuture && (
         <p className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-700">
           Future date  -  absences are not recorded until the day has passed.
         </p>
       )}
-      {reviewCount > 0 && (
+      {!error && reviewCount > 0 && (
         <p className="rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-sm text-orange-800">
           {reviewCount} staff member{reviewCount === 1 ? '' : 's'} have an open punch longer than
           the maximum shift ({Math.round((dayInfo?.maxShiftMinutes ?? 960) / 60)}h). The duration
@@ -294,7 +299,37 @@ export default function TimeclockPage() {
         </p>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      {error ? (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="font-display text-espresso">Attendance could not be loaded</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-[#9B2226]">
+              {error instanceof Error
+                ? error.message
+                : 'Attendance could not be loaded. Please try again.'}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-mist text-espresso"
+              onClick={() => {
+                void refetch();
+              }}
+            >
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ) : isLoading || !dayInfo ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <Skeleton key={index} className="h-24 w-full" />
+          ))}
+        </div>
+      ) : (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-normal text-sand-ink">Present</CardTitle>
@@ -328,10 +363,20 @@ export default function TimeclockPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-normal text-sand-ink">Holiday / Off</CardTitle>
+            <CardTitle className="text-sm font-normal text-sand-ink">Holiday</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="font-display text-3xl font-bold text-slate-600">{summary.holidayOff}</p>
+            <p className="font-display text-3xl font-bold text-slate-600">{summary.holiday}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-normal text-sand-ink">Off / Scheduled</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="font-display text-3xl font-bold text-slate-600">
+              {summary.off + summary.scheduled}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -345,6 +390,7 @@ export default function TimeclockPage() {
           </CardContent>
         </Card>
       </div>
+      )}
 
       <ErrorBoundary>
         {isLoading ? (
@@ -353,13 +399,7 @@ export default function TimeclockPage() {
               <Skeleton key={index} className="h-14 w-full" />
             ))}
           </div>
-        ) : error ? (
-          <Card>
-            <CardContent className="p-6 text-sm text-[#9B2226]">
-              {error instanceof Error ? error.message : 'Failed to load attendance'}
-            </CardContent>
-          </Card>
-        ) : (
+        ) : error ? null : (
           <Card>
             <CardHeader>
               <CardTitle className="font-display text-espresso">All Staff Attendance</CardTitle>

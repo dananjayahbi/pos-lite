@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,11 @@ interface TimeClockData {
   page: number;
   pageSize: number;
   totalPages: number;
+  /** Full-history totals from the server (ARGUS #352). */
+  summary: {
+    hoursThisWeek: number;
+    hoursThisMonth: number;
+  };
 }
 
 function formatMinutes(minutes: number): string {
@@ -46,7 +51,6 @@ export function TimeClockHistoryPanel({
   title?: string;
 }) {
   const [page, setPage] = useState(1);
-  const [summary, setSummary] = useState({ hoursThisWeek: 0, hoursThisMonth: 0 });
   const pageSize = 10;
 
   const { data, isLoading } = useQuery<{ success: boolean; data: TimeClockData }>({
@@ -64,39 +68,9 @@ export function TimeClockHistoryPanel({
     enabled: !!staffId,
   });
 
-  useEffect(() => {
-    if (!data?.data?.records) {
-      setSummary({ hoursThisWeek: 0, hoursThisMonth: 0 });
-      return;
-    }
-
-    const now = new Date();
-    const weekStart = new Date(now);
-    const day = weekStart.getDay();
-    const diff = day === 0 ? 6 : day - 1;
-    weekStart.setDate(weekStart.getDate() - diff);
-    weekStart.setHours(0, 0, 0, 0);
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    let weekHours = 0;
-    let monthHours = 0;
-
-    for (const record of data.data.records) {
-      const clockIn = new Date(record.clockedInAt);
-      const clockOut = record.clockedOutAt ? new Date(record.clockedOutAt) : now;
-      const hours = (clockOut.getTime() - clockIn.getTime()) / 3_600_000;
-
-      if (clockIn >= monthStart) monthHours += hours;
-      if (clockIn >= weekStart) weekHours += hours;
-    }
-
-    setSummary({
-      hoursThisWeek: Math.round(weekHours * 100) / 100,
-      hoursThisMonth: Math.round(monthHours * 100) / 100,
-    });
-  }, [data]);
-
   const records = data?.data;
+  // The API aggregates the full history; it is unaffected by `page`.
+  const summary = records?.summary ?? { hoursThisWeek: 0, hoursThisMonth: 0 };
 
   return (
     <Card>
