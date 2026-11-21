@@ -221,6 +221,8 @@ export async function POST(request: Request) {
       if (recipients.length > 0) {
         const { title, body } = buildSaleCompletedCopy(sale.id, sale.totalAmount.toString(), {
           zeroValueReason: sale.zeroValueReason,
+          customerName: sale.customer?.name,
+          productName: sale.lines[0]?.productNameSnapshot,
         });
         await prisma.notificationRecord.createMany({
           data: recipients.map((r) => ({

@@ -92,6 +92,8 @@ export function NotificationPopover() {
                 !isVoidedSale && n.type === 'SALE_COMPLETED' && n.relatedSale
                   ? buildSaleCompletedCopy(n.relatedEntityId ?? '', n.relatedSale.totalAmount, {
                       zeroValueReason: n.relatedSale.zeroValueReason,
+                      customerName: n.relatedSale.customerName,
+                      productName: n.relatedSale.productName,
                     })
                   : null;
               const Icon = isVoidedSale ? XCircle : getNotificationIcon(n.type);

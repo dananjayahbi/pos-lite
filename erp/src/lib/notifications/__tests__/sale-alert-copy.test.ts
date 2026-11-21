@@ -6,6 +6,7 @@ import {
   buildSaleCompletedCopy,
   buildSaleVoidedCopy,
   isVoidedSaleAlert,
+  saleAlertTitle,
   saleShortId,
   zeroValueReasonLabel,
 } from '@/lib/notifications/sale-alert-copy';
@@ -43,7 +44,7 @@ describe('sale alert void copy', () => {
 describe('sale alert completed copy', () => {
   it('rebuilds the alert with the current total (delivery included)', () => {
     const copy = buildSaleCompletedCopy('abcdef123456', '1891.76');
-    expect(copy.title).toBe(SALE_COMPLETED_TITLE);
+    expect(copy.title).toBe('Sale #ABCDEF12');
     expect(copy.body).toBe('Sale #ABCDEF12 completed for Rs. 1,891.76.');
   });
 
@@ -90,5 +91,46 @@ describe('sale alert zero-value reason', () => {
     expect(
       buildSaleCompletedCopy('sale', 500, { zeroValueReason: 'BANK_PAYMENT' }).body,
     ).toBe('Sale #SALE completed for Rs. 500.00.');
+  });
+});
+
+/** ARGUS #59: a sale alert's title must identify that particular sale. */
+describe('sale alert titles', () => {
+  it('carries the receipt reference and the customer', () => {
+    expect(
+      saleAlertTitle('abcdef123456', { customerName: 'Nimal Perera' }),
+    ).toBe('Sale #ABCDEF12 · Nimal Perera');
+    expect(
+      buildSaleCompletedCopy('abcdef123456', 500, { customerName: 'Nimal Perera' }).title,
+    ).toBe('Sale #ABCDEF12 · Nimal Perera');
+  });
+
+  it('falls back to the first product when there is no customer', () => {
+    expect(saleAlertTitle('abcdef123456', { productName: 'Chocolate Cake' })).toBe(
+      'Sale #ABCDEF12 · Chocolate Cake',
+    );
+  });
+
+  it('prefers the customer over the product', () => {
+    expect(
+      saleAlertTitle('abcdef123456', {
+        customerName: 'Nimal Perera',
+        productName: 'Chocolate Cake',
+      }),
+    ).toBe('Sale #ABCDEF12 · Nimal Perera');
+  });
+
+  it('keeps the reference when no summary is available', () => {
+    expect(saleAlertTitle('abcdef123456')).toBe('Sale #ABCDEF12');
+    expect(saleAlertTitle('', { customerName: 'Nimal' })).toBe(SALE_COMPLETED_TITLE);
+    expect(saleAlertTitle('abcdef123456', { customerName: '   ' })).toBe('Sale #ABCDEF12');
+  });
+
+  it('shortens a long summary instead of flooding the row', () => {
+    const title = saleAlertTitle('abcdef123456', {
+      customerName: 'A customer name that is definitely longer than the row allows',
+    });
+    expect(title.length).toBeLessThanOrEqual('Sale #ABCDEF12 · '.length + 32);
+    expect(title).toContain('·');
   });
 });

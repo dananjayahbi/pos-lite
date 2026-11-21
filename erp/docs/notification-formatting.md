@@ -32,6 +32,20 @@ reason without a rewrite; new rows are written with it. Labels are
 `Bank payment`, `Replacement`, and `Complimentary`; when a legacy row has no
 reason the copy says `Reason: not recorded` rather than guessing.
 
+## Distinguishable sale titles (ARGUS #59)
+
+Completed sale alerts used the single title `Sale Completed`, so 103 rows
+looked identical. `saleAlertTitle()` now renders `Sale #<reference> · <buyer>`
+and falls back to the first product snapshot when the sale has no linked
+customer, e.g. `Sale #ABCDEF12 · Chocolate Cake`. Summaries are whitespace
+collapsed and capped at 32 characters; with neither name available the title
+keeps the reference (`Sale #ABCDEF12`), and a blank id keeps the old constant.
+
+A `Sale` row has no separate invoice-number column (invoices are a billing
+concept), so the reference is the same 8-character id printed on the receipt.
+The notifications API joins `customer.name` and the first line's
+`productNameSnapshot`; the sale producer writes the same copy at creation.
+
 ## Verification
 
 `src/lib/notifications/__tests__/notification-time.test.ts` pins the relative

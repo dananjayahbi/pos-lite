@@ -16,6 +16,10 @@ export interface RelatedSaleAlert {
   status: string;
   totalAmount: number | string;
   zeroValueReason?: string | null;
+  /** Buyer name, when the sale is linked to a customer (ARGUS #59). */
+  customerName?: string | null;
+  /** First line's product snapshot, used when there is no customer (ARGUS #59). */
+  productName?: string | null;
 }
 
 /** Why a sale completed with a zero (or negative) total. */
@@ -51,6 +55,34 @@ export const SALE_COMPLETED_TITLE = 'Sale Completed';
 export interface SaleCompletedContext {
   /** Persisted `Sale.zeroValueReason`; explains a zero/negative total (ARGUS #58). */
   zeroValueReason?: string | null | undefined;
+  /** Buyer name, preferred for the row summary (ARGUS #59). */
+  customerName?: string | null | undefined;
+  /** First product, used when the sale has no linked customer (ARGUS #59). */
+  productName?: string | null | undefined;
+}
+
+const SUMMARY_MAX_LENGTH = 32;
+
+function shortSummary(value?: string | null): string | null {
+  const trimmed = value?.trim().replace(/\s+/g, ' ');
+  if (!trimmed) return null;
+  return trimmed.length > SUMMARY_MAX_LENGTH
+    ? `${trimmed.slice(0, SUMMARY_MAX_LENGTH - 1)}…`
+    : trimmed;
+}
+
+/**
+ * ARGUS #59: every sale alert used the same title, so 103 rows could not be
+ * told apart. Carry the receipt reference plus a short customer (or product)
+ * summary instead. The reference is the same 8-character id printed on the
+ * receipt; a sale has no separate invoice number.
+ */
+export function saleAlertTitle(saleId: string, context: SaleCompletedContext = {}): string {
+  const reference = saleShortId(saleId ?? '');
+  if (!reference) return SALE_COMPLETED_TITLE;
+
+  const summary = shortSummary(context.customerName) ?? shortSummary(context.productName);
+  return summary ? `Sale #${reference} · ${summary}` : `Sale #${reference}`;
 }
 
 /**
@@ -73,7 +105,7 @@ export function buildSaleCompletedCopy(
       : '';
 
   return {
-    title: SALE_COMPLETED_TITLE,
+    title: saleAlertTitle(saleId, context),
     body: `Sale #${saleShortId(saleId)} completed for ${formatSignedRupee(totalAmount)}.${reasonSuffix}`,
   };
 }

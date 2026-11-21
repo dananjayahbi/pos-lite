@@ -700,7 +700,9 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
 
     const completeSale = await tx.sale.findUniqueOrThrow({
       where: { id: sale.id },
-      include: { lines: true, payments: true },
+      // ARGUS #59: the sale-completed notification names the buyer when one is
+      // linked; this include is additive and only adds `customer.name`.
+      include: { lines: true, payments: true, customer: { select: { name: true } } },
     });
     return completeSale;
   }, { maxWait: 10_000, timeout: 30_000 });
