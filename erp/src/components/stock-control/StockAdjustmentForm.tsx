@@ -9,6 +9,10 @@ import { toast } from 'sonner';
 import { Search, Plus, Minus, Lock, Loader2, ChevronRight } from 'lucide-react';
 import {
   MANUAL_ADJUSTMENT_REASONS,
+  isManualReasonDirectionValid,
+  manualAdjustmentDirectionError,
+  validManualReasonsForDirection,
+  type ManualAdjustmentDirection,
   type ManualAdjustmentReason,
 } from '@/lib/services/manualAdjustment.core';
 import { Button } from '@/components/ui/button';
@@ -65,14 +69,26 @@ const REASON_LABELS: Record<ManualAdjustmentReason, string> = {
 
 // ── Form schema ──────────────────────────────────────────────────────────────
 
-const FormSchema = z.object({
-  productId: z.string().min(1, { error: 'Select a product' }),
-  variantId: z.string().min(1, { error: 'Select a variant' }),
-  adjustmentType: z.enum(['add', 'remove'], { error: 'Select adjustment type' }),
-  quantity: z.number().int().min(1, { error: 'Min quantity is 1' }),
-  reason: z.enum(MANUAL_ADJUSTMENT_REASONS, { error: 'Select a reason' }),
-  note: z.string().max(500).optional(),
-});
+const FormSchema = z
+  .object({
+    productId: z.string().min(1, { error: 'Select a product' }),
+    variantId: z.string().min(1, { error: 'Select a variant' }),
+    adjustmentType: z.enum(['add', 'remove'], { error: 'Select adjustment type' }),
+    quantity: z.number().int().min(1, { error: 'Min quantity is 1' }),
+    reason: z.enum(MANUAL_ADJUSTMENT_REASONS, { error: 'Select a reason' }),
+    note: z.string().max(500).optional(),
+  })
+  .superRefine((values, ctx) => {
+    // ARGUS #193: Damaged/Stolen/Returned to Supplier are removal-only and
+    // Found/Data Error work either way. The same rule runs server-side.
+    const directionError = manualAdjustmentDirectionError(
+      values.reason,
+      values.adjustmentType === 'add' ? 1 : -1,
+    );
+    if (directionError) {
+      ctx.addIssue({ code: 'custom', path: ['reason'], message: directionError });
+    }
+  });
 
 type FormValues = z.infer<typeof FormSchema>;
 
@@ -175,6 +191,24 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
   const adjustmentType = form.watch('adjustmentType');
   const quantity = form.watch('quantity');
   const noteValue = form.watch('note') ?? '';
+
+  // ARGUS #193: the reason list follows the selected direction, so an invalid
+  // pairing (positive Damaged, negative Found, …) cannot be chosen at all.
+  const direction: ManualAdjustmentDirection | null = adjustmentType ?? null;
+  const validReasons = direction
+    ? validManualReasonsForDirection(direction)
+    : MANUAL_ADJUSTMENT_REASONS;
+
+  const setAdjustmentType = (next: ManualAdjustmentDirection) => {
+    form.setValue('adjustmentType', next, { shouldValidate: true });
+    const currentReason = form.getValues('reason');
+    if (
+      currentReason &&
+      !isManualReasonDirectionValid(currentReason, next === 'add' ? 1 : -1)
+    ) {
+      form.resetField('reason');
+    }
+  };
 
   // ── Apply prefill once resolved ────────────────────────────────────────────
 
@@ -651,7 +685,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                       : 'border-sand/40 text-mist-ink hover:border-green-400 hover:bg-green-50/50'
                   }`}
                   onClick={() =>
-                    form.setValue('adjustmentType', 'add', { shouldValidate: true })
+                    setAdjustmentType('add')
                   }
                 >
                   <Plus className="h-5 w-5" />
@@ -665,7 +699,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                       : 'border-sand/40 text-mist-ink hover:border-red-400 hover:bg-red-50/50'
                   }`}
                   onClick={() =>
-                    form.setValue('adjustmentType', 'remove', { shouldValidate: true })
+                    setAdjustmentType('remove')
                   }
                 >
                   <Minus className="h-5 w-5" />
@@ -742,7 +776,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                   <SelectValue placeholder="Select a reason" />
                 </SelectTrigger>
                 <SelectContent>
-                  {MANUAL_ADJUSTMENT_REASONS.map((r) => (
+                  {validReasons.map((r) => (
                     <SelectItem key={r} value={r}>
                       {REASON_LABELS[r]}
                     </SelectItem>
@@ -754,6 +788,13 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                   {form.formState.errors.reason.message}
                 </p>
               )}
+              <p className="font-body text-[11px] text-mist-ink">
+                {direction === 'add'
+                  ? 'Adding stock allows Found or Data Error.'
+                  : direction === 'remove'
+                    ? 'Removing stock allows Found, Data Error, Damaged, Stolen or Returned to Supplier.'
+                    : 'Choose Add or Remove to see the valid reasons.'}
+              </p>
             </div>
 
             {/* Note */}

@@ -7,7 +7,10 @@ import {
   StockAdjustmentSchema,
   MAX_STOCK_QUANTITY,
 } from '@/lib/validators/product.validators';
-import { isManualAdjustmentReason } from '@/lib/services/manualAdjustment.core';
+import {
+  isManualAdjustmentReason,
+  manualAdjustmentDirectionError,
+} from '@/lib/services/manualAdjustment.core';
 import { recordManualAdjustmentSideEffects } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { staffDisplayName } from '@/lib/utils/staff-name';
@@ -65,6 +68,22 @@ export async function POST(request: NextRequest) {
             code: 'INVALID_ADJUSTMENT_REASON',
             message: `${reason} is a system-managed stock reason and cannot be used for a manual adjustment. Choose Found, Damaged, Stolen, Data Error or Returned to Supplier.`,
             details: [{ path: 'reason', message: 'Reason is not a manual adjustment reason' }],
+          },
+        },
+        { status: 422 },
+      );
+    }
+
+    // ARGUS #193: direction is part of the reason's meaning.
+    const directionError = manualAdjustmentDirectionError(reason, quantityDelta);
+    if (directionError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_ADJUSTMENT_DIRECTION',
+            message: directionError,
+            details: [{ path: 'reason', message: directionError }],
           },
         },
         { status: 422 },
