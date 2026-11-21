@@ -5,6 +5,7 @@ import type { DiscountType, Prisma } from '@/generated/prisma/client';
 import { adjustStockInTx } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { computePurchaseOrderTotals } from '@/lib/services/purchaseOrderTotals';
+import { computePurchaseOrderPayable } from '@/lib/services/purchaseOrderPayable.core';
 import {
   generatePurchaseOrderReference,
   isPurchaseOrderReferenceTaken,
@@ -202,8 +203,19 @@ export async function getPOById(tenantId: string, poId: string) {
     throw new Error('Purchase order not found');
   }
 
+  const costing = computePurchaseOrderPayable(po.lines, po.discountAmount, po.totalAmount);
+
   return {
     ...po,
+    /**
+     * What the order owes right now: the received value once goods arrive,
+     * otherwise the expected total (ARGUS #225). The payment API and UI use
+     * this instead of the expected `totalAmount`.
+     */
+    payableAmount: costing.payable,
+    receivedValue: costing.receivedSubtotal,
+    /** Expected value of the ordered lines (before the discount). */
+    expectedSubtotal: costing.expectedSubtotal,
     /**
      * Whether the ordered lines may still be rewritten. Receiving goods creates
      * stock movements and per-line received quantities, so the line set freezes
@@ -251,6 +263,14 @@ export async function getPOs(tenantId: string, options: GetPOsOptions) {
       include: {
         supplier: { select: { name: true } },
         _count: { select: { lines: true } },
+        lines: {
+          select: {
+            orderedQty: true,
+            receivedQty: true,
+            expectedCostPrice: true,
+            actualCostPrice: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
       skip,
@@ -260,7 +280,14 @@ export async function getPOs(tenantId: string, options: GetPOsOptions) {
   ]);
 
   return {
-    purchaseOrders,
+    purchaseOrders: purchaseOrders.map((po) => {
+      const costing = computePurchaseOrderPayable(po.lines, po.discountAmount, po.totalAmount);
+      return {
+        ...po,
+        payableAmount: costing.payable,
+        receivedValue: costing.receivedSubtotal,
+      };
+    }),
     total,
     page,
     totalPages: Math.ceil(total / limit),
@@ -695,9 +722,23 @@ export async function receivePOLines(
       newStatus = POStatus.PARTIALLY_RECEIVED;
     }
 
+    // The received value is now the payable (ARGUS #225). Re-sync the "paid"
+    // flag so a previously settled order that just received a higher invoice
+    // becomes unpaid again instead of claiming "Paid in full".
+    const costing = computePurchaseOrderPayable(updatedLines, po.discountAmount, po.totalAmount);
+    const paidAggregate = await tx.purchaseOrderPayment.aggregate({
+      where: { tenantId, purchaseOrderId: poId },
+      _sum: { amount: true },
+    });
+    const paidTotal = new Decimal(paidAggregate._sum.amount ?? 0);
+    const settled = costing.payable > 0 && paidTotal.greaterThanOrEqualTo(costing.payable);
+
     const updatedPO = await tx.purchaseOrder.update({
       where: { id: poId },
-      data: { status: newStatus },
+      data: {
+        status: newStatus,
+        paidAt: settled ? (po.paidAt ?? new Date()) : null,
+      },
       include: {
         lines: true,
         supplier: true,
@@ -705,7 +746,11 @@ export async function receivePOLines(
     });
 
     return {
-      updatedPO,
+      updatedPO: {
+        ...updatedPO,
+        payableAmount: costing.payable,
+        receivedValue: costing.receivedSubtotal,
+      },
       costPricesChanged,
       costPriceChangedCount: costPricesChanged.length,
     };

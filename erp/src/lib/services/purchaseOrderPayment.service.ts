@@ -9,6 +9,7 @@ import {
   assertSufficientFunds,
   postLedgerEntries,
 } from '@/lib/services/paymentAccount.service';
+import { computePurchaseOrderPayable } from '@/lib/services/purchaseOrderPayable.core';
 
 /**
  * Settling a purchase order from a payment account.
@@ -51,8 +52,17 @@ export async function payPurchaseOrder(
         id: true,
         referenceNo: true,
         totalAmount: true,
+        discountAmount: true,
         status: true,
         supplier: { select: { name: true } },
+        lines: {
+          select: {
+            orderedQty: true,
+            receivedQty: true,
+            expectedCostPrice: true,
+            actualCostPrice: true,
+          },
+        },
       },
     });
 
@@ -78,7 +88,11 @@ export async function payPurchaseOrder(
     }
 
     const alreadyPaid = await getPurchaseOrderPaidAmount(tenantId, po.id);
-    const payable = money(new Decimal(po.totalAmount));
+    // The payable is the received value once goods arrive; before that it is
+    // the expected total (ARGUS #225). Paying the expected total after a
+    // cheaper/higher actual invoice used to overpay or become impossible.
+    const costing = computePurchaseOrderPayable(po.lines, po.discountAmount, po.totalAmount);
+    const payable = costing.payable;
     const outstanding = money(new Decimal(payable).minus(alreadyPaid));
     const requested = money(new Decimal(input.amount));
 

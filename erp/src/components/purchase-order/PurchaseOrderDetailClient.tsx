@@ -69,7 +69,7 @@ export function PurchaseOrderDetailClient({ poId, canApprove }: { poId: string; 
   });
 
   const po = data?.data;
-  const payable = po ? Number(po.totalAmount) : 0;
+  const payable = po ? Number(po.payableAmount ?? po.totalAmount) : 0;
   const paymentsState = usePOPayments(poId, payable);
 
   const invalidate = useCallback(() => {
@@ -253,6 +253,8 @@ export function PurchaseOrderDetailClient({ poId, canApprove }: { poId: string; 
         discountValue={po.discountValue}
         discountAmount={po.discountAmount}
         total={po.totalAmount}
+        receivedValue={po.receivedValue}
+        payable={po.payableAmount}
       />
 
       {po.notes ? (

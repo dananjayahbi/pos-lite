@@ -300,8 +300,12 @@ export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }
                   </TableCell>
                   <TableCell className="text-center">{po._count.lines}</TableCell>
                   <TableCell className="text-right font-mono">
-                    {formatRupee(po.totalAmount)}
-                    {Number(po.discountAmount) > 0 ? (
+                    {formatRupee(po.payableAmount ?? po.totalAmount)}
+                    {Number(po.payableAmount ?? po.totalAmount) !== Number(po.totalAmount) ? (
+                      <span className="ml-1 block text-[10px] font-normal text-mist-ink">
+                        Ordered {formatRupee(po.totalAmount)}
+                      </span>
+                    ) : Number(po.discountAmount) > 0 ? (
                       <span className="ml-1 block text-[10px] font-normal text-mist-ink line-through">
                         {formatRupee(po.subtotalAmount)}
                       </span>

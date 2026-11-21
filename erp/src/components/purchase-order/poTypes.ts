@@ -48,6 +48,9 @@ export interface PurchaseOrderDetail {
   discountValue: string | number;
   discountAmount: string | number;
   totalAmount: string | number;
+  /** Server-computed received value / payable once goods arrive (ARGUS #225). */
+  payableAmount?: string | number;
+  receivedValue?: string | number;
   paymentTermDays: number | null;
   paymentAccountId: string | null;
   paidAt: string | null;
@@ -74,6 +77,8 @@ export interface PurchaseOrderListItem {
   subtotalAmount: string | number;
   discountAmount: string | number;
   totalAmount: string | number;
+  payableAmount?: string | number;
+  receivedValue?: string | number;
   paidAt: string | null;
   createdAt: string;
   supplier: { name: string };
