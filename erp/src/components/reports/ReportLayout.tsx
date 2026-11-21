@@ -55,6 +55,7 @@ import {
   resolveReportTitle,
   type ReportFormat,
 } from "@/lib/reports/report-config";
+import { formatReportDateRange } from "@/lib/reports/labels";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PERMISSIONS, type PermissionKey } from "@/lib/constants/permissions";
 
@@ -308,7 +309,7 @@ function ReportLayoutInner({
     setExportOpen(false);
 
     const title = currentReportTitle;
-    const dateRange = `${from} to ${to}`;
+    const dateRange = formatReportDateRange(from, to);
     const safeName = title.replace(/\s+/g, "_");
 
     try {
@@ -366,7 +367,7 @@ function ReportLayoutInner({
           rows,
           columns: resolvedColumns,
           title: currentReportTitle,
-          dateRange: `${from} to ${to}`,
+          dateRange: formatReportDateRange(from, to),
         }),
       });
 
@@ -486,9 +487,14 @@ function ReportLayoutInner({
             </Sheet>
           </div>
 
-          <h1 className="font-display text-lg font-bold text-espresso xl:hidden">
-            Reports
-          </h1>
+          <div className="min-w-0">
+            <p className="font-body text-[11px] uppercase tracking-wide text-mist-ink xl:hidden">
+              Reports
+            </p>
+            <h1 className="truncate font-display text-base font-bold text-espresso sm:text-lg">
+              {currentReportTitle}
+            </h1>
+          </div>
 
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 md:gap-3">
             <DateRangePicker

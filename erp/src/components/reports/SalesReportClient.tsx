@@ -15,6 +15,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReportContext } from "@/lib/reports/ReportContext";
+import { formatRupee } from "@/lib/format";
 import { salesProductLabel, topRevenueProducts } from "@/lib/reports/sales-report";
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -37,12 +38,7 @@ function toYMD(d: Date): string {
 }
 
 function fmtCurrency(val: string | number): string {
-  const num = typeof val === "number" ? val : parseFloat(val);
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "LKR",
-    minimumFractionDigits: 2,
-  }).format(num);
+  return formatRupee(val);
 }
 
 // ── Types ────────────────────────────────────────────────────────
