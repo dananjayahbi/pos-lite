@@ -72,6 +72,9 @@ export const AUDIT_ACTIONS = {
   STAFF_ROLE_CHANGED: 'STAFF_ROLE_CHANGED',
   STAFF_PERMISSION_CHANGED: 'STAFF_PERMISSION_CHANGED',
   STAFF_DETAILS_UPDATED: 'STAFF_DETAILS_UPDATED',
+  // ARGUS #463: activating/deactivating an account is a security change with
+  // its own action (previously folded into the generic details row).
+  STAFF_STATUS_CHANGED: 'STAFF_STATUS_CHANGED',
   // Attendance / time clock
   ATTENDANCE_ADJUSTED: 'ATTENDANCE_ADJUSTED',
   ATTENDANCE_STATUS_SET: 'ATTENDANCE_STATUS_SET',
@@ -225,14 +228,20 @@ export async function createAuditLog(input: CreateAuditLogInput): Promise<void> 
  * surfaces a 500. Best-effort/view-ish events keep using createAuditLog (or
  * fire-and-forget with a console error), never a silent `.catch(() => {})`.
  */
-export async function writeAuditLog(input: CreateAuditLogInput): Promise<void> {
+/** Minimal client shape shared by PrismaClient and a transaction client. */
+type AuditLogClient = Pick<typeof prisma, 'auditLog'>;
+
+async function writeAuditLogOn(
+  client: AuditLogClient,
+  input: CreateAuditLogInput,
+): Promise<void> {
   const beforeData =
     input.before === undefined ? undefined : input.before === null ? Prisma.JsonNull : input.before;
   const afterData =
     input.after === undefined ? undefined : input.after === null ? Prisma.JsonNull : input.after;
 
   try {
-    await prisma.auditLog.create({
+    await client.auditLog.create({
       data: {
         tenantId: input.tenantId,
         actorId: input.actorId,
@@ -258,6 +267,24 @@ export async function writeAuditLog(input: CreateAuditLogInput): Promise<void> {
     }
     throw error;
   }
+}
+
+/**
+ * ARGUS #463 — transaction-aware durable audit writer.
+ *
+ * Use this inside the same `$transaction` as the security-sensitive write so a
+ * failed audit rolls the write back. The change can never be committed without
+ * its audit row.
+ */
+export async function writeAuditLogTx(
+  tx: Prisma.TransactionClient,
+  input: CreateAuditLogInput,
+): Promise<void> {
+  await writeAuditLogOn(tx, input);
+}
+
+export async function writeAuditLog(input: CreateAuditLogInput): Promise<void> {
+  await writeAuditLogOn(prisma, input);
 }
 
 export function hashEmailForAudit(email: string): string {

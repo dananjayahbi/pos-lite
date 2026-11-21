@@ -3,10 +3,14 @@ import { UserRole } from '@/generated/prisma/client';
 import type { Prisma } from '@/generated/prisma/client';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
-import { writeAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { writeAuditLog, writeAuditLogTx, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { mapPrismaError } from '@/lib/api/map-prisma-error';
 import { withUniqueGuard } from '@/lib/api/race-guard';
 import { ApiError } from '@/lib/api/errors';
+import {
+  extraPermissions,
+  samePermissionSet,
+} from '@/lib/services/permissionSet.core';
 import {
   assertLastOwnerRemains,
   assertPermissionsGrantable,
@@ -279,108 +283,125 @@ export async function updateStaff(
   assignMoney('basicSalary');
   assignMoney('allowances');
 
-  if (data.permissions !== undefined) {
-    updateData.permissions = Array.from(
-      new Set(data.permissions.filter((permission): permission is string => typeof permission === 'string')),
-    ).sort();
+  const nextRole = data.role ?? existing.role;
+  const beforePermissions = extraPermissions(existing.permissions, existing.role);
+  const nextPermissions = data.permissions !== undefined
+    ? extraPermissions(data.permissions, nextRole)
+    : beforePermissions;
+  const permissionsChanged =
+    data.permissions !== undefined &&
+    !samePermissionSet(beforePermissions, nextPermissions);
+
+  // Only write the permissions column when the normalized extras changed. A
+  // legacy row that stores all inherited defaults is left untouched by a
+  // no-op save, so the row cannot churn 8 -> 4 without a real change.
+  if (permissionsChanged) {
+    updateData.permissions = nextPermissions;
   }
 
   // M03-04: privilege-revoking change → invalidate live sessions.
   const roleChanged = data.role !== undefined && data.role !== existing.role;
   const activeChanged = data.isActive !== undefined && data.isActive !== existing.isActive;
-  const beforePermissions = Array.isArray(existing.permissions)
-    ? existing.permissions.filter((permission): permission is string => typeof permission === 'string')
-    : [];
-  const permissionsChanged =
-    data.permissions !== undefined &&
-    JSON.stringify(
-      Array.from(
-        new Set(data.permissions.filter((permission): permission is string => typeof permission === 'string')),
-      ).sort(),
-    ) !== JSON.stringify([...beforePermissions].sort());
 
   if (roleChanged || activeChanged || permissionsChanged) {
     updateData.sessionVersion = { increment: 1 };
   }
 
-  const updated = await prisma.user.update({
-    where: { id },
-    data: updateData,
-    select: STAFF_SELECT,
-  });
-
-  if (roleChanged) {
-    await writeAuditLog({
-      tenantId,
-      actorId: actor.id,
-      actorRole: actor.role,
-      entityType: 'Staff',
-      entityId: id,
-      action: AUDIT_ACTIONS.STAFF_ROLE_CHANGED,
-      before: { role: existing.role },
-      after: { role: data.role },
+  // ARGUS #463: the staff update and every security audit row are one
+  // transaction. A failed audit rolls the change back instead of committing an
+  // unaudited role/permission/status change and then returning 500.
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: { id },
+      data: updateData,
+      select: STAFF_SELECT,
     });
-  }
 
-  if (permissionsChanged) {
-    const afterPermissions = Array.isArray(updated.permissions)
-      ? updated.permissions.filter((permission): permission is string => typeof permission === 'string')
-      : [];
-
-    await writeAuditLog({
-      tenantId,
-      actorId: actor.id,
-      actorRole: actor.role,
-      entityType: 'Staff',
-      entityId: id,
-      action: AUDIT_ACTIONS.STAFF_PERMISSION_CHANGED,
-      before: { permissions: beforePermissions },
-      after: { permissions: afterPermissions },
-    });
-  }
-
-  // HR / contact / salary / bank changes are security-sensitive too (ARGUS
-  // #336). Without this row an admin edit of a bank account or salary left no
-  // audit trail.
-  const detailFields = [
-    'email',
-    'isActive',
-    'commissionRate',
-    'fullName',
-    'nic',
-    'contactNumber',
-    'address',
-    'basicSalary',
-    'allowances',
-    'bankName',
-    'bankBranch',
-    'bankAccountNumber',
-    'etfNumber',
-    'epfNumber',
-  ] as const;
-  const changedDetailFields = detailFields.filter(
-    (key) => (data as Record<string, unknown>)[key] !== undefined,
-  );
-  if (changedDetailFields.length > 0) {
-    const before: Record<string, unknown> = {};
-    const after: Record<string, unknown> = {};
-    for (const key of changedDetailFields) {
-      before[key] = (existing as Record<string, unknown>)[key] ?? null;
-      after[key] = updateData[key] ?? (data as Record<string, unknown>)[key] ?? null;
+    if (roleChanged) {
+      await writeAuditLogTx(tx, {
+        tenantId,
+        actorId: actor.id,
+        actorRole: actor.role,
+        entityType: 'Staff',
+        entityId: id,
+        action: AUDIT_ACTIONS.STAFF_ROLE_CHANGED,
+        before: { role: existing.role },
+        after: { role: data.role },
+      });
     }
-    await writeAuditLog({
-      tenantId,
-      actorId: actor.id,
-      actorRole: actor.role,
-      entityType: 'Staff',
-      entityId: id,
-      action: AUDIT_ACTIONS.STAFF_DETAILS_UPDATED,
-      before: before as Prisma.InputJsonValue,
-      after: after as Prisma.InputJsonValue,
-    });
-  }
 
-  return updated;
+    if (permissionsChanged) {
+      const afterPermissions = extraPermissions(updated.permissions, nextRole);
+
+      await writeAuditLogTx(tx, {
+        tenantId,
+        actorId: actor.id,
+        actorRole: actor.role,
+        entityType: 'Staff',
+        entityId: id,
+        action: AUDIT_ACTIONS.STAFF_PERMISSION_CHANGED,
+        before: { permissions: beforePermissions },
+        after: { permissions: afterPermissions },
+      });
+    }
+
+    // ARGUS #463: active-status changes get their own security row instead of
+    // disappearing into the generic details audit (or none at all).
+    if (activeChanged) {
+      await writeAuditLogTx(tx, {
+        tenantId,
+        actorId: actor.id,
+        actorRole: actor.role,
+        entityType: 'Staff',
+        entityId: id,
+        action: AUDIT_ACTIONS.STAFF_STATUS_CHANGED,
+        before: { isActive: existing.isActive },
+        after: { isActive: data.isActive },
+      });
+    }
+
+    // HR / contact / salary / bank changes are security-sensitive too (ARGUS
+    // #336). Without this row an admin edit of a bank account or salary left no
+    // audit trail. isActive has its own action above.
+    const detailFields = [
+      'email',
+      'commissionRate',
+      'fullName',
+      'nic',
+      'contactNumber',
+      'address',
+      'basicSalary',
+      'allowances',
+      'bankName',
+      'bankBranch',
+      'bankAccountNumber',
+      'etfNumber',
+      'epfNumber',
+    ] as const;
+    const changedDetailFields = detailFields.filter(
+      (key) => (data as Record<string, unknown>)[key] !== undefined,
+    );
+    if (changedDetailFields.length > 0) {
+      const before: Record<string, unknown> = {};
+      const after: Record<string, unknown> = {};
+      for (const key of changedDetailFields) {
+        before[key] = (existing as Record<string, unknown>)[key] ?? null;
+        after[key] = updateData[key] ?? (data as Record<string, unknown>)[key] ?? null;
+      }
+      await writeAuditLogTx(tx, {
+        tenantId,
+        actorId: actor.id,
+        actorRole: actor.role,
+        entityType: 'Staff',
+        entityId: id,
+        action: AUDIT_ACTIONS.STAFF_DETAILS_UPDATED,
+        before: before as Prisma.InputJsonValue,
+        after: after as Prisma.InputJsonValue,
+      });
+    }
+
+    return updated;
+  });
 }
 
 // ── Create Staff Member ──────────────────────────────────────────────────────
