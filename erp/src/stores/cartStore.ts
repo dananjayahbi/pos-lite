@@ -7,6 +7,7 @@ import { clampPromotionDiscounts } from '@/lib/services/saleDiscountValidation.c
 import { createCartPromotionSnapshot } from '@/stores/cartPromotions';
 import type { CartPromotionSnapshot } from '@/stores/cartPromotions';
 import type { TaxRuleValue } from '@/lib/constants/product-options';
+import { resolveTaxRate } from '@/lib/pricing/taxRules.core';
 
 export interface CartItem {
   variantId: string;
@@ -473,20 +474,15 @@ export function getCartDiscountEffective(
 /**
  * Effective tax rate (as a fraction) for one cart line, exactly as the sales
  * service resolves it from the product's tax rule and the tenant rates.
+ *
+ * Tax rules are mutually exclusive (ARGUS #469): an SSCL line uses only the
+ * SSCL rate, never VAT + SSCL. Delegates to the shared pure resolver.
  */
 export function getLineTaxRate(
   taxRule: TaxRuleValue | undefined,
   { vatRate, ssclRate }: CartTaxRates,
 ): Decimal {
-  switch (taxRule ?? 'STANDARD_VAT') {
-    case 'SSCL':
-      return new Decimal(ssclRate).div(100);
-    case 'EXEMPT':
-      return new Decimal(0);
-    case 'STANDARD_VAT':
-    default:
-      return new Decimal(vatRate).div(100);
-  }
+  return resolveTaxRate(taxRule, { vatRate, ssclRate });
 }
 
 /**
