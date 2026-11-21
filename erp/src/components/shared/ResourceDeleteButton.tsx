@@ -7,6 +7,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { assignedProductsReason } from '@/lib/categories/categoryDelete.core';
 
 /**
  * M04-02 — the single delete affordance shared by every resource list
@@ -38,7 +39,7 @@ export interface ResourceDeleteButtonProps {
 
 /** Shared copy for the "record still has products" blocked state (M04-02). */
 export function productsAssignedReason(count: number): string {
-  return `${count} product${count === 1 ? '' : 's'} assigned - reassign or archive them first`;
+  return assignedProductsReason(count);
 }
 
 export function ResourceDeleteButton({

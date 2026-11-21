@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Pencil, Package, CalendarClock, Hash } from 'lucide-react';
 import { CategoryIcon } from '@/components/categories/CategoryIcon';
+import { categoryDeleteBlockedReason } from '@/lib/categories/categoryDelete.core';
 
 interface CategoryDetailPanelProps {
   category: Category;
@@ -41,6 +42,10 @@ export function CategoryDetailPanel({
   });
 
   const detail = data?.data ?? null;
+  // The list row already blocks in-use categories; the detail must use the same
+  // rule instead of offering a Delete that can only fail at the API (ARGUS #165).
+  const productCount = detail?._count.products ?? category._count.products;
+  const deleteBlockedReason = categoryDeleteBlockedReason(productCount);
 
   const formatDate = (iso: string) => {
     try {
@@ -84,14 +89,32 @@ export function CategoryDetailPanel({
             </Button>
           )}
           {canDelete && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onDelete}
-              className="h-8 border-sand text-red-700 hover:bg-red-50"
-            >
-              Delete
-            </Button>
+            <div className="flex flex-col items-end gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onDelete}
+                disabled={Boolean(deleteBlockedReason)}
+                title={
+                  deleteBlockedReason
+                    ? `Cannot delete ${category.name}: ${deleteBlockedReason}`
+                    : undefined
+                }
+                aria-label={
+                  deleteBlockedReason
+                    ? `Cannot delete ${category.name}: ${deleteBlockedReason}`
+                    : `Delete ${category.name}`
+                }
+                className="h-8 border-sand text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Delete
+              </Button>
+              {deleteBlockedReason ? (
+                <span className="max-w-[180px] text-right text-[10px] leading-tight text-warning">
+                  {deleteBlockedReason}
+                </span>
+              ) : null}
+            </div>
           )}
         </div>
       </div>
