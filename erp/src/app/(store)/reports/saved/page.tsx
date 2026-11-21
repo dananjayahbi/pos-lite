@@ -10,7 +10,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SavedReportOpenButton } from '@/components/reports/SavedReportOpenButton';
-import { buildReportHref, isKnownReportSlug } from '@/lib/reports/report-config';
+import {
+  buildReportHref,
+  normalizeReportType,
+  resolveReportTitle,
+} from '@/lib/reports/report-config';
 
 interface SavedReportRecord {
   id: string;
@@ -25,8 +29,9 @@ interface SavedReportRecord {
 }
 
 function formatReportType(reportType: string) {
-  const cleaned = reportType.split('/').filter(Boolean).slice(-1)[0] ?? reportType;
-  return cleaned.replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+  const slug = normalizeReportType(reportType);
+  if (!slug) return 'Unknown report';
+  return resolveReportTitle(buildReportHref(slug));
 }
 
 /**
@@ -39,9 +44,8 @@ function formatReportType(reportType: string) {
  * the client never trusts the stored string.
  */
 function buildSavedReportHref(savedReport: SavedReportRecord) {
-  const route = isKnownReportSlug(savedReport.reportType)
-    ? buildReportHref(savedReport.reportType)
-    : null;
+  const slug = normalizeReportType(savedReport.reportType);
+  const route = slug ? buildReportHref(slug) : null;
 
   if (!route) return null;
 
