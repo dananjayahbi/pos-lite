@@ -14,6 +14,8 @@ import {
 import { recordManualAdjustmentSideEffects } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
+import { stockAdjustmentRevalidationOptions } from '@/lib/website/storefront-revalidation.core';
 
 export async function POST(request: NextRequest) {
   try {
@@ -102,7 +104,7 @@ export async function POST(request: NextRequest) {
 
       const variant = await tx.productVariant.findFirst({
         where: { id: variantId, tenantId, deletedAt: null },
-        include: { product: { select: { name: true } } },
+        include: { product: { select: { id: true, name: true } } },
       });
 
       if (!variant) {
@@ -186,6 +188,7 @@ export async function POST(request: NextRequest) {
         lowStockTriggered,
         productName,
         sku,
+        productId: variant.product.id,
       };
     });
 
@@ -199,6 +202,18 @@ export async function POST(request: NextRequest) {
       actorId: session.user.id,
       options: { quantityDelta, reason, note },
     });
+
+    // ARGUS #195: storefront availability is cached. Purge the adjusted
+    // product and catalog filters after the commit; a down website must not
+    // fail a successful adjustment.
+    try {
+      await revalidateTenantStorefront(
+        tenantId,
+        stockAdjustmentRevalidationOptions([result.productId]),
+      );
+    } catch (revalidateError) {
+      console.warn('[POST /api/store/stock-control/adjust] Revalidation warning:', revalidateError);
+    }
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {

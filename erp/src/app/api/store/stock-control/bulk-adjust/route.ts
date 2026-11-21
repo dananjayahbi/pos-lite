@@ -17,6 +17,8 @@ import {
 import { recordManualAdjustmentSideEffects } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
+import { stockAdjustmentRevalidationOptions } from '@/lib/website/storefront-revalidation.core';
 
 const BulkAdjustSchema = z.object({
   adjustments: z
@@ -180,6 +182,7 @@ export async function POST(request: NextRequest) {
         createdAt: Date;
       }> = [];
       const lowStockTriggeredVariantIds: string[] = [];
+      const affectedProductIds = new Set<string>();
       const notificationsToCreate: Array<{
         tenantId: string;
         recipientId: string;
@@ -193,13 +196,15 @@ export async function POST(request: NextRequest) {
       // Fetch fresh variant state inside transaction
       const freshVariants = await tx.productVariant.findMany({
         where: { id: { in: variantIds }, tenantId, deletedAt: null },
-        include: { product: { select: { name: true } } },
+        include: { product: { select: { id: true, name: true } } },
       });
       const variantMap = new Map(freshVariants.map((v) => [v.id, v]));
 
       for (const adj of adjustments) {
         const variant = variantMap.get(adj.variantId);
         if (!variant) throw new Error('NOT_FOUND');
+
+        affectedProductIds.add(variant.product.id);
 
         const newQty = variant.stockQuantity + adj.quantityDelta;
         if (newQty < 0) {
@@ -301,6 +306,7 @@ export async function POST(request: NextRequest) {
         adjustedCount: movements.length,
         movements,
         lowStockTriggeredVariantIds,
+        affectedProductIds: [...affectedProductIds],
       };
     });
 
@@ -323,6 +329,20 @@ export async function POST(request: NextRequest) {
         }),
       ),
     );
+
+    // ARGUS #195: purge each adjusted product detail page plus the catalog
+    // availability filters. Revalidation failure is logged, never fatal.
+    try {
+      await revalidateTenantStorefront(
+        tenantId,
+        stockAdjustmentRevalidationOptions(result.affectedProductIds),
+      );
+    } catch (revalidateError) {
+      console.warn(
+        '[POST /api/store/stock-control/bulk-adjust] Revalidation warning:',
+        revalidateError,
+      );
+    }
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
