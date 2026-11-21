@@ -18,6 +18,7 @@ import {
 } from '@/lib/services/returnTender.core';
 import type { PaymentLegMethod, PaymentMethod, ReturnRefundMethod } from '@/generated/prisma/client';
 import { formatRupee } from '@/lib/format';
+import { buildReturnRefundPreview } from '@/components/returns/refundPreview';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,12 +30,18 @@ interface SaleLine {
   sku: string;
   quantity: number;
   unitPrice: string;
+  /** Post-discount line total; the refund preview/serving basis (ARGUS #99). */
+  lineTotalAfterDiscount: string | number;
+  /** Tax charged on this line at sale time; 0/absent on legacy rows. */
+  lineTax?: string | number | null;
   returnedQuantity: number;
 }
 
 interface SaleDetail {
   id: string;
   totalAmount: string;
+  taxAmount?: string | number | null;
+  discountAmount?: string | number | null;
   customer?: { id: string } | null;
   /** Tender header + legs, used to constrain the refund method (ARGUS #96). */
   paymentMethod?: PaymentMethod | null;
@@ -121,6 +128,28 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
   const selectedLines = returnLines.filter((l) => l.enabled && l.quantity > 0);
   const storeCreditAvailable = Boolean(sale?.customer?.id);
 
+  // ARGUS #99: same pure calculation as the return service, so the preview's
+  // line refunds/tax match what will be persisted for the selected quantities.
+  const refundPreview = useMemo(() => {
+    if (!sale) return null;
+    return buildReturnRefundPreview(
+      {
+        lines: sale.lines,
+        taxAmount: sale.taxAmount ?? 0,
+        discountAmount: sale.discountAmount ?? 0,
+      },
+      selectedLines.map((line) => ({
+        saleLineId: line.saleLineId,
+        quantity: line.quantity,
+      })),
+    );
+  }, [sale, selectedLines]);
+
+  const previewByLine = useMemo(
+    () => new Map((refundPreview?.lines ?? []).map((line) => [line.saleLineId, line])),
+    [refundPreview],
+  );
+
   // ARGUS #96: only refund through a tender the sale collected.
   const tenderMismatchReasons = useMemo(() => {
     const reasons: Partial<Record<ReturnRefundMethod, string>> = {};
@@ -149,6 +178,13 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
       : fallbackRefundMethod === 'EXCHANGE'
         ? 'STORE_CREDIT'
         : fallbackRefundMethod;
+
+  const refundDestination =
+    effectiveRefundMethod === 'CASH'
+      ? 'Cash from the drawer'
+      : effectiveRefundMethod === 'CARD_REVERSAL'
+        ? `Card reversal${cardReversalRef.trim() ? ` · ${cardReversalRef.trim()}` : ''}`
+        : 'Store credit to the linked customer';
 
   const { mutate: submitReturn, isPending } = useMutation({
     mutationFn: async () => {
@@ -187,12 +223,28 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const json = (await res.json()) as { success: boolean; error?: { message: string } };
+      const json = (await res.json()) as {
+        success: boolean;
+        data?: { refundAmount?: string | number };
+        error?: { message: string };
+      };
       if (!json.success) throw new Error(json.error?.message ?? 'Failed to process return');
-      return json;
+      return { json, expectedTotal: refundPreview?.totalRefund ?? '0.00' };
     },
-    onSuccess: () => {
-      toast.success('Return processed successfully');
+    onSuccess: ({ json, expectedTotal }) => {
+      const serverRefund = Number(json.data?.refundAmount);
+      const expected = Number(expectedTotal);
+      if (
+        Number.isFinite(serverRefund) &&
+        Number.isFinite(expected) &&
+        Math.abs(serverRefund - expected) > 0.005
+      ) {
+        toast.warning(
+          `Return processed - server refund ${formatRupee(serverRefund)} differs from the preview ${formatRupee(expected)}`,
+        );
+      } else {
+        toast.success('Return processed successfully');
+      }
       void qc.invalidateQueries({ queryKey: ['returns'] });
       onSuccess?.();
       resetForm();
@@ -309,6 +361,14 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
                       <p className="text-xs text-sand-ink">
                         {line.variantDesc} · {line.sku}
                       </p>
+                      {previewByLine.get(line.saleLineId) ? (
+                        <p className="text-xs font-mono text-espresso/70">
+                          Refund{' '}
+                          {formatRupee(
+                            Number(previewByLine.get(line.saleLineId)!.lineRefundAmount),
+                          )}
+                        </p>
+                      ) : null}
                     </label>
                     <div className="flex shrink-0 items-center gap-1">
                       <Input
@@ -333,6 +393,44 @@ export function NewReturnSheet({ open, onOpenChange, onSuccess }: NewReturnSheet
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {returnLines.length > 0 && (
+            <div className="rounded-lg border border-mist bg-linen/50 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-sand-ink">
+                Refund preview
+              </p>
+              {selectedLines.length === 0 || !refundPreview ? (
+                <p className="text-sm text-sand-ink">
+                  Select at least one item and quantity to see the refund.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-sm text-espresso">
+                    <span>Goods (after discounts)</span>
+                    <span className="font-mono">
+                      {formatRupee(Number(refundPreview.goodsSubtotal))}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-espresso">
+                    <span>Tax refunded</span>
+                    <span className="font-mono">
+                      {formatRupee(Number(refundPreview.taxTotal))}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-mist/50 pt-1.5 text-sm font-semibold text-espresso">
+                    <span>Total refund</span>
+                    <span className="font-mono text-base">
+                      {formatRupee(Number(refundPreview.totalRefund))}
+                    </span>
+                  </div>
+                  <p className="text-xs text-espresso/70">Refund via {refundDestination}</p>
+                  <p className="text-[11px] text-mist-ink">
+                    Preview only - the server recalculates and stores the final refund.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
