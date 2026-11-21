@@ -340,9 +340,16 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
                 <FlaskConical className="h-4 w-4 text-mist-ink" />
                 Production
               </h2>
-              <Button variant="ghost" size="sm" asChild>
-                <Link href="/factory/bom">Manage BOMs</Link>
-              </Button>
+              <div className="flex items-center gap-1">
+                {permissions.includes('bom:production:view') && (
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link href="/factory/production">View all</Link>
+                  </Button>
+                )}
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href="/factory/bom">Manage BOMs</Link>
+                </Button>
+              </div>
             </div>
             <div className="p-4">
               <ProductionHistoryPanel compact />

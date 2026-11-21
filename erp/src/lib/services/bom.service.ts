@@ -34,6 +34,10 @@ import { resolveRawMaterialUnitLabels } from '@/lib/services/rawMaterialUnitCata
 import { computeMaterialCost } from '@/lib/services/rawMaterialValuation.core';
 import { createBatchInTx } from '@/lib/services/batchTracking.service';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import {
+  readProductionBatchNumber,
+  scaleProductionConsumption,
+} from '@/lib/services/productionHistory.core';
 
 // ── Public list item shape ──────────────────────────────────────────────────
 
@@ -702,6 +706,14 @@ export async function produceGoods(
 
 // ── Production history ───────────────────────────────────────────────────────
 
+export interface ProductionConsumptionItem {
+  rawMaterialId: string;
+  rawMaterialName: string;
+  quantity: number;
+  unit: string;
+  unitShortLabel: string;
+}
+
 export interface ProductionHistoryItem {
   id: string;
   quantity: number;
@@ -712,6 +724,12 @@ export interface ProductionHistoryItem {
   actorName: string;
   variantSku: string;
   variantName: string;
+  /** Recipe used for the run (ARGUS #259). */
+  bomName: string;
+  /** Batch number recorded with the production audit row, when available. */
+  batchNumber: string | null;
+  /** Frozen recipe scaled by the produced quantity (ARGUS #259). */
+  consumption: ProductionConsumptionItem[];
 }
 
 export async function listProductionLogs(
@@ -723,14 +741,26 @@ export async function listProductionLogs(
   if (bomId) where.bomId = bomId;
   if (variantId) where.variantId = variantId;
 
-  const [rows, total] = await Promise.all([
+  const [rows, total, unitCatalog] = await Promise.all([
     prisma.productionLog.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
       include: {
-        bom: { select: { name: true } },
+        bom: {
+          select: {
+            name: true,
+            // A BOM cannot be edited after its first production run (ARGUS
+            // #248), so these lines are the recipe that this run actually used.
+            items: {
+              select: {
+                quantityPerUnit: true,
+                rawMaterial: { select: { id: true, name: true, unit: true } },
+              },
+            },
+          },
+        },
         variant: {
           select: { sku: true, product: { select: { name: true } } },
         },
@@ -738,18 +768,66 @@ export async function listProductionLogs(
       },
     }),
     prisma.productionLog.count({ where }),
+    listRawMaterialUnitCatalog(tenantId),
   ]);
 
-  const items: ProductionHistoryItem[] = rows.map((row) => ({
-    id: row.id,
-    quantity: row.quantity,
-    materialCost: row.materialCost.toNumber(),
-    note: row.note,
-    createdAt: row.createdAt,
-    actorName: staffDisplayName(row.actor.email),
-    variantSku: row.variant.sku,
-    variantName: row.variant.product.name,
-  }));
+  // The batch number lives in the PRODUCTION_LOGGED audit payload because the
+  // ProductionLog model has no batch column; read it for this page in one query.
+  const auditRows =
+    rows.length > 0
+      ? await prisma.auditLog.findMany({
+          where: {
+            tenantId,
+            entityType: 'ProductionLog',
+            action: AUDIT_ACTIONS.PRODUCTION_LOGGED,
+            entityId: { in: rows.map((row) => row.id) },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { entityId: true, after: true },
+        })
+      : [];
+  const batchNumberByLogId = new Map<string, string>();
+  for (const audit of auditRows) {
+    const batchNumber = readProductionBatchNumber(audit.after);
+    if (batchNumber && !batchNumberByLogId.has(audit.entityId)) {
+      batchNumberByLogId.set(audit.entityId, batchNumber);
+    }
+  }
+
+  const items: ProductionHistoryItem[] = rows.map((row) => {
+    const consumption = scaleProductionConsumption(
+      row.bom.items.map((item) => ({
+        rawMaterialId: item.rawMaterial.id,
+        rawMaterialName: item.rawMaterial.name,
+        unit: item.rawMaterial.unit,
+        quantityPerUnit: item.quantityPerUnit.toNumber(),
+      })),
+      row.quantity,
+    ).map((line) => {
+      const labels = resolveRawMaterialUnitLabels(unitCatalog, line.unit);
+      return {
+        rawMaterialId: line.rawMaterialId,
+        rawMaterialName: line.rawMaterialName,
+        quantity: line.quantity,
+        unit: line.unit,
+        unitShortLabel: labels.shortLabel,
+      };
+    });
+
+    return {
+      id: row.id,
+      quantity: row.quantity,
+      materialCost: row.materialCost.toNumber(),
+      note: row.note,
+      createdAt: row.createdAt,
+      actorName: staffDisplayName(row.actor.email),
+      variantSku: row.variant.sku,
+      variantName: row.variant.product.name,
+      bomName: row.bom.name,
+      batchNumber: batchNumberByLogId.get(row.id) ?? null,
+      consumption,
+    };
+  });
 
   return { items, total };
 }

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, Plus, RefreshCw } from 'lucide-react';
+import Link from 'next/link';
+import { AlertTriangle, History, Plus, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -34,6 +35,7 @@ export function BomListClient({ permissions }: BomListClientProps) {
   const canEdit = permissions.includes('bom:edit');
   const canDelete = permissions.includes('bom:delete');
   const canProduce = permissions.includes('bom:produce');
+  const canViewHistory = permissions.includes('bom:production:view');
 
   const items = data?.data ?? [];
 
@@ -54,12 +56,22 @@ export function BomListClient({ permissions }: BomListClientProps) {
             Define the raw materials consumed to produce each finished good.
           </p>
         </div>
-        {canCreate && (
-          <Button onClick={() => setFormOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            New BOM
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {canViewHistory && (
+            <Button variant="outline" asChild>
+              <Link href="/factory/production">
+                <History className="mr-2 h-4 w-4" />
+                Production history
+              </Link>
+            </Button>
+          )}
+          {canCreate && (
+            <Button onClick={() => setFormOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              New BOM
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-2">

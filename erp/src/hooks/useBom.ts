@@ -65,6 +65,14 @@ export interface ProductionPlanView {
   sufficient: boolean;
 }
 
+export interface ProductionConsumptionItem {
+  rawMaterialId: string;
+  rawMaterialName: string;
+  quantity: number;
+  unit: string;
+  unitShortLabel: string;
+}
+
 export interface ProductionHistoryItem {
   id: string;
   quantity: number;
@@ -75,6 +83,12 @@ export interface ProductionHistoryItem {
   actorName: string;
   variantSku: string;
   variantName: string;
+  /** Recipe used for the run (ARGUS #259). */
+  bomName: string;
+  /** Batch number recorded with the production audit row, when available. */
+  batchNumber: string | null;
+  /** Frozen recipe scaled by the produced quantity (ARGUS #259). */
+  consumption: ProductionConsumptionItem[];
 }
 
 interface ListResponse<T> {
