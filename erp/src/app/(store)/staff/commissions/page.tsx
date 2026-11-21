@@ -368,7 +368,7 @@ export default function CommissionReportsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg font-display text-espresso">Recent Payout History</CardTitle>
+          <CardTitle className="text-lg font-display text-espresso">Payout History for the Selected Commission Period</CardTitle>
         </CardHeader>
         <CardContent>
           {payoutHistoryLoading ? (
@@ -379,13 +379,14 @@ export default function CommissionReportsPage() {
             </div>
           ) : payoutHistory.length === 0 ? (
             <div className="rounded-lg border border-dashed border-mist bg-pearl/50 px-4 py-8 text-center text-sm text-sand-ink">
-              No payouts recorded for the selected window yet.
+              No payouts recorded for commission period {periodStart} to {periodEnd}.
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Staff</TableHead>
+                  <TableHead>Commission Window</TableHead>
                   <TableHead>Paid At</TableHead>
                   <TableHead>Method</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
@@ -406,6 +407,10 @@ export default function CommissionReportsPage() {
                           {payout.authorizedByName ?? staffDisplayName(payout.authorizedByEmail)}
                         </p>
                       </div>
+                    </TableCell>
+                    <TableCell className="text-xs text-sand-ink">
+                      {new Date(payout.periodStart).toLocaleDateString()} to{' '}
+                      {new Date(payout.periodEnd).toLocaleDateString()}
                     </TableCell>
                     <TableCell className="text-sm text-sand-ink">{new Date(payout.paidAt).toLocaleString()}</TableCell>
                     <TableCell className="text-sm text-espresso">

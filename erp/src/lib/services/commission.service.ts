@@ -532,20 +532,23 @@ export async function getCommissionPayouts(
 ) {
   const page = Math.max(filters.page ?? 1, 1);
   const pageSize = Math.min(Math.max(filters.pageSize ?? 20, 1), 100);
+  // ARGUS #362: a payout is shown in the selected *commission* window, not by
+  // the date the money happened to leave. A September commission paid in
+  // November therefore stays in the September report.
+  const periodConditions: Array<Record<string, unknown>> = [];
+  if (filters.periodStart) {
+    periodConditions.push({ periodEnd: { gte: filters.periodStart } });
+  }
+  if (filters.periodEnd) {
+    periodConditions.push({ periodStart: { lte: filters.periodEnd } });
+  }
   const where = {
     tenantId,
     ...(filters.userId ? { userId: filters.userId } : {}),
-    ...((filters.periodStart || filters.periodEnd)
-      ? {
-          paidAt: {
-            ...(filters.periodStart ? { gte: filters.periodStart } : {}),
-            ...(filters.periodEnd ? { lte: filters.periodEnd } : {}),
-          },
-        }
-      : {}),
-    // Pending payroll reservations are not payouts yet; hide them until the
-    // run is marked paid (ARGUS #372).
     AND: [
+      ...periodConditions,
+      // Pending payroll reservations are not payouts yet; hide them until the
+      // run is marked paid (ARGUS #372).
       {
         OR: [
           { paymentAccountName: null },
