@@ -1,6 +1,8 @@
 'use client';
 
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Boxes, PackageX, FlaskConical, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +12,14 @@ import { RawMaterialAlertsPanel } from '@/components/raw-materials/RawMaterialAl
 import { ProductionHistoryPanel } from '@/components/bom/ProductionHistoryPanel';
 import { useRawMaterialStats, useRawMaterials } from '@/hooks/useRawMaterials';
 import { getUnitShortLabel } from '@/lib/services/rawMaterial.core';
+import {
+  FACTORY_REFRESH_INTERVAL_MS,
+  FACTORY_REFRESH_TICK_MS,
+  formatFactoryLastUpdated,
+  isFactoryRefreshDue,
+  latestUpdatedAt,
+  refetchFactoryDashboard,
+} from '@/lib/factory/factoryRefresh';
 import {
   factoryFeedErrorMessage,
   factoryKpiValue,
@@ -21,8 +31,10 @@ interface FactoryDashboardClientProps {
 }
 
 export function FactoryDashboardClient({ permissions }: FactoryDashboardClientProps) {
+  const queryClient = useQueryClient();
   const {
     data: statsData,
+    dataUpdatedAt: statsUpdatedAt,
     isError: statsIsError,
     isLoading: statsIsLoading,
     error: statsError,
@@ -31,12 +43,66 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
   } = useRawMaterialStats();
   const {
     data: lowStockData,
+    dataUpdatedAt: lowStockUpdatedAt,
     isError: lowStockIsError,
     isLoading: lowStockIsLoading,
     error: lowStockError,
     isFetching: lowStockIsFetching,
     refetch: refetchLowStock,
   } = useRawMaterials({ stockStatus: 'LOW', limit: 5 });
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshCompletedAt, setLastRefreshCompletedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const refreshingRef = useRef(false);
+  // Set on mount (inside the effect) so the first automatic refresh happens one
+  // full interval after the initial query load, not on the first tick.
+  const lastRefreshStartedAtRef = useRef<number | null>(null);
+
+  // ARGUS #257 - one refresh moves all four dashboard feeds together. The
+  // button and the timer share the same guard, so refetches never overlap and
+  // existing data stays visible while the refresh runs.
+  const refreshAll = useCallback(async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    lastRefreshStartedAtRef.current = Date.now();
+    setIsRefreshing(true);
+    try {
+      await refetchFactoryDashboard(queryClient);
+      setLastRefreshCompletedAt(Date.now());
+      setNow(Date.now());
+    } finally {
+      refreshingRef.current = false;
+      setIsRefreshing(false);
+    }
+  }, [queryClient]);
+
+  useEffect(() => {
+    if (lastRefreshStartedAtRef.current === null) {
+      lastRefreshStartedAtRef.current = Date.now();
+    }
+    const timer = window.setInterval(() => {
+      const tickNow = Date.now();
+      setNow(tickNow);
+      if (
+        isFactoryRefreshDue({
+          now: tickNow,
+          lastRunAt: lastRefreshStartedAtRef.current,
+          isVisible: document.visibilityState === 'visible',
+          isRefreshing: refreshingRef.current,
+        })
+      ) {
+        void refreshAll();
+      }
+    }, FACTORY_REFRESH_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [refreshAll]);
+
+  const lastUpdatedAt = latestUpdatedAt([
+    statsUpdatedAt,
+    lowStockUpdatedAt,
+    lastRefreshCompletedAt,
+  ]);
 
   const stats = statsData?.data;
   const lowStock = lowStockData?.data ?? [];
@@ -56,11 +122,31 @@ export function FactoryDashboardClient({ permissions }: FactoryDashboardClientPr
 
   return (
     <div className="space-y-6 p-6">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-espresso">Factory Dashboard</h1>
-        <p className="mt-1 font-body text-sm text-mist-ink">
-          Monitor bulk raw-material stock for production planning.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-espresso">Factory Dashboard</h1>
+          <p className="mt-1 font-body text-sm text-mist-ink">
+            Monitor bulk raw-material stock for production planning.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span
+            className="font-body text-xs text-mist-ink"
+            title={lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleString() : undefined}
+          >
+            Last updated {formatFactoryLastUpdated(lastUpdatedAt, now)}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void refreshAll()}
+            disabled={isRefreshing}
+            title={`Auto-refreshes every ${Math.round(FACTORY_REFRESH_INTERVAL_MS / 1000)} seconds`}
+          >
+            <RefreshCw className={`mr-2 h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        </div>
       </div>
 
       {statsState === 'error' && (
