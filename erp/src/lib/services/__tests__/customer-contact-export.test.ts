@@ -4,6 +4,7 @@ import {
   buildExportFilename,
   CONTACT_OPT_OUT_TAG,
   DEFAULT_ACTIVE_DAYS,
+  hasContactOptOut,
   isContactExcluded,
   matchesContactScope,
   normalizePhoneNumber,
@@ -56,6 +57,16 @@ describe('normalizePhoneNumber', () => {
 });
 
 // ── Exclusion / opt-out ──────────────────────────────────────────────────────
+
+describe('hasContactOptOut', () => {
+  it('matches the tag case-insensitively and ignores surrounding spaces', () => {
+    expect(hasContactOptOut(['No-Contact'])).toBe(true);
+    expect(hasContactOptOut(['  NO-CONTACT  '])).toBe(true);
+    expect(hasContactOptOut(['vip', 'no-contact'])).toBe(true);
+    expect(hasContactOptOut(['vip'])).toBe(false);
+    expect(hasContactOptOut([])).toBe(false);
+  });
+});
 
 describe('isContactExcluded', () => {
   it('excludes inactive customers', () => {

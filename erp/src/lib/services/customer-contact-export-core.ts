@@ -83,6 +83,10 @@ export function normalizePhoneNumber(phone: string): string | null {
 
 // ── Exclusion / opt-out rules ────────────────────────────────────────────────
 
+export function hasContactOptOut(tags: readonly string[]): boolean {
+  return tags.some((tag) => tag.trim().toLowerCase() === CONTACT_OPT_OUT_TAG);
+}
+
 /**
  * A customer is excluded from outreach when they are inactive, soft-deleted, or
  * carry the opt-out tag. Excluded candidates never appear in an export.
@@ -90,7 +94,7 @@ export function normalizePhoneNumber(phone: string): string | null {
 export function isContactExcluded(candidate: ContactCandidate): boolean {
   if (!candidate.isActive) return true;
   if (candidate.deletedAt !== null) return true;
-  return candidate.tags.some((tag) => tag.toLowerCase() === CONTACT_OPT_OUT_TAG);
+  return hasContactOptOut(candidate.tags);
 }
 
 // ── Scope filtering ──────────────────────────────────────────────────────────

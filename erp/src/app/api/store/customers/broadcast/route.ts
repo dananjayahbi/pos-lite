@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma';
 import { sendWhatsAppTextMessage } from '@/lib/whatsapp';
 import { getCompletedSpendByCustomer } from '@/lib/services/customerSpend.service';
 import { filterCustomerIdsBySpend } from '@/lib/services/customerSpend.core';
+import { hasContactOptOut } from '@/lib/services/customer-contact-export-core';
 
 const BroadcastSchema = z.object({
   message: z.string().min(1).max(1000),
@@ -78,8 +79,13 @@ export async function POST(request: Request) {
     // Fetch matching customers
     let customers = await prisma.customer.findMany({
       where,
-      select: { id: true, name: true, phone: true, birthday: true },
+      select: { id: true, name: true, phone: true, birthday: true, tags: true },
     });
+
+    // The contact export already treats the no-contact tag as an opt-out; the
+    // broadcast composer must honour the same rule (ARGUS #317). Filter in JS so
+    // the match is case-insensitive like the export.
+    customers = customers.filter((customer) => !hasContactOptOut(customer.tags));
 
     // Apply birthday month filter in JS (Prisma doesn't support EXTRACT)
     if (filters?.birthdayMonth !== undefined) {
