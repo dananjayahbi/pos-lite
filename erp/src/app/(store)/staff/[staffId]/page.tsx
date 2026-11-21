@@ -46,6 +46,7 @@ import { canResetStaffPassword } from '@/lib/auth/staff-authorization';
 import { validateStaffPassword } from '@/lib/staff/passwordValidation.core';
 import { formatRupee } from '@/lib/format';
 import { getCommissionRecordStatus } from '@/lib/services/commissionSummary.core';
+import { maskBankAccountNumber } from '@/lib/services/staffPrivacy.core';
 import { TimeClockHistoryPanel } from '@/components/staff/TimeClockHistoryPanel';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import type { UpdateStaffInput } from '@/lib/validators/staff.validators';
@@ -283,6 +284,7 @@ export default function StaffDetailPage({
           editOpen={editOpen}
           setEditOpen={setEditOpen}
           onSuccess={handleSuccess}
+          canManage={hasPermission(PERMISSIONS.STAFF.manageStaff)}
           canForceLogout={sessionRole === 'OWNER' && sessionUserId !== staffMember.id}
         />
       )}
@@ -442,12 +444,14 @@ function ProfileTab({
   editOpen,
   setEditOpen,
   onSuccess,
+  canManage,
   canForceLogout,
 }: {
   staffMember: StaffDetail;
   editOpen: boolean;
   setEditOpen: (open: boolean) => void;
   onSuccess: () => void;
+  canManage: boolean;
   canForceLogout: boolean;
 }) {
   const [forceLogoutOpen, setForceLogoutOpen] = useState(false);
@@ -492,26 +496,28 @@ function ProfileTab({
           </Button>
         )}
 
-        <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="sm">
-              <Pencil className="mr-1.5 h-3.5 w-3.5" />
-              Edit Profile
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle className="font-display">Edit Staff Member</DialogTitle>
-            </DialogHeader>
-            <EditStaffForm
-              staffMember={staffMember}
-              onSuccess={() => {
-                setEditOpen(false);
-                onSuccess();
-              }}
-            />
-          </DialogContent>
-        </Dialog>
+        {canManage && (
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                Edit Profile
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="font-display">Edit Staff Member</DialogTitle>
+              </DialogHeader>
+              <EditStaffForm
+                staffMember={staffMember}
+                onSuccess={() => {
+                  setEditOpen(false);
+                  onSuccess();
+                }}
+              />
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -684,7 +690,7 @@ function ProfileTab({
               />
               <DetailItem
                 label="Account Number"
-                value={staffMember.bankAccountNumber ?? '-'}
+                value={maskBankAccountNumber(staffMember.bankAccountNumber) ?? '-'}
               />
               <DetailItem label="ETF Number" value={staffMember.etfNumber ?? '-'} />
               <DetailItem label="EPF Number" value={staffMember.epfNumber ?? '-'} />

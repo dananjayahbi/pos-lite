@@ -21,6 +21,7 @@ import {
   diffStaffAuditFields,
   formatCommissionRateForAudit,
 } from '@/lib/services/staffAudit.core';
+import { toStaffDetailDto } from '@/lib/services/staffPrivacy.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,6 +92,23 @@ const STAFF_SELECT = {
   epfNumber: true,
 } as const;
 
+/**
+ * ARGUS #341: the list only renders directory fields. Selecting the narrower
+ * shape here means salary, bank and HR PII never leave the database for a
+ * `staff:view` caller, even if a future response shaper regresses.
+ */
+const STAFF_LIST_SELECT = {
+  id: true,
+  email: true,
+  role: true,
+  isActive: true,
+  commissionRate: true,
+  clockedInAt: true,
+  createdAt: true,
+  fullName: true,
+  contactNumber: true,
+} as const;
+
 function cleanOptional(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
   const trimmed = value.trim();
@@ -139,14 +157,18 @@ export async function getStaffMembers(tenantId: string, options?: GetStaffOption
 
   return prisma.user.findMany({
     where,
-    select: STAFF_SELECT,
+    select: STAFF_LIST_SELECT,
     orderBy: { createdAt: 'desc' },
   });
 }
 
 // ── Get Staff By ID ──────────────────────────────────────────────────────────
 
-export async function getStaffById(tenantId: string, id: string) {
+export async function getStaffById(
+  tenantId: string,
+  id: string,
+  options: { includeSensitive?: boolean } = {},
+) {
   const user = await prisma.user.findFirst({
     where: { id, tenantId, deletedAt: null },
     select: STAFF_SELECT,
@@ -156,30 +178,12 @@ export async function getStaffById(tenantId: string, id: string) {
     throw new Error('Staff member not found');
   }
 
-  return {
-    id: user.id,
-    email: user.email,
-    role: user.role,
-    isActive: user.isActive,
-    permissions: Array.isArray(user.permissions)
-      ? user.permissions.filter((permission): permission is string => typeof permission === 'string')
-      : [],
-    commissionRate: user.commissionRate,
-    clockedInAt: user.clockedInAt,
-    lastLoginAt: user.lastLoginAt,
-    createdAt: user.createdAt,
-    fullName: user.fullName,
-    nic: user.nic,
-    contactNumber: user.contactNumber,
-    address: user.address,
-    basicSalary: user.basicSalary,
-    allowances: user.allowances,
-    bankName: user.bankName,
-    bankBranch: user.bankBranch,
-    bankAccountNumber: user.bankAccountNumber,
-    etfNumber: user.etfNumber,
-    epfNumber: user.epfNumber,
-  };
+  // ARGUS #341: HR/salary/bank fields are only returned to the stronger
+  // staff:manage permission. A plain staff:view caller still sees the
+  // directory identity/access data, but the account number is masked.
+  return toStaffDetailDto(user as unknown as Record<string, unknown>, {
+    includeSensitive: options.includeSensitive === true,
+  });
 }
 
 // ── Update Staff ─────────────────────────────────────────────────────────────

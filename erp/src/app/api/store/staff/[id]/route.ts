@@ -36,7 +36,11 @@ export async function GET(
     }
 
     const { id } = await params;
-    const staff = await getStaffById(tenantId, id);
+    // ARGUS #341: directory viewers get identity/access data only. Salary,
+    // bank and statutory fields need the stronger staff:manage key; the
+    // account number is masked when it is not needed for an edit.
+    const includeSensitive = hasPermission(session.user, PERMISSIONS.STAFF.manageStaff);
+    const staff = await getStaffById(tenantId, id, { includeSensitive });
 
     return NextResponse.json({ success: true, data: staff });
   } catch (error) {
