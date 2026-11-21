@@ -6,6 +6,7 @@ import { denialRouteFor } from '@/lib/auth/page-guards';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
 import { LOW_STOCK_SQL_PREDICATE } from '@/lib/inventory/lowStockPredicate';
+import { lowStockCardSubtitle } from '@/lib/dashboard/lowStockNote.core';
 import { getDefaultRouteForRole } from '@/lib/utils/default-route';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -94,7 +95,7 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  const [todaySales, totalCustomers, lowStockResult, openShift] = await Promise.all([
+  const [todaySales, totalCustomers, lowStockResult] = await Promise.all([
     prisma.sale.findMany({
       where: {
         tenantId,
@@ -116,15 +117,6 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
           AND p."deletedAt" IS NULL
           AND ${Prisma.raw(LOW_STOCK_SQL_PREDICATE)}
       `,
-    prisma.shift.findFirst({
-      where: { tenantId, status: 'OPEN' },
-      select: {
-        id: true,
-        openedAt: true,
-        cashier: { select: { email: true } },
-      },
-      orderBy: { openedAt: 'desc' },
-    }),
   ]);
 
   const todayRevenue = todaySales.reduce((sum, s) => sum + Number(s.totalAmount), 0);
@@ -154,14 +146,7 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
         label="Low Stock Alerts"
         value={lowStockCount}
         icon={<AlertTriangle className="h-6 w-6" />}
-        sub={
-          openShift
-            ? `Shift open · ${openShift.openedAt.toLocaleTimeString('en-LK', {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}`
-            : 'No open shift'
-        }
+        sub={lowStockCardSubtitle(lowStockCount)}
       />
     </div>
   );
