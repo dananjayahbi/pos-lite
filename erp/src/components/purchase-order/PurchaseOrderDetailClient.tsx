@@ -177,9 +177,14 @@ export function PurchaseOrderDetailClient({ poId, canApprove }: { poId: string; 
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <POStatusBadge status={status} />
             <span className="text-sm text-mist-ink">Ordered {formatPoDate(po.orderDate)}</span>
-            {po.paidAt ? (
+            {po.paymentState === 'PAID' ? (
               <span className="inline-flex items-center gap-1 text-sm text-green-700">
                 <Check className="h-3 w-3" /> Paid in full
+              </span>
+            ) : po.paymentState === 'PARTIALLY_PAID' ? (
+              <span className="text-sm text-amber-700">
+                Partially paid - {formatRupee(po.paidTotal ?? 0)} of{' '}
+                {formatRupee(po.payableAmount ?? po.totalAmount)}
               </span>
             ) : null}
           </div>

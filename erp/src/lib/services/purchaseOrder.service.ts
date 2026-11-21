@@ -6,6 +6,7 @@ import { adjustStockInTx } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { computePurchaseOrderTotals } from '@/lib/services/purchaseOrderTotals';
 import { computePurchaseOrderPayable } from '@/lib/services/purchaseOrderPayable.core';
+import { computePurchaseOrderPaymentState } from '@/lib/services/purchaseOrderPaymentState.core';
 import {
   canCancelPurchaseOrder,
   isPurchaseOrderFinanciallyLocked,
@@ -214,11 +215,16 @@ export async function getPOById(tenantId: string, poId: string) {
     .toDecimalPlaces(2)
     .toNumber();
 
+  const paymentSummary = computePurchaseOrderPaymentState(costing.payable, paidTotal);
+
   return {
     ...po,
     /** Money already applied to this order (ARGUS #226). */
     paidTotal,
     hasPayments: paidTotal > 0,
+    /** Paid/outstanding/Paid-Partially paid-Unpaid state (ARGUS #228). */
+    outstanding: paymentSummary.outstanding,
+    paymentState: paymentSummary.state,
     /**
      * What the order owes right now: the received value once goods arrive,
      * otherwise the expected total (ARGUS #225). The payment API and UI use
@@ -283,6 +289,7 @@ export async function getPOs(tenantId: string, options: GetPOsOptions) {
             actualCostPrice: true,
           },
         },
+        payments: { select: { amount: true } },
       },
       orderBy: { createdAt: 'desc' },
       skip,
@@ -292,12 +299,22 @@ export async function getPOs(tenantId: string, options: GetPOsOptions) {
   ]);
 
   return {
-    purchaseOrders: purchaseOrders.map((po) => {
+    purchaseOrders: purchaseOrders.map(({ payments, ...po }) => {
       const costing = computePurchaseOrderPayable(po.lines, po.discountAmount, po.totalAmount);
+      const paidTotal = payments
+        .reduce((sum, payment) => sum.plus(payment.amount), new Decimal(0))
+        .toDecimalPlaces(2)
+        .toNumber();
+      const paymentSummary = computePurchaseOrderPaymentState(costing.payable, paidTotal);
+
       return {
         ...po,
         payableAmount: costing.payable,
         receivedValue: costing.receivedSubtotal,
+        /** Money applied across instalments (ARGUS #228). */
+        paidTotal: paymentSummary.paidTotal,
+        outstanding: paymentSummary.outstanding,
+        paymentState: paymentSummary.state,
       };
     }),
     total,

@@ -291,10 +291,20 @@ export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }
                     <POStatusBadge status={po.status} />
                   </TableCell>
                   <TableCell>
-                    {po.paidAt ? (
+                    {po.paymentState === 'PAID' ? (
                       <Badge className="bg-green-50 text-green-700" variant="secondary">
                         Paid
                       </Badge>
+                    ) : po.paymentState === 'PARTIALLY_PAID' ? (
+                      <div>
+                        <Badge className="bg-amber-50 text-amber-700" variant="secondary">
+                          Partially paid
+                        </Badge>
+                        <span className="mt-1 block text-[10px] text-mist-ink">
+                          {formatRupee(po.paidTotal ?? 0)} paid,{' '}
+                          {formatRupee(po.outstanding ?? 0)} due
+                        </span>
+                      </div>
                     ) : (
                       <span className="text-xs text-mist-ink">Unpaid</span>
                     )}
