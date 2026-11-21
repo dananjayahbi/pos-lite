@@ -5,6 +5,7 @@ import type { Brand } from '@/hooks/useBrands';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Pencil, Package, CalendarClock, Hash, Tag } from 'lucide-react';
+import { brandDeleteBlockedReason } from '@/lib/brands/brandDelete.core';
 
 interface BrandDetailPanelProps {
   brand: Brand;
@@ -42,6 +43,10 @@ export function BrandDetailPanel({
   });
 
   const detail = data?.data ?? null;
+  // The list row already blocks in-use brands; the detail uses the same shared
+  // rule so it never offers a Delete that can only fail at the API (ARGUS #176).
+  const productCount = getProductCount(detail ?? brand);
+  const deleteBlockedReason = brandDeleteBlockedReason(productCount);
 
   const formatDate = (iso: string) => {
     try {
@@ -79,7 +84,7 @@ export function BrandDetailPanel({
                 {brand.name}
               </h2>
               <Badge variant="secondary" className="bg-sand text-espresso text-xs">
-                {getProductCount(detail ?? brand)} product{getProductCount(detail ?? brand) === 1 ? '' : 's'}
+                {productCount} product{productCount === 1 ? '' : 's'}
               </Badge>
             </div>
           </div>
@@ -96,15 +101,33 @@ export function BrandDetailPanel({
               Edit
             </Button>
           )}
-          {canDelete && brand._count.products === 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onDelete}
-              className="h-8 border-sand text-red-700 hover:bg-red-50"
-            >
-              Delete
-            </Button>
+          {canDelete && (
+            <div className="flex flex-col items-end gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onDelete}
+                disabled={Boolean(deleteBlockedReason)}
+                title={
+                  deleteBlockedReason
+                    ? `Cannot delete ${brand.name}: ${deleteBlockedReason}`
+                    : undefined
+                }
+                aria-label={
+                  deleteBlockedReason
+                    ? `Cannot delete ${brand.name}: ${deleteBlockedReason}`
+                    : `Delete ${brand.name}`
+                }
+                className="h-8 border-sand text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Delete
+              </Button>
+              {deleteBlockedReason ? (
+                <span className="max-w-[180px] text-right text-[10px] leading-tight text-warning">
+                  {deleteBlockedReason}
+                </span>
+              ) : null}
+            </div>
           )}
         </div>
       </div>

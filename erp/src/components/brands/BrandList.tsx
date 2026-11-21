@@ -3,7 +3,8 @@
 import type { Brand } from '@/hooks/useBrands';
 import { Badge } from '@/components/ui/badge';
 import { Pencil } from 'lucide-react';
-import { ResourceDeleteButton, productsAssignedReason } from '@/components/shared/ResourceDeleteButton';
+import { ResourceDeleteButton } from '@/components/shared/ResourceDeleteButton';
+import { brandDeleteBlockedReason } from '@/lib/brands/brandDelete.core';
 
 interface BrandListProps {
   brands: Brand[];
@@ -97,11 +98,7 @@ export function BrandList({
                   canDelete
                   label={brand.name}
                   onDelete={() => onDelete?.(brand)}
-                  blockedReason={
-                    brand._count.products > 0
-                      ? productsAssignedReason(brand._count.products)
-                      : undefined
-                  }
+                  blockedReason={brandDeleteBlockedReason(brand._count.products)}
                 />
               )}
             </div>
