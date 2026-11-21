@@ -16,6 +16,6 @@ export default async function StockTakesPage() {
     : [];
 
   return (
-    <StockTakeList permissions={userPermissions} />
+    <StockTakeList permissions={userPermissions} userId={session.user.id} />
   );
 }

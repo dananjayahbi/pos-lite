@@ -45,10 +45,12 @@ import {
 import { useStockTakeSessions } from '@/hooks/useStockTakeSessions';
 import { useCategories } from '@/hooks/useCategories';
 import { stockTakeAction } from '@/components/stock-control/stockTakeLinks';
+import { canCancelStockTake } from '@/lib/services/stockTakePolicy.core';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
 interface StockTakeListProps {
   permissions: string[];
+  userId: string;
 }
 
 // ── Cancel modal session type ────────────────────────────────────────────────
@@ -100,7 +102,7 @@ function formatDateTime(dateStr: string): string {
   );
 }
 
-export function StockTakeList({ permissions }: StockTakeListProps) {
+export function StockTakeList({ permissions, userId }: StockTakeListProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: sessionsRes, isLoading } = useStockTakeSessions();
@@ -111,13 +113,13 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
   const [creating, setCreating] = useState(false);
 
   const canManage = permissions.includes('stock:take');
+  const canApprove = permissions.includes('stock:take:approve');
   const sessions = sessionsRes?.data ?? [];
   const categories = categoriesRes?.data ?? [];
   const hasInProgress = sessions.some((s) => s.status === 'IN_PROGRESS');
 
   // ── Cancel modal state ───────────────────────────────────────────────────
   const [cancelTarget, setCancelTarget] = useState<CancelTarget | null>(null);
-  const [cancelAction, setCancelAction] = useState<'discard' | 'apply'>('discard');
   const [cancelling, setCancelling] = useState(false);
 
   const handleOpenCancel = useCallback(
@@ -137,19 +139,20 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
           (i) => i.discrepancy !== null && i.discrepancy !== 0,
         ).length;
         setCancelTarget({ id: sessionId, countedItemCount: counted, discrepancyCount: discrepancies });
-        setCancelAction('discard');
       } catch {
         toast.error('Failed to load session details');
       }
     },
-    [],
+    [setCancelTarget],
   );
 
   const handleConfirmCancel = useCallback(async () => {
     if (!cancelTarget) return;
     setCancelling(true);
     try {
-      const action = cancelTarget.countedItemCount === 0 ? 'none' : cancelAction;
+      // ARGUS #206 — cancel is discard-only; applying counts goes through the
+      // approval flow, never this endpoint.
+      const action = cancelTarget.countedItemCount === 0 ? 'none' : 'discard';
       const res = await fetch(
         `/api/store/stock-control/stock-takes/${cancelTarget.id}/cancel`,
         {
@@ -171,7 +174,7 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
     } finally {
       setCancelling(false);
     }
-  }, [cancelTarget, cancelAction, queryClient]);
+  }, [cancelTarget, queryClient, setCancelTarget]);
 
   const handleCreateSession = useCallback(async () => {
     setCreating(true);
@@ -440,17 +443,24 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
                         >
                           {action.label}
                         </Link>
-                        {s.status === 'IN_PROGRESS' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
-                            onClick={() => handleOpenCancel(s.id)}
-                          >
-                            <XCircle className="mr-1 h-3.5 w-3.5" />
-                            Cancel
-                          </Button>
-                        )}
+                        {s.status === 'IN_PROGRESS' &&
+                          canCancelStockTake({
+                            status: s.status,
+                            userId,
+                            initiatedById: s.initiatedById,
+                            canConduct: canManage,
+                            canApprove,
+                          }) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                              onClick={() => handleOpenCancel(s.id)}
+                            >
+                              <XCircle className="mr-1 h-3.5 w-3.5" />
+                              Cancel
+                            </Button>
+                          )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -472,61 +482,23 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
             <DialogDescription className="font-body text-mist-ink">
               {cancelTarget?.countedItemCount === 0
                 ? 'This session has no counted items. It will be cancelled immediately with no changes to stock.'
-                : `This session has ${cancelTarget?.countedItemCount} counted item${cancelTarget?.countedItemCount === 1 ? '' : 's'}${cancelTarget?.discrepancyCount ? ` with ${cancelTarget.discrepancyCount} discrepanc${cancelTarget.discrepancyCount === 1 ? 'y' : 'ies'}` : ''}. Choose how to handle the counted data before cancelling.`}
+                : `This session has ${cancelTarget?.countedItemCount} counted item${cancelTarget?.countedItemCount === 1 ? '' : 's'}${cancelTarget?.discrepancyCount ? ` with ${cancelTarget.discrepancyCount} discrepanc${cancelTarget.discrepancyCount === 1 ? 'y' : 'ies'}` : ''}. Cancelling discards them without changing stock.`}
             </DialogDescription>
           </DialogHeader>
 
           {cancelTarget && cancelTarget.countedItemCount > 0 && (
             <div className="space-y-3 py-2">
-              <p className="text-sm font-medium text-espresso">What should happen to the counted data?</p>
-
-              <label
-                className={`flex cursor-pointer items-start gap-3 rounded-lg border-2 p-4 transition-colors ${
-                  cancelAction === 'discard'
-                    ? 'border-espresso bg-pearl'
-                    : 'border-sand/40 hover:border-sand'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="cancelAction"
-                  value="discard"
-                  checked={cancelAction === 'discard'}
-                  onChange={() => setCancelAction('discard')}
-                  className="mt-0.5 accent-espresso"
-                />
-                <div>
-                  <p className="font-body text-sm font-semibold text-espresso">Discard all progress</p>
-                  <p className="mt-0.5 font-body text-xs text-mist-ink">
-                    All counted quantities are ignored. Stock levels remain unchanged.
-                  </p>
-                </div>
-              </label>
-
-              <label
-                className={`flex cursor-pointer items-start gap-3 rounded-lg border-2 p-4 transition-colors ${
-                  cancelAction === 'apply'
-                    ? 'border-espresso bg-pearl'
-                    : 'border-sand/40 hover:border-sand'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="cancelAction"
-                  value="apply"
-                  checked={cancelAction === 'apply'}
-                  onChange={() => setCancelAction('apply')}
-                  className="mt-0.5 accent-espresso"
-                />
-                <div>
-                  <p className="font-body text-sm font-semibold text-espresso">Apply current changes</p>
-                  <p className="mt-0.5 font-body text-xs text-mist-ink">
-                    {cancelTarget.discrepancyCount > 0
-                      ? `${cancelTarget.discrepancyCount} stock adjustment${cancelTarget.discrepancyCount === 1 ? '' : 's'} will be applied before cancelling.`
-                      : 'All counted items match system quantities - no adjustments needed.'}
-                  </p>
-                </div>
-              </label>
+              <div className="rounded-lg border border-sand/40 bg-pearl p-4">
+                <p className="font-body text-sm font-semibold text-espresso">
+                  Counted data will be discarded
+                </p>
+                <p className="mt-0.5 font-body text-xs text-mist-ink">
+                  All counted quantities are ignored and stock levels remain
+                  unchanged. To apply these counts, submit the session for
+                  approval instead; a manager must review and approve the
+                  corrections.
+                </p>
+              </div>
 
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <p className="font-body text-xs text-amber-700">
@@ -554,9 +526,7 @@ export function StockTakeList({ permissions }: StockTakeListProps) {
               {cancelling && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {cancelTarget?.countedItemCount === 0
                 ? 'Cancel Session'
-                : cancelAction === 'apply'
-                  ? 'Apply & Cancel'
-                  : 'Discard & Cancel'}
+                : 'Discard & Cancel'}
             </Button>
           </DialogFooter>
         </DialogContent>
