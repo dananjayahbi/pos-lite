@@ -5,7 +5,11 @@ import Decimal from 'decimal.js';
 import { Prisma } from '@/generated/prisma/client';
 import type { StockMovementReason } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
-import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import {
+  createAuditLog,
+  writeAuditLog,
+  AUDIT_ACTIONS,
+} from '@/lib/services/audit.service';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import type { TxClient } from '@/lib/services/inventory.service';
 import { calculateShippingFee } from '@/lib/services/rate-engine.service';
@@ -507,7 +511,9 @@ export async function dispatchDelivery(
   });
   if (!upload.ok) throw new Error(`COURIER_UPLOAD_FAILED:${upload.error.message}`);
 
-  const { dispatched, deductions } = await prisma.$transaction(async (tx: TxClient) => {
+  const { dispatched, deductions } = await (async () => {
+    try {
+      return await prisma.$transaction(async (tx: TxClient) => {
     const updated = await tx.delivery.update({
       where: { id },
       data: {
@@ -561,8 +567,33 @@ export async function dispatchDelivery(
       allowShortfall: input.allowPackagingShortfall === true,
     });
 
-    return { dispatched: updated, deductions };
-  });
+      return { dispatched: updated, deductions };
+      });
+    } catch (error) {
+      // The courier already issued a waybill; the local transaction rolled
+      // back. Make the orphan explicit instead of losing it (dispatch/courier
+      // atomicity proposal). There is no cancel API to call here.
+      const reason = error instanceof Error ? error.message : String(error);
+      try {
+        await writeAuditLog({
+          tenantId,
+          actorId: userId,
+          actorRole: 'UNKNOWN',
+          entityType: 'Delivery',
+          entityId: id,
+          action: AUDIT_ACTIONS.DELIVERY_DISPATCH_ORPHANED,
+          after: {
+            waybillId: upload.data.waybillId,
+            courierOrderId: upload.data.courierOrderId ?? null,
+            reason,
+          },
+        });
+      } catch (auditError) {
+        console.error('Orphaned dispatch audit failed:', auditError);
+      }
+      throw new Error(`DISPATCH_ROLLED_BACK_WITH_WAYBILL:${upload.data.waybillId}`);
+    }
+  })();
 
   // Non-blocking low-stock notification for anything that fell short.
   if (deductions.length > 0) {
