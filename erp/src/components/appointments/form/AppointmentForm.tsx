@@ -195,7 +195,7 @@ export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting,
           </div>
         </div>
         <div className="space-y-1.5">
-          <Label className="text-sm font-medium">Deposit Amount</Label>
+          <Label className="text-sm font-medium">Deposit Amount (LKR)</Label>
           <div className="relative">
             <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-mist-ink">
               Rs.
