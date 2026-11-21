@@ -46,10 +46,28 @@ instead of a dark banner, matching the invoice redesign.
   restock status, item/line counts, return reason.
 - Line table: product, variant, qty, unit price, line refund and per-line restock
   pill. The table header repeats on page breaks and rows avoid splitting.
-- Totals: refund-method explanation, tax refunded and original sale total
-  (when recorded), plus **Total Refund**.
+- Totals: refund-method explanation, **Goods refunded**, **Tax refunded**
+  (including a genuine 0.00 when the return recorded zero tax), **Original sale
+  total**, **Not refunded (original − refund)** when the refund is smaller (for
+  example a partial return or the non-refundable delivery charge), and **Total
+  Refund**.
 - Signatures: customer and authorizing manager.
 - Footer: store receipt footer, powered-by line and print timestamp.
+
+### Refund-method copy (ARGUS #101)
+
+- `CASH` — “Cash was handed back to the customer at the counter.”
+- `CARD_REVERSAL` — names the tender actually collected from the sale's payment
+  legs: “original card payment channel”, “original LankaQR payment channel” or
+  “original card/LankaQR payment channel”. It never claims a card when the sale
+  was QR-only (`returnTender.core` enforces the same rule server-side).
+- `STORE_CREDIT` — “The refund has been added to the customer's store-credit
+  balance and can be used on a future purchase.” There is no separate credit
+  note or expiry in the system, so the receipt does not promise one.
+- `EXCHANGE` — “The returned items were exchanged for other items in store.”
+
+The receipt route adds the original sale's payment legs to the return payload
+(tenant-scoped through the sale relation) solely to resolve that tender label.
 
 All tenant and return text is HTML-escaped; the only script is the auto-print
 call. The print buttons open the receipt URL in a new tab (the return-detail modal
