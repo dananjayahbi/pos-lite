@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { auditDetailMode } from '@/lib/audit/auditDetail.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,8 +68,7 @@ function getAllKeys(before: Record<string, unknown> | null, after: Record<string
 export default function AuditLogDetailModal({ entry, open, onOpenChange }: AuditLogDetailModalProps) {
   if (!entry) return null;
 
-  const hasBefore = entry.before !== null && Object.keys(entry.before).length > 0;
-  const hasAfter = entry.after !== null && Object.keys(entry.after).length > 0;
+  const mode = auditDetailMode(entry.before, entry.after);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -111,7 +111,7 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
 
         {/* Diff / Detail */}
         <div className="mt-4">
-          {hasBefore && hasAfter ? (
+          {mode === 'diff' ? (
             /* Before / After diff */
             <div className="rounded-lg border border-mist overflow-hidden">
               <table className="w-full text-sm">
@@ -144,7 +144,7 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
                 </tbody>
               </table>
             </div>
-          ) : hasAfter ? (
+          ) : mode === 'created' ? (
             /* Created With display */
             <div className="rounded-lg border border-mist overflow-hidden">
               <div className="bg-linen/40 px-3 py-2 text-sm font-medium text-espresso">
@@ -153,6 +153,23 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
               <table className="w-full text-sm">
                 <tbody>
                   {Object.entries(entry.after!).map(([key, val]) => (
+                    <tr key={key} className="border-t border-mist/50">
+                      <td className="px-3 py-1.5 font-mono text-xs text-espresso">{key}</td>
+                      <td className="px-3 py-1.5 text-xs text-espresso">{displayValue(val)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : mode === 'deleted' ? (
+            /* Deleted values */
+            <div className="rounded-lg border border-mist overflow-hidden">
+              <div className="bg-terracotta/10 px-3 py-2 text-sm font-medium text-terracotta">
+                Deleted values
+              </div>
+              <table className="w-full text-sm">
+                <tbody>
+                  {Object.entries(entry.before!).map(([key, val]) => (
                     <tr key={key} className="border-t border-mist/50">
                       <td className="px-3 py-1.5 font-mono text-xs text-espresso">{key}</td>
                       <td className="px-3 py-1.5 text-xs text-espresso">{displayValue(val)}</td>
