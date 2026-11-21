@@ -62,3 +62,31 @@ export function reportMonthLabel(ym: string): string {
   if (!monthName) return ym;
   return `${monthName} ${String(year).slice(-2)}`;
 }
+
+/** `PAYMENT_GATEWAY` → `Payment gateway` (cash-flow account type column). */
+export function accountTypeLabel(accountType: string | null | undefined): string {
+  return expenseCategoryLabel(accountType?.replace(/_/g, ' ') ?? '');
+}
+
+/** `ACTIVE` / `CLOSED` badge text; other values stay readable. */
+export function accountStatusLabel(status: string | null | undefined): string {
+  if (!status) return '-';
+  const upper = status.toUpperCase();
+  if (upper === 'ACTIVE') return 'Active';
+  if (upper === 'CLOSED') return 'Closed';
+  return expenseCategoryLabel(status);
+}
+
+/**
+ * Share of a total as a percentage (ARGUS #423). Bars scale to the total, so a
+ * category at 68.3% of expenses fills 68.3% rather than 100% of the largest bar.
+ */
+export function shareOfTotalPercent(
+  value: number | string,
+  total: number | string,
+): number {
+  const amount = typeof value === 'number' ? value : Number.parseFloat(value);
+  const whole = typeof total === 'number' ? total : Number.parseFloat(total);
+  if (!Number.isFinite(amount) || !Number.isFinite(whole) || whole <= 0) return 0;
+  return (amount / whole) * 100;
+}
