@@ -13,6 +13,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Table,
   TableBody,
   TableCell,
@@ -79,6 +94,20 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
       const res = await fetch('/api/store/payroll/runs?limit=12');
       const json = (await res.json()) as { success: boolean; data?: PayrollRunSummary[] };
       return json.data ?? [];
+    },
+  });
+
+  const [payRun, setPayRun] = useState<PayrollRunSummary | null>(null);
+  const [payAccountId, setPayAccountId] = useState('');
+
+  const accountsQuery = useQuery<{ id: string; name: string }[]>({
+    queryKey: ['payroll-payment-accounts'],
+    enabled: canRun,
+    queryFn: async () => {
+      const res = await fetch('/api/store/payment-accounts?status=ACTIVE');
+      if (!res.ok) return [];
+      const json = (await res.json()) as { data?: { id: string; name: string }[] };
+      return (json.data ?? []).filter((account) => !('pettyCashFund' in account));
     },
   });
 
@@ -164,11 +193,11 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
 
   // ARGUS #372: settle the run only when salary is actually paid.
   const markPaidMutation = useMutation({
-    mutationFn: async (runId: string) => {
-      const res = await fetch(`/api/store/payroll/runs/${runId}/pay`, {
+    mutationFn: async (input: { runId: string; paymentAccountId: string }) => {
+      const res = await fetch(`/api/store/payroll/runs/${input.runId}/pay`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ paymentAccountId: input.paymentAccountId }),
       });
       const json = (await res.json()) as { success: boolean; error?: { message: string } };
       if (!res.ok || !json.success) {
@@ -177,9 +206,13 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
       return json;
     },
     onSuccess: () => {
-      toast.success('Payroll marked paid; commission settled');
+      toast.success('Payroll marked paid; salary and commission posted');
+      setPayRun(null);
+      setPayAccountId('');
       void queryClient.invalidateQueries({ queryKey: ['payroll-runs'] });
       void queryClient.invalidateQueries({ queryKey: ['payroll-preview'] });
+      void queryClient.invalidateQueries({ queryKey: ['payment-accounts'] });
+      void queryClient.invalidateQueries({ queryKey: ['expenses'] });
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to mark payroll paid');
@@ -489,10 +522,13 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => markPaidMutation.mutate(run.id)}
+                              onClick={() => {
+                                setPayRun(run);
+                                setPayAccountId('');
+                              }}
                               disabled={markPaidMutation.isPending}
                             >
-                              {markPaidMutation.isPending ? 'Marking…' : 'Mark paid'}
+                              Mark paid
                             </Button>
                           )}
                           <Link
@@ -511,6 +547,59 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={payRun !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPayRun(null);
+            setPayAccountId('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-espresso">Mark payroll paid</DialogTitle>
+            <DialogDescription className="font-body text-sand-ink">
+              Paying {payRun?.periodMonth ?? ''} posts salary, employer EPF/ETF and the
+              reserved commission to expenses and the selected account, then settles the
+              commission records. This cannot be undone here.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="payroll-payment-account" className="text-espresso text-xs font-semibold">
+              Payment account
+            </Label>
+            <Select value={payAccountId} onValueChange={setPayAccountId}>
+              <SelectTrigger id="payroll-payment-account">
+                <SelectValue placeholder="Select the paying account" />
+              </SelectTrigger>
+              <SelectContent>
+                {(accountsQuery.data ?? []).map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayRun(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-espresso text-pearl hover:bg-espresso/90"
+              disabled={!payAccountId || markPaidMutation.isPending || !payRun}
+              onClick={() => {
+                if (!payRun || !payAccountId) return;
+                markPaidMutation.mutate({ runId: payRun.id, paymentAccountId: payAccountId });
+              }}
+            >
+              {markPaidMutation.isPending ? 'Posting…' : 'Mark paid & post'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageContainer>
   );
 }

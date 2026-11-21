@@ -12,6 +12,9 @@ import {
   payrollPendingMarker,
   planPayrollCommission,
 } from '@/lib/services/payrollCommission.core';
+import { buildPayrollPostingPlan } from '@/lib/services/payrollPosting.core';
+import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/paymentAccount.service';
+import { PaymentEntrySource } from '@/generated/prisma/client';
 import {
   PAYROLL_STATUTORY_RATES,
   calculatePayroll,
@@ -422,52 +425,111 @@ export async function markPayrollRunPaid(input: MarkPayrollPaidInput) {
   if (run.status === 'PAID') throw ApiError.conflict('Payroll run is already paid');
   if (run.status !== 'GENERATED') throw ApiError.conflict('Payroll run cannot be paid in its current state');
 
-  let accountName: string | null = null;
-  if (input.paymentAccountId) {
-    const account = await prisma.paymentAccount.findFirst({
-      where: { id: input.paymentAccountId, tenantId: input.tenantId },
-      select: { id: true, name: true, status: true },
-    });
-    if (!account) throw ApiError.notFound('Payment account not found');
-    if (account.status !== 'ACTIVE') throw ApiError.conflict(`Account "${account.name}" is closed`);
-    accountName = account.name;
+  if (!input.paymentAccountId) {
+    throw new ApiError(422, 'VALIDATION_ERROR', 'Select a payment account to pay payroll');
+  }
+  const paymentAccountId = input.paymentAccountId;
+
+  const account = await prisma.paymentAccount.findFirst({
+    where: { id: paymentAccountId, tenantId: input.tenantId },
+    select: { id: true, name: true, status: true, pettyCashFund: { select: { id: true } } },
+  });
+  if (!account) throw ApiError.notFound('Payment account not found');
+  if (account.status !== 'ACTIVE') throw ApiError.conflict(`Account "${account.name}" is closed`);
+  if (account.pettyCashFund) {
+    throw ApiError.conflict('Payroll must be paid from a bank/cash account, not a petty-cash fund');
   }
 
   const paidAt = input.paidDate ?? new Date();
   const marker = payrollPendingMarker(run.id);
 
-  await prisma.$transaction(async (tx) => {
+  const expenseIds = await prisma.$transaction(async (tx) => {
     const payouts = await tx.commissionPayout.findMany({
       where: { tenantId: input.tenantId, paymentAccountName: marker },
-      select: { id: true },
+      select: { id: true, userId: true, totalEarned: true },
     });
 
-    for (const payout of payouts) {
-      const records = await tx.commissionRecord.findMany({
-        where: { tenantId: input.tenantId, payoutId: payout.id },
-        select: { id: true, earnedAmount: true },
-      });
-      for (const record of records) {
-        await tx.commissionRecord.update({
-          where: { id: record.id },
-          data: { paidAmount: record.earnedAmount, isPaid: true },
-        });
-      }
-      await tx.commissionPayout.update({
-        where: { id: payout.id },
+    const plan = buildPayrollPostingPlan({
+      periodMonth: run.periodMonth,
+      runId: run.id,
+      totalCompanyCost: run.totalCompanyCost.toString(),
+      commissionPayouts: payouts.map((payout) => ({
+        id: payout.id,
+        userId: payout.userId,
+        amount: payout.totalEarned.toString(),
+      })),
+    });
+
+    if (plan.legs.length > 0) {
+      await assertSufficientFunds(
+        tx,
+        input.tenantId,
+        paymentAccountId,
+        plan.total,
+      );
+    }
+
+    const createdExpenseIds: string[] = [];
+    for (const leg of plan.legs) {
+      const expense = await tx.expense.create({
         data: {
-          paidAt,
-          ...(input.paymentAccountId
-            ? { paymentAccountId: input.paymentAccountId, paymentAccountName: accountName }
-            : { paymentAccountName: null }),
+          tenantId: input.tenantId,
+          category: leg.category,
+          amount: new Decimal(leg.amount),
+          description: leg.description,
+          paymentAccountId,
+          recordedById: input.actorId,
+          expenseDate: paidAt,
         },
       });
+      createdExpenseIds.push(expense.id);
+
+      await postLedgerEntries(
+        tx,
+        input.tenantId,
+        input.actorId,
+        [
+          {
+            accountId: paymentAccountId,
+            source: PaymentEntrySource.EXPENSE,
+            sourceId: expense.id,
+            description: leg.description.slice(0, 200),
+            credit: leg.amount,
+            entryDate: paidAt,
+          },
+        ],
+        { allowPettyCashAccount: true },
+      );
+
+      if (leg.payoutId) {
+        const records = await tx.commissionRecord.findMany({
+          where: { tenantId: input.tenantId, payoutId: leg.payoutId },
+          select: { id: true, earnedAmount: true },
+        });
+        for (const record of records) {
+          await tx.commissionRecord.update({
+            where: { id: record.id },
+            data: { paidAmount: record.earnedAmount, isPaid: true },
+          });
+        }
+        await tx.commissionPayout.update({
+          where: { id: leg.payoutId },
+          data: {
+            paidAt,
+            paymentAccountId: account.id,
+            paymentAccountName: account.name,
+            expenseId: expense.id,
+          },
+        });
+      }
     }
 
     await tx.payrollRun.update({
       where: { id: run.id },
       data: { status: 'PAID' },
     });
+
+    return createdExpenseIds;
   });
 
   await createAuditLog({
@@ -480,12 +542,11 @@ export async function markPayrollRunPaid(input: MarkPayrollPaidInput) {
     after: {
       status: 'PAID',
       paidAt: paidAt.toISOString(),
-      paymentAccountId: input.paymentAccountId ?? null,
-      paymentAccountName: accountName,
-      commissionPayouts: run.items.reduce(
-        (count, item) => count + (item.commissionAmount.gt(0) ? 1 : 0),
-        0,
-      ),
+      paymentAccountId: account.id,
+      paymentAccountName: account.name,
+      expenseIds,
+      totalCompanyCost: run.totalCompanyCost.toString(),
+      totalCommission: run.totalCommission.toString(),
     },
   });
 
