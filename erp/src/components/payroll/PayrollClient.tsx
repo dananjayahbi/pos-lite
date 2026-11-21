@@ -43,6 +43,8 @@ import { calculatePayroll } from '@/lib/payroll/calculations';
 import { validatePayrollAdvance } from '@/lib/payroll/advance-validation.core';
 import { fetchPayrollEnvelope, resolvePayrollLoadState } from '@/lib/payroll/api-load-state';
 import { assessPayrollRunReadiness, listStaffNames } from '@/lib/payroll/run-readiness';
+import { describePayrollRunStatus } from '@/lib/payroll/payroll-run-status';
+import { currentPayrollMonth } from '@/lib/payroll/payroll-month.core';
 import type { PayrollPreview, PayrollPreviewRow } from '@/lib/payroll/types';
 
 interface PayrollRunSummary {
@@ -56,10 +58,8 @@ interface PayrollRunSummary {
   _count: { items: number };
 }
 
-function currentMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-}
+const RUN_PAGE_SIZE = 12;
+const RUN_PAGE_MAX = 60;
 
 const RATE_HELP = 'Employee EPF 8% · Employer EPF 12% · Employer ETF 3% (Sri Lankan law)';
 
@@ -68,8 +68,9 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
   const { hasPermission } = usePermissions();
   const canRun = hasPermission(PERMISSIONS.PAYROLL.runPayroll);
   const [month, setMonth] = useState(() =>
-    initialMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(initialMonth) ? initialMonth : currentMonth(),
+    initialMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(initialMonth) ? initialMonth : currentPayrollMonth(),
   );
+  const [runsLimit, setRunsLimit] = useState(RUN_PAGE_SIZE);
   const [notes, setNotes] = useState('');
   const [overrides, setOverrides] = useState<
     Record<string, { noPayDays?: number; advanceDeduction?: number }>
@@ -86,9 +87,9 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
   });
 
   const runsQuery = useQuery<PayrollRunSummary[]>({
-    queryKey: ['payroll-runs'],
+    queryKey: ['payroll-runs', runsLimit],
     queryFn: () =>
-      fetchPayrollEnvelope<PayrollRunSummary[]>('/api/store/payroll/runs?limit=12'),
+      fetchPayrollEnvelope<PayrollRunSummary[]>(`/api/store/payroll/runs?limit=${runsLimit}`),
   });
 
   const [payRun, setPayRun] = useState<PayrollRunSummary | null>(null);
@@ -316,7 +317,7 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
               id="payroll-month"
               type="month"
               value={month}
-              max={currentMonth()}
+              max={currentPayrollMonth()}
               onChange={(event) => {
                 if (event.target.value) {
                   setMonth(event.target.value);
@@ -650,7 +651,9 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                   {(runsQuery.data ?? []).map((run) => (
                     <TableRow key={run.id}>
                       <TableCell className="font-mono text-xs">{run.periodMonth}</TableCell>
-                      <TableCell className="text-xs">{run.status}</TableCell>
+                      <TableCell className="text-xs">
+                        {describePayrollRunStatus({ status: run.status }).statusLabel}
+                      </TableCell>
                       <TableCell className="text-right text-xs">{run._count.items}</TableCell>
                       <TableCell className="text-right font-mono text-xs">
                         {formatRupee(run.totalGross)}
@@ -698,6 +701,23 @@ export default function PayrollClient({ initialMonth }: { initialMonth?: string 
                   ))}
                 </TableBody>
               </Table>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-mist-ink text-xs">
+                  Showing the latest {Math.min((runsQuery.data ?? []).length, runsLimit)} payroll
+                  run{(runsQuery.data ?? []).length === 1 ? '' : 's'}.
+                </p>
+                {(runsQuery.data ?? []).length >= runsLimit && runsLimit < RUN_PAGE_MAX && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setRunsLimit((current) => Math.min(current + RUN_PAGE_SIZE, RUN_PAGE_MAX))
+                    }
+                  >
+                    Show more months
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </CardContent>

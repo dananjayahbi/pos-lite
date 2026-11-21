@@ -45,6 +45,7 @@ import { payslipUrl } from '@/lib/payroll/payslip-links.core';
 import { summarizePayrollHeadcount } from '@/lib/payroll/export-eligibility.core';
 import { PAYROLL_TAX_NOT_CONFIGURED_MESSAGE } from '@/lib/payroll/tax-disclosure.core';
 import { formatRupee } from '@/lib/format';
+import { currentPayrollMonth } from '@/lib/payroll/payroll-month.core';
 
 interface PayrollRunSummary {
   id: string;
@@ -99,14 +100,15 @@ interface PayrollRunDetail extends PayrollRunSummary {
   totalEmployeeEpf: string;
   totalEmployerEpf: string;
   totalEmployerEtf: string;
+  /** Notes entered when the run was generated (ARGUS #382). */
+  notes: string | null;
   items: PayrollRunItem[];
   /** ARGUS #385: derived from the PAYROLL_RUN_PAID audit entry. */
   payment?: PayrollRunPaymentInfo | null;
 }
 
 function currentMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  return currentPayrollMonth();
 }
 
 function downloadUrl(
@@ -231,6 +233,7 @@ function PayrollReportsContent() {
               id="report-month"
               type="month"
               value={month}
+              max={currentMonth()}
               onChange={(event) => {
                 if (event.target.value) setMonth(event.target.value);
               }}
@@ -307,6 +310,13 @@ function PayrollReportsContent() {
                 {runStatus.statusLabel} - {run.periodMonth}
               </p>
               <p className="text-sand-ink mt-1 text-xs">{runStatus.statusDetail}</p>
+            </div>
+          )}
+
+          {run.notes && (
+            <div className="border-mist rounded-lg border p-4">
+              <p className="text-espresso text-sm font-semibold">Run notes</p>
+              <p className="text-sand-ink mt-1 whitespace-pre-wrap text-xs">{run.notes}</p>
             </div>
           )}
 

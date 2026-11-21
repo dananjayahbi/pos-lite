@@ -36,6 +36,7 @@ import {
   summarizeAttendanceCompleteness,
 } from '@/lib/payroll/attendance-completeness.core';
 import type { PayrollRunPaymentInfo } from '@/lib/payroll/payroll-run-status';
+import { validatePayrollMonth } from '@/lib/payroll/payroll-month.core';
 import type {
   PayrollPreview,
   PayrollPreviewRow,
@@ -62,7 +63,13 @@ export async function buildPayrollPreview(
   month: string | null | undefined,
   overrides: PayrollRowOverride[] = [],
 ): Promise<PayrollPreview> {
-  const range = resolveAttendanceMonth(month);
+  // ARGUS #382: a payroll month is never in the future, whichever entry point
+  // (preview, generate, service test) reached this function.
+  const requestedMonth = validatePayrollMonth(month);
+  if (!requestedMonth.ok) {
+    throw new ApiError(400, 'VALIDATION_ERROR', requestedMonth.message);
+  }
+  const range = resolveAttendanceMonth(requestedMonth.month);
 
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: tenantId },
