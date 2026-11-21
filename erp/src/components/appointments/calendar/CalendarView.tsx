@@ -10,9 +10,10 @@ import { MonthView } from './MonthView';
 interface CalendarViewProps {
   onAppointmentClick: (id: string) => void;
   onSlotClick: (date: Date, hour?: number) => void;
+  onNewClick: () => void;
 }
 
-export function CalendarView({ onAppointmentClick, onSlotClick }: CalendarViewProps) {
+export function CalendarView({ onAppointmentClick, onSlotClick, onNewClick }: CalendarViewProps) {
   const mounted = useMounted();
   const currentDate = useAppointmentStore((s) => s.currentDate);
   const calendarView = useAppointmentStore((s) => s.calendarView);
@@ -53,7 +54,10 @@ export function CalendarView({ onAppointmentClick, onSlotClick }: CalendarViewPr
             <div className="h-6 w-[200px] rounded bg-espresso/10 animate-pulse" />
             <div className="h-9 w-9 rounded-md border border-espresso/10" />
           </div>
-          <div className="h-8 w-48 rounded-lg border border-espresso/10" />
+          <div className="flex items-center gap-2">
+            <div className="h-9 w-36 rounded-md bg-espresso/10 animate-pulse" />
+            <div className="h-8 w-48 rounded-lg border border-espresso/10" />
+          </div>
         </div>
         <div className="h-[calc(100vh-280px)] rounded-lg bg-espresso/5 animate-pulse" />
       </div>
@@ -69,6 +73,7 @@ export function CalendarView({ onAppointmentClick, onSlotClick }: CalendarViewPr
         onNext={next}
         onToday={goToToday}
         onViewChange={handleViewChange}
+        onNewClick={onNewClick}
       />
       {calendarView === 'day' && (
         <DayView
