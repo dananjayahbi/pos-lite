@@ -120,7 +120,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export default function WebsiteSettingsForm() {
+export default function WebsiteSettingsForm({ tenantSlug = '' }: { tenantSlug?: string }) {
   const [config, setConfig] = useState<WebsiteConfigData>(DEFAULT_CONFIG);
   const [activeTab, setActiveTab] = useState<TabValue>('general');
   const [isSaving, setIsSaving] = useState(false);
@@ -400,7 +400,7 @@ export default function WebsiteSettingsForm() {
       case 'contact':
         return <ContactPageTab config={config} onChange={updateConfig} />;
       case 'appointments':
-        return <AppointmentsTab config={config} onChange={updateConfig} />;
+        return <AppointmentsTab config={config} onChange={updateConfig} tenantSlug={tenantSlug} />;
       default:
         return null;
     }
