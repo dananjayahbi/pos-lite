@@ -951,7 +951,12 @@ export function evaluateLowBalance(
   threshold: number | null | undefined,
   lowBalanceAlerted: boolean,
 ): LowBalanceAction {
-  if (threshold === null || threshold === undefined) return 'none';
+  // ARGUS #414: removing the threshold must also clear the latched flag.
+  // Otherwise re-adding a threshold while the fund is still low suppresses the
+  // next alert, because the fund still looks "already alerted".
+  if (threshold === null || threshold === undefined) {
+    return lowBalanceAlerted ? 'clear' : 'none';
+  }
   const below = currentBalance <= threshold;
   if (below && lowBalanceAlerted) return 'none'; // already alerted, suppress
   if (below) return 'fire';

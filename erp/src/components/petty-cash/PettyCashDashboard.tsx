@@ -35,6 +35,7 @@ import {
 } from '@/lib/petty-cash/ledger';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { PettyCashBalanceEquation } from '@/components/petty-cash/PettyCashBalanceEquation';
+import { resolveLowBalanceDisplay } from '@/lib/petty-cash/low-balance';
 import { PettyCashExportButton } from '@/components/petty-cash/PettyCashExportButton';
 import { PettyCashTopUpDialog } from '@/components/petty-cash/PettyCashTopUpDialog';
 import {
@@ -181,6 +182,10 @@ export default function PettyCashDashboard({
   });
 
   const fund = response?.fund ?? null;
+  // ARGUS #414: one display decision for the equation and the summary card.
+  const fundLowBalance = fund
+    ? resolveLowBalanceDisplay(fund.currentBalance, fund.lowBalanceThreshold)
+    : null;
   const toggleCategories = categoryEdits ?? fund?.activeCategories ?? [];
   // ARGUS #411: Save is disabled until a toggle actually changes the set.
   const categoriesDirty = isCategorySelectionDirty(
@@ -433,6 +438,7 @@ export default function PettyCashDashboard({
                 totalTopUps={response.balance.totalTopUps}
                 totalExpenses={response.balance.totalExpenses}
                 currentBalance={response.balance.currentBalance}
+                lowBalanceThreshold={fund.lowBalanceThreshold}
                 currency={fund.currency}
               />
             )}
@@ -455,9 +461,23 @@ export default function PettyCashDashboard({
                   <CardTitle className="text-sm font-normal text-sand-ink">Current Balance</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="font-display text-3xl font-bold text-terracotta">
-                    {formatRupee(fund.currentBalance)}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p
+                      className={`font-display text-3xl font-bold ${
+                        fundLowBalance?.isLow ? 'text-terracotta' : 'text-espresso'
+                      }`}
+                    >
+                      {formatRupee(fund.currentBalance)}
+                    </p>
+                    {fundLowBalance?.label && (
+                      <Badge
+                        className="bg-terracotta text-pearl"
+                        aria-label={fundLowBalance.label}
+                      >
+                        {fundLowBalance.label}
+                      </Badge>
+                    )}
+                  </div>
                   <p className="text-sm text-sand-ink">
                     {fund.lowBalanceThreshold
                       ? `Low-balance alert at ${formatRupee(fund.lowBalanceThreshold)}`

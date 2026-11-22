@@ -1,13 +1,17 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { formatRupee } from '@/lib/format';
+import { resolveLowBalanceDisplay } from '@/lib/petty-cash/low-balance';
 
 interface BalanceEquationProps {
   openingBalance: number;
   totalTopUps: number;
   totalExpenses: number;
   currentBalance: number;
+  /** Configured alert threshold; a positive balance at/below it is low. */
+  lowBalanceThreshold?: number | string | null;
   currency?: string;
 }
 
@@ -22,13 +26,23 @@ export function PettyCashBalanceEquation({
   totalTopUps,
   totalExpenses,
   currentBalance,
+  lowBalanceThreshold,
   currency,
 }: BalanceEquationProps) {
-  const isLow = currentBalance < 0;
+  // ARGUS #414: highlight a positive balance at/below the threshold, not only a
+  // negative one, and label the state explicitly.
+  const low = resolveLowBalanceDisplay(currentBalance, lowBalanceThreshold);
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-normal text-sand-ink">Balance Equation</CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-sm font-normal text-sand-ink">Balance Equation</CardTitle>
+          {low.label && (
+            <Badge className="bg-terracotta text-pearl" aria-label={low.label}>
+              {low.label}
+            </Badge>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -57,7 +71,7 @@ export function PettyCashBalanceEquation({
             <p className="text-xs text-sand-ink">Balance</p>
             <p
               className={`font-mono text-lg font-semibold ${
-                isLow ? 'text-terracotta' : 'text-espresso'
+                low.isLow ? 'text-terracotta' : 'text-espresso'
               }`}
             >
               {formatRupee(currentBalance)}

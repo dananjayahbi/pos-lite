@@ -6,9 +6,16 @@ import {
 } from '@/lib/services/petty-cash.service';
 
 describe('evaluateLowBalance (doc 40)', () => {
-  it('returns none when no threshold is configured', () => {
+  it('returns none when no threshold is configured and nothing is latched', () => {
     expect(evaluateLowBalance(100, null, false)).toBe('none');
     expect(evaluateLowBalance(100, undefined, false)).toBe('none');
+  });
+
+  it('clears the latched flag when the threshold is removed (ARGUS #414)', () => {
+    // Without this, re-adding a threshold while the fund is still low would
+    // suppress the next alert because the old flag survived.
+    expect(evaluateLowBalance(100, null, true)).toBe('clear');
+    expect(evaluateLowBalance(100, undefined, true)).toBe('clear');
   });
 
   it('fires when balance drops to or below the threshold', () => {
