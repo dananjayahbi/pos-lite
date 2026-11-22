@@ -14,6 +14,7 @@ helpers are used by the service, routes and UI.
 | Zero-earnings exclusion and headcount | `payroll/export-eligibility.core` | `payroll-coverage.test.ts` |
 | Blank bank/statutory fields block a clean export | `payroll/export-preflight` | `payroll-coverage.test.ts`, `export-preflight.test.ts` |
 | Payroll pages and separate print/download actions | UI | `tests/39_table_surfaces.spec.ts` (39.2) |
+| Workbook cell values, totals, headcount and blank fields | `summary-report`, `bank-sheet`, `statutory-return` | `payroll-export-content.test.ts` |
 
 Service functions that need Prisma (generate, pay, void) are covered through
 these decisions rather than a database fixture; RBAC remains enforced by the

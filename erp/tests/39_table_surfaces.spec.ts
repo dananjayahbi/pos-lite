@@ -125,6 +125,15 @@ test('39.2 payroll pages expose their real content, not just a table', async ({ 
     await expect(page.getByText('Bank salary worksheet')).toBeVisible();
     await expect(page.getByText('EPF / ETF monthly returns')).toBeVisible();
 
+    // ARGUS #393: the export controls point at the real route and formats.
+    const exportLinks = page.locator('a[href*="/exports/"]');
+    const hrefs = await exportLinks.evaluateAll((links) =>
+      links.map((link) => link.getAttribute('href') ?? ''),
+    );
+    expect(hrefs.length).toBeGreaterThanOrEqual(6);
+    expect(hrefs.some((href) => href.includes('format=pdf'))).toBe(true);
+    expect(hrefs.some((href) => href.includes('format=xlsx'))).toBe(true);
+
     const printButtons = page.getByRole('button', { name: /^Print payslip for / });
     const downloadButtons = page.getByRole('button', { name: /^Download payslip for / });
     const printCount = await printButtons.count();
