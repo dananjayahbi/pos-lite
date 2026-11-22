@@ -36,8 +36,10 @@ interface CashFlowTableProps {
 }
 
 /**
- * Tenant-wide ledger: every entry across every account for a chosen window.
- * The Account column is what distinguishes it from a single account book.
+ * Tenant-wide ledger (the "Ledger" tab): every entry across every account for
+ * a chosen window. The Account column distinguishes it from a single account
+ * book, and the balance column is explicitly labelled as that account's
+ * balance after the row - not a tenant-wide running total (ARGUS #432).
  */
 export function CashFlowTable({ accounts }: CashFlowTableProps) {
   const [dateFrom, setDateFrom] = useState('');
@@ -67,6 +69,15 @@ export function CashFlowTable({ accounts }: CashFlowTableProps) {
 
   return (
     <div className="space-y-4">
+      <div className="rounded-lg border border-mist/60 bg-linen/20 px-3 py-2">
+        <p className="font-body text-sm text-espresso">All accounts - one ledger</p>
+        <p className="mt-0.5 font-body text-xs text-sand-ink">
+          Every entry across every account for the selected window. Rows from
+          different accounts interleave; Balance is that account&apos;s balance
+          after the entry, not a tenant-wide running total. For a per-account
+          view open Account Book on a card.
+        </p>
+      </div>
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <Label htmlFor="cashflow-date-from" className="font-body text-xs text-sand-ink">
@@ -145,7 +156,9 @@ export function CashFlowTable({ accounts }: CashFlowTableProps) {
                 <TableHead className="text-espresso">Source</TableHead>
                 <TableHead className="text-right text-espresso">Debit</TableHead>
                 <TableHead className="text-right text-espresso">Credit</TableHead>
-                <TableHead className="text-right text-espresso">Balance</TableHead>
+                <TableHead className="text-right text-espresso">
+                  Account balance after
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -210,7 +223,7 @@ export function CashFlowTable({ accounts }: CashFlowTableProps) {
                   <span className="font-mono text-espresso">{formatRupee(sums.credit)}</span>
                 </span>
                 <span className="text-sand-ink">
-                  Net:{' '}
+                  Net movement:{' '}
                   <span className="font-mono font-semibold text-espresso">
                     {formatRupee(sums.debit - sums.credit)}
                   </span>

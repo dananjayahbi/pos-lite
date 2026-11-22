@@ -199,7 +199,7 @@ export function PaymentAccountsPageClient() {
             Accounts
           </TabsTrigger>
           <TabsTrigger value="cash-flow" className="font-body px-3">
-            Cash Flow
+            Ledger
           </TabsTrigger>
         </TabsList>
 
