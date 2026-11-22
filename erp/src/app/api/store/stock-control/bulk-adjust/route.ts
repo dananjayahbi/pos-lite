@@ -19,6 +19,7 @@ import { lockForUpdate } from '@/lib/api/race-guard';
 import { isLowStockVariant } from '@/lib/inventory/lowStockPredicate';
 import {
   createLowStockAlerts,
+  selectLowStockAlerts,
   type LowStockAlertCandidate,
 } from '@/lib/notifications/low-stock-alert';
 import { staffDisplayName } from '@/lib/utils/staff-name';
@@ -247,19 +248,21 @@ export async function POST(request: NextRequest) {
         });
 
         // Check low stock threshold with the shared rule (ARGUS #55/#215).
+        // ARGUS #217: record the quantity before this row so an upward
+        // adjustment that lands on the threshold does not alert.
         if (
           isLowStockVariant({
             stockQuantity: newQty,
             lowStockThreshold: variant.lowStockThreshold,
           })
         ) {
-          lowStockTriggeredVariantIds.push(adj.variantId);
           lowStockCandidates.push({
             variantId: adj.variantId,
             productName: variant.product.name,
             sku: variant.sku,
             stockQuantity: newQty,
             lowStockThreshold: variant.lowStockThreshold,
+            previousQuantity: variant.stockQuantity,
           });
         }
 
@@ -267,7 +270,14 @@ export async function POST(request: NextRequest) {
         variant.stockQuantity = newQty;
       }
 
-      // One shared producer writes the owner/manager alerts.
+      // One shared producer writes the owner/manager alerts. ARGUS #217: the
+      // response's "triggered" list mirrors the alerts that will actually be
+      // written (crossings only, deduplicated by the producer).
+      const alertedCandidates = selectLowStockAlerts(lowStockCandidates);
+      lowStockTriggeredVariantIds.push(
+        ...alertedCandidates.map((candidate) => candidate.variantId),
+      );
+
       await createLowStockAlerts(
         tx,
         tenantId,

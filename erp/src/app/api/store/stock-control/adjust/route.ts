@@ -14,7 +14,7 @@ import {
 import { recordManualAdjustmentSideEffects } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { isLowStockVariant } from '@/lib/inventory/lowStockPredicate';
-import { createLowStockAlerts } from '@/lib/notifications/low-stock-alert';
+import { createLowStockAlerts, selectLowStockAlerts } from '@/lib/notifications/low-stock-alert';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 import { stockAdjustmentRevalidationOptions } from '@/lib/website/storefront-revalidation.core';
@@ -149,24 +149,33 @@ export async function POST(request: NextRequest) {
       let sku = '';
 
       if (isLowStockVariant({ stockQuantity: newQty, lowStockThreshold: variant.lowStockThreshold })) {
-        lowStockTriggered = true;
         productName = variant.product.name;
         sku = variant.sku ?? variant.id;
 
-        await createLowStockAlerts(
-          tx,
-          tenantId,
-          [
-            {
-              variantId,
-              productName,
-              sku,
-              stockQuantity: newQty,
-              lowStockThreshold: variant.lowStockThreshold,
-            },
-          ],
-          `Adjusted by: ${staffDisplayName(session.user.email)}`,
-        );
+        // ARGUS #217: only a downward crossing alerts. A restock from 4 to 5
+        // with a threshold of 5 was already low and is now healthier, so it
+        // must not notify anyone. `previousQuantity` makes the shared producer
+        // apply that direction rule; dedupe happens inside the writer.
+        const candidates = [
+          {
+            variantId,
+            productName,
+            sku,
+            stockQuantity: newQty,
+            lowStockThreshold: variant.lowStockThreshold,
+            previousQuantity: variant.stockQuantity,
+          },
+        ];
+        lowStockTriggered = selectLowStockAlerts(candidates).length > 0;
+
+        if (lowStockTriggered) {
+          await createLowStockAlerts(
+            tx,
+            tenantId,
+            candidates,
+            `Adjusted by: ${staffDisplayName(session.user.email)}`,
+          );
+        }
       }
 
       return {

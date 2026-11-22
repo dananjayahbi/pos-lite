@@ -96,3 +96,23 @@ describe('filterNewLowStockAlerts (ARGUS #197)', () => {
     ).toEqual([]);
   });
 });
+
+describe('adjustment direction (ARGUS #217)', () => {
+  it('does not alert when an upward adjustment lands exactly on the threshold', () => {
+    expect(
+      selectLowStockAlerts([{ ...base, stockQuantity: 5, previousQuantity: 4 }]),
+    ).toEqual([]);
+  });
+
+  it('alerts on a downward crossing into the threshold', () => {
+    expect(
+      selectLowStockAlerts([{ ...base, stockQuantity: 4, previousQuantity: 6 }]),
+    ).toHaveLength(1);
+  });
+
+  it('does not alert when a decrease stays below the threshold', () => {
+    expect(
+      selectLowStockAlerts([{ ...base, stockQuantity: 3, previousQuantity: 4 }]),
+    ).toEqual([]);
+  });
+});
