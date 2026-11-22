@@ -16,7 +16,8 @@
  *   Deterministic hardware-free paths: USB → 500 PRINTER_ERROR 'USB printing is not supported…'; empty host → 500 'Printer host address is required…'.
  * - GET on all three settings routes → 405.
  * - Seed: dilani settings has vatRate 18, ssclRate 2.5, hardware {type:'NETWORK',host:'192.168.1.100',port:9100,...} (FLAT — page reads raw.printer.* so page shows defaults until first PATCH).
- * - Sidebar "My Account" → /settings/account → 404 (no page exists).
+ * - Sidebar "My Account" → /settings/account is a real page (S7a–S7e cover the
+ *   profile card, clear/error states and the self-service password API).
  */
 import { test, expect, type Page } from '@playwright/test';
 
@@ -618,11 +619,154 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     expect(body.data.vatRate).toBe(18);
   });
 
-  test('S7 — "My Account" page /settings/account renders (OBS-81 dead link fixed)', async ({ page }) => {
+  test('S7 - "My Account" loads profile identity and day-first timestamps', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     await page.goto(`${BASE}/settings/account`);
     await expect(page.getByRole('heading', { name: /my account/i })).toBeVisible({ timeout: 15000 });
     expect(page.url()).toContain('/settings/account');
+
+    // ARGUS #465/#506: the card shows the sign-in email and the stored name
+    // (or its mailbox fallback), and timestamps use the ERP convention.
+    await expect(page.getByText(OWNER.email, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/Last sign-in/i)).toBeVisible();
+    // `20 Nov 2026, 14:02` - never `Nov 20, 2026, 2:02 PM`.
+    await expect(page.getByText(/\d{1,2} [A-Z][a-z]{2} \d{4}, \d{2}:\d{2}/).first()).toBeVisible();
+  });
+
+  test('S7b - a wrong current password is shown, and Clear removes the message', async ({
+    page,
+  }) => {
+    await login(page, OWNER.email, OWNER.password);
+    await page.goto(`${BASE}/settings/account`);
+    await waitForHydratedForm(page);
+
+    await page.fill('#currentPassword', 'definitely-not-the-password');
+    await page.fill('#newPassword', 'a-brand-new-password');
+    await page.fill('#confirmPassword', 'a-brand-new-password');
+    await page.getByRole('button', { name: /Update Password/i }).click();
+
+    await expect(page.getByText(/Current password is incorrect/i)).toBeVisible({
+      timeout: 15000,
+    });
+
+    // ARGUS #507: Clear must also clear stale validation/error text.
+    await page.getByRole('button', { name: /^Clear$/i }).click();
+    await expect(page.getByText(/Current password is incorrect/i)).toHaveCount(0);
+    await expect(page.locator('#currentPassword')).toHaveValue('');
+  });
+
+  test('S7c - a failed profile GET offers Retry instead of a dead end', async ({ page }) => {
+    await login(page, OWNER.email, OWNER.password);
+
+    let failOnce = true;
+    await page.route('**/api/settings/account', async (route) => {
+      if (route.request().method() === 'GET' && failOnce) {
+        failOnce = false;
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: false,
+            error: { message: 'Failed to fetch account details' },
+          }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto(`${BASE}/settings/account`);
+    await expect(page.getByText(/Failed to fetch account details/i)).toBeVisible({
+      timeout: 15000,
+    });
+    await page.getByRole('button', { name: /^Retry$/i }).click();
+    await expect(page.getByText(/Last sign-in/i)).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/Failed to fetch account details/i)).toHaveCount(0);
+  });
+
+  test('S7d - password API enforces the 72-byte cap, reuse rule and friendly errors', async ({
+    page,
+  }) => {
+    await login(page, OWNER.email, OWNER.password);
+
+    // Empty payload: a field message, not zod's raw "expected string" prose.
+    const empty = await page.request.post(`${BASE}/api/settings/account`, { data: {} });
+    expect(empty.status()).toBe(400);
+    const emptyBody = await empty.json();
+    expect(emptyBody.error.code).toBe('VALIDATION_ERROR');
+    expect(String(emptyBody.error.message)).not.toContain('expected string');
+
+    // 80 ASCII characters (and 24 four-byte emoji) exceed bcrypt's 72 bytes.
+    for (const newPassword of ['x'.repeat(80), '😀'.repeat(24)]) {
+      const over = await page.request.post(`${BASE}/api/settings/account`, {
+        data: {
+          currentPassword: OWNER.password,
+          newPassword,
+          confirmPassword: newPassword,
+        },
+      });
+      expect(over.status()).toBe(400);
+      const body = await over.json();
+      expect(body.error.code).toBe('VALIDATION_ERROR');
+      expect(body.error.details?.[0]?.path).toBe('newPassword');
+    }
+
+    // Same password as the current one is rejected server-side.
+    const same = await page.request.post(`${BASE}/api/settings/account`, {
+      data: {
+        currentPassword: OWNER.password,
+        newPassword: OWNER.password,
+        confirmPassword: OWNER.password,
+      },
+    });
+    expect(same.status()).toBe(400);
+    expect(String((await same.json()).error.message)).toMatch(/different from the current/i);
+  });
+
+  test('S7e - a successful self-service change invalidates the old session', async ({
+    browser,
+    page,
+  }) => {
+    await login(page, OWNER.email, OWNER.password);
+    const email = `${RUN_TAG}-account@ayurpos-qa.test`;
+    const initial = 'initial-pass-123';
+    const next = 'changed-pass-456';
+
+    const created = await page.request.post(`${BASE}/api/store/staff`, {
+      data: { email, role: 'CASHIER' },
+    });
+    expect(created.status()).toBe(201);
+    const id = (await created.json()).data.id;
+    expect(
+      (
+        await page.request.post(`${BASE}/api/store/staff/${id}/password`, {
+          data: { newPassword: initial },
+        })
+      ).status(),
+    ).toBe(200);
+
+    const ctx = await browser.newContext({ baseURL: BASE });
+    const staffPage = await ctx.newPage();
+    await login(staffPage, email, initial);
+    await staffPage.goto(`${BASE}/settings/account`);
+    await waitForHydratedForm(staffPage);
+
+    await staffPage.fill('#currentPassword', initial);
+    await staffPage.fill('#newPassword', next);
+    await staffPage.fill('#confirmPassword', next);
+    const changed = await ctx.request.post(`${BASE}/api/settings/account`, {
+      data: { currentPassword: initial, newPassword: next, confirmPassword: next },
+    });
+    expect(changed.status()).toBe(200);
+
+    // sessionVersion was bumped: the same cookie can no longer read the card.
+    const after = await ctx.request.get(`${BASE}/api/settings/account`);
+    const afterBody = await after.json().catch(() => null);
+    expect(afterBody?.success).not.toBe(true);
+
+    // Cleanup: deactivate the throwaway account through the owner session.
+    await page.request.patch(`${BASE}/api/store/staff/${id}`, { data: { isActive: false } });
+    await ctx.close();
   });
 
   // ─── §9 Boundary Inputs, Chaos & Unicode ──────────────────────────────
