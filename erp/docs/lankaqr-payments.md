@@ -94,3 +94,24 @@ them server-side.
   gateway payment account.
 - `src/lib/validators/__tests__/sale.validators.test.ts` — split sale with a
   LankaQR leg is accepted.
+
+## Uploading the static QR (ARGUS #516)
+
+The page introduction said "paste or upload it here" but the form only had a
+URL input. It now has both:
+
+- **Upload image** -> `POST /api/settings/payments/qr` (multipart `file`).
+  The endpoint is OWNER/SUPER_ADMIN only (same rule as the payments PATCH,
+  ARGUS #509), always uses the session tenant, accepts JPEG/PNG/WebP up to
+  2 MB, stores `{tenantId}/lankaqr/static-qr` through the configured provider
+  and returns `{ success: true, url }`.
+- The returned URL (or a pasted URL) is only a form value until **Save Payment
+  Settings** persists `settings.lankaQr` with the audited PATCH.
+- Save is disabled while an upload is in flight, so the previous URL cannot be
+  persisted by a fast click (same race as the store logo, ARGUS #489).
+- SVG is rejected (a QR must be a raster image the modal can render), and
+  storage errors return a friendly message while the detail is logged
+  server-side.
+
+Pure validation/tests: `src/lib/payments/lanka-qr-upload.core.ts` and
+`src/lib/payments/__tests__/lanka-qr-upload.core.test.ts`.
