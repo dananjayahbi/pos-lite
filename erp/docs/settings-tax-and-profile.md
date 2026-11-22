@@ -57,3 +57,21 @@ shows a notice naming the website brand (when configured) and links to
 `/settings/website`, so an operator editing the profile knows it will not change
 the storefront and can jump to the right place. Editing the profile still does
 not rewrite the website brand.
+
+## Receipt identity check (ARGUS #473)
+
+The live profile can drift from the business it belongs to: a QA restore once
+left `receiptFooter` naming "Ayur Wellness Centre" on a Ruhunu Weda Gedara
+tenant, with no address or phone. The store profile page now renders a
+"what the next receipt prints" preview plus an audit (`receiptIdentityIssues`
+in `src/lib/settings/receiptIdentity.core.ts`):
+
+- a footer whose "Thank you for shopping at X" names a business other than the
+  tenant is flagged - it still prints, but the operator sees the mismatch;
+- a missing footer, address or phone is listed, because the receipt would
+  otherwise carry no brand contact;
+- free-form footers (no shopping-at/with shape) are never treated as another
+  brand, and a blank footer uses the shared fallback.
+
+The same helper owns the one footer fallback and the contact-line policy used
+by the browser, ESC/POS and A4 receipts (see `receipt-footer-parity.md`).

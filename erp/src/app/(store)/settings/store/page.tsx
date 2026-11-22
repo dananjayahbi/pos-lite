@@ -6,6 +6,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import StoreProfileSettingsForm from '@/components/settings/StoreProfileSettingsForm';
+import { receiptIdentityIssues } from '@/lib/settings/receiptIdentity.core';
 
 export const metadata = { title: 'Store Profile | AyurPOS' };
 
@@ -54,6 +55,11 @@ export default async function StoreProfileSettingsPage() {
     receiptFooter: typeof settings.receiptFooter === 'string' ? settings.receiptFooter : '',
   };
 
+  // ARGUS #473: the live profile carried a footer from another business and no
+  // contact details, so a customer receipt showed the wrong brand. Surface what
+  // the next receipt will print, and every contradiction, before it is printed.
+  const identityIssues = receiptIdentityIssues(initialValues);
+
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6 p-6">
       <div>
@@ -64,6 +70,36 @@ export default async function StoreProfileSettingsPage() {
         </p>
       </div>
       <StoreProfileSettingsForm initialValues={initialValues} />
+
+      <div className="rounded-lg border border-mist bg-white p-4 text-sm text-sand-ink">
+        <p className="font-medium text-espresso">What the next receipt prints</p>
+        <div className="mt-2 rounded-md border border-dashed border-sand bg-linen/40 px-3 py-2 font-mono text-xs text-espresso">
+          <div className="font-semibold">{initialValues.storeName}</div>
+          {initialValues.address
+            .split(/\r\n|\r|\n/)
+            .filter((line) => line.trim())
+            .map((line, index) => (
+              <div key={`address-${index}`}>{line}</div>
+            ))}
+          {initialValues.phoneNumber.trim() && <div>Tel: {initialValues.phoneNumber.trim()}</div>}
+          <div className="mt-2 whitespace-pre-line">
+            {initialValues.receiptFooter.trim() || 'Thank you for shopping with us!'}
+          </div>
+        </div>
+        {identityIssues.length === 0 ? (
+          <p className="mt-2 text-xs">
+            Name and contact details are complete, and the footer matches this business.
+          </p>
+        ) : (
+          <ul className="mt-2 list-disc space-y-1 pl-4 text-xs">
+            {identityIssues.map((issue) => (
+              <li key={issue.code} className="text-[#9B2226]">
+                {issue.message}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <div className="rounded-lg border border-sand bg-linen/60 p-4 text-sm text-sand-ink">
         <p className="font-medium text-espresso">Storefront brand is managed separately</p>
