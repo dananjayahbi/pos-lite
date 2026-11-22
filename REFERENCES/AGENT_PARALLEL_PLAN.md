@@ -38,8 +38,12 @@ Worktrees (created from the checkpoint commit `d168e52` or later):
 | Agent | Worktree | Branch | Ownership |
 | ----- | -------- | ------ | --------- |
 | reports | `C:\Users\Tuf\.local\share\opencode\worktree\b4adbd\agent-reports` | `agent/agent-reports` | Dashboard: `erp/src/app/(store)/dashboard/**`, `erp/src/components/dashboard/**`, dashboard/report APIs |
-| sales | `C:\Users\Tuf\.local\share\opencode\worktree\b4adbd\agent-sales` | `agent/agent-sales` | Notifications & sale alerts: `erp/src/app/(store)/notifications/**`, `erp/src/lib/services/notification*`, sale void route/audit |
-| pos | `...\agent-pos` | `agent/agent-pos` | POS cash tender: `erp/src/lib/services/sale.service.ts`, `erp/src/components/pos/CashPaymentModal.tsx`, `SplitPaymentModal.tsx`, related core tests |
+| sales | `C:\Users\Tuf\.local\share\opencode\worktree\b4adbd\agent-sales` | `agent/agent-sales` | Sales & returns: `erp/src/app/(store)/sales/**`, `returns/**`, `erp/src/lib/services/sale.service.ts`, `return.service.ts`, sale alerts |
+| pos | `...\agent-pos` | `agent/agent-pos` | POS UI + shifts: `erp/src/components/pos/**`, `erp/src/app/(store)/pos/**`, shift/Z-report surfaces |
+| catalog | `...\agent-catalog` | `agent/agent-catalog` | Products, inventory, barcodes: `inventory/**`, `components/products/**`, `components/barcode-printing/**`, `lib/barcode*` |
+| notifications | `...\agent-notifications` | `agent/agent-notifications` | Notifications inbox and alert copy: `erp/src/app/(store)/notifications/**`, `erp/src/lib/notifications/**` |
+| appointments | `...\agent-appointments` | `agent/agent-appointments` | Appointments: `erp/src/app/(store)/appointments/**`, `components/appointments/**`, `lib/appointments/**` |
+| ops | `...\agent-ops` | `agent/agent-ops` | Website CMS, hardware/courier settings, COD reconciliation |
 
 Setup already done in each worktree (`<wt>\erp`):
 - junction `node_modules` -> `E:\work_git_repos\pos-lite\erp\node_modules`
@@ -80,6 +84,91 @@ For each agent commit:
 - pos: #62 cash payment accepts less than total; the server `INSUFFICIENT_CASH`
   guard already exists (added with #321) - verify it and add focused regression
   coverage/hardening rather than duplicating.
+
+## Batch 14 - the 174-task refill (50 claims per turn)
+
+Operator policy: claim **at most 50** tasks per turn, implement them, then claim
+the next 50. Do not claim the whole refill at once.
+
+Batch 14a (50 tasks) is split across the module worktrees:
+
+- reports (7): #43, #44, #45, #47, #48, #49, #50 - dashboard currency/date,
+  stock-movement labels, low-stock helper text and rule, revenue date basis.
+- sales (13): #55, #81-#89, #103-#105 - low-stock alert on sale, sales list
+  units/dates/invoice/void/edit/filter/return-window, return commission and
+  rounding, returns text.
+- pos (9): #69-#73, #114-#117 - POS toast/hint/promo/LankaQR/badge, shift
+  history link, stale shift, summary counts, shift formatting/net revenue.
+- catalog (8): #149-#155, #162 - deleted badges, concatenated labels, stock
+  date formats, nested main, latent stock states, barcode format, QA data
+  hygiene, barcode copy/queue feedback.
+- notifications (4): #56-#59 - notification dates, amounts, zero-value reason,
+  sale-alert identity.
+- appointments (4): #133-#136 - calendar actions/slots, stats cards, reminders,
+  dates/title/duplicate walk-ins.
+- ops (5): #499, #510, #512, #513, #514 - CMS soft-deleted category, printer
+  host visibility, COD import history/unmatched rows, courier test-before-save,
+  courier credential storage.
+
+Agents commit once per task and never submit to Atlas. The main agent reviews,
+merges into `argus_qa`, then submits each commit through
+`POST /internal/v1/submit` (progress + DoD ticked first).
+
+**Batch 14a result:** 50/50 implemented, merged and submitted to `IN_REVIEW`.
+Full suite green at **2,743 tests (357 files)**, `tsc` clean. Merge conflicts
+resolved in `RecentStockMovementsCard.tsx` (kept the stock timestamp helper +
+movement badge), `api/store/sales/route.ts` (kept both notification copy and
+LankaQR guard imports) and `lib/__tests__/format.test.ts` (combined both suites).
+
+**Batch 14b (next 50, all priority-25 cosmetics):**
+
+- reports (13): #439-#443 (Sales & Profit reports), #219-#223 (Stock
+  Valuation), #422-#424 (Cash Flow).
+- factory (9): #258-#261 (Factory Dashboard), #448-#450 (Saved Reports),
+  #457-#458 (Audit Log).
+- catalog (13): #169-#173 (Categories), #177-#179 (Brands), #482-#486 (Units).
+- ops (15): #302-#307 (Waybill), #276-#278 (Deliveries), #268-#269 (Dispatch),
+  #294-#296 (Rate Card), #517 (Failed Deliveries).
+
+The remaining 74 after 14b are payroll/staff/customers, stock-control and
+settings/storefront polish; group them the same way when claimed.
+
+**Batch 14c result (wave 2):** 50/50 implemented, merged and submitted. Full
+suite green after wave 2 at **2,958 tests (391 files)**, `tsc` clean. Merge
+notes:
+- `components/reports/ReportLayout.tsx` conflicted with the factory saved-report
+  work; resolved to the tested `buildSavedReportRequest` payload plus the new
+  `!reportFailed` export/save condition.
+- `lib/factory/__tests__/factoryQueries.test.ts` needed the new
+  `factory-output-stats` refresh key added (follow-up `b59880d`).
+- The UI copy guard caught two em-dash fallbacks (#457 audit, #517 recovery
+  rate). They now use a hyphen; follow-ups `e468c04` and `96883f5`.
+
+**Batch 14d (wave 3, 50 tasks):**
+- payroll (12): #380-#383, #390, #392-#393, #369-#370, #359-#360, #347.
+- admin (15): #464-#467, #505-#508, #404-#405, #414-#415, #318-#320.
+- stock (23): #191, #211-#212, #202-#204, #196-#197, #188-#189, #216-#217,
+  #251, #254-#255, #247, #238-#240, #190, #285-#286, #233.
+
+Wave 3 result: 50/50 submitted. Full suite green at **3,111 tests (419
+files)**, `tsc` clean. Notes:
+- #190 has a main commit plus a formatting follow-up; the submitted patch is the
+  main commit and the summary names the follow-up.
+- #286 is submitted with `needs_schema: true` in the report: packaging cost/value
+  needs a `PackagingItem.unitCost` column; the list presentation gaps are fixed.
+
+**Batch 14e (wave 4, final 24 tasks):** settings/storefront/barcode/payment
+polish, split ops (12: #473-#478, #490-#494, #516) and front
+(12: #431-#434, #500-#503, #334, #163-#164, #346).
+
+Wave 4 result: 24/24 submitted. The full 174-task refill is implemented, merged
+into `argus_qa`, and submitted to Atlas; the board reads **0 pending, 0 in
+progress, 174 in review, 0 claim slots used**. The six stale batch-13
+in-progress leases (already implemented and merged, but unsubmittable because
+they carry no DoD checklist) were given a progress note and archived, so no
+orphaned leases remain. One task (#286) is explicitly submitted with a
+`needs_schema` note: packaging cost/value needs a `PackagingItem.unitCost`
+column, which the agent is not allowed to add.
 
 ## Batch progress log
 
