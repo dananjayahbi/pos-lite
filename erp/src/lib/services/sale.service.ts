@@ -18,6 +18,7 @@ import { resolveCashTender } from '@/lib/services/saleCashTender.core';
 import { assertSaleVoidable } from '@/lib/services/saleVoid.core';
 import { assertCompletedSaleShape } from '@/lib/services/saleCompleteness.core';
 import { preserveSellingTimestamp } from '@/lib/sales/sale-edit';
+import { resolveActiveTaxRates } from '@/lib/settings/taxSettingsChange.core';
 import {
   assertDiscountsAuthorized,
   cartDiscountPercent,
@@ -48,10 +49,10 @@ function buildVariantDescription(form: string | null, packSize: string | null): 
 // preview so the two can never drift.
 
 export function extractTenantRates(settings: unknown): { vatRate: number; ssclRate: number } {
-  const s = settings as Record<string, unknown>;
-  const vatRate = typeof s.vatRate === 'number' ? s.vatRate : 0;
-  const ssclRate = typeof s.ssclRate === 'number' ? s.ssclRate : 0;
-  return { vatRate, ssclRate };
+  // Future-dated tax changes must not charge early (ARGUS #475). The shared
+  // resolver is also used by the settings screen and the API, so the money
+  // path and the displayed schedule can never disagree.
+  return resolveActiveTaxRates(settings);
 }
 
 // ── Create Sale ──────────────────────────────────────────────────────────────

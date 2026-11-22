@@ -75,3 +75,35 @@ in `src/lib/settings/receiptIdentity.core.ts`):
 
 The same helper owns the one footer fallback and the contact-line policy used
 by the browser, ESC/POS and A4 receipts (see `receipt-footer-parity.md`).
+
+## Tax effective dates, versions and zero-rate confirmation (ARGUS #475)
+
+Tax writes are no longer immediate last-write-wins. `PATCH /api/settings/taxes`
+accepts three optional fields and enforces them server-side:
+
+| Field | Rule |
+| --- | --- |
+| `effectiveFrom` | `YYYY-MM-DD`; defaults to today. A future date schedules the change. |
+| `expectedVersion` | The `taxVersion` the form loaded. A mismatch returns `409 VERSION_CONFLICT`. |
+| `acknowledgeZeroRate` | Required (`422 ZERO_RATE_CONFIRMATION_REQUIRED`) when a non-zero rate becomes 0. |
+
+The read/validate/write runs in one transaction with `SELECT ... FOR UPDATE` on
+the tenant row, so two managers cannot both pass with the same version. Every
+write increments `taxVersion`, stores `taxEffectiveFrom`, `taxPriorRates`,
+`taxUpdatedAt` and one bounded `taxRateHistory` entry, and audits
+before/after rates plus the effective date (unchanged values do not skip the
+audit row).
+
+Money resolution is server-side: `resolveActiveTaxRates` (used by
+`extractTenantRates` in `sale.service.ts`, and therefore by sales and
+appointment sales) returns the prior rates until the effective date, then the
+new ones. A future-dated rate never charges early, and historical sales keep
+their snapshotted tax amounts.
+
+The form no longer coerces a cleared input to 0. It keeps the raw string,
+shows an inline range error, requires the zero-rate checkbox, shows the
+active-vs-scheduled state, and reloads after saving so the new version and
+schedule are read from the server.
+
+Pure logic/tests: `src/lib/settings/taxSettingsChange.core.ts` and
+`src/lib/settings/__tests__/taxSettingsChange.core.test.ts`.

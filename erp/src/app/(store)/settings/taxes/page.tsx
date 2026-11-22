@@ -11,6 +11,7 @@ import {
   missingTaxIdentityFields,
   taxIdentityFieldStatus,
 } from '@/lib/settings/taxIdentity.core';
+import { readTaxSchedule, todayIso } from '@/lib/settings/taxSettingsChange.core';
 
 export const metadata = { title: 'Tax Settings | AyurPOS' };
 
@@ -51,6 +52,11 @@ export default async function TaxSettingsPage() {
     ssclRate: typeof settings.ssclRate === 'number' ? settings.ssclRate : 0,
   };
 
+  // ARGUS #475: the form needs the version it loaded (optimistic lock) and the
+  // active/pending schedule so it can warn before a future-dated change.
+  const today = todayIso();
+  const schedule = readTaxSchedule(settings, today);
+
   const identityFields = taxIdentityFieldStatus(settings);
   const missingIdentityFieldCount = missingTaxIdentityFields(settings).length;
 
@@ -63,7 +69,13 @@ export default async function TaxSettingsPage() {
           Only the store owner can change these rates.
         </p>
       </div>
-      <TaxSettingsForm initialValues={initialValues} />
+      <TaxSettingsForm
+        initialValues={initialValues}
+        version={schedule.version}
+        currentEffectiveFrom={schedule.effectiveFrom}
+        today={today}
+        pending={schedule.pending}
+      />
 
       <Card className="border-mist">
         <CardContent className="space-y-4 py-5">
