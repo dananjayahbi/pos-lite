@@ -64,3 +64,19 @@ value.
 
 `receipt-renderer.test.ts` pins the logo element, the no-logo case and the
 attribute-escaping case.
+
+## Failure messages are sanitised (ARGUS #494)
+
+Both store-profile write paths used to return the raw exception message, so a
+database or object-storage failure could expose hostnames, bucket names or SQL
+detail to the browser. They now:
+
+- log the full error server-side (`console.error` with the route name);
+- return a stable, friendly message:
+  - `PATCH /api/settings/store` -> `500 { code: "INTERNAL_ERROR", message:
+    "Failed to save store profile" }`;
+  - `POST /api/settings/store/logo` -> `500 { error: "Could not upload the logo.
+    Please try again." }` (the shape `LogoUploadField` already parses).
+
+Validation errors (400) remain specific because they describe the operator's
+input, not internals.

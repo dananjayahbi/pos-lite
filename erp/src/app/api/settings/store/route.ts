@@ -182,9 +182,13 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to save store profile';
+    // ARGUS #494: never echo a database/storage exception to the browser.
+    console.error('PATCH /api/settings/store error:', error);
     return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message } },
+      {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to save store profile' },
+      },
       { status: 500 },
     );
   }
