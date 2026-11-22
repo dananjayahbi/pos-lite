@@ -306,6 +306,20 @@ export function GeneralTab({ config, onChange }: GeneralTabProps) {
               placeholder="https://tiktok.com/@..."
             />
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="socialYoutube">YouTube URL</Label>
+            <Input
+              id="socialYoutube"
+              value={config.socialLinks?.youtube ?? ''}
+              onChange={(e) =>
+                onChange({ socialLinks: { ...config.socialLinks, youtube: e.target.value } })
+              }
+              placeholder="https://youtube.com/@yourchannel"
+            />
+            <p className="text-xs text-sand-ink">
+              Leave blank to stop showing the YouTube icon on the storefront.
+            </p>
+          </div>
         </div>
       </div>
     </div>
