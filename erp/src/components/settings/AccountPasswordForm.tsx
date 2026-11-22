@@ -44,6 +44,16 @@ export default function AccountPasswordForm() {
     setSuccess(false);
   };
 
+  /**
+   * ARGUS #507: Clear must reset the form AND every stale message; it used to
+   * empty the fields while leaving the last validation error visible.
+   */
+  function resetForm() {
+    setValues(EMPTY_FORM);
+    setErrors({});
+    setSuccess(false);
+  }
+
   function validate(): boolean {
     // ARGUS #505: one policy for the form and the API (including the bcrypt
     // 72-byte cap, which is what actually gets hashed).
@@ -92,6 +102,7 @@ export default function AccountPasswordForm() {
 
       toast.success('Password updated. You will be signed out for security.');
       setSuccess(true);
+      setErrors({});
       setValues(EMPTY_FORM);
       // Bump the session so the user re-authenticates after a short delay.
       setTimeout(() => {
@@ -158,16 +169,20 @@ export default function AccountPasswordForm() {
         </div>
 
         {success && (
-          <div className="rounded-md border border-success/30 bg-success/10 px-4 py-3 text-sm text-espresso">
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-md border border-success/30 bg-success/10 px-4 py-3 text-sm text-espresso"
+          >
             Your password has been updated. Signing you out…
           </div>
         )}
 
         <div className="flex items-center justify-end gap-2 pt-2">
-          <Button type="button" variant="ghost" onClick={() => setValues(EMPTY_FORM)}>
+          <Button type="button" variant="ghost" onClick={resetForm} disabled={saving}>
             Clear
           </Button>
-          <Button type="submit" disabled={saving}>
+          <Button type="submit" disabled={saving || success}>
             {saving ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
