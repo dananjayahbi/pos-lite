@@ -10,6 +10,7 @@ import {
   Minus,
   Plus,
   Printer,
+  RefreshCw,
   Search,
   Trash2,
 } from 'lucide-react';
@@ -107,7 +108,7 @@ export function BarcodePrintingClient() {
   const vatRate = taxRates?.vatRate ?? 0;
   const ssclRate = taxRates?.ssclRate ?? 0;
 
-  const { data, isLoading, isFetching } = useProducts({
+  const { data, isLoading, isFetching, isError, error, refetch } = useProducts({
     search: deferredSearch.trim() || undefined,
     limit: PRODUCTS_PER_PAGE,
     page,
@@ -458,9 +459,37 @@ export function BarcodePrintingClient() {
                     <Skeleton key={row} className="h-9 w-full" />
                   ))}
                 </div>
+              ) : isError ? (
+                <div className="space-y-2 p-4" role="alert">
+                  <p className="font-body text-sm font-medium text-[#9B2226]">
+                    Products could not be loaded
+                  </p>
+                  <p className="font-body text-xs text-sand-ink">
+                    {error instanceof Error
+                      ? error.message
+                      : 'The product request failed. This is not an empty catalogue.'}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-sand font-body text-espresso"
+                    onClick={() => {
+                      void refetch();
+                    }}
+                    disabled={isFetching}
+                  >
+                    <RefreshCw
+                      className={`mr-1.5 h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`}
+                    />
+                    {isFetching ? 'Retrying…' : 'Retry'}
+                  </Button>
+                </div>
               ) : options.length === 0 ? (
                 <p className="p-4 font-body text-sm text-mist-ink">
-                  No variants match "{search.trim()}".
+                  {searchTerm
+                    ? `No variants match “${searchTerm}”.`
+                    : 'No active products with variants yet. Add products in Inventory first.'}
                 </p>
               ) : (
                 <ul className="divide-y divide-sand/30">
