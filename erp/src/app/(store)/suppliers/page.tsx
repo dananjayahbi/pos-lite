@@ -29,6 +29,7 @@ import { toast } from 'sonner';
 import { SupplierSheet } from '@/components/suppliers/SupplierSheet';
 import { RestoreSupplierButton } from '@/components/suppliers/RestoreSupplierButton';
 import { getSuppliersListState } from '@/lib/services/supplierListState.core';
+import { formatRupee } from '@/lib/format';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,16 @@ interface Supplier {
   notes?: string | null;
   isActive: boolean;
   _count: { purchaseOrders: number };
+  /** ARGUS #239: status split + committed/outstanding value. */
+  purchaseOrderSummary?: {
+    total: number;
+    draft: number;
+    open: number;
+    received: number;
+    cancelled: number;
+    committedValue: number;
+    outstandingValue: number;
+  };
 }
 
 interface SuppliersResponse {
@@ -221,7 +232,8 @@ export default function SuppliersPage() {
               <TableHead>Phone</TableHead>
               <TableHead>WhatsApp</TableHead>
               <TableHead>Lead Time</TableHead>
-              <TableHead className="text-center">PO Count</TableHead>
+              <TableHead className="text-center">Purchase Activity</TableHead>
+              <TableHead className="text-right">Committed / Due</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -229,7 +241,7 @@ export default function SuppliersPage() {
             {listState === 'loading' ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 7 }).map((_, j) => (
+                  {Array.from({ length: 8 }).map((_, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
@@ -238,7 +250,7 @@ export default function SuppliersPage() {
               ))
             ) : listState === 'empty' ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                   No suppliers found
                 </TableCell>
               </TableRow>
@@ -277,7 +289,39 @@ export default function SuppliersPage() {
                       {s.leadTimeDays} days
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-center">{s._count.purchaseOrders}</TableCell>
+                  <TableCell className="text-center">
+                    <div className="font-medium text-espresso">
+                      {s.purchaseOrderSummary?.total ?? s._count.purchaseOrders}
+                    </div>
+                    {s.purchaseOrderSummary ? (
+                      <div className="text-[10px] leading-4 text-muted-foreground">
+                        {s.purchaseOrderSummary.draft} draft ·{' '}
+                        {s.purchaseOrderSummary.open} open ·{' '}
+                        {s.purchaseOrderSummary.received} received
+                        {s.purchaseOrderSummary.cancelled > 0
+                          ? ` · ${s.purchaseOrderSummary.cancelled} cancelled`
+                          : ''}
+                      </div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {s.purchaseOrderSummary ? (
+                      <>
+                        <div className="font-mono text-sm">
+                          {formatRupee(s.purchaseOrderSummary.committedValue)}
+                        </div>
+                        {s.purchaseOrderSummary.outstandingValue > 0 ? (
+                          <div className="text-[10px] text-amber-700">
+                            {formatRupee(s.purchaseOrderSummary.outstandingValue)} due
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-muted-foreground">fully paid</div>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       {s.isActive ? (

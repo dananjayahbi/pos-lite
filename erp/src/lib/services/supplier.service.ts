@@ -6,6 +6,9 @@ import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { findDuplicateSupplierName } from '@/lib/services/supplierDuplicateName.core';
 import { findSupplierPhoneClash } from '@/lib/services/supplierPhone.core';
 import { supplierAuditSnapshot } from '@/lib/services/supplierAudit.core';
+import {
+  summarizeSupplierPurchaseOrders,
+} from '@/lib/services/supplierPurchaseMetrics.core';
 
 /** Actor passed from the route so the supplier trail records who acted. */
 export interface SupplierActor {
@@ -283,6 +286,15 @@ export async function getSuppliers(tenantId: string, options: GetSuppliersOption
       where,
       include: {
         _count: { select: { purchaseOrders: true } },
+        // ARGUS #239: the row needs a status split and the money still owed,
+        // not a single all-status count.
+        purchaseOrders: {
+          select: {
+            status: true,
+            totalAmount: true,
+            payments: { select: { amount: true } },
+          },
+        },
       },
       orderBy: { name: 'asc' },
       skip,
@@ -292,7 +304,19 @@ export async function getSuppliers(tenantId: string, options: GetSuppliersOption
   ]);
 
   return {
-    suppliers,
+    suppliers: suppliers.map(({ purchaseOrders, ...supplier }) => ({
+      ...supplier,
+      purchaseOrderSummary: summarizeSupplierPurchaseOrders(
+        purchaseOrders.map((po) => ({
+          status: po.status,
+          totalAmount: po.totalAmount.toNumber(),
+          paidAmount: po.payments.reduce(
+            (sum, payment) => sum + payment.amount.toNumber(),
+            0,
+          ),
+        })),
+      ),
+    })),
     total,
     page,
     totalPages: Math.ceil(total / limit),
