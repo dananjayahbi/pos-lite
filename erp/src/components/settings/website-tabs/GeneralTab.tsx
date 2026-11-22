@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { DeferredMediaUploader } from '@/components/shared/DeferredMediaUploader';
 import { AnnouncementBarSettingsForm } from '@/components/settings/AnnouncementBarSettingsForm';
+import { isHexColorOrEmpty } from '@/lib/website/link-validation.core';
 import type { WebsiteConfigData } from '@/types/website.types';
 
 interface GeneralTabProps {
@@ -102,6 +103,7 @@ export function GeneralTab({ config, onChange }: GeneralTabProps) {
                 value={config.primaryColor ?? '#0a0a0a'}
                 onChange={(e) => onChange({ primaryColor: e.target.value })}
                 className="flex-1"
+                aria-invalid={!isHexColorOrEmpty(config.primaryColor)}
               />
             </div>
           </div>
@@ -119,6 +121,7 @@ export function GeneralTab({ config, onChange }: GeneralTabProps) {
                 value={config.accentColor ?? '#b4946e'}
                 onChange={(e) => onChange({ accentColor: e.target.value })}
                 className="flex-1"
+                aria-invalid={!isHexColorOrEmpty(config.accentColor)}
               />
             </div>
           </div>
@@ -136,10 +139,14 @@ export function GeneralTab({ config, onChange }: GeneralTabProps) {
                 value={config.bgColor ?? '#ece2d6'}
                 onChange={(e) => onChange({ bgColor: e.target.value })}
                 className="flex-1"
+                aria-invalid={!isHexColorOrEmpty(config.bgColor)}
               />
             </div>
           </div>
         </div>
+        <p className="mt-2 text-xs text-sand-ink">
+          Colours must be hex values such as #0a0a0a or #fff. Empty uses the saved default.
+        </p>
       </div>
 
       <Separator />
@@ -181,6 +188,7 @@ export function GeneralTab({ config, onChange }: GeneralTabProps) {
                 onChange={(e) => onChange({ headingColor: e.target.value })}
                 placeholder="#0a0a0a"
                 className="flex-1"
+                aria-invalid={!isHexColorOrEmpty(config.headingColor)}
               />
             </div>
           </div>
@@ -199,6 +207,7 @@ export function GeneralTab({ config, onChange }: GeneralTabProps) {
                 onChange={(e) => onChange({ bodyColor: e.target.value })}
                 placeholder="#555555"
                 className="flex-1"
+                aria-invalid={!isHexColorOrEmpty(config.bodyColor)}
               />
             </div>
           </div>
