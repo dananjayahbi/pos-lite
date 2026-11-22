@@ -8,6 +8,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { toCsvLines } from '@/lib/export';
 import { Prisma } from '@/generated/prisma/client';
 import { LOW_STOCK_SQL_PREDICATE } from '@/lib/inventory/lowStockPredicate';
+import { LOW_STOCK_OVERRIDE_MAX } from '@/lib/inventory/lowStockThreshold';
 
 interface LowStockRow {
   id: string;
@@ -51,9 +52,12 @@ export async function GET(request: NextRequest) {
     const countOnly = searchParams.get('countOnly') === 'true';
     const format = searchParams.get('format');
     // XC-01: threshold=abc used to be parseInt→NaN→silent empty 200 (BUG-81)
-    // and >int4 crashed with 500 (BUG-82). Now: malformed → 400, clamped to a
-    // sane int4 window.
-    const threshold = parseQueryInt(searchParams, 'threshold', { min: 0, max: 2_147_483_647 });
+    // and >int4 crashed with 500 (BUG-82). ARGUS #216: a huge value is also a
+    // nonsense shortfall, so it returns 400 instead of being clamped to int4.
+    const threshold = parseQueryInt(searchParams, 'threshold', {
+      min: 0,
+      max: LOW_STOCK_OVERRIDE_MAX,
+    });
     const page = parseQueryInt(searchParams, 'page', { default: 1, min: 1 }) ?? 1;
     const limit = parseQueryInt(searchParams, 'limit', { default: 25, min: 1, max: 100 }) ?? 25;
 

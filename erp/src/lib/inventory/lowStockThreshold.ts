@@ -48,3 +48,39 @@ export function lowStockThresholdCellLabel(
   const resolved = resolveEffectiveLowStockThreshold(variantThreshold, override);
   return resolved.isOverride ? `${resolved.applied} (override)` : String(resolved.applied);
 }
+
+/**
+ * ARGUS #216 - the override input contract.
+ *
+ * The number input snapped an empty field back to 1 (so replacing 5 with 20
+ * could become 120), accepted 9,999,999,999 (which the API clamped to int4) and
+ * forced a minimum of 1 even though threshold `0` is the out-of-stock view.
+ * The input is now kept as text and parsed here: empty is an explicit error
+ * rather than a silent 1, `0` is valid, and values above a sane ceiling are
+ * rejected before they reach the API.
+ */
+export const LOW_STOCK_OVERRIDE_MAX = 1_000_000;
+
+export interface LowStockOverrideParseResult {
+  /** Present only when the input is valid. */
+  threshold?: number;
+  error?: string;
+}
+
+export function parseLowStockOverrideInput(raw: string): LowStockOverrideParseResult {
+  const trimmed = raw.trim();
+  if (trimmed === '') {
+    return { error: 'Enter a threshold - 0 shows out-of-stock variants only' };
+  }
+  if (!/^\d+$/.test(trimmed)) {
+    return { error: 'Enter a whole number' };
+  }
+  const value = Number(trimmed);
+  if (!Number.isSafeInteger(value)) {
+    return { error: `Threshold cannot exceed ${LOW_STOCK_OVERRIDE_MAX.toLocaleString('en-GB')}` };
+  }
+  if (value > LOW_STOCK_OVERRIDE_MAX) {
+    return { error: `Threshold cannot exceed ${LOW_STOCK_OVERRIDE_MAX.toLocaleString('en-GB')}` };
+  }
+  return { threshold: value };
+}
