@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { CreatePromotionSchema, UpdatePromotionSchema } from '@/lib/validators/promotion.validators';
+import { CreatePromotionSchema, EvaluateCartSchema, UpdatePromotionSchema } from '@/lib/validators/promotion.validators';
 
 describe('CreatePromotionSchema free-item promotions (ARGUS #324)', () => {
   it('accepts a BOGO with a cap, buy quantity and target', () => {
@@ -214,6 +214,17 @@ describe('CreatePromotionSchema conditional requirements (ARGUS #330)', () => {
     ).toBe(true);
   });
 
+  it('stores a promo code in the uppercase the input shows (ARGUS #334)', () => {
+    const parsed = CreatePromotionSchema.safeParse({
+      name: 'Summer',
+      type: 'PROMO_CODE',
+      value: 10,
+      promoCode: ' summer10 ',
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.promoCode).toBe('SUMMER10');
+  });
+
   it('requires a category for CATEGORY_PERCENTAGE', () => {
     const parsed = CreatePromotionSchema.safeParse({
       name: 'No category',
@@ -240,5 +251,63 @@ describe('CreatePromotionSchema conditional requirements (ARGUS #330)', () => {
         expect(parsed.error.issues[0]?.path).toEqual(['targetProductId']);
       }
     }
+  });
+});
+
+/** ARGUS #334: the evaluate endpoint must return 400, not 500/negative money. */
+describe('EvaluateCartSchema input hardening', () => {
+  const line = {
+    variantId: 'variant-1',
+    quantity: 2,
+    unitPrice: '1000.00',
+  };
+
+  it('accepts a normal cart line', () => {
+    expect(EvaluateCartSchema.safeParse({ cartLines: [line] }).success).toBe(true);
+  });
+
+  it('rejects a non-numeric unit price with a field error', () => {
+    const parsed = EvaluateCartSchema.safeParse({
+      cartLines: [{ ...line, unitPrice: 'not-a-price' }],
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.path).toEqual(['cartLines', 0, 'unitPrice']);
+    }
+  });
+
+  it('rejects negative unit price and manual discount values', () => {
+    expect(
+      EvaluateCartSchema.safeParse({ cartLines: [{ ...line, unitPrice: '-1' }] }).success,
+    ).toBe(false);
+    expect(
+      EvaluateCartSchema.safeParse({
+        cartLines: [{ ...line, manualDiscountAmount: '-15' }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('bounds the manual discount at the line total', () => {
+    expect(
+      EvaluateCartSchema.safeParse({
+        cartLines: [{ ...line, manualDiscountAmount: '2000' }],
+      }).success,
+    ).toBe(true);
+    expect(
+      EvaluateCartSchema.safeParse({
+        cartLines: [{ ...line, manualDiscountAmount: '2000.01' }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('bounds quantity and money to storage-safe ceilings', () => {
+    expect(
+      EvaluateCartSchema.safeParse({ cartLines: [{ ...line, quantity: 0 }] }).success,
+    ).toBe(false);
+    expect(
+      EvaluateCartSchema.safeParse({
+        cartLines: [{ ...line, unitPrice: '10000000000.00' }],
+      }).success,
+    ).toBe(false);
   });
 });

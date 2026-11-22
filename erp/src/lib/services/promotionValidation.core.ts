@@ -94,6 +94,17 @@ export function normalizePromoCode(raw: string | null | undefined): string | nul
 }
 
 /**
+ * Canonical stored promo code (ARGUS #334). The input looks uppercase, so the
+ * stored value must match it; matching stays case-insensitive for old rows.
+ */
+export function normalizePromoCodeForStorage(
+  raw: string | null | undefined,
+): string | null {
+  const normalized = normalizePromoCode(raw);
+  return normalized === null ? null : normalized.toLocaleUpperCase('en-US');
+}
+
+/**
  * Identity key for case-insensitive uniqueness (`SUMMER10` = `summer10`).
  * Whitespace and surrounding case never create a second code.
  */

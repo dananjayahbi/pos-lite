@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   normalizePromoCode,
+  normalizePromoCodeForStorage,
   promoCodeConflicts,
   promoCodeKey,
   promotionTypeIssues,
@@ -52,6 +53,12 @@ describe('promo code identity', () => {
     expect(normalizePromoCode('  summer10 ')).toBe('summer10');
     expect(normalizePromoCode('   ')).toBeNull();
     expect(normalizePromoCode(null)).toBeNull();
+  });
+
+  it('stores new codes in the uppercase the input shows (ARGUS #334)', () => {
+    expect(normalizePromoCodeForStorage('  summer10 ')).toBe('SUMMER10');
+    expect(normalizePromoCodeForStorage('')).toBeNull();
+    expect(normalizePromoCodeForStorage(null)).toBeNull();
   });
 
   it('compares case-insensitively', () => {

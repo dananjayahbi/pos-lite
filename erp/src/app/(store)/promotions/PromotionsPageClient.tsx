@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
 import { toast } from 'sonner';
 import Decimal from 'decimal.js';
-import { Plus, Pencil } from 'lucide-react';
+import { Plus, Pencil, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
 import { auditPromotions } from '@/lib/services/promotionHygiene.core';
 import {
@@ -64,6 +64,7 @@ import {
 // M15-01 (BUG-46) — customer pricing rules are managed in their own tab
 // rather than appended to this table.
 import { CustomerPricingTab } from '@/components/promotions/CustomerPricingTab';
+import { PromotionProductSelect } from '@/components/promotions/PromotionProductSelect';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -117,10 +118,7 @@ interface CategoryOption {
   name: string;
 }
 
-interface ProductOption {
-  id: string;
-  name: string;
-}
+const PAGE_SIZE = 10;
 
 // ── Badge Style Helper ───────────────────────────────────────────────────────
 
@@ -216,13 +214,21 @@ function getPreviewText(
 interface PromotionFormProps {
   defaultValues?: Partial<CreatePromotionInput>;
   categories: CategoryOption[];
-  products: ProductOption[];
+  /** Label for the edited promotion's current product, if any. */
+  selectedProductLabel?: string | undefined;
   onSubmit: (data: CreatePromotionInput) => void;
   isSubmitting: boolean;
   submitLabel: string;
 }
 
-function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmitting, submitLabel }: PromotionFormProps) {
+function PromotionForm({
+  defaultValues,
+  categories,
+  selectedProductLabel,
+  onSubmit,
+  isSubmitting,
+  submitLabel,
+}: PromotionFormProps) {
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<CreatePromotionFormValues, unknown, CreatePromotionInput>({
     resolver: standardSchemaResolver(CreatePromotionSchema),
     defaultValues: {
@@ -328,21 +334,14 @@ function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmit
       {(watchedType === 'PRODUCT_PERCENTAGE' || watchedType === 'PRODUCT_FIXED') && (
         <div className="space-y-1.5">
           <Label htmlFor="targetProductId" className="font-body text-sm text-espresso">Product</Label>
-          <Select
-            value={watch('targetProductId') ?? ''}
-            onValueChange={(v) => setValue('targetProductId', v)}
-          >
-            <SelectTrigger className="font-body">
-              <SelectValue placeholder="Select product" />
-            </SelectTrigger>
-            <SelectContent>
-              {products.map((p) => (
-                <SelectItem key={p.id} value={p.id} className="font-body">
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <PromotionProductSelect
+            id="targetProductId"
+            value={watch('targetProductId')}
+            onChange={(productId) => setValue('targetProductId', productId)}
+            selectedLabel={selectedProductLabel}
+            placeholder="Select product"
+            disabled={isSubmitting}
+          />
           {errors.targetProductId && (
             <p className="text-xs text-[#9B2226]">{errors.targetProductId.message}</p>
           )}
@@ -378,24 +377,17 @@ function PromotionForm({ defaultValues, categories, products, onSubmit, isSubmit
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="bogoTargetProductId" className="font-body text-sm text-espresso">Product</Label>
-            <Select
-              value={watch('targetProductId') ?? ''}
-              onValueChange={(v) => {
-                setValue('targetProductId', v);
+            <PromotionProductSelect
+              id="bogoTargetProductId"
+              value={watch('targetProductId')}
+              onChange={(productId) => {
+                setValue('targetProductId', productId);
                 setValue('targetCategoryId', undefined);
               }}
-            >
-              <SelectTrigger className="font-body">
-                <SelectValue placeholder="Single product" />
-              </SelectTrigger>
-              <SelectContent>
-                {products.map((p) => (
-                  <SelectItem key={p.id} value={p.id} className="font-body">
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              selectedLabel={selectedProductLabel}
+              placeholder="Single product"
+              disabled={isSubmitting}
+            />
           </div>
           {errors.targetProductId && (
             <p className="text-xs text-[#9B2226]">{errors.targetProductId.message}</p>
@@ -511,23 +503,41 @@ export default function PromotionsPage({
     },
   });
 
-  // Fetch products for product-wise promotion select
-  const { data: products = [] } = useQuery({
-    queryKey: ['products-list-promotions'],
-    queryFn: async () => {
-      const res = await fetch('/api/store/products?status=active&limit=1000');
-      if (!res.ok) return [];
-      const json = await res.json();
-      return (json.data ?? []) as ProductOption[];
-    },
-  });
-
   const promotions = data ?? [];
   // ARGUS #329: "active" means live at this instant, not merely isActive.
   const liveCounts = summarizePromotionLiveStates(promotions);
   const activeCount = liveCounts.live;
   const promoCodeCount = promotions.filter((promotion) => promotion.type === 'PROMO_CODE').length;
   const hygiene = auditPromotions(promotions);
+
+  // ARGUS #334: search/status filter and pagination over the loaded page.
+  const [search, setSearch] = useState('');
+  const [liveFilter, setLiveFilter] = useState<'ALL' | PromotionLiveState>('ALL');
+  const [page, setPage] = useState(1);
+
+  const filteredPromotions = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return promotions.filter((promotion) => {
+      if (liveFilter !== 'ALL' && getPromotionLiveState(promotion) !== liveFilter) {
+        return false;
+      }
+      if (!needle) return true;
+      return (
+        promotion.name.toLowerCase().includes(needle) ||
+        (promotion.promoCode ?? '').toLowerCase().includes(needle) ||
+        (PROMOTION_TYPE_LABELS[promotion.type] ?? promotion.type)
+          .toLowerCase()
+          .includes(needle)
+      );
+    });
+  }, [promotions, search, liveFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredPromotions.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pagedPromotions = filteredPromotions.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
 
   // Create mutation
   const createMutation = useMutation({
@@ -683,7 +693,6 @@ export default function PromotionsPage({
               </DialogHeader>
               <PromotionForm
                 categories={categories}
-                products={products}
                 onSubmit={(data) => createMutation.mutate(data)}
                 isSubmitting={createMutation.isPending}
                 submitLabel="Create Promotion"
@@ -717,13 +726,59 @@ export default function PromotionsPage({
             <div className="rounded-xl border border-mist/30 bg-pearl p-4">
               <p className="font-body text-xs uppercase tracking-wide text-mist-ink">Scheduled</p>
               <p className="mt-2 font-display text-2xl text-espresso">{liveCounts.scheduled}</p>
-              <p className="mt-1 text-sm text-sand-ink">Waiting for their start date; expired rows are not counted here.</p>
+              <p className="mt-1 text-sm text-sand-ink">Starts in the future; not applying yet.</p>
             </div>
             <div className="rounded-xl border border-mist/30 bg-pearl p-4">
               <p className="font-body text-xs uppercase tracking-wide text-mist-ink">Promo codes</p>
               <p className="mt-2 font-display text-2xl text-espresso">{promoCodeCount}</p>
-              <p className="mt-1 text-sm text-sand-ink">If this grows into a monster, we can graduate it to a dedicated page later.</p>
+              <p className="mt-1 text-sm text-sand-ink">
+                Codes customers type at checkout. Each is also listed as its own promotion.
+              </p>
             </div>
+          </div>
+
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-mist-ink" />
+              <Input
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search by name, code or type"
+                aria-label="Search promotions"
+                className="border-mist pl-8 font-body"
+              />
+            </div>
+            <Select
+              value={liveFilter}
+              onValueChange={(value) => {
+                setLiveFilter(value as 'ALL' | PromotionLiveState);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger
+                className="w-48 border-mist font-body"
+                aria-label="Filter promotions by live status"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All statuses</SelectItem>
+                {(Object.keys(PROMOTION_LIVE_STATE_LABELS) as PromotionLiveState[]).map(
+                  (state) => (
+                    <SelectItem key={state} value={state}>
+                      {PROMOTION_LIVE_STATE_LABELS[state]}
+                    </SelectItem>
+                  ),
+                )}
+              </SelectContent>
+            </Select>
+            <span className="font-body text-xs text-mist-ink">
+              {filteredPromotions.length} of {promotions.length} shown
+            </span>
           </div>
 
           {/* Table */}
@@ -747,9 +802,27 @@ export default function PromotionsPage({
                 {isFetching ? 'Retrying...' : 'Retry'}
               </Button>
             </div>
-          ) : promotions.length === 0 ? (
+          ) : filteredPromotions.length === 0 ? (
             <div className="text-center py-16">
-              <p className="font-body text-mist-ink">No promotions yet. Create one to get started.</p>
+              <p className="font-body text-mist-ink">
+                {promotions.length === 0
+                  ? 'No promotions yet. Create one to get started.'
+                  : 'No promotions match these filters.'}
+              </p>
+              {promotions.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 font-body"
+                  onClick={() => {
+                    setSearch('');
+                    setLiveFilter('ALL');
+                    setPage(1);
+                  }}
+                >
+                  Clear filters
+                </Button>
+              )}
             </div>
           ) : (
             <div className="border border-mist/30 rounded-lg overflow-hidden">
@@ -767,7 +840,7 @@ export default function PromotionsPage({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {promotions.map((promo) => {
+                  {pagedPromotions.map((promo) => {
                     const liveState = getPromotionLiveState(promo);
                     return (
                     <TableRow key={promo.id} className="hover:bg-linen/30">
@@ -799,6 +872,9 @@ export default function PromotionsPage({
                               onCheckedChange={(checked) =>
                                 toggleMutation.mutate({ id: promo.id, isActive: checked })
                               }
+                              aria-label={`${
+                                promo.isActive ? 'Deactivate' : 'Activate'
+                              } ${promo.name}`}
                             />
                           )}
                           <Badge
@@ -838,6 +914,34 @@ export default function PromotionsPage({
             </div>
           )}
 
+          {!isLoading && !isError && filteredPromotions.length > 0 && (
+            <div className="flex items-center justify-end gap-2">
+              <span className="font-body text-xs text-mist-ink">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="font-body"
+                disabled={currentPage <= 1}
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="font-body"
+                disabled={currentPage >= totalPages}
+                onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+              >
+                Next
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
+
           {/* Edit Sheet */}
           <Sheet open={!!editPromo} onOpenChange={(open) => { if (!open) setEditPromo(null); }}>
             <SheetContent className="overflow-y-auto sm:max-w-xl">
@@ -861,7 +965,7 @@ export default function PromotionsPage({
                       description: editPromo.description ?? undefined,
                     }}
                     categories={categories}
-                    products={products}
+                    selectedProductLabel={editPromo.targetProduct?.name}
                     onSubmit={(data) => updateMutation.mutate({ id: editPromo.id, data })}
                     isSubmitting={updateMutation.isPending}
                     submitLabel="Save Changes"

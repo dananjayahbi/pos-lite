@@ -14,6 +14,7 @@ import { ApiError } from '@/lib/api/errors';
 import { lockingTx, lockForUpdate } from '@/lib/api/race-guard';
 import {
   normalizePromoCode,
+  normalizePromoCodeForStorage,
   promotionTypeIssues,
 } from '@/lib/services/promotionValidation.core';
 import { toWindowDate, windowIssues } from '@/lib/services/promotionWindow.core';
@@ -798,7 +799,7 @@ export async function createPromotion(
 ) {
   assertPromotionRequirements(data);
 
-  const promoCode = normalizePromoCode(data.promoCode);
+  const promoCode = normalizePromoCodeForStorage(data.promoCode);
   const startsAt = toWindowDate(data.startsAt, 'start');
   const endsAt = toWindowDate(data.endsAt, 'end');
 
@@ -856,7 +857,7 @@ export async function updatePromotion(
 
     const nextType = data.type ?? existing.type;
     const nextPromoCode = data.promoCode !== undefined
-      ? normalizePromoCode(data.promoCode)
+      ? normalizePromoCodeForStorage(data.promoCode)
       : existing.promoCode;
     const nextCategoryId = data.targetCategoryId === undefined
       ? existing.targetCategoryId
