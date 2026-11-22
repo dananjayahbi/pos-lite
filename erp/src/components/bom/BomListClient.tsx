@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, History, Plus, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, History, Plus, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -22,13 +22,16 @@ interface BomListClientProps {
 export function BomListClient({ permissions }: BomListClientProps) {
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
+  // ARGUS #254: the list asked for a fixed 50 rows and had no page controls.
+  const [page, setPage] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
   const [editingBomId, setEditingBomId] = useState<string | null>(null);
   const [produceBomId, setProduceBomId] = useState<string | null>(null);
 
   const { data, isError, isLoading, error, isFetching, refetch } = useBoms({
     ...(debounced ? { search: debounced } : {}),
-    limit: 50,
+    page,
+    limit: 25,
   });
 
   const canCreate = permissions.includes('bom:create');
@@ -38,6 +41,8 @@ export function BomListClient({ permissions }: BomListClientProps) {
   const canViewHistory = permissions.includes('bom:production:view');
 
   const items = data?.data ?? [];
+  const meta = data?.meta;
+  const totalPages = meta?.totalPages ?? 1;
 
   // ARGUS #252 - error outranks empty: a failed list must not claim there are
   // no recipes, and last-known rows are not presented as current.
@@ -81,7 +86,10 @@ export function BomListClient({ permissions }: BomListClientProps) {
           onChange={(e) => {
             setSearch(e.target.value);
             const value = e.target.value;
-            window.setTimeout(() => setDebounced(value), 300);
+            window.setTimeout(() => {
+              setDebounced(value);
+              setPage(1);
+            }, 300);
           }}
           className="max-w-sm"
         />
@@ -131,6 +139,34 @@ export function BomListClient({ permissions }: BomListClientProps) {
           }}
           onProduce={(id) => setProduceBomId(id)}
         />
+      )}
+
+      {viewState === 'data' && totalPages > 1 && (
+        <div className="flex items-center justify-between text-sm">
+          <p className="font-body text-mist-ink">
+            Page {meta?.page ?? page} of {totalPages} ({meta?.total ?? items.length} recipes)
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1 || isFetching}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              <ChevronLeft className="mr-1 h-4 w-4" />
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages || isFetching}
+              onClick={() => setPage((current) => current + 1)}
+            >
+              Next
+              <ChevronRight className="ml-1 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       )}
 
       <BomFormDialog

@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useBom, useBomEligibleVariants, useCreateBom, useUpdateBom, type BomIngredientView } from '@/hooks/useBom';
-import { useRawMaterials } from '@/hooks/useRawMaterials';
+import { useRawMaterials, type RawMaterialItem } from '@/hooks/useRawMaterials';
 import { getUnitLabel, getUnitShortLabel } from '@/lib/services/rawMaterial.core';
 import {
   findDuplicateRawMaterialIds,
@@ -71,7 +71,29 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
   } = useBom(editingBomId);
   // ARGUS #250: only manufactured variants without an existing BOM are offered.
   const { data: eligibleData } = useBomEligibleVariants(open && !isEdit);
-  const { data: materialsData } = useRawMaterials({ limit: 100 });
+  // ARGUS #254: the ingredient picker was capped at the first 100 materials.
+  // It now searches server-side and keeps any already-selected row visible.
+  const [materialSearch, setMaterialSearch] = useState('');
+  const [debouncedMaterialSearch, setDebouncedMaterialSearch] = useState('');
+  const { data: materialsData } = useRawMaterials({
+    limit: 50,
+    ...(debouncedMaterialSearch ? { search: debouncedMaterialSearch } : {}),
+  });
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedMaterialSearch(materialSearch.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [materialSearch]);
+
+  const [materialCache, setMaterialCache] = useState<Map<string, RawMaterialItem>>(new Map());
+  useEffect(() => {
+    if (!materialsData?.data) return;
+    setMaterialCache((previous) => {
+      const next = new Map(previous);
+      for (const material of materialsData.data) next.set(material.id, material);
+      return next;
+    });
+  }, [materialsData]);
 
   const createMutation = useCreateBom();
   const updateMutation = useUpdateBom();
@@ -99,9 +121,24 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
       setForm(EMPTY_FORM);
     }
     setError(null);
+    setMaterialSearch('');
+    setDebouncedMaterialSearch('');
   }, [open, isEdit, detailData]);
 
-  const materials = materialsData?.data ?? [];
+  const fetchedMaterials = materialsData?.data ?? [];
+  const selectedMaterialIds = new Set(
+    form.ingredients.map((row) => row.rawMaterialId).filter(Boolean),
+  );
+  // The current search result first, then any selected material that the search
+  // no longer returned so a saved recipe keeps showing its ingredient names.
+  const materials = [
+    ...fetchedMaterials,
+    ...[...materialCache.values()].filter(
+      (cached) =>
+        selectedMaterialIds.has(cached.id) &&
+        !fetchedMaterials.some((material) => material.id === cached.id),
+    ),
+  ];
 
   const variants = (eligibleData?.data ?? []).map((variant) => ({
     id: variant.id,
@@ -264,6 +301,21 @@ export function BomFormDialog({ open, onOpenChange, editingBomId }: BomFormDialo
               >
                 <Plus className="mr-1 h-4 w-4" /> Add ingredient
               </Button>
+            </div>
+            <div className="space-y-2">
+              <Input
+                placeholder="Search raw materials by name…"
+                aria-label="Search raw materials"
+                value={materialSearch}
+                onChange={(event) => setMaterialSearch(event.target.value)}
+              />
+              <p className="text-xs text-mist-ink">
+                Showing {materials.length} material{materials.length === 1 ? '' : 's'}
+                {debouncedMaterialSearch
+                  ? ` matching "${debouncedMaterialSearch}"`
+                  : ' - type to search the full catalogue'}
+                .
+              </p>
             </div>
             <div className="space-y-2">
               <div className="grid grid-cols-[minmax(0,1fr)_90px_70px_120px_32px] gap-2 px-1 text-xs font-medium uppercase tracking-wide text-mist-ink">
