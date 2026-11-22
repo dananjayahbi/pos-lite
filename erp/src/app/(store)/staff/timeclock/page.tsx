@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, CalendarPlus, Pencil, Settings2 } from 'lucide-react';
+import { CalendarDays, CalendarPlus, Download, LogIn, LogOut, Pencil, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -103,6 +110,15 @@ const STATUS_CLASS: Record<AttendanceDisplayStatus, string> = {
   INSUFFICIENT: 'border border-orange-200 bg-orange-100 text-orange-800',
 };
 
+/** Bulk markable statuses; HOLIDAY here is a per-staff status, not the calendar. */
+const BULK_STATUSES: AttendanceStatusValue[] = [
+  'LEAVE',
+  'HALF_DAY',
+  'ABSENT',
+  'HOLIDAY',
+  'PRESENT',
+];
+
 function todayYmd(): string {
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60_000;
@@ -140,6 +156,10 @@ export default function TimeclockPage() {
   const [adjustRow, setAdjustRow] = useState<AttendanceRow | null>(null);
   const [statusRow, setStatusRow] = useState<AttendanceRow | null>(null);
   const [punchesRow, setPunchesRow] = useState<AttendanceRow | null>(null);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [bulkStatus, setBulkStatus] = useState<AttendanceStatusValue>('LEAVE');
+  const [exportFrom, setExportFrom] = useState('');
+  const [exportTo, setExportTo] = useState('');
 
   const { data, isLoading, error, refetch } = useQuery<{
     success: boolean;
@@ -174,6 +194,90 @@ export default function TimeclockPage() {
   const rows = useMemo(() => data?.data?.staff ?? [], [data]);
   const dayInfo = data?.data;
   const canMarkHoliday = canManage && Boolean(dayInfo?.isWorkingDay) && !dayInfo?.isHoliday;
+
+  // ARGUS #359: the global header has a clock widget, but the Attendance page
+  // should let the person clock in/out where they review their own day.
+  const { data: selfStatus } = useQuery<{
+    success: boolean;
+    data: {
+      clockedInAt: string | null;
+      openRecordId: string | null;
+      needsReview: boolean;
+    };
+  }>({
+    queryKey: ['timeclock-me'],
+    queryFn: async () => {
+      const res = await fetch('/api/store/timeclock/me');
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message ?? 'Clock status could not be loaded');
+      }
+      return json;
+    },
+  });
+
+  const clockInMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/store/timeclock/clock-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message ?? 'Clock-in failed');
+      }
+      return json;
+    },
+    onSuccess: () => {
+      toast.success('Clocked in');
+      invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const clockOutMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/store/timeclock/clock-out', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message ?? 'Clock-out failed');
+      }
+      return json;
+    },
+    onSuccess: () => {
+      toast.success('Clocked out');
+      invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const bulkStatusMutation = useMutation({
+    mutationFn: async (input: { userIds: string[]; status: AttendanceStatusValue }) => {
+      for (const userId of input.userIds) {
+        const res = await fetch('/api/store/timeclock/attendance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, date, status: input.status }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          throw new Error(json.error?.message ?? 'Bulk attendance update failed');
+        }
+      }
+      return input.userIds.length;
+    },
+    onSuccess: (count) => {
+      toast.success(`Marked ${count} staff member${count === 1 ? '' : 's'} as ${STATUS_LABEL[bulkStatus]}`);
+      setSelectedUserIds([]);
+      invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
 
   const { data: calendarData } = useQuery<{ success: boolean; data: AttendanceCalendarSettings }>({
     queryKey: ['attendance-settings'],
@@ -241,6 +345,16 @@ export default function TimeclockPage() {
     ? summarizePunchIntervals(punchesRow.records)
     : null;
 
+  const allSelected = rows.length > 0 && selectedUserIds.length === rows.length;
+  const toggleAllRows = () =>
+    setSelectedUserIds(allSelected ? [] : rows.map((row) => row.userId));
+  const toggleRow = (userId: string) =>
+    setSelectedUserIds((current) =>
+      current.includes(userId)
+        ? current.filter((id) => id !== userId)
+        : [...current, userId],
+    );
+
   return (
     <div className="space-y-6 p-6">
       <div>
@@ -260,7 +374,10 @@ export default function TimeclockPage() {
               id="attendance-date"
               type="date"
               value={date}
-              onChange={(event) => setDate(event.target.value)}
+              onChange={(event) => {
+                setDate(event.target.value);
+                setSelectedUserIds([]);
+              }}
               className="mt-1 w-44 border-mist"
             />
           </div>
@@ -288,6 +405,77 @@ export default function TimeclockPage() {
           <p className="pb-2 text-xs text-sand-ink">
             Standard workday: 8h. Time beyond 8h is shown separately as OT.
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="flex flex-wrap items-end gap-3 p-4">
+          <div className="mr-auto">
+            <p className="text-espresso text-sm font-semibold">My clock</p>
+            <p className="text-sand-ink mt-1 text-xs">
+              {selfStatus?.data.clockedInAt
+                ? `Clocked in at ${formatTime(selfStatus.data.clockedInAt)}${
+                    selfStatus.data.needsReview ? ' - open beyond the maximum shift' : ''
+                  }.`
+                : 'Not clocked in.'}
+            </p>
+          </div>
+          {selfStatus?.data.clockedInAt ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => clockOutMutation.mutate()}
+              disabled={clockOutMutation.isPending}
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              {clockOutMutation.isPending ? 'Clocking out…' : 'Clock out'}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              className="bg-espresso text-pearl hover:bg-espresso/90"
+              onClick={() => clockInMutation.mutate()}
+              disabled={clockInMutation.isPending}
+            >
+              <LogIn className="mr-2 h-4 w-4" />
+              {clockInMutation.isPending ? 'Clocking in…' : 'Clock in'}
+            </Button>
+          )}
+          <div>
+            <Label htmlFor="attendance-export-from" className="font-body text-xs text-sand-ink">
+              Export from
+            </Label>
+            <Input
+              id="attendance-export-from"
+              type="date"
+              value={exportFrom || date}
+              onChange={(event) => setExportFrom(event.target.value)}
+              className="mt-1 w-40 border-mist"
+            />
+          </div>
+          <div>
+            <Label htmlFor="attendance-export-to" className="font-body text-xs text-sand-ink">
+              Export to
+            </Label>
+            <Input
+              id="attendance-export-to"
+              type="date"
+              value={exportTo || date}
+              onChange={(event) => setExportTo(event.target.value)}
+              className="mt-1 w-40 border-mist"
+            />
+          </div>
+          <Button variant="outline" asChild>
+            <a
+              href={`/api/store/timeclock/attendance/export?from=${encodeURIComponent(
+                exportFrom || date,
+              )}&to=${encodeURIComponent(exportTo || date)}`}
+              download
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Export CSV
+            </a>
+          </Button>
         </CardContent>
       </Card>
 
@@ -408,6 +596,51 @@ export default function TimeclockPage() {
       )}
 
       <ErrorBoundary>
+        {canManage && selectedUserIds.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-end gap-3 rounded-lg border border-mist bg-linen/40 p-3">
+            <p className="text-espresso mr-auto text-sm font-medium">
+              {selectedUserIds.length} selected for {date}
+            </p>
+            <div>
+              <Label htmlFor="bulk-attendance-status" className="font-body text-xs text-sand-ink">
+                Mark as
+              </Label>
+              <Select
+                value={bulkStatus}
+                onValueChange={(value) => setBulkStatus(value as AttendanceStatusValue)}
+              >
+                <SelectTrigger id="bulk-attendance-status" className="mt-1 w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {BULK_STATUSES.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {STATUS_LABEL[status]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              type="button"
+              className="bg-espresso text-pearl hover:bg-espresso/90"
+              disabled={bulkStatusMutation.isPending}
+              onClick={() =>
+                bulkStatusMutation.mutate({ userIds: selectedUserIds, status: bulkStatus })
+              }
+            >
+              {bulkStatusMutation.isPending ? 'Applying…' : 'Apply to selected'}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setSelectedUserIds([])}
+              disabled={bulkStatusMutation.isPending}
+            >
+              Clear
+            </Button>
+          </div>
+        )}
         {isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 5 }).map((_, index) => (
@@ -424,6 +657,17 @@ export default function TimeclockPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-linen/40">
+                    {canManage && (
+                      <TableHead className="w-8">
+                        <input
+                          type="checkbox"
+                          aria-label="Select all staff for bulk status"
+                          checked={allSelected}
+                          onChange={toggleAllRows}
+                          className="h-4 w-4 accent-espresso"
+                        />
+                      </TableHead>
+                    )}
                     <TableHead className="text-espresso">Staff</TableHead>
                     <TableHead className="text-espresso">Role</TableHead>
                     <TableHead className="text-espresso">Status</TableHead>
@@ -438,7 +682,7 @@ export default function TimeclockPage() {
                 <TableBody>
                   {rows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="py-10 text-center text-sand-ink">
+                      <TableCell colSpan={canManage ? 10 : 9} className="py-10 text-center text-sand-ink">
                         No active staff found.
                       </TableCell>
                     </TableRow>
@@ -447,6 +691,17 @@ export default function TimeclockPage() {
                       const hasOpenPunch = row.records.some((record) => record.isOpen);
                       return (
                         <TableRow key={row.userId} className="hover:bg-linen/20">
+                          {canManage && (
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${row.fullName ?? staffDisplayName(row.email)} for bulk status`}
+                                checked={selectedUserIds.includes(row.userId)}
+                                onChange={() => toggleRow(row.userId)}
+                                className="h-4 w-4 accent-espresso"
+                              />
+                            </TableCell>
+                          )}
                           <TableCell>
                             <p className="font-medium text-espresso">
                               {row.fullName ?? staffDisplayName(row.email)}

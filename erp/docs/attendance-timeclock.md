@@ -182,3 +182,20 @@ detection and the suggested close time.
 `src/lib/attendance/__tests__/punchTimes.core.test.ts` covers manual
 punch/overlap validation. `timeclock-attendance.test.ts` also pins the
 overdue-open-punch cap (16h → 480 regular + 480 OT).
+
+## Attendance page actions (ARGUS #359)
+
+- **My clock**: the page shows the signed-in user's open punch and a Clock in /
+  Clock out button, so the global header widget is no longer the only path.
+- **Bulk status**: managers can select several staff and mark Leave, Half Day,
+  Absent, Holiday or Present for the selected day in one action. Each write
+  still goes through `POST /api/store/timeclock/attendance`, so tenant scope,
+  permissions and audit rows are unchanged.
+- **Range export**: "Export CSV" downloads every staff/day row for an inclusive
+  `from`/`to` window (max 92 days) from
+  `GET /api/store/timeclock/attendance/export`. The previous CSV existed only on
+  one staff member's detail page.
+- **Adjust** now exposes the punch note field and sends it with the PATCH.
+  Server-side, a punch cannot be moved to another calendar day
+  (`punchDay.core.ts`); future clock-outs and overlapping punches were already
+  rejected by `punchTimes.core.ts`.

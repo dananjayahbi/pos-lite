@@ -100,3 +100,45 @@ test('39.1 every table on the listed pages has a white surface', async ({ page }
   expect(checked.length, `checked ${checked.join(', ')}; no table on ${withoutTable.join(', ')}`)
     .toBeGreaterThanOrEqual(15);
 });
+
+/**
+ * ARGUS #383: the table-surface sweep only proves a table rendered. This pins
+ * the payroll page content and the two distinct payslip actions.
+ */
+test('39.2 payroll pages expose their real content, not just a table', async ({ page }) => {
+  await login(page);
+
+  await page.goto(`${BASE_URL}/payroll`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: 'Run payroll' })).toBeVisible();
+  await expect(page.getByText('Recent payroll runs')).toBeVisible();
+  await expect(page.getByLabel('Payroll month')).toBeVisible();
+
+  await page.goto(`${BASE_URL}/payroll/reports`, { waitUntil: 'domcontentloaded' });
+  await expect(
+    page.getByRole('heading', { name: 'Payroll reports & bank sheets' }),
+  ).toBeVisible();
+  await expect(page.getByLabel('Payroll month')).toBeVisible();
+
+  // If a run exists, the three exports and the separate payslip actions render.
+  const exportCard = page.getByText('Monthly payroll summary');
+  if (await exportCard.isVisible().catch(() => false)) {
+    await expect(page.getByText('Bank salary worksheet')).toBeVisible();
+    await expect(page.getByText('EPF / ETF monthly returns')).toBeVisible();
+
+    // ARGUS #393: the export controls point at the real route and formats.
+    const exportLinks = page.locator('a[href*="/exports/"]');
+    const hrefs = await exportLinks.evaluateAll((links) =>
+      links.map((link) => link.getAttribute('href') ?? ''),
+    );
+    expect(hrefs.length).toBeGreaterThanOrEqual(6);
+    expect(hrefs.some((href) => href.includes('format=pdf'))).toBe(true);
+    expect(hrefs.some((href) => href.includes('format=xlsx'))).toBe(true);
+
+    const printButtons = page.getByRole('button', { name: /^Print payslip for / });
+    const downloadButtons = page.getByRole('button', { name: /^Download payslip for / });
+    const printCount = await printButtons.count();
+    if (printCount > 0) {
+      await expect(downloadButtons).toHaveCount(printCount);
+    }
+  }
+});

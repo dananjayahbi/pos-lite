@@ -41,9 +41,11 @@ import {
   type PayrollRunPaymentInfo,
 } from '@/lib/payroll/payroll-run-status';
 import { PAYROLL_EXPORT_PROVENANCE_CAVEAT } from '@/lib/payroll/export-provenance';
+import { payslipUrl } from '@/lib/payroll/payslip-links.core';
 import { summarizePayrollHeadcount } from '@/lib/payroll/export-eligibility.core';
 import { PAYROLL_TAX_NOT_CONFIGURED_MESSAGE } from '@/lib/payroll/tax-disclosure.core';
 import { formatRupee } from '@/lib/format';
+import { currentPayrollMonth } from '@/lib/payroll/payroll-month.core';
 
 interface PayrollRunSummary {
   id: string;
@@ -98,14 +100,15 @@ interface PayrollRunDetail extends PayrollRunSummary {
   totalEmployeeEpf: string;
   totalEmployerEpf: string;
   totalEmployerEtf: string;
+  /** Notes entered when the run was generated (ARGUS #382). */
+  notes: string | null;
   items: PayrollRunItem[];
   /** ARGUS #385: derived from the PAYROLL_RUN_PAID audit entry. */
   payment?: PayrollRunPaymentInfo | null;
 }
 
 function currentMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  return currentPayrollMonth();
 }
 
 function downloadUrl(
@@ -116,8 +119,8 @@ function downloadUrl(
   return `/api/store/payroll/runs/${runId}/exports/${kind}?format=${format}`;
 }
 
-function payslipUrl(runId: string, userId: string) {
-  return `/api/store/payroll/runs/${runId}/payslips/${userId}`;
+function payslipDownloadUrl(runId: string, userId: string) {
+  return payslipUrl(runId, userId, 'download');
 }
 
 export default function PayrollReportsClient() {
@@ -137,12 +140,14 @@ function PayrollReportsContent() {
   const [sendingUserId, setSendingUserId] = useState<string | null>(null);
 
   const runsQuery = useQuery<PayrollRunSummary[]>({
-    queryKey: ['payroll-runs'],
+    queryKey: ['payroll-runs', 'month', month],
     queryFn: () =>
-      fetchPayrollEnvelope<PayrollRunSummary[]>('/api/store/payroll/runs?limit=60'),
+      fetchPayrollEnvelope<PayrollRunSummary[]>(
+        `/api/store/payroll/runs?month=${encodeURIComponent(month)}`,
+      ),
   });
 
-  const summary = (runsQuery.data ?? []).find((run) => run.periodMonth === month);
+  const summary = runsQuery.data?.[0];
 
   const runQuery = useQuery<PayrollRunDetail>({
     queryKey: ['payroll-run', summary?.id],
@@ -159,7 +164,7 @@ function PayrollReportsContent() {
 
   const emailMutation = useMutation({
     mutationFn: async (userId: string) => {
-      const res = await fetch(`${payslipUrl(runQuery.data!.id, userId)}/email`, { method: 'POST' });
+      const res = await fetch(`${payslipDownloadUrl(runQuery.data!.id, userId)}/email`, { method: 'POST' });
       const json = (await res.json()) as {
         success: boolean;
         data?: { delivered: boolean; reason: string | null; status: string };
@@ -230,6 +235,7 @@ function PayrollReportsContent() {
               id="report-month"
               type="month"
               value={month}
+              max={currentMonth()}
               onChange={(event) => {
                 if (event.target.value) setMonth(event.target.value);
               }}
@@ -306,6 +312,13 @@ function PayrollReportsContent() {
                 {runStatus.statusLabel} - {run.periodMonth}
               </p>
               <p className="text-sand-ink mt-1 text-xs">{runStatus.statusDetail}</p>
+            </div>
+          )}
+
+          {run.notes && (
+            <div className="border-mist rounded-lg border p-4">
+              <p className="text-espresso text-sm font-semibold">Run notes</p>
+              <p className="text-sand-ink mt-1 whitespace-pre-wrap text-xs">{run.notes}</p>
             </div>
           )}
 
@@ -478,9 +491,10 @@ function PayrollReportsContent() {
                               size="sm"
                               variant="outline"
                               onClick={() =>
-                                window.open(payslipUrl(run.id, item.userId), '_blank', 'noopener')
+                                window.open(payslipUrl(run.id, item.userId, 'view'), '_blank', 'noopener')
                               }
-                              title="Print or download payslip"
+                              title="Open a print view of the payslip"
+                              aria-label={`Print payslip for ${item.staffName}`}
                             >
                               <Printer className="h-4 w-4" />
                             </Button>
@@ -488,9 +502,14 @@ function PayrollReportsContent() {
                               size="sm"
                               variant="outline"
                               onClick={() =>
-                                window.open(payslipUrl(run.id, item.userId), '_blank', 'noopener')
+                                window.open(
+                                  payslipDownloadUrl(run.id, item.userId),
+                                  '_blank',
+                                  'noopener',
+                                )
                               }
-                              title="Download payslip PDF"
+                              title="Download the payslip PDF"
+                              aria-label={`Download payslip for ${item.staffName}`}
                             >
                               <Download className="h-4 w-4" />
                             </Button>

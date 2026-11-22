@@ -14,6 +14,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  formatAttendanceDate,
+  shiftReferenceLabel,
+} from '@/lib/attendance/attendancePresentation.core';
 
 interface TimeClockRecord {
   id: string;
@@ -113,7 +117,7 @@ export function TimeClockHistoryPanel({
                 {records.records.map((record) => (
                   <TableRow key={record.id}>
                     <TableCell className="text-sm">
-                      {new Date(record.clockedInAt).toLocaleDateString('en-LK')}
+                      {formatAttendanceDate(record.clockedInAt)}
                     </TableCell>
                     <TableCell className="font-mono text-sm">
                       {new Date(record.clockedInAt).toLocaleTimeString('en-LK', {
@@ -133,7 +137,13 @@ export function TimeClockHistoryPanel({
                       {record.durationMinutes !== null ? formatMinutes(record.durationMinutes) : '-'}
                     </TableCell>
                     <TableCell className="font-mono text-xs">
-                      {record.shift ? `${record.shift.id.slice(0, 8)}…` : '-'}
+                      {record.shift ? (
+                        <span title={shiftReferenceLabel(record.shift).title}>
+                          {shiftReferenceLabel(record.shift).label}
+                        </span>
+                      ) : (
+                        '-'
+                      )}
                     </TableCell>
                     <TableCell className="max-w-[180px] truncate text-sm text-sand-ink">
                       {record.notes ?? '-'}

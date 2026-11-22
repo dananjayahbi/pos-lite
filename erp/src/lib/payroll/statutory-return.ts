@@ -5,6 +5,7 @@ import {
   describePayrollRunStatus,
   type PayrollRunPaymentInfo,
 } from '@/lib/payroll/payroll-run-status';
+import { applyMoneyNumberFormat } from '@/lib/payroll/xlsx-money.core';
 
 export interface StatutoryRow {
   staffName: string;
@@ -110,6 +111,8 @@ function epfSheet(meta: StatutoryMeta, rows: StatutoryRow[]): XLSX.WorkSheet {
     { wch: 20 },
     { wch: 20 },
   ];
+  const headerRow = aoa.findIndex((row) => row[0] === 'No.');
+  applyMoneyNumberFormat(sheet, [4, 5, 6], headerRow + 1, aoa.length - 1);
   return sheet;
 }
 
@@ -154,6 +157,8 @@ function etfSheet(meta: StatutoryMeta, rows: StatutoryRow[]): XLSX.WorkSheet {
     { wch: 22 },
     { wch: 20 },
   ];
+  const headerRow = aoa.findIndex((row) => row[0] === 'No.');
+  applyMoneyNumberFormat(sheet, [4, 5], headerRow + 1, aoa.length - 1);
   return sheet;
 }
 

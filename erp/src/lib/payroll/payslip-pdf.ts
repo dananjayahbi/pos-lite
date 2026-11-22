@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { formatMinutesAsHm } from '@/lib/utils/attendance-period';
+import { totalDeductionsIncludingEpf } from '@/lib/payroll/deductions.core';
 
 export interface PayrollPayslipCompany {
   name: string;
@@ -143,9 +144,9 @@ export async function generatePayrollPayslipPdf(
       3: { cellWidth: 155 },
     },
     body: [
-      ['Employee', data.item.staffName, 'Employee ID', data.item.epfNumber ?? '-'],
-      ['Role', data.item.role, 'NIC', data.item.nic ?? '-'],
-      ['Email', data.item.staffEmail, 'EPF / ETF No.', `${data.item.epfNumber ?? '-'} / ${data.item.etfNumber ?? '-'}`],
+      ['Employee', data.item.staffName, 'EPF No.', data.item.epfNumber ?? '-'],
+      ['Role', data.item.role, 'ETF No.', data.item.etfNumber ?? '-'],
+      ['Email', data.item.staffEmail, 'NIC', data.item.nic ?? '-'],
       [
         'Bank',
         [data.item.bankName, data.item.bankBranch].filter(Boolean).join(' - ') || '-',
@@ -197,7 +198,15 @@ export async function generatePayrollPayslipPdf(
       ],
       ['Salary Advances', rupees(data.item.advanceDeduction)],
       [`Employee EPF (${data.rates.employeeEpf}%)`, rupees(data.item.employeeEpf)],
-      ['Total (no-pay + advances)', rupees(data.item.totalDeductions)],
+      [
+        'Total deductions (no-pay + advances + EPF)',
+        rupees(
+          totalDeductionsIncludingEpf({
+            totalDeductions: data.item.totalDeductions,
+            employeeEpf: data.item.employeeEpf,
+          }),
+        ),
+      ],
     ],
     styles: { font: 'helvetica', fontSize: 9.5, cellPadding: 4, textColor: ESPRESSO },
     headStyles: { fillColor: ESPRESSO, textColor: [255, 255, 255] },
@@ -253,7 +262,7 @@ export async function generatePayrollPayslipPdf(
   doc.setFontSize(8);
   doc.setTextColor(120, 120, 120);
   doc.text(
-    'Net salary = Gross salary − (No-pay + Advances) − Employee EPF. Employer EPF/ETF are paid by the company and are not deducted from the employee.',
+    'Net salary = Gross salary − Total deductions (no-pay + advances + employee EPF). Employer EPF/ETF are paid by the company and are not deducted from the employee.',
     margin,
     afterNet + 22,
     { maxWidth: pageWidth - margin * 2 },

@@ -134,3 +134,25 @@ npx vitest run src/lib/payroll
 - `payroll-settings.test.ts` — parsing/defaults/working-day resolution.
 - `documents.test.ts` - payslip PDF, bank salary worksheet XLSX/PDF, EPF/ETF returns,
   summary report render without errors.
+
+## Payslip print vs download (ARGUS #380)
+
+Both actions stream the same generated PDF, but they now ask for different
+dispositions:
+
+- **Print** opens `/api/store/payroll/runs/<run>/payslips/<user>?disposition=inline`
+  in a new tab so the browser renders the PDF and the user can print it.
+- **Download** keeps `Content-Disposition: attachment` so it saves the file.
+
+The URL builder lives in `src/lib/payroll/payslip-links.core.ts` (unit tested),
+so the two buttons cannot collapse back into the same action. The route also
+sets `Cache-Control: private, no-store` for both modes.
+
+## Payslip labels and deduction total (ARGUS #381)
+
+The profile block labels the EPF and ETF numbers as `EPF No.` and `ETF No.` and
+the NIC as `NIC`; there is no invented "Employee ID". The deductions table now
+ends with **Total deductions (no-pay + advances + EPF)**, computed by
+`src/lib/payroll/deductions.core.ts`. That figure reconciles gross to net, and
+the footer formula names it directly instead of adding EPF a second time.
+

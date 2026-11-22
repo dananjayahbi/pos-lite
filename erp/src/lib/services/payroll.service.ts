@@ -36,6 +36,7 @@ import {
   summarizeAttendanceCompleteness,
 } from '@/lib/payroll/attendance-completeness.core';
 import type { PayrollRunPaymentInfo } from '@/lib/payroll/payroll-run-status';
+import { validatePayrollMonth } from '@/lib/payroll/payroll-month.core';
 import type {
   PayrollPreview,
   PayrollPreviewRow,
@@ -62,7 +63,13 @@ export async function buildPayrollPreview(
   month: string | null | undefined,
   overrides: PayrollRowOverride[] = [],
 ): Promise<PayrollPreview> {
-  const range = resolveAttendanceMonth(month);
+  // ARGUS #382: a payroll month is never in the future, whichever entry point
+  // (preview, generate, service test) reached this function.
+  const requestedMonth = validatePayrollMonth(month);
+  if (!requestedMonth.ok) {
+    throw new ApiError(400, 'VALIDATION_ERROR', requestedMonth.message);
+  }
+  const range = resolveAttendanceMonth(requestedMonth.month);
 
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: tenantId },
@@ -820,6 +827,29 @@ export async function listPayrollRuns(tenantId: string, limit = 24) {
       _count: { select: { items: true } },
     },
   });
+}
+
+/**
+ * ARGUS #392: look up one month directly instead of scanning the latest N runs.
+ * The Reports page previously requested `limit=60` and treated a month outside
+ * that window as "no run exists", so an older run could not be downloaded.
+ */
+export async function getPayrollRunSummaryForMonth(tenantId: string, month: string) {
+  const range = resolveAttendanceMonth(month);
+  const run = await prisma.payrollRun.findUnique({
+    where: { tenantId_periodMonth: { tenantId, periodMonth: range.month } },
+    select: {
+      id: true,
+      periodMonth: true,
+      status: true,
+      totalGross: true,
+      totalNet: true,
+      totalCompanyCost: true,
+      generatedAt: true,
+      _count: { select: { items: true } },
+    },
+  });
+  return run ? [run] : [];
 }
 
 export async function getPayrollSettings(tenantId: string): Promise<PayrollSettings> {

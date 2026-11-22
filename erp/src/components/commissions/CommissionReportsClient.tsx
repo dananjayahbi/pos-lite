@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -36,6 +36,11 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { COMMISSION_PAYOUT_REQUIRES_OWNER } from '@/lib/services/commission-payout-permission.core';
 import { formatRupee } from '@/lib/format';
 import { formatLocalDateYmd } from '@/lib/utils/commission-period';
+import {
+  commissionPayoutAmount,
+  formatCommissionDateTime,
+  formatCommissionWindow,
+} from '@/lib/services/commissionPayoutPresentation.core';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import {
   fetchCommissionEnvelope,
@@ -65,6 +70,8 @@ interface CommissionPayoutHistoryRecord {
   userEmail: string;
   userName: string | null;
   userRole: string;
+  /** Amount actually paid by this payout (partial payouts pay less than earned). */
+  amountPaid?: string;
   totalEarned: string;
   periodStart: string;
   periodEnd: string;
@@ -109,6 +116,8 @@ export default function CommissionReportsClient() {
   const defaults = getDefaultPeriod();
   const [periodStart, setPeriodStart] = useState(defaults.start);
   const [periodEnd, setPeriodEnd] = useState(defaults.end);
+  const [payoutPage, setPayoutPage] = useState(1);
+  const payoutPageSize = 20;
   const [payoutTarget, setPayoutTarget] = useState<CommissionSummary | undefined>(undefined);
   const [payoutOpen, setPayoutOpen] = useState(false);
   const [payoutNotes, setPayoutNotes] = useState('');
@@ -142,18 +151,32 @@ export default function CommissionReportsClient() {
     isError: payoutHistoryError,
     error: payoutHistoryErrorObject,
     refetch: refetchPayoutHistory,
-  } = useQuery<{ records: CommissionPayoutHistoryRecord[] }>({
-    queryKey: ['commission-payout-history', periodStart, periodEnd],
+  } = useQuery<{
+    records: CommissionPayoutHistoryRecord[];
+    page?: number;
+    totalPages?: number;
+    total?: number;
+  }>({
+    queryKey: ['commission-payout-history', periodStart, periodEnd, payoutPage],
     queryFn: () => {
       const params = new URLSearchParams({
         periodStart: new Date(periodStart).toISOString(),
         periodEnd: new Date(periodEnd + 'T23:59:59.999Z').toISOString(),
+        page: String(payoutPage),
+        pageSize: String(payoutPageSize),
       });
-      return fetchCommissionEnvelope<{ records: CommissionPayoutHistoryRecord[] }>(
-        `/api/store/staff/commissions/payouts?${params}`,
-      );
+      return fetchCommissionEnvelope<{
+        records: CommissionPayoutHistoryRecord[];
+        page: number;
+        totalPages: number;
+        total: number;
+      }>(`/api/store/staff/commissions/payouts?${params}`);
     },
   });
+
+  useEffect(() => {
+    setPayoutPage(1);
+  }, [periodStart, periodEnd]);
 
   const { data: accountsData } = useQuery<{ accounts: PaymentAccountOption[] }>({
     queryKey: ['payment-accounts', 'active'],
@@ -454,6 +477,7 @@ export default function CommissionReportsClient() {
               No payouts recorded for commission period {periodStart} to {periodEnd}.
             </div>
           ) : (
+            <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -481,14 +505,17 @@ export default function CommissionReportsClient() {
                       </div>
                     </TableCell>
                     <TableCell className="text-xs text-sand-ink">
-                      {new Date(payout.periodStart).toLocaleDateString()} to{' '}
-                      {new Date(payout.periodEnd).toLocaleDateString()}
+                      {formatCommissionWindow(payout.periodStart, payout.periodEnd)}
                     </TableCell>
-                    <TableCell className="text-sm text-sand-ink">{new Date(payout.paidAt).toLocaleString()}</TableCell>
+                    <TableCell className="text-sm text-sand-ink">
+                      {formatCommissionDateTime(payout.paidAt)}
+                    </TableCell>
                     <TableCell className="text-sm text-espresso">
                       {payout.paymentAccountName ?? payout.paymentMethod ?? 'Manual'}
                     </TableCell>
-                    <TableCell className="text-right font-mono">{formatRupee(payout.totalEarned)}</TableCell>
+                    <TableCell className="text-right font-mono">
+                      {formatRupee(commissionPayoutAmount(payout))}
+                    </TableCell>
                     <TableCell className="text-sm text-sand-ink">{payout.proofReference ?? '-'}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="outline" size="sm" onClick={() => setSelectedHistory(payout)}>
@@ -499,6 +526,39 @@ export default function CommissionReportsClient() {
                 ))}
               </TableBody>
             </Table>
+            {(payoutHistoryData?.totalPages ?? 1) > 1 && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-sand-ink">
+                  Page {payoutHistoryData?.page ?? payoutPage} of{' '}
+                  {payoutHistoryData?.totalPages ?? 1}
+                  {typeof payoutHistoryData?.total === 'number'
+                    ? ` · ${payoutHistoryData.total} payouts`
+                    : ''}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={payoutPage <= 1 || payoutHistoryLoading}
+                    onClick={() => setPayoutPage((page) => Math.max(1, page - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={
+                      payoutHistoryLoading ||
+                      payoutPage >= (payoutHistoryData?.totalPages ?? 1)
+                    }
+                    onClick={() => setPayoutPage((page) => page + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -630,11 +690,15 @@ export default function CommissionReportsClient() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-lg border border-mist p-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Amount</p>
-                    <p className="mt-2 font-display text-3xl text-espresso">{formatRupee(selectedHistory.totalEarned)}</p>
+                    <p className="mt-2 font-display text-3xl text-espresso">
+                      {formatRupee(commissionPayoutAmount(selectedHistory))}
+                    </p>
                   </div>
                   <div className="rounded-lg border border-mist p-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-sand-ink">Paid At</p>
-                    <p className="mt-2 text-espresso">{new Date(selectedHistory.paidAt).toLocaleString()}</p>
+                    <p className="mt-2 text-espresso">
+                      {formatCommissionDateTime(selectedHistory.paidAt)}
+                    </p>
                   </div>
                 </div>
                 {selectedHistory.allocation && (
@@ -656,7 +720,7 @@ export default function CommissionReportsClient() {
                   </div>
                 )}
                 <div className="rounded-lg border border-mist p-4 text-sand-ink">
-                  <p><span className="font-medium text-espresso">Commission window:</span> {new Date(selectedHistory.periodStart).toLocaleDateString()} → {new Date(selectedHistory.periodEnd).toLocaleDateString()}</p>
+                  <p><span className="font-medium text-espresso">Commission window:</span> {formatCommissionWindow(selectedHistory.periodStart, selectedHistory.periodEnd)}</p>
                   <p><span className="font-medium text-espresso">Payment account:</span> {selectedHistory.paymentAccountName ?? selectedHistory.paymentMethod ?? 'Manual / not specified'}</p>
                   <p><span className="font-medium text-espresso">Proof reference:</span> {selectedHistory.proofReference ?? 'Not recorded'}</p>
                   <p><span className="font-medium text-espresso">Authorised by:</span> {selectedHistory.authorizedByName ?? staffDisplayName(selectedHistory.authorizedByEmail)}</p>

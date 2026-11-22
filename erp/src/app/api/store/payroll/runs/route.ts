@@ -3,8 +3,9 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { ok, toErrorResponse, unauthorized, validationError } from '@/lib/api/error-envelope';
-import { generatePayrollRun, listPayrollRuns } from '@/lib/services/payroll.service';
+import { generatePayrollRun, listPayrollRuns, getPayrollRunSummaryForMonth } from '@/lib/services/payroll.service';
 import { GeneratePayrollSchema } from '@/lib/validators/payroll.validators';
+import { validatePayrollMonth } from '@/lib/payroll/payroll-month.core';
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,7 +21,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const limitParam = Number(request.nextUrl.searchParams.get('limit'));
+    const params = request.nextUrl.searchParams;
+    const month = params.get('month');
+    if (month) {
+      // ARGUS #392: exact month lookup; no five-year window and no misleading
+      // "not found" for a run that exists but sits outside the latest page.
+      const requested = validatePayrollMonth(month);
+      if (!requested.ok) {
+        return validationError([{ path: ['month'], message: requested.message }], requested.message);
+      }
+      return ok(await getPayrollRunSummaryForMonth(tenantId, requested.month));
+    }
+
+    const limitParam = Number(params.get('limit'));
     const runs = await listPayrollRuns(
       tenantId,
       Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 24,

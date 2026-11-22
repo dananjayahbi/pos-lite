@@ -23,6 +23,7 @@ export interface AdjustableClockRecord {
   isOpen: boolean;
   /** Open beyond the maximum shift  -  capped and waiting for a real clock-out. */
   needsReview?: boolean;
+  notes?: string | null;
 }
 
 export interface AttendanceAdjustRow {
@@ -281,6 +282,7 @@ function ClockRecordEditor({
   const [clockOut, setClockOut] = useState(
     record.clockedOutAt ? toDateTimeLocal(record.clockedOutAt) : '',
   );
+  const [notes, setNotes] = useState(record.notes ?? '');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -310,6 +312,7 @@ function ClockRecordEditor({
         body: JSON.stringify({
           clockedInAt: inDate.toISOString(),
           clockedOutAt: outDate ? outDate.toISOString() : null,
+          notes: notes.trim() ? notes.trim() : null,
         }),
       });
       const json = await res.json();
@@ -365,6 +368,21 @@ function ClockRecordEditor({
             disabled={isSubmitting}
           />
         </div>
+      </div>
+
+      <div>
+        <Label htmlFor={`clock-notes-${record.id}`} className="font-body text-xs">
+          Notes <span className="font-normal text-sand-ink">(reason/audit note)</span>
+        </Label>
+        <Input
+          id={`clock-notes-${record.id}`}
+          value={notes}
+          onChange={(event) => setNotes(event.target.value)}
+          placeholder="Why were the times changed?"
+          maxLength={500}
+          className="mt-1 border-mist text-xs"
+          disabled={isSubmitting}
+        />
       </div>
 
       {record.isOpen && (

@@ -45,6 +45,7 @@ export async function GET(
       status: context.run.status,
       payment: context.payment,
       provenanceNote: context.provenance.caveat,
+      employeeEpfRate: Number(context.run.employeeEpfRate),
     };
     const totals = summaryTotals(context);
     const items = toSummaryItems(context);
