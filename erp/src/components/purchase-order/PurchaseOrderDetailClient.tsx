@@ -260,6 +260,7 @@ export function PurchaseOrderDetailClient({ poId, canApprove }: { poId: string; 
         supplierContact={po.supplier.contactName}
         expectedDeliveryDate={po.expectedDeliveryDate}
         paymentTermDays={po.paymentTermDays}
+        paymentState={po.paymentState}
         orderDate={po.orderDate}
         createdAt={po.createdAt}
         createdByName={staffDisplayName(po.createdBy.email)}

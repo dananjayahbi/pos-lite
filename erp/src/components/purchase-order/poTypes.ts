@@ -83,6 +83,8 @@ export interface PurchaseOrderListItem {
   status: string;
   orderDate: string;
   expectedDeliveryDate?: string | null;
+  /** Terms drive the due date/overdue state (ARGUS #233). */
+  paymentTermDays?: number | null;
   subtotalAmount: string | number;
   discountAmount: string | number;
   totalAmount: string | number;

@@ -22,7 +22,7 @@ import { POPaymentTermsField, type PaymentTermValue } from './POPaymentTermsFiel
 import { POReferenceField } from './POReferenceField';
 import { updatePurchaseOrder } from './poApi';
 import { isPurchaseOrderFinanciallyLocked } from '@/lib/services/purchaseOrderPermissions.core';
-import { pinDayToNoonIso } from './poDates';
+import { pinDayToNoonIso, poDeliveryDateError } from './poDates';
 import { poQueryKeys } from './poQueryKeys';
 import type { PODiscountType, PurchaseOrderDetail } from './poTypes';
 
@@ -119,6 +119,8 @@ export function POEditDialog({ open, onOpenChange, purchaseOrder }: POEditDialog
 
   const referenceError =
     referenceNo.trim().length < 3 ? 'Reference must be at least 3 characters' : undefined;
+  // ARGUS #233: delivery cannot precede the order date.
+  const deliveryError = poDeliveryDateError(orderDate, expectedDelivery) ?? undefined;
 
   // Once money is applied the financial fields are frozen (ARGUS #226). The
   // reference and dates remain editable for corrections.
@@ -156,10 +158,14 @@ export function POEditDialog({ open, onOpenChange, purchaseOrder }: POEditDialog
             <input
               id="po-edit-expected"
               type="date"
+              min={orderDate || undefined}
               value={expectedDelivery}
               onChange={(event) => setExpectedDelivery(event.target.value)}
               className="border-mist bg-pearl text-espresso focus-visible:ring-espresso/30 h-9 w-full rounded-lg border px-3 text-sm focus-visible:ring-2 focus-visible:outline-none"
             />
+            {deliveryError ? (
+              <p className="mt-1 text-xs text-red-600">{deliveryError}</p>
+            ) : null}
           </div>
 
           <POPaymentTermsField
@@ -194,7 +200,7 @@ export function POEditDialog({ open, onOpenChange, purchaseOrder }: POEditDialog
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
             Cancel
           </Button>
-          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || Boolean(referenceError)}>
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || Boolean(referenceError) || Boolean(deliveryError)}>
             {mutation.isPending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

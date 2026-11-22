@@ -166,6 +166,13 @@ export async function POST(request: Request) {
       );
     }
 
+    if (message.startsWith('Expected delivery date')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message } },
+        { status: 400 },
+      );
+    }
+
     if (message.includes('already in use') || message.includes('not found or closed')) {
       return NextResponse.json(
         { success: false, error: { code: 'CONFLICT', message } },
