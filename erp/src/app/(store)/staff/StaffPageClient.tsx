@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSession } from 'next-auth/react';
 import { useForm } from 'react-hook-form';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
 import Link from 'next/link';
@@ -14,6 +15,8 @@ import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -39,6 +42,7 @@ import { toast } from 'sonner';
 import { CreateStaffSchema } from '@/lib/validators/staff.validators';
 import type { CreateStaffInput } from '@/lib/validators/staff.validators';
 import { ASSIGNABLE_ROLES, type AssignableRole } from '@/lib/constants/permissions';
+import { assignableRolesFor } from '@/lib/auth/staff-authorization';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { describeApiFailure, readJsonBody } from '@/lib/api/safe-response';
@@ -94,13 +98,27 @@ function RoleBadge({ role }: { role: string }) {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 10;
+
 export default function StaffPage({ canManage }: { canManage: boolean }) {
   const queryClient = useQueryClient();
+  const { data: sessionData } = useSession();
+  const sessionRole = (sessionData?.user?.role as string) ?? '';
+  const sessionUserId = sessionData?.user?.id ?? '';
+  // ARGUS #346: never offer a role the API would reject.
+  const assignableRoles = useMemo(() => assignableRolesFor(sessionRole), [sessionRole]);
 
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
+  const [page, setPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // ARGUS #346: deactivating a staff member (especially yourself or the owner)
+  // is confirmed first; the server also refuses the last active owner.
+  const [statusChange, setStatusChange] = useState<{
+    member: StaffMember;
+    nextActive: boolean;
+  } | null>(null);
   // M03-08 (GAP-2): optional initial password for the create dialog.
   const [initialPassword, setInitialPassword] = useState('');
 
@@ -142,6 +160,10 @@ export default function StaffPage({ canManage }: { canManage: boolean }) {
 
   const staff = data?.data ?? [];
 
+  const totalPages = Math.max(1, Math.ceil(staff.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pagedStaff = staff.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   // ── Toggle Active ──────────────────────────────────────────────────────────
 
   const toggleMutation = useMutation({
@@ -159,6 +181,7 @@ export default function StaffPage({ canManage }: { canManage: boolean }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['staff'] });
+      setStatusChange(null);
       toast.success('Staff status updated');
     },
     onError: (err) => {
@@ -176,8 +199,6 @@ export default function StaffPage({ canManage }: { canManage: boolean }) {
       commissionRate: undefined,
     },
   });
-
-  const selectedRole = form.watch('role');
 
   const createMutation = useMutation({
     mutationFn: async (data: CreateStaffInput) => {
@@ -303,7 +324,7 @@ export default function StaffPage({ canManage }: { canManage: boolean }) {
                         <SelectValue placeholder="Select role" />
                       </SelectTrigger>
                       <SelectContent>
-                        {ASSIGNABLE_ROLES.map((r) => (
+                        {assignableRoles.map((r) => (
                           <SelectItem key={r} value={r}>
                             {r.replace('_', ' ')}
                           </SelectItem>
@@ -375,25 +396,26 @@ export default function StaffPage({ canManage }: { canManage: boolean }) {
                       Optional now; the account cannot sign in until a password is set.
                     </p>
                   </div>
-                  {selectedRole === 'CASHIER' && (
-                    <div className="space-y-2">
-                      <Label htmlFor="commissionRate">Commission Rate (%)</Label>
-                      <Input
-                        id="commissionRate"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        placeholder="e.g. 5.00"
-                        {...form.register('commissionRate')}
-                      />
-                      {form.formState.errors.commissionRate && (
-                        <p className="text-sm text-terracotta">
-                          {form.formState.errors.commissionRate.message}
-                        </p>
-                      )}
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="commissionRate">Commission Rate (%)</Label>
+                    <Input
+                      id="commissionRate"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      placeholder="e.g. 5.00"
+                      {...form.register('commissionRate')}
+                    />
+                    <p className="text-xs text-sand-ink">
+                      Applies to sales this staff member handles; 0 or blank means no commission.
+                    </p>
+                    {form.formState.errors.commissionRate && (
+                      <p className="text-sm text-terracotta">
+                        {form.formState.errors.commissionRate.message}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -482,10 +504,19 @@ export default function StaffPage({ canManage }: { canManage: boolean }) {
         <Input
           placeholder="Search by name or email..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
           className="max-w-sm"
         />
-        <Select value={roleFilter} onValueChange={setRoleFilter}>
+        <Select
+          value={roleFilter}
+          onValueChange={(value) => {
+            setRoleFilter(value);
+            setPage(1);
+          }}
+        >
           <SelectTrigger className="w-52">
             <SelectValue placeholder="All roles" />
           </SelectTrigger>
@@ -506,6 +537,7 @@ export default function StaffPage({ canManage }: { canManage: boolean }) {
             onClick={() => {
               setSearch('');
               setRoleFilter('ALL');
+              setPage(1);
             }}
           >
             Clear filters
@@ -520,6 +552,7 @@ export default function StaffPage({ canManage }: { canManage: boolean }) {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Email</TableHead>
               <TableHead>Contact Number</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>Status</TableHead>
@@ -532,6 +565,7 @@ export default function StaffPage({ canManage }: { canManage: boolean }) {
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
                   <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-40" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-28" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-20" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-10" /></TableCell>
@@ -541,7 +575,7 @@ export default function StaffPage({ canManage }: { canManage: boolean }) {
               ))
             ) : error ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-8">
+                <TableCell colSpan={7} className="py-8">
                   <div className="mx-auto max-w-md space-y-3 text-center">
                     <p className="font-medium text-[#9B2226]">Staff list could not be loaded</p>
                     <p className="text-sm text-sand-ink">
@@ -562,16 +596,17 @@ export default function StaffPage({ canManage }: { canManage: boolean }) {
               </TableRow>
             ) : staff.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-sand-ink">
+                <TableCell colSpan={7} className="text-center py-8 text-sand-ink">
                   No staff members found
                 </TableCell>
               </TableRow>
             ) : (
-              staff.map((member) => (
+              pagedStaff.map((member) => (
                 <TableRow key={member.id}>
                   <TableCell className="font-medium">
                     {member.fullName ?? staffDisplayName(member.email)}
                   </TableCell>
+                  <TableCell className="text-sm text-sand-ink">{member.email}</TableCell>
                   <TableCell className="font-mono text-sm">
                     {member.contactNumber ?? '-'}
                   </TableCell>
@@ -583,8 +618,11 @@ export default function StaffPage({ canManage }: { canManage: boolean }) {
                       <Switch
                         checked={member.isActive}
                         onCheckedChange={(checked) =>
-                          toggleMutation.mutate({ id: member.id, isActive: checked })
+                          setStatusChange({ member, nextActive: checked })
                         }
+                        aria-label={`${
+                          member.isActive ? 'Deactivate' : 'Activate'
+                        } ${member.fullName ?? staffDisplayName(member.email)}`}
                       />
                     ) : (
                       <Badge variant={member.isActive ? 'default' : 'secondary'}>
@@ -612,6 +650,93 @@ export default function StaffPage({ canManage }: { canManage: boolean }) {
         </Table>
       </div>
       </ErrorBoundary>
+
+      {!isLoading && !error && totalPages > 1 && (
+        <div className="flex items-center justify-end gap-2">
+          <span className="text-xs text-sand-ink">
+            Page {currentPage} of {totalPages} · {staff.length} staff
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage <= 1}
+            onClick={() => setPage((value) => Math.max(1, value - 1))}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage >= totalPages}
+            onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+          >
+            Next
+          </Button>
+        </div>
+      )}
+
+      <Dialog
+        open={statusChange !== null}
+        onOpenChange={(open) => {
+          if (!open) setStatusChange(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-espresso">
+              {statusChange?.nextActive ? 'Activate staff member?' : 'Deactivate staff member?'}
+            </DialogTitle>
+            <DialogDescription className="font-body text-mist-ink">
+              {statusChange?.nextActive
+                ? `${statusChange.member.fullName ?? staffDisplayName(statusChange.member.email)} will be able to sign in again.`
+                : `${statusChange?.member.fullName ?? (statusChange ? staffDisplayName(statusChange.member.email) : 'This staff member')} will be signed out and blocked from signing in until reactivated.`}
+            </DialogDescription>
+          </DialogHeader>
+          {statusChange && !statusChange.nextActive && (
+            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 font-body text-xs text-amber-900">
+              {statusChange.member.id === sessionUserId && (
+                <p>You are deactivating your own account. You will lose access immediately.</p>
+              )}
+              {statusChange.member.role === 'OWNER' && (
+                <p>
+                  At least one active owner must remain. The server refuses this change if
+                  it would deactivate the last owner.
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setStatusChange(null)}
+              disabled={toggleMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              className={
+                statusChange?.nextActive
+                  ? 'bg-green-700 text-white hover:bg-green-800'
+                  : 'bg-[#9B2226] text-white hover:bg-[#9B2226]/90'
+              }
+              onClick={() => {
+                if (!statusChange) return;
+                toggleMutation.mutate({
+                  id: statusChange.member.id,
+                  isActive: statusChange.nextActive,
+                });
+              }}
+              disabled={toggleMutation.isPending}
+            >
+              {toggleMutation.isPending
+                ? 'Saving…'
+                : statusChange?.nextActive
+                  ? 'Activate'
+                  : 'Deactivate'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

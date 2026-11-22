@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, use } from 'react';
+import { useState, useCallback, useEffect, use, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
@@ -37,17 +37,18 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Download, FileText, LogOut, Pencil, KeyRound } from 'lucide-react';
+import { ArrowLeft, LogOut, Pencil, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { UpdateStaffSchema } from '@/lib/validators/staff.validators';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { usePermissions } from '@/hooks/usePermissions';
-import { canResetStaffPassword } from '@/lib/auth/staff-authorization';
+import { canResetStaffPassword, assignableRolesFor } from '@/lib/auth/staff-authorization';
 import { validateStaffPassword } from '@/lib/staff/passwordValidation.core';
-import { formatRupee } from '@/lib/format';
+import { formatRupee, formatShortDate, formatShortDateTime, formatShortTime } from '@/lib/format';
 import { getCommissionRecordStatus } from '@/lib/services/commissionSummary.core';
 import { maskBankAccountNumber } from '@/lib/services/staffPrivacy.core';
 import { TimeClockHistoryPanel } from '@/components/staff/TimeClockHistoryPanel';
+import { StaffDocumentDownloadButton } from '@/components/staff/StaffDocumentDownloadButton';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { extraPermissions } from '@/lib/services/permissionSet.core';
 import { describeApiFailure, readJsonBody } from '@/lib/api/safe-response';
@@ -112,14 +113,7 @@ function currentMonth(): string {
 }
 
 function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return '-';
-  return new Date(iso).toLocaleString('en-LK', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatShortDateTime(iso);
 }
 
 type Tab = 'profile' | 'commission' | 'timeclock';
@@ -134,8 +128,8 @@ const ROLE_COLORS: Record<string, string> = {
   FACTORY_MANAGER: 'bg-mist text-espresso',
 };
 
-const ASSIGNABLE_ROLES = ['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK', 'FACTORY_MANAGER'] as const;
-type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
+const OWNER_ASSIGNABLE_ROLES = ['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK', 'FACTORY_MANAGER'] as const;
+type AssignableRole = (typeof OWNER_ASSIGNABLE_ROLES)[number];
 
 function RoleBadge({ role }: { role: string }) {
   return (
@@ -255,6 +249,11 @@ export default function StaffDetailPage({
 
   const sessionRole = (sessionData?.user?.role as string) ?? '';
   const sessionUserId = sessionData?.user?.id ?? '';
+  // ARGUS #346: an editor only sees roles their own role may assign.
+  const editableRoles = useMemo(
+    () => assignableRolesFor(sessionRole) as AssignableRole[],
+    [sessionRole],
+  );
   // ARGUS #339: same gate as the API (staff:manage) plus the role hierarchy —
   // a manager must not reset an OWNER/manager above them.
   const canSetPassword =
@@ -295,24 +294,16 @@ export default function StaffDetailPage({
               Set Password
             </Button>
           )}
-          <Button variant="outline" size="sm" asChild>
-            <a
-              href={`/api/store/staff/${staffMember.id}/attendance/export?month=${encodeURIComponent(month)}`}
-              download
-            >
-              <Download className="mr-1.5 h-3.5 w-3.5" />
-              Attendance CSV
-            </a>
-          </Button>
-          <Button variant="outline" size="sm" asChild>
-            <a
-              href={`/api/store/staff/${staffMember.id}/payslip?month=${encodeURIComponent(month)}`}
-              download
-            >
-              <FileText className="mr-1.5 h-3.5 w-3.5" />
-              Payslip PDF
-            </a>
-          </Button>
+          <StaffDocumentDownloadButton
+            href={`/api/store/staff/${staffMember.id}/attendance/export?month=${encodeURIComponent(month)}`}
+            label="Attendance CSV"
+            filename={`attendance-${staffMember.id}-${month}.csv`}
+          />
+          <StaffDocumentDownloadButton
+            href={`/api/store/staff/${staffMember.id}/payslip?month=${encodeURIComponent(month)}`}
+            label="Payslip PDF"
+            filename={`payslip-${staffMember.id}-${month}.pdf`}
+          />
         </div>
       </div>
 
@@ -343,6 +334,7 @@ export default function StaffDetailPage({
           onSuccess={handleSuccess}
           canManage={hasPermission(PERMISSIONS.STAFF.manageStaff)}
           canForceLogout={sessionRole === 'OWNER' && sessionUserId !== staffMember.id}
+          roles={editableRoles}
         />
       )}
 
@@ -503,6 +495,7 @@ function ProfileTab({
   onSuccess,
   canManage,
   canForceLogout,
+  roles,
 }: {
   staffMember: StaffDetail;
   editOpen: boolean;
@@ -510,6 +503,7 @@ function ProfileTab({
   onSuccess: () => void;
   canManage: boolean;
   canForceLogout: boolean;
+  roles: AssignableRole[];
 }) {
   const [forceLogoutOpen, setForceLogoutOpen] = useState(false);
   const [isForceLoggingOut, setIsForceLoggingOut] = useState(false);
@@ -569,6 +563,7 @@ function ProfileTab({
               </DialogHeader>
               <EditStaffForm
                 staffMember={staffMember}
+                roles={roles}
                 onSuccess={() => {
                   setEditOpen(false);
                   onSuccess();
@@ -639,11 +634,7 @@ function ProfileTab({
           <CardContent>
             {staffMember.clockedInAt ? (
               <Badge variant="default" className="bg-green-100 text-green-800">
-                Since{' '}
-                {new Date(staffMember.clockedInAt).toLocaleTimeString('en-LK', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
+                Since {formatShortTime(staffMember.clockedInAt)}
               </Badge>
             ) : (
               <span className="text-sand-ink text-sm">Not clocked in</span>
@@ -794,9 +785,11 @@ function ProfileTab({
 
 function EditStaffForm({
   staffMember,
+  roles,
   onSuccess,
 }: {
   staffMember: StaffDetail;
+  roles: AssignableRole[];
   onSuccess: () => void;
 }) {
   const form = useForm<UpdateStaffInput>({
@@ -871,7 +864,7 @@ function EditStaffForm({
                 <SelectValue placeholder="Select role" />
               </SelectTrigger>
               <SelectContent>
-                {ASSIGNABLE_ROLES.map((r) => (
+                {roles.map((r) => (
                   <SelectItem key={r} value={r}>
                     {r.replace('_', ' ')}
                   </SelectItem>
@@ -1077,8 +1070,8 @@ function CommissionHistory({ staffId }: { staffId: string }) {
           </div>
           {lastPayout ? (
             <p className="text-xs text-sand-ink">
-              Last payout {lastPayout.id.slice(0, 8).toUpperCase()} on{' '}
-              {new Date(lastPayout.paidAt).toLocaleDateString('en-LK')} ({formatRupee(lastPayout.totalEarned)}).
+              Last payout {lastPayout.id} on {formatShortDate(lastPayout.paidAt)} (
+              {formatRupee(lastPayout.totalEarned)}).
             </p>
           ) : null}
 
@@ -1110,11 +1103,11 @@ function CommissionHistory({ staffId }: { staffId: string }) {
                     const status = getCommissionRecordStatus(r);
                     return (
                     <TableRow key={r.id}>
-                      <TableCell className="font-mono text-xs">
-                        {r.saleId.slice(0, 8)}…
+                      <TableCell className="font-mono text-xs break-all">
+                        {r.saleId}
                       </TableCell>
                       <TableCell className="text-sm">
-                        {new Date(r.createdAt).toLocaleDateString('en-LK')}
+                        {formatShortDateTime(r.createdAt)}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
                         {formatRupee(r.baseAmount)}
@@ -1154,9 +1147,8 @@ function CommissionHistory({ staffId }: { staffId: string }) {
                           {status === 'PAID' ? 'Paid' : status === 'PARTIAL' ? 'Partial' : 'Unpaid'}
                         </Badge>
                         {r.payout ? (
-                          <p className="mt-0.5 font-mono text-[10px] text-sand-ink">
-                            {r.payout.id.slice(0, 8).toUpperCase()} ·{' '}
-                            {new Date(r.payout.paidAt).toLocaleDateString('en-LK')}
+                          <p className="mt-0.5 font-mono text-[10px] text-sand-ink break-all">
+                            {r.payout.id} · {formatShortDate(r.payout.paidAt)}
                           </p>
                         ) : null}
                       </TableCell>
