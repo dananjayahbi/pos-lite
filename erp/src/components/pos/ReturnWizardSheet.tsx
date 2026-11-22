@@ -1,14 +1,23 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { useSession } from 'next-auth/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCartStore } from '@/stores/cartStore';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { canAuthorizeReturn } from '@/components/returns/returnAuthorizer';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReturnItemSelectionStep } from '@/components/pos/ReturnItemSelectionStep';
 import { ReturnRefundOptionsStep } from '@/components/pos/ReturnRefundOptionsStep';
 import { ReturnReceiptDialog } from '@/components/pos/ReturnReceiptDialog';
+import { computeReturnRefund } from '@/lib/services/returnRefund.core';
+import {
+  REFUND_METHODS,
+  defaultRefundMethodForSale,
+  refundMethodTenderMismatchReason,
+  type SaleTenderSnapshot,
+} from '@/lib/services/returnTender.core';
 import type { ReturnRefundMethod } from '@/generated/prisma/client';
 import Decimal from 'decimal.js';
 import { toast } from 'sonner';
@@ -41,6 +50,14 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
     refundMethod: string;
   } | null>(null);
   const queryClient = useQueryClient();
+  const { data: session } = useSession();
+  // ARGUS #95: attribute the return to the signed-in manager/owner. A cashier
+  // (or any non-manager holding an explicit `sale:refund` override) cannot
+  // authorize a refund, so no authorizer is sent — the record stays null and
+  // the history surfaces render "Not recorded".
+  const authorizedById = canAuthorizeReturn(session?.user?.role)
+    ? session?.user?.id
+    : undefined;
 
   const { data: saleData, isLoading, error, refetch } = useQuery({
     queryKey: ['sale-return', saleId],
@@ -52,6 +69,37 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
     },
     enabled: open && saleId !== null,
   });
+
+  // Store credit is issued to the sale's customer; a guest sale has nobody to
+  // hold the balance, so the method is unavailable (the API rejects it too).
+  const saleHasCustomer = Boolean(
+    (saleData as { customer?: { id?: string } | null } | undefined)?.customer?.id,
+  );
+
+  // ARGUS #96: cash/card refunds are only offered for a tender the sale
+  // actually collected. Store credit/exchange remain available.
+  const tenderMismatchReasons = useMemo(() => {
+    const reasons: Partial<Record<ReturnRefundMethod, string>> = {};
+    if (!saleData) return reasons;
+    for (const method of REFUND_METHODS) {
+      const reason = refundMethodTenderMismatchReason(
+        method,
+        saleData as SaleTenderSnapshot,
+      );
+      if (reason) reasons[method] = reason;
+    }
+    return reasons;
+  }, [saleData]);
+
+  // Derived, never synced via an effect: an invalid choice falls back to the
+  // most truthful method for this sale without cascading renders.
+  const effectiveRefundMethod: ReturnRefundMethod =
+    !(refundMethod === 'STORE_CREDIT' && !saleHasCustomer) &&
+    !tenderMismatchReasons[refundMethod]
+      ? refundMethod
+      : defaultRefundMethodForSale(saleData as SaleTenderSnapshot, {
+          storeCreditAvailable: saleHasCustomer,
+        });
 
   const resetWizard = useCallback(() => {
     setStep(1);
@@ -84,6 +132,14 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
 
   const handleSubmit = async () => {
     if (!saleId) return;
+    if (effectiveRefundMethod === 'STORE_CREDIT' && !saleHasCustomer) {
+      toast.error('Store credit requires a sale linked to a customer');
+      return;
+    }
+    if (tenderMismatchReasons[effectiveRefundMethod]) {
+      toast.error(tenderMismatchReasons[effectiveRefundMethod]);
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -97,10 +153,11 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
             variantId: l.variantId,
             quantity: l.quantity,
           })),
-          refundMethod,
+          refundMethod: effectiveRefundMethod,
           restockItems,
           reason,
-          ...(refundMethod === 'CARD_REVERSAL' && cardReversalReference
+          ...(authorizedById ? { authorizedById } : {}),
+          ...(effectiveRefundMethod === 'CARD_REVERSAL' && cardReversalReference
             ? { cardReversalReference }
             : {}),
         }),
@@ -119,7 +176,7 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
 
       void queryClient.invalidateQueries({ queryKey: ['sale-history'] });
 
-      if (refundMethod === 'EXCHANGE') {
+      if (effectiveRefundMethod === 'EXCHANGE') {
         const store = useCartStore.getState();
         store.clearCart();
         store.setExchangeCredit(
@@ -133,7 +190,7 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
         setReceiptState({
           returnId: returnRecord.id,
           refundAmount: returnRecord.refundAmount,
-          refundMethod,
+          refundMethod: effectiveRefundMethod,
         });
         return;
       }
@@ -148,25 +205,36 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
     }
   };
 
-  // Compute refund total from selected lines
-  const computeRefundTotal = (): Decimal => {
+  // Compute refund total from selected lines, including the tax collected.
+  // Uses the same pure calculation as the API so the preview and the saved
+  // refund always agree.
+  const refundTotal = useMemo(() => {
     if (!saleData) return new Decimal(0);
-    const sale = saleData as { lines: Array<{ id: string; quantity: number; lineTotalAfterDiscount: number }> };
-    let total = new Decimal(0);
-    for (const sel of selectedLines) {
-      const saleLine = sale.lines.find((l) => l.id === sel.saleLineId);
-      if (saleLine && sel.quantity > 0) {
-        const lineRefund = new Decimal(sel.quantity)
-          .div(new Decimal(saleLine.quantity))
-          .mul(new Decimal(saleLine.lineTotalAfterDiscount.toString()))
-          .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-        total = total.plus(lineRefund);
-      }
-    }
-    return total;
-  };
-
-  const refundTotal = computeRefundTotal();
+    const sale = saleData as {
+      taxAmount?: number | string;
+      discountAmount?: number | string;
+      lines: Array<{
+        id: string;
+        quantity: number;
+        lineTotalAfterDiscount: number | string;
+        lineTax?: number | string | null;
+        returnedQuantity?: number;
+        returnedRefundAmount?: number | string | null;
+        returnedTaxAmount?: number | string | null;
+      }>;
+    };
+    return computeReturnRefund(
+      {
+        lines: sale.lines,
+        taxAmount: sale.taxAmount ?? 0,
+        discountAmount: sale.discountAmount ?? 0,
+      },
+      selectedLines.map((line) => ({
+        saleLineId: line.saleLineId,
+        quantity: line.quantity,
+      })),
+    ).totalRefund;
+  }, [saleData, selectedLines]);
   const hasSelectedItems = selectedLines.some((l) => l.quantity > 0);
 
   const stepLabels = ['Select Items', 'Refund Options'];
@@ -288,9 +356,11 @@ export function ReturnWizardSheet({ saleId, open, onOpenChange, onReturnComplete
               {step === 2 && (
                 <ReturnRefundOptionsStep
                   refundTotal={refundTotal}
-                  refundMethod={refundMethod}
+                  refundMethod={effectiveRefundMethod}
                   cardReversalReference={cardReversalReference}
                   reason={reason}
+                  storeCreditAvailable={saleHasCustomer}
+                  tenderMismatchReasons={tenderMismatchReasons}
                   onChange={(patch) => {
                     if (patch.refundMethod !== undefined) setRefundMethod(patch.refundMethod);
                     if (patch.cardReversalReference !== undefined) setCardReversalReference(patch.cardReversalReference);

@@ -10,6 +10,17 @@ interface NotificationData {
   relatedEntityId: string | null;
   isRead: boolean;
   createdAt: string;
+  /** ARGUS #52: present for SALE_COMPLETED alerts; status drives the Voided label. */
+  relatedSale?: {
+    id: string;
+    status: string;
+    totalAmount: number | string;
+    /** ARGUS #58: why a zero/negative total was recorded. */
+    zeroValueReason?: string | null;
+    /** ARGUS #59: title summary (buyer first, then first product). */
+    customerName?: string | null;
+    productName?: string | null;
+  } | null;
 }
 
 interface NotificationsResponse {

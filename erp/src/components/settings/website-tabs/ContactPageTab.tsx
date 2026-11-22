@@ -93,7 +93,7 @@ export function ContactPageTab({ config, onChange }: ContactPageTabProps) {
             id="contactAddress"
             value={config.contactAddress ?? ''}
             onChange={(e) => onChange({ contactAddress: e.target.value })}
-            placeholder="No. 42, Horton Place, Colombo 07, Western Province, Sri Lanka (00700)"
+            placeholder="Store address shown on the contact page"
             rows={2}
           />
         </div>
@@ -121,7 +121,7 @@ export function ContactPageTab({ config, onChange }: ContactPageTabProps) {
             type="email"
             value={config.contactEmailDisplay ?? ''}
             onChange={(e) => onChange({ contactEmailDisplay: e.target.value })}
-            placeholder="care@wedagedara.lk"
+            placeholder="hello@yourstore.lk"
           />
         </div>
 

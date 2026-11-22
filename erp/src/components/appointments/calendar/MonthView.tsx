@@ -2,6 +2,8 @@
 
 import { useMemo } from 'react';
 import { useAppointments } from '@/hooks/appointments';
+import { selectMonthViewAppointments } from '@/lib/appointments/appointmentCalendar.core';
+import { formatAppointmentTime } from '@/lib/appointments/appointmentDisplay.core';
 
 const STATUS_DOT_COLORS: Record<string, string> = {
   SCHEDULED: 'bg-blue-500',
@@ -71,8 +73,12 @@ export function MonthView({ currentDate, onDayClick, onAppointmentClick }: Month
               return aDate.toDateString() === day.toDateString();
             });
 
+            // ARGUS #133: cancelled and QA fixture rows are collapsed instead
+            // of filling the day cell and the status dots.
+            const { visible: visibleAppts, hiddenCount } = selectMonthViewAppointments(dayAppts);
+
             const statusCounts: Record<string, number> = {};
-            dayAppts.forEach((a) => {
+            visibleAppts.forEach((a) => {
               statusCounts[a.status] = (statusCounts[a.status] || 0) + 1;
             });
 
@@ -98,17 +104,25 @@ export function MonthView({ currentDate, onDayClick, onAppointmentClick }: Month
                     </div>
                   ))}
                 </div>
-                {dayAppts.slice(0, 3).map((appt) => (
+                {visibleAppts.slice(0, 3).map((appt) => (
                   <div
                     key={appt.id}
                     className={`text-[10px] truncate mt-0.5 px-1 rounded border-l-2 ${STATUS_DOT_COLORS[appt.status]?.replace('bg-', 'border-l-') ?? 'border-l-gray-400'}`}
                     onClick={(e) => { e.stopPropagation(); onAppointmentClick(appt.id); }}
                   >
-                    {new Date(appt.startTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })} {appt.title}
+                    {formatAppointmentTime(appt.startTime)} {appt.title}
                   </div>
                 ))}
-                {dayAppts.length > 3 && (
-                  <div className="text-[10px] text-espresso/40">+{dayAppts.length - 3} more</div>
+                {visibleAppts.length > 3 && (
+                  <div className="text-[10px] text-espresso/40">+{visibleAppts.length - 3} more</div>
+                )}
+                {hiddenCount > 0 && (
+                  <div
+                    className="text-[10px] text-espresso/40"
+                    title={`${hiddenCount} cancelled or QA fixture appointment(s) hidden`}
+                  >
+                    +{hiddenCount} hidden
+                  </div>
                 )}
               </div>
             );

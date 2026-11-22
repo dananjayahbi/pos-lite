@@ -2,7 +2,15 @@ import Decimal from 'decimal.js';
 
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/lib/api/errors';
-import { AUDIT_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
+import { AUDIT_ACTIONS, createAuditLogInTransaction } from '@/lib/services/audit.service';
+import { evaluatePaymentAccountPolicy } from '@/lib/services/paymentAccountPolicy';
+import {
+  SALE_VOID_SOURCE,
+  classifyLedgerSource,
+  ledgerTotalPages,
+  nextAccountBalance,
+  type RefundSourceIds,
+} from '@/lib/services/paymentAccountLedger.core';
 import {
   PaymentAccountStatus,
   PaymentAccountType,
@@ -10,6 +18,8 @@ import {
 } from '@/generated/prisma/client';
 import type { Prisma, PrismaClient } from '@/generated/prisma/client';
 import type { TxClient } from '@/lib/services/inventory.service';
+import { lockForUpdate } from '@/lib/api/race-guard';
+import { resolveInclusiveDateRange } from '@/lib/api/inclusive-date-range';
 import type {
   CloseAccountInput,
   CreatePaymentAccountInput,
@@ -64,6 +74,80 @@ function makeGroupId(): string {
   return `pg_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function assertPaymentAccountPolicy(
+  input: Parameters<typeof evaluatePaymentAccountPolicy>[0],
+): void {
+  const decision = evaluatePaymentAccountPolicy(input);
+  if (!decision.allowed) {
+    throw new ApiError(403, 'FORBIDDEN', decision.reason ?? 'Owner approval is required');
+  }
+}
+
+/**
+ * Resolve which SALE_REFUND sourceIds belong to returns vs sales so void
+ * reversals can be labelled/filtered separately (ARGUS #430). Only distinct
+ * ids present in the same ledger window are queried.
+ */
+async function resolveRefundSourceIds(
+  tenantId: string,
+  baseWhere: Prisma.PaymentAccountEntryWhereInput,
+): Promise<RefundSourceIds> {
+  const rows = await prisma.paymentAccountEntry.findMany({
+    where: { ...baseWhere, source: PaymentEntrySource.SALE_REFUND },
+    select: { sourceId: true },
+    distinct: ['sourceId'],
+  });
+  const sourceIds = Array.from(
+    new Set(rows.map((row) => row.sourceId).filter((id): id is string => Boolean(id))),
+  );
+
+  if (sourceIds.length === 0) {
+    return { returnIds: new Set(), saleIds: new Set() };
+  }
+
+  const [returns, sales] = await Promise.all([
+    prisma.return.findMany({
+      where: { tenantId, id: { in: sourceIds } },
+      select: { id: true },
+    }),
+    prisma.sale.findMany({
+      where: { tenantId, id: { in: sourceIds } },
+      select: { id: true },
+    }),
+  ]);
+
+  return {
+    returnIds: new Set(returns.map((row) => row.id)),
+    saleIds: new Set(sales.map((row) => row.id)),
+  };
+}
+
+function applyLedgerSourceFilter(
+  where: Prisma.PaymentAccountEntryWhereInput,
+  source: string | undefined,
+  ids: RefundSourceIds,
+): void {
+  if (!source) return;
+
+  if (source === SALE_VOID_SOURCE) {
+    where.source = PaymentEntrySource.SALE_REFUND;
+    where.sourceId = { in: Array.from(ids.saleIds) };
+    return;
+  }
+
+  if (source === 'SALE_REFUND') {
+    where.source = PaymentEntrySource.SALE_REFUND;
+    // Everything not tied to a sale: return refunds, cancelled-return
+    // reversals and legacy null ids. This excludes every void reversal.
+    if (ids.saleIds.size > 0) {
+      where.NOT = { sourceId: { in: Array.from(ids.saleIds) } };
+    }
+    return;
+  }
+
+  where.source = source as PaymentEntrySource;
+}
+
 // ── Ledger primitives ────────────────────────────────────────────────────────
 
 /**
@@ -83,6 +167,14 @@ export async function postLedgerEntries(
   if (lines.length === 0) return;
 
   const accountIds = Array.from(new Set(lines.map((line) => line.accountId)));
+
+  // Serialize ledger postings per account: without the lock two concurrent
+  // movements read the same cached balance, both pass their checks and both
+  // write the same next balance (lost update / negative balance). Sorted ids
+  // keep multi-account postings deadlock-free (ARGUS #425).
+  for (const accountId of [...accountIds].sort()) {
+    await lockForUpdate(tx, 'payment_accounts', '"id" = $1', [accountId]);
+  }
 
   const accounts = await tx.paymentAccount.findMany({
     where: { id: { in: accountIds }, tenantId },
@@ -137,7 +229,7 @@ export async function postLedgerEntries(
     }
 
     const current = running.get(line.accountId)!;
-    const next = current.plus(debit).minus(credit);
+    const next = nextAccountBalance(current, debit, credit);
     running.set(line.accountId, next);
 
     return {
@@ -179,6 +271,10 @@ export async function assertSufficientFunds(
   overdrawApproved = false,
 ): Promise<void> {
   if (overdrawApproved) return;
+
+  // Lock the row so the funds check and the later posting in the same
+  // transaction see a serialized balance (ARGUS #425).
+  await lockForUpdate(tx, 'payment_accounts', '"id" = $1', [accountId]);
 
   const account = await tx.paymentAccount.findFirst({
     where: { id: accountId, tenantId },
@@ -242,6 +338,27 @@ export async function listPaymentAccounts(
   };
 }
 
+/**
+ * Destination picker for operational roles (ARGUS #427).
+ *
+ * Returns only id/name/type so a cashier can choose where a POS/expense
+ * payment lands without exposing balances, ledger history or the management
+ * page. Petty-cash accounts are excluded because sale routing cannot use them.
+ */
+export async function listPaymentAccountDestinations(tenantId: string) {
+  const accounts = await prisma.paymentAccount.findMany({
+    where: {
+      tenantId,
+      status: PaymentAccountStatus.ACTIVE,
+      pettyCashFund: null,
+    },
+    select: { id: true, name: true, type: true, status: true },
+    orderBy: { name: 'asc' },
+  });
+
+  return { accounts };
+}
+
 export async function getPaymentAccount(tenantId: string, accountId: string) {
   const account = await prisma.paymentAccount.findFirst({
     where: { id: accountId, tenantId },
@@ -260,6 +377,12 @@ export async function createPaymentAccount(
   actorRole: string,
   input: CreatePaymentAccountInput,
 ) {
+  assertPaymentAccountPolicy({
+    operation: 'CREATE',
+    actorRole,
+    openingBalance: input.openingBalance,
+  });
+
   const existing = await prisma.paymentAccount.findFirst({
     where: { tenantId, name: input.name },
     select: { id: true },
@@ -294,7 +417,7 @@ export async function createPaymentAccount(
       ]);
     }
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,
@@ -356,29 +479,34 @@ export async function updatePaymentAccount(
     }
   }
 
-  const updated = await prisma.paymentAccount.update({
-    where: { id: accountId },
-    data: {
-      ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(input.type !== undefined ? { type: input.type } : {}),
-      ...(input.accountNumber !== undefined ? { accountNumber: input.accountNumber } : {}),
-      ...(input.note !== undefined ? { note: input.note } : {}),
-      ...(input.details !== undefined ? { details: input.details as Prisma.InputJsonValue } : {}),
-    },
-  });
+  // The metadata update and its audit row commit together. Using the global
+  // audit writer here would let a rolled-back update leave an orphan row
+  // (ARGUS #426).
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.paymentAccount.update({
+      where: { id: accountId },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.type !== undefined ? { type: input.type } : {}),
+        ...(input.accountNumber !== undefined ? { accountNumber: input.accountNumber } : {}),
+        ...(input.note !== undefined ? { note: input.note } : {}),
+        ...(input.details !== undefined ? { details: input.details as Prisma.InputJsonValue } : {}),
+      },
+    });
 
-  await createAuditLog({
-    tenantId,
-    actorId,
-    actorRole,
-    entityType: 'PaymentAccount',
-    entityId: accountId,
-    action: AUDIT_ACTIONS.PAYMENT_ACCOUNT_UPDATED,
-    before: { name: before.name, type: before.type, note: before.note },
-    after: { name: updated.name, type: updated.type, note: updated.note },
-  });
+    await createAuditLogInTransaction(tx, {
+      tenantId,
+      actorId,
+      actorRole,
+      entityType: 'PaymentAccount',
+      entityId: accountId,
+      action: AUDIT_ACTIONS.PAYMENT_ACCOUNT_UPDATED,
+      before: { name: before.name, type: before.type, note: before.note },
+      after: { name: updated.name, type: updated.type, note: updated.note },
+    });
 
-  return updated;
+    return updated;
+  });
 }
 
 // ── Money movements ──────────────────────────────────────────────────────────
@@ -391,6 +519,11 @@ export async function transferFunds(
 ) {
   const groupId = makeGroupId();
   const amount = dec(input.amount);
+  assertPaymentAccountPolicy({
+    operation: 'TRANSFER',
+    actorRole,
+    amount: amount.toNumber(),
+  });
 
   return prisma.$transaction(async (tx) => {
     const [from, to] = await Promise.all([
@@ -463,7 +596,7 @@ export async function transferFunds(
       });
     }
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,
@@ -499,10 +632,29 @@ export async function depositFunds(
 ) {
   const groupId = makeGroupId();
   const amount = dec(input.amount);
+  assertPaymentAccountPolicy({
+    operation: 'DEPOSIT',
+    actorRole,
+    amount: amount.toNumber(),
+  });
 
   return prisma.$transaction(async (tx) => {
-    const target = await tx.paymentAccount.findFirst({ where: { id: accountId, tenantId } });
+    const target = await tx.paymentAccount.findFirst({
+      where: { id: accountId, tenantId },
+      include: { pettyCashFund: { select: { id: true } } },
+    });
     if (!target) throw new ApiError(404, 'NOT_FOUND', 'Payment account not found');
+
+    // ARGUS #431: petty cash is funded through Petty Cash -> Add Cash In, not
+    // the generic deposit dialog. Reject it explicitly so a direct API call
+    // gets a clear message instead of the generic ledger guard.
+    if (target.pettyCashFund) {
+      throw new ApiError(
+        409,
+        'CONFLICT',
+        'This account is managed by Petty Cash. Add cash from Petty Cash → Add Cash In.',
+      );
+    }
 
     const lines: LedgerLine[] = [];
     const note = input.note?.trim();
@@ -510,10 +662,18 @@ export async function depositFunds(
     if (input.fromAccountId) {
       const source = await tx.paymentAccount.findFirst({
         where: { id: input.fromAccountId, tenantId },
+        include: { pettyCashFund: { select: { id: true } } },
       });
       if (!source) throw new ApiError(404, 'NOT_FOUND', 'Source account not found');
       if (source.id === target.id) {
         throw new ApiError(422, 'VALIDATION_ERROR', 'Source and destination accounts must differ');
+      }
+      if (source.pettyCashFund) {
+        throw new ApiError(
+          409,
+          'CONFLICT',
+          'Petty cash cannot be a deposit source. Record the spend as a Petty Cash expense instead.',
+        );
       }
       await assertSufficientFunds(tx, tenantId, source.id, amount);
 
@@ -540,7 +700,7 @@ export async function depositFunds(
 
     await postLedgerEntries(tx, tenantId, actorId, lines);
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,
@@ -568,10 +728,28 @@ export async function withdrawFunds(
 ) {
   const groupId = makeGroupId();
   const amount = dec(input.amount);
+  assertPaymentAccountPolicy({
+    operation: 'WITHDRAW',
+    actorRole,
+    amount: amount.toNumber(),
+  });
 
   return prisma.$transaction(async (tx) => {
-    const source = await tx.paymentAccount.findFirst({ where: { id: accountId, tenantId } });
+    const source = await tx.paymentAccount.findFirst({
+      where: { id: accountId, tenantId },
+      include: { pettyCashFund: { select: { id: true } } },
+    });
     if (!source) throw new ApiError(404, 'NOT_FOUND', 'Payment account not found');
+
+    // ARGUS #431: petty cash is spent through Petty Cash -> Expense, not a
+    // generic withdrawal. Block it explicitly for direct API callers too.
+    if (source.pettyCashFund) {
+      throw new ApiError(
+        409,
+        'CONFLICT',
+        'Petty cash cannot be withdrawn directly. Record the spend as a Petty Cash expense instead.',
+      );
+    }
 
     await assertSufficientFunds(tx, tenantId, source.id, amount);
 
@@ -591,10 +769,18 @@ export async function withdrawFunds(
     if (input.toAccountId) {
       const target = await tx.paymentAccount.findFirst({
         where: { id: input.toAccountId, tenantId },
+        include: { pettyCashFund: { select: { id: true } } },
       });
       if (!target) throw new ApiError(404, 'NOT_FOUND', 'Destination account not found');
       if (target.id === source.id) {
         throw new ApiError(422, 'VALIDATION_ERROR', 'Source and destination accounts must differ');
+      }
+      if (target.pettyCashFund) {
+        throw new ApiError(
+          409,
+          'CONFLICT',
+          'Petty cash cannot be a withdrawal destination. Use a fund transfer into Petty Cash instead.',
+        );
       }
       lines.push({
         accountId: target.id,
@@ -609,7 +795,7 @@ export async function withdrawFunds(
 
     await postLedgerEntries(tx, tenantId, actorId, lines);
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,
@@ -654,6 +840,11 @@ export async function closePaymentAccount(
     }
 
     const balance = new Decimal(account.balance);
+    assertPaymentAccountPolicy({
+      operation: 'CLOSE',
+      actorRole,
+      amount: balance.toNumber(),
+    });
 
     if (balance.greaterThan(0)) {
       if (!input.transferToAccountId) {
@@ -718,7 +909,7 @@ export async function closePaymentAccount(
       },
     });
 
-    await createAuditLog({
+    await createAuditLogInTransaction(tx, {
       tenantId,
       actorId,
       actorRole,
@@ -741,7 +932,7 @@ export async function getAccountBook(
   query: {
     dateFrom?: string | undefined;
     dateTo?: string | undefined;
-    source?: PaymentEntrySource | undefined;
+    source?: PaymentEntrySource | 'SALE_VOID' | undefined;
     page: number;
     pageSize: number;
   },
@@ -750,13 +941,20 @@ export async function getAccountBook(
 
   const where: Prisma.PaymentAccountEntryWhereInput = { tenantId, accountId };
 
-  if (query.dateFrom || query.dateTo) {
+  // ARGUS #429: date-only bounds are inclusive local calendar days, shared
+  // with the tenant ledger, Expenses cash flow and inventory movement filters.
+  const range = resolveInclusiveDateRange(query.dateFrom, query.dateTo);
+  if (range.from || range.to) {
     where.entryDate = {
-      ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-      ...(query.dateTo ? { lte: new Date(`${query.dateTo}T23:59:59.999Z`) } : {}),
+      ...(range.from ? { gte: range.from } : {}),
+      ...(range.to ? { lte: range.to } : {}),
     };
   }
-  if (query.source) where.source = query.source;
+
+  // ARGUS #430: the source filter must match the displayed label. SALE_VOID
+  // and SALE_REFUND are derived from the originating document id.
+  const refundIds = await resolveRefundSourceIds(tenantId, where);
+  applyLedgerSourceFilter(where, query.source, refundIds);
 
   const [entries, total] = await Promise.all([
     prisma.paymentAccountEntry.findMany({
@@ -775,11 +973,14 @@ export async function getAccountBook(
 
   return {
     account,
-    entries,
+    entries: entries.map((entry) => ({
+      ...entry,
+      ledgerKind: classifyLedgerSource(entry.source, entry.sourceId, refundIds),
+    })),
     total,
     page: query.page,
     pageSize: query.pageSize,
-    totalPages: Math.ceil(total / query.pageSize),
+    totalPages: ledgerTotalPages(total, query.pageSize),
     sums: {
       debit: toMoney(dec(totals._sum.debit ?? 0)),
       credit: toMoney(dec(totals._sum.credit ?? 0)),
@@ -801,12 +1002,15 @@ export async function getCashFlow(
   const where: Prisma.PaymentAccountEntryWhereInput = { tenantId };
 
   if (query.accountId) where.accountId = query.accountId;
-  if (query.dateFrom || query.dateTo) {
+  const range = resolveInclusiveDateRange(query.dateFrom, query.dateTo);
+  if (range.from || range.to) {
     where.entryDate = {
-      ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-      ...(query.dateTo ? { lte: new Date(`${query.dateTo}T23:59:59.999Z`) } : {}),
+      ...(range.from ? { gte: range.from } : {}),
+      ...(range.to ? { lte: range.to } : {}),
     };
   }
+
+  const refundIds = await resolveRefundSourceIds(tenantId, where);
 
   const [entries, total] = await Promise.all([
     prisma.paymentAccountEntry.findMany({
@@ -825,11 +1029,14 @@ export async function getCashFlow(
   });
 
   return {
-    entries,
+    entries: entries.map((entry) => ({
+      ...entry,
+      ledgerKind: classifyLedgerSource(entry.source, entry.sourceId, refundIds),
+    })),
     total,
     page: query.page,
     pageSize: query.pageSize,
-    totalPages: Math.ceil(total / query.pageSize),
+    totalPages: ledgerTotalPages(total, query.pageSize),
     sums: {
       debit: toMoney(dec(totals._sum.debit ?? 0)),
       credit: toMoney(dec(totals._sum.credit ?? 0)),

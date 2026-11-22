@@ -1,10 +1,7 @@
 import 'server-only';
 
-import Decimal from 'decimal.js';
-
 import { prisma } from '@/lib/prisma';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
-import type { TxClient } from '@/lib/services/inventory.service';
 import type {
   CreatePackagingItemInput,
   UpdatePackagingItemInput,
@@ -17,6 +14,22 @@ import {
   packagingCategoryLabel,
   packagingConsumptionUnits,
 } from '@/lib/services/packaging.core';
+import { assertPackagingItemDeletable } from '@/lib/services/packagingGuards.core';
+import {
+  toPackagingHistoryRow,
+  type PackagingHistoryRow,
+} from '@/lib/packaging/packagingHistory.core';
+import {
+  changePackagingStock,
+  type DeductionResult,
+} from '@/lib/services/packagingDeduction.service';
+export {
+  autoDeductPackaging,
+  assertPackagingAvailableForDispatch,
+  previewPackagingDeduction,
+  type DeductionResult,
+  type PackagingDeductionPreview,
+} from '@/lib/services/packagingDeduction.service';
 import {
   assertPackagingCategoryExists,
   getPackagingCategoryNameMap,
@@ -66,6 +79,106 @@ export async function getPackagingItems(tenantId: string): Promise<PackagingItem
     .slice()
     .sort(comparePackagingItems)
     .map((item) => toPackagingItemDto(item, categoryNames));
+}
+
+/**
+ * Newest-first packaging consumption ledger (ARGUS #281). Paginated and
+ * optionally scoped to one item. Reads the same `PackagingConsumption` rows
+ * that reconciliation relies on, including consumptions of soft-deleted items
+ * (the delete dialog promises that history is kept).
+ */
+export async function getPackagingConsumptionHistory(
+  tenantId: string,
+  input: {
+    page?: number | undefined;
+    pageSize?: number | undefined;
+    itemId?: string | undefined;
+  } = {},
+): Promise<{
+  rows: PackagingHistoryRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}> {
+  const page = Math.max(1, Math.floor(input.page ?? 1));
+  const pageSize = Math.min(Math.max(1, Math.floor(input.pageSize ?? 25)), 100);
+  const where = {
+    tenantId,
+    ...(input.itemId ? { packagingItemId: input.itemId } : {}),
+  };
+
+  const [consumptions, total] = await Promise.all([
+    prisma.packagingConsumption.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        packagingItem: { select: { id: true, name: true, sku: true, unit: true } },
+        delivery: { select: { id: true, orderRef: true, saleId: true } },
+      },
+    }),
+    prisma.packagingConsumption.count({ where }),
+  ]);
+
+  const rows = consumptions.map((consumption) =>
+    toPackagingHistoryRow({
+      id: consumption.id,
+      deliveryId: consumption.deliveryId,
+      orderRef: consumption.delivery.orderRef,
+      saleId: consumption.delivery.saleId,
+      packagingItemId: consumption.packagingItemId,
+      itemName: consumption.packagingItem.name,
+      itemSku: consumption.packagingItem.sku,
+      unit: consumption.packagingItem.unit,
+      quantity: consumption.quantity.toString(),
+      createdAt: consumption.createdAt,
+    }),
+  );
+
+  return { rows, total, page, pageSize };
+}
+
+/** One selectable packaging item on the dispatch sheet (ARGUS #283). */
+export interface PackagingDispatchOptionDto {
+  id: string;
+  name: string;
+  unit: string;
+  quantityOnHand: number;
+  autoDeduct: boolean;
+  consumptionPerParcel: string | null;
+}
+
+/**
+ * Minimal packaging options for the dispatch sheet. Readable by anyone allowed
+ * to dispatch (not only packaging managers), and deliberately excludes cost /
+ * audit fields. `autoDeduct` is the default suggestion; the operator sends the
+ * explicit `packagingItemIds` selection with the dispatch request.
+ */
+export async function getPackagingDispatchOptions(
+  tenantId: string,
+): Promise<PackagingDispatchOptionDto[]> {
+  const items = await prisma.packagingItem.findMany({
+    where: { tenantId, deletedAt: null },
+    orderBy: [{ name: 'asc' }],
+    select: {
+      id: true,
+      name: true,
+      unit: true,
+      quantityOnHand: true,
+      autoDeduct: true,
+      consumptionPerParcel: true,
+    },
+  });
+
+  return items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    unit: item.unit,
+    quantityOnHand: item.quantityOnHand,
+    autoDeduct: item.autoDeduct,
+    consumptionPerParcel: serializeMoneyOrNull(item.consumptionPerParcel),
+  }));
 }
 
 /**
@@ -159,7 +272,6 @@ export async function updatePackagingItem(
   if (input.category !== undefined) data.category = input.category;
   if (input.name !== undefined) data.name = input.name.trim();
   if (input.unit !== undefined) data.unit = input.unit;
-  if (input.quantityOnHand !== undefined) data.quantityOnHand = input.quantityOnHand;
   if (input.lowStockThreshold !== undefined) data.lowStockThreshold = input.lowStockThreshold;
   if (input.autoDeduct !== undefined) data.autoDeduct = input.autoDeduct;
   if (input.sku !== undefined) data.sku = input.sku?.trim() || null;
@@ -178,15 +290,21 @@ export async function updatePackagingItem(
     entityType: 'PackagingItem',
     entityId: id,
     action: AUDIT_ACTIONS.PACKAGING_ITEM_UPDATED,
+    // Stock is not editable here (ARGUS #280); quantity only changes through
+    // `adjustPackagingStock`, which carries its own reason/note audit.
     before: {
       name: existing.name,
       category: existing.category,
-      quantityOnHand: existing.quantityOnHand,
+      unit: existing.unit,
+      lowStockThreshold: existing.lowStockThreshold,
+      autoDeduct: existing.autoDeduct,
     },
     after: {
       name: updated.name,
       category: updated.category,
-      quantityOnHand: updated.quantityOnHand,
+      unit: updated.unit,
+      lowStockThreshold: updated.lowStockThreshold,
+      autoDeduct: updated.autoDeduct,
     },
   }).catch(() => {});
 
@@ -196,9 +314,9 @@ export async function updatePackagingItem(
 
 /**
  * Soft-delete an item. Consumption history keeps pointing at the row, so the
- * delete is never a hard delete. The item must not be referenced by an open
- * (non-terminal) delivery's consumption trail? Consumption rows only exist for
- * already-dispatched parcels, so deleting is safe.
+ * delete is never a hard delete. Stock must be zero first — a soft delete hides
+ * the row from stock queries without writing anything off (ARGUS #280). The
+ * row keeps its `autoDeduct`/consumption history; only the item is hidden.
  */
 export async function deletePackagingItem(tenantId: string, id: string, userId: string) {
   const existing = await prisma.packagingItem.findFirst({
@@ -206,9 +324,14 @@ export async function deletePackagingItem(tenantId: string, id: string, userId: 
   });
   if (!existing) throw new Error('PACKAGING_ITEM_NOT_FOUND');
 
+  assertPackagingItemDeletable({
+    quantityOnHand: existing.quantityOnHand,
+    unit: existing.unit,
+  });
+
   await prisma.packagingItem.update({
     where: { id },
-    data: { deletedAt: new Date(), autoDeduct: false },
+    data: { deletedAt: new Date() },
   });
 
   void createAuditLog({
@@ -234,18 +357,9 @@ export async function adjustPackagingStock(
   delta: number,
   note?: string,
 ) {
-  const existing = await prisma.packagingItem.findFirst({
-    where: { id, tenantId, deletedAt: null },
-  });
-  if (!existing) throw new Error('PACKAGING_ITEM_NOT_FOUND');
-
-  const next = existing.quantityOnHand + delta;
-  if (next < 0) throw new Error('INSUFFICIENT_PACKAGING_STOCK');
-
-  const updated = await prisma.packagingItem.update({
-    where: { id },
-    data: { quantityOnHand: next },
-  });
+  const change = await changePackagingStock(prisma, tenantId, id, delta);
+  const updated = await prisma.packagingItem.findUniqueOrThrow({ where: { id } });
+  const reason = note?.trim() || 'Manual stock adjustment';
 
   void createAuditLog({
     tenantId,
@@ -254,85 +368,15 @@ export async function adjustPackagingStock(
     entityType: 'PackagingItem',
     entityId: id,
     action: AUDIT_ACTIONS.PACKAGING_STOCK_ADJUSTED,
-    before: { quantityOnHand: existing.quantityOnHand },
-    after: { quantityOnHand: updated.quantityOnHand, note },
+    before: { quantityOnHand: change.before },
+    after: { quantityOnHand: change.after, note: reason, reason },
   }).catch(() => {});
 
   const categoryNames = await getPackagingCategoryNameMap(tenantId);
   return toPackagingItemDto(updated, categoryNames);
 }
 
-export interface DeductionResult {
-  itemId: string;
-  name: string;
-  consumed: Decimal;
-  insufficient: boolean;
-}
-
 export { packagingConsumptionUnits };
-
-/**
- * Deduct configured auto-deduct packaging items for a parcel (typically 1
- * polymailer + 1 label). Writes PackagingConsumption rows. Warns (does not throw)
- * when stock is insufficient, returning which items fell short.
- *
- * Pass `tx` to make the deduction atomic with the delivery status change; that
- * is how dispatch/redelivery call it so a crash can never leave a dispatched
- * parcel with an un-deducted stock balance.
- */
-export async function autoDeductPackaging(
-  tenantId: string,
-  deliveryId: string,
-  opts?: { tx?: TxClient },
-): Promise<DeductionResult[]> {
-  const client = opts?.tx ?? prisma;
-  const items = await client.packagingItem.findMany({
-    where: { tenantId, deletedAt: null, autoDeduct: true },
-  });
-
-  if (items.length === 0) return [];
-
-  const results: DeductionResult[] = [];
-
-  for (const item of items) {
-    const perParcel = new Decimal(item.consumptionPerParcel?.toString() ?? '1');
-    const stock = new Decimal(item.quantityOnHand);
-    const insufficient = stock.lessThan(perParcel);
-
-    const wanted = packagingConsumptionUnits(perParcel);
-    const units = Math.min(wanted, Math.max(item.quantityOnHand, 0));
-    if (units <= 0) {
-      if (wanted > 0) {
-        results.push({
-          itemId: item.id,
-          name: item.name,
-          consumed: new Decimal(0),
-          insufficient: true,
-        });
-      }
-      continue;
-    }
-
-    await client.packagingItem.update({
-      where: { id: item.id },
-      data: { quantityOnHand: { decrement: units } },
-    });
-
-    const consumedQty = new Decimal(units);
-    await client.packagingConsumption.create({
-      data: {
-        tenantId,
-        deliveryId,
-        packagingItemId: item.id,
-        quantity: consumedQty,
-      },
-    });
-
-    results.push({ itemId: item.id, name: item.name, consumed: consumedQty, insufficient });
-  }
-
-  return results;
-}
 
 /** Create a non-blocking low-stock notification if any auto-deduct item is short. */
 export async function notifyLowStock(

@@ -7,6 +7,7 @@ import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { createShipment } from '@/lib/services/shipment.service';
 import { autoDeductPackaging, notifyLowStock } from '@/lib/services/packaging.service';
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
+import { decryptCourierAccount } from '@/lib/courier/credentials';
 import { toCourierOrderPayload } from '@/lib/courier/mappers';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import type { RecoveryAction } from '@/generated/prisma/client';
@@ -145,11 +146,12 @@ export async function redeliverDelivery(
   if (!account?.isActive) throw new Error('COURIER_ACCOUNT_NOT_CONFIGURED');
 
   const adapter = resolveAdapterForAccount(account);
+  const credentials = decryptCourierAccount(account);
   const auth = await adapter.authenticate({
-    email: account.email ?? undefined,
-    password: account.password ?? undefined,
-    apiKey: account.apiKey ?? undefined,
-    env: account.env,
+    email: credentials.email ?? undefined,
+    password: credentials.password ?? undefined,
+    apiKey: credentials.apiKey ?? undefined,
+    env: credentials.env,
   });
   if (!auth.ok) throw new Error(`COURIER_AUTH_FAILED:${auth.error.message}`);
 
@@ -167,6 +169,8 @@ export async function redeliverDelivery(
     {
       orderRef: existing.orderRef,
       codAmount: existing.codAmount,
+      shippingFee: existing.shippingFee,
+      paymentStatus: existing.paymentStatus,
       notes: existing.notes,
       itemCount: existing.itemCount,
     },
@@ -241,7 +245,14 @@ export async function redeliverDelivery(
     });
 
     // Deduct packaging for the new shipment atomically with the status flip.
-    const deductions = await autoDeductPackaging(tenantId, deliveryId, { tx });
+    // ARGUS #282: redelivery keeps its historical best-effort behaviour (there
+    // is no override control on the recovery flow yet); the primary dispatch
+    // path is the one that blocks a shortfall.
+    const deductions = await autoDeductPackaging(tenantId, deliveryId, {
+      tx,
+      actorId: staffId,
+      allowShortfall: true,
+    });
 
     return { dispatched: updated, deductions };
   });
@@ -287,6 +298,7 @@ export async function permanentlyCancelDelivery(
     // reserved line items for website orders (which have no Sale row).
     if (existing.sale?.lines.length) {
       for (const line of existing.sale.lines) {
+        if (!line.variantId) continue;
         await adjustStockInTx(tx, tenantId, line.variantId, staffId, {
           quantityDelta: line.quantity,
           reason: 'VOID_REVERSAL',

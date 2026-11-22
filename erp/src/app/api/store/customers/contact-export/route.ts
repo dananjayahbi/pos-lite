@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { hasPermission } from '@/lib/utils/permissions';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { compileCustomerContactExport } from '@/lib/services/customer-contact-export.service';
+import {
+  compileCustomerContactExport,
+  recordAdHocContactExportDownload,
+} from '@/lib/services/customer-contact-export.service';
 import type { ContactExportScope } from '@/lib/services/customer-contact-export-core';
 import { parseQueryInt } from '@/lib/api/query-params';
 import { toErrorResponse } from '@/lib/api/error-envelope';
@@ -10,9 +13,13 @@ import { toErrorResponse } from '@/lib/api/error-envelope';
 /**
  * Ad-hoc Customer Contact Export (doc 18).
  *
- * Lets owner/staff trigger a contact export on demand (outside the scheduled
- * cron run) and download the file directly. Requires the `customer:view`
- * permission. Scope is optional and defaults to the configured value.
+ * Lets an authorised user trigger a contact export on demand (outside the
+ * scheduled cron run) and download the file directly. Requires
+ * `broadcast:send` - the bulk-contact permission used by the composer family -
+ * because the response is full contact PII for every matching customer, not a
+ * single record a `customer:view` reader is entitled to. CASHIER holds
+ * `customer:view` but not `broadcast:send`. One CONTACT_EXPORT_RUN audit row is
+ * written per download (ARGUS #316).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -33,12 +40,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!hasPermission(session.user, PERMISSIONS.CUSTOMER.viewCustomer)) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
-        { status: 403 },
-      );
-    }
+    // Bulk contact PII: the composer's permission, not `customer:view`.
+    // CASHIER holds customer:view/create but deliberately not broadcast:send.
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.BROADCAST.send);
+    if (forbidden) return forbidden;
 
     const { searchParams } = new URL(request.url);
     const rawScope = searchParams.get('scope');
@@ -58,6 +63,14 @@ export async function GET(request: NextRequest) {
           : undefined,
       actorRole: session.user.role,
       actorId: session.user.id,
+    });
+
+    // ARGUS #316: compile-only used to leave no audit trail. Record the
+    // download (actor + included count) before the file is returned.
+    await recordAdHocContactExportDownload({
+      compiled,
+      actorId: session.user.id,
+      actorRole: session.user.role,
     });
 
     const isXlsx = compiled.format === 'xlsx';

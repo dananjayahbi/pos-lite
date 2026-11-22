@@ -105,7 +105,13 @@ export async function PATCH(
         );
       }
 
-      const po = await updatePOStatus(tenantId, id, parsed.data.status);
+      const po = await updatePOStatus(
+        tenantId,
+        id,
+        parsed.data.status,
+        session.user.id,
+        session.user.role,
+      );
       return NextResponse.json({ success: true, data: po });
     }
 
@@ -129,7 +135,13 @@ export async function PATCH(
       );
     }
 
-    const edited = await updatePO(tenantId, id, parsedEdit.data);
+    const edited = await updatePO(
+      tenantId,
+      id,
+      parsedEdit.data,
+      session.user.id,
+      session.user.role,
+    );
     return NextResponse.json({ success: true, data: edited });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
@@ -148,8 +160,19 @@ export async function PATCH(
       );
     }
 
+    if (message.startsWith('Expected delivery date')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message } },
+        { status: 400 },
+      );
+    }
+
     // Status/state guards that make the request valid but impossible right now.
-    if (message.startsWith('Lines cannot be edited') || message.startsWith('A cancelled purchase order')) {
+    if (
+      message.startsWith('Lines cannot be edited') ||
+      message.startsWith('A cancelled purchase order') ||
+      message.startsWith('A paid purchase order')
+    ) {
       return NextResponse.json(
         { success: false, error: { code: 'CONFLICT', message } },
         { status: 409 },

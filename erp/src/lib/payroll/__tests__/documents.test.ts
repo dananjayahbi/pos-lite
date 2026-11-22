@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import * as XLSX from 'xlsx';
 import { generatePayrollPayslipPdf } from '@/lib/payroll/payslip-pdf';
 import {
+  BANK_WORKSHEET_DISCLAIMER,
+  BANK_WORKSHEET_SHEET_NAME,
   generateBankSheetPdf,
   generateBankSheetXlsx,
+  bankSheetFilename,
 } from '@/lib/payroll/bank-sheet';
 import {
   generateStatutoryReturnPdf,
@@ -11,6 +15,7 @@ import {
 import {
   generateSummaryReportPdf,
   generateSummaryReportXlsx,
+  summaryEpfHeader,
 } from '@/lib/payroll/summary-report';
 
 const meta = {
@@ -65,6 +70,7 @@ const summaryTotals = {
   gross: item.grossSalary,
   deductions: item.totalDeductions,
   employeeEpf: item.employeeEpf,
+  deductionsIncludingEpf: '15961.53',
   employerEpf: item.employerEpf,
   employerEtf: item.employerEtf,
   net: item.netSalary,
@@ -96,20 +102,62 @@ describe('payroll documents', () => {
     });
     expect(isPdf(pdf)).toBe(true);
     expect(pdf.byteLength).toBeGreaterThan(1000);
+
+    // ARGUS #381: no invented "Employee ID"; the EPF number has its own label
+    // and the deduction total reconciles gross to net including employee EPF.
+    const text = pdf.toString('latin1');
+    expect(text).not.toContain('Employee ID');
+    expect(text).toContain('EPF No.');
+    expect(text).toContain('Total deductions');
   });
 
-  it('renders bank salary sheets in Excel and PDF', () => {
+  it('renders bank salary worksheets in Excel and PDF', () => {
     const rows = [
       {
         staffName: item.staffName,
+        nic: item.nic,
         bankName: item.bankName,
         bankBranch: item.bankBranch,
         bankAccountNumber: item.bankAccountNumber,
         netSalary: item.netSalary,
       },
     ];
-    expect(isZip(generateBankSheetXlsx(meta, rows))).toBe(true);
+    const xlsx = generateBankSheetXlsx(meta, rows);
+    expect(isZip(xlsx)).toBe(true);
     expect(isPdf(generateBankSheetPdf(meta, rows))).toBe(true);
+
+    const workbook = XLSX.read(xlsx, { type: 'buffer', cellNF: true });
+    expect(workbook.SheetNames).toEqual([BANK_WORKSHEET_SHEET_NAME]);
+    const sheet = workbook.Sheets[BANK_WORKSHEET_SHEET_NAME]!;
+    const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as unknown[][];
+    expect(String(aoa[2]?.[0])).toContain('UNPAID');
+    expect(String(aoa[3]?.[0])).toBe(BANK_WORKSHEET_DISCLAIMER);
+    expect(aoa[5]).toEqual([
+      'No.',
+      'Employee Name',
+      'NIC',
+      'Bank',
+      'Branch',
+      'Account Number',
+      'Net Salary (LKR)',
+    ]);
+    expect(aoa[6]).toEqual([
+      1,
+      item.staffName,
+      item.nic,
+      item.bankName,
+      item.bankBranch,
+      item.bankAccountNumber,
+      Number(item.netSalary),
+    ]);
+    // ARGUS #390: two-decimal money format on the data and total rows.
+    expect(sheet['G7']?.z).toBe('#,##0.00');
+    expect(sheet['G9']?.z).toBe('#,##0.00');
+  });
+
+  it('names the download a worksheet, not a bank batch file', () => {
+    expect(bankSheetFilename(meta, 'xlsx')).toBe('bank-salary-worksheet-2026-11.xlsx');
+    expect(BANK_WORKSHEET_DISCLAIMER).toContain('not a bank batch file');
   });
 
   it('renders EPF/ETF returns in Excel and PDF', () => {
@@ -125,8 +173,27 @@ describe('payroll documents', () => {
         employerEtf: item.employerEtf,
       },
     ];
-    expect(isZip(generateStatutoryReturnXlsx(statutoryMeta, rows))).toBe(true);
+    const xlsx = generateStatutoryReturnXlsx(statutoryMeta, rows);
+    expect(isZip(xlsx)).toBe(true);
     expect(isPdf(generateStatutoryReturnPdf(statutoryMeta, rows))).toBe(true);
+
+    const workbook = XLSX.read(xlsx, { type: 'buffer', cellNF: true });
+    const epf = XLSX.utils.sheet_to_json(workbook.Sheets['EPF C-Form']!, {
+      header: 1,
+    }) as unknown[][];
+    expect(String(epf[4]?.[0])).toContain('UNPAID');
+    // ARGUS #390: earnings and contributions carry a two-decimal format.
+    expect(epf[6]).toEqual([
+      'No.',
+      'Employee Name',
+      'NIC',
+      'EPF Number',
+      'Total Monthly Earnings (LKR)',
+      'Employee EPF 8% (LKR)',
+      'Employer EPF 12% (LKR)',
+    ]);
+    expect(workbook.Sheets['EPF C-Form']!['E8']?.z).toBe('#,##0.00');
+    expect(workbook.Sheets['EPF C-Form']!['G8']?.z).toBe('#,##0.00');
   });
 
   it('renders the monthly summary in Excel and PDF', () => {
@@ -146,5 +213,156 @@ describe('payroll documents', () => {
     ];
     expect(isZip(generateSummaryReportXlsx(meta, summaryTotals, rows))).toBe(true);
     expect(isPdf(generateSummaryReportPdf(meta, summaryTotals, rows))).toBe(true);
+
+    const workbook = XLSX.read(generateSummaryReportXlsx(meta, summaryTotals, rows), {
+      type: 'buffer',
+      cellNF: true,
+    });
+    const summaryRows = XLSX.utils.sheet_to_json(workbook.Sheets['Summary']!, {
+      header: 1,
+    }) as unknown[][];
+    expect(
+      summaryRows.some((row) => String(row[0]).includes('PAYE/APIT income tax is not configured')),
+    ).toBe(true);
+
+    // ARGUS #390: the same control totals as the PDF, with real money formats.
+    expect(summaryRows[5]).toEqual(['Headcount', 1]);
+    const summarySheet = workbook.Sheets['Summary']!;
+    expect(summarySheet['B8']?.z).toBe('#,##0.00');
+    const detailSheet = workbook.Sheets['Employees']!;
+    const detailRows = XLSX.utils.sheet_to_json(detailSheet, { header: 1 }) as unknown[][];
+    expect(detailRows[3]?.[0]).toBe('Total');
+    expect(Number(detailRows[3]?.[6])).toBeCloseTo(Number(item.grossSalary), 2);
+    expect(Number(detailRows[3]?.[9])).toBeCloseTo(Number(item.netSalary), 2);
+    expect(detailSheet['G4']?.z).toBe('#,##0.00');
+
+    // ARGUS #390: the detail header reflects the rate stored on the run.
+    expect(summaryEpfHeader(9)).toBe('EPF (9%)');
+    expect(summaryEpfHeader()).toBe('EPF (8%)');
+  });
+
+  it('labels the net amount as payable until the run is paid', () => {
+    const rows = [
+      {
+        staffName: item.staffName,
+        role: item.role,
+        basicSalary: item.basicSalary,
+        allowances: item.allowances,
+        overtimeAmount: item.overtimeAmount,
+        commissionAmount: item.commissionAmount,
+        grossSalary: item.grossSalary,
+        totalDeductions: item.totalDeductions,
+        employeeEpf: item.employeeEpf,
+        netSalary: item.netSalary,
+      },
+    ];
+    const unpaid = XLSX.read(generateSummaryReportXlsx(meta, summaryTotals, rows), {
+      type: 'buffer',
+    });
+    const unpaidRows = XLSX.utils.sheet_to_json(unpaid.Sheets['Summary']!, {
+      header: 1,
+    }) as unknown[][];
+    expect(unpaidRows.some((row) => row[0] === 'Net payable')).toBe(true);
+    expect(unpaidRows.some((row) => row[0] === 'Net salaries paid')).toBe(false);
+    expect(String(unpaidRows[2]?.[0])).toContain('UNPAID');
+
+    const paidMeta = {
+      ...meta,
+      status: 'PAID',
+      payment: {
+        paidAt: '2026-11-30T09:15:00.000Z',
+        approvedBy: 'Nimal Silva',
+        approvedByRole: 'OWNER',
+        source: 'audit-log' as const,
+      },
+    };
+    const paid = XLSX.read(generateSummaryReportXlsx(paidMeta, summaryTotals, rows), {
+      type: 'buffer',
+    });
+    const paidRows = XLSX.utils.sheet_to_json(paid.Sheets['Summary']!, {
+      header: 1,
+    }) as unknown[][];
+    expect(paidRows.some((row) => row[0] === 'Net salaries paid')).toBe(true);
+    expect(paidRows.some((row) => row[0] === 'Net payable')).toBe(false);
+    expect(String(paidRows[2]?.[0])).toContain('PAID');
+    expect(String(paidRows[2]?.[0])).toContain('Nimal Silva');
+  });
+
+  it('stamps regenerated exports with the current-profile caveat', () => {
+    const rows = [
+      {
+        staffName: item.staffName,
+        role: item.role,
+        basicSalary: item.basicSalary,
+        allowances: item.allowances,
+        overtimeAmount: item.overtimeAmount,
+        commissionAmount: item.commissionAmount,
+        grossSalary: item.grossSalary,
+        totalDeductions: item.totalDeductions,
+        employeeEpf: item.employeeEpf,
+        netSalary: item.netSalary,
+      },
+    ];
+    const caveat =
+      'Company name and employer EPF/ETF numbers are read from the current company profile. This document was regenerated at download time and may differ from the originally issued copy.';
+    const workbook = XLSX.read(
+      generateSummaryReportXlsx({ ...meta, provenanceNote: caveat }, summaryTotals, rows),
+      { type: 'buffer' },
+    );
+    const summaryRows = XLSX.utils.sheet_to_json(workbook.Sheets['Summary']!, {
+      header: 1,
+    }) as unknown[][];
+    expect(summaryRows.some((row) => String(row[0]).includes('current company profile'))).toBe(
+      true,
+    );
+    expect(summaryRows.some((row) => String(row[0]).includes('regenerated at download time'))).toBe(
+      true,
+    );
+  });
+
+  it('reconciles gross to net through labelled no-pay/advances and EPF', () => {
+    const rows = [
+      {
+        staffName: item.staffName,
+        role: item.role,
+        basicSalary: '34109.56',
+        allowances: '0.00',
+        overtimeAmount: '0.00',
+        commissionAmount: '0.00',
+        grossSalary: '34109.56',
+        totalDeductions: '3000.00',
+        employeeEpf: '2728.76',
+        netSalary: '28380.80',
+      },
+    ];
+    const totals = {
+      ...summaryTotals,
+      gross: '34109.56',
+      deductions: '3000.00',
+      employeeEpf: '2728.76',
+      deductionsIncludingEpf: '5728.76',
+      net: '28380.80',
+    };
+    const workbook = XLSX.read(generateSummaryReportXlsx(meta, totals, rows), {
+      type: 'buffer',
+    });
+    const summaryRows = XLSX.utils.sheet_to_json(workbook.Sheets['Summary']!, {
+      header: 1,
+    }) as unknown[][];
+    expect(
+      summaryRows.some(
+        (row) => row[0] === 'Total deductions incl. employee EPF' && row[1] === 5728.76,
+      ),
+    ).toBe(true);
+    expect(summaryRows.some((row) => row[0] === 'No-pay + advances')).toBe(true);
+
+    const detailRows = XLSX.utils.sheet_to_json(workbook.Sheets['Employees']!, {
+      header: 1,
+    }) as unknown[][];
+    expect(detailRows[0]).toContain('No-pay + advances');
+    expect(detailRows[0]).toContain('Employee EPF');
+    expect(detailRows[0]).not.toContain('Deductions');
+    // 34,109.56 - 3,000.00 - 2,728.76 = 28,380.80
+    expect(Number(detailRows[1]?.[6]) - Number(detailRows[1]?.[7]) - Number(detailRows[1]?.[8])).toBeCloseTo(28380.8, 2);
   });
 });

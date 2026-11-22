@@ -23,6 +23,9 @@ export interface RawMaterialItem {
   unitShortLabel: string;
   quantity: number;
   lowStockThreshold: number;
+  /** Cost of one base unit and quantity x unitCost (ARGUS #243). */
+  unitCost: number;
+  stockValue: number;
   description: string | null;
   isActive: boolean;
   createdAt: string;

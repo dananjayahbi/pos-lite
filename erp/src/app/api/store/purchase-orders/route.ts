@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getPOs, createPO } from '@/lib/services/purchaseOrder.service';
+import { canCreatePurchaseOrderWithStatus } from '@/lib/services/purchaseOrderPermissions.core';
+import { isValidIsoDay } from '@/lib/services/purchaseOrderDateRange.core';
 import { CreatePOSchema } from '@/lib/validators/purchaseOrder.validators';
 import { POStatus } from '@/generated/prisma/client';
 import { parseQueryInt } from '@/lib/api/query-params';
@@ -36,12 +38,30 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const statusParam = searchParams.get('status');
+    const from = searchParams.get('from') ?? undefined;
+    const to = searchParams.get('to') ?? undefined;
+
+    // The two date inputs are plain `yyyy-mm-dd` days. Reject anything else
+    // before it reaches the range builder, so a malformed filter is a 400 and
+    // never a silently widened result set (ARGUS #230).
+    if ((from !== undefined && !isValidIsoDay(from)) || (to !== undefined && !isValidIsoDay(to))) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'from and to must be valid yyyy-mm-dd dates',
+          },
+        },
+        { status: 400 },
+      );
+    }
 
     const result = await getPOs(tenantId, {
       supplierId: searchParams.get('supplierId') ?? undefined,
       status: statusParam && statusParam in POStatus ? (statusParam as POStatus) : undefined,
-      from: searchParams.get('from') ?? undefined,
-      to: searchParams.get('to') ?? undefined,
+      from,
+      to,
       // XC-01: malformed page/limit now 400 instead of NaN → 500.
       page: parseQueryInt(searchParams, 'page', { min: 1, max: 1_000_000 }),
       limit: parseQueryInt(searchParams, 'limit', { min: 1, max: 200 }),
@@ -95,12 +115,38 @@ export async function POST(request: Request) {
       );
     }
 
-    const po = await createPO(tenantId, session.user.id, {
-      ...parsed.data,
-      ...(parsed.data.discountType !== undefined
-        ? { discountType: parsed.data.discountType }
-        : {}),
-    });
+    // "Create as SENT" commits the order to the supplier, which is an approval
+    // action: create-only roles may save a DRAFT but must not bypass the
+    // purchase_order:approve separation (ARGUS #224).
+    if (
+      !canCreatePurchaseOrderWithStatus(
+        parsed.data.status,
+        hasPermission(session.user, PERMISSIONS.SUPPLIER.approvePurchaseOrder),
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Sending a purchase order requires the purchase_order:approve permission',
+          },
+        },
+        { status: 403 },
+      );
+    }
+
+    const po = await createPO(
+      tenantId,
+      session.user.id,
+      {
+        ...parsed.data,
+        ...(parsed.data.discountType !== undefined
+          ? { discountType: parsed.data.discountType }
+          : {}),
+      },
+      session.user.role,
+    );
 
     return NextResponse.json({ success: true, data: po }, { status: 201 });
   } catch (error) {
@@ -114,6 +160,13 @@ export async function POST(request: Request) {
     }
 
     if (message.includes('At least one line')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message } },
+        { status: 400 },
+      );
+    }
+
+    if (message.startsWith('Expected delivery date')) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message } },
         { status: 400 },

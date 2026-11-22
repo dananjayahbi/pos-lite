@@ -3,22 +3,52 @@ import { ApiError } from '@/lib/api/errors';
 import { AUDIT_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/paymentAccount.service';
-import { adjustFundBalance, assertFundCanSpend } from '@/lib/services/petty-cash.service';
+import { adjustFundBalanceTx, assertFundCanSpend, checkFundLowBalance } from '@/lib/services/petty-cash.service';
 import {
   allocateCommissionPayment,
+  summarizeCommissionAllocation,
   summarizeOpenCommission,
 } from '@/lib/services/commission-allocation';
-import { PaymentEntrySource } from '@/generated/prisma/client';
+import { describeCommissionBalance } from '@/lib/services/commissionSummary.core';
+import {
+  planCommissionReversal,
+  resolveCommissionSaleDate,
+  resolveOriginalCommissionBase,
+  resolveOriginalCommissionRate,
+} from '@/lib/services/commissionClawback.core';
+import type { TxClient } from '@/lib/services/inventory.service';
+import {
+  PAYROLL_PENDING_ACCOUNT_PREFIX,
+  planPayrollCommission,
+} from '@/lib/services/payrollCommission.core';
+import { PaymentEntrySource, ReturnStatus } from '@/generated/prisma/client';
+import {
+  COMMISSION_RATE_BOUND_MESSAGE,
+  COMMISSION_RATE_MAX,
+  COMMISSION_RATE_MIN,
+} from '@/lib/constants/commission-rate';
 import Decimal from 'decimal.js';
 
 type CommissionPayoutMetadata = {
   note?: string;
   paymentMethod?: string;
   proofReference?: string;
+  /** ARGUS #366: per-payout net allocation summary for the receipt. */
+  allocation?: {
+    recordCount: number;
+    grossAllocated: string;
+    adjustmentsSettled: string;
+    netAllocated: string;
+  };
 };
 
 function serializePayoutNotes(metadata: CommissionPayoutMetadata): string | undefined {
-  if (!metadata.note && !metadata.paymentMethod && !metadata.proofReference) {
+  if (
+    !metadata.note &&
+    !metadata.paymentMethod &&
+    !metadata.proofReference &&
+    !metadata.allocation
+  ) {
     return undefined;
   }
 
@@ -26,6 +56,7 @@ function serializePayoutNotes(metadata: CommissionPayoutMetadata): string | unde
     ...(metadata.note ? { note: metadata.note } : {}),
     ...(metadata.paymentMethod ? { paymentMethod: metadata.paymentMethod } : {}),
     ...(metadata.proofReference ? { proofReference: metadata.proofReference } : {}),
+    ...(metadata.allocation ? { allocation: metadata.allocation } : {}),
   });
 }
 
@@ -33,11 +64,20 @@ function buildPayoutMetadata(input: {
   note?: string | undefined;
   paymentMethod?: string | undefined;
   proofReference?: string | undefined;
+  allocation?:
+    | {
+        recordCount: number;
+        grossAllocated: string;
+        adjustmentsSettled: string;
+        netAllocated: string;
+      }
+    | undefined;
 }): CommissionPayoutMetadata {
   return {
     ...(input.note ? { note: input.note } : {}),
     ...(input.paymentMethod ? { paymentMethod: input.paymentMethod } : {}),
     ...(input.proofReference ? { proofReference: input.proofReference } : {}),
+    ...(input.allocation ? { allocation: input.allocation } : {}),
   };
 }
 
@@ -68,12 +108,16 @@ export async function createCommissionRecord(input: {
   const base = new Decimal(input.baseAmount.toString());
   const rate = new Decimal(input.commissionRate.toString());
 
-  if (rate.lt(0) || rate.gt(100)) {
-    throw new Error('Commission rate must be between 0 and 100');
+  // ARGUS #342: the same 0-100 contract as the staff API validator and form.
+  if (rate.lt(COMMISSION_RATE_MIN) || rate.gt(COMMISSION_RATE_MAX)) {
+    throw new ApiError(400, 'VALIDATION_ERROR', COMMISSION_RATE_BOUND_MESSAGE);
   }
 
   const earnedAmount = base.mul(rate).div(100);
 
+  // `createdAt` is the entry timestamp. Period reports deliberately use the
+  // sale's accounting date (`Sale.saleDate`, falling back to `Sale.createdAt`)
+  // so a backdated sale still reports in its sale month (ARGUS #365).
   return prisma.commissionRecord.create({
     data: {
       tenantId: input.tenantId,
@@ -87,42 +131,140 @@ export async function createCommissionRecord(input: {
   });
 }
 
-export async function createNegativeCommissionRecord(returnId: string, tenantId: string) {
-  const returnRecord = await prisma.return.findUnique({
-    where: { id: returnId },
-    select: {
-      refundAmount: true,
-      originalSaleId: true,
-      originalSale: {
-        select: { cashierId: true },
+export interface ReconcileCommissionForSaleInput {
+  tenantId: string;
+  saleId: string;
+  /** True when the sale was voided: the whole commission is reversed. */
+  voided?: boolean | undefined;
+  /** Actor for the audit row (void actor, return initiator, or SYSTEM). */
+  actorId?: string | null | undefined;
+  /** Optional transaction so the clawback commits with the void/return. */
+  tx?: TxClient | undefined;
+}
+
+/**
+ * Reconcile commission for one sale to its post-return/void target (ARGUS #361).
+ *
+ * The original positive records are never mutated — a partially or fully paid
+ * payout stays truthful. A new negative `CommissionRecord` (paidAmount 0,
+ * isPaid false) is written for the shortfall, so the next payout nets it via
+ * the #337 paidAmount/payout model. Re-running is idempotent because the plan
+ * compares the target base with the signed base already on the ledger.
+ *
+ * Returns the adjustment row, or null when there is no commission, no shortfall
+ * (already reconciled), or the sale has no positive commission basis.
+ */
+export async function reconcileCommissionForSale(input: ReconcileCommissionForSaleInput) {
+  const client = input.tx ?? prisma;
+
+  const records = await client.commissionRecord.findMany({
+    where: { tenantId: input.tenantId, saleId: input.saleId },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (records.length === 0) return null;
+
+  const positive = records.filter(
+    (record) => new Decimal(record.baseAmount.toString()).gt(0),
+  );
+  if (positive.length === 0) return null;
+
+  const originalBase = resolveOriginalCommissionBase(records);
+  const originalEarned = positive.reduce(
+    (sum, record) => sum.plus(record.earnedAmount.toString()),
+    new Decimal(0),
+  );
+  if (originalBase.lte(0) || originalEarned.lte(0)) return null;
+
+  // ARGUS #345: reverse with the rate that actually earned the commission, not
+  // the staff member's current rate. A single row carries the exact snapshot;
+  // mixed/legacy rows fall back to the earned/base weighted average.
+  const originalRate = resolveOriginalCommissionRate(records);
+
+  const [refunded, sale] = await Promise.all([
+    client.return.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        originalSaleId: input.saleId,
+        status: ReturnStatus.COMPLETED,
       },
-    },
+      _sum: { refundAmount: true },
+    }),
+    client.sale.findUnique({
+      where: { id: input.saleId },
+      select: {
+        totalAmount: true,
+        deliveryCharge: true,
+        createdAt: true,
+        completedAt: true,
+      },
+    }),
+  ]);
+
+  const existingBase = records.reduce(
+    (sum, record) => sum.plus(record.baseAmount.toString()),
+    new Decimal(0),
+  );
+
+  // Both sides use the tax-inclusive sale base: `refundAmount` includes the tax
+  // that was refunded (Return.refundAmount / Return.taxAmount), so a full
+  // return claws the full commission rather than leaving the VAT share behind.
+  // Delivery is not refundable and is excluded from the comparison base too, so
+  // a full goods return also reverses the commission earned on delivery.
+  const saleBase = sale
+    ? new Decimal(sale.totalAmount.toString())
+    : originalBase;
+
+  const plan = planCommissionReversal({
+    originalBase,
+    commissionRate: originalRate,
+    saleBase,
+    deliveryChargeBase: sale ? sale.deliveryCharge.toString() : 0,
+    returnedBase: refunded._sum.refundAmount?.toString() ?? '0',
+    voided: input.voided === true,
+    existingBase,
   });
 
-  if (!returnRecord?.originalSale?.cashierId) return null;
+  if (plan.noop) return null;
 
-  const user = await prisma.user.findUnique({
-    where: { id: returnRecord.originalSale.cashierId },
-    select: { commissionRate: true },
-  });
+  const saleDate = sale ? resolveCommissionSaleDate(sale) : new Date();
 
-  if (!user?.commissionRate) return null;
-
-  const rate = new Decimal(user.commissionRate.toString());
-  const refund = new Decimal(returnRecord.refundAmount.toString());
-  const negativeEarned = refund.mul(rate).div(100).neg();
-
-  return prisma.commissionRecord.create({
+  const adjustment = await client.commissionRecord.create({
     data: {
-      tenantId,
-      saleId: returnRecord.originalSaleId,
-      userId: returnRecord.originalSale.cashierId,
-      baseAmount: refund.neg(),
-      commissionRate: rate,
-      earnedAmount: negativeEarned,
+      tenantId: input.tenantId,
+      saleId: input.saleId,
+      userId: positive[0]!.userId,
+      baseAmount: plan.adjustmentBase,
+      commissionRate: originalRate,
+      earnedAmount: plan.adjustmentEarned,
       isPaid: false,
+      // Payroll period truth: the reversing row belongs to the sale's period.
+      createdAt: saleDate,
     },
   });
+
+  void createAuditLog({
+    tenantId: input.tenantId,
+    actorId: input.actorId ?? null,
+    actorRole: input.actorId ? 'UNKNOWN' : 'SYSTEM',
+    entityType: 'CommissionRecord',
+    entityId: adjustment.id,
+    action: 'COMMISSION_CLAWED_BACK',
+    after: {
+      saleId: input.saleId,
+      voided: input.voided === true,
+      saleDate: saleDate.toISOString(),
+      commissionRate: originalRate.toFixed(2),
+      saleBase: saleBase.toFixed(2),
+      originalBase: originalBase.toFixed(2),
+      returnedBase: refunded._sum.refundAmount?.toString() ?? '0',
+      targetBase: plan.targetBase.toFixed(2),
+      adjustmentBase: plan.adjustmentBase.toFixed(2),
+      adjustmentEarned: plan.adjustmentEarned.toFixed(2),
+      outstanding: true,
+    },
+  }).catch(() => {});
+
+  return adjustment;
 }
 
 export async function getCommissionsForUser(
@@ -131,9 +273,10 @@ export async function getCommissionsForUser(
   page: number,
   pageSize: number,
 ) {
-  const [records, total] = await Promise.all([
+  const where = { tenantId, userId };
+  const [records, total, earnedAgg, paidAgg, lastPayout] = await Promise.all([
     prisma.commissionRecord.findMany({
-      where: { tenantId, userId },
+      where,
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
@@ -142,76 +285,101 @@ export async function getCommissionsForUser(
         payout: { select: { id: true, paidAt: true } },
       },
     }),
-    prisma.commissionRecord.count({ where: { tenantId, userId } }),
+    prisma.commissionRecord.count({ where }),
+    prisma.commissionRecord.aggregate({ where, _sum: { earnedAmount: true } }),
+    prisma.commissionRecord.aggregate({ where, _sum: { paidAmount: true } }),
+    prisma.commissionPayout.findFirst({
+      where,
+      orderBy: { paidAt: 'desc' },
+      select: { id: true, paidAt: true, totalEarned: true },
+    }),
   ]);
 
-  return { records, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+  // ARGUS #337: the badges describe the FULL ledger, not the current page.
+  // Only `paidAmount` counts as paid; `isPaid` alone is not money.
+  const summary = describeCommissionBalance({
+    totalEarned: earnedAgg._sum.earnedAmount,
+    totalPaid: paidAgg._sum.paidAmount,
+  });
+
+  return {
+    records,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+    summary: { ...summary, lastPayout },
+  };
 }
 
 export async function getUnpaidTotal(tenantId: string, userId: string) {
-  const [earned, paid, legacyPaid] = await Promise.all([
-    prisma.commissionRecord.aggregate({
-      where: { tenantId, userId },
-      _sum: { earnedAmount: true },
-    }),
-    prisma.commissionRecord.aggregate({
-      where: { tenantId, userId },
-      _sum: { paidAmount: true },
-    }),
-    prisma.commissionRecord.aggregate({
-      where: { tenantId, userId, isPaid: true, paidAmount: 0 },
-      _sum: { earnedAmount: true },
-    }),
+  const where = { tenantId, userId };
+  const [earned, paid] = await Promise.all([
+    prisma.commissionRecord.aggregate({ where, _sum: { earnedAmount: true } }),
+    prisma.commissionRecord.aggregate({ where, _sum: { paidAmount: true } }),
   ]);
-  return (earned._sum.earnedAmount ?? new Decimal(0)).minus(
-    (paid._sum.paidAmount ?? new Decimal(0)).plus(legacyPaid._sum.earnedAmount ?? new Decimal(0)),
-  );
+
+  const { unpaid } = describeCommissionBalance({
+    totalEarned: earned._sum.earnedAmount,
+    totalPaid: paid._sum.paidAmount,
+  });
+  return new Decimal(unpaid);
 }
 
 /** Commission totals for one staff member over a date range (payslip). */
 export async function getCommissionSummaryForUser(
   tenantId: string,
   userId: string,
-  periodStart: Date,
+  _periodStart: Date,
   periodEnd: Date,
 ) {
-  const [earnedAgg, paidAgg, legacyPaidAgg] = await Promise.all([
-    prisma.commissionRecord.aggregate({
-      where: {
-        tenantId,
-        userId,
-        createdAt: { gte: periodStart, lte: periodEnd },
+  // ARGUS #374: payroll pays the current outstanding balance up to month-end,
+  // not just records created in that month, so earlier negative clawbacks and
+  // partial payouts carry forward. Records reserved by a pending payroll run
+  // are already committed to that run and are excluded here.
+  const records = await prisma.commissionRecord.findMany({
+    where: {
+      tenantId,
+      userId,
+      // ARGUS #365: pay outstanding commission whose sale accounting date is
+      // up to month-end; a backdated sale belongs to its sale month.
+      sale: {
+        status: { not: 'VOIDED' },
+        OR: [
+          { saleDate: { lte: periodEnd } },
+          { saleDate: null, createdAt: { lte: periodEnd } },
+        ],
       },
-      _sum: { earnedAmount: true },
-    }),
-    prisma.commissionRecord.aggregate({
-      where: {
-        tenantId,
-        userId,
-        createdAt: { gte: periodStart, lte: periodEnd },
-      },
-      _sum: { paidAmount: true },
-    }),
-    prisma.commissionRecord.aggregate({
-      where: {
-        tenantId,
-        userId,
-        isPaid: true,
-        paidAmount: 0,
-        createdAt: { gte: periodStart, lte: periodEnd },
-      },
-      _sum: { earnedAmount: true },
-    }),
-  ]);
+      OR: [
+        { payoutId: null },
+        { payout: { paymentAccountName: null } },
+        {
+          payout: {
+            paymentAccountName: {
+              not: { startsWith: PAYROLL_PENDING_ACCOUNT_PREFIX },
+            },
+          },
+        },
+      ],
+    },
+    select: { id: true, earnedAmount: true, paidAmount: true, createdAt: true },
+    orderBy: { createdAt: 'asc' },
+  });
 
-  const earned = earnedAgg._sum.earnedAmount ?? new Decimal(0);
-  const paid = (paidAgg._sum.paidAmount ?? new Decimal(0)).plus(
-    legacyPaidAgg._sum.earnedAmount ?? new Decimal(0),
+  const plan = planPayrollCommission(records);
+  const earned = records.reduce(
+    (sum, record) => sum.plus(record.earnedAmount.toString()),
+    new Decimal(0),
   );
+  const paid = records.reduce(
+    (sum, record) => sum.plus(record.paidAmount.toString()),
+    new Decimal(0),
+  );
+
   return {
-    earned: earned.toString(),
-    paid: paid.toString(),
-    unpaid: earned.minus(paid).toString(),
+    earned: describeCommissionBalance({ totalEarned: earned, totalPaid: paid }).totalEarned,
+    paid: describeCommissionBalance({ totalEarned: earned, totalPaid: paid }).totalPaid,
+    unpaid: plan.payable.toFixed(2),
   };
 }
 
@@ -250,12 +418,35 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
     });
     if (!staff) throw ApiError.notFound('Staff member not found');
 
+    // ARGUS #337: openness is determined by money, not the derived `isPaid`
+    // flag — legacy rows carry `isPaid = true` with `paidAmount = 0` and are
+    // still payable. `summarizeOpenCommission` drops fully settled records.
     const unpaidRecords = await tx.commissionRecord.findMany({
       where: {
         tenantId: input.tenantId,
         userId: input.userId,
-        isPaid: false,
-        createdAt: { gte: input.periodStart, lte: input.periodEnd },
+        // ARGUS #365: period reporting follows the sale's accounting date, not
+        // when the commission row happened to be inserted (backdated sales).
+        sale: {
+          OR: [
+            { saleDate: { gte: input.periodStart, lte: input.periodEnd } },
+            {
+              saleDate: null,
+              createdAt: { gte: input.periodStart, lte: input.periodEnd },
+            },
+          ],
+        },
+        OR: [
+          { payoutId: null },
+          { payout: { paymentAccountName: null } },
+          {
+            payout: {
+              paymentAccountName: {
+                not: { startsWith: PAYROLL_PENDING_ACCOUNT_PREFIX },
+              },
+            },
+          },
+        ],
       },
       select: { id: true, earnedAmount: true, paidAmount: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
@@ -284,6 +475,11 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
 
     const amount = requested.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
+    // ARGUS #366: allocate before writing the payout so the receipt can store
+    // the gross/adjustment/net reconciliation derived from the same math.
+    const allocations = allocateCommissionPayment(openRecords, amount);
+    const allocationSummary = summarizeCommissionAllocation(openRecords, allocations);
+
     const account = await tx.paymentAccount.findFirst({
       where: { id: paymentAccountId, tenantId: input.tenantId },
       include: { pettyCashFund: { select: { id: true } } },
@@ -305,6 +501,7 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
         note: input.notes,
         paymentMethod: account.name,
         proofReference: input.proofReference,
+        allocation: allocationSummary,
       }),
     );
 
@@ -359,7 +556,6 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
       { allowPettyCashAccount: true },
     );
 
-    const allocations = allocateCommissionPayment(openRecords, amount);
     for (const allocation of allocations) {
       await tx.commissionRecord.update({
         where: { id: allocation.id },
@@ -371,18 +567,23 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
       });
     }
 
-    return { payout, pettyCashFundId, amount, accountName: account.name, staffName, expenseId: expense.id };
+    // ARGUS #369: the petty-cash fund leg commits with the payout, expense and
+    // ledger entries. Moving the balance adjustment after the commit left a
+    // paid payout without the matching fund reduction when the second write
+    // failed.
+    if (pettyCashFundId) {
+      await adjustFundBalanceTx(tx, input.tenantId, pettyCashFundId, -amount.toNumber(), {
+        enforceNonNegative: true,
+      });
+    }
+
+    return { payout, pettyCashFundId, amount, accountName: account.name, staffName, expenseId: expense.id, allocation: allocationSummary };
   });
 
-  // A linked petty-cash payout also reduces the fund's running balance. Kept
-  // outside the transaction because adjustFundBalance owns its own write and
-  // low-balance check.
+  // Only the low-balance notification is post-commit: the money has already
+  // moved atomically above, and a notification failure must not roll it back.
   if (transactionResult.pettyCashFundId) {
-    await adjustFundBalance(
-      input.tenantId,
-      transactionResult.pettyCashFundId,
-      -transactionResult.amount.toNumber(),
-    );
+    await checkFundLowBalance(input.tenantId, transactionResult.pettyCashFundId);
   }
 
   await createAuditLog({
@@ -401,6 +602,12 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
       paymentAccount: transactionResult.accountName,
       expenseId: transactionResult.expenseId,
       proofReference: input.proofReference ?? null,
+      allocation: {
+        recordCount: transactionResult.allocation.recordCount,
+        grossAllocated: transactionResult.allocation.grossAllocated,
+        adjustmentsSettled: transactionResult.allocation.adjustmentsSettled,
+        netAllocated: transactionResult.allocation.netAllocated,
+      },
     },
   });
 
@@ -419,17 +626,30 @@ export async function getCommissionPayouts(
 ) {
   const page = Math.max(filters.page ?? 1, 1);
   const pageSize = Math.min(Math.max(filters.pageSize ?? 20, 1), 100);
+  // ARGUS #362: a payout is shown in the selected *commission* window, not by
+  // the date the money happened to leave. A September commission paid in
+  // November therefore stays in the September report.
+  const periodConditions: Array<Record<string, unknown>> = [];
+  if (filters.periodStart) {
+    periodConditions.push({ periodEnd: { gte: filters.periodStart } });
+  }
+  if (filters.periodEnd) {
+    periodConditions.push({ periodStart: { lte: filters.periodEnd } });
+  }
   const where = {
     tenantId,
     ...(filters.userId ? { userId: filters.userId } : {}),
-    ...((filters.periodStart || filters.periodEnd)
-      ? {
-          paidAt: {
-            ...(filters.periodStart ? { gte: filters.periodStart } : {}),
-            ...(filters.periodEnd ? { lte: filters.periodEnd } : {}),
-          },
-        }
-      : {}),
+    AND: [
+      ...periodConditions,
+      // Pending payroll reservations are not payouts yet; hide them until the
+      // run is marked paid (ARGUS #372).
+      {
+        OR: [
+          { paymentAccountName: null },
+          { paymentAccountName: { not: { startsWith: PAYROLL_PENDING_ACCOUNT_PREFIX } } },
+        ],
+      },
+    ],
   };
 
   const [records, total] = await Promise.all([
@@ -456,6 +676,9 @@ export async function getCommissionPayouts(
         userEmail: record.user.email,
         userName: record.user.fullName?.trim() || null,
         userRole: record.user.role,
+        // ARGUS #370: the column stores the amount actually paid (a partial
+        // payout stores only the paid part), so expose the accurate name too.
+        amountPaid: record.totalEarned.toString(),
         totalEarned: record.totalEarned.toString(),
         periodStart: record.periodStart,
         periodEnd: record.periodEnd,
@@ -464,6 +687,7 @@ export async function getCommissionPayouts(
         authorizedByName: record.authorizedBy.fullName?.trim() || null,
         note: metadata.note ?? null,
         paymentMethod: metadata.paymentMethod ?? null,
+        allocation: metadata.allocation ?? null,
         paymentAccountId: record.paymentAccountId,
         paymentAccountName: record.paymentAccountName ?? record.paymentAccount?.name ?? null,
         expenseId: record.expenseId,
@@ -489,54 +713,44 @@ export async function getCommissionSummaryForTenant(
 
   const summaries = await Promise.all(
     users.map(async (user) => {
-      const [earned, paid, legacyPaid] = await Promise.all([
-        prisma.commissionRecord.aggregate({
-          where: {
-            tenantId,
-            userId: user.id,
-            createdAt: { gte: periodStart, lte: periodEnd },
-          },
-          _sum: { earnedAmount: true },
-        }),
-        prisma.commissionRecord.aggregate({
-          where: {
-            tenantId,
-            userId: user.id,
-            createdAt: { gte: periodStart, lte: periodEnd },
-          },
-          _sum: { paidAmount: true },
-        }),
-        prisma.commissionRecord.aggregate({
-          where: {
-            tenantId,
-            userId: user.id,
-            isPaid: true,
-            paidAmount: 0,
-            createdAt: { gte: periodStart, lte: periodEnd },
-          },
-          _sum: { earnedAmount: true },
-        }),
+      const where = {
+        tenantId,
+        userId: user.id,
+        // ARGUS #365: report commission in the period of the sale's accounting
+        // date. Backdated sales keep their date; pre-saleDate rows fall back
+        // to createdAt.
+        sale: {
+          OR: [
+            { saleDate: { gte: periodStart, lte: periodEnd } },
+            { saleDate: null, createdAt: { gte: periodStart, lte: periodEnd } },
+          ],
+        },
+      };
+      const [earned, paid] = await Promise.all([
+        prisma.commissionRecord.aggregate({ where, _sum: { earnedAmount: true } }),
+        prisma.commissionRecord.aggregate({ where, _sum: { paidAmount: true } }),
       ]);
 
-      const totalEarned = earned._sum.earnedAmount ?? new Decimal(0);
-      const totalPaid = (paid._sum.paidAmount ?? new Decimal(0)).plus(
-        legacyPaid._sum.earnedAmount ?? new Decimal(0),
-      );
-      const unpaid = new Decimal(totalEarned.toString()).sub(new Decimal(totalPaid.toString()));
+      // ARGUS #337: Total Paid is recorded payout money; an `isPaid` flag with
+      // paidAmount 0 (legacy) must not reduce the open liability.
+      const balance = describeCommissionBalance({
+        totalEarned: earned._sum.earnedAmount,
+        totalPaid: paid._sum.paidAmount,
+      });
 
       return {
         userId: user.id,
         email: user.email,
         fullName: user.fullName?.trim() || null,
         role: user.role,
-        totalEarned: totalEarned.toString(),
-        totalPaid: totalPaid.toString(),
-        unpaid: unpaid.toString(),
+        totalEarned: balance.totalEarned,
+        totalPaid: balance.totalPaid,
+        unpaid: balance.unpaid,
       };
     }),
   );
 
   return summaries.filter(
-    (s) => s.totalEarned !== '0' || s.totalPaid !== '0',
+    (s) => s.totalEarned !== '0.00' || s.totalPaid !== '0.00',
   );
 }

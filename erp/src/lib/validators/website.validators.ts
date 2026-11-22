@@ -1,5 +1,35 @@
 import { z } from 'zod';
 
+import {
+  isHexColorOrEmpty,
+  isSafeWebsiteHrefOrEmpty,
+} from '@/lib/website/link-validation.core';
+
+/**
+ * ARGUS #503: link fields were length-only, so `javascript:` and a bare `#`
+ * passed and the storefront rendered them directly. One schema covers every
+ * navigation/footer/CTA/ad-target field; empty stays valid for optional links.
+ */
+function websiteHref(max: number) {
+  return z
+    .string()
+    .trim()
+    .max(max)
+    .refine(isSafeWebsiteHrefOrEmpty, {
+      message:
+        'Use a /path, #section, mailto:, tel: or http(s) URL (a bare # is not a destination)',
+    });
+}
+
+/** ARGUS #503: the colour text inputs accept only `#rgb` / `#rrggbb`. */
+const HexColor = z
+  .string()
+  .trim()
+  .max(7)
+  .refine(isHexColorOrEmpty, { message: 'Use a hex colour such as #0a0a0a' })
+  .nullable()
+  .optional();
+
 // ── Social Links ─────────────────────────────────────────────────────────────
 
 export const WebsiteSocialLinksSchema = z.object({
@@ -20,12 +50,12 @@ export const WebsiteNavItemSchema: z.ZodType<{
   children?: { label: string; href: string }[] | undefined;
 }> = z.object({
   label: z.string().min(1).max(50),
-  href: z.string().min(1).max(200),
+  href: websiteHref(200),
   children: z
     .array(
       z.object({
         label: z.string().min(1).max(50),
-        href: z.string().min(1).max(200),
+        href: websiteHref(200),
       })
     )
     .optional(),
@@ -41,7 +71,7 @@ export const WebsiteHeroSlideSchema = z.object({
   subtitle: z.string().max(300).nullable().optional().or(z.literal('')),
   description: z.string().max(500).nullable().optional().or(z.literal('')),
   ctaText: z.string().max(50).nullable().optional().or(z.literal('')),
-  ctaLink: z.string().max(200).nullable().optional().or(z.literal('')),
+  ctaLink: websiteHref(200).nullable().optional(),
   isActive: z.boolean().default(true),
   sortOrder: z.number().int().nonnegative().default(0),
 });
@@ -72,7 +102,7 @@ export const WebsiteAdSchema = z.object({
   mediaType: z.enum(['image', 'video']),
   mediaUrl: z.string().min(1, 'Media URL is required'),
   mobileMediaUrl: z.string().nullable().optional().or(z.literal('')),
-  targetUrl: z.string().max(500).nullable().optional().or(z.literal('')),
+  targetUrl: websiteHref(500).nullable().optional(),
   position: z.enum(['header', 'between_sections', 'sidebar', 'popup']),
   displayAfterSection: z.string().nullable().optional().or(z.literal('')),
   startsAt: WebsiteDateSchema,
@@ -89,7 +119,7 @@ export const UpdateWebsiteAdSchema = WebsiteAdSchema.partial();
 
 export const WebsiteAnnouncementBarSchema = z.object({
   text: z.string().max(200).nullable().optional().or(z.literal('')),
-  link: z.string().max(500).nullable().optional().or(z.literal('')),
+  link: websiteHref(500).nullable().optional(),
   isActive: z.boolean().default(false),
 });
 
@@ -101,7 +131,7 @@ export const UpdateWebsiteAnnouncementBarSchema =
 export const ShopByConcernItemSchema = z.object({
   name: z.string().min(1).max(100),
   imageUrl: z.string().min(1),
-  link: z.string().max(200).optional().or(z.literal('')),
+  link: websiteHref(200).optional(),
   sortOrder: z.number().int().nonnegative().default(0),
 });
 
@@ -117,7 +147,7 @@ export const TestimonialItemSchema = z.object({
 
 export const FooterColumnLinkSchema = z.object({
   label: z.string().min(1).max(50),
-  href: z.string().min(1).max(200),
+  href: websiteHref(200),
 });
 
 export const FooterColumnSchema = z.object({
@@ -148,7 +178,7 @@ export const HeroSectionSchema = z.object({
   // Common hero editorial controls (shared across all slides)
   showConsultDoctor: z.boolean().optional(),
   consultDoctorLabel: z.string().max(50).optional().or(z.literal('')),
-  consultDoctorLink: z.string().max(200).optional().or(z.literal('')),
+  consultDoctorLink: websiteHref(200).optional(),
   showCraftedBy: z.boolean().optional(),
   craftedByText: z.string().max(300).optional().or(z.literal('')),
   showSocialLinks: z.boolean().optional(),
@@ -166,7 +196,7 @@ export const HeroSectionSchema = z.object({
 export const ImageSliderItemSchema = z.object({
   imageUrl: z.string().min(1).optional(),
   alt: z.string().optional(),
-  linkUrl: z.string().optional(),
+  linkUrl: websiteHref(200).optional(),
   sortOrder: z.number().int().nonnegative().optional(),
   isActive: z.boolean().optional(),
 }).partial().passthrough();
@@ -199,7 +229,7 @@ export const InfoAdSectionSchema = z.object({
   title: z.string().optional(),
   subtitle: z.string().optional(),
   buttonText: z.string().optional(),
-  buttonLink: z.string().optional(),
+  buttonLink: websiteHref(200).optional(),
 }).partial().passthrough();
 
 export const CategoriesSectionSchema = z.object({
@@ -270,16 +300,16 @@ export const WebsiteConfigSchema = z.object({
   logoUrl: z.string().max(500).nullable().optional().or(z.literal('')),
   faviconUrl: z.string().max(500).nullable().optional().or(z.literal('')),
 
-  // Colors
-  primaryColor: z.string().max(7).nullable().optional(),
-  accentColor: z.string().max(7).nullable().optional(),
-  bgColor: z.string().max(7).nullable().optional(),
+  // Colors (ARGUS #503: hex only)
+  primaryColor: HexColor,
+  accentColor: HexColor,
+  bgColor: HexColor,
 
   // Typography
   headingFontFamily: z.string().max(200).nullable().optional().or(z.literal('')),
   bodyFontFamily: z.string().max(200).nullable().optional().or(z.literal('')),
-  headingColor: z.string().max(7).nullable().optional(),
-  bodyColor: z.string().max(7).nullable().optional(),
+  headingColor: HexColor,
+  bodyColor: HexColor,
 
   // SEO
   metaTitle: z.string().max(120).nullable().optional().or(z.literal('')),

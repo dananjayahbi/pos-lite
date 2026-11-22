@@ -7,11 +7,17 @@ dialog instead of a payment modal. The cashier must pick a reason
 
 ## How the terminal decides
 
-`CartPanel` shows the zero-value button when the **amount due** is ≤ 0, i.e.
+`CartPanel` shows the zero-value button when the **sale total** is ≤ 0, i.e.
 
 ```
-amountDue = subtotal − cartDiscount + tax − promotionDiscount − storeCredit
+total = subtotal − cartDiscount + tax − promotionDiscount
 ```
+
+Store credit is a tender, not a discount: it lowers the **amount due**, never the
+sale total. A cart fully covered by store credit therefore opens the
+**Complete with Store Credit** confirmation (see
+[`store-credit-tender.md`](./store-credit-tender.md)) instead of the zero-value
+flow.
 
 ## What the API must be told (Issue #7)
 

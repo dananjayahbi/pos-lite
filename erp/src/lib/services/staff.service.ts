@@ -1,11 +1,31 @@
 import { prisma } from '@/lib/prisma';
 import { UserRole } from '@/generated/prisma/client';
+import type { Prisma } from '@/generated/prisma/client';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
-import { writeAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { writeAuditLog, writeAuditLogTx, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { mapPrismaError } from '@/lib/api/map-prisma-error';
 import { withUniqueGuard } from '@/lib/api/race-guard';
 import { ApiError } from '@/lib/api/errors';
+import {
+  permissionPayloadToSave,
+  samePermissionSet,
+} from '@/lib/services/permissionSet.core';
+import {
+  assertLastOwnerRemains,
+  assertPermissionsGrantable,
+  canAssignRole,
+  canManageStaffRole,
+  canResetStaffPassword,
+} from '@/lib/auth/staff-authorization';
+import {
+  STAFF_CREATED_AUDIT_FIELDS,
+  STAFF_PROFILE_AUDIT_FIELDS,
+  buildStaffAuditSnapshot,
+  diffStaffAuditFields,
+  formatCommissionRateForAudit,
+} from '@/lib/services/staffAudit.core';
+import { toStaffDetailDto } from '@/lib/services/staffPrivacy.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,6 +96,26 @@ const STAFF_SELECT = {
   epfNumber: true,
 } as const;
 
+/**
+ * ARGUS #341: the list only renders directory fields. Selecting the narrower
+ * shape here means salary, bank and HR PII never leave the database for a
+ * `staff:view` caller, even if a future response shaper regresses.
+ */
+const STAFF_LIST_SELECT = {
+  id: true,
+  email: true,
+  role: true,
+  isActive: true,
+  // ARGUS #464/#466: the settings roster must be able to name the explicit
+  // extras and revokes it shows; permissions are access metadata, not HR PII.
+  permissions: true,
+  commissionRate: true,
+  clockedInAt: true,
+  createdAt: true,
+  fullName: true,
+  contactNumber: true,
+} as const;
+
 function cleanOptional(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
   const trimmed = value.trim();
@@ -124,14 +164,18 @@ export async function getStaffMembers(tenantId: string, options?: GetStaffOption
 
   return prisma.user.findMany({
     where,
-    select: STAFF_SELECT,
+    select: STAFF_LIST_SELECT,
     orderBy: { createdAt: 'desc' },
   });
 }
 
 // ── Get Staff By ID ──────────────────────────────────────────────────────────
 
-export async function getStaffById(tenantId: string, id: string) {
+export async function getStaffById(
+  tenantId: string,
+  id: string,
+  options: { includeSensitive?: boolean } = {},
+) {
   const user = await prisma.user.findFirst({
     where: { id, tenantId, deletedAt: null },
     select: STAFF_SELECT,
@@ -141,30 +185,12 @@ export async function getStaffById(tenantId: string, id: string) {
     throw new Error('Staff member not found');
   }
 
-  return {
-    id: user.id,
-    email: user.email,
-    role: user.role,
-    isActive: user.isActive,
-    permissions: Array.isArray(user.permissions)
-      ? user.permissions.filter((permission): permission is string => typeof permission === 'string')
-      : [],
-    commissionRate: user.commissionRate,
-    clockedInAt: user.clockedInAt,
-    lastLoginAt: user.lastLoginAt,
-    createdAt: user.createdAt,
-    fullName: user.fullName,
-    nic: user.nic,
-    contactNumber: user.contactNumber,
-    address: user.address,
-    basicSalary: user.basicSalary,
-    allowances: user.allowances,
-    bankName: user.bankName,
-    bankBranch: user.bankBranch,
-    bankAccountNumber: user.bankAccountNumber,
-    etfNumber: user.etfNumber,
-    epfNumber: user.epfNumber,
-  };
+  // ARGUS #341: HR/salary/bank fields are only returned to the stronger
+  // staff:manage permission. A plain staff:view caller still sees the
+  // directory identity/access data, but the account number is masked.
+  return toStaffDetailDto(user as unknown as Record<string, unknown>, {
+    includeSensitive: options.includeSensitive === true,
+  });
 }
 
 // ── Update Staff ─────────────────────────────────────────────────────────────
@@ -187,6 +213,45 @@ export async function updateStaff(
   actor: AuditActor,
 ) {
   const existing = await assertStaffBelongsToTenant(tenantId, id);
+
+  // Role hierarchy (ARGUS #335): staff:manage does not let a manager touch an
+  // owner/manager, change their own privileges, or grant permissions they do
+  // not hold.
+  if (!canManageStaffRole(actor.role, existing.role)) {
+    throw new ApiError(403, 'FORBIDDEN', 'You cannot manage a staff member at this role level');
+  }
+  if (
+    actor.role === 'MANAGER' &&
+    id === actor.id &&
+    (data.role !== undefined || data.permissions !== undefined || data.isActive !== undefined)
+  ) {
+    throw new ApiError(
+      403,
+      'FORBIDDEN',
+      'Managers cannot change their own role, status or permissions',
+    );
+  }
+  if (data.role !== undefined && !canAssignRole(actor.role, data.role)) {
+    throw new ApiError(403, 'FORBIDDEN', 'You cannot assign this role');
+  }
+  if (data.permissions !== undefined) {
+    assertPermissionsGrantable(actor.role, data.permissions);
+  }
+  const demotesOwner =
+    existing.role === 'OWNER' &&
+    ((data.role !== undefined && data.role !== 'OWNER') || data.isActive === false);
+  if (demotesOwner) {
+    const otherActiveOwners = await prisma.user.count({
+      where: { tenantId, role: 'OWNER', isActive: true, deletedAt: null, id: { not: id } },
+    });
+    assertLastOwnerRemains({
+      existingRole: existing.role,
+      existingIsActive: existing.isActive,
+      nextRole: data.role,
+      nextIsActive: data.isActive,
+      otherActiveOwners,
+    });
+  }
 
   const updateData: Record<string, unknown> = {};
 
@@ -232,67 +297,143 @@ export async function updateStaff(
   assignMoney('basicSalary');
   assignMoney('allowances');
 
-  if (data.permissions !== undefined) {
-    updateData.permissions = Array.from(
-      new Set(data.permissions.filter((permission): permission is string => typeof permission === 'string')),
-    ).sort();
+  const nextRole = data.role ?? existing.role;
+  // ARGUS #464: the stored payload is extras plus `!`-prefixed revokes, so a
+  // deny survives the round-trip and is compared like any other change.
+  const beforePermissions = permissionPayloadToSave(existing.permissions, existing.role);
+  const nextPermissions = data.permissions !== undefined
+    ? permissionPayloadToSave(data.permissions, nextRole)
+    : beforePermissions;
+  const permissionsChanged =
+    data.permissions !== undefined &&
+    !samePermissionSet(beforePermissions, nextPermissions);
+
+  // Only write the permissions column when the normalized extras changed. A
+  // legacy row that stores all inherited defaults is left untouched by a
+  // no-op save, so the row cannot churn 8 -> 4 without a real change.
+  if (permissionsChanged) {
+    updateData.permissions = nextPermissions;
   }
 
   // M03-04: privilege-revoking change → invalidate live sessions.
   const roleChanged = data.role !== undefined && data.role !== existing.role;
   const activeChanged = data.isActive !== undefined && data.isActive !== existing.isActive;
-  const beforePermissions = Array.isArray(existing.permissions)
-    ? existing.permissions.filter((permission): permission is string => typeof permission === 'string')
-    : [];
-  const permissionsChanged =
-    data.permissions !== undefined &&
-    JSON.stringify(
-      Array.from(
-        new Set(data.permissions.filter((permission): permission is string => typeof permission === 'string')),
-      ).sort(),
-    ) !== JSON.stringify([...beforePermissions].sort());
 
   if (roleChanged || activeChanged || permissionsChanged) {
     updateData.sessionVersion = { increment: 1 };
   }
 
-  const updated = await prisma.user.update({
-    where: { id },
-    data: updateData,
-    select: STAFF_SELECT,
+  // ARGUS #463: the staff update and every security audit row are one
+  // transaction. A failed audit rolls the change back instead of committing an
+  // unaudited role/permission/status change and then returning 500.
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: { id },
+      data: updateData,
+      select: STAFF_SELECT,
+    });
+
+    if (roleChanged) {
+      await writeAuditLogTx(tx, {
+        tenantId,
+        actorId: actor.id,
+        actorRole: actor.role,
+        entityType: 'Staff',
+        entityId: id,
+        action: AUDIT_ACTIONS.STAFF_ROLE_CHANGED,
+        before: { role: existing.role },
+        after: { role: data.role },
+      });
+    }
+
+    if (permissionsChanged) {
+      const afterPermissions = permissionPayloadToSave(updated.permissions, nextRole);
+
+      await writeAuditLogTx(tx, {
+        tenantId,
+        actorId: actor.id,
+        actorRole: actor.role,
+        entityType: 'Staff',
+        entityId: id,
+        action: AUDIT_ACTIONS.STAFF_PERMISSION_CHANGED,
+        before: { permissions: beforePermissions },
+        after: { permissions: afterPermissions },
+      });
+    }
+
+    // ARGUS #463: active-status changes get their own security row instead of
+    // disappearing into the generic details audit (or none at all).
+    if (activeChanged) {
+      await writeAuditLogTx(tx, {
+        tenantId,
+        actorId: actor.id,
+        actorRole: actor.role,
+        entityType: 'Staff',
+        entityId: id,
+        action: AUDIT_ACTIONS.STAFF_STATUS_CHANGED,
+        before: { isActive: existing.isActive },
+        after: { isActive: data.isActive },
+      });
+    }
+
+    // HR / contact / salary / bank changes are security-sensitive too (ARGUS
+    // #336). Without this row an admin edit of a bank account or salary left no
+    // audit trail. isActive has its own action above.
+    const detailFields = [
+      'email',
+      'fullName',
+      'nic',
+      'contactNumber',
+      'address',
+      'basicSalary',
+      'allowances',
+      'bankName',
+      'bankBranch',
+      'bankAccountNumber',
+      'etfNumber',
+      'epfNumber',
+    ] as const;
+    const changedDetailFields = detailFields.filter(
+      (key) => (data as Record<string, unknown>)[key] !== undefined,
+    );
+    if (changedDetailFields.length > 0) {
+      const before: Record<string, unknown> = {};
+      const after: Record<string, unknown> = {};
+      for (const key of changedDetailFields) {
+        before[key] = (existing as Record<string, unknown>)[key] ?? null;
+        after[key] = updateData[key] ?? (data as Record<string, unknown>)[key] ?? null;
+      }
+      await writeAuditLogTx(tx, {
+        tenantId,
+        actorId: actor.id,
+        actorRole: actor.role,
+        entityType: 'Staff',
+        entityId: id,
+        action: AUDIT_ACTIONS.STAFF_DETAILS_UPDATED,
+        before: before as Prisma.InputJsonValue,
+        after: after as Prisma.InputJsonValue,
+      });
+    }
+
+    // Commission rate changes alter future pay; keep the dedicated action even
+    // when the same PATCH edits profile fields (ARGUS #340/#463).
+    const beforeCommissionRate = formatCommissionRateForAudit(existing.commissionRate);
+    const afterCommissionRate = formatCommissionRateForAudit(updated.commissionRate);
+    if (beforeCommissionRate !== afterCommissionRate) {
+      await writeAuditLogTx(tx, {
+        tenantId,
+        actorId: actor.id,
+        actorRole: actor.role,
+        entityType: 'Staff',
+        entityId: id,
+        action: AUDIT_ACTIONS.STAFF_COMMISSION_RATE_CHANGED,
+        before: { commissionRate: beforeCommissionRate },
+        after: { commissionRate: afterCommissionRate },
+      });
+    }
+
+    return updated;
   });
-
-  if (roleChanged) {
-    await writeAuditLog({
-      tenantId,
-      actorId: actor.id,
-      actorRole: actor.role,
-      entityType: 'Staff',
-      entityId: id,
-      action: AUDIT_ACTIONS.STAFF_ROLE_CHANGED,
-      before: { role: existing.role },
-      after: { role: data.role },
-    });
-  }
-
-  if (permissionsChanged) {
-    const afterPermissions = Array.isArray(updated.permissions)
-      ? updated.permissions.filter((permission): permission is string => typeof permission === 'string')
-      : [];
-
-    await writeAuditLog({
-      tenantId,
-      actorId: actor.id,
-      actorRole: actor.role,
-      entityType: 'Staff',
-      entityId: id,
-      action: AUDIT_ACTIONS.STAFF_PERMISSION_CHANGED,
-      before: { permissions: beforePermissions },
-      after: { permissions: afterPermissions },
-    });
-  }
-
-  return updated;
 }
 
 // ── Create Staff Member ──────────────────────────────────────────────────────
@@ -306,9 +447,16 @@ export async function updateStaff(
  * created account cannot sign in until an OWNER sets one via
  * /api/store/staff/[id]/password. Returns the created record.
  */
-export async function createStaffMember(tenantId: string, data: CreateStaffInput) {
+export async function createStaffMember(
+  tenantId: string,
+  data: CreateStaffInput,
+  actor: AuditActor,
+) {
   if (data.role === UserRole.SUPER_ADMIN) {
     throw new Error('Cannot assign SUPER_ADMIN role');
+  }
+  if (!canAssignRole(actor.role, data.role)) {
+    throw new Error('STAFF_ROLE_NOT_ASSIGNABLE');
   }
 
   const tempPassword = randomUUID();
@@ -326,7 +474,7 @@ export async function createStaffMember(tenantId: string, data: CreateStaffInput
   const etfNumber = cleanOptional(data.etfNumber);
   const epfNumber = cleanOptional(data.epfNumber);
 
-  return withUniqueGuard(
+  const created = await withUniqueGuard(
     () =>
       prisma.user.create({
         data: {
@@ -356,6 +504,24 @@ export async function createStaffMember(tenantId: string, data: CreateStaffInput
     // Non-race errors keep the Prisma mapping (typed 4xx, no raw dump).
     throw mapPrismaError(error) ?? error;
   });
+
+  // ARGUS #340: account creation is security-relevant. The snapshot is
+  // allow-listed (no passwordHash) and bounded. Durable write: an unaudited
+  // staff account must not report success.
+  await writeAuditLog({
+    tenantId,
+    actorId: actor.id,
+    actorRole: actor.role,
+    entityType: 'Staff',
+    entityId: created.id,
+    action: AUDIT_ACTIONS.STAFF_CREATED,
+    after: buildStaffAuditSnapshot(
+      created as unknown as Record<string, unknown>,
+      STAFF_CREATED_AUDIT_FIELDS,
+    ) as Prisma.InputJsonValue,
+  });
+
+  return created;
 }
 
 /**
@@ -374,6 +540,10 @@ export async function setStaffPassword(
   context?: { ipAddress?: string | undefined; userAgent?: string | undefined },
 ) {
   const existing = await assertStaffBelongsToTenant(tenantId, id);
+
+  if (!canResetStaffPassword(actor.role, existing.role)) {
+    throw new Error('STAFF_PASSWORD_RESET_FORBIDDEN');
+  }
 
   const passwordHash = await bcrypt.hash(newPassword, 12);
 

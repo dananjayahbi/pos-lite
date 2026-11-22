@@ -47,6 +47,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       session.user.id,
       id,
       parsed.data.quantityDelta,
+      parsed.data.reason,
     );
     return NextResponse.json({ success: true, data: material });
   } catch (error) {
@@ -60,6 +61,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
+      );
+    }
+    if (error instanceof Error && error.message === 'INVALID_REASON') {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Select a valid adjustment reason' } },
+        { status: 400 },
       );
     }
     if (error instanceof Error && error.message === 'DELTA_ZERO') {

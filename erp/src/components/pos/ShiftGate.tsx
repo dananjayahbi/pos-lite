@@ -29,11 +29,12 @@ interface ShiftGateProps {
  * rendered the "Open Your Shift" screen instead of the report (or its
  * "No shift ID provided." / fetch-failure states).
  *
- * The gate keeps the same rule for every POS surface EXCEPT `/pos/shift-report`
- * (URL frozen by the QA contract): with no open shift it still renders the
- * ShiftOpenModal, but on the shift-report path it renders the children so the
- * report page can show its own documented empty/error UI. With an open shift
- * nothing changes — children render inside POSTerminalShell exactly as before.
+ * ARGUS #113: `/pos/shift-report` (URL frozen by the QA contract) is a
+ * standalone report surface. It renders its children directly with no
+ * POSTerminalShell and no ShiftOpenModal, so the report is not squeezed into
+ * the cart column and prints as a clean document. Every other POS surface keeps
+ * the original rule: ShiftOpenModal without an open shift, POSTerminalShell with
+ * one.
  */
 export function ShiftGate({
   hasOpenShift,
@@ -53,12 +54,13 @@ export function ShiftGate({
   const isHistorySurface =
     pathname.startsWith('/pos/history') || pathname.startsWith('/pos/returns');
 
+  if (isShiftReport) {
+    // Standalone report surface: no terminal shell, no cart rail, no POS
+    // chrome — the page reads ?shiftId itself and owns its print layout.
+    return <>{children}</>;
+  }
+
   if (!hasOpenShift) {
-    if (isShiftReport) {
-      // The report page reads ?shiftId itself and renders its own
-      // empty/error state; do not bounce the cashier to ShiftOpenModal.
-      return <>{children}</>;
-    }
     return (
       <ShiftOpenModal
         cashierName={cashierName}

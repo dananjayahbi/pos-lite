@@ -36,6 +36,7 @@ interface SaleLine {
   unitPrice: number;
   quantity: number;
   discountPercent: number;
+  categoryId?: string | null;
 }
 
 interface HeldSale {
@@ -152,6 +153,7 @@ export function RetrieveHeldSalesSheet({
       unitPrice: Number(l.unitPrice),
       quantity: Number(l.quantity),
       discountPercent: Number(l.discountPercent),
+      ...(l.categoryId ? { categoryId: l.categoryId } : {}),
     }));
 
     replaceCart(mapped, 0, Number(sale.discountAmount));

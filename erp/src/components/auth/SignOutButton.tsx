@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { signOut } from 'next-auth/react';
 import { postLogoutAudit } from '@/lib/auth/logout-audit';
+import { clearCartOnSignOut } from '@/lib/pos/cartSession';
 
 interface SignOutButtonProps {
   /** Visual style variant */
@@ -28,6 +29,8 @@ export function SignOutButton({
     setLoading(true);
     // M01-04: ledger the sign-out while the session cookie still exists.
     await postLogoutAudit();
+    // ARGUS #66: the terminal must not hand the cart to the next cashier.
+    await clearCartOnSignOut();
     // Use window.location.origin so the redirect is always correct,
     // regardless of what AUTH_URL / NEXTAUTH_URL is set to server-side.
     await signOut({ callbackUrl: `${window.location.origin}/login` });

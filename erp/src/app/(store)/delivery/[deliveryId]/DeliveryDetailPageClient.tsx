@@ -5,14 +5,24 @@ import { useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDelivery, useLabelTemplate } from '@/hooks/delivery';
+import { useBulkCreateDelivery } from '@/hooks/orders';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
 import { StatusBadge } from '@/components/delivery/StatusBadge';
 import { DeliveryDetailPanel } from '@/components/delivery/DeliveryDetailPanel';
 import { DispatchSheet } from '@/components/delivery/DispatchSheet';
+import { canPrepareDelivery } from '@/components/delivery/prepareDelivery';
 import { printShippingLabel } from '@/components/delivery/labels/ShippingLabel';
+import {
+  canPrintWaybill,
+  resolveLabelTemplate,
+  resolveLabelTemplateViewState,
+} from '@/components/delivery/labels/labelTemplateState';
 import { printOrderInvoice } from '@/components/delivery/invoices/printOrderInvoice';
+import { deliveryDetailViewState } from '@/components/delivery/detailLoadState';
+import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
+import { waybillSenderDecision } from '@/lib/delivery/sender';
+import { deliveryErrorStatus } from '@/lib/delivery/loadError';
 import { waitForPrintOverlayToClose } from '@/lib/print-session';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
@@ -26,10 +36,45 @@ type PrintAction = 'waybill' | 'invoice';
 export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClientProps) {
   const router = useRouter();
   const [isNavigating, startTransition] = useTransition();
-  const { data: delivery, isLoading } = useDelivery(deliveryId);
-  const { data: labelTemplate } = useLabelTemplate();
+  const { data: delivery, isLoading, isError, error, isFetching, refetch } =
+    useDelivery(deliveryId);
+  const detailState = deliveryDetailViewState({
+    isLoading,
+    isError,
+    errorStatus: deliveryErrorStatus(error),
+    hasDelivery: Boolean(delivery),
+  });
+  const {
+    data: labelTemplate,
+    branding,
+    isLoading: templateLoading,
+    isError: templateError,
+    error: templateLoadError,
+    isFetching: templateFetching,
+    refetch: refetchTemplate,
+  } = useLabelTemplate();
   const { hasPermission } = usePermissions();
   const canDispatch = hasPermission(PERMISSIONS.DELIVERY.dispatchDelivery);
+  const prepare = useBulkCreateDelivery();
+
+  const templateState = resolveLabelTemplateViewState({
+    isError: templateError,
+    isLoading: templateLoading,
+    hasTemplate: Boolean(labelTemplate),
+  });
+  const waybillTemplate = resolveLabelTemplate(labelTemplate, branding);
+  const canPrintWaybillNow = canPrintWaybill(templateState, waybillTemplate);
+  const senderDecision = waybillSenderDecision(waybillTemplate);
+  const recipientDecision = waybillRecipientPrintDecision(delivery?.address);
+  const waybillBlockedReason = !canPrintWaybillNow
+    ? templateState === 'error'
+      ? 'Waybill template failed to load - retry before printing'
+      : templateState !== 'ready'
+        ? 'Waybill template is still loading'
+        : senderDecision.reason ?? 'Sender details are missing from the Store Profile'
+    : !recipientDecision.canPrint
+      ? recipientDecision.reason
+      : null;
 
   const [dispatchOpen, setDispatchOpen] = useState(false);
   /** Which print action is running, so its button can show a spinner. */
@@ -48,8 +93,16 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
 
   const handlePrintWaybill = () => {
     if (!delivery) return;
+    if (!canPrintWaybillNow) {
+      toast.error(waybillBlockedReason ?? 'Waybill cannot be printed');
+      return;
+    }
+    if (!recipientDecision.canPrint) {
+      toast.error(recipientDecision.reason ?? 'Recipient address is incomplete');
+      return;
+    }
     void runPrint('waybill', async () => {
-      printShippingLabel(delivery, labelTemplate ?? DEFAULT_LABEL_TEMPLATE);
+      printShippingLabel(delivery, waybillTemplate);
       await waitForPrintOverlayToClose();
     });
   };
@@ -82,7 +135,8 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
             Back
           </Button>
           <h1 className="truncate text-xl font-semibold text-espresso">
-            {delivery ? delivery.orderRef : 'Delivery'}
+            {delivery?.orderRef ??
+              (detailState === 'loading' ? 'Loading delivery...' : 'Delivery')}
           </h1>
           {delivery && <StatusBadge status={delivery.status} />}
         </div>
@@ -95,8 +149,9 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
             <Button
               variant="outline"
               onClick={handlePrintWaybill}
-              disabled={printing !== null}
+              disabled={printing !== null || !canPrintWaybillNow || !recipientDecision.canPrint}
               aria-busy={printing === 'waybill'}
+              title={waybillBlockedReason ?? undefined}
               data-testid="delivery-waybill-button"
             >
               {printing === 'waybill' ? (
@@ -116,6 +171,20 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
               ) : null}
               {printing === 'invoice' ? 'Preparing invoice…' : 'Print Invoice'}
             </Button>
+            {canDispatch && canPrepareDelivery(delivery.status) && (
+              <Button
+                variant="outline"
+                onClick={() => prepare.mutate([delivery.id])}
+                disabled={prepare.isPending}
+                aria-busy={prepare.isPending}
+                data-testid="delivery-prepare-button"
+              >
+                {prepare.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" data-testid="loading-spinner" />
+                ) : null}
+                {prepare.isPending ? 'Preparing...' : 'Prepare for delivery'}
+              </Button>
+            )}
             {canDispatch && delivery.status === 'PENDING_DISPATCH' && (
               <Button onClick={() => setDispatchOpen(true)} data-testid="delivery-dispatch-button">
                 Dispatch
@@ -125,23 +194,109 @@ export function DeliveryDetailPageClient({ deliveryId }: DeliveryDetailPageClien
         )}
       </div>
 
+      {/* Waybill template failure (ARGUS #298) */}
+      {templateState === 'error' && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 font-body text-sm text-red-700"
+        >
+          <span>
+            Waybill template failed to load - printing is disabled
+            {templateLoadError instanceof Error ? ` (${templateLoadError.message})` : ''}.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+            onClick={() => refetchTemplate()}
+            disabled={templateFetching}
+          >
+            {templateFetching ? 'Retrying…' : 'Retry'}
+          </Button>
+        </div>
+      )}
+
+      {/* Missing sender profile (ARGUS #301) */}
+      {senderDecision.missing.length > 0 && (
+        <div
+          role="alert"
+          className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 font-body text-sm text-amber-800"
+        >
+          <p className="font-medium">
+            {senderDecision.canPrint
+              ? 'Waybill sender address is missing.'
+              : 'Waybill printing is blocked.'}
+          </p>
+          <p>{senderDecision.reason}. Update the Store Profile before printing.</p>
+        </div>
+      )}
+
+      {/* Missing recipient block (ARGUS #300) */}
+      {delivery && !recipientDecision.canPrint && (
+        <div
+          role="alert"
+          className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 font-body text-sm text-amber-800"
+        >
+          <p className="font-medium">Waybill printing is blocked.</p>
+          <p>{recipientDecision.reason}. Add the shipping address before printing.</p>
+        </div>
+      )}
+
       {/* Loading */}
-      {isLoading && (
+      {detailState === 'loading' && (
         <div className="space-y-4">
           <Skeleton className="h-40 w-full" />
           <Skeleton className="h-40 w-full" />
         </div>
       )}
 
-      {/* Not found */}
-      {!isLoading && !delivery && (
-        <div className="rounded-lg border border-espresso/10 py-16 text-center text-espresso/60">
-          Delivery not found.
+      {/* Not found (404 only) */}
+      {detailState === 'not-found' && (
+        <div className="rounded-lg border border-espresso/10 py-16 text-center">
+          <p className="text-espresso/70">Delivery not found.</p>
+          <p className="mt-1 text-sm text-espresso/40">
+            It may have been removed, or the link may be incorrect.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => startTransition(() => router.push('/delivery'))}
+          >
+            Back to deliveries
+          </Button>
+        </div>
+      )}
+
+      {/* Load error (403/500/network) - retryable, never shown as 404 */}
+      {detailState === 'error' && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 font-body text-sm text-red-700"
+        >
+          <div>
+            <p className="font-medium">Could not load this delivery.</p>
+            <p className="text-xs text-red-700/80">
+              {error instanceof Error
+                ? error.message
+                : 'Check your connection or permissions and try again.'}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            data-testid="delivery-retry"
+          >
+            {isFetching ? 'Retrying...' : 'Retry'}
+          </Button>
         </div>
       )}
 
       {/* Content */}
-      {!isLoading && delivery && <DeliveryDetailPanel delivery={delivery} />}
+      {detailState === 'ready' && delivery && <DeliveryDetailPanel delivery={delivery} />}
 
       <DispatchSheet
         delivery={delivery ?? null}

@@ -36,9 +36,30 @@ export async function POST(
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
     const parsed = CancelAppointmentSchema.safeParse(body);
-    const reason = parsed.success ? parsed.data.reason : undefined;
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'A cancellation reason is required',
+            details: parsed.error.issues.map((issue) => ({
+              path: issue.path.join('.'),
+              message: issue.message,
+            })),
+          },
+        },
+        { status: 400 },
+      );
+    }
 
-    const appointment = await cancelAppointment(tenantId, id, session.user.id, reason, session.user.role);
+    const appointment = await cancelAppointment(
+      tenantId,
+      id,
+      session.user.id,
+      parsed.data.reason,
+      session.user.role,
+    );
 
     return NextResponse.json({ success: true, data: appointment });
   } catch (error) {
@@ -49,6 +70,33 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Appointment not found' } },
         { status: 404 },
+      );
+    }
+
+    if (message === 'APPOINTMENT_HAS_SALE') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'APPOINTMENT_HAS_SALE',
+            message: 'This appointment was converted to a sale - void the sale instead of cancelling',
+          },
+        },
+        { status: 409 },
+      );
+    }
+
+    if (message === 'APPOINTMENT_NOT_CANCELLABLE') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'APPOINTMENT_NOT_CANCELLABLE',
+            message:
+              'Only scheduled, confirmed, checked-in or in-progress appointments can be cancelled',
+          },
+        },
+        { status: 409 },
       );
     }
 

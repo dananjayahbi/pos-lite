@@ -8,8 +8,11 @@ import {
   getUnitShortLabel,
   humanizeRawMaterialCategoryKey,
   isRawMaterialLowStock,
+  matchesRawMaterialStockStatus,
+  parseRawMaterialStockStatus,
   RAW_MATERIAL_CATEGORY_LABELS,
   RAW_MATERIAL_CATEGORIES,
+  RAW_MATERIAL_STOCK_STATUSES,
   slugifyRawMaterialCategoryKey,
   UNIT_LABELS,
   UNITS,
@@ -101,6 +104,57 @@ describe('rawMaterial.core - stock status', () => {
     expect(isRawMaterialLowStock(0, 5)).toBe(true);
     expect(isRawMaterialLowStock(5, 5)).toBe(true);
     expect(isRawMaterialLowStock(20, 5)).toBe(false);
+  });
+});
+
+/**
+ * ARGUS #242 — the list filter used to page first and filter in memory, so
+ * `total` described the unfiltered set. Filter and badge now share this rule.
+ */
+describe('rawMaterial.core - stock-status filter rule', () => {
+  it('selects OUT only for quantities at or below zero', () => {
+    expect(matchesRawMaterialStockStatus(0, 5, 'OUT')).toBe(true);
+    expect(matchesRawMaterialStockStatus(-2, 5, 'OUT')).toBe(true);
+    expect(matchesRawMaterialStockStatus(1, 5, 'OUT')).toBe(false);
+  });
+
+  it('selects LOW only for positive quantities at or below a positive threshold', () => {
+    expect(matchesRawMaterialStockStatus(5, 5, 'LOW')).toBe(true);
+    expect(matchesRawMaterialStockStatus(3, 10, 'LOW')).toBe(true);
+    expect(matchesRawMaterialStockStatus(0, 5, 'LOW')).toBe(false);
+    expect(matchesRawMaterialStockStatus(20, 5, 'LOW')).toBe(false);
+    // A zero threshold never makes a positive quantity low.
+    expect(matchesRawMaterialStockStatus(10, 0, 'LOW')).toBe(false);
+  });
+
+  it('selects OK above the threshold', () => {
+    expect(matchesRawMaterialStockStatus(20, 5, 'OK')).toBe(true);
+    expect(matchesRawMaterialStockStatus(10, 0, 'OK')).toBe(true);
+    expect(matchesRawMaterialStockStatus(3, 10, 'OK')).toBe(false);
+  });
+
+  it('matches exactly one status per quantity', () => {
+    for (const quantity of [0, 3, 50]) {
+      const matched = RAW_MATERIAL_STOCK_STATUSES.filter((status) =>
+        matchesRawMaterialStockStatus(quantity, 5, status),
+      );
+      expect(matched).toHaveLength(1);
+    }
+  });
+});
+
+describe('rawMaterial.core - stock-status param mapping', () => {
+  it('accepts the three filter values', () => {
+    expect(parseRawMaterialStockStatus('OK')).toBe('OK');
+    expect(parseRawMaterialStockStatus('LOW')).toBe('LOW');
+    expect(parseRawMaterialStockStatus('OUT')).toBe('OUT');
+  });
+
+  it('ignores unknown, lowercase and missing values', () => {
+    expect(parseRawMaterialStockStatus('low')).toBeUndefined();
+    expect(parseRawMaterialStockStatus('')).toBeUndefined();
+    expect(parseRawMaterialStockStatus(null)).toBeUndefined();
+    expect(parseRawMaterialStockStatus(undefined)).toBeUndefined();
   });
 });
 

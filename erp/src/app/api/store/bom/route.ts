@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { listBoms, createBom } from '@/lib/services/bom.service';
 import { CreateBomSchema } from '@/lib/validators/bom.validators';
+import { INGREDIENT_DUPLICATE_MESSAGE } from '@/lib/services/bom.core';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { parseQueryInt } from '@/lib/api/query-params';
 
@@ -116,16 +117,21 @@ export async function POST(request: Request) {
         { status: 404 },
       );
     }
+    if (message === 'INGREDIENT_DUPLICATE') {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: INGREDIENT_DUPLICATE_MESSAGE } },
+        { status: 400 },
+      );
+    }
     if (message === 'TRADED_NOT_MANUFACTURED') {
       return NextResponse.json(
         { success: false, error: { code: 'UNPROCESSABLE_ENTITY', message: 'BOMs are only available for manufactured products' } },
         { status: 422 },
       );
     }
-    console.error('POST /api/store/bom error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' } },
-      { status: 500 },
-    );
+    // INF-02: Prisma P2002 (the belt-and-braces duplicate path) and other known
+    // request errors map to typed 4xx responses; unknown errors stay a
+    // leak-free 500.
+    return toErrorResponse(error, 'POST /api/store/bom');
   }
 }

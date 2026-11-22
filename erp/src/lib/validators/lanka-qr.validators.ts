@@ -25,6 +25,23 @@ export const LankaQrSettingsSchema = z.object({
     .max(240, 'Instructions must be 240 characters or less'),
   referenceRequired: z.boolean(),
   allowSplit: z.boolean(),
+}).superRefine((data, ctx) => {
+  // Never enable a tender that cannot be scanned (ARGUS #509).
+  if (!data.enabled) return;
+  if (!data.merchantName) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['merchantName'],
+      message: 'Merchant name is required before LankaQR can be enabled',
+    });
+  }
+  if (!isRenderableQrImageUrl(data.qrImageUrl)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['qrImageUrl'],
+      message: 'Upload or link the merchant QR image before enabling LankaQR',
+    });
+  }
 });
 
 export type LankaQrSettingsInput = z.infer<typeof LankaQrSettingsSchema>;

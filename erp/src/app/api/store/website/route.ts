@@ -175,14 +175,23 @@ export async function PUT(request: Request) {
       );
     }
 
-    const config = await upsertWebsiteConfig(tenantId, parsed.data, session.user.id);
+    const config = await upsertWebsiteConfig(tenantId, parsed.data, {
+      id: session.user.id,
+      role: session.user.role,
+    });
 
     // Reconcile hero slides / ads relation rows to match the editor.
     if (heroSlides) {
-      await replaceHeroSlides(config.id, tenantId, heroSlides);
+      await replaceHeroSlides(config.id, tenantId, heroSlides, {
+        id: session.user.id,
+        role: session.user.role,
+      });
     }
     if (ads) {
-      await replaceAds(config.id, tenantId, ads);
+      await replaceAds(config.id, tenantId, ads, {
+        id: session.user.id,
+        role: session.user.role,
+      });
     }
 
     // ── On-demand revalidation ─────────────────────────────────────────────
@@ -244,8 +253,10 @@ export async function DELETE() {
     const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebsite);
     if (forbidden) return forbidden;
 
-    const reset = await resetWebsiteConfig(tenantId);
-
+    const reset = await resetWebsiteConfig(tenantId, {
+      id: session.user.id,
+      role: session.user.role,
+    });
     // Revalidate the storefront so the reset is reflected immediately.
     try {
       const tenant = await prisma.tenant.findUnique({
@@ -262,7 +273,15 @@ export async function DELETE() {
       console.warn('[DELETE /api/store/website] Revalidation warning:', revalidateErr);
     }
 
-    return NextResponse.json({ success: true, data: { reset } });
+    return NextResponse.json({
+      success: true,
+      data: {
+        reset: reset.reset,
+        deletedAssets: reset.deletedAssets,
+        failedAssets: reset.failedAssets,
+        skippedAssets: reset.skippedAssets,
+      },
+    });
   } catch (error) {
     console.error('DELETE /api/store/website error:', error);
     return NextResponse.json(

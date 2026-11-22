@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { getReminderHistory } from '@/lib/services/appointment-reminder.service';
+import { getReminderHistory, listTenantReminders, parseReminderLimit } from '@/lib/services/appointment-reminder.service';
+import { summarizeReminderStatuses } from '@/lib/appointments/appointmentReminders.core';
 
 export async function GET(request: Request) {
   try {
@@ -34,16 +35,21 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const appointmentId = url.searchParams.get('appointmentId');
 
+    // ARGUS #135: without an appointmentId this is the tenant reminder queue
+    // shown on the Settings tab. Both scopes use the same permission check and
+    // are filtered by the caller's tenant.
     if (!appointmentId) {
-      return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'appointmentId parameter is required' } },
-        { status: 400 },
-      );
+      const limit = parseReminderLimit(url.searchParams.get('limit'));
+      const data = await listTenantReminders(tenantId, limit);
+      return NextResponse.json({ success: true, data });
     }
 
     const reminders = await getReminderHistory(tenantId, appointmentId);
 
-    return NextResponse.json({ success: true, data: reminders });
+    return NextResponse.json({
+      success: true,
+      data: { reminders, summary: summarizeReminderStatuses(reminders) },
+    });
   } catch (error) {
     console.error('GET /api/store/appointments/reminders error:', error);
     return NextResponse.json(

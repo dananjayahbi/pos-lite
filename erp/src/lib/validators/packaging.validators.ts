@@ -50,7 +50,8 @@ export const UpdatePackagingItemSchema = z.object({
   name: z.string().min(1, 'Name is required').max(120).optional(),
   sku: z.string().max(60).optional().or(z.literal('')),
   unit: z.enum(PACKAGING_UNITS).optional(),
-  quantityOnHand: z.coerce.number().int().min(0).optional(),
+  // Stock is intentionally absent: it may only move through the adjustment
+  // endpoint (`POST /api/store/packaging/:id`), which records a note/reason.
   lowStockThreshold: z.coerce.number().int().min(0).optional(),
   autoDeduct: z.boolean().optional(),
   // `null` clears the per-parcel rate.
@@ -63,6 +64,13 @@ export const PackagingStockAdjustSchema = z.object({
     .int()
     .refine((v) => v !== 0, 'Delta cannot be zero'),
   note: z.string().max(500).optional(),
+});
+
+/** GET /api/store/packaging/history — bounded, newest-first ledger page. */
+export const PackagingHistoryQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).optional().default(25),
+  itemId: z.string().cuid().optional(),
 });
 
 export const CreatePackagingCategorySchema = z.object({
@@ -83,3 +91,5 @@ export type UpdatePackagingItemInput = z.infer<typeof UpdatePackagingItemSchema>
 export type PackagingStockAdjustInput = z.infer<typeof PackagingStockAdjustSchema>;
 export type CreatePackagingCategoryInput = z.infer<typeof CreatePackagingCategorySchema>;
 export type UpdatePackagingCategoryInput = z.infer<typeof UpdatePackagingCategorySchema>;
+export type PackagingHistoryQuery = z.infer<typeof PackagingHistoryQuerySchema>;
+

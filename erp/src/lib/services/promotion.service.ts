@@ -1,9 +1,24 @@
 import Decimal from 'decimal.js';
 import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
+import {
+  applyFixedToRemaining,
+  applyPercentageToRemaining,
+  remainingAfterDiscounts,
+} from '@/lib/services/promotionStacking.core';
 import type { PromotionType } from '@/generated/prisma/client';
 import type { CreatePromotionInput, UpdatePromotionInput } from '@/lib/validators/promotion.validators';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { planPromotionStatusChange } from '@/lib/services/promotionStatus.core';
+import { ApiError } from '@/lib/api/errors';
+import { lockingTx, lockForUpdate } from '@/lib/api/race-guard';
+import {
+  normalizePromoCode,
+  normalizePromoCodeForStorage,
+  promotionTypeIssues,
+} from '@/lib/services/promotionValidation.core';
+import { toWindowDate, windowIssues } from '@/lib/services/promotionWindow.core';
+import { summarizePromotionUsage } from '@/lib/services/promotionUsage.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -59,6 +74,99 @@ interface PromotionRow {
   isActive: boolean;
   description: string | null;
   createdAt: Date;
+}
+
+/**
+ * ARGUS #330 — server-side required-field guard shared with the Zod schema.
+ * The route validates first, but direct service callers get the same typed
+ * 400 instead of storing an "active" promotion that can never apply.
+ */
+function assertPromotionRequirements(data: {
+  type?: string | null | undefined;
+  promoCode?: string | null | undefined;
+  targetCategoryId?: string | null | undefined;
+  targetProductId?: string | null | undefined;
+  startsAt?: string | null | undefined;
+  endsAt?: string | null | undefined;
+}): void {
+  const issues = [
+    ...promotionTypeIssues(data),
+    ...windowIssues(data.startsAt, data.endsAt),
+  ];
+  if (issues.length > 0) {
+    throw ApiError.validation(issues[0]!.message, issues);
+  }
+}
+
+/**
+ * ARGUS #330 — case-insensitive promo-code uniqueness per tenant. There is no
+ * DB unique on (tenantId, promoCode), so this check runs inside the same
+ * tenant-row lock as the write (`lockingTx` + `lockForUpdate`). Concurrent
+ * writers serialize on that lock and the loser sees the winner's row; a
+ * direct-SQL client bypassing this service can still race (documented in
+ * docs/promotion-code-and-targets.md).
+ */
+async function assertPromoCodeAvailable(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  promoCode: string,
+  excludeId?: string,
+): Promise<void> {
+  const clash = await tx.promotion.findFirst({
+    where: {
+      tenantId,
+      promoCode: { equals: promoCode, mode: 'insensitive' },
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { id: true },
+  });
+  if (clash) {
+    throw ApiError.conflict('A promotion with this promo code already exists.');
+  }
+}
+
+/** ARGUS #331: the signed-in route actor, never the old SYSTEM placeholder. */
+export interface PromotionActor {
+  id: string;
+  role: string;
+}
+
+type PromotionAuditRow = {
+  name: string;
+  type: string;
+  value: { toString(): string };
+  promoCode: string | null;
+  targetCategoryId: string | null;
+  targetProductId: string | null;
+  minQuantity: number | null;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  isActive: boolean;
+  description: string | null;
+};
+
+/** Stable before/after shape for promotion audit rows. */
+export function promotionAuditSnapshot(row: PromotionAuditRow): Record<string, unknown> {
+  return {
+    name: row.name,
+    type: row.type,
+    value: row.value.toString(),
+    promoCode: row.promoCode,
+    targetCategoryId: row.targetCategoryId,
+    targetProductId: row.targetProductId,
+    minQuantity: row.minQuantity,
+    startsAt: row.startsAt ? row.startsAt.toISOString() : null,
+    endsAt: row.endsAt ? row.endsAt.toISOString() : null,
+    isActive: row.isActive,
+    description: row.description,
+  };
+}
+
+/** Actor fields for createAuditLog; a missing actor stays SYSTEM. */
+function auditActor(actor: PromotionActor | undefined): { actorId: string | null; actorRole: string } {
+  return actor
+    ? { actorId: actor.id, actorRole: actor.role }
+    : { actorId: null, actorRole: 'SYSTEM' };
 }
 
 // ── Fetch Active Promotions ──────────────────────────────────────────────────
@@ -125,12 +233,21 @@ export async function evaluateCustomerPricing(
     where: {
       tenantId,
       isActive: true,
-      customerTag: { in: customer.tags },
-      OR: [
-        { variantId: { in: variantIds } },
-        { variantId: null },
-      ],
+      // ARGUS #333: rule tags are canonical upper-case, but customer tags may
+      // predate that convention; match case-insensitively so `Wholesale` on a
+      // customer still receives a `WHOLESALE` rule.
       AND: [
+        {
+          OR: customer.tags.map((tag) => ({
+            customerTag: { equals: tag, mode: 'insensitive' as const },
+          })),
+        },
+        {
+          OR: [
+            { variantId: { in: variantIds } },
+            { variantId: null },
+          ],
+        },
         { OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }] },
         { OR: [{ endsAt: null }, { endsAt: { gte: new Date() } }] },
       ],
@@ -172,6 +289,22 @@ export async function evaluateCustomerPricing(
 }
 
 // ── Evaluate Category Discounts ──────────────────────────────────────────────
+
+/**
+ * ARGUS #323 — replace every client-supplied category with the category the
+ * variant really belongs to. A cart payload can claim any categoryId; only the
+ * server-resolved map is trusted. Unknown/foreign variants get `undefined`, so
+ * they cannot claim a category promotion.
+ */
+export function applyResolvedCategories(
+  cartLines: CartLine[],
+  categoryByVariantId: ReadonlyMap<string, string | null | undefined>,
+): CartLine[] {
+  return cartLines.map((line) => ({
+    ...line,
+    categoryId: categoryByVariantId.get(line.variantId) ?? undefined,
+  }));
+}
 
 export function evaluateCategoryDiscounts(
   cartLines: CartLine[],
@@ -290,23 +423,60 @@ export function evaluateProductDiscounts(
 
 // ── Evaluate BOGO / Mix & Match ──────────────────────────────────────────────
 
+/**
+ * ARGUS #324 — buy-N-get-free on the targeted lines only.
+ *
+ * Contract (no schema change):
+ *  - `minQuantity` = buy N on a single line.
+ *  - `value` = maximum LKR value of one free unit.
+ *  - Free units = floor(line.quantity / N), evaluated PER LINE (documented
+ *    choice; the form preview says the same). The discount is
+ *    min(unitPrice, cap) × free units.
+ *  - A promotion with no target product/category, or a non-positive cap, is
+ *    skipped with a reason — never applied to the whole cart.
+ */
 export function evaluateBOGO(
   cartLines: CartLine[],
   promos: PromotionRow[],
   alreadyDiscounted: Set<string>,
+  productByVariantId: ReadonlyMap<string, string> = new Map(),
 ): { applied: AppliedDiscount[]; skipped: SkippedPromotion[] } {
   const applied: AppliedDiscount[] = [];
   const skipped: SkippedPromotion[] = [];
 
   for (const promo of promos) {
+    if (!promo.targetProductId && !promo.targetCategoryId) {
+      skipped.push({ promotionId: promo.id, reason: 'No target product or category set' });
+      continue;
+    }
+
+    const cap = new Decimal(promo.value.toString());
+    if (cap.lessThanOrEqualTo(0)) {
+      skipped.push({ promotionId: promo.id, reason: 'Item value cap must be greater than zero' });
+      continue;
+    }
+
     const minQty = promo.minQuantity ?? 2;
 
+    const matchesTarget = (line: CartLine): boolean => {
+      const productMatch = promo.targetProductId
+        ? productByVariantId.get(line.variantId) === promo.targetProductId
+        : true;
+      const categoryMatch = promo.targetCategoryId
+        ? line.categoryId === promo.targetCategoryId
+        : true;
+      return productMatch && categoryMatch;
+    };
+
     const eligibleLines = cartLines.filter(
-      (l) => !alreadyDiscounted.has(l.variantId) && l.quantity >= minQty,
+      (l) => !alreadyDiscounted.has(l.variantId) && l.quantity >= minQty && matchesTarget(l),
     );
 
     if (eligibleLines.length === 0) {
-      skipped.push({ promotionId: promo.id, reason: `No items meet min quantity of ${minQty}` });
+      skipped.push({
+        promotionId: promo.id,
+        reason: `No targeted items meet the buy quantity of ${minQty}`,
+      });
       continue;
     }
 
@@ -314,12 +484,14 @@ export function evaluateBOGO(
     const affectedLines: string[] = [];
 
     for (const line of eligibleLines) {
-      // Free units = floor(quantity / minQty)
       const freeUnits = Math.floor(line.quantity / minQty);
       if (freeUnits <= 0) continue;
 
+      // Cap the value of each free unit; a Rs 2500 cap on a Rs 500 item still
+      // gives the full Rs 500 unit away.
       const unitPrice = new Decimal(line.unitPrice);
-      const disc = unitPrice.times(freeUnits).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      const perFreeUnit = Decimal.min(unitPrice, cap);
+      const disc = perFreeUnit.times(freeUnits).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
       totalDiscount = totalDiscount.plus(disc);
       affectedLines.push(line.variantId);
       alreadyDiscounted.add(line.variantId);
@@ -328,7 +500,7 @@ export function evaluateBOGO(
     if (affectedLines.length > 0) {
       applied.push({
         promotionId: promo.id,
-        label: promo.name,
+        label: `${promo.name} - Buy ${minQty}, get floor(qty/${minQty}) free (up to ${cap.toFixed(2)} each)`,
         discountAmount: totalDiscount.toString(),
         promotionType: promo.type,
         affectedLines,
@@ -337,6 +509,19 @@ export function evaluateBOGO(
   }
 
   return { applied, skipped };
+}
+
+/**
+ * ARGUS #71: use the promotion's own name as its cart label.
+ *
+ * The label used to append the computed offer (`10% Off Everything - 10% off
+ * cart`), so a name that already states the discount repeated it. The discount
+ * amount is rendered separately next to the label, so the name alone is the
+ * one clear label.
+ */
+export function cartPromotionLabel(name: string): string {
+  const trimmed = name.trim();
+  return trimmed.length > 0 ? trimmed : 'Cart promotion';
 }
 
 // ── Evaluate Cart-Level Promotions ───────────────────────────────────────────
@@ -360,10 +545,12 @@ export function evaluateCartPromotions(
     let disc: Decimal;
 
     if (promo.type === 'CART_PERCENTAGE') {
-      disc = subtotal.times(value).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      disc = new Decimal(
+        applyPercentageToRemaining(subtotal.toNumber(), value.toNumber()),
+      );
     } else {
       // CART_FIXED
-      disc = Decimal.min(value, subtotal).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      disc = new Decimal(applyFixedToRemaining(subtotal.toNumber(), value.toNumber()));
     }
 
     if (disc.greaterThan(bestDiscount)) {
@@ -375,7 +562,7 @@ export function evaluateCartPromotions(
   if (bestPromo && bestDiscount.greaterThan(0)) {
     applied.push({
       promotionId: bestPromo.id,
-      label: `${bestPromo.name} - ${bestPromo.type === 'CART_PERCENTAGE' ? `${new Decimal(bestPromo.value.toString())}% off cart` : `₹${new Decimal(bestPromo.value.toString())} off cart`}`,
+      label: cartPromotionLabel(bestPromo.name),
       discountAmount: bestDiscount.toString(),
       promotionType: bestPromo.type,
       affectedLines: cartLines.map((l) => l.variantId),
@@ -398,6 +585,7 @@ export async function validatePromoCode(
   tenantId: string,
   code: string,
   cartLines: CartLine[],
+  remainingSubtotal?: number,
 ): Promise<AppliedDiscount | { error: { code: string; message: string } }> {
   const now = new Date();
   const promo = await prisma.promotion.findFirst({
@@ -421,13 +609,19 @@ export async function validatePromoCode(
   }
 
   const value = new Decimal(promo.value.toString());
-  const subtotal = cartLines.reduce((sum, l) => {
+  const eligibleSubtotal = cartLines.reduce((sum, l) => {
     const lineTotal = new Decimal(l.unitPrice).times(l.quantity);
     const manualDisc = l.manualDiscountAmount ? new Decimal(l.manualDiscountAmount) : new Decimal(0);
     return sum.plus(lineTotal.minus(manualDisc));
   }, new Decimal(0));
 
-  const disc = subtotal.times(value).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  // The code applies after the line/cart promotions: never on the original
+  // subtotal, and never more than what is left (ARGUS #322).
+  const base = remainingSubtotal !== undefined
+    ? Decimal.min(eligibleSubtotal, new Decimal(Math.max(0, remainingSubtotal)))
+    : eligibleSubtotal;
+
+  const disc = new Decimal(applyPercentageToRemaining(base.toNumber(), value.toNumber()));
 
   return {
     promotionId: promo.id,
@@ -462,6 +656,19 @@ export async function evaluatePromotions(
   // 2. Fetch automatic promotions
   const grouped = await fetchActivePromotions(tenantId);
 
+  // ARGUS #323: resolve product/category from the database once. The client's
+  // categoryId is never trusted — a spoofed category cannot claim a promotion.
+  const variantIds = [...new Set(cartLines.map((line) => line.variantId))];
+  const variants = await prisma.productVariant.findMany({
+    where: { id: { in: variantIds }, product: { tenantId } },
+    select: { id: true, productId: true, product: { select: { categoryId: true } } },
+  });
+  const productByVariantId = new Map(variants.map((variant) => [variant.id, variant.productId]));
+  const categoryByVariantId = new Map(
+    variants.map((variant) => [variant.id, variant.product.categoryId]),
+  );
+  const resolvedCartLines = applyResolvedCategories(cartLines, categoryByVariantId);
+
   // 3. Product discounts (most specific first: product beats category/cart).
   // Percentage and fixed product promotions share the same target-product
   // contract and precedence; the newer fixed type wins its target first because
@@ -471,15 +678,8 @@ export async function evaluatePromotions(
     ...grouped.PRODUCT_FIXED,
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   if (productPromotions.length > 0) {
-    const variantIds = [...new Set(cartLines.map((line) => line.variantId))];
-    const variants = await prisma.productVariant.findMany({
-      where: { id: { in: variantIds }, product: { tenantId } },
-      select: { id: true, productId: true },
-    });
-    const productByVariantId = new Map(variants.map((variant) => [variant.id, variant.productId]));
-
     const productResult = evaluateProductDiscounts(
-      cartLines,
+      resolvedCartLines,
       productPromotions,
       alreadyDiscounted,
       productByVariantId,
@@ -489,29 +689,50 @@ export async function evaluatePromotions(
   }
 
   // 4. Category discounts
-  const catResult = evaluateCategoryDiscounts(cartLines, grouped.CATEGORY_PERCENTAGE, alreadyDiscounted);
+  const catResult = evaluateCategoryDiscounts(resolvedCartLines, grouped.CATEGORY_PERCENTAGE, alreadyDiscounted);
   appliedDiscounts.push(...catResult.applied);
   skippedPromotions.push(...catResult.skipped);
 
   // 5. BOGO / Mix & Match
-  const bogoResult = evaluateBOGO(cartLines, [...grouped.BOGO, ...grouped.MIX_AND_MATCH], alreadyDiscounted);
+  const bogoResult = evaluateBOGO(
+    resolvedCartLines,
+    [...grouped.BOGO, ...grouped.MIX_AND_MATCH],
+    alreadyDiscounted,
+    productByVariantId,
+  );
   appliedDiscounts.push(...bogoResult.applied);
   skippedPromotions.push(...bogoResult.skipped);
 
-  // 6. Cart-level promotions
-  const subtotal = cartLines.reduce((sum, l) => {
+  // 6. Cart-level promotions run on what is left after the line-level
+  // discounts, not the original subtotal (ARGUS #322).
+  const subtotal = resolvedCartLines.reduce((sum, l) => {
     const lineTotal = new Decimal(l.unitPrice).times(l.quantity);
     const manualDisc = l.manualDiscountAmount ? new Decimal(l.manualDiscountAmount) : new Decimal(0);
     return sum.plus(lineTotal.minus(manualDisc));
   }, new Decimal(0));
 
-  const cartResult = evaluateCartPromotions(cartLines, subtotal, [...grouped.CART_PERCENTAGE, ...grouped.CART_FIXED]);
+  const lineDiscountTotal = appliedDiscounts.reduce(
+    (sum, discount) => sum + Number(discount.discountAmount),
+    0,
+  );
+  let remaining = remainingAfterDiscounts(subtotal.toNumber(), [lineDiscountTotal]);
+
+  const cartResult = evaluateCartPromotions(
+    resolvedCartLines,
+    new Decimal(remaining),
+    [...grouped.CART_PERCENTAGE, ...grouped.CART_FIXED],
+  );
   appliedDiscounts.push(...cartResult.applied);
   skippedPromotions.push(...cartResult.skipped);
 
-  // 7. Promo code
+  remaining = remainingAfterDiscounts(
+    remaining,
+    cartResult.applied.map((discount) => Number(discount.discountAmount)),
+  );
+
+  // 7. Promo code applies to the remainder only.
   if (promoCode) {
-    const codeResult = await validatePromoCode(tenantId, promoCode, cartLines);
+    const codeResult = await validatePromoCode(tenantId, promoCode, resolvedCartLines, remaining);
     if ('error' in codeResult) {
       skippedPromotions.push({ promotionId: 'promo_code', reason: codeResult.error.message });
     } else {
@@ -519,8 +740,13 @@ export async function evaluatePromotions(
     }
   }
 
-  const totalDiscountAmount = appliedDiscounts
+  const rawDiscountAmount = appliedDiscounts
     .reduce((sum, d) => sum.plus(new Decimal(d.discountAmount)), new Decimal(0))
+    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+  // Hard cap: the combined promotions can never discount more than the cart is
+  // worth, even if a rule was misconfigured.
+  const totalDiscountAmount = Decimal.min(rawDiscountAmount, subtotal)
     .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
     .toString();
 
@@ -530,98 +756,226 @@ export async function evaluatePromotions(
 // ── CRUD Functions ───────────────────────────────────────────────────────────
 
 export async function getPromotions(tenantId: string) {
-  return prisma.promotion.findMany({
-    where: { tenantId },
-    include: {
-      targetCategory: { select: { id: true, name: true } },
-      targetProduct: { select: { id: true, name: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  const [promotions, usage] = await Promise.all([
+    prisma.promotion.findMany({
+      where: { tenantId },
+      include: {
+        targetCategory: { select: { id: true, name: true } },
+        targetProduct: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+    getPromotionUsageCounts(tenantId),
+  ]);
+
+  // ARGUS #331: read-only usage count derived from Sale.appliedPromotions.
+  return promotions.map((promotion) => ({
+    ...promotion,
+    usageCount: usage.countByPromotionId[promotion.id] ?? 0,
+    usageDiscountTotal: usage.discountByPromotionId[promotion.id] ?? '0.00',
+  }));
 }
 
-export async function createPromotion(tenantId: string, data: CreatePromotionInput) {
-  const promo = await prisma.promotion.create({
-    data: {
+/**
+ * Read-only per-promotion usage from completed, non-voided sales.
+ * No schema counter; `Sale.appliedPromotions` already records what applied.
+ */
+export async function getPromotionUsageCounts(tenantId: string) {
+  const sales = await prisma.sale.findMany({
+    where: {
       tenantId,
-      name: data.name,
-      type: data.type as PromotionType,
-      value: data.value,
-      ...(data.promoCode !== undefined && { promoCode: data.promoCode }),
-      ...(data.targetCategoryId !== undefined && { targetCategoryId: data.targetCategoryId }),
-      ...(data.targetProductId !== undefined && { targetProductId: data.targetProductId }),
-      ...(data.minQuantity !== undefined && { minQuantity: data.minQuantity }),
-      ...(data.startsAt !== undefined && { startsAt: new Date(data.startsAt) }),
-      ...(data.endsAt !== undefined && { endsAt: new Date(data.endsAt) }),
-      ...(data.isActive !== undefined && { isActive: data.isActive }),
-      ...(data.description !== undefined && { description: data.description }),
+      status: { not: 'VOIDED' },
+      appliedPromotions: { not: Prisma.DbNull },
     },
+    select: { appliedPromotions: true },
+  });
+  return summarizePromotionUsage(sales);
+}
+
+export async function createPromotion(
+  tenantId: string,
+  data: CreatePromotionInput,
+  actor?: PromotionActor,
+) {
+  assertPromotionRequirements(data);
+
+  const promoCode = normalizePromoCodeForStorage(data.promoCode);
+  const startsAt = toWindowDate(data.startsAt, 'start');
+  const endsAt = toWindowDate(data.endsAt, 'end');
+
+  const promo = await lockingTx(async (tx) => {
+    await lockForUpdate(tx, 'tenants', '"id" = $1', [tenantId]);
+    if (promoCode !== null) {
+      await assertPromoCodeAvailable(tx, tenantId, promoCode);
+    }
+
+    return tx.promotion.create({
+      data: {
+        tenantId,
+        name: data.name,
+        type: data.type as PromotionType,
+        value: data.value,
+        ...(promoCode !== null && { promoCode }),
+        ...(data.targetCategoryId !== undefined && { targetCategoryId: data.targetCategoryId }),
+        ...(data.targetProductId !== undefined && { targetProductId: data.targetProductId }),
+        ...(data.minQuantity !== undefined && { minQuantity: data.minQuantity }),
+        ...(startsAt !== undefined && { startsAt }),
+        ...(endsAt !== undefined && { endsAt }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
+        ...(data.description !== undefined && { description: data.description }),
+      },
+    });
   });
 
   void createAuditLog({
     tenantId,
-    actorId: null,
-    actorRole: 'SYSTEM',
+    ...auditActor(actor),
     entityType: 'Promotion',
     entityId: promo.id,
     action: AUDIT_ACTIONS.PROMOTION_CREATED,
-    after: { name: promo.name, type: promo.type, value: promo.value.toString() },
+    after: promotionAuditSnapshot(promo) as Prisma.InputJsonValue,
   }).catch(() => {});
 
   return promo;
 }
 
-export async function updatePromotion(tenantId: string, id: string, data: UpdatePromotionInput) {
-  const updated = await prisma.promotion.update({
-    where: { id, tenantId },
-    data: {
-      ...(data.name !== undefined && { name: data.name }),
-      ...(data.type !== undefined && { type: data.type as PromotionType }),
-      ...(data.value !== undefined && { value: data.value }),
-      ...(data.promoCode !== undefined && { promoCode: data.promoCode }),
-      ...(data.targetCategoryId !== undefined && { targetCategoryId: data.targetCategoryId }),
-      ...(data.targetProductId !== undefined && { targetProductId: data.targetProductId }),
-      ...(data.minQuantity !== undefined && { minQuantity: data.minQuantity }),
-      ...(data.startsAt !== undefined && { startsAt: new Date(data.startsAt) }),
-      ...(data.endsAt !== undefined && { endsAt: new Date(data.endsAt) }),
-      ...(data.isActive !== undefined && { isActive: data.isActive }),
-      ...(data.description !== undefined && { description: data.description }),
-    },
+export async function updatePromotion(
+  tenantId: string,
+  id: string,
+  data: UpdatePromotionInput,
+  actor?: PromotionActor,
+) {
+  const result = await lockingTx(async (tx) => {
+    // Serialize promotion writes per tenant so the check-then-write for promo
+    // code uniqueness cannot race (ARGUS #330).
+    await lockForUpdate(tx, 'tenants', '"id" = $1', [tenantId]);
+
+    const existing = await tx.promotion.findFirst({ where: { id, tenantId } });
+    // ARGUS #328: a missing row and a foreign-tenant row are indistinguishable
+    // and both map to 404 NOT_FOUND, never a Prisma P2025-style 500.
+    if (!existing) throw ApiError.notFound('Promotion not found');
+
+    const nextType = data.type ?? existing.type;
+    const nextPromoCode = data.promoCode !== undefined
+      ? normalizePromoCodeForStorage(data.promoCode)
+      : existing.promoCode;
+    const nextCategoryId = data.targetCategoryId === undefined
+      ? existing.targetCategoryId
+      : data.targetCategoryId;
+    const nextProductId = data.targetProductId === undefined
+      ? existing.targetProductId
+      : data.targetProductId;
+    const nextStartsAt = data.startsAt === undefined
+      ? (existing.startsAt ? existing.startsAt.toISOString() : null)
+      : data.startsAt;
+    const nextEndsAt = data.endsAt === undefined
+      ? (existing.endsAt ? existing.endsAt.toISOString() : null)
+      : data.endsAt;
+
+    // Validate the EFFECTIVE row, so a PATCH that only moves the end date is
+    // checked against the stored start date and stored type/targets.
+    assertPromotionRequirements({
+      type: nextType,
+      promoCode: nextPromoCode,
+      targetCategoryId: nextCategoryId,
+      targetProductId: nextProductId,
+      startsAt: nextStartsAt,
+      endsAt: nextEndsAt,
+    });
+
+    if (nextPromoCode !== null) {
+      await assertPromoCodeAvailable(tx, tenantId, nextPromoCode, id);
+    }
+
+    const startsAt = data.startsAt !== undefined
+      ? toWindowDate(data.startsAt, 'start')
+      : undefined;
+    const endsAt = data.endsAt !== undefined
+      ? toWindowDate(data.endsAt, 'end')
+      : undefined;
+
+    const updated = await tx.promotion.update({
+      where: { id },
+      data: {
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.type !== undefined && { type: data.type as PromotionType }),
+        ...(data.value !== undefined && { value: data.value }),
+        ...(data.promoCode !== undefined && { promoCode: nextPromoCode }),
+        ...(data.targetCategoryId !== undefined && { targetCategoryId: data.targetCategoryId }),
+        ...(data.targetProductId !== undefined && { targetProductId: data.targetProductId }),
+        ...(data.minQuantity !== undefined && { minQuantity: data.minQuantity }),
+        ...(startsAt !== undefined && { startsAt }),
+        ...(endsAt !== undefined && { endsAt }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
+        ...(data.description !== undefined && { description: data.description }),
+      },
+    });
+    return { before: existing, updated };
   });
 
   void createAuditLog({
     tenantId,
-    actorId: null,
-    actorRole: 'SYSTEM',
+    ...auditActor(actor),
     entityType: 'Promotion',
     entityId: id,
     action: AUDIT_ACTIONS.PROMOTION_UPDATED,
-    after: data as Prisma.InputJsonValue,
+    before: promotionAuditSnapshot(result.before) as Prisma.InputJsonValue,
+    after: promotionAuditSnapshot(result.updated) as Prisma.InputJsonValue,
+  }).catch(() => {});
+
+  return result.updated;
+}
+
+export async function setPromotionActive(
+  tenantId: string,
+  id: string,
+  isActive: boolean,
+  actorId?: string | undefined,
+  actorRole?: string | undefined,
+) {
+  const promo = await prisma.promotion.findFirst({ where: { id, tenantId } });
+  if (!promo) throw ApiError.notFound('Promotion not found');
+
+  const plan = planPromotionStatusChange(promo.isActive, isActive);
+  if (!plan.changed) return promo;
+
+  const updated = await prisma.promotion.update({
+    where: { id },
+    data: { isActive: plan.isActive },
+  });
+
+  void createAuditLog({
+    tenantId,
+    actorId: actorId ?? null,
+    actorRole: actorId ? (actorRole ?? 'USER') : 'SYSTEM',
+    entityType: 'Promotion',
+    entityId: id,
+    action: plan.auditAction === 'PROMOTION_ACTIVATED'
+      ? AUDIT_ACTIONS.PROMOTION_ACTIVATED
+      : AUDIT_ACTIONS.PROMOTION_ARCHIVED,
+    before: promotionAuditSnapshot(promo) as Prisma.InputJsonValue,
+    after: promotionAuditSnapshot(updated) as Prisma.InputJsonValue,
   }).catch(() => {});
 
   return updated;
 }
 
-export async function togglePromotion(tenantId: string, id: string) {
-  const promo = await prisma.promotion.findFirst({ where: { id, tenantId } });
-  if (!promo) throw new Error('Promotion not found');
-  const updated = await prisma.promotion.update({
-    where: { id },
-    data: { isActive: !promo.isActive },
-  });
+/** Idempotent: an already-inactive promotion stays inactive. */
+export async function deactivatePromotion(
+  tenantId: string,
+  id: string,
+  actorId?: string | undefined,
+  actorRole?: string | undefined,
+) {
+  return setPromotionActive(tenantId, id, false, actorId, actorRole);
+}
 
-  if (!updated.isActive) {
-    void createAuditLog({
-      tenantId,
-      actorId: null,
-      actorRole: 'SYSTEM',
-      entityType: 'Promotion',
-      entityId: id,
-      action: AUDIT_ACTIONS.PROMOTION_ARCHIVED,
-      before: { isActive: true },
-      after: { isActive: false },
-    }).catch(() => {});
-  }
-
-  return updated;
+/** Explicit reactivation; never reachable through the Deactivate action. */
+export async function activatePromotion(
+  tenantId: string,
+  id: string,
+  actorId?: string | undefined,
+  actorRole?: string | undefined,
+) {
+  return setPromotionActive(tenantId, id, true, actorId, actorRole);
 }

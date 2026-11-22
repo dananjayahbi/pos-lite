@@ -33,7 +33,7 @@ export default function NewProductPage() {
   if (!hasPermission('product:create')) return null;
 
   return (
-    <main className="min-h-screen bg-linen p-6 md:p-8">
+    <div className="min-h-screen bg-linen p-6 md:p-8">
       <Card className="border-mist bg-pearl p-6 md:p-8">
         <WizardProgressBar currentStep={step} />
         <div className="mt-8">
@@ -42,6 +42,6 @@ export default function NewProductPage() {
           {step === 3 && <WizardStep3Review />}
         </div>
       </Card>
-    </main>
+    </div>
   );
 }

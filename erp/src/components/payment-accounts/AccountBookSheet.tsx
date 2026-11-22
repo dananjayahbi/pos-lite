@@ -36,13 +36,14 @@ import { buildQuery, getJson } from './paymentAccountApi';
 import {
   ENTRY_SOURCE_LABELS,
   formatEntryDate,
+  formatEntryTime,
   parseMoney,
 } from './paymentAccountLabels';
-import { PAYMENT_ENTRY_SOURCES } from './paymentAccountTypes';
+import { LEDGER_SOURCE_FILTERS } from './paymentAccountTypes';
 import type {
   AccountBookResult,
+  LedgerEntrySource,
   PaymentAccount,
-  PaymentEntrySource,
 } from './paymentAccountTypes';
 
 const PAGE_SIZE = 25;
@@ -71,7 +72,7 @@ export function AccountBookSheet({ open, onOpenChange, account }: AccountBookShe
 function BookBody({ account }: { account: PaymentAccount }) {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [source, setSource] = useState<PaymentEntrySource | typeof ALL_SOURCES>(ALL_SOURCES);
+  const [source, setSource] = useState<LedgerEntrySource | typeof ALL_SOURCES>(ALL_SOURCES);
   const [page, setPage] = useState(1);
 
   const filters = {
@@ -125,6 +126,18 @@ function BookBody({ account }: { account: PaymentAccount }) {
             {formatRupee(header.balance)}
           </span>
         </p>
+        {header.details && header.details.length > 0 && (
+          <dl className="flex flex-wrap gap-x-5 gap-y-1 pt-1">
+            {header.details.map((detail, index) => (
+              <div key={`${detail.label}-${index}`}>
+                <dt className="font-body text-[10px] uppercase tracking-wide text-mist-ink">
+                  {detail.label || 'Detail'}
+                </dt>
+                <dd className="font-body text-xs text-espresso">{detail.value || '-'}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </DialogHeader>
 
       <div className="flex flex-wrap items-end gap-3 border-b border-mist p-4">
@@ -165,7 +178,7 @@ function BookBody({ account }: { account: PaymentAccount }) {
           <Select
             value={source}
             onValueChange={(next) => {
-              setSource(next as PaymentEntrySource | typeof ALL_SOURCES);
+              setSource(next as LedgerEntrySource | typeof ALL_SOURCES);
               resetPage();
             }}
           >
@@ -174,7 +187,7 @@ function BookBody({ account }: { account: PaymentAccount }) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL_SOURCES}>All sources</SelectItem>
-              {PAYMENT_ENTRY_SOURCES.map((option) => (
+              {LEDGER_SOURCE_FILTERS.map((option) => (
                 <SelectItem key={option} value={option}>
                   {ENTRY_SOURCE_LABELS[option]}
                 </SelectItem>
@@ -200,7 +213,7 @@ function BookBody({ account }: { account: PaymentAccount }) {
             <Table>
               <TableHeader>
                 <TableRow className="bg-linen/40">
-                  <TableHead className="text-espresso">Date</TableHead>
+                  <TableHead className="text-espresso">Date / recorded</TableHead>
                   <TableHead className="text-espresso">Description</TableHead>
                   <TableHead className="text-espresso">Source</TableHead>
                   <TableHead className="text-right text-espresso">Debit</TableHead>
@@ -219,13 +232,16 @@ function BookBody({ account }: { account: PaymentAccount }) {
                   entries.map((entry) => (
                     <TableRow key={entry.id} className="hover:bg-linen/20">
                       <TableCell className="whitespace-nowrap font-mono text-xs">
-                        {formatEntryDate(entry.entryDate)}
+                        <div>{formatEntryDate(entry.entryDate)}</div>
+                        <div className="text-[10px] text-mist-ink">
+                          rec {formatEntryTime(entry.createdAt)}
+                        </div>
                       </TableCell>
                       <TableCell className="max-w-xs truncate font-body">
                         {entry.description}
                       </TableCell>
                       <TableCell className="font-body text-xs text-sand-ink">
-                        {ENTRY_SOURCE_LABELS[entry.source]}
+                        {ENTRY_SOURCE_LABELS[entry.ledgerKind ?? entry.source]}
                       </TableCell>
                       <TableCell className="text-right font-mono text-xs">
                         {parseMoney(entry.debit) === 0 ? '-' : formatRupee(entry.debit)}

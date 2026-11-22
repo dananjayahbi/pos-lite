@@ -7,6 +7,9 @@
 
 export type PODiscountType = 'PERCENTAGE' | 'FIXED';
 
+/** Server-derived payment state; a part payment is not "Unpaid" (ARGUS #228). */
+export type PurchaseOrderPaymentState = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
+
 /** One editable row in the create form, before it becomes an API line. */
 export interface POLineDraft {
   /** Stable React key; never sent to the server. */
@@ -48,6 +51,15 @@ export interface PurchaseOrderDetail {
   discountValue: string | number;
   discountAmount: string | number;
   totalAmount: string | number;
+  /** Server-computed received value / payable once goods arrive (ARGUS #225). */
+  payableAmount?: string | number;
+  receivedValue?: string | number;
+  /** Money already applied (ARGUS #226). */
+  paidTotal?: string | number;
+  hasPayments?: boolean;
+  /** Amount still owed and the Paid/Partially paid/Unpaid state (ARGUS #228). */
+  outstanding?: string | number;
+  paymentState?: PurchaseOrderPaymentState;
   paymentTermDays: number | null;
   paymentAccountId: string | null;
   paidAt: string | null;
@@ -71,9 +83,17 @@ export interface PurchaseOrderListItem {
   status: string;
   orderDate: string;
   expectedDeliveryDate?: string | null;
+  /** Terms drive the due date/overdue state (ARGUS #233). */
+  paymentTermDays?: number | null;
   subtotalAmount: string | number;
   discountAmount: string | number;
   totalAmount: string | number;
+  payableAmount?: string | number;
+  receivedValue?: string | number;
+  /** Total applied across instalments and the derived state (ARGUS #228). */
+  paidTotal?: string | number;
+  outstanding?: string | number;
+  paymentState?: PurchaseOrderPaymentState;
   paidAt: string | null;
   createdAt: string;
   supplier: { name: string };

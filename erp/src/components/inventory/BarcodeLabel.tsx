@@ -1,6 +1,7 @@
 'use client';
 
 import Barcode from 'react-barcode';
+import { hasPrintableBarcode } from '@/lib/barcode-printing.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -12,6 +13,8 @@ interface BarcodeLabelProps {
   form?: string | null | undefined;
   packSize?: string | null | undefined;
   retailPrice: number;
+  /** "incl. VAT" / "incl. SSCL" / "VAT exempt" (ARGUS #160). */
+  priceQualifier?: string | null | undefined;
   stockQuantity: number;
   lowStockThreshold: number;
   isPreview?: boolean | undefined;
@@ -33,12 +36,14 @@ export function BarcodeLabel({
   form,
   packSize,
   retailPrice,
+  priceQualifier,
   stockQuantity,
   lowStockThreshold,
   isPreview = false,
 }: BarcodeLabelProps) {
-  const barcodeValue = barcode || sku;
-  const hasBarcodeValue = barcodeValue.length > 0;
+  // ARGUS #163: never print the SKU as if it were the catalogue barcode.
+  const barcodeValue = hasPrintableBarcode(barcode) ? barcode.trim() : '';
+  const hasBarcode = barcodeValue.length > 0;
   const isLowStock = stockQuantity <= lowStockThreshold && stockQuantity >= 0;
 
   const formPackParts: string[] = [];
@@ -63,9 +68,10 @@ export function BarcodeLabel({
           productName={productName}
           sku={sku}
           barcodeValue={barcodeValue}
-          hasBarcodeValue={hasBarcodeValue}
+          hasBarcodeValue={hasBarcode}
           formPackText={formPackText}
           retailPrice={retailPrice}
+          priceQualifier={priceQualifier}
           isLowStock={isLowStock}
         />
       </div>
@@ -86,7 +92,7 @@ export function BarcodeLabel({
         productName={productName}
         sku={sku}
         barcodeValue={barcodeValue}
-        hasBarcodeValue={hasBarcodeValue}
+        hasBarcodeValue={hasBarcode}
         formPackText={formPackText}
         retailPrice={retailPrice}
         isLowStock={isLowStock}
@@ -105,6 +111,7 @@ function LabelContent({
   hasBarcodeValue,
   formPackText,
   retailPrice,
+  priceQualifier,
   isLowStock,
 }: {
   brandName?: string | null | undefined;
@@ -114,6 +121,7 @@ function LabelContent({
   hasBarcodeValue: boolean;
   formPackText: string;
   retailPrice: number;
+  priceQualifier?: string | null | undefined;
   isLowStock: boolean;
 }) {
   return (
@@ -159,8 +167,8 @@ function LabelContent({
             renderer="svg"
           />
         ) : (
-          <span className="font-body text-[8px] text-mist-ink italic">
-            No barcode available
+          <span className="font-body text-[8px] text-[#9B2226] italic">
+            SKU only - no barcode
           </span>
         )}
       </div>
@@ -176,8 +184,15 @@ function LabelContent({
             style={{ width: 8, height: 8, backgroundColor: '#B7791F' }}
           />
         )}
-        <span className="font-display text-[14px] font-bold text-espresso text-right">
-          {formatPrice(retailPrice)}
+        <span className="flex flex-col items-end leading-none">
+          <span className="font-display text-[14px] font-bold text-espresso text-right">
+            {formatPrice(retailPrice)}
+          </span>
+          {priceQualifier ? (
+            <span className="font-body text-[7px] text-mist-ink mt-0.5">
+              {priceQualifier}
+            </span>
+          ) : null}
         </span>
       </div>
     </>

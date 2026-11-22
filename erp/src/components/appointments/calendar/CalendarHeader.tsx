@@ -1,7 +1,8 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { formatAppointmentDate, formatAppointmentMonthYear } from '@/lib/appointments/appointmentDisplay.core';
 import type { CalendarView } from '@/stores/appointmentStore';
 
 interface CalendarHeaderProps {
@@ -11,53 +12,58 @@ interface CalendarHeaderProps {
   onNext: () => void;
   onToday: () => void;
   onViewChange: (view: CalendarView) => void;
+  onNewClick: () => void;
 }
 
 function formatHeader(date: Date, view: CalendarView): string {
-  const opts: Intl.DateTimeFormatOptions = {};
   if (view === 'day') {
-    opts.weekday = 'long'; opts.month = 'long'; opts.day = 'numeric'; opts.year = 'numeric';
-  } else if (view === 'week') {
+    return formatAppointmentDate(date, { weekday: true, month: 'long' });
+  }
+  if (view === 'week') {
     const start = new Date(date);
     start.setDate(start.getDate() - start.getDay());
     const end = new Date(start);
     end.setDate(end.getDate() + 6);
-    return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  } else {
-    opts.month = 'long'; opts.year = 'numeric';
+    return `${formatAppointmentDate(start, { year: false })} - ${formatAppointmentDate(end)}`;
   }
-  return date.toLocaleDateString('en-US', opts);
+  return formatAppointmentMonthYear(date);
 }
 
 export function CalendarHeader({
-  currentDate, calendarView, onPrevious, onNext, onToday, onViewChange,
+  currentDate, calendarView, onPrevious, onNext, onToday, onViewChange, onNewClick,
 }: CalendarHeaderProps) {
   return (
     <div className="flex items-center justify-between gap-4 flex-wrap">
       <div className="flex items-center gap-2">
-        <Button variant="outline" size="icon" onClick={onPrevious}>
+        <Button variant="outline" size="icon" onClick={onPrevious} aria-label="Previous period">
           <ChevronLeft className="h-4 w-4" />
         </Button>
         <h2 className="text-lg font-semibold text-espresso min-w-[200px] text-center">
           {formatHeader(currentDate, calendarView)}
         </h2>
-        <Button variant="outline" size="icon" onClick={onNext}>
+        <Button variant="outline" size="icon" onClick={onNext} aria-label="Next period">
           <ChevronRight className="h-4 w-4" />
         </Button>
         <Button variant="ghost" size="sm" onClick={onToday}>Today</Button>
       </div>
-      <div className="flex rounded-lg border border-espresso/10 p-0.5">
-        {(['day', 'week', 'month'] as const).map((v) => (
-          <Button
-            key={v}
-            variant={calendarView === v ? 'default' : 'ghost'}
-            size="sm"
-            className="capitalize"
-            onClick={() => onViewChange(v)}
-          >
-            {v}
-          </Button>
-        ))}
+      <div className="flex items-center gap-2">
+        <Button size="sm" onClick={onNewClick}>
+          <Plus className="mr-1 h-4 w-4" />
+          New Appointment
+        </Button>
+        <div className="flex rounded-lg border border-espresso/10 p-0.5">
+          {(['day', 'week', 'month'] as const).map((v) => (
+            <Button
+              key={v}
+              variant={calendarView === v ? 'default' : 'ghost'}
+              size="sm"
+              className="capitalize"
+              onClick={() => onViewChange(v)}
+            >
+              {v}
+            </Button>
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import type { PaymentAccountType, PaymentEntrySource } from './paymentAccountTypes';
+import type { LedgerEntrySource, PaymentAccountType } from './paymentAccountTypes';
 
 /** Human labels for the six account types. */
 export const ACCOUNT_TYPE_LABELS: Record<PaymentAccountType, string> = {
@@ -11,10 +11,11 @@ export const ACCOUNT_TYPE_LABELS: Record<PaymentAccountType, string> = {
 };
 
 /** Human labels for every ledger source. */
-export const ENTRY_SOURCE_LABELS: Record<PaymentEntrySource, string> = {
+export const ENTRY_SOURCE_LABELS: Record<LedgerEntrySource, string> = {
   OPENING_BALANCE: 'Opening Balance',
   SALE: 'Sale',
   SALE_REFUND: 'Sale Refund',
+  SALE_VOID: 'Sale Void / Reversal',
   PURCHASE_ORDER_PAYMENT: 'Purchase Order Payment',
   EXPENSE: 'Expense',
   DEPOSIT: 'Deposit',
@@ -38,6 +39,20 @@ export function formatEntryDate(value: string): string {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
+  });
+}
+
+/**
+ * Recorded time for a ledger row (ARGUS #433). The entry date may be a
+ * date-only manual entry, so same-day rows were visually indistinguishable.
+ * The creation timestamp orders them and is shown next to the entry date.
+ */
+export function formatEntryTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
   });
 }
 

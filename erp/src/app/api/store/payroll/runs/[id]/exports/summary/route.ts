@@ -7,6 +7,7 @@ import {
   formatExtension,
   getPayrollExportContext,
   periodLabel,
+  recordPayrollExportDownload,
   summaryTotals,
   toSummaryItems,
 } from '@/lib/services/payroll-exports.service';
@@ -41,12 +42,26 @@ export async function GET(
       periodLabel: periodLabel(new Date(context.run.periodStart)),
       periodMonth: context.run.periodMonth,
       generatedAt: context.generatedAt,
+      status: context.run.status,
+      payment: context.payment,
+      provenanceNote: context.provenance.caveat,
+      employeeEpfRate: Number(context.run.employeeEpfRate),
     };
     const totals = summaryTotals(context);
     const items = toSummaryItems(context);
 
     if (extension === 'xlsx') {
       const buffer = generateSummaryReportXlsx(meta, totals, items);
+      await recordPayrollExportDownload({
+        tenantId,
+        runId: context.run.id,
+        actorId: session.user.id,
+        actorRole: session.user.role ?? 'UNKNOWN',
+        exportType: 'summary',
+        format: 'xlsx',
+        periodMonth: context.run.periodMonth,
+        itemCount: items.length,
+      });
       return new Response(new Uint8Array(buffer), {
         headers: {
           'Content-Type':
@@ -58,6 +73,16 @@ export async function GET(
     }
 
     const buffer = generateSummaryReportPdf(meta, totals, items);
+    await recordPayrollExportDownload({
+      tenantId,
+      runId: context.run.id,
+      actorId: session.user.id,
+      actorRole: session.user.role ?? 'UNKNOWN',
+      exportType: 'summary',
+      format: 'pdf',
+      periodMonth: context.run.periodMonth,
+      itemCount: items.length,
+    });
     return new Response(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'application/pdf',

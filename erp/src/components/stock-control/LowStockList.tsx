@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import Link from 'next/link';
-import { Download, PackageCheck, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, PackageCheck, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +18,19 @@ import {
 } from '@/components/ui/table';
 import { useLowStockVariants } from '@/hooks/useLowStockVariants';
 import { formatRupee } from '@/lib/format';
+import {
+  lowStockBadgeLabel,
+  lowStockErrorMessage,
+  resolveLowStockViewState,
+} from '@/components/stock-control/lowStockState';
+import { resolveLowStockShortfall } from '@/lib/inventory/lowStockShortfall';
+import {
+  LOW_STOCK_OVERRIDE_MAX,
+  lowStockThresholdCellLabel,
+  lowStockThresholdRuleLabel,
+  parseLowStockOverrideInput,
+  resolveEffectiveLowStockThreshold,
+} from '@/lib/inventory/lowStockThreshold';
 
 interface LowStockListProps {
   permissions: string[];
@@ -27,12 +40,14 @@ export function LowStockList({ permissions }: LowStockListProps) {
   const [page, setPage] = useState(1);
   const [limit] = useState(25);
   const [useOverride, setUseOverride] = useState(false);
-  const [thresholdOverride, setThresholdOverride] = useState(5);
+  // ARGUS #216: keep the raw text so the field can be emptied, and allow 0.
+  const [thresholdOverrideInput, setThresholdOverrideInput] = useState('5');
   const [exporting, setExporting] = useState(false);
 
-  const threshold = useOverride ? thresholdOverride : undefined;
+  const overrideParse = parseLowStockOverrideInput(thresholdOverrideInput);
+  const threshold = useOverride ? overrideParse.threshold : undefined;
 
-  const { data, isLoading } = useLowStockVariants({ page, limit, threshold });
+  const { data, isLoading, isError, error, isFetching, refetch } = useLowStockVariants({ page, limit, threshold });
 
   const variants = data?.data ?? [];
   const meta = data?.meta;
@@ -40,6 +55,16 @@ export function LowStockList({ permissions }: LowStockListProps) {
   const totalPages = meta?.totalPages ?? 1;
 
   const canView = permissions.includes('stock:view');
+
+  // ARGUS #213: resolve the state explicitly so a failed feed can never render
+  // the healthy "all variants are adequately stocked" copy.
+  const viewState = resolveLowStockViewState({
+    hasPermission: canView,
+    isError,
+    isLoading,
+    variantCount: variants.length,
+  });
+  const badgeLabel = lowStockBadgeLabel(viewState, total);
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -94,24 +119,38 @@ export function LowStockList({ permissions }: LowStockListProps) {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="font-display text-2xl font-bold text-espresso">Low Stock Variants</h1>
-            {!isLoading && (
+            {badgeLabel !== null && (
               <Badge
                 variant="secondary"
-                className="bg-amber-100 text-amber-800 hover:bg-amber-100"
+                className={
+                  viewState === 'error'
+                    ? 'bg-mist/40 text-espresso/70 hover:bg-mist/40'
+                    : 'bg-amber-100 text-amber-800 hover:bg-amber-100'
+                }
+                aria-label={
+                  viewState === 'error' ? 'Low stock count unavailable' : `${total} low stock variants`
+                }
               >
-                {total}
+                {badgeLabel}
               </Badge>
             )}
           </div>
           <p className="mt-1 font-body text-sm text-mist-ink">
-            Variants at or below their low stock threshold - sorted by urgency.
+            {useOverride && overrideParse.error
+              ? 'Fix the override threshold to apply it.'
+              : `Variants ${lowStockThresholdRuleLabel(threshold)} - sorted by urgency.`}
           </p>
         </div>
         <Button
           variant="outline"
           className="border-sand text-espresso"
           onClick={handleExport}
-          disabled={exporting || total === 0}
+          disabled={
+            exporting ||
+            viewState !== 'list' ||
+            total === 0 ||
+            (useOverride && Boolean(overrideParse.error))
+          }
         >
           <Download className="mr-2 h-4 w-4" />
           {exporting ? 'Exporting…' : 'Export CSV'}
@@ -133,39 +172,84 @@ export function LowStockList({ permissions }: LowStockListProps) {
           Override threshold
         </label>
         {useOverride && (
-          <Input
-            type="number"
-            min={1}
-            value={thresholdOverride}
-            onChange={(e) => {
-              setThresholdOverride(Math.max(1, parseInt(e.target.value, 10) || 1));
-              setPage(1);
-            }}
-            className="w-24 border-sand"
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={0}
+              max={LOW_STOCK_OVERRIDE_MAX}
+              step={1}
+              inputMode="numeric"
+              aria-label="Low stock threshold override"
+              value={thresholdOverrideInput}
+              onChange={(e) => {
+                // Keep the typed text verbatim; parsing (and the error) is
+                // handled by the shared helper so an empty field is not
+                // silently replaced with 1.
+                setThresholdOverrideInput(e.target.value);
+                setPage(1);
+              }}
+              className="w-24 border-sand"
+            />
+            {overrideParse.error && (
+              <span role="alert" className="font-body text-xs text-red-600">
+                {overrideParse.error}
+              </span>
+            )}
+          </div>
         )}
         {!useOverride && (
           <span className="font-body text-xs text-mist-ink">
             Using individual per-variant thresholds
           </span>
         )}
+        {useOverride && !overrideParse.error && (
+          <span className="font-body text-xs text-mist-ink">
+            {overrideParse.threshold === 0
+              ? 'Showing only out-of-stock variants'
+              : `Override threshold: ${overrideParse.threshold}`}
+          </span>
+        )}
       </div>
 
       {/* Table */}
-      {isLoading ? (
+      {viewState === 'loading' ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : variants.length === 0 ? (
+      ) : viewState === 'error' ? (
+        <div
+          role="alert"
+          className="flex flex-col items-center justify-center gap-3 rounded-lg border border-red-200 bg-red-50 py-16"
+        >
+          <AlertTriangle className="h-12 w-12 text-red-500" />
+          <p className="font-body text-lg font-medium text-red-800">Low stock check failed</p>
+          <p className="font-body max-w-md text-center text-sm text-red-600">
+            {lowStockErrorMessage(error)}
+          </p>
+          <p className="font-body text-xs text-red-600">
+            The low stock count is unknown until the feed loads.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+            onClick={() => refetch()}
+            disabled={isFetching}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+            {isFetching ? 'Retrying…' : 'Retry'}
+          </Button>
+        </div>
+      ) : viewState === 'empty' ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-green-200 bg-green-50 py-16">
           <PackageCheck className="h-12 w-12 text-green-500" />
           <p className="font-body text-lg font-medium text-green-800">
             All variants are adequately stocked
           </p>
           <p className="font-body text-sm text-green-600">
-            No variants are currently at or below their low stock threshold.
+            No variants are currently {lowStockThresholdRuleLabel(threshold)}.
           </p>
         </div>
       ) : (
@@ -186,6 +270,15 @@ export function LowStockList({ permissions }: LowStockListProps) {
               <TableBody>
                 {variants.map((v) => {
                   const isOutOfStock = v.stock_quantity === 0;
+                  // ARGUS #214: the list/shortfall predicate used the override;
+                  // show that same effective threshold here.
+                  const effectiveThreshold =
+                    v.effective_threshold ??
+                    resolveEffectiveLowStockThreshold(v.low_stock_threshold, threshold).applied;
+                  const shortfall = resolveLowStockShortfall(
+                    v.stock_quantity,
+                    effectiveThreshold,
+                  );
                   return (
                     <TableRow key={v.id}>
                       <TableCell>
@@ -217,11 +310,15 @@ export function LowStockList({ permissions }: LowStockListProps) {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center font-body text-sm text-espresso">
-                        {v.low_stock_threshold}
+                        {lowStockThresholdCellLabel(v.low_stock_threshold, threshold)}
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-body text-sm font-bold text-red-600">
-                          -{v.shortfall}
+                        <span
+                          className={`font-body text-sm font-bold ${
+                            shortfall.amount === 0 ? 'text-amber-600' : 'text-red-600'
+                          }`}
+                        >
+                          {shortfall.label}
                         </span>
                       </TableCell>
                       <TableCell className="text-right font-body text-sm text-espresso">

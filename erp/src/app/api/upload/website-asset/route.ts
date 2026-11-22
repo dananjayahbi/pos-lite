@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { requirePermissionResponse } from '@/lib/api/permission-guard';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { uploadFile } from '@/lib/storage';
 
 /**
@@ -14,6 +16,10 @@ export async function POST(req: NextRequest) {
       { status: 401 },
     );
   }
+
+  // Website media is owner/manager work, like the CMS itself (ARGUS #496).
+  const forbidden = requirePermissionResponse(session.user, PERMISSIONS.SETTINGS.manageWebsite);
+  if (forbidden) return forbidden;
 
   let formData: FormData;
   try {

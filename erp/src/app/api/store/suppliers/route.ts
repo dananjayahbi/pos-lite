@@ -90,7 +90,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const supplier = await createSupplier(tenantId, parsed.data as CreateSupplierInput);
+    const supplier = await createSupplier(tenantId, parsed.data as CreateSupplierInput, {
+      id: session.user.id,
+      role: session.user.role,
+    });
 
     return NextResponse.json({ success: true, data: supplier }, { status: 201 });
   } catch (error) {

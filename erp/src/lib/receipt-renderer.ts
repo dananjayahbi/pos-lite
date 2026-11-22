@@ -1,4 +1,10 @@
 import { formatRupee } from '@/lib/format';
+import { reprintIdentityNotice } from '@/lib/receipt-identity.core';
+import {
+  receiptContactLines,
+  receiptFooterLines,
+  resolveReceiptFooter,
+} from '@/lib/settings/receiptIdentity.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -10,6 +16,8 @@ export interface ReceiptSale {
   totalAmount: { toString(): string } | number;
   changeGiven?: { toString(): string } | number | null;
   paymentMethod: string | null;
+  /** A voided sale must print a VOID stamp and label reversed tenders. */
+  status?: string | null;
   createdAt: Date | string;
   lines: Array<{
     productNameSnapshot: string;
@@ -30,7 +38,17 @@ export interface ReceiptSale {
 
 export interface ReceiptTenant {
   name: string;
+  /** Uploaded store logo; printed on the thermal header (ARGUS #474). */
+  logoUrl?: string | null;
   settings: unknown;
+}
+
+export interface ReceiptRenderOptions {
+  /**
+   * True when an already-completed sale is being reprinted. Store identity is
+   * read from the current tenant, so the document carries a caveat (ARGUS #472).
+   */
+  isReprint?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -74,17 +92,27 @@ export function buildThermalReceiptHtml(
   sale: ReceiptSale,
   tenant: ReceiptTenant,
   cashierName: string,
+  options: ReceiptRenderOptions = {},
 ): string {
   const s = getSettings(tenant.settings);
   const { date, time } = formatDate(sale.createdAt);
   const saleRef = sale.id.slice(0, 8).toUpperCase();
+  const identityNotice = reprintIdentityNotice(options.isReprint);
+  const isVoided = sale.status === 'VOIDED';
 
   const storeAddress = typeof s.address === 'string' ? s.address : '';
   const storePhone = typeof s.phoneNumber === 'string' ? s.phoneNumber : '';
-  const receiptFooter =
-    typeof s.receiptFooter === 'string'
-      ? s.receiptFooter
-      : 'Thank you for your purchase!';
+  const logoUrl = typeof tenant.logoUrl === 'string' ? tenant.logoUrl.trim() : '';
+  const receiptFooter = resolveReceiptFooter(
+    typeof s.receiptFooter === 'string' ? s.receiptFooter : '',
+  );
+  // ARGUS #492: the address is a 3-row textarea and the footer a 4-row one, so
+  // the operator's line breaks must survive printing.
+  const contactLines = receiptContactLines({
+    address: storeAddress,
+    phoneNumber: storePhone,
+  });
+  const footerLines = receiptFooterLines(receiptFooter);
 
   // ── Line items ──
   let linesHtml = '';
@@ -110,10 +138,18 @@ export function buildThermalReceiptHtml(
 
   // ── Payments ──
   let paymentsHtml = '';
+  const paymentLabels: Record<string, string> = {
+    CASH: 'Cash',
+    CARD: 'Card',
+    LANKAQR: 'LankaQR',
+    STORE_CREDIT: 'Store Credit',
+    EXCHANGE_CREDIT: 'Exchange Credit',
+  };
   for (const p of sale.payments) {
+    const methodLabel = paymentLabels[p.method] ?? p.method;
     paymentsHtml += `
       <div class="item-row">
-        <span>${esc(p.method)}</span>
+        <span>${esc(methodLabel)}${isVoided ? ' (reversed)' : ''}</span>
         <span>${formatRupee(n(p.amount))}</span>
       </div>`;
     if (p.cardReferenceNumber) {
@@ -131,7 +167,7 @@ export function buildThermalReceiptHtml(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Receipt – ${esc(saleRef)}</title>
+<title>Receipt${isVoided ? ' (VOID)' : ''} – ${esc(saleRef)}</title>
 <style>
   @page { size: 80mm auto; margin: 3mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -145,7 +181,24 @@ export function buildThermalReceiptHtml(
   }
   .center { text-align: center; }
   .bold { font-weight: bold; }
+  .void-stamp {
+    border: 3px solid #9B2226;
+    color: #9B2226;
+    font-size: 28px;
+    font-weight: bold;
+    letter-spacing: 6px;
+    text-align: center;
+    padding: 4px 0;
+    margin: 6px 0 2px;
+  }
+  .void-note {
+    color: #9B2226;
+    font-size: 10px;
+    text-align: center;
+    margin-bottom: 4px;
+  }
   .store-name { font-size: 16px; font-weight: bold; margin-bottom: 2px; }
+  .brand-logo { max-width: 34mm; max-height: 16mm; object-fit: contain; margin-bottom: 2px; }
   .store-info { font-size: 10px; color: #333; }
   .separator { border-top: 1px dashed #000; margin: 6px 0; }
   .meta-row { display: flex; justify-content: space-between; font-size: 11px; }
@@ -163,10 +216,13 @@ export function buildThermalReceiptHtml(
 <body>
 
 <div class="center">
+  ${logoUrl ? `<img class="brand-logo" src="${esc(logoUrl)}" alt="${esc(tenant.name)} logo" />` : ''}
   <div class="store-name">${esc(tenant.name)}</div>
-  ${storeAddress ? `<div class="store-info">${esc(storeAddress)}</div>` : ''}
-  ${storePhone ? `<div class="store-info">Tel: ${esc(storePhone)}</div>` : ''}
+  ${contactLines.map((contactLine) => `<div class="store-info">${esc(contactLine)}</div>`).join('')}
+  ${identityNotice ? `<div class="store-info" style="margin-top:4px;border-top:1px dashed #000;padding-top:4px;">${esc(identityNotice)}</div>` : ''}
 </div>
+
+${isVoided ? `<div class="void-stamp">VOID</div><div class="void-note">This sale was voided. Stock and tenders were reversed; this is not a valid receipt.</div>` : ''}
 
 <div class="separator"></div>
 
@@ -202,7 +258,7 @@ ${linesHtml}
 <div class="separator"></div>
 
 <div class="footer">
-  ${esc(receiptFooter)}
+  ${footerLines.map((footerLine) => `<div>${esc(footerLine)}</div>`).join('')}
   <div class="powered">Powered by AyurPOS</div>
   <div style="font-size:9px;color:#aaa;margin-top:2px;">Printed: ${printTimestamp}</div>
 </div>

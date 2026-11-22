@@ -2,11 +2,15 @@ import { describe, it, expect } from 'vitest';
 
 import {
   buildPackagingSkuBase,
+  decidePackagingShortfall,
   isPackagingItemLowStock,
   nextAvailablePackagingSku,
   packagingCategoryLabel,
   packagingConsumptionUnits,
+  packagingItemHasStock,
   packagingQuantityLabel,
+  planPackagingDeduction,
+  resolvePackagingPerParcelRate,
 } from '@/lib/services/packaging.core';
 import {
   DEFAULT_PACKAGING_CATEGORIES,
@@ -35,6 +39,117 @@ describe('packagingConsumptionUnits', () => {
 
   it('keeps whole rates whole', () => {
     expect(packagingConsumptionUnits(3)).toBe(3);
+  });
+});
+
+describe('planPackagingDeduction', () => {
+  it('plans one parcel worth of stock for a new dispatch', () => {
+    expect(
+      planPackagingDeduction({
+        perParcel: 1.6,
+        quantityOnHand: 10,
+        existingConsumptions: 0,
+        parcelCount: 1,
+      }),
+    ).toEqual({
+      missingParcels: 1,
+      unitsPerParcel: 2,
+      unitsToDeduct: 2,
+      insufficient: false,
+    });
+  });
+
+  it('is idempotent for a retry of the same parcel', () => {
+    expect(
+      planPackagingDeduction({
+        perParcel: 1.6,
+        quantityOnHand: 8,
+        existingConsumptions: 1,
+        parcelCount: 1,
+      }),
+    ).toMatchObject({ missingParcels: 0, unitsToDeduct: 0, insufficient: false });
+  });
+
+  it('catches up exactly one parcel for a redelivery', () => {
+    expect(
+      planPackagingDeduction({
+        perParcel: 1.6,
+        quantityOnHand: 8,
+        existingConsumptions: 1,
+        parcelCount: 2,
+      }),
+    ).toMatchObject({ missingParcels: 1, unitsToDeduct: 2, insufficient: false });
+  });
+
+  it('caps at stock and flags the 10 m / 16 parcel shortage', () => {
+    const plan = planPackagingDeduction({
+      perParcel: 1.6,
+      quantityOnHand: 10,
+      existingConsumptions: 0,
+      parcelCount: 16,
+    });
+    expect(plan.missingParcels).toBe(16);
+    expect(plan.unitsToDeduct).toBe(10);
+    expect(plan.insufficient).toBe(true);
+  });
+
+  it('never deducts a negative amount', () => {
+    expect(
+      planPackagingDeduction({
+        perParcel: 1.6,
+        quantityOnHand: 0,
+        existingConsumptions: 0,
+        parcelCount: 4,
+      }),
+    ).toMatchObject({ unitsToDeduct: 0, insufficient: true });
+  });
+
+  it('treats a zero rate as nothing to deduct', () => {
+    expect(
+      planPackagingDeduction({
+        perParcel: 0,
+        quantityOnHand: 10,
+        existingConsumptions: 0,
+        parcelCount: 3,
+      }),
+    ).toMatchObject({ unitsPerParcel: 0, unitsToDeduct: 0, insufficient: false });
+  });
+});
+
+describe('decidePackagingShortfall', () => {
+  const enough = {
+    name: 'Polymailer',
+    requiredUnits: 2,
+    availableUnits: 10,
+    insufficient: false,
+  };
+  const short = {
+    name: 'Tape roll',
+    requiredUnits: 5,
+    availableUnits: 2,
+    insufficient: true,
+  };
+
+  it('blocks dispatch when any item is short', () => {
+    expect(decidePackagingShortfall([enough, short])).toEqual({
+      blocked: true,
+      shortItems: [short],
+    });
+  });
+
+  it('allows dispatch when every item has enough stock', () => {
+    expect(decidePackagingShortfall([enough])).toEqual({ blocked: false, shortItems: [] });
+  });
+
+  it('allows an explicit override to proceed despite the shortfall', () => {
+    expect(decidePackagingShortfall([short], { allowOverride: true })).toEqual({
+      blocked: false,
+      shortItems: [short],
+    });
+  });
+
+  it('does not block when no packaging was selected', () => {
+    expect(decidePackagingShortfall([])).toEqual({ blocked: false, shortItems: [] });
   });
 });
 
@@ -67,6 +182,13 @@ describe('low-stock + label helpers', () => {
     expect(isPackagingItemLowStock(5, 5)).toBe(true);
     expect(isPackagingItemLowStock(4, 5)).toBe(true);
     expect(isPackagingItemLowStock(6, 5)).toBe(false);
+  });
+
+  it('treats any positive quantity as stock that blocks a delete', () => {
+    expect(packagingItemHasStock(10)).toBe(true);
+    expect(packagingItemHasStock(1)).toBe(true);
+    expect(packagingItemHasStock(0)).toBe(false);
+    expect(packagingItemHasStock(-1)).toBe(false);
   });
 
   it('prefers the tenant category name and falls back to the built-in label', () => {
@@ -116,5 +238,36 @@ describe('category constants', () => {
       { category: 'LABEL', name: 'Z' },
       { category: 'TAPE', name: 'B' },
     ]);
+  });
+});
+
+describe('resolvePackagingPerParcelRate (ARGUS #285)', () => {
+  it('shows the effective whole-unit rate and flags rounding', () => {
+    expect(resolvePackagingPerParcelRate(1.6)).toEqual({
+      configured: 1.6,
+      effective: 2,
+      rounded: true,
+    });
+    expect(resolvePackagingPerParcelRate(0.5)).toEqual({
+      configured: 0.5,
+      effective: 1,
+      rounded: true,
+    });
+  });
+
+  it('does not flag a whole rate', () => {
+    expect(resolvePackagingPerParcelRate(3)).toEqual({
+      configured: 3,
+      effective: 3,
+      rounded: false,
+    });
+  });
+
+  it('treats zero as no deduction', () => {
+    expect(resolvePackagingPerParcelRate(0)).toEqual({
+      configured: 0,
+      effective: 0,
+      rounded: false,
+    });
   });
 });

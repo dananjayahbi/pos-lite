@@ -4,6 +4,10 @@ import net from 'node:net';
 import { prisma } from '@/lib/prisma';
 import { sumPaymentBreakdown } from '@/lib/services/paymentBreakdown';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import {
+  receiptContactLines,
+  receiptFooterLines,
+} from '@/lib/settings/receiptIdentity.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -151,6 +155,16 @@ export async function printSaleReceipt(saleId: string): Promise<void> {
   parts.push(...line(tenant.name.toUpperCase()));
   parts.push(ESC_NORMAL);
 
+  // ARGUS #491: the ESC/POS sale receipt now prints the same contact block as
+  // the browser and A4 receipts (previously address and phone were dropped).
+  for (const contactLine of receiptContactLines({
+    address: typeof (settings as any)?.address === 'string' ? (settings as any).address : '',
+    phoneNumber:
+      typeof (settings as any)?.phoneNumber === 'string' ? (settings as any).phoneNumber : '',
+  })) {
+    parts.push(...line(centerText(contactLine, w)));
+  }
+
   if ((settings as any)?.receiptHeader) {
     parts.push(...line(String((settings as any).receiptHeader)));
   }
@@ -225,11 +239,14 @@ export async function printSaleReceipt(saleId: string): Promise<void> {
   // Footer
   parts.push(ESC_ALIGN_CENTER);
 
-  if ((settings as any)?.receiptFooter) {
-    parts.push(...line(String((settings as any).receiptFooter)));
-  } else {
-    parts.push(...line('Thank you for your purchase!'));
-  }
+  // ARGUS #491/#492: one contact policy; each stored line prints on its own.
+  parts.push(
+    ...receiptFooterLines(
+      typeof (settings as any)?.receiptFooter === 'string'
+        ? (settings as any).receiptFooter
+        : '',
+    ).flatMap((footerLine) => line(centerText(footerLine, w))),
+  );
 
   parts.push(...line(''));
   parts.push(...line(''));

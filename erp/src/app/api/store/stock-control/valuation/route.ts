@@ -1,22 +1,31 @@
 import { type NextRequest, NextResponse } from 'next/server';
+import Decimal from 'decimal.js';
+import { Prisma } from '@/generated/prisma/client';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { csvCell } from '@/lib/export';
+import { buildValuationCsv, valuationCsvFilename } from '@/lib/pricing/valuationCsv.core';
+import {
+  readValuationTaxRates,
+  summarizeValuationTax,
+  valuationMarginPercent,
+  type ValuationTaxLineInput,
+} from '@/lib/pricing/valuation-tax.core';
+import {
+  VALUATION_COST_BASIS,
+  VALUATION_COST_BASIS_NOTE,
+} from '@/lib/pricing/valuationBasis';
+import { STOCK_SCOPE_SQL } from '@/lib/inventory/stockScope';
+import { sumValuationBreakdown, isVariantInStock } from '@/lib/pricing/valuationTotals.core';
 
-interface ValuationRow {
-  retail_value: string;
-  cost_value: string;
-  variant_count: bigint;
-}
-
-interface CategoryValuationRow {
+interface VariantValuationRow {
   category_id: string;
   category_name: string;
-  variant_count: bigint;
-  retail_value: string;
-  cost_value: string;
+  stock_quantity: number;
+  retail_price: string;
+  cost_price: string;
+  tax_rule: string | null;
 }
 
 export async function GET(request: NextRequest) {
@@ -48,102 +57,146 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const [totals, categoryBreakdown] = await Promise.all([
-      prisma.$queryRaw<ValuationRow[]>`
-        SELECT
-          COALESCE(SUM(pv."stockQuantity" * pv."retailPrice"), 0)::text as retail_value,
-          COALESCE(SUM(pv."stockQuantity" * pv."costPrice"), 0)::text as cost_value,
-          COUNT(*)::bigint as variant_count
-        FROM product_variants pv
-        JOIN products p ON pv."productId" = p.id
-        WHERE pv."tenantId" = ${tenantId}
-          AND pv."deletedAt" IS NULL
-          AND p."isArchived" = false
-      `,
-      prisma.$queryRaw<CategoryValuationRow[]>`
+    const [variants, tenant, rawMaterialTotals] = await Promise.all([
+      prisma.$queryRaw<VariantValuationRow[]>`
         SELECT
           c.id as category_id,
           c.name as category_name,
-          COUNT(pv.id)::bigint as variant_count,
-          COALESCE(SUM(pv."stockQuantity" * pv."retailPrice"), 0)::text as retail_value,
-          COALESCE(SUM(pv."stockQuantity" * pv."costPrice"), 0)::text as cost_value
+          pv."stockQuantity"::int as stock_quantity,
+          pv."retailPrice"::text as retail_price,
+          pv."costPrice"::text as cost_price,
+          p."taxRule"::text as tax_rule
         FROM product_variants pv
         JOIN products p ON pv."productId" = p.id
         JOIN categories c ON p."categoryId" = c.id
         WHERE pv."tenantId" = ${tenantId}
-          AND pv."deletedAt" IS NULL
-          AND p."isArchived" = false
-        GROUP BY c.id, c.name
-        ORDER BY c.name
+          AND ${Prisma.raw(STOCK_SCOPE_SQL)}
+        ORDER BY c.name, pv.id
+      `,
+      prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { settings: true },
+      }),
+      prisma.$queryRaw<Array<{ raw_material_value: string; material_count: bigint }>>`
+        SELECT
+          COALESCE(SUM(rm.quantity * rm."unitCost"), 0)::text as raw_material_value,
+          COUNT(*)::bigint as material_count
+        FROM raw_materials rm
+        WHERE rm."tenantId" = ${tenantId}
+          AND rm."deletedAt" IS NULL
+          AND rm."isActive" = true
       `,
     ]);
 
-    const retailValue = parseFloat(totals[0]?.retail_value ?? '0');
-    const costValue = parseFloat(totals[0]?.cost_value ?? '0');
-    const variantCount = Number(totals[0]?.variant_count ?? 0);
-    const estimatedMargin = retailValue - costValue;
-    const estimatedMarginPercent = retailValue > 0 ? (estimatedMargin / retailValue) * 100 : 0;
-    const roundedMarginPercent = Math.round(estimatedMarginPercent * 100) / 100;
+    const taxRates = readValuationTaxRates(tenant?.settings);
+    const categoryMap = new Map<
+      string,
+      { categoryId: string; categoryName: string; variantCount: number; lines: ValuationTaxLineInput[]; cost: Decimal }
+    >();
 
-    const breakdown = categoryBreakdown.map((c) => ({
-      categoryId: c.category_id,
-      categoryName: c.category_name,
-      variantCount: Number(c.variant_count),
-      retailValue: parseFloat(c.retail_value),
-      costValue: parseFloat(c.cost_value),
-    }));
+    for (const variant of variants) {
+      const retail = new Decimal(variant.retail_price).times(variant.stock_quantity);
+      const cost = new Decimal(variant.cost_price).times(variant.stock_quantity);
+      const line: ValuationTaxLineInput = {
+        retailValue: retail,
+        taxRule: variant.tax_rule,
+      };
+
+      const category = categoryMap.get(variant.category_id) ?? {
+        categoryId: variant.category_id,
+        categoryName: variant.category_name,
+        variantCount: 0,
+        lines: [],
+        cost: new Decimal(0),
+      };
+      category.variantCount += isVariantInStock(variant.stock_quantity) ? 1 : 0;
+      category.lines.push(line);
+      category.cost = category.cost.plus(cost);
+      categoryMap.set(variant.category_id, category);
+    }
+
+    // ARGUS #220: the table is built first; the KPI totals are its column sums,
+    // so a concurrent stock change can never leave the cards disagreeing with
+    // the rows and CSV.
+    const breakdown = [...categoryMap.values()]
+      .map((category) => {
+        const categoryTotals = summarizeValuationTax(category.lines, taxRates);
+        return {
+          categoryId: category.categoryId,
+          categoryName: category.categoryName,
+          variantCount: category.variantCount,
+          retailValue: categoryTotals.retailValueExTax.toNumber(),
+          vatAmount: categoryTotals.vatAmount.toNumber(),
+          ssclAmount: categoryTotals.ssclAmount.toNumber(),
+          taxAmount: categoryTotals.taxAmount.toNumber(),
+          retailValueInclTax: categoryTotals.retailValueInclTax.toNumber(),
+          costValue: category.cost.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
+        };
+      })
+      .sort((a, b) => a.categoryName.localeCompare(b.categoryName));
+
+    const breakdownTotals = sumValuationBreakdown(breakdown);
+    const costValue = new Decimal(breakdownTotals.costValue);
+    const retailValue = new Decimal(breakdownTotals.retailValue);
+    const variantCount = breakdownTotals.variantCount;
+    // Raw materials live in their own table; include their value so the report
+    // covers the whole inventory (ARGUS #243).
+    const rawMaterialValue = parseFloat(rawMaterialTotals[0]?.raw_material_value ?? '0');
+    const rawMaterialCount = Number(rawMaterialTotals[0]?.material_count ?? 0);
+    const totalCostValue = costValue.plus(rawMaterialValue).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const estimatedMargin = retailValue.minus(costValue).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const roundedMarginPercent = valuationMarginPercent(retailValue, costValue);
+
+    const snapshot = {
+      retailValue: retailValue.toNumber(),
+      vatAmount: Number(breakdownTotals.vatAmount),
+      ssclAmount: Number(breakdownTotals.ssclAmount),
+      taxAmount: Number(breakdownTotals.taxAmount),
+      retailValueInclTax: Number(breakdownTotals.retailValueInclTax),
+      taxRates,
+      costValue: costValue.toNumber(),
+      rawMaterialValue,
+      totalCostValue: totalCostValue.toNumber(),
+      estimatedMargin: estimatedMargin.toNumber(),
+      estimatedMarginPercent: roundedMarginPercent,
+      variantCount,
+      categoryBreakdown: breakdown,
+      calculatedAt: new Date().toISOString(),
+    };
 
     const format = request.nextUrl.searchParams.get('format');
     if (format === 'csv') {
-      const lines: string[] = [];
-      lines.push('Stock Valuation Summary');
-      lines.push('Metric,Value');
-      lines.push(`Total Retail Value,${csvCell(retailValue.toFixed(2))}`);
-      lines.push(`Total Cost Value,${csvCell(costValue.toFixed(2))}`);
-      lines.push(`Estimated Margin (Rs.),${csvCell(estimatedMargin.toFixed(2))}`);
-      lines.push(`Estimated Margin (%),${csvCell(roundedMarginPercent)}`);
-      lines.push('');
-      lines.push('Category Breakdown');
-      // M35-01 (BUG-79): the two summary headers are already unquoted; the data
-      // rows below now use the shared `csvCell` so numeric cells stop being
-      // needlessly quoted and a comma in a category name can never break a row.
-      lines.push('Category,Variants in Stock,Retail Value (Rs.),Cost Value (Rs.),Margin %,Share of Total');
-      for (const cat of breakdown) {
-        const catMargin = cat.retailValue > 0 ? ((cat.retailValue - cat.costValue) / cat.retailValue) * 100 : 0;
-        const share = retailValue > 0 ? (cat.retailValue / retailValue) * 100 : 0;
-        lines.push(
-          [
-            csvCell(cat.categoryName),
-            csvCell(cat.variantCount),
-            csvCell(cat.retailValue.toFixed(2)),
-            csvCell(cat.costValue.toFixed(2)),
-            csvCell(catMargin.toFixed(2)),
-            csvCell(share.toFixed(2)),
-          ].join(','),
-        );
-      }
-
-      const csv = lines.join('\n');
-      const today = new Date().toISOString().split('T')[0];
-      return new NextResponse(csv, {
+      // ARGUS #223: same snapshot, same builder as the page, plus an as-of line
+      // and a time-stamped filename.
+      return new NextResponse(buildValuationCsv(snapshot), {
         status: 200,
         headers: {
           'Content-Type': 'text/csv',
-          'Content-Disposition': `attachment; filename="stock-valuation-${today}.csv"`,
+          'Content-Disposition': `attachment; filename="${valuationCsvFilename(snapshot.calculatedAt)}"`,
         },
       });
     }
-
     return NextResponse.json({
       success: true,
       data: {
-        retailValue,
-        costValue,
-        estimatedMargin,
+        retailValue: retailValue.toNumber(),
+        vatAmount: Number(breakdownTotals.vatAmount),
+        ssclAmount: Number(breakdownTotals.ssclAmount),
+        taxAmount: Number(breakdownTotals.taxAmount),
+        retailValueInclTax: Number(breakdownTotals.retailValueInclTax),
+        taxRates,
+        costValue: costValue.toNumber(),
+        // ARGUS #218: explicit contract for consumers that render the figure.
+        costBasis: VALUATION_COST_BASIS,
+        costBasisNote: VALUATION_COST_BASIS_NOTE,
+        rawMaterialValue,
+        rawMaterialCount,
+        totalCostValue: totalCostValue.toNumber(),
+        estimatedMargin: estimatedMargin.toNumber(),
         estimatedMarginPercent: roundedMarginPercent,
         variantCount,
         categoryBreakdown: breakdown,
-        calculatedAt: new Date().toISOString(),
+        calculatedAt: snapshot.calculatedAt,
       },
     });
   } catch (error) {

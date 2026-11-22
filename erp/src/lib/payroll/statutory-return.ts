@@ -1,6 +1,11 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import {
+  describePayrollRunStatus,
+  type PayrollRunPaymentInfo,
+} from '@/lib/payroll/payroll-run-status';
+import { applyMoneyNumberFormat } from '@/lib/payroll/xlsx-money.core';
 
 export interface StatutoryRow {
   staffName: string;
@@ -23,6 +28,11 @@ export interface StatutoryMeta {
   employerEpfRate: number;
   employerEtfRate: number;
   generatedAt: Date;
+  /** ARGUS #385: the return is generated from an unpaid run until marked paid. */
+  status?: string;
+  payment?: PayrollRunPaymentInfo | null;
+  /** ARGUS #387: explicit current-profile caveat for regenerated exports. */
+  provenanceNote?: string;
 }
 
 function num(value: string): number {
@@ -51,11 +61,17 @@ function totals(rows: StatutoryRow[]) {
 
 function epfSheet(meta: StatutoryMeta, rows: StatutoryRow[]): XLSX.WorkSheet {
   const total = totals(rows);
+  const status = describePayrollRunStatus({
+    status: meta.status ?? 'GENERATED',
+    payment: meta.payment ?? null,
+  });
   const aoa: (string | number)[][] = [
     ['C FORM - CONTRIBUTIONS TO EMPLOYEES PROVIDENT FUND'],
     ['Employer', meta.companyName],
     ['Employer EPF Number', meta.employerEpfNumber || '-'],
     ['Month', meta.periodLabel],
+    [`Status: ${status.exportMarker}`],
+    ...(meta.provenanceNote ? [[meta.provenanceNote]] : []),
     [],
     [
       'No.',
@@ -95,16 +111,24 @@ function epfSheet(meta: StatutoryMeta, rows: StatutoryRow[]): XLSX.WorkSheet {
     { wch: 20 },
     { wch: 20 },
   ];
+  const headerRow = aoa.findIndex((row) => row[0] === 'No.');
+  applyMoneyNumberFormat(sheet, [4, 5, 6], headerRow + 1, aoa.length - 1);
   return sheet;
 }
 
 function etfSheet(meta: StatutoryMeta, rows: StatutoryRow[]): XLSX.WorkSheet {
   const total = totals(rows);
+  const status = describePayrollRunStatus({
+    status: meta.status ?? 'GENERATED',
+    payment: meta.payment ?? null,
+  });
   const aoa: (string | number)[][] = [
     ['EMPLOYEES TRUST FUND - MONTHLY RETURN'],
     ['Employer', meta.companyName],
     ['Employer ETF Number', meta.employerEtfNumber || '-'],
     ['Month', meta.periodLabel],
+    [`Status: ${status.exportMarker}`],
+    ...(meta.provenanceNote ? [[meta.provenanceNote]] : []),
     [],
     [
       'No.',
@@ -133,6 +157,8 @@ function etfSheet(meta: StatutoryMeta, rows: StatutoryRow[]): XLSX.WorkSheet {
     { wch: 22 },
     { wch: 20 },
   ];
+  const headerRow = aoa.findIndex((row) => row[0] === 'No.');
+  applyMoneyNumberFormat(sheet, [4, 5], headerRow + 1, aoa.length - 1);
   return sheet;
 }
 
@@ -153,6 +179,10 @@ export function generateStatutoryReturnPdf(
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const total = totals(rows);
+  const status = describePayrollRunStatus({
+    status: meta.status ?? 'GENERATED',
+    payment: meta.payment ?? null,
+  });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
@@ -166,9 +196,15 @@ export function generateStatutoryReturnPdf(
     40,
     60,
   );
+  doc.setFontSize(8);
+  doc.text(`Status: ${status.exportMarker}`, 40, 72);
+  if (meta.provenanceNote) {
+    doc.setFontSize(7);
+    doc.text(meta.provenanceNote, 40, 82, { maxWidth: pageWidth - 80 });
+  }
 
   autoTable(doc, {
-    startY: 74,
+    startY: meta.provenanceNote ? 94 : 84,
     margin: { left: 40, right: 40, top: 40, bottom: 40 },
     head: [
       [
@@ -212,9 +248,15 @@ export function generateStatutoryReturnPdf(
     40,
     60,
   );
+  doc.setFontSize(8);
+  doc.text(`Status: ${status.exportMarker}`, 40, 72);
+  if (meta.provenanceNote) {
+    doc.setFontSize(7);
+    doc.text(meta.provenanceNote, 40, 82, { maxWidth: pageWidth - 80 });
+  }
 
   autoTable(doc, {
-    startY: 74,
+    startY: meta.provenanceNote ? 94 : 84,
     margin: { left: 40, right: 40, top: 40, bottom: 40 },
     head: [
       [
@@ -247,7 +289,7 @@ export function generateStatutoryReturnPdf(
     doc.setFontSize(8);
     doc.setTextColor(153, 153, 153);
     doc.text(
-      `Generated ${meta.generatedAt.toLocaleString('en-GB')} • Page ${page} of ${pageCount}`,
+      `Generated ${meta.generatedAt.toLocaleString('en-GB')} • ${status.exportMarker} • Page ${page} of ${pageCount}`,
       pageWidth - 40,
       doc.internal.pageSize.getHeight() - 20,
       { align: 'right' },

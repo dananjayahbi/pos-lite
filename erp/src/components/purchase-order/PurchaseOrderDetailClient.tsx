@@ -29,6 +29,10 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatRupee } from '@/lib/format';
+import {
+  canCancelPurchaseOrder,
+  isPurchaseOrderFinanciallyLocked,
+} from '@/lib/services/purchaseOrderPermissions.core';
 
 import { cancelPurchaseOrder, recordPurchaseOrderPayment } from './poApi';
 import { formatPoDate } from './poDates';
@@ -50,9 +54,9 @@ import { usePOPayments } from './usePOPayments';
  * receiving page) and the list key, so a settle or cancel updates both views.
  */
 
-const PAYABLE_STATUSES = new Set(['DRAFT', 'SENT', 'PARTIALLY_RECEIVED', 'RECEIVED']);
+const PAYABLE_STATUSES = new Set(['PARTIALLY_RECEIVED', 'RECEIVED']);
 
-export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
+export function PurchaseOrderDetailClient({ poId, canApprove }: { poId: string; canApprove: boolean }) {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -69,7 +73,7 @@ export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
   });
 
   const po = data?.data;
-  const payable = po ? Number(po.totalAmount) : 0;
+  const payable = po ? Number(po.payableAmount ?? po.totalAmount) : 0;
   const paymentsState = usePOPayments(poId, payable);
 
   const invalidate = useCallback(() => {
@@ -154,7 +158,8 @@ export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
   }
 
   const status = po.status;
-  const canCancel = status === 'DRAFT' || status === 'SENT' || status === 'PARTIALLY_RECEIVED';
+  const canCancel =
+    canCancelPurchaseOrder(status) && !isPurchaseOrderFinanciallyLocked(po.paidTotal ?? 0);
   const canPay = PAYABLE_STATUSES.has(status) && paymentsState.outstanding > 0;
 
   return (
@@ -172,9 +177,14 @@ export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <POStatusBadge status={status} />
             <span className="text-sm text-mist-ink">Ordered {formatPoDate(po.orderDate)}</span>
-            {po.paidAt ? (
+            {po.paymentState === 'PAID' ? (
               <span className="inline-flex items-center gap-1 text-sm text-green-700">
                 <Check className="h-3 w-3" /> Paid in full
+              </span>
+            ) : po.paymentState === 'PARTIALLY_PAID' ? (
+              <span className="text-sm text-amber-700">
+                Partially paid - {formatRupee(po.paidTotal ?? 0)} of{' '}
+                {formatRupee(po.payableAmount ?? po.totalAmount)}
               </span>
             ) : null}
           </div>
@@ -193,7 +203,7 @@ export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
               Record Payment
             </Button>
           ) : null}
-          {status === 'DRAFT' ? (
+          {status === 'DRAFT' && canApprove ? (
             <>
               <Button variant="outline" onClick={handleMarkSent} disabled={markingSent}>
                 {markingSent ? (
@@ -222,6 +232,15 @@ export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
               <XCircle className="mr-2 h-4 w-4" />
               Cancel PO
             </Button>
+          ) : status === 'PARTIALLY_RECEIVED' ? (
+            <Button
+              variant="outline"
+              disabled
+              title="Goods have already been received - cancel is not available"
+            >
+              <XCircle className="mr-2 h-4 w-4" />
+              Cancel PO
+            </Button>
           ) : null}
           {status === 'RECEIVED' ? (
             <span className="inline-flex items-center gap-1 rounded-lg bg-green-50 px-3 py-1.5 text-sm text-green-700">
@@ -241,6 +260,7 @@ export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
         supplierContact={po.supplier.contactName}
         expectedDeliveryDate={po.expectedDeliveryDate}
         paymentTermDays={po.paymentTermDays}
+        paymentState={po.paymentState}
         orderDate={po.orderDate}
         createdAt={po.createdAt}
         createdByName={staffDisplayName(po.createdBy.email)}
@@ -253,6 +273,8 @@ export function PurchaseOrderDetailClient({ poId }: { poId: string }) {
         discountValue={po.discountValue}
         discountAmount={po.discountAmount}
         total={po.totalAmount}
+        receivedValue={po.receivedValue}
+        payable={po.payableAmount}
       />
 
       {po.notes ? (

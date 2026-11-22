@@ -43,6 +43,11 @@ const Toaster = ({ ...props }: ToasterProps) => {
       toastOptions={{
         classNames: {
           toast: "cn-toast",
+          // ARGUS #69: success toasts are purely informational (they never
+          // carry an action button), so they must not intercept pointer
+          // events. In the POS the top-right toast otherwise sits over the
+          // cart rail's Clear Cart button and swallows the click.
+          success: "cn-toast-passive",
         },
       }}
       {...restProps}

@@ -10,6 +10,8 @@ describe('INF-02 mapServiceError', () => {
     ['BELOW_ZERO', 400],
     ['DELTA_ZERO', 400],
     ['BOM_EXISTS', 409],
+    ['BOM_LOCKED', 409],
+    ['INGREDIENT_DUPLICATE', 400],
     ['ALREADY_DISPUTED', 409],
     ['SERVICE_NAME_EXISTS', 409],
     ['TRADED_NOT_MANUFACTURED', 400],
@@ -18,6 +20,8 @@ describe('INF-02 mapServiceError', () => {
     ['LEDGER_ENTRY_NOT_FOUND', 404],
     ['DISPUTE_NOT_FOUND', 404],
     ['APPOINTMENT_NOT_FOUND', 404],
+    ['RETURN_STORE_CREDIT_REQUIRES_CUSTOMER: sale abc has no linked customer', 422],
+    ['RETURN_SERVICE_LINE_NOT_RETURNABLE: line x is a service', 422],
   ])('sentinel %s → %i', (message, status) => {
     const mapped = mapServiceError(new Error(message));
     expect(mapped).toBeInstanceOf(ApiError);

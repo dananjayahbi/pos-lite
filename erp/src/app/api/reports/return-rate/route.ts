@@ -213,7 +213,8 @@ export async function GET(request: NextRequest) {
       const shares = allocateCartDiscountShares(lineTotals, cartDiscount);
 
       lines.forEach((line, index) => {
-        const category = line.variant.product.category;
+        const category = line.variant?.product.category;
+        if (!category) return;
         const entry = categoryMap.get(category.id) ?? {
           categoryId: category.id,
           categoryName: category.name,

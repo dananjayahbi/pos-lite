@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, use } from 'react';
+import { useState, useCallback, useEffect, use, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
@@ -37,12 +37,27 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Download, FileText, LogOut, Pencil } from 'lucide-react';
+import { ArrowLeft, LogOut, Pencil, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { UpdateStaffSchema } from '@/lib/validators/staff.validators';
-import { formatRupee } from '@/lib/format';
+import { PERMISSIONS } from '@/lib/constants/permissions';
+import { usePermissions } from '@/hooks/usePermissions';
+import { canResetStaffPassword, assignableRolesFor } from '@/lib/auth/staff-authorization';
+import { validateStaffPassword } from '@/lib/staff/passwordValidation.core';
+import { formatRupee, formatShortDate, formatShortDateTime, formatShortTime } from '@/lib/format';
+import { getCommissionRecordStatus } from '@/lib/services/commissionSummary.core';
+import { maskBankAccountNumber } from '@/lib/services/staffPrivacy.core';
 import { TimeClockHistoryPanel } from '@/components/staff/TimeClockHistoryPanel';
+import { StaffDocumentDownloadButton } from '@/components/staff/StaffDocumentDownloadButton';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { extraPermissions } from '@/lib/services/permissionSet.core';
+import { describeApiFailure, readJsonBody } from '@/lib/api/safe-response';
+import {
+  STAFF_DETAIL_FALLBACK,
+  StaffRequestError,
+  classifyStaffDetailFailure,
+  staffDetailErrorTitle,
+} from '@/lib/staff/staffPageState.core';
 import type { UpdateStaffInput } from '@/lib/validators/staff.validators';
 
 
@@ -98,14 +113,7 @@ function currentMonth(): string {
 }
 
 function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return '-';
-  return new Date(iso).toLocaleString('en-LK', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatShortDateTime(iso);
 }
 
 type Tab = 'profile' | 'commission' | 'timeclock';
@@ -120,8 +128,8 @@ const ROLE_COLORS: Record<string, string> = {
   FACTORY_MANAGER: 'bg-mist text-espresso',
 };
 
-const ASSIGNABLE_ROLES = ['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK', 'FACTORY_MANAGER'] as const;
-type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
+const OWNER_ASSIGNABLE_ROLES = ['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK', 'FACTORY_MANAGER'] as const;
+type AssignableRole = (typeof OWNER_ASSIGNABLE_ROLES)[number];
 
 function RoleBadge({ role }: { role: string }) {
   return (
@@ -141,17 +149,37 @@ export default function StaffDetailPage({
   const { staffId } = use(params);
   const queryClient = useQueryClient();
   const { data: sessionData } = useSession();
+  const { hasPermission } = usePermissions();
 
   const [activeTab, setActiveTab] = useState<Tab>('profile');
   const [editOpen, setEditOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const [month, setMonth] = useState(currentMonth);
 
-  const { data, isLoading } = useQuery<{ success: boolean; data: StaffDetail }>({
+  const { data, isLoading, error, refetch } = useQuery<{
+    success: boolean;
+    data: StaffDetail;
+  }>({
     queryKey: ['staff-detail', staffId],
     queryFn: async () => {
       const res = await fetch(`/api/store/staff/${staffId}`);
-      if (!res.ok) throw new Error('Failed to fetch staff member');
-      return res.json();
+      const parsed = await readJsonBody<{
+        success: boolean;
+        data: StaffDetail;
+        error?: { message?: string };
+      }>(res);
+      if (!res.ok || !parsed.ok || !parsed.value?.success) {
+        throw new StaffRequestError(
+          describeApiFailure({
+            ok: res.ok,
+            status: res.status,
+            body: parsed.ok ? parsed.value : null,
+            fallback: STAFF_DETAIL_FALLBACK,
+          }),
+          res.status,
+        );
+      }
+      return parsed.value;
     },
   });
 
@@ -177,6 +205,37 @@ export default function StaffDetailPage({
     );
   }
 
+  if (error) {
+    const status = error instanceof StaffRequestError ? error.status : 500;
+    const kind = classifyStaffDetailFailure(status);
+    return (
+      <div className="mx-auto max-w-md space-y-4 py-20 text-center">
+        <p className="font-display text-xl font-bold text-espresso">
+          {staffDetailErrorTitle(kind)}
+        </p>
+        <p className="text-sm text-sand-ink">
+          {error instanceof Error ? error.message : 'Please try again.'}
+        </p>
+        <div className="flex justify-center gap-2">
+          {kind !== 'not-found' && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void refetch();
+              }}
+            >
+              Retry
+            </Button>
+          )}
+          <Button variant="outline" asChild>
+            <Link href="/staff">Back to Staff</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (!staffMember) {
     return (
       <div className="text-center py-20 text-sand-ink">
@@ -190,6 +249,16 @@ export default function StaffDetailPage({
 
   const sessionRole = (sessionData?.user?.role as string) ?? '';
   const sessionUserId = sessionData?.user?.id ?? '';
+  // ARGUS #346: an editor only sees roles their own role may assign.
+  const editableRoles = useMemo(
+    () => assignableRolesFor(sessionRole) as AssignableRole[],
+    [sessionRole],
+  );
+  // ARGUS #339: same gate as the API (staff:manage) plus the role hierarchy —
+  // a manager must not reset an OWNER/manager above them.
+  const canSetPassword =
+    hasPermission(PERMISSIONS.STAFF.manageStaff) &&
+    canResetStaffPassword(sessionRole, staffMember.role);
 
   return (
     <div className="space-y-6 p-6 md:p-8">
@@ -219,24 +288,22 @@ export default function StaffDetailPage({
             className="w-40 border-mist"
             aria-label="Payslip and attendance month"
           />
-          <Button variant="outline" size="sm" asChild>
-            <a
-              href={`/api/store/staff/${staffMember.id}/attendance/export?month=${encodeURIComponent(month)}`}
-              download
-            >
-              <Download className="mr-1.5 h-3.5 w-3.5" />
-              Attendance CSV
-            </a>
-          </Button>
-          <Button variant="outline" size="sm" asChild>
-            <a
-              href={`/api/store/staff/${staffMember.id}/payslip?month=${encodeURIComponent(month)}`}
-              download
-            >
-              <FileText className="mr-1.5 h-3.5 w-3.5" />
-              Payslip PDF
-            </a>
-          </Button>
+          {canSetPassword && (
+            <Button variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>
+              <KeyRound className="mr-1.5 h-3.5 w-3.5" />
+              Set Password
+            </Button>
+          )}
+          <StaffDocumentDownloadButton
+            href={`/api/store/staff/${staffMember.id}/attendance/export?month=${encodeURIComponent(month)}`}
+            label="Attendance CSV"
+            filename={`attendance-${staffMember.id}-${month}.csv`}
+          />
+          <StaffDocumentDownloadButton
+            href={`/api/store/staff/${staffMember.id}/payslip?month=${encodeURIComponent(month)}`}
+            label="Payslip PDF"
+            filename={`payslip-${staffMember.id}-${month}.pdf`}
+          />
         </div>
       </div>
 
@@ -265,7 +332,9 @@ export default function StaffDetailPage({
           editOpen={editOpen}
           setEditOpen={setEditOpen}
           onSuccess={handleSuccess}
+          canManage={hasPermission(PERMISSIONS.STAFF.manageStaff)}
           canForceLogout={sessionRole === 'OWNER' && sessionUserId !== staffMember.id}
+          roles={editableRoles}
         />
       )}
 
@@ -276,7 +345,144 @@ export default function StaffDetailPage({
       {activeTab === 'timeclock' && (
         <TimeClockHistoryPanel staffId={staffId} title="Time Clock" />
       )}
+
+      <SetPasswordDialog
+        staffId={staffMember.id}
+        staffName={displayName(staffMember)}
+        open={passwordOpen}
+        onOpenChange={setPasswordOpen}
+      />
     </div>
+  );
+}
+
+// ── Set / Reset Password ─────────────────────────────────────────────────────
+
+/**
+ * ARGUS #339: the create form can leave an account with an unusable random
+ * password (e.g. the follow-up call fails). This dialog is the guaranteed,
+ * permission-gated path to give an existing staff member a usable password.
+ */
+function SetPasswordDialog({
+  staffId,
+  staffName,
+  open,
+  onOpenChange,
+}: {
+  staffId: string;
+  staffName: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setNewPassword('');
+      setConfirmPassword('');
+      setError(null);
+    }
+  }, [open]);
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/store/staff/${staffId}/password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword, confirmPassword }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error?.message ?? 'Failed to set the password');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success('Password updated. The staff member must sign in again.');
+      queryClient.invalidateQueries({ queryKey: ['staff-detail', staffId] });
+      queryClient.invalidateQueries({ queryKey: ['staff'] });
+      onOpenChange(false);
+    },
+    onError: (err: Error) => {
+      // The API message is safe to show; the password is never echoed.
+      setError(err.message);
+    },
+  });
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const validation = validateStaffPassword({ newPassword, confirmPassword });
+    if (!validation.ok) {
+      setError(validation.message);
+      return;
+    }
+    setError(null);
+    mutation.mutate();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display">Set password</DialogTitle>
+          <DialogDescription>
+            Set a new sign-in password for{' '}
+            <span className="font-medium text-espresso">{staffName}</span>. Any active sessions
+            for this account will be signed out. Use this when the account was created without a
+            usable password.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="staff-new-password">New password</Label>
+            <Input
+              id="staff-new-password"
+              type="password"
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              minLength={8}
+              required
+            />
+            <p className="text-xs text-sand-ink">At least 8 characters.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="staff-confirm-password">Confirm password</Label>
+            <Input
+              id="staff-confirm-password"
+              type="password"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              required
+            />
+          </div>
+
+          {error ? (
+            <p role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </p>
+          ) : null}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={mutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? 'Saving…' : 'Set password'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -287,16 +493,22 @@ function ProfileTab({
   editOpen,
   setEditOpen,
   onSuccess,
+  canManage,
   canForceLogout,
+  roles,
 }: {
   staffMember: StaffDetail;
   editOpen: boolean;
   setEditOpen: (open: boolean) => void;
   onSuccess: () => void;
+  canManage: boolean;
   canForceLogout: boolean;
+  roles: AssignableRole[];
 }) {
   const [forceLogoutOpen, setForceLogoutOpen] = useState(false);
   const [isForceLoggingOut, setIsForceLoggingOut] = useState(false);
+  // ARGUS #459: show extras only, not the role defaults some legacy rows store.
+  const explicitPermissions = extraPermissions(staffMember.permissions, staffMember.role);
 
   const handleForceLogout = useCallback(async () => {
     setIsForceLoggingOut(true);
@@ -337,26 +549,29 @@ function ProfileTab({
           </Button>
         )}
 
-        <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="sm">
-              <Pencil className="mr-1.5 h-3.5 w-3.5" />
-              Edit Profile
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle className="font-display">Edit Staff Member</DialogTitle>
-            </DialogHeader>
-            <EditStaffForm
-              staffMember={staffMember}
-              onSuccess={() => {
-                setEditOpen(false);
-                onSuccess();
-              }}
-            />
-          </DialogContent>
-        </Dialog>
+        {canManage && (
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                Edit Profile
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="font-display">Edit Staff Member</DialogTitle>
+              </DialogHeader>
+              <EditStaffForm
+                staffMember={staffMember}
+                roles={roles}
+                onSuccess={() => {
+                  setEditOpen(false);
+                  onSuccess();
+                }}
+              />
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -419,11 +634,7 @@ function ProfileTab({
           <CardContent>
             {staffMember.clockedInAt ? (
               <Badge variant="default" className="bg-green-100 text-green-800">
-                Since{' '}
-                {new Date(staffMember.clockedInAt).toLocaleTimeString('en-LK', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
+                Since {formatShortTime(staffMember.clockedInAt)}
               </Badge>
             ) : (
               <span className="text-sand-ink text-sm">Not clocked in</span>
@@ -462,9 +673,9 @@ function ProfileTab({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {staffMember.permissions.length > 0 ? (
+            {explicitPermissions.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
-                {staffMember.permissions.map((permission) => (
+                {explicitPermissions.map((permission) => (
                   <Badge
                     key={permission}
                     variant="secondary"
@@ -529,7 +740,7 @@ function ProfileTab({
               />
               <DetailItem
                 label="Account Number"
-                value={staffMember.bankAccountNumber ?? '-'}
+                value={maskBankAccountNumber(staffMember.bankAccountNumber) ?? '-'}
               />
               <DetailItem label="ETF Number" value={staffMember.etfNumber ?? '-'} />
               <DetailItem label="EPF Number" value={staffMember.epfNumber ?? '-'} />
@@ -574,9 +785,11 @@ function ProfileTab({
 
 function EditStaffForm({
   staffMember,
+  roles,
   onSuccess,
 }: {
   staffMember: StaffDetail;
+  roles: AssignableRole[];
   onSuccess: () => void;
 }) {
   const form = useForm<UpdateStaffInput>({
@@ -651,7 +864,7 @@ function EditStaffForm({
                 <SelectValue placeholder="Select role" />
               </SelectTrigger>
               <SelectContent>
-                {ASSIGNABLE_ROLES.map((r) => (
+                {roles.map((r) => (
                   <SelectItem key={r} value={r}>
                     {r.replace('_', ' ')}
                   </SelectItem>
@@ -785,10 +998,19 @@ interface CommissionRecord {
   baseAmount: string;
   commissionRate: string;
   earnedAmount: string;
+  /** Money actually allocated to this record by a recorded payout. */
+  paidAmount: string;
   isPaid: boolean;
   createdAt: string;
   sale: { id: string; totalAmount: string; createdAt: string };
   payout: { id: string; paidAt: string } | null;
+}
+
+interface CommissionSummary {
+  totalEarned: string;
+  totalPaid: string;
+  unpaid: string;
+  lastPayout: { id: string; paidAt: string; totalEarned: string } | null;
 }
 
 interface CommissionData {
@@ -797,6 +1019,8 @@ interface CommissionData {
   page: number;
   pageSize: number;
   totalPages: number;
+  /** Full-ledger totals — independent of the current page (ARGUS #337). */
+  summary: CommissionSummary;
 }
 
 function CommissionHistory({ staffId }: { staffId: string }) {
@@ -818,15 +1042,12 @@ function CommissionHistory({ staffId }: { staffId: string }) {
 
   const commissions = data?.data;
 
-  // Summary calculations
-  const totalEarned = commissions?.records.reduce(
-    (sum, r) => sum + Number(r.earnedAmount),
-    0,
-  ) ?? 0;
-  const totalPaid = commissions?.records
-    .filter((r) => r.isPaid)
-    .reduce((sum, r) => sum + Number(r.earnedAmount), 0) ?? 0;
-  const unpaid = totalEarned - totalPaid;
+  // ARGUS #337: totals come from the server's full-ledger aggregates, not from
+  // the ten rows on this page, and only recorded payout money counts as paid.
+  const totalEarned = Number(commissions?.summary?.totalEarned ?? 0);
+  const totalPaid = Number(commissions?.summary?.totalPaid ?? 0);
+  const unpaid = Number(commissions?.summary?.unpaid ?? 0);
+  const lastPayout = commissions?.summary?.lastPayout ?? null;
 
   return (
     <div className="space-y-4">
@@ -847,6 +1068,12 @@ function CommissionHistory({ staffId }: { staffId: string }) {
               Unpaid: {formatRupee(unpaid)}
             </Badge>
           </div>
+          {lastPayout ? (
+            <p className="text-xs text-sand-ink">
+              Last payout {lastPayout.id} on {formatShortDate(lastPayout.paidAt)} (
+              {formatRupee(lastPayout.totalEarned)}).
+            </p>
+          ) : null}
 
           {isLoading ? (
             <div className="space-y-2">
@@ -866,18 +1093,21 @@ function CommissionHistory({ staffId }: { staffId: string }) {
                     <TableHead className="text-right">Base Amount</TableHead>
                     <TableHead className="text-right">Rate</TableHead>
                     <TableHead className="text-right">Earned</TableHead>
+                    <TableHead className="text-right">Paid</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {commissions.records.map((r) => (
+                  {commissions.records.map((r) => {
+                    const status = getCommissionRecordStatus(r);
+                    return (
                     <TableRow key={r.id}>
-                      <TableCell className="font-mono text-xs">
-                        {r.saleId.slice(0, 8)}…
+                      <TableCell className="font-mono text-xs break-all">
+                        {r.saleId}
                       </TableCell>
                       <TableCell className="text-sm">
-                        {new Date(r.createdAt).toLocaleDateString('en-LK')}
+                        {formatShortDateTime(r.createdAt)}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
                         {formatRupee(r.baseAmount)}
@@ -887,6 +1117,9 @@ function CommissionHistory({ staffId }: { staffId: string }) {
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
                         {formatRupee(r.earnedAmount)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatRupee(r.paidAmount)}
                       </TableCell>
                       <TableCell>
                         <Badge
@@ -904,16 +1137,24 @@ function CommissionHistory({ staffId }: { staffId: string }) {
                         <Badge
                           variant="secondary"
                           className={
-                            r.isPaid
+                            status === 'PAID'
                               ? 'bg-green-100 text-green-800'
-                              : 'bg-amber-100 text-amber-800'
+                              : status === 'PARTIAL'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-amber-100 text-amber-800'
                           }
                         >
-                          {r.isPaid ? 'Paid' : 'Unpaid'}
+                          {status === 'PAID' ? 'Paid' : status === 'PARTIAL' ? 'Partial' : 'Unpaid'}
                         </Badge>
+                        {r.payout ? (
+                          <p className="mt-0.5 font-mono text-[10px] text-sand-ink break-all">
+                            {r.payout.id} · {formatShortDate(r.payout.paidAt)}
+                          </p>
+                        ) : null}
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
 

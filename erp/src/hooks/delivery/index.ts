@@ -2,18 +2,30 @@ export { useDeliveries } from './useDeliveries';
 export { useDelivery } from './useDelivery';
 export { useCreateDelivery } from './useCreateDelivery';
 export { useDispatchDelivery } from './useDispatchDelivery';
+export { DispatchRequestError } from './useDispatchDelivery';
+export type {
+  DispatchDeliveryPayload,
+  DispatchShortfallItem,
+} from './useDispatchDelivery';
 export { useCancelDelivery } from './useCancelDelivery';
 export { useShipmentTracking } from './useShipmentTracking';
 export { useRateCard } from './useRateCard';
 export { useRatePreview } from './useRatePreview';
 export {
   usePackaging,
+  usePackagingHistory,
+  usePackagingDispatchOptions,
   usePackagingCategories,
   useCreatePackagingCategory,
   useUpdatePackagingCategory,
   useDeletePackagingCategory,
 } from './usePackaging';
-export type { PackagingItemRow, PackagingCategoryItem } from './usePackaging';
+export type {
+  PackagingItemRow,
+  PackagingCategoryItem,
+  PackagingHistoryPage,
+  PackagingDispatchOption,
+} from './usePackaging';
 export { useReconciliation } from './useReconciliation';
 export { useCourierSettings } from './useCourierSettings';
 export { useLabelTemplate } from './useLabelTemplate';

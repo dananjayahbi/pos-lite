@@ -24,3 +24,18 @@ export function computeCartTotals(lines: CartLine[]): CartTotals {
     allInStock,
   };
 }
+
+/**
+ * ARGUS #287 — the storefront has no per-unit weight in the catalogue, so the
+ * checkout collects the parcel weight. Normalize the raw input to a positive kg
+ * value with the rate card's 2dp precision, or `undefined` when unknown (the
+ * ERP then falls back to the base rate and records the gap in its audit log).
+ */
+export function parseParcelWeightKg(
+  value: string | number | null | undefined,
+): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  const parsed = typeof value === 'number' ? value : Number.parseFloat(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return Math.round((parsed + Number.EPSILON) * 100) / 100;
+}

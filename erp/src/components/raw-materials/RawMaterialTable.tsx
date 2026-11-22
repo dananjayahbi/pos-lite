@@ -23,6 +23,7 @@ interface RawMaterialTableProps {
   onEdit: (material: RawMaterialItem) => void;
   onDelete: (material: RawMaterialItem) => void;
   onAdjust: (material: RawMaterialItem) => void;
+  onHistory: (material: RawMaterialItem) => void;
 }
 
 function SkeletonRows() {
@@ -62,6 +63,7 @@ export function RawMaterialTable({
   onEdit,
   onDelete,
   onAdjust,
+  onHistory,
 }: RawMaterialTableProps) {
   if (isLoading) {
     return (
@@ -124,6 +126,7 @@ export function RawMaterialTable({
                 onEdit={() => onEdit(material)}
                 onDelete={() => onDelete(material)}
                 onAdjust={() => onAdjust(material)}
+                onHistory={() => onHistory(material)}
               />
             </TableCell>
           </TableRow>

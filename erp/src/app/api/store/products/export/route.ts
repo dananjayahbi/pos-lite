@@ -89,6 +89,7 @@ export async function GET(request: NextRequest) {
         description: true,
         isArchived: true,
         tags: true,
+        taxRule: true,
         createdAt: true,
         category: { select: { name: true } },
         brand: { select: { name: true } },
@@ -113,7 +114,7 @@ export async function GET(request: NextRequest) {
 
     const headersWithCost = [
       'Product Name', 'Category', 'Brand', 'SKU', 'Barcode',
-      'Form', 'Pack Size', 'Cost Price', 'Retail Price', 'Wholesale Price',
+      'Form', 'Pack Size', 'Cost Price', 'Tax Rule', 'Retail Price', 'Wholesale Price',
       'Stock Quantity', 'Low Stock Threshold', 'Status', 'Tags', 'Description', 'Created At',
     ];
     const headersWithoutCost = headersWithCost.filter((h) => h !== 'Cost Price');
@@ -138,6 +139,7 @@ export async function GET(request: NextRequest) {
         }
 
         fields.push(
+          product.taxRule,
           String(variant.retailPrice),
           String(variant.wholesalePrice ?? ''),
           String(variant.stockQuantity),

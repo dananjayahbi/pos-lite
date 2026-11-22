@@ -144,7 +144,7 @@ test.describe('Module 19 - Expenses & Petty Cash', () => {
 
     // Default: blocked with a typed 422 — nothing is written.
     const blocked = await createExpense(page, {
-      category: 'MAINTENANCE',
+      category: 'MISCELLANEOUS',
       amount: overdraw,
       description: 'QA overdraft blocked',
       expenseDate: new Date().toISOString().slice(0, 10),
@@ -158,7 +158,7 @@ test.describe('Module 19 - Expenses & Petty Cash', () => {
 
     // Manager override: explicit approval drives the balance negative.
     const approved = await createExpense(page, {
-      category: 'MAINTENANCE',
+      category: 'MISCELLANEOUS',
       amount: overdraw,
       description: 'QA overdraft approved',
       expenseDate: new Date().toISOString().slice(0, 10),
@@ -255,8 +255,15 @@ test.describe('Module 19 - Expenses & Petty Cash', () => {
     expect(response.status()).toBe(200);
     const body = await json(response);
     expect(body?.success).toBe(true);
-    expect(body?.data?.tenantId).toBeTruthy();
-    expect(body?.data?.tenantId).not.toBeUndefined();
+    // ARGUS #408: GET is read-only, so a tenant that never ran explicit setup
+    // returns setupRequired instead of lazily creating a fund. Either outcome
+    // must stay tenant-scoped and must not expose another tenant's fund.
+    if (body?.data) {
+      expect(body.data.tenantId).toBeTruthy();
+      expect(body.data.tenantId).not.toBeUndefined();
+    } else {
+      expect(body?.setupRequired).toBe(true);
+    }
   });
 
   test('F9 accepts Unicode / XSS-safe descriptions in expense records without crashing', async ({ page }) => {
@@ -275,12 +282,332 @@ test.describe('Module 19 - Expenses & Petty Cash', () => {
     expect(create.body?.data?.description).toContain('Tamil');
   });
 
-  test('F10 rejects malformed query filters and keeps the API contract stable', async ({ page }) => {
+  test('F10 rejects malformed query filters with a typed 400, never a 500', async ({ page }) => {
     await login(page, OWNER);
-    const badDate = await page.request.get('/api/store/expenses?dateFrom=not-a-date&dateTo=also-not-a-date');
-    expect([200, 400, 500]).toContain(badDate.status());
+    const badDate = await page.request.get(
+      '/api/store/expenses?dateFrom=not-a-date&dateTo=also-not-a-date',
+    );
+    expect(badDate.status()).toBe(400);
+    expect((await json(badDate))?.error?.code).toBe('VALIDATION_ERROR');
+
+    const reversed = await page.request.get(
+      '/api/store/expenses?dateFrom=2026-11-30&dateTo=2026-11-01',
+    );
+    expect(reversed.status()).toBe(400);
+    expect((await json(reversed))?.error?.code).toBe('VALIDATION_ERROR');
 
     const invalidPage = await page.request.get('/api/store/expenses?page=0&pageSize=0');
-    expect([200, 400]).toContain(invalidPage.status());
+    expect(invalidPage.status()).toBe(400);
+    expect((await json(invalidPage))?.error?.code).toBe('VALIDATION_ERROR');
+  });
+
+  test('F11 the To-date boundary includes an expense dated on the end day', async ({ page }) => {
+    await login(page, OWNER);
+    const today = new Date().toISOString().slice(0, 10);
+    const description = `QA boundary ${Date.now()}`;
+    const create = await createExpense(page, {
+      category: 'MISCELLANEOUS',
+      amount: 3.25,
+      description,
+      expenseDate: today,
+    });
+    expect(create.response.status()).toBe(201);
+
+    const filtered = await page.request.get(
+      `/api/store/expenses?dateFrom=${today}&dateTo=${today}&search=${encodeURIComponent(
+        description,
+      )}`,
+    );
+    expect(filtered.status()).toBe(200);
+    const body = await json(filtered);
+    expect(body?.data?.total).toBe(1);
+    expect(body?.data?.expenses?.[0]?.description).toBe(description);
+    // The grand total covers the filtered set (ARGUS #404).
+    expect(Number(body?.data?.totalAmount)).toBeCloseTo(3.25, 2);
+  });
+
+  test('F12 editing an expense repoints the amount and unlinks the fund', async ({ page }) => {
+    await login(page, OWNER);
+    const fundBefore = await getFund(page);
+    const created = await createExpense(page, {
+      category: 'TRAVEL',
+      amount: 40,
+      description: `QA edit ${Date.now()}`,
+      expenseDate: new Date().toISOString().slice(0, 10),
+      pettyCashFundId: fundBefore.id,
+    });
+    expect(created.response.status()).toBe(201);
+    const id = created.body?.data?.id;
+
+    const patched = await page.request.patch(`/api/store/expenses/${id}`, {
+      data: {
+        amount: 12.5,
+        pettyCashFundId: null,
+        paymentAccountId: null,
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(patched.status()).toBe(200);
+    const after = await json(patched);
+    expect(Number(after?.data?.amount)).toBeCloseTo(12.5, 2);
+    expect(after?.data?.pettyCashFundId ?? null).toBeNull();
+
+    // The fund's ledger was reversed by the unlink, so its balance returns to
+    // the pre-expense figure (no orphaned deduction).
+    const fundAfter = await getFund(page);
+    expect(
+      Math.abs(Number(fundAfter.currentBalance) - Number(fundBefore.currentBalance)),
+    ).toBeLessThan(0.02);
+  });
+
+  test('F13 deleting an expense removes it and leaves an audit row with before data', async ({
+    page,
+  }) => {
+    await login(page, OWNER);
+    const description = `QA delete ${Date.now()}`;
+    const created = await createExpense(page, {
+      category: 'OFFICE_STATIONERY',
+      amount: 9.5,
+      description,
+      expenseDate: new Date().toISOString().slice(0, 10),
+    });
+    const id = created.body?.data?.id;
+    expect(created.response.status()).toBe(201);
+
+    expect((await page.request.delete(`/api/store/expenses/${id}`)).status()).toBe(200);
+
+    const list = await page.request.get(
+      `/api/store/expenses?search=${encodeURIComponent(description)}`,
+    );
+    expect((await json(list))?.data?.total).toBe(0);
+
+    const audit = await page.request.get(
+      `/api/audit-logs?action=EXPENSE_DELETED&search=${encodeURIComponent(id)}`,
+    );
+    expect(audit.status()).toBe(200);
+    const auditBody = await json(audit);
+    const rows = auditBody?.data?.data ?? auditBody?.data ?? [];
+    const row = rows.find((entry: { entityId?: string }) => entry.entityId === id);
+    expect(row, 'EXPENSE_DELETED audit row exists').toBeTruthy();
+    expect(JSON.stringify(row?.before ?? {})).toContain(description);
+  });
+
+  test('F14 creation above the approval threshold is recorded with an audit trail', async ({
+    page,
+  }) => {
+    await login(page, OWNER);
+    const description = `QA approval ${Date.now()}`;
+    const created = await createExpense(page, {
+      category: 'MAINTENANCE',
+      amount: 25_000,
+      description,
+      expenseDate: new Date().toISOString().slice(0, 10),
+    });
+    expect(created.response.status()).toBe(201);
+    const id = created.body?.data?.id;
+
+    const audit = await page.request.get(
+      `/api/audit-logs?action=EXPENSE_CREATED&search=${encodeURIComponent(id)}`,
+    );
+    expect(audit.status()).toBe(200);
+    const auditBody = await json(audit);
+    const rows = auditBody?.data?.data ?? auditBody?.data ?? [];
+    const row = rows.find((entry: { entityId?: string }) => entry.entityId === id);
+    expect(row, 'EXPENSE_CREATED audit row exists').toBeTruthy();
+    expect(Number(row?.after?.amount)).toBeCloseTo(25_000, 2);
+  });
+
+  test('F15 a filtered export contains only the matching rows and their amounts', async ({
+    page,
+  }) => {
+    await login(page, OWNER);
+    const marker = `QA export ${Date.now()}`;
+    const created = await createExpense(page, {
+      category: 'ADVERTISING',
+      amount: 61.75,
+      description: marker,
+      expenseDate: new Date().toISOString().slice(0, 10),
+    });
+    expect(created.response.status()).toBe(201);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const csv = await page.request.get(
+      `/api/store/expenses/export?category=ADVERTISING&dateFrom=${today}&dateTo=${today}&search=${encodeURIComponent(
+        marker,
+      )}`,
+    );
+    expect(csv.status()).toBe(200);
+    expect((csv.headers()['content-type'] ?? '').toLowerCase()).toContain('text/csv');
+    const text = await csv.text();
+    expect(text).toContain(marker);
+    expect(text).not.toContain('QA team lunch');
+    // Data row: Date,Category,Description,Account,Amount,...
+    const dataRow = text.split(/\r?\n/).find((line) => line.includes(marker));
+    expect(dataRow?.split(',')[4]).toBe('61.75');
+  });
+
+  test('F16 the expenses page is RBAC-gated and surfaces a load error with Retry', async ({
+    page,
+  }) => {
+    await login(page, CASHIER);
+    await page.goto(`${BASE_URL}/expenses`, { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
+    await expect(page.getByRole('heading', { name: /^Expenses$/i })).toHaveCount(0);
+
+    await login(page, OWNER);
+    await page.route('**/api/store/expenses**', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: false,
+            error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' },
+          }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+    await page.goto(`${BASE_URL}/expenses`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText(/Could not load expenses/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('button', { name: /^Retry$/i })).toBeVisible();
+  });
+
+  test('F17 a fund-linked expense must use one of the fund Active Categories', async ({
+    page,
+  }) => {
+    await login(page, OWNER);
+    const fund = await getFund(page);
+
+    const restrict = await page.request.patch('/api/store/petty-cash', {
+      data: {
+        fundId: fund.id,
+        name: fund.name,
+        lowBalanceThreshold: fund.lowBalanceThreshold ? Number(fund.lowBalanceThreshold) : null,
+        activeCategories: ['MISCELLANEOUS'],
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(restrict.status()).toBe(200);
+
+    try {
+      const denied = await createExpense(page, {
+        category: 'TRAVEL',
+        amount: 5,
+        description: 'QA disabled category',
+        expenseDate: new Date().toISOString().slice(0, 10),
+        pettyCashFundId: fund.id,
+      });
+      expect(denied.response.status()).toBe(422);
+      expect(denied.body?.error?.code).toBe('CATEGORY_NOT_ENABLED');
+    } finally {
+      await page.request.patch('/api/store/petty-cash', {
+        data: {
+          fundId: fund.id,
+          name: fund.name,
+          lowBalanceThreshold: fund.lowBalanceThreshold ? Number(fund.lowBalanceThreshold) : null,
+          activeCategories: ['MISCELLANEOUS', 'TRAVEL', 'STAFF_MEALS'],
+        },
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+  });
+
+  test('F18 GET /api/store/petty-cash is read-only (no lazy fund or balance write)', async ({
+    page,
+  }) => {
+    await login(page, OWNER);
+    const before = await getFund(page);
+    const second = await page.request.get('/api/store/petty-cash');
+    expect(second.status()).toBe(200);
+    const body = await json(second);
+    expect(body?.data?.id).toBe(before.id);
+    expect(Number(body?.data?.currentBalance)).toBeCloseTo(Number(before.currentBalance), 2);
+    expect(body?.balance?.currentBalance).toBeCloseTo(Number(before.currentBalance), 2);
+
+    // A second read must produce identical state.
+    const third = await json(await page.request.get('/api/store/petty-cash'));
+    expect(third?.balance?.currentBalance).toBeCloseTo(
+      Number(body?.balance?.currentBalance),
+      2,
+    );
+  });
+
+  test('F19 Add Cash In enforces source type and entry-date rules', async ({ page }) => {
+    await login(page, OWNER);
+
+    const future = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+    const futureRes = await page.request.post('/api/store/petty-cash/top-up', {
+      data: { amount: 100, sourceType: 'EXTERNAL', entryDate: future },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(futureRes.status()).toBe(400);
+    expect((await json(futureRes))?.error?.code).toBe('VALIDATION_ERROR');
+
+    const missingAccount = await page.request.post('/api/store/petty-cash/top-up', {
+      data: { amount: 100, sourceType: 'ACCOUNT' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(missingAccount.status()).toBe(400);
+    expect((await json(missingAccount))?.error?.code).toBe('VALIDATION_ERROR');
+
+    const amount = 137.77;
+    const description = `QA external top-up ${Date.now()}`;
+    const ok = await page.request.post('/api/store/petty-cash/top-up', {
+      data: {
+        amount,
+        sourceType: 'EXTERNAL',
+        description,
+        entryDate: new Date().toISOString().slice(0, 10),
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(ok.status()).toBe(200);
+    const okBody = await json(ok);
+    expect(okBody?.data?.sourceType).toBe('EXTERNAL');
+    expect(Number(okBody?.data?.amount)).toBeCloseTo(amount, 2);
+
+    // Audit payload names the amount and source type.
+    const audit = await json(
+      await page.request.get('/api/audit-logs?action=PETTY_CASH_TOP_UP&pageSize=20'),
+    );
+    const rows = audit?.data?.data ?? audit?.data ?? [];
+    const row = rows.find(
+      (entry: { after?: { amount?: number } }) =>
+        Math.abs(Number(entry.after?.amount) - amount) < 0.001,
+    );
+    expect(row, 'PETTY_CASH_TOP_UP audit row').toBeTruthy();
+    expect(JSON.stringify(row.after)).toContain('EXTERNAL');
+  });
+
+  test('F20 fund settings audit records the threshold and category changes', async ({ page }) => {
+    await login(page, OWNER);
+    const fund = await getFund(page);
+    const threshold = 312.34;
+    const categories = ['MISCELLANEOUS', 'TRAVEL'];
+
+    const patch = await page.request.patch('/api/store/petty-cash', {
+      data: {
+        fundId: fund.id,
+        name: fund.name,
+        lowBalanceThreshold: threshold,
+        activeCategories: categories,
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(patch.status()).toBe(200);
+
+    const audit = await json(
+      await page.request.get('/api/audit-logs?action=PETTY_CASH_FUND_UPDATED&pageSize=20'),
+    );
+    const rows = audit?.data?.data ?? audit?.data ?? [];
+    const row = rows.find(
+      (entry: { entityId?: string; after?: { lowBalanceThreshold?: number } }) =>
+        entry.entityId === fund.id &&
+        Math.abs(Number(entry.after?.lowBalanceThreshold) - threshold) < 0.001,
+    );
+    expect(row, 'fund update audit row with threshold').toBeTruthy();
+    expect(row.after.activeCategories).toEqual(expect.arrayContaining(categories));
   });
 });

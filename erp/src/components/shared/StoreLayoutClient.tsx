@@ -4,6 +4,9 @@ import { useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { postLogoutAudit } from '@/lib/auth/logout-audit';
+import { clearCartOnSignOut } from '@/lib/pos/cartSession';
+import { PERMISSIONS } from '@/lib/constants/permissions';
+import { shouldShowClockWidget } from '@/lib/attendance/attendancePageAccess.core';
 import type { UserRole } from '@/generated/prisma/client';
 import StoreSidebar from '@/components/layout/StoreSidebar';
 import { NotificationPopover } from '@/components/notifications/NotificationPopover';
@@ -44,6 +47,12 @@ export default function StoreLayoutClient({
   useCommandK(() => setGlobalSearchOpen(true));
 
   const showSidebar = !pathname.startsWith('/pos');
+  // ARGUS #355: never show the clock-in on the attendance surface to a user
+  // without staff:attendance:view. Other pages keep self-service clocking.
+  const showClock = shouldShowClockWidget(
+    pathname,
+    permissions.includes(PERMISSIONS.STAFF.viewAttendance),
+  );
 
   return (
     <>
@@ -68,7 +77,7 @@ export default function StoreLayoutClient({
             >
               <NavSearchTrigger onOpen={() => setGlobalSearchOpen(true)} />
               <div className="flex items-center gap-3">
-                <TimeClockWidget variant="compact" />
+                {showClock ? <TimeClockWidget variant="compact" /> : null}
                 <NotificationPopover />
                 <span className="max-w-[180px] truncate rounded-full bg-linen px-3 py-1 text-xs text-espresso/70">
                   {userName}
@@ -78,6 +87,8 @@ export default function StoreLayoutClient({
                   onClick={async () => {
                     // M01-04: ledger the sign-out before the cookie is cleared.
                     await postLogoutAudit();
+                    // ARGUS #66: clear the cart before the session is gone.
+                    await clearCartOnSignOut();
                     await signOut({ callbackUrl: `${window.location.origin}/login` });
                   }}
                   className="text-xs text-terracotta transition-colors hover:text-espresso"

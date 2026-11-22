@@ -106,7 +106,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const staff = await createStaffMember(tenantId, parsed.data);
+    const staff = await createStaffMember(tenantId, parsed.data, {
+      id: session.user.id,
+      role: session.user.role,
+      tenantId,
+    });
 
     return NextResponse.json({ success: true, data: staff }, { status: 201 });
   } catch (error) {

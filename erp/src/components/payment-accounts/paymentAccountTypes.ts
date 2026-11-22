@@ -32,6 +32,14 @@ export const PAYMENT_ENTRY_SOURCES = [
 
 export type PaymentEntrySource = (typeof PAYMENT_ENTRY_SOURCES)[number];
 
+/**
+ * Derived ledger view sources. `SALE_VOID` separates a void/full-sale reversal
+ * from a return refund even though both persist as `SALE_REFUND` (ARGUS #430).
+ */
+export const LEDGER_SOURCE_FILTERS = [...PAYMENT_ENTRY_SOURCES, 'SALE_VOID'] as const;
+
+export type LedgerEntrySource = (typeof LEDGER_SOURCE_FILTERS)[number];
+
 export type PaymentAccountStatus = 'ACTIVE' | 'CLOSED';
 
 /** One row of the free-form "Account details" grid. */
@@ -71,6 +79,8 @@ export interface PaymentAccountEntry {
   balanceAfter: string;
   entryDate: string;
   createdAt: string;
+  /** Derived display/filter source; defaults to `source` when absent. */
+  ledgerKind?: LedgerEntrySource;
   /** Present on the tenant-wide cash-flow view only. */
   account?: PaymentAccountEntryAccountRef;
 }

@@ -57,6 +57,8 @@ import { useCategories } from '@/hooks/useCategories';
 import { useBrands } from '@/hooks/useBrands';
 import type { HealthConcern } from '@/generated/prisma/client';
 import { HEALTH_CONCERNS } from '@/lib/constants/health-concerns';
+import { taxRuleLabel } from '@/lib/constants/product-options';
+import { useTaxRates } from '@/hooks/useTaxRates';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -145,7 +147,12 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
       const res = await fetch(`/api/store/products/${productId}`, {
         method: 'DELETE',
       });
-      if (!res.ok) throw new Error('Failed to delete product');
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        throw new Error(json?.error?.message ?? 'Failed to delete product');
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -153,8 +160,8 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
       queryClient.invalidateQueries({ queryKey: ['products'] });
       router.push('/inventory');
     },
-    onError: () => {
-      toast.error('Failed to delete product');
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete product');
     },
   });
 
@@ -314,6 +321,7 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
           permissions={permissions}
           productName={product.name ?? ''}
           brandName={product.brand?.name ?? null}
+          taxRule={(product.taxRule as string | null | undefined) ?? null}
         />
       )}
       {activeTab === 'stock-history' && (
@@ -336,7 +344,10 @@ export function ProductDetailClient({ productId, permissions }: ProductDetailCli
           <DialogHeader>
             <DialogTitle className="font-display text-espresso">Delete Product</DialogTitle>
             <DialogDescription className="font-body text-mist-ink">
-              This action cannot be undone. Type <strong className="text-espresso">{product.name}</strong> to confirm.
+              This hides <strong className="text-espresso">{product.name}</strong> from the catalog;
+              it can be restored from the Deleted filter. A product with stock on hand cannot be
+              deleted - adjust the stock to zero or archive it first. Type the product name to
+              confirm.
             </DialogDescription>
           </DialogHeader>
           <Input
@@ -380,6 +391,7 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
   const queryClient = useQueryClient();
   const { data: categoriesData } = useCategories();
   const { data: brandsData } = useBrands();
+  const { data: taxRates } = useTaxRates();
 
   const categories = categoriesData?.data ?? [];
   const brands = brandsData?.data ?? [];
@@ -555,9 +567,9 @@ function EditProductSheet({ open, onOpenChange, product, productId }: EditProduc
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="STANDARD_VAT">Standard VAT (15%)</SelectItem>
-                <SelectItem value="SSCL">SSCL</SelectItem>
-                <SelectItem value="EXEMPT">VAT Exempt</SelectItem>
+                <SelectItem value="STANDARD_VAT">{taxRuleLabel('STANDARD_VAT', taxRates)}</SelectItem>
+                <SelectItem value="SSCL">{taxRuleLabel('SSCL', taxRates)}</SelectItem>
+                <SelectItem value="EXEMPT">{taxRuleLabel('EXEMPT', taxRates)}</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -31,6 +31,7 @@ export interface PlaceOrderError {
 }
 
 export interface PlaceOrderOptions {
+  /** Goods value only; the ERP adds and collects the shipping fee on top. */
   codAmount: number;
   itemCount: number;
   /** Optional total parcel weight (kg) used to price delivery. */

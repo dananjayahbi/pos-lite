@@ -4,6 +4,11 @@ import Link from 'next/link';
 import { auth } from '@/lib/auth';
 import { denialRouteFor } from '@/lib/auth/page-guards';
 import { prisma } from '@/lib/prisma';
+import { Prisma } from '@/generated/prisma/client';
+import { LOW_STOCK_PRODUCT_SCOPE_SQL, LOW_STOCK_SQL_PREDICATE } from '@/lib/inventory/lowStockPredicate';
+import { lowStockCardSubtitle } from '@/lib/dashboard/lowStockNote.core';
+import { formatRupee } from '@/lib/format';
+import { saleAccountingDateWhere } from '@/lib/reports/accounting';
 import { getDefaultRouteForRole } from '@/lib/utils/default-route';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -21,11 +26,24 @@ import { StockSummaryWidgets } from '@/components/dashboard/StockSummaryWidgets'
 import { RecentStockMovementsCard } from '@/components/dashboard/RecentStockMovementsCard';
 import { QuickNav } from '@/components/dashboard/QuickNav';
 import { AnalyticsSection } from '@/components/dashboard/AnalyticsSection';
+import { endOfLocalDay, startOfLocalDay } from '@/components/dashboard/charts/analytics';
+import { formatRecentSaleTimestamp } from '@/components/dashboard/recentSaleTime';
+import { formatVariantLabel } from '@/lib/products/variant-label';
+import {
+  resolveRecentSalePayment,
+  type RecentSalePaymentTone,
+} from '@/components/dashboard/recentSalePayment';
 
-const lkr = new Intl.NumberFormat('en-LK', {
-  style: 'currency',
-  currency: 'LKR',
-});
+const PAYMENT_TONE_CLASS: Record<RecentSalePaymentTone, string> = {
+  cash: 'bg-green-100 text-green-800',
+  card: 'bg-blue-100 text-blue-800',
+  bank: 'bg-indigo-100 text-indigo-800',
+  qr: 'bg-purple-100 text-purple-800',
+  credit: 'bg-purple-100 text-purple-800',
+  split: 'bg-purple-100 text-purple-800',
+  zero: 'bg-gray-100 text-gray-700',
+  neutral: 'bg-gray-100 text-gray-700',
+};
 
 function StatCard({
   label,
@@ -73,15 +91,17 @@ function TableSkeleton() {
 }
 
 async function TodayStats({ tenantId }: { tenantId: string }) {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  const todayStart = startOfLocalDay(new Date());
+  const todayEnd = endOfLocalDay(todayStart);
 
-  const [todaySales, totalCustomers, lowStockResult, openShift] = await Promise.all([
+  const [todaySales, totalCustomers, lowStockResult] = await Promise.all([
     prisma.sale.findMany({
       where: {
         tenantId,
         status: 'COMPLETED',
-        completedAt: { gte: todayStart },
+        // ARGUS #50: today's revenue follows the recorded sale date, so a
+        // backdated sale counted on its own day and not on completion time.
+        ...saleAccountingDateWhere(todayStart, todayEnd),
       },
       select: { totalAmount: true },
     }),
@@ -94,19 +114,9 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
         JOIN "products" p ON pv."productId" = p."id"
         WHERE pv."tenantId" = ${tenantId}
           AND pv."deletedAt" IS NULL
-          AND p."isArchived" = false
-          AND p."deletedAt" IS NULL
-          AND pv."stockQuantity" <= pv."lowStockThreshold"
+          AND ${Prisma.raw(LOW_STOCK_PRODUCT_SCOPE_SQL)}
+          AND ${Prisma.raw(LOW_STOCK_SQL_PREDICATE)}
       `,
-    prisma.shift.findFirst({
-      where: { tenantId, status: 'OPEN' },
-      select: {
-        id: true,
-        openedAt: true,
-        cashier: { select: { email: true } },
-      },
-      orderBy: { openedAt: 'desc' },
-    }),
   ]);
 
   const todayRevenue = todaySales.reduce((sum, s) => sum + Number(s.totalAmount), 0);
@@ -116,7 +126,7 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <StatCard
         label="Today's Revenue"
-        value={lkr.format(todayRevenue)}
+        value={formatRupee(todayRevenue)}
         icon={<TrendingUp className="h-6 w-6" />}
         sub={`${todaySales.length} transaction${todaySales.length !== 1 ? 's' : ''}`}
       />
@@ -136,14 +146,7 @@ async function TodayStats({ tenantId }: { tenantId: string }) {
         label="Low Stock Alerts"
         value={lowStockCount}
         icon={<AlertTriangle className="h-6 w-6" />}
-        sub={
-          openShift
-            ? `Shift open · ${openShift.openedAt.toLocaleTimeString('en-LK', {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}`
-            : 'No open shift'
-        }
+        sub={lowStockCardSubtitle(lowStockCount)}
       />
     </div>
   );
@@ -158,8 +161,10 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
       id: true,
       totalAmount: true,
       paymentMethod: true,
+      zeroValueReason: true,
       completedAt: true,
       customer: { select: { name: true } },
+      payments: { select: { method: true, amount: true } },
       _count: { select: { lines: true } },
     },
   });
@@ -176,40 +181,28 @@ async function RecentSales({ tenantId }: { tenantId: string }) {
           <TableHead>Items</TableHead>
           <TableHead>Payment</TableHead>
           <TableHead>Amount</TableHead>
-          <TableHead>Time</TableHead>
+          <TableHead>Date &amp; Time</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {sales.map((sale) => (
-          <TableRow key={sale.id}>
-            <TableCell className="text-espresso">{sale.customer?.name ?? 'Walk-in'}</TableCell>
-            <TableCell>{sale._count.lines}</TableCell>
-            <TableCell>
-              <Badge
-                className={
-                  sale.paymentMethod === 'CASH'
-                    ? 'bg-green-100 text-green-800'
-                    : sale.paymentMethod === 'CARD'
-                      ? 'bg-blue-100 text-blue-800'
-                      : 'bg-purple-100 text-purple-800'
-                }
-              >
-                {sale.paymentMethod ?? '-'}
-              </Badge>
-            </TableCell>
-            <TableCell className="text-espresso font-medium">
-              {lkr.format(Number(sale.totalAmount))}
-            </TableCell>
-            <TableCell className="text-sand-ink text-sm">
-              {sale.completedAt
-                ? new Date(sale.completedAt).toLocaleTimeString('en-LK', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                : '-'}
-            </TableCell>
-          </TableRow>
-        ))}
+        {sales.map((sale) => {
+          const payment = resolveRecentSalePayment(sale);
+          return (
+            <TableRow key={sale.id}>
+              <TableCell className="text-espresso">{sale.customer?.name ?? 'Walk-in'}</TableCell>
+              <TableCell>{sale._count.lines}</TableCell>
+              <TableCell>
+                <Badge className={PAYMENT_TONE_CLASS[payment.tone]}>{payment.label}</Badge>
+              </TableCell>
+              <TableCell className="text-espresso font-medium">
+                {formatRupee(Number(sale.totalAmount))}
+              </TableCell>
+              <TableCell className="text-sand-ink text-sm">
+                {sale.completedAt ? formatRecentSaleTimestamp(sale.completedAt) : '-'}
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );
@@ -241,9 +234,8 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
     JOIN "products" p ON pv."productId" = p."id"
     WHERE pv."tenantId" = ${tenantId}
       AND pv."deletedAt" IS NULL
-      AND p."isArchived" = false
-      AND p."deletedAt" IS NULL
-      AND pv."stockQuantity" <= pv."lowStockThreshold"
+      AND ${Prisma.raw(LOW_STOCK_PRODUCT_SCOPE_SQL)}
+      AND ${Prisma.raw(LOW_STOCK_SQL_PREDICATE)}
     ORDER BY pv."stockQuantity" ASC
     LIMIT 8
   `;
@@ -264,39 +256,40 @@ async function LowStockItems({ tenantId }: { tenantId: string }) {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((v) => (
-          <TableRow key={v.id}>
-            <TableCell className="text-espresso font-medium">
-              {v.productName}
-              {(v.form ?? v.packSize) && (
-                <span className="text-sand-ink ml-1 text-xs">
-                  {[v.form, v.packSize].filter(Boolean).join(' / ')}
+        {rows.map((v) => {
+          const variantLabel = formatVariantLabel(v);
+          return (
+            <TableRow key={v.id}>
+              <TableCell className="text-espresso font-medium">
+                {v.productName}
+                {variantLabel && (
+                  <span className="text-sand-ink ml-1 text-xs">· {variantLabel}</span>
+                )}
+              </TableCell>
+              <TableCell className="font-mono text-sm">{v.sku}</TableCell>
+              <TableCell>
+                <span
+                  className={
+                    v.stockQuantity === 0
+                      ? 'font-semibold text-red-600'
+                      : 'font-semibold text-amber-600'
+                  }
+                >
+                  {v.stockQuantity}
                 </span>
-              )}
-            </TableCell>
-            <TableCell className="font-mono text-sm">{v.sku}</TableCell>
-            <TableCell>
-              <span
-                className={
-                  v.stockQuantity === 0
-                    ? 'font-semibold text-red-600'
-                    : 'font-semibold text-amber-600'
-                }
-              >
-                {v.stockQuantity}
-              </span>
-            </TableCell>
-            <TableCell className="text-sand-ink">{v.lowStockThreshold}</TableCell>
-            <TableCell>
-              <Link
-                href={`/inventory/${v.productId}`}
-                className="text-terracotta text-sm hover:underline"
-              >
-                View
-              </Link>
-            </TableCell>
-          </TableRow>
-        ))}
+              </TableCell>
+              <TableCell className="text-sand-ink">{v.lowStockThreshold}</TableCell>
+              <TableCell>
+                <Link
+                  href={`/inventory/${v.productId}`}
+                  className="text-terracotta text-sm hover:underline"
+                >
+                  View
+                </Link>
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );

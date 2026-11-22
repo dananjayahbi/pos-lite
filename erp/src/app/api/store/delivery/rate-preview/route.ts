@@ -3,13 +3,26 @@ import { NextResponse } from 'next/server';
 import { requireDeliveryAuth, validationError, internalError } from '@/lib/api/delivery-route';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { calculateShippingFee } from '@/lib/services/rate-engine.service';
+import { MAX_RATE_WEIGHT_KG } from '@/lib/delivery/rateCardQuote.core';
 import { z } from 'zod';
 
-const RatePreviewSchema = z.object({
-  weightKg: z.coerce.number().nonnegative().optional(),
-  destinationDistrictId: z.coerce.number().int().optional(),
-  destinationCityId: z.coerce.number().int().optional(),
-});
+const RatePreviewSchema = z
+  .object({
+    weightKg: z.coerce
+      .number()
+      .positive('Weight must be greater than zero')
+      .max(MAX_RATE_WEIGHT_KG, `Weight cannot exceed ${MAX_RATE_WEIGHT_KG} kg`),
+    destinationDistrictId: z.coerce.number().int().positive().optional(),
+    destinationCityId: z.coerce.number().int().positive().optional(),
+  })
+  .refine(
+    (value) =>
+      value.destinationDistrictId !== undefined || value.destinationCityId !== undefined,
+    {
+      message: 'Select a destination city or district to preview the shipping fee',
+      path: ['destinationCityId'],
+    },
+  );
 
 export async function POST(request: Request) {
   const guard = await requireDeliveryAuth(PERMISSIONS.DELIVERY.createDelivery);
@@ -41,6 +54,7 @@ export async function POST(request: Request) {
         baseRate: result.baseRate.toFixed(2),
         extraKgRate: result.extraKgRate.toFixed(2),
         freeBaseWeightKg: result.freeBaseWeightKg.toFixed(2),
+        configured: result.configured,
       },
     });
   } catch (error) {

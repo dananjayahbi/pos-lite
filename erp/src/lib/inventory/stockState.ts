@@ -1,0 +1,81 @@
+/**
+ * One stock-state rule for the inventory list (ARGUS #142).
+ *
+ * Before this module the status badge and the low/out-of-stock filters each had
+ * their own definition:
+ * - the badge said "Out of Stock" when ANY variant was exactly 0;
+ * - the out-of-stock filter required EVERY variant <= 0;
+ * - the low-stock filter looked at 0 < qty <= threshold, while the badge's
+ *   low-stock branch included 0.
+ *
+ * The rule below is the shared definition used by both the API filter and the
+ * badge, so the row label always agrees with the filter that produced the row.
+ */
+
+export type StockState = 'OUT_OF_STOCK' | 'LOW_STOCK' | 'IN_STOCK';
+
+export interface StockStateVariant {
+  stockQuantity: number;
+  lowStockThreshold: number;
+}
+
+/** A variant is out of stock at or below zero, low inside its threshold. */
+export function getVariantStockState(variant: StockStateVariant): StockState {
+  if (variant.stockQuantity <= 0) return 'OUT_OF_STOCK';
+  if (variant.stockQuantity <= variant.lowStockThreshold) return 'LOW_STOCK';
+  return 'IN_STOCK';
+}
+
+/**
+ * A product is out of stock when no variant is sellable. That includes
+ * negative legacy/import quantities (handled per variant) and products with no
+ * variants at all, which can never be sold (ARGUS #153).
+ *
+ * It is low stock when at least one sellable variant is at or below its
+ * threshold.
+ */
+export function getProductStockState(variants: StockStateVariant[]): StockState {
+  if (variants.length === 0) return 'OUT_OF_STOCK';
+
+  const states = variants.map(getVariantStockState);
+  if (states.every((state) => state === 'OUT_OF_STOCK')) return 'OUT_OF_STOCK';
+  if (states.some((state) => state === 'LOW_STOCK')) return 'LOW_STOCK';
+  return 'IN_STOCK';
+}
+
+/** True when the product matches an inventory `low_stock` / `out_of_stock` filter. */
+export function matchesStockStatusFilter(
+  variants: StockStateVariant[],
+  status: 'low_stock' | 'out_of_stock',
+): boolean {
+  const state = getProductStockState(variants);
+  return status === 'low_stock' ? state === 'LOW_STOCK' : state === 'OUT_OF_STOCK';
+}
+
+export type ProductStatusBadgeKind =
+  | 'DELETED'
+  | 'ARCHIVED'
+  | 'OUT_OF_STOCK'
+  | 'LOW_STOCK'
+  | 'ACTIVE';
+
+/**
+ * Single rule for the inventory status badge (ARGUS #149).
+ *
+ * The Deleted view lists soft-deleted products, so those rows must never fall
+ * through to a stock badge. Lifecycle states win over quantities:
+ * deleted > archived > stock state.
+ */
+export function resolveProductStatusBadge(input: {
+  isDeleted?: boolean;
+  isArchived: boolean;
+  variants: StockStateVariant[];
+}): ProductStatusBadgeKind {
+  if (input.isDeleted) return 'DELETED';
+  if (input.isArchived) return 'ARCHIVED';
+
+  const state = getProductStockState(input.variants);
+  if (state === 'OUT_OF_STOCK') return 'OUT_OF_STOCK';
+  if (state === 'LOW_STOCK') return 'LOW_STOCK';
+  return 'ACTIVE';
+}

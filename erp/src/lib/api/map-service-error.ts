@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { ApiError } from './errors';
+import { BOM_LOCKED_MESSAGE, INGREDIENT_DUPLICATE_MESSAGE } from '@/lib/services/bom.core';
 
 /**
  * INF-02 — single service-error → HTTP mapper.
@@ -53,8 +54,10 @@ const RULES: Rule[] = [
   { match: exact('BELOW_ZERO'), status: 400, code: 'BELOW_ZERO', message: 'This adjustment would take stock below zero.' },
   { match: exact('DELTA_ZERO'), status: 400, code: 'DELTA_ZERO', message: 'The change amount must be non-zero.' },
   { match: exact('BOM_EXISTS'), status: 409, code: 'BOM_EXISTS', message: 'A bill of materials already exists for this variant.' },
+  { match: exact('BOM_LOCKED'), status: 409, code: 'BOM_LOCKED', message: BOM_LOCKED_MESSAGE },
   { match: exact('BOM_INACTIVE'), status: 409, code: 'BOM_INACTIVE', message: 'The bill of materials is inactive.' },
   { match: exact('NO_INGREDIENTS'), status: 400, code: 'NO_INGREDIENTS', message: 'The bill of materials has no ingredients.' },
+  { match: exact('INGREDIENT_DUPLICATE'), status: 400, code: 'VALIDATION_ERROR', message: INGREDIENT_DUPLICATE_MESSAGE },
   { match: exact('ALREADY_CONVERTED'), status: 409, code: 'ALREADY_CONVERTED', message: 'This record has already been converted.' },
   { match: exact('ALREADY_DISPUTED'), status: 409, code: 'ALREADY_DISPUTED', message: 'This entry is already under dispute.' },
   { match: exact('SERVICE_NAME_EXISTS'), status: 409, code: 'CONFLICT', message: 'A service with this name already exists.' },
@@ -81,6 +84,12 @@ const RULES: Rule[] = [
   { match: token('RETURN_LINE_FOREIGN'), status: 422, code: 'UNPROCESSABLE', message: 'The return line does not belong to the referenced sale.' },
   { match: token('RETURN_QTY_INVALID'), status: 422, code: 'UNPROCESSABLE', message: 'Return quantity must be greater than zero.' },
   { match: token('RETURN_QTY_EXCEEDS_RETURNABLE'), status: 422, code: 'UNPROCESSABLE', message: 'The requested quantity exceeds the remaining returnable quantity for this line.' },
+  { match: token('RETURN_STORE_CREDIT_REQUIRES_CUSTOMER'), status: 422, code: 'UNPROCESSABLE', message: 'Store credit can only be issued for a sale linked to a customer.' },
+  { match: token('RETURN_SERVICE_LINE_NOT_RETURNABLE'), status: 422, code: 'UNPROCESSABLE', message: 'Service lines cannot be returned to stock.' },
+  { match: token('STAFF_ROLE_NOT_ASSIGNABLE'), status: 403, code: 'FORBIDDEN', message: 'You cannot assign this staff role.' },
+  { match: token('STAFF_PASSWORD_RESET_FORBIDDEN'), status: 403, code: 'FORBIDDEN', message: 'You cannot reset the password for this staff member.' },
+  { match: token('PERMISSION_NOT_GRANTABLE'), status: 403, code: 'FORBIDDEN', message: 'You cannot grant a permission you do not hold.' },
+  { match: exact('LAST_OWNER_REQUIRED'), status: 409, code: 'LAST_OWNER_REQUIRED', message: 'The store must keep at least one active owner.' },
 
   // ── Prose messages from the older product/customer services ────────────
   // Status + code are preserved exactly as the routes returned them; only the

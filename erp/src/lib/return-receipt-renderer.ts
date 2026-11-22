@@ -1,4 +1,10 @@
 import { formatRupee } from '@/lib/format';
+import { reprintIdentityNotice } from '@/lib/receipt-identity.core';
+import {
+  receiptContactLines,
+  receiptFooterLines,
+  resolveReceiptFooter,
+} from '@/lib/settings/receiptIdentity.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -7,9 +13,20 @@ export interface ReceiptReturn {
   originalSaleId: string;
   refundMethod: string;
   refundAmount: { toString(): string } | number;
+  /** Tax component included in refundAmount (0 on legacy returns). */
+  taxAmount?: { toString(): string } | number | null;
   restockItems: boolean;
   reason: string;
   createdAt: Date | string;
+  /** Original sale totals, shown so the customer can see the sale context. */
+  originalSale?: {
+    totalAmount: { toString(): string } | number;
+    taxAmount?: { toString(): string } | number | null;
+    deliveryCharge?: { toString(): string } | number | null;
+    /** Tender header/legs used to name a card/QR reversal truthfully. */
+    paymentMethod?: string | null;
+    payments?: Array<{ method: string }> | null;
+  } | null;
   lines: Array<{
     productNameSnapshot: string;
     variantDescriptionSnapshot: string;
@@ -24,6 +41,11 @@ export interface ReceiptTenant {
   name: string;
   logoUrl?: string | null;
   settings: unknown;
+}
+
+export interface ReturnReceiptOptions {
+  /** True when an already-completed return is being reprinted (ARGUS #472). */
+  isReprint?: boolean;
 }
 
 // ── Brand palette (matches globals.css) ──────────────────────────────────────
@@ -78,6 +100,31 @@ function initialsOf(name: string): string {
   );
 }
 
+/**
+ * ARGUS #96/#101: name the digital tender actually collected. Payment legs are
+ * authoritative (a split sale can have cash + card/QR); the sale header is the
+ * fallback for legacy rows. Returns null when only cash/unknown was collected,
+ * so the receipt never claims "original card" for a QR-only sale.
+ */
+function originalDigitalTenderLabel(
+  originalSale: NonNullable<ReceiptReturn['originalSale']>,
+): string | null {
+  const methods = new Set(
+    (originalSale.payments ?? []).map((payment) => payment.method),
+  );
+  const hasCard = methods.has('CARD');
+  const hasQr = methods.has('LANKAQR');
+
+  if (hasCard && hasQr) return 'card/LankaQR';
+  if (hasQr) return 'LankaQR';
+  if (hasCard) return 'card';
+
+  if (originalSale.paymentMethod === 'LANKAQR') return 'LankaQR';
+  if (originalSale.paymentMethod === 'CARD') return 'card';
+  if (originalSale.paymentMethod === 'SPLIT') return 'card/QR';
+  return null;
+}
+
 // ── Builder ──────────────────────────────────────────────────────────────────
 
 /**
@@ -97,18 +144,25 @@ export function buildReturnReceiptHtml(
   tenant: ReceiptTenant,
   cashierName: string,
   managerName: string,
+  options: ReturnReceiptOptions = {},
 ): string {
   const s = getSettings(tenant.settings);
   const { date, time } = formatDate(returnData.createdAt);
   const returnRef = returnData.id.slice(0, 8).toUpperCase();
   const saleRef = returnData.originalSaleId.slice(0, 8).toUpperCase();
+  const identityNotice = reprintIdentityNotice(options.isReprint);
 
   const storeAddress = typeof s.address === 'string' ? s.address : '';
   const storePhone = typeof s.phoneNumber === 'string' ? s.phoneNumber : '';
-  const receiptFooter =
-    typeof s.receiptFooter === 'string' && s.receiptFooter.trim() !== ''
-      ? s.receiptFooter
-      : 'Thank you for shopping with us!';
+  const receiptFooter = resolveReceiptFooter(
+    typeof s.receiptFooter === 'string' ? s.receiptFooter : '',
+  );
+  // ARGUS #492: keep the operator's line breaks on the A4 header and footer.
+  const contactLines = receiptContactLines({
+    address: storeAddress,
+    phoneNumber: storePhone,
+  });
+  const footerLines = receiptFooterLines(receiptFooter);
   const logoUrl = typeof tenant.logoUrl === 'string' ? tenant.logoUrl.trim() : '';
 
   // ── Line items ──
@@ -152,10 +206,20 @@ export function buildReturnReceiptHtml(
     refundNote = 'Cash was handed back to the customer at the counter.';
   } else if (refundMethod === 'CARD_REVERSAL') {
     refundMethodLabel = 'Card Reversal';
-    refundNote = 'The refund is reversed to the original card used for the sale.';
+    // ARGUS #96/#101: a reversal is only allowed against a card/QR tender, and
+    // the receipt must name the channel actually used (QR is not a card).
+    const tender = returnData.originalSale
+      ? originalDigitalTenderLabel(returnData.originalSale)
+      : null;
+    refundNote = tender
+      ? `The refund is reversed to the original ${tender} payment channel.`
+      : 'The refund is reversed through the original card/QR payment channel.';
   } else if (refundMethod === 'STORE_CREDIT') {
     refundMethodLabel = 'Store Credit';
-    refundNote = 'A credit note was issued and can be redeemed on a future purchase.';
+    // There is no separate credit-note redemption/expiry; the refund simply
+    // lands on the customer's existing store-credit balance (ARGUS #101).
+    refundNote =
+      "The refund has been added to the customer's store-credit balance and can be used on a future purchase.";
   } else if (refundMethod === 'EXCHANGE') {
     refundMethodLabel = 'Exchange';
     refundNote = 'The returned items were exchanged for other items in store.';
@@ -173,6 +237,15 @@ export function buildReturnReceiptHtml(
 
   const now = new Date();
   const printTimestamp = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+  const taxRefunded = n(returnData.taxAmount);
+  const totalRefund = n(returnData.refundAmount);
+  const taxProvided = returnData.taxAmount != null;
+  const goodsRefunded = Math.max(totalRefund - taxRefunded, 0);
+  const originalSaleTotal =
+    returnData.originalSale != null ? n(returnData.originalSale.totalAmount) : null;
+  const notRefunded =
+    originalSaleTotal !== null ? originalSaleTotal - totalRefund : null;
 
   const logoHtml = logoUrl
     ? `<img class="brand-logo" src="${esc(logoUrl)}" alt="${esc(tenant.name)} logo" />`
@@ -487,8 +560,7 @@ export function buildReturnReceiptHtml(
       ${logoHtml}
       <div>
         <div class="brand-name">${esc(tenant.name)}</div>
-        ${storeAddress ? `<div class="brand-meta">${esc(storeAddress)}</div>` : ''}
-        ${storePhone ? `<div class="brand-meta">Tel: ${esc(storePhone)}</div>` : ''}
+        ${contactLines.map((contactLine) => `<div class="brand-meta">${esc(contactLine)}</div>`).join('')}
       </div>
     </div>
     <div class="doc-id">
@@ -497,6 +569,8 @@ export function buildReturnReceiptHtml(
       <div class="doc-date">${date} &middot; ${time}</div>
     </div>
   </header>
+
+  ${identityNotice ? `<div style="margin:4mm 0 0;padding:2mm 3mm;border:0.3mm dashed ${SAND};color:${MUTED_INK};font-size:8pt;">${esc(identityNotice)}</div>` : ''}
 
   <section class="summary">
     <div class="summary-cell">
@@ -554,7 +628,11 @@ export function buildReturnReceiptHtml(
     <div class="totals">
       <div class="totals-line"><span>Items returned</span><span>${totalQuantity}</span></div>
       <div class="totals-line"><span>Refund method</span><span>${esc(refundMethodLabel)}</span></div>
-      <div class="totals-grand"><span>Total Refund</span><span class="amount">${formatRupee(n(returnData.refundAmount))}</span></div>
+      <div class="totals-line"><span>Goods refunded</span><span>${formatRupee(goodsRefunded)}</span></div>
+      ${taxProvided ? `<div class="totals-line"><span>Tax refunded</span><span>${formatRupee(taxRefunded)}</span></div>` : ''}
+      ${originalSaleTotal !== null ? `<div class="totals-line"><span>Original sale total</span><span>${formatRupee(originalSaleTotal)}</span></div>` : ''}
+      ${notRefunded !== null && notRefunded > 0.005 ? `<div class="totals-line"><span>Not refunded (original − refund)</span><span>${formatRupee(notRefunded)}</span></div>` : ''}
+      <div class="totals-grand"><span>Total Refund</span><span class="amount">${formatRupee(totalRefund)}</span></div>
     </div>
   </div>
 
@@ -570,7 +648,7 @@ export function buildReturnReceiptHtml(
   </div>
 
   <footer class="doc-footer">
-    ${esc(receiptFooter)}
+    ${footerLines.map((footerLine) => `<div>${esc(footerLine)}</div>`).join('')}
     <div class="powered">Powered by AyurPOS &middot; Printed ${printTimestamp}</div>
   </footer>
 

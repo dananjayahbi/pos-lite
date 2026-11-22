@@ -21,6 +21,12 @@ interface MovementItem {
   quantityBefore: number;
   quantityAfter: number;
   note: string | null;
+  /** ARGUS #199: source document references, if the movement came from one. */
+  saleId: string | null;
+  purchaseOrderId: string | null;
+  stockTakeSessionId: string | null;
+  batchId: string | null;
+  variantId: string;
   variant: {
     sku: string;
     form: string | null;

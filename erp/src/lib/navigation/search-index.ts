@@ -71,7 +71,7 @@ export const NAV_SEARCH_INDEX: NavSearchEntry[] = [
   { title: 'Staff', path: '/staff', description: 'Staff directory and management.', keywords: ['employees', 'team'], group: 'Operations', permission: 'staff:view' },
   { title: 'New Staff Member', path: '/staff', description: 'Create a new staff member.', keywords: ['add staff member', 'new staff', 'add staff', 'employee'], group: 'Operations', permission: 'staff:manage', kind: 'action' },
   { title: 'Attendance', path: '/staff/timeclock', description: 'Attendance and timeclock records.', keywords: ['clock in', 'punch'], group: 'Operations', permission: 'staff:attendance:view' },
-  { title: 'Staff Commissions', path: '/staff/commissions', description: 'Staff commission payouts and history.', keywords: ['commission', 'payout'], group: 'Operations', permission: 'staff:view' },
+  { title: 'Staff Commissions', path: '/staff/commissions', description: 'Staff commission payouts and history.', keywords: ['commission', 'payout'], group: 'Operations', permission: 'payroll:view' },
   { title: 'Run Payroll', path: '/payroll', description: 'Generate the monthly salary run with EPF/ETF.', keywords: ['payroll', 'salary', 'epf', 'etf', 'payslip'], group: 'Operations', permission: 'payroll:view' },
   { title: 'Payroll Reports & Bank Sheets', path: '/payroll/reports', description: 'Bank salary sheet, EPF/ETF returns and payroll summary.', keywords: ['bank sheet', 'epf', 'etf', 'c form', 'payroll report'], group: 'Operations', permission: 'payroll:view' },
 

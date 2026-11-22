@@ -6,7 +6,9 @@
  */
 import { prisma } from '@/lib/prisma';
 import type { RawMaterial, UserRole } from '@/generated/prisma/client';
-import { getRawMaterialStockStatus, getUnitShortLabel } from '@/lib/services/rawMaterial.core';
+import { getRawMaterialStockStatus } from '@/lib/services/rawMaterial.core';
+import { listRawMaterialUnitCatalog } from '@/lib/services/rawMaterialUnit.service';
+import { resolveRawMaterialUnitLabels } from '@/lib/services/rawMaterialUnitCatalog.core';
 
 export type RawMaterialAlertSeverity = 'LOW' | 'CRITICAL';
 
@@ -15,6 +17,9 @@ export interface RawMaterialAlert {
   name: string;
   category: string;
   unit: string;
+  /** Tenant-defined labels, including for inactive units (ARGUS #481). */
+  unitName: string;
+  unitShortLabel: string;
   quantity: number;
   lowStockThreshold: number;
   /** LOW = at/below threshold but above zero; CRITICAL = out of stock. */
@@ -24,6 +29,13 @@ export interface RawMaterialAlert {
 /**
  * Compute the alert for a raw material row, or `null` when it is not flagged.
  * A material is flagged when quantity is at or below the low-stock threshold.
+ *
+ * ARGUS #260: out-of-stock is unconditionally critical. The previous
+ * `threshold <= 0 → null` short-circuit ran before the stock-state check, so a
+ * material at 0 with threshold 0 counted as Out of stock in the KPI but raised
+ * no alert (the UI allows a threshold of 0). Zero/negative quantity is now
+ * checked first; a positive quantity with no configured threshold still never
+ * alerts.
  */
 export function evaluateRawMaterialAlert(
   material: Pick<RawMaterial, 'quantity' | 'lowStockThreshold'>,
@@ -31,11 +43,12 @@ export function evaluateRawMaterialAlert(
   const quantity = material.quantity.toNumber();
   const threshold = material.lowStockThreshold.toNumber();
 
-  // No threshold configured ⇒ never alert.
+  if (quantity <= 0) return 'CRITICAL';
+
+  // No threshold configured ⇒ a positive quantity is not "low".
   if (threshold <= 0) return null;
 
   const status = getRawMaterialStockStatus(quantity, threshold);
-  if (status === 'OUT') return 'CRITICAL';
   if (status === 'LOW') return 'LOW';
   return null;
 }
@@ -69,7 +82,7 @@ export async function notifyRawMaterialAlert(
         title: isCritical
           ? 'Critical: raw material out of stock'
           : 'Raw material low stock',
-        body: `${alert.name} is at ${alert.quantity} ${getUnitShortLabel(alert.unit)} (threshold ${alert.lowStockThreshold})`,
+        body: `${alert.name} is at ${alert.quantity} ${alert.unitShortLabel} (threshold ${alert.lowStockThreshold})`,
         relatedEntityType: 'RawMaterial',
         relatedEntityId: alert.rawMaterialId,
       })),
@@ -81,27 +94,33 @@ export async function notifyRawMaterialAlert(
 
 /** Current alert state for a tenant — material rows currently flagged. */
 export async function listRawMaterialAlerts(tenantId: string): Promise<RawMaterialAlert[]> {
-  const rows = await prisma.rawMaterial.findMany({
-    where: { tenantId, deletedAt: null, isActive: true },
-    select: {
-      id: true,
-      name: true,
-      category: true,
-      unit: true,
-      quantity: true,
-      lowStockThreshold: true,
-    },
-  });
+  const [rows, unitCatalog] = await Promise.all([
+    prisma.rawMaterial.findMany({
+      where: { tenantId, deletedAt: null, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        unit: true,
+        quantity: true,
+        lowStockThreshold: true,
+      },
+    }),
+    listRawMaterialUnitCatalog(tenantId),
+  ]);
 
   const alerts: RawMaterialAlert[] = [];
   for (const row of rows) {
     const severity = evaluateRawMaterialAlert(row);
     if (!severity) continue;
+    const unitLabels = resolveRawMaterialUnitLabels(unitCatalog, row.unit);
     alerts.push({
       rawMaterialId: row.id,
       name: row.name,
       category: row.category,
       unit: row.unit,
+      unitName: unitLabels.name,
+      unitShortLabel: unitLabels.shortLabel,
       quantity: row.quantity.toNumber(),
       lowStockThreshold: row.lowStockThreshold.toNumber(),
       severity,

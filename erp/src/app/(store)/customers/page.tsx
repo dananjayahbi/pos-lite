@@ -22,12 +22,21 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Plus, Eye, Pencil, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
-import { formatRupee } from '@/lib/format';
+import { Plus, Eye, Pencil, ChevronLeft, ChevronRight, Upload, AlertCircle } from 'lucide-react';
+import { formatRelativeDate, formatRupee } from '@/lib/format';
+import { formatCustomerPhone } from '@/lib/services/customerDisplay.core';
 import { CustomerSheet } from '@/components/customers/CustomerSheet';
 import { LoyaltyBadge } from '@/components/customers/LoyaltyBadge';
 import { RepeatBuyersTabs, type RepeatBuyersFilter } from '@/components/customers/RepeatBuyersTabs';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { CUSTOMER_SPEND_BANDS } from '@/lib/services/customerSpendBands.core';
+import {
+  CustomerLoadError,
+  resolveCustomerListState,
+} from '@/lib/services/customerLoad.core';
+import { resolveCustomerEditAccess } from '@/lib/services/customerPermissions.core';
+import { usePermissions } from '@/hooks/usePermissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,36 +67,25 @@ interface CustomersResponse {
 }
 
 // ── Spend band options ───────────────────────────────────────────────────────
+// Bands come from the shared, disjoint definition so a customer on a boundary
+// is counted in exactly one band (ARGUS #312).
 
-const SPEND_BANDS = [
-  { label: 'Any', min: undefined, max: undefined },
-  { label: 'Under Rs. 5,000', min: undefined, max: 5000 },
-  { label: 'Rs. 5,000 – 25,000', min: 5000, max: 25000 },
-  { label: 'Rs. 25,000+', min: 25000, max: undefined },
-] as const;
+const SPEND_BANDS = CUSTOMER_SPEND_BANDS;
 
 // ── Relative timestamps ──────────────────────────────────────────────────────
-
-/**
- * Module-level so the relative labels are not re-evaluated as a render-side
- * side effect; they are display-only text for the customer list.
- */
-function formatRelativeDate(value?: string | null) {
-  if (!value) return '-';
-  const seconds = Math.floor((Date.now() - new Date(value).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  const days = Math.floor(seconds / 86400);
-  if (days < 1) return `${Math.floor(seconds / 3600)}h ago`;
-  if (days < 30) return `${days}d ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  return `${Math.floor(months / 12)}y ago`;
-}
+// ARGUS #319: one relative-date helper. The list used to print `22d ago` while
+// the detail page printed `3 weeks ago` for the same date; both now use the
+// shared `formatRelativeDate` from `@/lib/format`.
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CustomersPage() {
   const queryClient = useQueryClient();
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
+  const { canEdit: canEditCustomer } = resolveCustomerEditAccess({
+    permissionsLoading,
+    hasEditPermission: hasPermission(PERMISSIONS.CUSTOMER.editCustomer),
+  });
 
   // Filters
   const [search, setSearch] = useState('');
@@ -126,7 +124,7 @@ export default function CustomersPage() {
   };
 
   // Build query params
-  const band = SPEND_BANDS[Number(spendBand)] ?? SPEND_BANDS[0];
+  const band = SPEND_BANDS[Number(spendBand)] ?? SPEND_BANDS[0]!;
   const queryParams = new URLSearchParams();
   if (debouncedSearch) queryParams.set('search', debouncedSearch);
   if (tag !== 'ALL') queryParams.set('tag', tag);
@@ -136,16 +134,44 @@ export default function CustomersPage() {
   queryParams.set('page', String(page));
   queryParams.set('limit', '20');
 
-  const { data, isLoading } = useQuery<{ success: boolean; data: CustomersResponse }>({
+  const { data, isLoading, isError, error, isFetching, refetch } = useQuery<{
+    success: boolean;
+    data: CustomersResponse;
+  }>({
     queryKey: ['customers', debouncedSearch, tag, spendBand, audience, page],
     queryFn: async () => {
       const res = await fetch(`/api/store/customers?${queryParams.toString()}`);
-      if (!res.ok) throw new Error('Failed to fetch customers');
-      return res.json();
+      let json: {
+        success?: boolean;
+        data?: CustomersResponse;
+        error?: { message?: string };
+      } | null = null;
+      try {
+        json = await res.json();
+      } catch {
+        // A non-JSON error response still needs an explicit load error.
+      }
+      if (!res.ok || !json?.success || !json.data) {
+        throw new CustomerLoadError(
+          json?.error?.message ??
+            (res.status === 403
+              ? 'You do not have permission to view customers'
+              : 'Failed to load customers'),
+          res.status,
+        );
+      }
+      return { success: true, data: json.data };
     },
   });
 
   const result = data?.data;
+  const listState = resolveCustomerListState({
+    isLoading,
+    isError,
+    customerCount: result?.customers.length ?? 0,
+  });
+  const loadErrorMessage =
+    error instanceof Error ? error.message : 'Failed to load customers';
 
   const handleSuccess = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['customers'] });
@@ -157,9 +183,10 @@ export default function CustomersPage() {
   }, []);
 
   const openEdit = useCallback((customer: Customer) => {
+    if (!canEditCustomer) return;
     setEditingCustomer(customer);
     setSheetOpen(true);
-  }, []);
+  }, [canEditCustomer]);
 
   const getCreditColor = (val: string | number) => {
     const n = Number(val);
@@ -197,7 +224,7 @@ export default function CustomersPage() {
         <RepeatBuyersTabs
           value={audience}
           onChange={changeAudience}
-          repeatCount={result?.total}
+          repeatCount={listState === 'ready' ? result?.total : undefined}
         />
         <Input
           placeholder="Search by name or phone..."
@@ -224,7 +251,7 @@ export default function CustomersPage() {
           </SelectTrigger>
           <SelectContent>
             {SPEND_BANDS.map((b, i) => (
-              <SelectItem key={i} value={String(i)}>
+              <SelectItem key={b.key} value={String(i)}>
                 {b.label}
               </SelectItem>
             ))}
@@ -248,7 +275,7 @@ export default function CustomersPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
+            {listState === 'loading' ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
                   {Array.from({ length: 7 }).map((_, j) => (
@@ -258,7 +285,28 @@ export default function CustomersPage() {
                   ))}
                 </TableRow>
               ))
-            ) : result?.customers.length === 0 ? (
+            ) : listState === 'error' ? (
+              <TableRow>
+                <TableCell colSpan={7} className="py-12">
+                  <div role="alert" className="mx-auto max-w-lg text-center">
+                    <AlertCircle className="mx-auto h-6 w-6 text-terracotta" />
+                    <p className="mt-2 font-medium text-espresso">
+                      Could not load customers
+                    </p>
+                    <p className="mt-1 text-sm text-sand-ink">{loadErrorMessage}</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-4"
+                      disabled={isFetching}
+                      onClick={() => void refetch()}
+                    >
+                      {isFetching ? 'Retrying...' : 'Retry'}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : listState === 'empty' ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-12 text-sand-ink">
                   No customers found
@@ -278,7 +326,7 @@ export default function CustomersPage() {
                       <LoyaltyBadge orderCount={c.orderCount} size="sm" />
                     </div>
                   </TableCell>
-                  <TableCell className="font-mono text-sm">{c.phone}</TableCell>
+                  <TableCell className="font-mono text-sm">{formatCustomerPhone(c.phone)}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
                       {c.tags.map((t) => (
@@ -289,7 +337,7 @@ export default function CustomersPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-sm text-sand-ink">
-                    {formatRelativeDate(c.lastPurchaseAt)}
+                    {formatRelativeDate(c.lastPurchaseAt) ?? '-'}
                   </TableCell>
                   <TableCell className={`text-right font-mono ${getCreditColor(c.creditBalance)}`}>
                     {formatRupee(c.creditBalance)}
@@ -300,13 +348,25 @@ export default function CustomersPage() {
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/customers/${c.id}`}>
-                          <Eye className="h-4 w-4" />
+                        <Link
+                          href={`/customers/${c.id}`}
+                          aria-label={`View ${c.name}`}
+                          title={`View ${c.name}`}
+                        >
+                          <Eye className="h-4 w-4" aria-hidden="true" />
                         </Link>
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      {canEditCustomer && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEdit(c)}
+                          aria-label={`Edit ${c.name}`}
+                          title={`Edit ${c.name}`}
+                        >
+                          <Pencil className="h-4 w-4" aria-hidden="true" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -318,7 +378,7 @@ export default function CustomersPage() {
       </ErrorBoundary>
 
       {/* Pagination */}
-      {result && result.totalPages > 1 && (
+      {listState === 'ready' && result && result.totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-sand-ink">
             Page {result.page} of {result.totalPages} · {result.total} customer{result.total !== 1 ? 's' : ''}
@@ -349,7 +409,7 @@ export default function CustomersPage() {
       {/* Sheet */}
       <CustomerSheet
         customer={editingCustomer}
-        open={sheetOpen}
+        open={sheetOpen && (canEditCustomer || !editingCustomer)}
         onOpenChange={setSheetOpen}
         onSuccess={handleSuccess}
       />

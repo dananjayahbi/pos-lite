@@ -15,7 +15,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
-import { pinDayToNoonIso, todayIso } from './poDates';
+import { pinDayToNoonIso, poDeliveryDateError, todayIso } from './poDates';
 import { PODiscountField } from './PODiscountField';
 import { POLinesEditor } from './POLinesEditor';
 import { POOrderDateField } from './POOrderDateField';
@@ -51,7 +51,7 @@ interface PODraft {
 
 type FieldErrors = Record<string, string>;
 
-export function CreatePurchaseOrderClient() {
+export function CreatePurchaseOrderClient({ canApprove }: { canApprove: boolean }) {
   const router = useRouter();
 
   const [draft, setDraft] = useState<PODraft>({
@@ -113,6 +113,12 @@ export function CreatePurchaseOrderClient() {
 
     if (!draft.orderDate) next['orderDate'] = 'Order date is required';
 
+    const deliveryError = poDeliveryDateError(
+      draft.orderDate,
+      draft.expectedDeliveryDate,
+    );
+    if (deliveryError) next['expectedDeliveryDate'] = deliveryError;
+
     if (draft.discountType !== null) {
       const value = Number.parseFloat(draft.discountValue);
       if (!Number.isFinite(value) || value < 0) {
@@ -127,6 +133,10 @@ export function CreatePurchaseOrderClient() {
 
   const submit = useCallback(
     async (status: 'DRAFT' | 'SENT') => {
+      if (status === 'SENT' && !canApprove) {
+        toast.error('Sending a purchase order requires approval permission');
+        return;
+      }
       const found = validate();
       setErrors(found);
       if (Object.keys(found).length > 0) {
@@ -190,7 +200,7 @@ export function CreatePurchaseOrderClient() {
         setSubmittingStatus(null);
       }
     },
-    [draft, router, validate],
+    [canApprove, draft, router, validate],
   );
 
   const busy = submittingStatus !== null;
@@ -243,10 +253,14 @@ export function CreatePurchaseOrderClient() {
                   <Input
                     id="po-expected-delivery"
                     type="date"
+                    min={draft.orderDate || undefined}
                     value={draft.expectedDeliveryDate}
                     onChange={(event) => patch({ expectedDeliveryDate: event.target.value })}
                     disabled={busy}
                   />
+                  {errors['expectedDeliveryDate'] ? (
+                    <p className="text-xs text-red-600">{errors['expectedDeliveryDate']}</p>
+                  ) : null}
                 </div>
                 <POPaymentTermsField
                   value={draft.paymentTermDays}
@@ -310,22 +324,24 @@ export function CreatePurchaseOrderClient() {
             paymentTermDays={draft.paymentTermDays}
             footer={
               <div className="space-y-2 pt-2">
+                {canApprove ? (
+                  <Button
+                    type="button"
+                    className="w-full"
+                    disabled={busy}
+                    onClick={() => void submit('SENT')}
+                  >
+                    {submittingStatus === 'SENT' ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="mr-2 h-4 w-4" />
+                    )}
+                    Create Purchase Order
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
-                  className="w-full"
-                  disabled={busy}
-                  onClick={() => void submit('SENT')}
-                >
-                  {submittingStatus === 'SENT' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="mr-2 h-4 w-4" />
-                  )}
-                  Create Purchase Order
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
+                  variant={canApprove ? 'outline' : 'default'}
                   className="w-full"
                   disabled={busy}
                   onClick={() => void submit('DRAFT')}
@@ -348,7 +364,9 @@ export function CreatePurchaseOrderClient() {
                   Cancel PO
                 </Button>
                 <p className="pt-1 text-center text-xs text-mist-ink">
-                  Drafts stay editable; created orders are marked Sent so goods can be received.
+                  {canApprove
+                    ? 'Drafts stay editable; created orders are marked Sent so goods can be received.'
+                    : 'This order will be saved as a draft; a manager with approval permission sends it.'}{' '}
                   Cancel PO discards this unsaved order.
                 </p>
               </div>

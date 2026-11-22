@@ -10,7 +10,17 @@ import {
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { ApiError } from '@/lib/api/errors';
 import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/paymentAccount.service';
+import { parseRangeEnd, parseRangeStart } from '@/lib/dates/inclusiveRange';
+import { computePettyCashPeriodStatement } from '@/lib/services/pettyCashReport.core';
+import { lockForUpdate } from '@/lib/api/race-guard';
+import { decideFundDelta } from '@/lib/petty-cash/fund-balance';
+import { diffFundSettings, fundSettingsSnapshot } from '@/lib/petty-cash/fund-settings';
 import type { TopUpPettyCashInput } from '@/lib/validators/petty-cash.validators';
+import {
+  multiplePettyCashFundsMessage,
+  resolvePettyCashReadiness,
+} from '@/lib/petty-cash/setup-state';
+import { PETTY_CASH_LEDGER_LIMIT } from '@/lib/petty-cash/ledger';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +54,15 @@ export interface ExpenseCategoryTotal {
   total: number;
 }
 
+/** Period metadata for a filtered petty-cash export (ARGUS #395). */
+export interface PettyCashExportPeriod {
+  dateFrom: string | null;
+  dateTo: string | null;
+  filtered: boolean;
+  categoryFiltered: boolean;
+  label: string;
+}
+
 /** Structured dataset ready for serialization into the export file. */
 export interface PettyCashExportData {
   fund: {
@@ -54,7 +73,9 @@ export interface PettyCashExportData {
     currentBalance: number;
     lowBalanceThreshold: number | null;
   };
-  balance: BalanceEquation;
+  /** Period statement: opening + cash-in(in period) − expenses(in period). */
+  balance: BalanceEquation & { closingBalance: number };
+  period: PettyCashExportPeriod;
   expenses: {
     id: string;
     expenseDate: string;
@@ -63,6 +84,15 @@ export interface PettyCashExportData {
     amount: number;
     receiptImageUrl: string | null;
     recordedByEmail: string;
+  }[];
+  /** Individual cash-in transactions in the same period as the statement. */
+  topUps: {
+    id: string;
+    entryDate: string;
+    source: string;
+    description: string;
+    amount: number;
+    recordedByEmail: string | null;
   }[];
   byCategory: ExpenseCategoryTotal[];
 }
@@ -112,6 +142,50 @@ export function buildTopUpDescription(
   return sourceName
     ? `Petty Cash Replenished from ${sourceName}`.slice(0, 200)
     : 'Petty Cash Replenished';
+}
+
+/**
+ * ARGUS #408 - serialize setup per tenant in this process. The database guard
+ * below is the cross-instance authority; this map avoids two local requests
+ * both racing into the advisory-lock transaction and then both ensuring the
+ * payment account.
+ */
+const setupLocks = new Map<string, Promise<unknown>>();
+
+async function withTenantSetupLock<T>(
+  tenantId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const previous = setupLocks.get(tenantId) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(fn);
+  setupLocks.set(tenantId, run);
+  try {
+    return await run;
+  } finally {
+    if (setupLocks.get(tenantId) === run) {
+      setupLocks.delete(tenantId);
+    }
+  }
+}
+
+/**
+ * PostgreSQL transaction-scoped advisory lock. This is the no-migration
+ * uniqueness guard: concurrent creators block until the winner commits, then
+ * re-read and stop. The key includes the tenant so stores never contend.
+ */
+async function lockFundSetup(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+): Promise<void> {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`petty-cash-fund:${tenantId}`}))`;
+}
+
+async function lockFundAccount(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  fundId: string,
+): Promise<void> {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`petty-cash-account:${tenantId}:${fundId}`}))`;
 }
 
 // ── Service ─────────────────────────────────────────────────────────────────
@@ -206,19 +280,33 @@ export async function ensureFundPaymentAccount(
 
   const actor = await resolveActorId(tenantId, actorId);
 
-  const byName = await prisma.paymentAccount.findFirst({
-    where: { tenantId, name: fund.name },
-    include: { pettyCashFund: { select: { id: true } } },
-  });
-  if (byName?.pettyCashFund && byName.pettyCashFund.id !== fund.id) {
-    throw new ApiError(
-      409,
-      'CONFLICT',
-      `A payment account named "${fund.name}" is already linked to another petty-cash fund`,
-    );
-  }
-
   const account = await prisma.$transaction(async (tx) => {
+    // ARGUS #408: concurrent setup across instances must not create two
+    // same-named payment accounts or two opening-balance entries.
+    await lockFundAccount(tx, tenantId, fund.id);
+
+    const fresh = await tx.pettyCashFund.findFirst({
+      where: { id: fund.id, tenantId },
+      select: { paymentAccountId: true },
+    });
+    if (fresh?.paymentAccountId) {
+      return tx.paymentAccount.findFirst({
+        where: { id: fresh.paymentAccountId, tenantId },
+      });
+    }
+
+    const byName = await tx.paymentAccount.findFirst({
+      where: { tenantId, name: fund.name },
+      include: { pettyCashFund: { select: { id: true } } },
+    });
+    if (byName?.pettyCashFund && byName.pettyCashFund.id !== fund.id) {
+      throw new ApiError(
+        409,
+        'CONFLICT',
+        `A payment account named "${fund.name}" is already linked to another petty-cash fund`,
+      );
+    }
+
     const created = !byName;
     const target =
       byName ??
@@ -329,51 +417,171 @@ export async function ensureDefaultPettyCashPaymentAccount(
 }
 
 /**
- * Return the standalone petty-cash fund for a tenant, lazily creating a default
- * fund if none exists (doc 36). One fund per store keeps the float accountable.
- * The fund is always backed by a default CASH payment account.
+ * The fund row the Petty Cash page renders: newest 20 linked expenses plus its
+ * payment account. Kept separate so reads and setup return the same shape.
  */
-export async function getOrCreateFund(tenantId: string, actorId?: string) {
-  const existing = await prisma.pettyCashFund.findFirst({
+async function loadFundWithLedger(tenantId: string, fundId: string) {
+  return prisma.pettyCashFund.findFirst({
+    where: { id: fundId, tenantId },
+    include: {
+      expenses: {
+        orderBy: { expenseDate: 'desc' },
+        take: PETTY_CASH_LEDGER_LIMIT,
+        include: { recordedBy: { select: { email: true } } },
+      },
+      paymentAccount: true,
+    },
+  });
+}
+
+/** Active funds for a tenant, oldest first. Read-only by design. */
+export async function findActivePettyCashFunds(tenantId: string) {
+  return prisma.pettyCashFund.findMany({
     where: { tenantId, isActive: true },
     orderBy: { createdAt: 'asc' },
+    select: { id: true },
   });
+}
 
-  let fund = existing;
-  if (!fund) {
-    fund = await prisma.pettyCashFund.create({
-      data: {
-        tenantId,
-        name: 'Main Petty Cash',
-        openingBalance: 0,
-        currentBalance: 0,
-        lowBalanceThreshold: DEFAULT_LOW_BALANCE_THRESHOLD,
-        activeCategories: DEFAULT_CATEGORIES,
-      },
-    });
+export interface PettyCashReadState {
+  fund: Awaited<ReturnType<typeof loadFundWithLedger>> | null;
+  setupRequired: boolean;
+  multipleFunds: boolean;
+  fundCount: number;
+}
 
-    if (actorId) {
+/**
+ * ARGUS #408 - GET must not create anything. This read-only state reports one
+ * of three outcomes: not configured (render a Setup button), ready, or
+ * multiple active funds (flag instead of silently using the first).
+ */
+export async function getPettyCashReadState(tenantId: string): Promise<PettyCashReadState> {
+  const funds = await findActivePettyCashFunds(tenantId);
+  const readiness = resolvePettyCashReadiness(funds);
+  if (readiness.status === 'not-configured') {
+    return { fund: null, setupRequired: true, multipleFunds: false, fundCount: 0 };
+  }
+  if (readiness.status === 'multiple') {
+    return {
+      fund: null,
+      setupRequired: false,
+      multipleFunds: true,
+      fundCount: readiness.fundCount,
+    };
+  }
+  return {
+    fund: await loadFundWithLedger(tenantId, readiness.fundId),
+    setupRequired: false,
+    multipleFunds: false,
+    fundCount: 1,
+  };
+}
+
+/**
+ * ARGUS #408 - explicit, idempotent setup. Serialized in-process and by a
+ * PostgreSQL advisory lock so two first loads cannot create two funds. If a
+ * tenant already has duplicates this refuses to guess and returns a conflict.
+ */
+export async function setupPettyCashFund(tenantId: string, actorId?: string) {
+  return withTenantSetupLock(tenantId, async () => {
+    const before = resolvePettyCashReadiness(
+      await findActivePettyCashFunds(tenantId),
+    );
+    if (before.status === 'multiple') {
+      throw new ApiError(
+        409,
+        'MULTIPLE_FUNDS',
+        multiplePettyCashFundsMessage(before.fundCount),
+      );
+    }
+
+    let created = false;
+    if (before.status === 'not-configured') {
+      const result = await prisma.$transaction(async (tx) => {
+        await lockFundSetup(tx, tenantId);
+
+        const again = resolvePettyCashReadiness(
+          await tx.pettyCashFund.findMany({
+            where: { tenantId, isActive: true },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true },
+          }),
+        );
+        if (again.status === 'multiple') {
+          throw new ApiError(
+            409,
+            'MULTIPLE_FUNDS',
+            multiplePettyCashFundsMessage(again.fundCount),
+          );
+        }
+        if (again.status === 'ready') {
+          return { created: false };
+        }
+
+        await tx.pettyCashFund.create({
+          data: {
+            tenantId,
+            name: 'Main Petty Cash',
+            openingBalance: 0,
+            currentBalance: 0,
+            lowBalanceThreshold: DEFAULT_LOW_BALANCE_THRESHOLD,
+            activeCategories: DEFAULT_CATEGORIES,
+          },
+        });
+        return { created: true };
+      });
+      created = result.created;
+    }
+
+    // Re-read after the cross-instance lock: a concurrent winner's fund is now
+    // visible and is the only one this call may configure.
+    const after = resolvePettyCashReadiness(
+      await findActivePettyCashFunds(tenantId),
+    );
+    if (after.status === 'multiple') {
+      throw new ApiError(
+        409,
+        'MULTIPLE_FUNDS',
+        multiplePettyCashFundsMessage(after.fundCount),
+      );
+    }
+    if (after.status !== 'ready') {
+      throw new ApiError(
+        500,
+        'INTERNAL_SERVER_ERROR',
+        'Petty cash setup did not produce a fund',
+      );
+    }
+
+    await ensureFundPaymentAccount(tenantId, after.fundId, actorId);
+
+    if (created && actorId) {
       void createAuditLog({
         tenantId,
         actorId,
         actorRole: 'USER',
         entityType: 'PettyCashFund',
-        entityId: fund.id,
+        entityId: after.fundId,
         action: AUDIT_ACTIONS.PETTY_CASH_FUND_CREATED,
         after: { openingBalance: 0, currentBalance: 0 },
       }).catch(() => {});
     }
-  }
 
-  await ensureFundPaymentAccount(tenantId, fund.id, actorId);
-
-  return prisma.pettyCashFund.findFirst({
-    where: { id: fund.id },
-    include: {
-      expenses: { orderBy: { expenseDate: 'desc' }, take: 20 },
-      paymentAccount: true,
-    },
+    const fund = await loadFundWithLedger(tenantId, after.fundId);
+    if (!fund) {
+      throw new ApiError(500, 'INTERNAL_SERVER_ERROR', 'Petty cash fund could not be loaded');
+    }
+    return { fund, created };
   });
+}
+
+/**
+ * Existing callers (top-up, legacy flows) still need a configured fund. They
+ * now go through the same locked setup path instead of racing a bare create.
+ */
+export async function getOrCreateFund(tenantId: string, actorId?: string) {
+  const { fund } = await setupPettyCashFund(tenantId, actorId);
+  return fund;
 }
 
 /** Fetch a fund by id (tenant-scoped) with its linked expenses and account. */
@@ -466,18 +674,22 @@ export async function getBalanceEquation(
 export interface PettyCashTopUpRow {
   id: string;
   entryDate: string;
+  createdAt: string;
   description: string;
   amount: string;
+  recordedByEmail: string | null;
 }
 
 /**
- * List the ledger debits that represent top-ups into the petty-cash account.
- * The ledger is the transaction record, so no extra table is needed: every
- * Add Cash In call writes one of these rows.
+ * List the latest ledger debits that represent top-ups into the petty-cash
+ * account. The list is intentionally capped, and the caller discloses
+ * "latest N of total" while the balance equation keeps using full totals
+ * (ARGUS #410).
  */
 export async function getPettyCashTopUps(
   tenantId: string,
   fund: { paymentAccountId: string | null },
+  limit: number = PETTY_CASH_LEDGER_LIMIT,
 ): Promise<PettyCashTopUpRow[]> {
   if (!fund.paymentAccountId) return [];
 
@@ -489,16 +701,80 @@ export async function getPettyCashTopUps(
       debit: { gt: 0 },
     },
     orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
-    take: 50,
-    select: { id: true, entryDate: true, description: true, debit: true },
+    take: limit,
+    select: {
+      id: true,
+      entryDate: true,
+      createdAt: true,
+      description: true,
+      debit: true,
+      createdById: true,
+    },
   });
+
+  const actorIds = Array.from(new Set(entries.map((entry) => entry.createdById)));
+  const actors = actorIds.length
+    ? await prisma.user.findMany({
+        where: { tenantId, id: { in: actorIds } },
+        select: { id: true, email: true },
+      })
+    : [];
+  const emailById = new Map(actors.map((actor) => [actor.id, actor.email]));
 
   return entries.map((entry) => ({
     id: entry.id,
     entryDate: entry.entryDate.toISOString(),
+    createdAt: entry.createdAt.toISOString(),
     description: entry.description,
     amount: entry.debit.toFixed(2),
+    recordedByEmail: emailById.get(entry.createdById) ?? null,
   }));
+}
+
+export interface PettyCashLedgerTotals {
+  expenseCount: number;
+  expenseTotal: number;
+  topUpCount: number;
+  topUpTotal: number;
+  limit: number;
+}
+
+/**
+ * Full totals for the linked-expense ledger, independent of the displayed
+ * page. These must agree with the balance equation: it sums every expense and
+ * every top-up, not just the visible rows.
+ */
+export async function getPettyCashLedgerTotals(
+  tenantId: string,
+  fund: { id: string; paymentAccountId: string | null },
+): Promise<PettyCashLedgerTotals> {
+  const [expenses, topUps] = await Promise.all([
+    prisma.expense.aggregate({
+      where: { tenantId, pettyCashFundId: fund.id },
+      _count: { _all: true },
+      _sum: { amount: true },
+    }),
+    fund.paymentAccountId
+      ? prisma.paymentAccountEntry.aggregate({
+          where: {
+            tenantId,
+            accountId: fund.paymentAccountId,
+            source: { in: [...TOP_UP_SOURCES] },
+            debit: { gt: 0 },
+          },
+          _count: { _all: true },
+          _sum: { debit: true },
+        })
+      : Promise.resolve({ _count: { _all: 0 }, _sum: { debit: null } }),
+  ]);
+
+  return {
+    expenseCount: expenses._count._all,
+    expenseTotal: expenses._sum.amount?.toNumber() ?? 0,
+    topUpCount: topUps._count._all,
+    topUpTotal: topUps._sum.debit?.toNumber() ?? 0,
+    limit: PETTY_CASH_LEDGER_LIMIT,
+  };
 }
 
 /**
@@ -525,11 +801,31 @@ export async function topUpPettyCash(
   const amount = new Decimal(input.amount);
   const groupId = `pc_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
   const entryDate = input.entryDate;
+  const sourceType =
+    input.sourceType ?? (input.sourceAccountId ? 'ACCOUNT' : 'EXTERNAL');
+
+  // Defense in depth: the validator already enforces the split, but a service
+  // caller must not be able to label an account transfer as external cash (or
+  // record external cash against a bank account).
+  if (sourceType === 'ACCOUNT' && !input.sourceAccountId) {
+    throw new ApiError(
+      422,
+      'VALIDATION_ERROR',
+      'Select the account the transfer came from',
+    );
+  }
+  if (sourceType === 'EXTERNAL' && input.sourceAccountId) {
+    throw new ApiError(
+      422,
+      'VALIDATION_ERROR',
+      'External cash cannot name a source account',
+    );
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     let sourceName: string | null = null;
 
-    if (input.sourceAccountId) {
+    if (sourceType === 'ACCOUNT' && input.sourceAccountId) {
       const source = await tx.paymentAccount.findFirst({
         where: { id: input.sourceAccountId, tenantId },
         include: { pettyCashFund: { select: { id: true } } },
@@ -598,27 +894,42 @@ export async function topUpPettyCash(
       data: { currentBalance: { increment: amount.toNumber() } },
     });
 
+    // The audit row commits with the ledger debit, so a top-up can never exist
+    // as an audit without its money movement (ARGUS #406). Record the ledger
+    // entry ids so later reconciliation matches exactly.
+    const ledgerEntries = await tx.paymentAccountEntry.findMany({
+      where: { tenantId, accountId: fundAccountId, sourceId: groupId },
+      select: { id: true },
+    });
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        actorId,
+        actorRole,
+        entityType: 'PettyCashFund',
+        entityId: fund.id,
+        action: AUDIT_ACTIONS.PETTY_CASH_TOP_UP,
+        after: {
+          amount: amount.toNumber(),
+          sourceType,
+          sourceAccountId: input.sourceAccountId ?? null,
+          description: buildTopUpDescription(sourceName, input.description),
+          entryDate: (entryDate ?? new Date()).toISOString(),
+          ledgerEntryIds: ledgerEntries.map((entry) => entry.id),
+        },
+      },
+    });
+
     return {
       fund: updated,
       amount: amount.toNumber(),
       description: buildTopUpDescription(sourceName, input.description),
+      sourceType,
       sourceAccountId: input.sourceAccountId ?? null,
     };
   });
 
-  void createAuditLog({
-    tenantId,
-    actorId,
-    actorRole,
-    entityType: 'PettyCashFund',
-    entityId: fund.id,
-    action: AUDIT_ACTIONS.PETTY_CASH_TOP_UP,
-    after: {
-      amount: amount.toNumber(),
-      sourceAccountId: input.sourceAccountId ?? null,
-      description: result.description,
-    },
-  }).catch(() => {});
+  // A top-up can lift the fund back above its threshold and clear the alert.
 
   // A top-up can lift the fund back above its threshold and clear the alert.
   await checkFundLowBalance(tenantId, fund.id);
@@ -640,7 +951,12 @@ export function evaluateLowBalance(
   threshold: number | null | undefined,
   lowBalanceAlerted: boolean,
 ): LowBalanceAction {
-  if (threshold === null || threshold === undefined) return 'none';
+  // ARGUS #414: removing the threshold must also clear the latched flag.
+  // Otherwise re-adding a threshold while the fund is still low suppresses the
+  // next alert, because the fund still looks "already alerted".
+  if (threshold === null || threshold === undefined) {
+    return lowBalanceAlerted ? 'clear' : 'none';
+  }
   const below = currentBalance <= threshold;
   if (below && lowBalanceAlerted) return 'none'; // already alerted, suppress
   if (below) return 'fire';
@@ -743,22 +1059,42 @@ export async function buildPettyCashExportData(
   tenantId: string,
   filters: PettyCashExportFilters,
 ): Promise<PettyCashExportData | null> {
+  // ARGUS #408: never export the first of several active funds as if it were
+  // the store's fund. The page flags duplicates; the export refuses.
+  const activeFunds = await findActivePettyCashFunds(tenantId);
+  const readiness = resolvePettyCashReadiness(activeFunds);
+  if (readiness.status === 'multiple') {
+    throw new ApiError(
+      409,
+      'MULTIPLE_FUNDS',
+      multiplePettyCashFundsMessage(readiness.fundCount),
+    );
+  }
+  if (readiness.status === 'not-configured') return null;
+
   const fund = await prisma.pettyCashFund.findFirst({
-    where: { tenantId, isActive: true },
-    orderBy: { createdAt: 'asc' },
+    where: { id: readiness.fundId, tenantId },
   });
   if (!fund) return null;
 
-  const where: Record<string, unknown> = { tenantId, pettyCashFundId: fund.id };
-  if (filters.category) where.category = filters.category as ExpenseCategory;
+  // Inclusive day bounds (#394): a YYYY-MM-DD `dateTo` means the whole day.
+  const start = filters.dateFrom ? parseRangeStart(filters.dateFrom) : null;
+  const end = filters.dateTo ? parseRangeEnd(filters.dateTo) : null;
+  const periodFiltered = start !== null || end !== null;
 
-  const dateFilter: Record<string, Date> = {};
-  if (filters.dateFrom) dateFilter.gte = new Date(filters.dateFrom);
-  if (filters.dateTo) dateFilter.lte = new Date(filters.dateTo);
-  if (Object.keys(dateFilter).length > 0) where.expenseDate = dateFilter;
+  // Expense list/category totals honour the category filter; the balance
+  // statement never does — the fund's opening/closing does not depend on which
+  // categories are shown.
+  const expenseDateFilter = {
+    ...(start ? { gte: start } : {}),
+    ...(end ? { lte: end } : {}),
+  };
+  const expenseWhere: Record<string, unknown> = { tenantId, pettyCashFundId: fund.id };
+  if (filters.category) expenseWhere.category = filters.category as ExpenseCategory;
+  if (periodFiltered) expenseWhere.expenseDate = expenseDateFilter;
 
   const expenses = await prisma.expense.findMany({
-    where,
+    where: expenseWhere,
     include: { recordedBy: { select: { email: true } } },
     orderBy: { expenseDate: 'desc' },
   });
@@ -775,9 +1111,149 @@ export async function buildPettyCashExportData(
   for (const entry of categoryMap.values()) byCategory.push(entry);
   byCategory.sort((a, b) => b.total - a.total);
 
-  const agg = await prisma.expense.aggregate({ where, _sum: { amount: true } });
-  const totalExpenses = agg._sum.amount ? agg._sum.amount.toNumber() : 0;
-  const totalTopUps = (await sumTopUps(tenantId, fund)).toNumber();
+  const statementExpenseWhere = {
+    tenantId,
+    pettyCashFundId: fund.id,
+    ...(periodFiltered ? { expenseDate: expenseDateFilter } : {}),
+  };
+  const beforeExpenseWhere = start
+    ? { tenantId, pettyCashFundId: fund.id, expenseDate: { lt: start } }
+    : null;
+
+  const accountId = fund.paymentAccountId;
+  const topUpBase = accountId
+    ? {
+        tenantId,
+        accountId,
+        source: { in: [...TOP_UP_SOURCES] },
+        debit: { gt: 0 },
+      }
+    : null;
+
+  const [periodExpensesAgg, beforeExpensesAgg, topUpsInPeriodAgg, topUpsBeforeAgg] =
+    await Promise.all([
+      prisma.expense.aggregate({ where: statementExpenseWhere, _sum: { amount: true } }),
+      beforeExpenseWhere
+        ? prisma.expense.aggregate({ where: beforeExpenseWhere, _sum: { amount: true } })
+        : Promise.resolve({ _sum: { amount: null } }),
+      topUpBase
+        ? prisma.paymentAccountEntry.aggregate({
+            where: {
+              ...topUpBase,
+              ...(periodFiltered
+                ? {
+                    entryDate: {
+                      ...(start ? { gte: start } : {}),
+                      ...(end ? { lte: end } : {}),
+                    },
+                  }
+                : {}),
+            },
+            _sum: { debit: true },
+          })
+        : Promise.resolve({ _sum: { debit: null } }),
+      topUpBase && start
+        ? prisma.paymentAccountEntry.aggregate({
+            where: { ...topUpBase, entryDate: { lt: start } },
+            _sum: { debit: true },
+          })
+        : Promise.resolve({ _sum: { debit: null } }),
+    ]);
+
+  const periodStatement = computePettyCashPeriodStatement({
+    fundOpeningBalance: fund.openingBalance,
+    topUpsBefore: topUpsBeforeAgg._sum.debit ?? 0,
+    expensesBefore: beforeExpensesAgg._sum.amount ?? 0,
+    topUpsInPeriod: topUpsInPeriodAgg._sum.debit ?? 0,
+    expensesInPeriod: periodExpensesAgg._sum.amount ?? 0,
+  });
+
+  // ARGUS #412: the export used to show cash-in only as an aggregate. List the
+  // individual period top-ups with their source, note and operator.
+  const topUpEntries = topUpBase
+    ? await prisma.paymentAccountEntry.findMany({
+        where: {
+          ...topUpBase,
+          ...(periodFiltered
+            ? {
+                entryDate: {
+                  ...(start ? { gte: start } : {}),
+                  ...(end ? { lte: end } : {}),
+                },
+              }
+            : {}),
+        },
+        orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+        select: {
+          id: true,
+          entryDate: true,
+          description: true,
+          debit: true,
+          createdById: true,
+          source: true,
+          sourceId: true,
+          transferGroupId: true,
+        },
+      })
+    : [];
+
+  const transferKeys = Array.from(
+    new Set(
+      topUpEntries
+        .filter((entry) => entry.source !== PaymentEntrySource.DEPOSIT)
+        .map((entry) => entry.transferGroupId ?? entry.sourceId)
+        .filter((key): key is string => Boolean(key)),
+    ),
+  );
+  const sourceEntries =
+    transferKeys.length > 0 && accountId
+      ? await prisma.paymentAccountEntry.findMany({
+          where: {
+            tenantId,
+            credit: { gt: 0 },
+            accountId: { not: accountId },
+            OR: [
+              { transferGroupId: { in: transferKeys } },
+              { sourceId: { in: transferKeys } },
+            ],
+          },
+          select: {
+            transferGroupId: true,
+            sourceId: true,
+            account: { select: { name: true } },
+          },
+        })
+      : [];
+  const sourceNameByKey = new Map<string, string>();
+  for (const entry of sourceEntries) {
+    const key = entry.transferGroupId ?? entry.sourceId;
+    if (key) sourceNameByKey.set(key, entry.account.name);
+  }
+
+  const topUpActorIds = Array.from(new Set(topUpEntries.map((entry) => entry.createdById)));
+  const topUpActors =
+    topUpActorIds.length > 0
+      ? await prisma.user.findMany({
+          where: { tenantId, id: { in: topUpActorIds } },
+          select: { id: true, email: true },
+        })
+      : [];
+  const topUpEmailById = new Map(topUpActors.map((actor) => [actor.id, actor.email]));
+
+  const exportTopUps = topUpEntries.map((entry) => {
+    const key = entry.transferGroupId ?? entry.sourceId;
+    return {
+      id: entry.id,
+      entryDate: entry.entryDate.toISOString(),
+      source:
+        entry.source === PaymentEntrySource.DEPOSIT
+          ? 'External cash'
+          : (key ? sourceNameByKey.get(key) : undefined) ?? 'Account transfer',
+      description: entry.description,
+      amount: entry.debit.toNumber(),
+      recordedByEmail: topUpEmailById.get(entry.createdById) ?? null,
+    };
+  });
 
   return {
     fund: {
@@ -791,13 +1267,22 @@ export async function buildPettyCashExportData(
         : null,
     },
     balance: {
-      openingBalance: fund.openingBalance.toNumber(),
-      totalTopUps,
-      totalExpenses,
-      currentBalance: new Decimal(fund.openingBalance.toNumber())
-        .plus(totalTopUps)
-        .minus(totalExpenses)
-        .toNumber(),
+      openingBalance: periodStatement.openingBalance.toNumber(),
+      totalTopUps: periodStatement.totalTopUps.toNumber(),
+      totalExpenses: periodStatement.totalExpenses.toNumber(),
+      closingBalance: periodStatement.closingBalance.toNumber(),
+      // All-time live fund balance (kept for API compatibility); the CSV uses
+      // the period closing balance instead of calling this "current".
+      currentBalance: fund.currentBalance.toNumber(),
+    },
+    period: {
+      dateFrom: filters.dateFrom ?? null,
+      dateTo: filters.dateTo ?? null,
+      filtered: periodFiltered,
+      categoryFiltered: Boolean(filters.category),
+      label: periodFiltered
+        ? `${filters.dateFrom ?? 'earliest'} to ${filters.dateTo ?? 'latest'} (inclusive)`
+        : 'All time',
     },
     expenses: expenses.map((e) => ({
       id: e.id,
@@ -808,12 +1293,65 @@ export async function buildPettyCashExportData(
       receiptImageUrl: e.receiptImageUrl,
       recordedByEmail: e.recordedBy.email,
     })),
+    topUps: exportTopUps,
     byCategory,
   };
 }
 
 /** Sentinel thrown when a linked expense would push a fund below zero (M19-01). */
 export const PETTY_CASH_OVERDRAW_SENTINEL = 'Petty cash fund cannot go negative';
+
+/**
+ * ARGUS #403 - lock fund rows in a deterministic order. Callers take account
+ * locks first, then call this, so concurrent expense writes cannot deadlock on
+ * a fund pair moved in opposite directions.
+ */
+export async function lockFundRows(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  fundIds: readonly (string | null | undefined)[],
+): Promise<void> {
+  const ids = Array.from(
+    new Set(fundIds.filter((id): id is string => Boolean(id))),
+  ).sort();
+  for (const id of ids) {
+    await lockForUpdate(tx, 'petty_cash_funds', '"id" = $1 AND "tenantId" = $2', [id, tenantId]);
+  }
+}
+
+/**
+ * ARGUS #403 - apply a fund-balance delta inside the caller's transaction.
+ * The row is locked and re-read first, so the non-negative check and the write
+ * cannot be raced by another spend.
+ */
+export async function adjustFundBalanceTx(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  fundId: string,
+  delta: number,
+  options: { enforceNonNegative?: boolean; approved?: boolean } = {},
+): Promise<number> {
+  await lockForUpdate(tx, 'petty_cash_funds', '"id" = $1', [fundId]);
+  const fund = await tx.pettyCashFund.findFirst({
+    where: { id: fundId, tenantId },
+    select: { currentBalance: true },
+  });
+  if (!fund) {
+    throw new ApiError(404, 'NOT_FOUND', 'Petty cash fund not found');
+  }
+
+  const current = new Decimal(fund.currentBalance.toString());
+  const decision = decideFundDelta(current.toNumber(), delta, options);
+  if (!decision.allowed) {
+    throw new Error(decision.reason ?? PETTY_CASH_OVERDRAW_SENTINEL);
+  }
+
+  await tx.pettyCashFund.update({
+    where: { id: fundId },
+    data: { currentBalance: decision.nextBalance },
+  });
+  return decision.nextBalance;
+}
 
 /**
  * M19-01 (BUG-53, decision D2) — guard a spend against the fund's live balance.
@@ -886,13 +1424,41 @@ export async function updateFund(
     throw new ApiError(404, 'NOT_FOUND', 'Petty cash fund not found');
   }
 
-  if (data.name !== undefined && existing.paymentAccountId) {
+  // ARGUS #411: compare every setting (not just name/opening/isActive) and
+  // write nothing for a no-op save. Category order is irrelevant.
+  const before = fundSettingsSnapshot({
+    name: existing.name,
+    openingBalance: existing.openingBalance,
+    lowBalanceThreshold: existing.lowBalanceThreshold,
+    isActive: existing.isActive,
+    activeCategories: existing.activeCategories,
+  });
+  const after = fundSettingsSnapshot({
+    name: data.name !== undefined ? data.name : existing.name,
+    openingBalance:
+      data.openingBalance !== undefined ? data.openingBalance : existing.openingBalance,
+    lowBalanceThreshold:
+      data.lowBalanceThreshold !== undefined
+        ? data.lowBalanceThreshold
+        : existing.lowBalanceThreshold,
+    isActive: data.isActive !== undefined ? data.isActive : existing.isActive,
+    activeCategories:
+      data.activeCategories !== undefined
+        ? data.activeCategories
+        : existing.activeCategories,
+  });
+  const diff = diffFundSettings(before, after);
+  if (!diff.changed) {
+    return getFund(tenantId, fundId);
+  }
+
+  if (diff.changedFields.includes('name') && existing.paymentAccountId) {
     const clash = await prisma.paymentAccount.findFirst({
-      where: { tenantId, name: data.name, id: { not: existing.paymentAccountId } },
+      where: { tenantId, name: after.name, id: { not: existing.paymentAccountId } },
       select: { id: true },
     });
     if (clash) {
-      throw new ApiError(409, 'CONFLICT', `A payment account named "${data.name}" already exists`);
+      throw new ApiError(409, 'CONFLICT', `A payment account named "${after.name}" already exists`);
     }
   }
 
@@ -905,25 +1471,40 @@ export async function updateFund(
   if (data.isActive !== undefined) patch.isActive = data.isActive;
   if (data.activeCategories !== undefined) patch.activeCategories = data.activeCategories;
 
-  // Keep the linked payment account name aligned with the fund name.
-  const updated = await prisma.$transaction(async (tx) => {
-    const next = await tx.pettyCashFund.update({
+  // Keep the linked payment account name aligned with the fund name, and write
+  // the full before/after audit in the same transaction as the fund update.
+  await prisma.$transaction(async (tx) => {
+    await tx.pettyCashFund.update({
       where: { id: fundId },
       data: patch,
     });
-    if (data.name !== undefined && existing.paymentAccountId) {
+    if (diff.changedFields.includes('name') && existing.paymentAccountId) {
       await tx.paymentAccount.update({
         where: { id: existing.paymentAccountId },
-        data: { name: data.name },
+        data: { name: after.name },
       });
     }
-    return next;
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        actorId,
+        actorRole: 'USER',
+        entityType: 'PettyCashFund',
+        entityId: fundId,
+        action: AUDIT_ACTIONS.PETTY_CASH_FUND_UPDATED,
+        before: diff.before as unknown as Prisma.InputJsonValue,
+        after: {
+          ...diff.after,
+          changedFields: diff.changedFields,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
   });
 
   // Recompute the running balance whenever the opening allocation changes.
   // The legacy openingBalance path is no longer exposed in the UI, but if an
   // owner calls it we keep the linked account in step with the new allocation.
-  if (data.openingBalance !== undefined) {
+  if (diff.changedFields.includes('openingBalance')) {
     const beforeCurrent = new Decimal(existing.currentBalance.toString());
     await recomputeCurrentBalance(tenantId, fundId);
     const afterFund = await prisma.pettyCashFund.findFirst({
@@ -951,30 +1532,9 @@ export async function updateFund(
       });
     }
     await checkFundLowBalance(tenantId, fundId);
-  } else if (data.lowBalanceThreshold !== undefined) {
+  } else if (diff.changedFields.includes('lowBalanceThreshold')) {
     await checkFundLowBalance(tenantId, fundId);
   }
 
-  void createAuditLog({
-    tenantId,
-    actorId,
-    actorRole: 'USER',
-    entityType: 'PettyCashFund',
-    entityId: fundId,
-    action: AUDIT_ACTIONS.PETTY_CASH_FUND_UPDATED,
-    before: {
-      name: existing.name,
-      openingBalance: existing.openingBalance.toNumber(),
-      isActive: existing.isActive,
-    },
-    after: { name: updated.name, openingBalance: updated.openingBalance.toNumber() },
-  }).catch(() => {});
-
-  return prisma.pettyCashFund.findFirst({
-    where: { id: fundId, tenantId },
-    include: {
-      expenses: { orderBy: { expenseDate: 'desc' } },
-      paymentAccount: true,
-    },
-  });
+  return getFund(tenantId, fundId);
 }

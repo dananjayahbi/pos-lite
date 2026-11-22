@@ -11,6 +11,8 @@ import {
   type BroadcastRecipient,
 } from '@/lib/services/broadcast-dispatch.service';
 import type { Prisma, Gender } from '@/generated/prisma/client';
+import { getCompletedSpendByCustomer } from '@/lib/services/customerSpend.service';
+import { filterCustomerIdsBySpend } from '@/lib/services/customerSpend.core';
 
 // M31-03 (OBS-53): the send loop no longer runs inside this request. The audit
 // row is created first (status SENDING) and dispatch continues *after* the
@@ -89,18 +91,12 @@ export async function POST(request: Request) {
       where.gender = filters.gender as Gender;
     }
 
-    if (filters?.minSpend !== undefined) {
-      where.totalSpend = {
-        ...(typeof where.totalSpend === 'object' ? where.totalSpend : {}),
-        gte: filters.minSpend,
-      } as Prisma.DecimalFilter;
-    }
-
-    if (filters?.maxSpend !== undefined) {
-      where.totalSpend = {
-        ...(typeof where.totalSpend === 'object' ? where.totalSpend : {}),
-        lte: filters.maxSpend,
-      } as Prisma.DecimalFilter;
+    if (filters?.minSpend !== undefined || filters?.maxSpend !== undefined) {
+      // Completed-sale spend only (ARGUS #309).
+      const spendByCustomer = await getCompletedSpendByCustomer(tenantId);
+      where.id = {
+        in: filterCustomerIdsBySpend(spendByCustomer, filters?.minSpend, filters?.maxSpend),
+      };
     }
 
     // Fetch matching customers

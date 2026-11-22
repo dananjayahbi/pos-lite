@@ -1,6 +1,6 @@
 'use client';
 
-import { formatRupee } from '@/lib/format';
+import { formatRupee, formatShortDateTime, formatShortTime } from '@/lib/format';
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Printer } from 'lucide-react';
 import { CopyableText } from '@/components/shared/CopyableText';
+import { saleBreakdown } from '@/lib/pos/saleBreakdown';
+import { paymentMethodLabel } from '@/lib/sales/payment-method-label';
 
 interface SaleLine {
   id: string;
@@ -38,10 +40,13 @@ interface Sale {
   subtotal: number;
   discountAmount: number;
   taxAmount: number;
+  deliveryCharge?: number;
   totalAmount: number;
-  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | null;
+  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | 'STORE_CREDIT' | 'EXCHANGE_CREDIT' | 'NONE' | null;
   status: 'OPEN' | 'COMPLETED' | 'VOIDED';
   authorizingManagerId: string | null;
+  /** Accounting date; pre-migration rows fall back to createdAt (ARGUS #82). */
+  saleDate?: string | null;
   createdAt: string;
   lines: SaleLine[];
 }
@@ -53,16 +58,7 @@ interface SaleDetailModalProps {
 }
 
 function formatDateTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  return (
-    d.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    }) +
-    ', ' +
-    d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-  );
+  return formatShortDateTime(dateStr);
 }
 
 export function SaleDetailModal({
@@ -73,13 +69,20 @@ export function SaleDetailModal({
   if (!sale) return null;
 
   const shortId = sale.id.slice(0, 8).toUpperCase();
-  const lineDiscountTotal = (sale.lines ?? []).reduce(
-    (sum, l) => sum + l.discountAmount,
-    0,
-  );
+  // Subtotal is already net of line discounts, so the breakdown shows only the
+  // cart discount, tax and delivery — the same rows as the sale detail page.
+  const breakdown = saleBreakdown({
+    subtotal: sale.subtotal,
+    discountAmount: sale.discountAmount,
+    taxAmount: sale.taxAmount,
+    deliveryCharge: sale.deliveryCharge,
+    totalAmount: sale.totalAmount,
+  });
 
   const handlePrint = () => {
-    window.open(`/api/store/sales/${sale.id}/receipt`, '_blank', 'noopener');
+    // ARGUS #472: the receipt reads the current store profile, so a history
+    // reprint is explicitly marked as such.
+    window.open(`/api/store/sales/${sale.id}/receipt?reprint=1`, '_blank', 'noopener');
   };
 
   return (
@@ -90,7 +93,10 @@ export function SaleDetailModal({
             Sale {shortId}
           </DialogTitle>
           <p className="font-body text-xs text-mist-ink">
-            {formatDateTime(sale.createdAt)}
+            {formatDateTime(sale.saleDate ?? sale.createdAt)}
+          </p>
+          <p className="font-body text-[11px] text-mist-ink">
+            Entered {formatShortTime(sale.createdAt)}
           </p>
           <CopyableText value={sale.id} label="Sale ID" className="text-xs text-espresso" />
         </DialogHeader>
@@ -107,7 +113,7 @@ export function SaleDetailModal({
           )}
           {sale.paymentMethod && (
             <Badge variant="secondary" className="text-[10px]">
-              {sale.paymentMethod}
+              {paymentMethodLabel(sale.paymentMethod)}
             </Badge>
           )}
         </div>
@@ -170,30 +176,20 @@ export function SaleDetailModal({
 
         {/* Totals */}
         <div className="border-t border-mist/30 pt-3 space-y-1.5">
-          <div className="flex justify-between font-body text-sm text-espresso">
-            <span>Sub-total</span>
-            <span className="font-mono">{formatRupee(sale.subtotal)}</span>
-          </div>
-          {lineDiscountTotal > 0 && (
-            <div className="flex justify-between font-body text-sm text-[#9B2226]">
-              <span>Line Discounts</span>
+          {breakdown.rows.map((row) => (
+            <div
+              key={row.key}
+              className={`flex justify-between font-body text-sm ${
+                row.sign === -1 ? 'text-[#9B2226]' : 'text-espresso'
+              }`}
+            >
+              <span>{row.label}</span>
               <span className="font-mono">
-                -{formatRupee(lineDiscountTotal)}
+                {row.sign === -1 ? '-' : ''}
+                {formatRupee(row.amount)}
               </span>
             </div>
-          )}
-          {sale.discountAmount > 0 && (
-            <div className="flex justify-between font-body text-sm text-[#9B2226]">
-              <span>Cart Discount</span>
-              <span className="font-mono">
-                -{formatRupee(sale.discountAmount)}
-              </span>
-            </div>
-          )}
-          <div className="flex justify-between font-body text-sm text-espresso">
-            <span>Tax</span>
-            <span className="font-mono">{formatRupee(sale.taxAmount)}</span>
-          </div>
+          ))}
           <div className="flex justify-between items-baseline pt-1.5 border-t border-mist/30">
             <span className="font-display text-base text-espresso font-bold">
               Total

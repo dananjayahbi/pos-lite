@@ -32,10 +32,10 @@ export async function POST(
       );
     }
 
-    if (
-      !hasPermission(session.user, PERMISSIONS.SUPPLIER.createPurchaseOrder) &&
-      !hasPermission(session.user, PERMISSIONS.SUPPLIER.approvePurchaseOrder)
-    ) {
+    // Sending moves a DRAFT to SENT, so it is an approval action. A create-only
+    // role could otherwise send without the purchase_order:approve separation
+    // (ARGUS #224).
+    if (!hasPermission(session.user, PERMISSIONS.SUPPLIER.approvePurchaseOrder)) {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
@@ -100,7 +100,13 @@ export async function POST(
       );
     }
 
-    const updatedPO = await updatePOStatus(tenantId, id, POStatus.SENT);
+    const updatedPO = await updatePOStatus(
+      tenantId,
+      id,
+      POStatus.SENT,
+      session.user.id,
+      session.user.role,
+    );
 
     return NextResponse.json({ success: true, data: updatedPO });
   } catch (error) {

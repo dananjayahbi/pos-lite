@@ -1221,6 +1221,7 @@ async function seedDemoSales() {
   });
 
   for (const { variantId } of soldVariantIds) {
+    if (!variantId) continue;
     await prisma.productVariant.update({
       where: { id: variantId },
       data: { stockQuantity: 50 },
@@ -1317,7 +1318,7 @@ async function seedDemoReturns() {
     data: {
       returnId: returnA.id,
       originalSaleLineId: lineA.id,
-      variantId: lineA.variantId,
+      variantId: lineA.variantId!,
       productNameSnapshot: lineA.productNameSnapshot,
       variantDescriptionSnapshot: lineA.variantDescriptionSnapshot,
       quantity: 1,
@@ -1328,7 +1329,7 @@ async function seedDemoReturns() {
   });
 
   await prisma.productVariant.update({
-    where: { id: lineA.variantId },
+    where: { id: lineA.variantId! },
     data: { stockQuantity: { increment: 1 } },
   });
 
@@ -1363,7 +1364,7 @@ async function seedDemoReturns() {
     data: {
       returnId: returnB.id,
       originalSaleLineId: lineB.id,
-      variantId: lineB.variantId,
+      variantId: lineB.variantId!,
       productNameSnapshot: lineB.productNameSnapshot,
       variantDescriptionSnapshot: lineB.variantDescriptionSnapshot,
       quantity: lineB.quantity,
@@ -1409,7 +1410,7 @@ async function seedDemoReturns() {
     data: {
       returnId: returnC.id,
       originalSaleLineId: lineC.id,
-      variantId: lineC.variantId,
+      variantId: lineC.variantId!,
       productNameSnapshot: lineC.productNameSnapshot,
       variantDescriptionSnapshot: lineC.variantDescriptionSnapshot,
       quantity: 1,
@@ -1420,7 +1421,7 @@ async function seedDemoReturns() {
   });
 
   await prisma.productVariant.update({
-    where: { id: lineC.variantId },
+    where: { id: lineC.variantId! },
     data: { stockQuantity: { increment: 1 } },
   });
 
@@ -1455,7 +1456,7 @@ async function seedDemoReturns() {
     data: {
       returnId: returnD.id,
       originalSaleLineId: lineD.id,
-      variantId: lineD.variantId,
+      variantId: lineD.variantId!,
       productNameSnapshot: lineD.productNameSnapshot,
       variantDescriptionSnapshot: lineD.variantDescriptionSnapshot,
       quantity: lineD.quantity,
@@ -1466,7 +1467,7 @@ async function seedDemoReturns() {
   });
 
   await prisma.productVariant.update({
-    where: { id: lineD.variantId },
+    where: { id: lineD.variantId! },
     data: { stockQuantity: { increment: lineD.quantity } },
   });
 
@@ -1609,7 +1610,9 @@ async function seedCRMData() {
 
   let po1Created = false;
   if (!existingPO1) {
-    await prisma.purchaseOrder.create({
+    const beforeA = variantA!.stockQuantity;
+    const beforeB = variantB!.stockQuantity;
+    const po1 = await prisma.purchaseOrder.create({
       data: {
         tenantId,
         supplierId: lankaTextile.id,
@@ -1618,6 +1621,8 @@ async function seedCRMData() {
         referenceNo: 'PO-SEED-0001',
         notes: po1Notes,
         expectedDeliveryDate: new Date(),
+        subtotalAmount: 35000,
+        discountAmount: 0,
         totalAmount: 35000,
         lines: {
           create: [
@@ -1656,6 +1661,35 @@ async function seedCRMData() {
       data: { stockQuantity: { increment: 15 } },
     });
 
+    // One receipt movement per line so the seeded stock is traceable to the PO
+    // (matches the real receive path; the old seed only incremented stock).
+    await prisma.stockMovement.createMany({
+      data: [
+        {
+          tenantId,
+          variantId: variantA!.id,
+          reason: 'PURCHASE_RECEIVED',
+          quantityDelta: 20,
+          quantityBefore: beforeA,
+          quantityAfter: beforeA + 20,
+          actorId: firstUser.id,
+          note: 'Demo PO receipt - line 1',
+          purchaseOrderId: po1.id,
+        },
+        {
+          tenantId,
+          variantId: variantB!.id,
+          reason: 'PURCHASE_RECEIVED',
+          quantityDelta: 15,
+          quantityBefore: beforeB,
+          quantityAfter: beforeB + 15,
+          actorId: firstUser.id,
+          note: 'Demo PO receipt - line 2',
+          purchaseOrderId: po1.id,
+        },
+      ],
+    });
+
     po1Created = true;
   }
   console.log(`PO 1 (RECEIVED): ${po1Created ? 'created' : 'skipped (already exists)'}`);
@@ -1680,6 +1714,8 @@ async function seedCRMData() {
         referenceNo: 'PO-SEED-0002',
         notes: po2Notes,
         expectedDeliveryDate: expectedDelivery,
+        subtotalAmount: 40500,
+        discountAmount: 0,
         totalAmount: 40500,
         lines: {
           create: [

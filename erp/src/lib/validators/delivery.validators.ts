@@ -50,6 +50,10 @@ export const CreateDeliverySchema = z.object({
   source: z.enum(DELIVERY_SOURCES).optional(),
   customerId: z.string().cuid().optional(),
   saleId: z.string().cuid().optional(),
+  /**
+   * Goods value only (ARGUS #288). The shipping fee is computed from the rate
+   * card and stored separately; the courier collects goods + shipping.
+   */
   codAmount: z.coerce.number().nonnegative('COD amount cannot be negative').optional(),
   declaredValue: z.coerce.number().nonnegative().optional(),
   itemCount: z.coerce.number().int().min(1).default(1),
@@ -77,6 +81,11 @@ export const DispatchDeliverySchema = z.object({
     .min(8, 'Manual waybill id is required (at least 8 characters)')
     .max(40)
     .optional(),
+  // ARGUS #282: an explicit acknowledgement that packaging stock is short.
+  allowPackagingShortfall: z.boolean().optional(),
+  // ARGUS #283: packaging chosen for this dispatch. `undefined` means the
+  // legacy auto-deduct suggestion; `[]` means consume no packaging.
+  packagingItemIds: z.array(z.string().cuid()).max(100).optional(),
 });
 
 export const CancelDeliverySchema = z.object({
@@ -85,10 +94,14 @@ export const CancelDeliverySchema = z.object({
 
 export const DeliveryFiltersSchema = z.object({
   status: z.enum(DELIVERY_STATUSES).optional(),
+  /** Comma-separated statuses, used by the dispatch queue default (ARGUS #269). */
+  statuses: z.string().max(300).optional(),
   source: z.enum(DELIVERY_SOURCES).optional(),
   search: z.string().max(200).optional(),
   dateFrom: z.string().datetime().optional(),
   dateTo: z.string().datetime().optional(),
+  /** Include per-status workload counts for the dispatch summary. */
+  includeCounts: z.enum(['0', '1']).optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
 });

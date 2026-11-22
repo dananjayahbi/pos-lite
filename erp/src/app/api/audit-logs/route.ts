@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { getAuditLogs, attachAuditActorNames } from '@/lib/services/audit.service';
+import { getAuditLogs, getAuditLogsForExport, attachAuditActorNames } from '@/lib/services/audit.service';
 import { parseQueryInt, parseQueryDate } from '@/lib/api/query-params';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { toCsvLines } from '@/lib/export';
@@ -22,6 +22,9 @@ const AUDIT_CSV_HEADERS = [
   'actorId',
   'actorRole',
   'ipAddress',
+  'userAgent',
+  'before',
+  'after',
 ] as const;
 
 export async function GET(request: NextRequest) {
@@ -54,10 +57,22 @@ export async function GET(request: NextRequest) {
     const entityType = searchParams.get('entityType') ?? undefined;
     const action = searchParams.get('action') ?? undefined;
     const userId = searchParams.get('userId') ?? undefined;
+    // ARGUS #457 - free-text/entity-id search for forensic investigations.
+    const searchRaw = searchParams.get('search')?.trim() ?? '';
+    if (searchRaw.length > 200) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'BAD_REQUEST', message: 'Query parameter "search" is too long (max 200)' },
+        },
+        { status: 400 },
+      );
+    }
+    const search = searchRaw === '' ? undefined : searchRaw;
     // XC-01 + XC-02: dates validated (garbage → 400, not Invalid Date in a
     // Prisma filter); pagination clamped.
     const startDate = parseQueryDate(searchParams, 'startDate');
-    const endDate = parseQueryDate(searchParams, 'endDate');
+    const endDate = parseQueryDate(searchParams, 'endDate', { endOfDay: true });
     const page = parseQueryInt(searchParams, 'page', { default: 1, min: 1, max: 1_000_000 }) ?? 1;
     const pageSize = parseQueryInt(searchParams, 'pageSize', { default: 50, min: 1, max: 200 }) ?? 50;
     const format = searchParams.get('format') ?? 'json';
@@ -69,6 +84,7 @@ export async function GET(request: NextRequest) {
           startDate,
           endDate,
           userId,
+          search,
           page,
           pageSize,
         })
@@ -78,13 +94,23 @@ export async function GET(request: NextRequest) {
           startDate,
           endDate,
           userId,
+          search,
           page,
           pageSize,
         });
 
-    const entries = await attachAuditActorNames(result.data);
+    const actorTenantScope = isSuperAdmin ? null : tenantId;
+    const entries = await attachAuditActorNames(result.data, actorTenantScope);
 
     if (format === 'csv') {
+      // ARGUS #453: export the complete filtered set (not the current page) and
+      // include the change evidence the detail modal shows.
+      const exportRows = await getAuditLogsForExport(
+        isSuperAdmin ? (searchParams.get('tenantId') ?? undefined) : (tenantId as string),
+        { entityType, action, startDate, endDate, userId, search },
+      );
+      const exportEntries = await attachAuditActorNames(exportRows, actorTenantScope);
+
       // M35-01 (BUG-79): the header row is emitted UNQUOTED and data cells are
       // quoted only when they need it, via the shared `toCsvLines` writer. The
       // old inline mapper quoted every cell — including the header — producing
@@ -92,7 +118,7 @@ export async function GET(request: NextRequest) {
       // quotes in some locales and which makes diffs noisy (RULE: RULE-EXPORT-CSV).
       const csv = toCsvLines(
         AUDIT_CSV_HEADERS,
-        entries.map((entry) => [
+        exportEntries.map((entry) => [
           entry.createdAt.toISOString(),
           entry.entityType,
           entry.entityId,
@@ -101,6 +127,11 @@ export async function GET(request: NextRequest) {
           entry.actorId ?? '',
           entry.actorRole,
           entry.ipAddress ?? '',
+          entry.userAgent ?? '',
+          entry.before === null || entry.before === undefined
+            ? ''
+            : JSON.stringify(entry.before),
+          entry.after === null || entry.after === undefined ? '' : JSON.stringify(entry.after),
         ]),
       );
 
@@ -109,6 +140,7 @@ export async function GET(request: NextRequest) {
         headers: {
           'Content-Type': 'text/csv; charset=utf-8',
           'Content-Disposition': 'attachment; filename="audit-log-export.csv"',
+          'X-Total-Rows': String(exportEntries.length),
         },
       });
     }
@@ -139,6 +171,7 @@ interface CrossTenantFilters {
   startDate?: Date | undefined;
   endDate?: Date | undefined;
   userId?: string | undefined;
+  search?: string | undefined;
   page?: number | undefined;
   pageSize?: number | undefined;
 }
@@ -162,6 +195,16 @@ async function getCrossTenantAuditLogs(
   if (filters.entityType !== undefined) where.entityType = filters.entityType;
   if (filters.action !== undefined) where.action = filters.action;
   if (filters.userId !== undefined) where.actorId = filters.userId;
+  if (filters.search !== undefined && filters.search.trim() !== '') {
+    const term = filters.search.trim();
+    where.OR = [
+      { entityId: { contains: term, mode: 'insensitive' } },
+      { entityType: { contains: term, mode: 'insensitive' } },
+      { action: { contains: term, mode: 'insensitive' } },
+      { ipAddress: { contains: term, mode: 'insensitive' } },
+      { userAgent: { contains: term, mode: 'insensitive' } },
+    ];
+  }
   if (filters.startDate !== undefined || filters.endDate !== undefined) {
     where.createdAt = {
       ...(filters.startDate !== undefined ? { gte: filters.startDate } : {}),

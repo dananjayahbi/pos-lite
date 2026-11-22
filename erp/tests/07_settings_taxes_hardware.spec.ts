@@ -16,7 +16,8 @@
  *   Deterministic hardware-free paths: USB → 500 PRINTER_ERROR 'USB printing is not supported…'; empty host → 500 'Printer host address is required…'.
  * - GET on all three settings routes → 405.
  * - Seed: dilani settings has vatRate 18, ssclRate 2.5, hardware {type:'NETWORK',host:'192.168.1.100',port:9100,...} (FLAT — page reads raw.printer.* so page shows defaults until first PATCH).
- * - Sidebar "My Account" → /settings/account → 404 (no page exists).
+ * - Sidebar "My Account" → /settings/account is a real page (S7a–S7e cover the
+ *   profile card, clear/error states and the self-service password API).
  */
 import { test, expect, type Page } from '@playwright/test';
 
@@ -24,12 +25,15 @@ const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3003';
 const TAXES_API = `${BASE}/api/settings/taxes`;
 const HARDWARE_API = `${BASE}/api/settings/hardware`;
 const STORE_API = `${BASE}/api/settings/store`;
+const AUDIT_API = `${BASE}/api/audit-logs`;
+const STORE_PAGE = `${BASE}/settings/store`;
 const TEST_PRINT_API = `${BASE}/api/hardware/test-print`;
 const TEST_DRAWER_API = `${BASE}/api/hardware/test-drawer`;
 const TAXES_PAGE = `${BASE}/settings/taxes`;
 const HARDWARE_PAGE = `${BASE}/settings/hardware`;
 
 const OWNER = { email: 'owner@dilani-ayurwellness.lk', password: 'owner123!' };
+const MANAGER = { email: 'manager@ayurpos.dev', password: 'manager123!' };
 const CASHIER = { email: 'cashier1@ayurpos.dev', password: 'cashier123!' };
 const DISPATCH = { email: 'dispatch@ayurpos.dev', password: 'dispatch123!' };
 const FOREIGN_OWNER = { email: 'owner@lanka-electronics.lk', password: 'owner123!' };
@@ -78,6 +82,40 @@ interface SettingsSnapshot {
 let settingsSnapshot: SettingsSnapshot | null = null;
 const RUN_TAG = `qa-m07-${Date.now()}`;
 
+/**
+ * ARGUS #478: this suite used to restore a hardcoded "Ayur Wellness Centre"
+ * name/footer instead of the live profile. Every destructive test now restores
+ * the values captured here; a fresh run never rewrites the tenant's brand.
+ */
+async function restoreStoreProfile(page: Page): Promise<void> {
+  const snapshot = settingsSnapshot;
+  if (!snapshot) throw new Error('store profile snapshot was not captured in F0');
+  const res = await page.request.patch(STORE_API, {
+    data: {
+      storeName: snapshot.name ?? 'Ayur Wellness Centre',
+      logoUrl: snapshot.logoUrl ?? '',
+      address: String(snapshot.address ?? ''),
+      phoneNumber: String(snapshot.phoneNumber ?? ''),
+      receiptFooter: String(snapshot.receiptFooter ?? ''),
+    },
+  });
+  expect(res.status()).toBe(200);
+}
+
+async function restoreTaxRates(page: Page): Promise<void> {
+  const snapshot = settingsSnapshot;
+  if (!snapshot) throw new Error('tax snapshot was not captured in F0');
+  const res = await page.request.patch(TAXES_API, {
+    data: {
+      vatRate: Number(snapshot.vatRate ?? 0),
+      ssclRate: Number(snapshot.ssclRate ?? 0),
+      // A captured 0% is legitimate; the QA restore is an explicit confirmation.
+      acknowledgeZeroRate: true,
+    },
+  });
+  expect(res.status()).toBe(200);
+}
+
 test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
   test('F0 — baseline: capture settings snapshot for restore', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
@@ -89,6 +127,25 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     settingsSnapshot = { vatRate: Number(vat), ssclRate: Number(sscl) };
     expect(Number(vat)).toBeGreaterThanOrEqual(0);
     expect(Number(sscl)).toBeGreaterThanOrEqual(0);
+
+    // ARGUS #478: capture the *live* store profile, not a hardcoded brand.
+    await page.goto(STORE_PAGE);
+    await expect(page.locator('#storeName')).toBeVisible({ timeout: 30_000 });
+    const name = await page.locator('#storeName').inputValue();
+    const address = await page.locator('#address').inputValue();
+    const phoneNumber = await page.locator('#phoneNumber').inputValue();
+    const receiptFooter = await page.locator('#receiptFooter').inputValue();
+    const logo = page.locator('img[alt="Store logo"]');
+    const logoUrl = (await logo.count()) > 0 ? await logo.first().getAttribute('src') : '';
+    settingsSnapshot = {
+      ...settingsSnapshot,
+      name,
+      logoUrl: logoUrl ?? '',
+      address,
+      phoneNumber,
+      receiptFooter,
+    };
+    expect(name.length).toBeGreaterThanOrEqual(2);
   });
 
   // ─── §1 Functional & Business Lifecycle ───────────────────────────────
@@ -109,6 +166,9 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     // Static preview rows: STANDARD_VAT / SSCL / EXEMPT.
     await expect(page.getByText(/STANDARD_VAT|Standard VAT/i).first()).toBeVisible();
     await expect(page.getByText(/EXEMPT/i).first()).toBeVisible();
+    // ARGUS #478: the tax-invoice identity gap stays visible (registration and
+    // invoice numbering have no schema storage) rather than silently omitted.
+    await expect(page.getByText(/Tax and invoice identity/i)).toBeVisible();
   });
 
   test('F2 — tax settings save round-trip persists to Tenant.settings', async ({ page }) => {
@@ -124,12 +184,76 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     const nextSscl = currentSscl === '4.25' ? '5.25' : '4.25';
     await page.locator('#vatRate').fill(nextVat);
     await page.locator('#ssclRate').fill(nextSscl);
+    // ARGUS #475: the form now sends a version + effective date and may reload
+    // after a successful save, so the toast is asserted before the page settles.
     await page.getByRole('button', { name: /save tax settings/i }).click();
     await expect(page.getByText(/tax settings saved/i)).toBeVisible({ timeout: 10000 });
     // Server-rendered read-back proves persistence.
     await page.goto(TAXES_PAGE);
     await expect(page.locator('#vatRate')).toHaveValue(new RegExp(`^${nextVat.replace('.', '\\.')}$`));
     await expect(page.locator('#ssclRate')).toHaveValue(new RegExp(`^${nextSscl.replace('.', '\\.')}$`));
+  });
+
+  test('F2a — a tax write is audited with rates, effective date and version', async ({ page }) => {
+    await login(page, OWNER.email, OWNER.password);
+    const before = await page.request.get(TAXES_API);
+    expect(before.status()).toBe(200);
+    const beforeBody = await before.json();
+    const previous = beforeBody.data as {
+      vatRate: number;
+      ssclRate: number;
+      version: number;
+    };
+    const nextVat = previous.vatRate === 11.25 ? 12.25 : 11.25;
+
+    const res = await page.request.patch(TAXES_API, {
+      data: {
+        vatRate: nextVat,
+        ssclRate: previous.ssclRate,
+        expectedVersion: previous.version,
+        acknowledgeZeroRate: true,
+      },
+    });
+    expect(res.status()).toBe(200);
+    const saved = await res.json();
+    expect(saved.data.taxVersion).toBe(previous.version + 1);
+    expect(saved.data.vatRate).toBe(nextVat);
+
+    // The audit row is durable and carries before/after plus the effective date.
+    const audit = await page.request.get(
+      `${AUDIT_API}?entityType=TenantSettings&pageSize=5`,
+    );
+    expect(audit.status()).toBe(200);
+    const auditBody = await audit.json();
+    const latest = auditBody.data?.[0];
+    expect(latest?.action).toBe('SETTINGS_CHANGED');
+    expect(latest?.after?.vatRate).toBe(nextVat);
+    expect(latest?.after?.effectiveFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    await restoreTaxRates(page);
+  });
+
+  test('F2b — a stale expectedVersion is rejected instead of overwriting', async ({ page }) => {
+    await login(page, OWNER.email, OWNER.password);
+    const current = await page.request.get(TAXES_API);
+    const body = await current.json();
+    const staleVersion = Math.max(0, (body.data?.version ?? 0) - 1);
+    const rates = { vatRate: body.data?.vatRate ?? 0, ssclRate: body.data?.ssclRate ?? 0 };
+
+    const res = await page.request.patch(TAXES_API, {
+      data: { ...rates, expectedVersion: staleVersion, acknowledgeZeroRate: true },
+    });
+    expect(res.status()).toBe(409);
+    expect((await res.json()).error.code).toBe('VERSION_CONFLICT');
+  });
+
+  test('F2c — managers cannot change tax rates', async ({ page }) => {
+    await login(page, MANAGER.email, MANAGER.password);
+    const res = await page.request.patch(TAXES_API, {
+      data: { vatRate: 0, ssclRate: 0, acknowledgeZeroRate: true },
+    });
+    expect(res.status()).toBe(403);
+    expect((await res.json()).error.code).toBe('FORBIDDEN');
   });
 
   test('F3 — hardware page renders (seed-shape quirk: flat seed hardware → page defaults)', async ({ page }) => {
@@ -223,19 +347,21 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
 
   test('F8 — /api/settings/store PATCH works API-only (orphaned form, live route)', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
+    const snapshot = settingsSnapshot;
+    expect(snapshot).not.toBeNull();
     const res = await page.request.patch(STORE_API, {
       data: {
-        storeName: 'Ayur Wellness Centre',
-        logoUrl: '',
+        storeName: snapshot?.name ?? 'Ayur Wellness Centre',
+        logoUrl: snapshot?.logoUrl ?? '',
         address: `QA Probe ${RUN_TAG}`,
-        phoneNumber: '+94770000000',
-        receiptFooter: 'Thank you for shopping at Ayur Wellness Centre!',
+        phoneNumber: snapshot?.phoneNumber ?? '',
+        receiptFooter: snapshot?.receiptFooter ?? '',
       },
     });
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    expect(body.data.name).toBe('Ayur Wellness Centre');
+    expect(body.data.name).toBe(snapshot?.name ?? 'Ayur Wellness Centre');
     expect(body.data.settings.address).toBe(`QA Probe ${RUN_TAG}`);
   });
 
@@ -618,11 +744,154 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     expect(body.data.vatRate).toBe(18);
   });
 
-  test('S7 — "My Account" page /settings/account renders (OBS-81 dead link fixed)', async ({ page }) => {
+  test('S7 - "My Account" loads profile identity and day-first timestamps', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     await page.goto(`${BASE}/settings/account`);
     await expect(page.getByRole('heading', { name: /my account/i })).toBeVisible({ timeout: 15000 });
     expect(page.url()).toContain('/settings/account');
+
+    // ARGUS #465/#506: the card shows the sign-in email and the stored name
+    // (or its mailbox fallback), and timestamps use the ERP convention.
+    await expect(page.getByText(OWNER.email, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/Last sign-in/i)).toBeVisible();
+    // `20 Nov 2026, 14:02` - never `Nov 20, 2026, 2:02 PM`.
+    await expect(page.getByText(/\d{1,2} [A-Z][a-z]{2} \d{4}, \d{2}:\d{2}/).first()).toBeVisible();
+  });
+
+  test('S7b - a wrong current password is shown, and Clear removes the message', async ({
+    page,
+  }) => {
+    await login(page, OWNER.email, OWNER.password);
+    await page.goto(`${BASE}/settings/account`);
+    await waitForHydratedForm(page);
+
+    await page.fill('#currentPassword', 'definitely-not-the-password');
+    await page.fill('#newPassword', 'a-brand-new-password');
+    await page.fill('#confirmPassword', 'a-brand-new-password');
+    await page.getByRole('button', { name: /Update Password/i }).click();
+
+    await expect(page.getByText(/Current password is incorrect/i)).toBeVisible({
+      timeout: 15000,
+    });
+
+    // ARGUS #507: Clear must also clear stale validation/error text.
+    await page.getByRole('button', { name: /^Clear$/i }).click();
+    await expect(page.getByText(/Current password is incorrect/i)).toHaveCount(0);
+    await expect(page.locator('#currentPassword')).toHaveValue('');
+  });
+
+  test('S7c - a failed profile GET offers Retry instead of a dead end', async ({ page }) => {
+    await login(page, OWNER.email, OWNER.password);
+
+    let failOnce = true;
+    await page.route('**/api/settings/account', async (route) => {
+      if (route.request().method() === 'GET' && failOnce) {
+        failOnce = false;
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: false,
+            error: { message: 'Failed to fetch account details' },
+          }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto(`${BASE}/settings/account`);
+    await expect(page.getByText(/Failed to fetch account details/i)).toBeVisible({
+      timeout: 15000,
+    });
+    await page.getByRole('button', { name: /^Retry$/i }).click();
+    await expect(page.getByText(/Last sign-in/i)).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/Failed to fetch account details/i)).toHaveCount(0);
+  });
+
+  test('S7d - password API enforces the 72-byte cap, reuse rule and friendly errors', async ({
+    page,
+  }) => {
+    await login(page, OWNER.email, OWNER.password);
+
+    // Empty payload: a field message, not zod's raw "expected string" prose.
+    const empty = await page.request.post(`${BASE}/api/settings/account`, { data: {} });
+    expect(empty.status()).toBe(400);
+    const emptyBody = await empty.json();
+    expect(emptyBody.error.code).toBe('VALIDATION_ERROR');
+    expect(String(emptyBody.error.message)).not.toContain('expected string');
+
+    // 80 ASCII characters (and 24 four-byte emoji) exceed bcrypt's 72 bytes.
+    for (const newPassword of ['x'.repeat(80), '😀'.repeat(24)]) {
+      const over = await page.request.post(`${BASE}/api/settings/account`, {
+        data: {
+          currentPassword: OWNER.password,
+          newPassword,
+          confirmPassword: newPassword,
+        },
+      });
+      expect(over.status()).toBe(400);
+      const body = await over.json();
+      expect(body.error.code).toBe('VALIDATION_ERROR');
+      expect(body.error.details?.[0]?.path).toBe('newPassword');
+    }
+
+    // Same password as the current one is rejected server-side.
+    const same = await page.request.post(`${BASE}/api/settings/account`, {
+      data: {
+        currentPassword: OWNER.password,
+        newPassword: OWNER.password,
+        confirmPassword: OWNER.password,
+      },
+    });
+    expect(same.status()).toBe(400);
+    expect(String((await same.json()).error.message)).toMatch(/different from the current/i);
+  });
+
+  test('S7e - a successful self-service change invalidates the old session', async ({
+    browser,
+    page,
+  }) => {
+    await login(page, OWNER.email, OWNER.password);
+    const email = `${RUN_TAG}-account@ayurpos-qa.test`;
+    const initial = 'initial-pass-123';
+    const next = 'changed-pass-456';
+
+    const created = await page.request.post(`${BASE}/api/store/staff`, {
+      data: { email, role: 'CASHIER' },
+    });
+    expect(created.status()).toBe(201);
+    const id = (await created.json()).data.id;
+    expect(
+      (
+        await page.request.post(`${BASE}/api/store/staff/${id}/password`, {
+          data: { newPassword: initial },
+        })
+      ).status(),
+    ).toBe(200);
+
+    const ctx = await browser.newContext({ baseURL: BASE });
+    const staffPage = await ctx.newPage();
+    await login(staffPage, email, initial);
+    await staffPage.goto(`${BASE}/settings/account`);
+    await waitForHydratedForm(staffPage);
+
+    await staffPage.fill('#currentPassword', initial);
+    await staffPage.fill('#newPassword', next);
+    await staffPage.fill('#confirmPassword', next);
+    const changed = await ctx.request.post(`${BASE}/api/settings/account`, {
+      data: { currentPassword: initial, newPassword: next, confirmPassword: next },
+    });
+    expect(changed.status()).toBe(200);
+
+    // sessionVersion was bumped: the same cookie can no longer read the card.
+    const after = await ctx.request.get(`${BASE}/api/settings/account`);
+    const afterBody = await after.json().catch(() => null);
+    expect(afterBody?.success).not.toBe(true);
+
+    // Cleanup: deactivate the throwaway account through the owner session.
+    await page.request.patch(`${BASE}/api/store/staff/${id}`, { data: { isActive: false } });
+    await ctx.close();
   });
 
   // ─── §9 Boundary Inputs, Chaos & Unicode ──────────────────────────────
@@ -634,8 +903,8 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.data.name).toContain('<script>');
-    // Restore immediately.
-    await page.request.patch(STORE_API, { data: { storeName: 'Ayur Wellness Centre', logoUrl: '', address: '', phoneNumber: '', receiptFooter: '' } });
+    // Restore the captured profile (ARGUS #478), not a hardcoded brand.
+    await restoreStoreProfile(page);
   });
 
   test('X2 — store profile: storeName min-2 and max-80 zod bounds', async ({ page }) => {
@@ -662,8 +931,8 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
     const body = await res.json();
     const settings = typeof body.data.settings === 'string' ? JSON.parse(body.data.settings) : body.data.settings;
     expect(settings.receiptFooter).toBe(uni);
-    // Restore seed footer.
-    await page.request.patch(STORE_API, { data: { storeName: 'Ayur Wellness Centre', logoUrl: '', address: '', phoneNumber: '', receiptFooter: 'Thank you for shopping at Ayur Wellness Centre!' } });
+    // Restore the captured footer, not the seed text (ARGUS #478).
+    await restoreStoreProfile(page);
   });
 
   test('X5 — taxes: NaN-shaped and huge-number payloads rejected (no 500)', async ({ page }) => {
@@ -696,19 +965,16 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
   // ─── §10 Time-Travel & Retroactive Semantics ──────────────────────────
   test('T1 — settings PATCH timestamps: updatedAt advances monotonically', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
-    const a = await page.request.patch(TAXES_API, { data: { vatRate: 18, ssclRate: 2.5 } });
-    const b = await page.request.patch(TAXES_API, { data: { vatRate: 18.5, ssclRate: 2.5 } });
+    const a = await page.request.patch(TAXES_API, { data: { vatRate: 18, ssclRate: 2.5, acknowledgeZeroRate: true } });
+    const b = await page.request.patch(TAXES_API, { data: { vatRate: 18.5, ssclRate: 2.5, acknowledgeZeroRate: true } });
     expect(a.status()).toBe(200);
     expect(b.status()).toBe(200);
-    // No direct updatedAt exposure — assert both writes succeeded and restore.
-    const c = await page.request.patch(TAXES_API, { data: { vatRate: 18, ssclRate: 2.5 } });
-    expect(c.status()).toBe(200);
+    // The captured baseline is restored in T2/Z1; this test only proves both writes land.
   });
 
-  test('T2 — restore: seed tax rates and hardware restored after suite mutations', async ({ page }) => {
+  test('T2 — restore: captured tax rates and hardware are restored after suite mutations', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
-    const res = await page.request.patch(TAXES_API, { data: { vatRate: 18, ssclRate: 2.5 } });
-    expect(res.status()).toBe(200);
+    await restoreTaxRates(page);
     const hw = await page.request.patch(HARDWARE_API, {
       data: { printerType: 'NETWORK', host: '192.168.1.100', port: 9100, cashDrawerEnabled: true, cfdEnabled: true },
     });
@@ -716,18 +982,16 @@ test.describe.serial('Module 07 — Store Settings, Taxes & Hardware', () => {
   });
 
   // ─── §0 Cleanup ───────────────────────────────────────────────────────
-  test('Z1 — cleanup: settings restored to seed values', async ({ page }) => {
+  test('Z1 — cleanup: settings restored to the captured baseline', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
-    const taxes = await page.request.patch(TAXES_API, { data: { vatRate: 18, ssclRate: 2.5 } });
-    expect(taxes.status()).toBe(200);
+    await restoreTaxRates(page);
     const hw = await page.request.patch(HARDWARE_API, {
       data: { printerType: 'NETWORK', host: '192.168.1.100', port: 9100, cashDrawerEnabled: true, cfdEnabled: true },
     });
     expect(hw.status()).toBe(200);
-    const store = await page.request.patch(STORE_API, {
-      data: { storeName: 'Ayur Wellness Centre', logoUrl: '', address: '', phoneNumber: '', receiptFooter: 'Thank you for shopping at Ayur Wellness Centre!' },
-    });
-    expect(store.status()).toBe(200);
+    // ARGUS #478: restore the values captured in F0 so the live tenant keeps
+    // its own brand/contact/footer instead of a test fixture.
+    await restoreStoreProfile(page);
     expect(settingsSnapshot).not.toBeNull();
   });
 });

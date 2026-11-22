@@ -1,15 +1,41 @@
 import { prisma } from '@/lib/prisma';
-import { getPayrollRun } from '@/lib/services/payroll.service';
+import Decimal from 'decimal.js';
+import {
+  getPayrollRun,
+  getPayrollRunPaymentInfo,
+} from '@/lib/services/payroll.service';
 import { readPayrollSettingsFromTenantSettings } from '@/lib/payroll/payroll-settings';
 import type { BankSheetRow } from '@/lib/payroll/bank-sheet';
 import type { StatutoryRow } from '@/lib/payroll/statutory-return';
 import type { SummaryReportItem, SummaryReportTotals } from '@/lib/payroll/summary-report';
+import type { PayrollRunPaymentInfo } from '@/lib/payroll/payroll-run-status';
+import {
+  buildPayrollExportProvenance,
+  type PayrollExportProvenance,
+} from '@/lib/payroll/export-provenance';
+import { filterPayrollExportItems } from '@/lib/payroll/export-eligibility.core';
+import {
+  buildPayrollExportAudit,
+  type PayrollExportAuditFormat,
+  type PayrollExportAuditType,
+} from '@/lib/payroll/export-audit.core';
+import { AUDIT_ACTIONS, writeAuditLog } from '@/lib/services/audit.service';
+import {
+  buildExportPreflight,
+  type PayrollExportKind,
+  type PayrollExportPreflight,
+  type PayrollExportStaffRow,
+} from '@/lib/payroll/export-preflight';
 
 export interface PayrollExportContext {
   run: Awaited<ReturnType<typeof getPayrollRun>>;
   companyName: string;
   payrollSettings: ReturnType<typeof readPayrollSettingsFromTenantSettings>;
   generatedAt: Date;
+  /** ARGUS #385: derived from the PAYROLL_RUN_PAID audit entry. */
+  payment: PayrollRunPaymentInfo;
+  /** ARGUS #387: company identity is current, not snapshotted on the run. */
+  provenance: PayrollExportProvenance;
 }
 
 export async function getPayrollExportContext(
@@ -24,17 +50,29 @@ export async function getPayrollExportContext(
     }),
   ]);
 
+  const companyName = tenant.name;
+  const payrollSettings = readPayrollSettingsFromTenantSettings(tenant.settings);
+  const generatedAt = new Date();
+
   return {
     run,
-    companyName: tenant.name,
-    payrollSettings: readPayrollSettingsFromTenantSettings(tenant.settings),
-    generatedAt: new Date(),
+    companyName,
+    payrollSettings,
+    generatedAt,
+    payment: await getPayrollRunPaymentInfo(tenantId, run.id, run.status),
+    provenance: buildPayrollExportProvenance({
+      companyName,
+      employerEpfNumber: payrollSettings.employerEpfNumber,
+      employerEtfNumber: payrollSettings.employerEtfNumber,
+      generatedAt,
+    }),
   };
 }
 
 export function toBankSheetRows(context: PayrollExportContext): BankSheetRow[] {
-  return context.run.items.map((item) => ({
+  return filterPayrollExportItems(context.run.items, 'bank-sheet').map((item) => ({
     staffName: item.staffName,
+    nic: item.nic,
     bankName: item.bankName,
     bankBranch: item.bankBranch,
     bankAccountNumber: item.bankAccountNumber,
@@ -43,7 +81,7 @@ export function toBankSheetRows(context: PayrollExportContext): BankSheetRow[] {
 }
 
 export function toStatutoryRows(context: PayrollExportContext): StatutoryRow[] {
-  return context.run.items.map((item) => ({
+  return filterPayrollExportItems(context.run.items, 'statutory').map((item) => ({
     staffName: item.staffName,
     nic: item.nic,
     epfNumber: item.epfNumber,
@@ -80,6 +118,9 @@ export function summaryTotals(context: PayrollExportContext): SummaryReportTotal
     commission: run.totalCommission.toString(),
     gross: run.totalGross.toString(),
     deductions: run.totalDeductions.toString(),
+    deductionsIncludingEpf: new Decimal(run.totalDeductions)
+      .add(run.totalEmployeeEpf)
+      .toFixed(2),
     employeeEpf: run.totalEmployeeEpf.toString(),
     employerEpf: run.totalEmployerEpf.toString(),
     employerEtf: run.totalEmployerEtf.toString(),
@@ -94,4 +135,93 @@ export function periodLabel(periodStart: Date): string {
 
 export function formatExtension(value: string | null): 'xlsx' | 'pdf' {
   return value === 'xlsx' ? 'xlsx' : 'pdf';
+}
+
+/** Staff details needed by the bank sheet / C-form / ETF return checks. */
+export function toPreflightStaff(
+  context: PayrollExportContext,
+  kind: PayrollExportKind,
+): PayrollExportStaffRow[] {
+  return filterPayrollExportItems(context.run.items, kind).map((item) => ({
+    staffName: item.staffName,
+    bankName: item.bankName,
+    bankAccountNumber: item.bankAccountNumber,
+    nic: item.nic,
+    epfNumber: item.epfNumber,
+    etfNumber: item.etfNumber,
+  }));
+}
+
+/**
+ * ARGUS #378: completeness gate for one export. `summary` has no required
+ * staff identity fields, so it is always complete.
+ */
+export function buildPayrollExportPreflight(
+  context: PayrollExportContext,
+  kind: PayrollExportKind,
+): PayrollExportPreflight {
+  return buildExportPreflight({
+    kind,
+    staff: toPreflightStaff(context, kind),
+    employerEpfNumber: context.payrollSettings.employerEpfNumber,
+    employerEtfNumber: context.payrollSettings.employerEtfNumber,
+  });
+}
+
+export type PayrollExportPreflights = Record<PayrollExportKind, PayrollExportPreflight>;
+
+export function buildPayrollExportPreflights(
+  context: PayrollExportContext,
+): PayrollExportPreflights {
+  return {
+    'bank-sheet': buildPayrollExportPreflight(context, 'bank-sheet'),
+    statutory: buildPayrollExportPreflight(context, 'statutory'),
+    summary: buildPayrollExportPreflight(context, 'summary'),
+  };
+}
+
+/** Download links may explicitly override a flagged (incomplete) export. */
+export function allowsIncompleteExport(value: string | null): boolean {
+  return value === '1' || value === 'true';
+}
+
+/**
+ * ARGUS #391: durable audit trace for every successful sensitive payroll
+ * download. Uses `writeAuditLog`, which throws rather than swallowing failure,
+ * so an unauditable file is not returned.
+ */
+export async function recordPayrollExportDownload(input: {
+  tenantId: string;
+  runId: string;
+  actorId: string;
+  actorRole: string;
+  exportType: PayrollExportAuditType;
+  format: PayrollExportAuditFormat;
+  periodMonth: string;
+  itemCount: number;
+  incompleteOverride?: boolean | undefined;
+}): Promise<void> {
+  const payload = buildPayrollExportAudit({
+    exportType: input.exportType,
+    format: input.format,
+    periodMonth: input.periodMonth,
+    itemCount: input.itemCount,
+    incompleteOverride: input.incompleteOverride,
+  });
+
+  await writeAuditLog({
+    tenantId: input.tenantId,
+    actorId: input.actorId,
+    actorRole: input.actorRole,
+    entityType: 'PayrollRun',
+    entityId: input.runId,
+    action: AUDIT_ACTIONS.PAYROLL_EXPORT_DOWNLOADED,
+    after: {
+      exportType: payload.exportType,
+      format: payload.format,
+      periodMonth: payload.periodMonth,
+      itemCount: payload.itemCount,
+      incompleteOverride: payload.incompleteOverride,
+    },
+  });
 }

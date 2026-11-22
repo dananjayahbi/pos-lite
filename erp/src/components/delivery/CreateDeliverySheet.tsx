@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
@@ -28,6 +27,10 @@ import {
 import { useCreateDelivery, useLocations, useRatePreview } from '@/hooks/delivery';
 import { useDeliveryStore } from '@/stores/deliveryStore';
 import { formatRupee } from '@/lib/format';
+import {
+  buildRatePreviewRequest,
+  resolveRatePreviewState,
+} from '@/lib/delivery/ratePreview.core';
 
 interface CreateDeliverySheetProps {
   open: boolean;
@@ -38,7 +41,6 @@ export function CreateDeliverySheet({ open, onOpenChange }: CreateDeliverySheetP
   const closeCreate = useDeliveryStore((s) => s.closeCreate);
   const createDelivery = useCreateDelivery();
   const locations = useLocations();
-  const ratePreview = useRatePreview();
 
   const {
     register,
@@ -64,18 +66,33 @@ export function CreateDeliverySheet({ open, onOpenChange }: CreateDeliverySheetP
   const weight = watch('totalWeightKg') as number | undefined;
   const cityId = watch('address.cityId') as number | undefined;
   const cityName = watch('address.cityName') as string | undefined;
-
-  // Fetch a rate preview whenever the weight or destination city changes.
-  useEffect(() => {
-    if (!open) return;
-    if (weight != null && weight > 0 && cityId) {
-      ratePreview.mutate({ weightKg: weight, destinationCityId: cityId });
-    }
-  }, [open, weight, cityId]);
+  const districtId = watch('address.districtId') as number | undefined;
+  const previewRequest = buildRatePreviewRequest({
+    weightKg: weight,
+    destinationCityId: cityId,
+    destinationDistrictId: districtId,
+  });
+  const ratePreview = useRatePreview(previewRequest);
+  const previewState = resolveRatePreviewState({
+    request: previewRequest,
+    isPending: ratePreview.isPending,
+    isError: ratePreview.isError,
+    data: ratePreview.data ?? null,
+  });
+  // ARGUS #288: the COD field is the goods value; shipping is charged on top
+  // and collected with it. Show the collectable total so a zero-goods parcel
+  // does not look like a zero-COD delivery.
+  const goodsValue = Number(watch('codAmount') ?? 0) || 0;
+  const estimatedShipping = Number(ratePreview.data?.shippingFee ?? 0) || 0;
+  const collectableTotal = goodsValue + estimatedShipping;
 
   const cities = (locations.data?.cities ?? []) as Array<{
     id: number | null;
     name: string;
+  }>;
+  const districts = (locations.data?.districts ?? []) as Array<{
+    id: number;
+    text: string;
   }>;
   const usingFallbackCities = locations.data?.source === 'FALLBACK';
 
@@ -132,6 +149,35 @@ export function CreateDeliverySheet({ open, onOpenChange }: CreateDeliverySheetP
             <Input id="addressLine2" {...register('address.addressLine2')} placeholder="Optional" />
           </div>
 
+          {/* District */}
+          <div className="space-y-1.5">
+            <Label>District</Label>
+            <Select
+              value={districtId ? String(districtId) : ''}
+              onValueChange={(value) => {
+                const district = districts.find((d) => String(d.id) === value);
+                setValue('address.districtId', district?.id, { shouldValidate: true });
+                setValue('address.districtName', district?.text, { shouldValidate: true });
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={locations.isLoading ? 'Loading districts...' : 'Select district'}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {districts.map((district) => (
+                  <SelectItem key={district.id} value={String(district.id)}>
+                    {district.text}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-espresso/50">
+              Optional. Used with the city for district/city zone rates.
+            </p>
+          </div>
+
           {/* City */}
           <div className="space-y-1.5">
             <Label>City *</Label>
@@ -167,8 +213,11 @@ export function CreateDeliverySheet({ open, onOpenChange }: CreateDeliverySheetP
 
           {/* COD */}
           <div className="space-y-1.5">
-            <Label htmlFor="codAmount">COD Amount</Label>
+            <Label htmlFor="codAmount">Goods value (COD)</Label>
             <Input id="codAmount" type="number" step="0.01" {...register('codAmount')} placeholder="0.00" />
+            <p className="text-xs text-espresso/60">
+              Value of the goods. The shipping fee is added and collected on delivery.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -192,17 +241,58 @@ export function CreateDeliverySheet({ open, onOpenChange }: CreateDeliverySheetP
           </div>
 
           {/* Rate preview */}
-          {ratePreview.data && (
+          {previewState === 'incomplete' && (
+            <p className="text-espresso/50 text-xs">
+              Enter a weight and choose a city or district to estimate the shipping fee.
+            </p>
+          )}
+          {previewState === 'loading' && (
+            <p className="text-espresso/60 text-sm">Calculating shipping estimate...</p>
+          )}
+          {previewState === 'error' && (
+            <div
+              role="alert"
+              className="border-terracotta/30 bg-terracotta/5 rounded-lg border px-3 py-2 text-sm"
+            >
+              <p className="text-espresso font-medium">Could not calculate the shipping fee</p>
+              <p className="text-espresso/70 mt-1 text-xs">
+                {ratePreview.error instanceof Error
+                  ? ratePreview.error.message
+                  : 'The rate preview request failed.'}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                onClick={() => void ratePreview.refetch()}
+                disabled={ratePreview.isFetching}
+              >
+                {ratePreview.isFetching ? 'Retrying...' : 'Retry estimate'}
+              </Button>
+            </div>
+          )}
+          {previewState === 'not-configured' && (
+            <div
+              role="alert"
+              className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            >
+              Shipping is not configured for this store. Set an active rate card before creating a
+              delivery - the fee cannot be treated as free shipping.
+            </div>
+          )}
+          {previewState === 'ready' && ratePreview.data && (
             <div className="rounded-lg border border-espresso/10 bg-espresso/5 px-3 py-2 text-sm">
-              <span className="text-espresso/60">Estimated shipping fee: </span>
-              <span className="font-medium text-espresso">
-                {formatRupee(
-                  ratePreview.data.shippingFee ??
-                    ratePreview.data.total ??
-                    ratePreview.data.rate ??
-                    0,
-                )}
-              </span>
+              <div>
+                <span className="text-espresso/60">Estimated shipping fee: </span>
+                <span className="font-medium text-espresso">
+                  {formatRupee(ratePreview.data.shippingFee)}
+                </span>
+              </div>
+              <div className="mt-1 border-t border-espresso/10 pt-1">
+                <span className="text-espresso/60">Collectable on delivery (goods + shipping): </span>
+                <span className="font-medium text-espresso">{formatRupee(collectableTotal)}</span>
+              </div>
             </div>
           )}
 

@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
+  // Dev and production builds must not share `.next`. A `next build` writes a
+  // production route manifest; starting `next dev` on top of it served 404 for
+  // dynamic routes (product detail, stock history, barcode lookup, category /
+  // brand detail, storefront) until the cache was wiped (ARGUS #180).
+  distDir: process.env.NODE_ENV === 'development' ? '.next-dev' : '.next',
   // Allow cross-origin requests in dev mode. The admin UI is reached via the
   // /etc/hosts-mapped `admin.ruhunuwedagedara.lk` hostname, and the storefront
   // subdomain may issue `/_next/*` requests when its pages embed URLs that

@@ -18,11 +18,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { DELIVERY_STATUSES } from '@/lib/validators/delivery.validators';
 import type { DeliveryStatus } from '@/generated/prisma/client';
 
 interface BulkStatusDialogProps {
   count: number;
+  /**
+   * Statuses legal for every selected order (ARGUS #263). Empty means the
+   * selection has no shared move — the dialog refuses to guess.
+   */
+  allowedStatuses: readonly DeliveryStatus[];
   onCancel: () => void;
   onConfirm: (status: DeliveryStatus) => void;
   isPending?: boolean;
@@ -30,11 +34,15 @@ interface BulkStatusDialogProps {
 
 export function BulkStatusDialog({
   count,
+  allowedStatuses,
   onCancel,
   onConfirm,
   isPending = false,
 }: BulkStatusDialogProps) {
-  const [status, setStatus] = useState<DeliveryStatus>('PENDING_DISPATCH');
+  const [status, setStatus] = useState<DeliveryStatus | null>(
+    allowedStatuses[0] ?? null,
+  );
+  const noSharedStatus = allowedStatuses.length === 0;
 
   return (
     <Dialog open onOpenChange={(v) => { if (!v) onCancel(); }}>
@@ -42,18 +50,24 @@ export function BulkStatusDialog({
         <DialogHeader>
           <DialogTitle className="font-display text-espresso">Change status</DialogTitle>
           <DialogDescription>
-            Change the status of {count} selected order(s).
+            {noSharedStatus
+              ? `No common status is valid for the ${count} selected order(s). Failed and returned parcels are handled in Failed Deliveries & Recovery.`
+              : `Change the status of ${count} selected order(s). Only statuses valid for every selected order are listed.`}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-espresso">New status</label>
-          <Select value={status} onValueChange={(v) => setStatus(v as DeliveryStatus)}>
+          <Select
+            {...(status ? { value: status } : {})}
+            onValueChange={(v) => setStatus(v as DeliveryStatus)}
+            disabled={noSharedStatus}
+          >
             <SelectTrigger>
-              <SelectValue placeholder="Select status" />
+              <SelectValue placeholder={noSharedStatus ? 'No valid status' : 'Select status'} />
             </SelectTrigger>
             <SelectContent>
-              {DELIVERY_STATUSES.map((s) => (
+              {allowedStatuses.map((s) => (
                 <SelectItem key={s} value={s}>
                   {s.replace(/_/g, ' ').toLowerCase()}
                 </SelectItem>
@@ -67,8 +81,10 @@ export function BulkStatusDialog({
             Cancel
           </Button>
           <Button
-            onClick={() => onConfirm(status)}
-            disabled={isPending}
+            onClick={() => {
+              if (status) onConfirm(status);
+            }}
+            disabled={isPending || !status}
             aria-busy={isPending}
             data-testid="bulk-status-apply"
           >

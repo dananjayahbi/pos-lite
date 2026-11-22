@@ -28,7 +28,7 @@ export async function POST(_request: Request, { params }: RouteParams) {
     }
 
     const { id } = await params;
-    const po = await cancelPO(session.user.tenantId, id);
+    const po = await cancelPO(session.user.tenantId, id, session.user.id, session.user.role);
     return NextResponse.json({ success: true, data: po });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';

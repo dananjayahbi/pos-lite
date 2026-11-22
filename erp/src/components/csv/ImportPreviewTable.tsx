@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useCategories } from '@/hooks/useCategories';
 import { useBrands } from '@/hooks/useBrands';
+import { validateProductImportRow } from '@/lib/products/csv-import';
 import { toast } from 'sonner';
 
 interface ImportPreviewTableProps {
@@ -58,30 +59,25 @@ export function ImportPreviewTable({ data, mapping, onBack }: ImportPreviewTable
         mapped[field] = ((row[csvHeader] as string | undefined) ?? '').trim();
       }
 
-      const errors: string[] = [];
-      let status: RowStatus = 'valid';
-
-      // Error checks
-      if (!mapped.productName) {
-        errors.push('Product Name is required');
-        status = 'error';
-      }
-
-      const retailPriceStr = mapped.retailPrice ?? '';
-      const retailPrice = parseFloat(retailPriceStr);
-      if (!retailPriceStr || isNaN(retailPrice) || retailPrice <= 0) {
-        errors.push('Retail Price must be a positive number');
-        status = 'error';
-      }
-
-      if (!mapped.category) {
-        errors.push('Category is required');
-        status = 'error';
-      }
+      // ARGUS #146: one validator for the preview and the API. Missing cost,
+      // below-cost, invalid tax and invalid stock are errors (not silent
+      // defaults); blank tax/stock are reported as warnings.
+      const result = validateProductImportRow(mapped, idx + 1);
+      const errors = [...result.errors];
+      let status: RowStatus = result.ok ? 'valid' : 'error';
 
       if (!mapped.sku && !mapped.barcode) {
         errors.push('Either SKU or Barcode is required');
         status = 'error';
+      }
+
+      if (result.defaults.taxRule) {
+        errors.push('Tax Rule is blank - will default to STANDARD_VAT');
+        if (status !== 'error') status = 'warning';
+      }
+      if (result.defaults.initialStock) {
+        errors.push('Initial Stock is blank - will import as 0');
+        if (status !== 'error') status = 'warning';
       }
 
       // Warning checks (only if not already error)
@@ -113,43 +109,49 @@ export function ImportPreviewTable({ data, mapping, onBack }: ImportPreviewTable
   const pageRows = validatedRows.slice(page * ROWS_PER_PAGE, (page + 1) * ROWS_PER_PAGE);
 
   const handleImport = async () => {
-    const importableRows = validatedRows
-      .filter((r) => r.status !== 'error')
-      .map((r) => {
-        const d = r.mappedData;
-        const row: Record<string, unknown> = {
-          productName: d.productName,
-          category: d.category,
-          retailPrice: parseFloat(d.retailPrice ?? '0'),
-        };
-        if (d.sku) row.sku = d.sku;
-        if (d.barcode) row.barcode = d.barcode;
-        if (d.brand) row.brand = d.brand;
-        if (d.description) row.description = d.description;
-        if (d.tags) row.tags = d.tags;
-        if (d.costPrice) row.costPrice = parseFloat(d.costPrice as string);
-        if (d.form) row.form = d.form;
-        if (d.packSize) row.packSize = d.packSize;
-        if (d.lowStockThreshold) row.lowStockThreshold = parseInt(d.lowStockThreshold, 10);
-        if (d.wholesalePrice) row.wholesalePrice = parseFloat(d.wholesalePrice);
-        return row;
-      });
+    // Send every preview row with its CSV row number; the API validates again
+    // and returns a structured summary naming rejected rows and defaults.
+    const importRows = validatedRows.map((r) => ({
+      rowNumber: r.rowNumber,
+      ...r.mappedData,
+    }));
 
     setIsImporting(true);
     try {
       const res = await fetch('/api/store/products/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: importableRows }),
+        body: JSON.stringify({ rows: importRows }),
       });
-      const json = await res.json();
+      const json = (await res.json()) as {
+        success: boolean;
+        error?: { message?: string };
+        data?: {
+          productsCreated: number;
+          variantsCreated: number;
+          rowsCreated: number;
+          rowsRejected: number;
+          partial: boolean;
+          message?: string;
+        };
+      };
       if (!res.ok) {
         toast.error(`Import failed: ${json.error?.message ?? 'Unknown error'}`);
         return;
       }
-      toast.success(
-        `${json.data.productsCreated} products created, ${json.data.variantsCreated} variants added.`,
-      );
+      const summary = json.data;
+      if (!summary) {
+        toast.error('Import failed: empty response');
+        return;
+      }
+      const headline =
+        summary.message ??
+        `${summary.productsCreated} products, ${summary.variantsCreated} variants imported.`;
+      if (summary.partial || summary.rowsRejected > 0) {
+        toast.warning(headline);
+      } else {
+        toast.success(headline);
+      }
       router.push('/inventory');
     } catch {
       toast.error('Import failed: network error');
@@ -188,6 +190,9 @@ export function ImportPreviewTable({ data, mapping, onBack }: ImportPreviewTable
               <th className="px-4 py-2 text-left font-body font-semibold text-espresso">Product Name</th>
               <th className="px-4 py-2 text-left font-body font-semibold text-espresso">SKU</th>
               <th className="px-4 py-2 text-right font-body font-semibold text-espresso">Retail Price</th>
+              <th className="px-4 py-2 text-right font-body font-semibold text-espresso">Cost Price</th>
+              <th className="px-4 py-2 text-center font-body font-semibold text-espresso">Tax Rule</th>
+              <th className="px-4 py-2 text-right font-body font-semibold text-espresso">Initial Stock</th>
               <th className="px-4 py-2 text-center font-body font-semibold text-espresso">Status</th>
             </tr>
           </thead>
@@ -214,11 +219,23 @@ export function ImportPreviewTable({ data, mapping, onBack }: ImportPreviewTable
                   <td className="px-4 py-2 text-right font-mono text-xs text-espresso">
                     {row.mappedData.retailPrice || '-'}
                   </td>
+                  <td className="px-4 py-2 text-right font-mono text-xs text-espresso">
+                    {row.mappedData.costPrice || '-'}
+                  </td>
+                  <td className="px-4 py-2 text-center font-mono text-xs text-espresso">
+                    {row.mappedData.taxRule || 'STANDARD_VAT (default)'}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono text-xs text-espresso">
+                    {row.mappedData.initialStock === undefined ||
+                    row.mappedData.initialStock === ''
+                      ? '0 (default)'
+                      : row.mappedData.initialStock}
+                  </td>
                   <td className="px-4 py-2 text-center">{statusBadge(row.status)}</td>
                 </tr>
                 {expandedRow === row.rowNumber && (
                   <tr key={`${row.rowNumber}-detail`} className="border-b border-sand bg-linen/30">
-                    <td colSpan={6} className="px-8 py-3">
+                    <td colSpan={9} className="px-8 py-3">
                       <div className="space-y-1">
                         <div className="grid grid-cols-2 gap-x-6 gap-y-1 font-body text-xs text-espresso">
                           {Object.entries(row.mappedData)

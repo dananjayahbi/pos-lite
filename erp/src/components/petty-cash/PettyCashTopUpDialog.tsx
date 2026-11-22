@@ -9,15 +9,18 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { AccountSelect } from '@/components/payment-accounts/AccountSelect';
 import { AmountDateNoteFields } from '@/components/payment-accounts/AmountDateNoteFields';
 import { DialogSubmitRow } from '@/components/payment-accounts/DialogSubmitRow';
 import { formatRupee } from '@/lib/format';
 import { parseMoney, todayIso } from '@/components/payment-accounts/paymentAccountLabels';
 import type { PaymentAccount } from '@/components/payment-accounts/paymentAccountTypes';
+import type { TopUpSourceType } from '@/lib/validators/petty-cash.validators';
 
 export interface PettyCashTopUpPayload {
   amount: number;
+  sourceType: TopUpSourceType;
   sourceAccountId: string | null;
   description?: string;
   entryDate: string;
@@ -33,9 +36,10 @@ interface PettyCashTopUpDialogProps {
 }
 
 /**
- * "Add Cash In" — tops up the petty-cash float. The source account is
- * optional: when chosen, both ledgers move (bank/cash → petty cash); when left
- * empty, the cash is recorded as entering the business from outside.
+ * "Add Cash In" - tops up the petty-cash float. ARGUS #413 makes the source
+ * path explicit: external cash (no bank debit) or a transfer from a chosen
+ * account (both ledgers move). A future date is rejected because the balance
+ * is incremented immediately.
  */
 export function PettyCashTopUpDialog({
   open,
@@ -77,6 +81,7 @@ function TopUpForm({
   onSubmit,
   onCancel,
 }: TopUpFormProps) {
+  const [sourceType, setSourceType] = useState<TopUpSourceType>('EXTERNAL');
   const [sourceAccountId, setSourceAccountId] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [entryDate, setEntryDate] = useState(todayIso());
@@ -89,9 +94,22 @@ function TopUpForm({
   const amountNumber = parseMoney(amount);
   const amountValid = amountNumber !== null && amountNumber > 0;
   const exceedsSource =
-    amountValid && sourceBalance !== null && amountNumber !== null && amountNumber > sourceBalance;
+    sourceType === 'ACCOUNT' &&
+    amountValid &&
+    sourceBalance !== null &&
+    amountNumber !== null &&
+    amountNumber > sourceBalance;
+  const sourceValid = sourceType === 'EXTERNAL' || Boolean(sourceAccountId);
+  const futureDate = entryDate > todayIso();
 
-  const canSubmit = amountValid && !exceedsSource && !isSubmitting;
+  const canSubmit =
+    amountValid && !exceedsSource && sourceValid && !futureDate && !isSubmitting;
+
+  const chooseExternal = () => {
+    setSourceType('EXTERNAL');
+    setSourceAccountId(null);
+  };
+  const chooseTransfer = () => setSourceType('ACCOUNT');
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -102,7 +120,8 @@ function TopUpForm({
     try {
       await onSubmit({
         amount: amountNumber,
-        sourceAccountId,
+        sourceType,
+        sourceAccountId: sourceType === 'ACCOUNT' ? sourceAccountId : null,
         ...(note.trim() ? { description: note.trim() } : {}),
         entryDate,
       });
@@ -117,8 +136,8 @@ function TopUpForm({
       <DialogHeader>
         <DialogTitle className="font-display">Add Cash In</DialogTitle>
         <DialogDescription className="font-body text-sm text-mist-ink">
-          Top up the petty-cash float. The amount is added to Current Balance immediately
-          and recorded in the Linked Expenses table.
+          Top up the petty-cash float. Choose external cash or a transfer from an account; the
+          amount is added to Current Balance immediately. Only today or past dates are accepted.
         </DialogDescription>
       </DialogHeader>
 
@@ -131,34 +150,82 @@ function TopUpForm({
           </p>
         </div>
 
-        <div>
-          <Label htmlFor="petty-cash-topup-source" className="font-body">
-            From account <span className="font-normal text-mist-ink">(optional)</span>
-          </Label>
-          <div className="mt-1.5">
-            <AccountSelect
-              id="petty-cash-topup-source"
-              accounts={accounts}
-              value={sourceAccountId}
-              onValueChange={setSourceAccountId}
-              placeholder="Outside the business / bank transfer"
-              {...(paymentAccountId ? { excludeAccountId: paymentAccountId } : {})}
-              noneLabel="Outside the business / bank transfer"
+        <div className="space-y-2">
+          <Label>Source</Label>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={chooseExternal}
               disabled={isSubmitting}
-              className="w-full border-mist"
-            />
+              className={`rounded-lg border p-3 text-left ${
+                sourceType === 'EXTERNAL'
+                  ? 'border-espresso bg-linen/50'
+                  : 'border-mist hover:border-espresso/40'
+              }`}
+            >
+              <span className="block font-body text-sm font-semibold text-espresso">
+                External cash
+              </span>
+              <span className="mt-1 block font-body text-xs text-sand-ink">
+                Cash enters from outside the business. No bank account is debited.
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={chooseTransfer}
+              disabled={isSubmitting}
+              className={`rounded-lg border p-3 text-left ${
+                sourceType === 'ACCOUNT'
+                  ? 'border-espresso bg-linen/50'
+                  : 'border-mist hover:border-espresso/40'
+              }`}
+            >
+              <span className="block font-body text-sm font-semibold text-espresso">
+                Transfer from account
+              </span>
+              <span className="mt-1 block font-body text-xs text-sand-ink">
+                Debits the chosen bank or cash account and credits petty cash.
+              </span>
+            </button>
           </div>
-          <p className="mt-1 font-body text-[11px] text-sand-ink">
-            {source
-              ? `Recorded as “Petty Cash Replenished from ${source.name}” unless you add a note.`
-              : 'Recorded as “Petty Cash Replenished” unless you add a note.'}
-          </p>
-          {source && sourceBalance !== null && (
-            <p className="mt-1 font-body text-[11px] text-sand-ink">
-              Available in {source.name}: {formatRupee(sourceBalance)}
-            </p>
-          )}
         </div>
+
+        {sourceType === 'ACCOUNT' && (
+          <div>
+            <Label htmlFor="petty-cash-topup-source" className="font-body">
+              Source account
+            </Label>
+            <div className="mt-1.5">
+              <AccountSelect
+                id="petty-cash-topup-source"
+                accounts={accounts}
+                value={sourceAccountId}
+                onValueChange={setSourceAccountId}
+                placeholder="Select the account the transfer came from"
+                {...(paymentAccountId ? { excludeAccountId: paymentAccountId } : {})}
+                disabled={isSubmitting}
+                className="w-full border-mist"
+              />
+            </div>
+            <p className="mt-1 font-body text-[11px] text-sand-ink">
+              {source
+                ? `Recorded as “Petty Cash Replenished from ${source.name}” unless you add a note.`
+                : 'Select a source account. The transfer is recorded in both account ledgers.'}
+            </p>
+            {source && sourceBalance !== null && (
+              <p className="mt-1 font-body text-[11px] text-sand-ink">
+                Available in {source.name}: {formatRupee(sourceBalance)}
+              </p>
+            )}
+          </div>
+        )}
+
+        {sourceType === 'EXTERNAL' && (
+          <p className="rounded-md border border-mist bg-linen/30 p-3 font-body text-xs text-sand-ink">
+            Recorded as “Petty Cash Replenished” unless you add a note. No bank or cash account is
+            debited, so this must be real cash entering the business.
+          </p>
+        )}
 
         <AmountDateNoteFields
           idPrefix="petty-cash-topup"
@@ -173,7 +240,13 @@ function TopUpForm({
               ? `Amount exceeds the available balance of ${formatRupee(sourceBalance)}`
               : undefined
           }
-          amountHint="Added to the petty cash Current Balance"
+          amountHint={
+            sourceType === 'ACCOUNT'
+              ? 'Debited from the selected account and added to petty cash'
+              : 'Added to petty cash from external cash'
+          }
+          dateMax={todayIso()}
+          dateError={futureDate ? 'Date cannot be in the future' : undefined}
           disabled={isSubmitting}
         />
 

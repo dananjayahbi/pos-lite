@@ -4,14 +4,23 @@ import Decimal from 'decimal.js';
 
 import { Prisma } from '@/generated/prisma/client';
 import type { StockMovementReason } from '@/generated/prisma/client';
+import type { DeliveryStatus } from '@/generated/prisma/client';
+import { DELIVERY_STATUSES } from '@/lib/validators/delivery.validators';
 import { prisma } from '@/lib/prisma';
-import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import {
+  createAuditLog,
+  writeAuditLog,
+  AUDIT_ACTIONS,
+} from '@/lib/services/audit.service';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import type { TxClient } from '@/lib/services/inventory.service';
 import { calculateShippingFee } from '@/lib/services/rate-engine.service';
+import { resolveShippingChargeDecision } from '@/lib/delivery/shippingConfig.core';
+import { phoneSearchVariants } from '@/lib/delivery/search.core';
 import { createShipment } from '@/lib/services/shipment.service';
-import { autoDeductPackaging, notifyLowStock } from '@/lib/services/packaging.service';
+import { autoDeductPackaging, assertPackagingAvailableForDispatch, notifyLowStock } from '@/lib/services/packaging.service';
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
+import { decryptCourierAccount } from '@/lib/courier/credentials';
 import { toCourierOrderPayload } from '@/lib/courier/mappers';
 import { HOLD_BUFFER_DURATION_MS, TERMINAL_SHIPMENT_STATUSES } from '@/lib/constants/courier';
 import type {
@@ -61,17 +70,26 @@ async function generateOrderRef(tx: TxClient, tenantId: string): Promise<string>
 }
 
 export async function getDeliveries(tenantId: string, filters: DeliveryFilters) {
-  const { status, source, search, dateFrom, dateTo, page, limit } = filters;
+  const { status, statuses, source, search, dateFrom, dateTo, includeCounts, page, limit } = filters;
 
   const where: Prisma.DeliveryWhereInput = { tenantId, deletedAt: null };
-  if (status) where.status = status;
   if (source) where.source = source;
   if (search) {
+    // ARGUS #268: a dispatch lookup is usually a phone number. Match the
+    // recipient/alternate phone, the linked customer's phone and name, plus the
+    // common phone spellings from `phoneSearchVariants`.
+    const phoneMatches = phoneSearchVariants(search).flatMap((term) => [
+      { address: { phone: { contains: term, mode: 'insensitive' as const } } },
+      { address: { phone2: { contains: term, mode: 'insensitive' as const } } },
+      { customer: { phone: { contains: term, mode: 'insensitive' as const } } },
+    ]);
     where.OR = [
       { orderRef: { contains: search, mode: 'insensitive' } },
       { courierOrderRef: { contains: search, mode: 'insensitive' } },
       { address: { fullName: { contains: search, mode: 'insensitive' } } },
+      { customer: { name: { contains: search, mode: 'insensitive' } } },
       { shipments: { some: { waybillId: { contains: search, mode: 'insensitive' } } } },
+      ...phoneMatches,
     ];
   }
   if (dateFrom || dateTo) {
@@ -80,7 +98,23 @@ export async function getDeliveries(tenantId: string, filters: DeliveryFilters) 
     if (dateTo) where.createdAt.lte = new Date(dateTo);
   }
 
-  const [total, items] = await Promise.all([
+  // ARGUS #269: the dispatch queue sends several statuses at once.
+  const requestedStatuses = (statuses ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value): value is DeliveryStatus =>
+      (DELIVERY_STATUSES as readonly string[]).includes(value),
+    );
+  // Counts describe the search scope, not the current status filter, so the
+  // workload summary still shows the other buckets.
+  const countWhere: Prisma.DeliveryWhereInput = { ...where };
+  if (requestedStatuses.length > 0) {
+    where.status = { in: requestedStatuses };
+  } else if (status) {
+    where.status = status;
+  }
+
+  const [total, items, statusGroups] = await Promise.all([
     prisma.delivery.count({ where }),
     prisma.delivery.findMany({
       where,
@@ -88,14 +122,38 @@ export async function getDeliveries(tenantId: string, filters: DeliveryFilters) 
         address: true,
         shipments: { orderBy: { createdAt: 'desc' }, take: 1 },
         customer: { select: { id: true, name: true, phone: true } },
+        // ARGUS #307: the waybill description needs at least the first product
+        // and SKU for courier/customs identification.
+        lines: {
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+          select: { productNameSnapshot: true, skuSnapshot: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
     }),
+    includeCounts === '1'
+      ? prisma.delivery.groupBy({
+          by: ['status'],
+          where: countWhere,
+          _count: { _all: true },
+        })
+      : Promise.resolve([]),
   ]);
 
-  return { items, total, page, limit };
+  const statusCounts = Object.fromEntries(
+    statusGroups.map((group) => [group.status, group._count._all]),
+  );
+
+  return {
+    items,
+    total,
+    page,
+    limit,
+    ...(includeCounts === '1' ? { statusCounts } : {}),
+  };
 }
 
 export async function getDeliveryById(tenantId: string, id: string) {
@@ -141,6 +199,15 @@ export async function createDelivery(
     destinationDistrictId: input.address.districtId,
     destinationCityId: input.address.cityId,
   });
+  // ARGUS #292: no active card is a configuration error, not free shipping.
+  if (
+    resolveShippingChargeDecision({
+      configured: fee.configured,
+      shippingFee: fee.shippingFee.toString(),
+    }).blocked
+  ) {
+    throw new Error('SHIPPING_NOT_CONFIGURED');
+  }
 
   const holdExpiresAt = new Date(Date.now() + HOLD_BUFFER_DURATION_MS);
 
@@ -255,6 +322,14 @@ export async function updateDelivery(
           ? input.address.districtId
           : existing.address?.districtId,
       });
+      if (
+        resolveShippingChargeDecision({
+          configured: fee.configured,
+          shippingFee: fee.shippingFee.toString(),
+        }).blocked
+      ) {
+        throw new Error('SHIPPING_NOT_CONFIGURED');
+      }
       data.shippingFee = fee.shippingFee.toFixed(2);
     }
 
@@ -444,6 +519,13 @@ export async function dispatchDelivery(
     throw new Error('DELIVERY_PAYMENT_NOT_SETTLED');
   }
 
+  // ARGUS #282: short packaging blocks the dispatch before a courier waybill is
+  // issued. The API caller must send the explicit shortfall override to proceed.
+  await assertPackagingAvailableForDispatch(tenantId, id, {
+    ...(input.packagingItemIds !== undefined ? { itemIds: input.packagingItemIds } : {}),
+    allowShortfall: input.allowPackagingShortfall === true,
+  });
+
   const account = await prisma.courierAccount.findFirst({ where: { tenantId } });
   if (!account?.isActive) throw new Error('COURIER_ACCOUNT_NOT_CONFIGURED');
 
@@ -452,11 +534,13 @@ export async function dispatchDelivery(
   const adapter = resolveAdapterForAccount(account);
 
   // Authenticate (API key for prod, or login for staging).
+  // ARGUS #514: the stored row is ciphertext; decrypt only for the request.
+  const credentials = decryptCourierAccount(account);
   const auth = await adapter.authenticate({
-    email: account.email ?? undefined,
-    password: account.password ?? undefined,
-    apiKey: account.apiKey ?? undefined,
-    env: account.env,
+    email: credentials.email ?? undefined,
+    password: credentials.password ?? undefined,
+    apiKey: credentials.apiKey ?? undefined,
+    env: credentials.env,
   });
   if (!auth.ok) throw new Error(`COURIER_AUTH_FAILED:${auth.error.message}`);
 
@@ -472,7 +556,7 @@ export async function dispatchDelivery(
       cityName: existing.address.cityName,
       districtId: existing.address.districtId,
     },
-    { orderRef: existing.orderRef, codAmount: existing.codAmount, notes: existing.notes, itemCount: existing.itemCount },
+    { orderRef: existing.orderRef, codAmount: existing.codAmount, shippingFee: existing.shippingFee, paymentStatus: existing.paymentStatus, notes: existing.notes, itemCount: existing.itemCount },
     { waybillId: input.waybillMode === 'MANUAL' ? input.manualWaybillId : undefined },
   );
 
@@ -482,7 +566,9 @@ export async function dispatchDelivery(
   });
   if (!upload.ok) throw new Error(`COURIER_UPLOAD_FAILED:${upload.error.message}`);
 
-  const { dispatched, deductions } = await prisma.$transaction(async (tx: TxClient) => {
+  const { dispatched, deductions } = await (async () => {
+    try {
+      return await prisma.$transaction(async (tx: TxClient) => {
     const updated = await tx.delivery.update({
       where: { id },
       data: {
@@ -529,10 +615,40 @@ export async function dispatchDelivery(
     // status flip, so a parcel can never be marked DISPATCHED with its
     // packaging stock left un-deducted. The low-stock notification stays
     // outside the transaction (notifications must not roll stock back).
-    const deductions = await autoDeductPackaging(tenantId, id, { tx });
+    const deductions = await autoDeductPackaging(tenantId, id, {
+      tx,
+      actorId: userId,
+      ...(input.packagingItemIds !== undefined ? { itemIds: input.packagingItemIds } : {}),
+      allowShortfall: input.allowPackagingShortfall === true,
+    });
 
-    return { dispatched: updated, deductions };
-  });
+      return { dispatched: updated, deductions };
+      });
+    } catch (error) {
+      // The courier already issued a waybill; the local transaction rolled
+      // back. Make the orphan explicit instead of losing it (dispatch/courier
+      // atomicity proposal). There is no cancel API to call here.
+      const reason = error instanceof Error ? error.message : String(error);
+      try {
+        await writeAuditLog({
+          tenantId,
+          actorId: userId,
+          actorRole: 'UNKNOWN',
+          entityType: 'Delivery',
+          entityId: id,
+          action: AUDIT_ACTIONS.DELIVERY_DISPATCH_ORPHANED,
+          after: {
+            waybillId: upload.data.waybillId,
+            courierOrderId: upload.data.courierOrderId ?? null,
+            reason,
+          },
+        });
+      } catch (auditError) {
+        console.error('Orphaned dispatch audit failed:', auditError);
+      }
+      throw new Error(`DISPATCH_ROLLED_BACK_WITH_WAYBILL:${upload.data.waybillId}`);
+    }
+  })();
 
   // Non-blocking low-stock notification for anything that fell short.
   if (deductions.length > 0) {
@@ -559,11 +675,12 @@ export async function trackShipment(tenantId: string, shipmentId: string, userId
 
   const adapter = resolveAdapterForAccount(account);
 
+  const trackCredentials = decryptCourierAccount(account);
   const auth = await adapter.authenticate({
-    email: account.email ?? undefined,
-    password: account.password ?? undefined,
-    apiKey: account.apiKey ?? undefined,
-    env: account.env,
+    email: trackCredentials.email ?? undefined,
+    password: trackCredentials.password ?? undefined,
+    apiKey: trackCredentials.apiKey ?? undefined,
+    env: trackCredentials.env,
   });
   if (!auth.ok) throw new Error(`COURIER_AUTH_FAILED:${auth.error.message}`);
 

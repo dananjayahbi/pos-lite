@@ -8,7 +8,9 @@ import { createPaymentAccount, listPaymentAccounts } from '@/lib/services/paymen
 import { ensureDefaultPettyCashPaymentAccount } from '@/lib/services/petty-cash.service';
 
 export async function GET(request: Request) {
-  const guard = await requirePaymentAccountAuth(PERMISSIONS.PAYMENT_ACCOUNT.viewPaymentAccount);
+  // The full list includes every balance; destination pickers use the safe
+  // /destinations route instead (ARGUS #427).
+  const guard = await requirePaymentAccountAuth(PERMISSIONS.PAYMENT_ACCOUNT.managePaymentAccount);
   if (!guard.ok) return guard.response;
 
   try {

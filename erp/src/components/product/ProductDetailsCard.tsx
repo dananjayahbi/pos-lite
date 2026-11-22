@@ -4,14 +4,11 @@ import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { ImageViewerModal } from '@/components/product/ImageViewerModal';
+import { taxRuleLabel } from '@/lib/constants/product-options';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
+import { useTaxRates } from '@/hooks/useTaxRates';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-const TAX_LABELS: Record<string, string> = {
-  STANDARD_VAT: 'Standard VAT (15%)',
-  SSCL: 'SSCL',
-  EXEMPT: 'VAT Exempt',
-};
 
 const SOURCE_LABELS: Record<string, string> = {
   MANUFACTURED: 'Manufactured',
@@ -19,14 +16,7 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
+  return formatStockMovementTimestamp(dateStr);
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -53,6 +43,7 @@ interface ProductDetailsCardProps {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function ProductDetailsCard({ product, variants = [] }: ProductDetailsCardProps) {
+  const { data: taxRates } = useTaxRates();
   const [descExpanded, setDescExpanded] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
   const descTruncated = product.description && product.description.length > 200;
@@ -142,7 +133,7 @@ export function ProductDetailsCard({ product, variants = [] }: ProductDetailsCar
         {/* Tax Rule */}
         <FieldRow
           label="Tax Rule"
-          value={TAX_LABELS[product.taxRule] ?? product.taxRule}
+          value={taxRuleLabel(product.taxRule, taxRates)}
         />
 
         {/* Product Source */}

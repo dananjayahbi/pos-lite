@@ -3,7 +3,9 @@
 import type { Brand } from '@/hooks/useBrands';
 import { Badge } from '@/components/ui/badge';
 import { Pencil } from 'lucide-react';
-import { ResourceDeleteButton, productsAssignedReason } from '@/components/shared/ResourceDeleteButton';
+import { ResourceDeleteButton } from '@/components/shared/ResourceDeleteButton';
+import { brandDeleteBlockedReason } from '@/lib/brands/brandDelete.core';
+import { shouldHandleRowKey } from '@/lib/catalog/listRowKeyboard.core';
 
 interface BrandListProps {
   brands: Brand[];
@@ -44,7 +46,9 @@ export function BrandList({
             tabIndex={0}
             onClick={() => onSelect?.(brand)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
+              // Keys pressed on the edit/delete buttons bubble here; only keys
+              // that originate on the row itself may select it (ARGUS #178).
+              if (shouldHandleRowKey(e.key, e.target === e.currentTarget)) {
                 e.preventDefault();
                 onSelect?.(brand);
               }
@@ -97,11 +101,7 @@ export function BrandList({
                   canDelete
                   label={brand.name}
                   onDelete={() => onDelete?.(brand)}
-                  blockedReason={
-                    brand._count.products > 0
-                      ? productsAssignedReason(brand._count.products)
-                      : undefined
-                  }
+                  blockedReason={brandDeleteBlockedReason(brand._count.products)}
                 />
               )}
             </div>

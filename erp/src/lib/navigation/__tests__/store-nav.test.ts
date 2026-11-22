@@ -44,6 +44,7 @@ const EXPECTED_HREFS = [
   '/factory',
   '/orders',
   '/delivery',
+  '/delivery/failed',
   '/delivery/packaging',
   '/delivery/settings',
   '/delivery/rate-card',
@@ -90,6 +91,26 @@ describe('store navigation', () => {
   it('does not leave empty groups', () => {
     for (const group of storeNavGroups) {
       expect(group.items.length, `${group.label} is empty`).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('navigation icons', () => {
+  const allItems: NavItem[] = storeNavGroups.flatMap((group) => group.items);
+
+  it('gives every nav item an icon', () => {
+    for (const item of allItems) {
+      expect(item.icon, `${item.href} has no icon`).toBeTruthy();
+    }
+  });
+
+  it('never reuses an icon, so each section stays recognisable', () => {
+    const seen = new Map<unknown, string>();
+
+    for (const item of allItems) {
+      const previousHref = seen.get(item.icon);
+      expect(previousHref, `${item.href} reuses the icon of ${previousHref}`).toBeUndefined();
+      seen.set(item.icon, item.href);
     }
   });
 });

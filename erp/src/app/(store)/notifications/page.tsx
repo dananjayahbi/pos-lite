@@ -6,13 +6,23 @@ import {
   Bell,
   Check,
   CheckCheck,
+  XCircle,
 } from 'lucide-react';
+import { normalizeRupeeText } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useGetNotifications, useInvalidateNotifications } from '@/hooks/useGetNotifications';
 import { getNotificationIcon } from '@/lib/constants/notification-types';
+import { getNotificationHref } from '@/lib/notifications/notification-href';
+import { formatNotificationTime } from '@/lib/notifications/notification-time';
+import {
+  SALE_VOIDED_TITLE,
+  buildSaleCompletedCopy,
+  buildSaleVoidedCopy,
+  isVoidedSaleAlert,
+} from '@/lib/notifications/sale-alert-copy';
 
 type NotificationStatusFilter = 'all' | 'read' | 'unread';
 
@@ -28,36 +38,6 @@ type NotificationStatusFilter = 'all' | 'read' | 'unread';
  * M32-02 (OBS-59): the icon table is now shared with the header popover — see
  * `getNotificationIcon` in `src/lib/constants/notification-types.ts`.
  */
-
-function formatRelativeTime(dateStr: string): string {
-  const now = Date.now();
-  const date = new Date(dateStr).getTime();
-  const diff = now - date;
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString('en-LK');
-}
-
-function getNotificationHref(type: string, relatedEntityId: string | null): string | null {
-  switch (type) {
-    case 'LOW_STOCK_ALERT':
-      return '/stock-control/low-stock';
-    case 'PETTY_CASH_LOW':
-      return '/petty-cash';
-    case 'STOCK_TAKE_SUBMITTED':
-    case 'STOCK_TAKE_APPROVED':
-    case 'STOCK_TAKE_REJECTED':
-      return relatedEntityId ? `/stock-control/stock-takes/${relatedEntityId}/review` : null;
-    default:
-      return null;
-  }
-}
 
 export default function NotificationsPage() {
   const router = useRouter();
@@ -84,14 +64,11 @@ export default function NotificationsPage() {
     }
   }
 
-  async function handleOpen(id: string, type: string, relatedEntityId: string | null, isRead: boolean) {
+  async function handleOpen(id: string, href: string, isRead: boolean) {
     if (!isRead) {
       await handleMarkRead(id);
     }
-    const href = getNotificationHref(type, relatedEntityId);
-    if (href) {
-      router.push(href);
-    }
+    router.push(href);
   }
 
   return (
@@ -169,8 +146,38 @@ export default function NotificationsPage() {
             </div>
           ) : (
             notifications.map((notification) => {
-              const Icon = getNotificationIcon(notification.type);
-              const href = getNotificationHref(notification.type, notification.relatedEntityId);
+              const isVoidedSale = isVoidedSaleAlert(notification.type, notification.relatedSale);
+              const completedCopy =
+                !isVoidedSale &&
+                notification.type === 'SALE_COMPLETED' &&
+                notification.relatedSale
+                  ? buildSaleCompletedCopy(
+                      notification.relatedEntityId ?? '',
+                      notification.relatedSale.totalAmount,
+                      {
+                        zeroValueReason: notification.relatedSale.zeroValueReason,
+                        customerName: notification.relatedSale.customerName,
+                        productName: notification.relatedSale.productName,
+                      },
+                    )
+                  : null;
+              const Icon = isVoidedSale ? XCircle : getNotificationIcon(notification.type);
+              const href = getNotificationHref({
+                type: notification.type,
+                relatedEntityId: notification.relatedEntityId,
+                relatedEntityType: notification.relatedEntityType,
+              });
+              const title = isVoidedSale
+                ? SALE_VOIDED_TITLE
+                : (completedCopy?.title ?? notification.title);
+              const body = normalizeRupeeText(
+                isVoidedSale && notification.relatedSale
+                  ? buildSaleVoidedCopy(
+                      notification.relatedEntityId ?? '',
+                      notification.relatedSale.totalAmount,
+                    ).body
+                  : (completedCopy?.body ?? notification.body),
+              );
 
               return (
                 <div
@@ -184,11 +191,14 @@ export default function NotificationsPage() {
                       </div>
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-medium text-espresso">{notification.title}</p>
+                          <p className="font-medium text-espresso">{title}</p>
+                          {isVoidedSale && (
+                            <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Voided</Badge>
+                          )}
                           {!notification.isRead && <Badge className="bg-terracotta text-pearl">Unread</Badge>}
                         </div>
-                        <p className="text-sm text-sand-ink">{notification.body}</p>
-                        <p className="font-mono text-xs text-mist-ink">{formatRelativeTime(notification.createdAt)}</p>
+                        <p className="text-sm text-sand-ink">{body}</p>
+                        <p className="font-mono text-xs text-mist-ink">{formatNotificationTime(notification.createdAt)}</p>
                       </div>
                     </div>
 
@@ -200,8 +210,8 @@ export default function NotificationsPage() {
                         </Button>
                       )}
                       {href && (
-                        <Button size="sm" onClick={() => handleOpen(notification.id, notification.type, notification.relatedEntityId, notification.isRead)}>
-                          Open
+                        <Button size="sm" onClick={() => handleOpen(notification.id, href, notification.isRead)}>
+                          {isVoidedSale ? 'View sale' : 'Open'}
                         </Button>
                       )}
                     </div>

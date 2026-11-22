@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getCashFlowStatement } from '@/lib/services/cashflow.service';
+import { resolveInclusiveDateRange } from '@/lib/api/inclusive-date-range';
+import { validateCashFlowRangeDates } from '@/lib/reports/cashflowRange';
 
 export async function GET(request: Request) {
   try {
@@ -45,12 +47,28 @@ export async function GET(request: Request) {
       );
     }
 
-    const dateFrom = new Date(dateFromParam);
-    const dateTo = new Date(dateToParam);
+    // ARGUS #429: one shared inclusive local-day helper for every cash-flow
+    // surface, so the same From/To label includes the same entries.
+    const { from: dateFrom, to: dateTo } = resolveInclusiveDateRange(dateFromParam, dateToParam);
 
-    if (isNaN(dateFrom.getTime()) || isNaN(dateTo.getTime())) {
+    if (!dateFrom || !dateTo) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid date format' } },
+        { status: 400 },
+      );
+    }
+
+    // ARGUS #422: a reversed range is a bad request, not an empty statement.
+    const rangeValidation = validateCashFlowRangeDates(dateFrom, dateTo);
+    if (!rangeValidation.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: rangeValidation.message ?? 'Invalid date range',
+          },
+        },
         { status: 400 },
       );
     }

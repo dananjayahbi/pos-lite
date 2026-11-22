@@ -4,6 +4,14 @@ import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StockTakeStatus } from '@/generated/prisma/client';
+import { isStaleStockTake } from '@/lib/services/stockTakeAge.core';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import {
+  parseStockTakeCategoryId,
+  stockTakeCategoryListWhere,
+  stockTakeCategoryLookupWhere,
+  validateStockTakeScope,
+} from '@/lib/services/stockTakePolicy.core';
 
 export async function GET() {
   try {
@@ -21,6 +29,14 @@ export async function GET() {
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: 'No tenant associated' } },
         { status: 401 },
+      );
+    }
+
+    // ARGUS #205 — stock-take reads use the same permission as counting.
+    if (!hasPermission(session.user, PERMISSIONS.STOCK.conductStockTake)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
       );
     }
 
@@ -43,7 +59,9 @@ export async function GET() {
     const categories =
       categoryIds.length > 0
         ? await prisma.category.findMany({
-            where: { id: { in: categoryIds } },
+            // ARGUS #209: a foreign/deleted category id must never resolve a
+            // name into this tenant's session list.
+            where: stockTakeCategoryListWhere(tenantId, categoryIds),
             select: { id: true, name: true },
           })
         : [];
@@ -55,6 +73,7 @@ export async function GET() {
       categoryId: s.categoryId,
       categoryName: s.categoryId ? (categoryMap.get(s.categoryId) ?? null) : null,
       status: s.status,
+      initiatedById: s.initiatedById,
       initiatedBy: s.initiatedBy.email,
       startedAt: s.startedAt.toISOString(),
       completedAt: s.completedAt?.toISOString() ?? null,
@@ -101,8 +120,53 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = (await request.json()) as { categoryId?: string };
-    const categoryId = body.categoryId ?? null;
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid JSON body' } },
+        { status: 400 },
+      );
+    }
+
+    const parsedCategory = parseStockTakeCategoryId(
+      body && typeof body === 'object'
+        ? (body as { categoryId?: unknown }).categoryId
+        : undefined,
+    );
+    if (!parsedCategory.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: parsedCategory.message,
+            details: [{ path: 'categoryId', message: parsedCategory.message }],
+          },
+        },
+        { status: 400 },
+      );
+    }
+
+    const categoryId = parsedCategory.categoryId;
+
+    // ARGUS #209: the optional category must exist, be live and belong to this
+    // tenant. Reject before creating a session (a foreign id must not leak its
+    // name through the list, and an unknown id must not create an empty
+    // session).
+    if (categoryId) {
+      const category = await prisma.category.findFirst({
+        where: stockTakeCategoryLookupWhere(tenantId, categoryId),
+        select: { id: true },
+      });
+      if (!category) {
+        return NextResponse.json(
+          { success: false, error: { code: 'CATEGORY_NOT_FOUND', message: 'Category not found' } },
+          { status: 404 },
+        );
+      }
+    }
 
     // Check no IN_PROGRESS session exists
     const existing = await prisma.stockTakeSession.findFirst({
@@ -110,8 +174,16 @@ export async function POST(request: NextRequest) {
     });
 
     if (existing) {
+      const stale = isStaleStockTake(existing.startedAt, existing.status);
       return NextResponse.json(
-        { success: false, error: { code: 'CONFLICT', message: 'An in-progress stock take session already exists' } },
+        {
+          success: false,
+          error: {
+            code: 'CONFLICT',
+            message: `An in-progress stock take session (${existing.id.slice(0, 8)}, started ${existing.startedAt.toISOString().slice(0, 10)}) already exists. Complete or cancel it before starting a new one${stale ? ' - it is stale (older than 7 days)' : ''}.`,
+            details: { sessionId: existing.id, startedAt: existing.startedAt.toISOString(), stale },
+          },
+        },
         { status: 400 },
       );
     }
@@ -139,6 +211,17 @@ export async function POST(request: NextRequest) {
         select: { id: true, stockQuantity: true },
       });
 
+      // ARGUS #212: an empty session consumes the single in-progress slot and
+      // could be completed and approved as if it were a real count. Refuse it
+      // before anything commits.
+      const scopeCheck = validateStockTakeScope({
+        categoryId,
+        countableVariantCount: variants.length,
+      });
+      if (!scopeCheck.ok) {
+        throw new Error(`EMPTY_STOCK_TAKE_SCOPE|${scopeCheck.message}`);
+      }
+
       if (variants.length > 0) {
         await tx.stockTakeItem.createMany({
           data: variants.map((v) => ({
@@ -152,8 +235,39 @@ export async function POST(request: NextRequest) {
       return newSession.id;
     });
 
+    // ARGUS #211: creation is a stock-take lifecycle event. Approval,
+    // rejection and cancellation already write an audit row; without this the
+    // trail began only once someone acted on the session.
+    await createAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      actorRole: session.user.role,
+      entityType: 'StockTakeSession',
+      entityId: result,
+      action: AUDIT_ACTIONS.STOCK_TAKE_CREATED,
+      after: {
+        scope: categoryId ? 'category' : 'all',
+        categoryId,
+        initiatedBy: session.user.id,
+        startedAt: new Date().toISOString(),
+      },
+    });
+
     return NextResponse.json({ success: true, data: { id: result } }, { status: 201 });
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (message.startsWith('EMPTY_STOCK_TAKE_SCOPE|')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'EMPTY_SCOPE',
+            message: message.slice('EMPTY_STOCK_TAKE_SCOPE|'.length),
+          },
+        },
+        { status: 422 },
+      );
+    }
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to create stock take session' } },
       { status: 500 },

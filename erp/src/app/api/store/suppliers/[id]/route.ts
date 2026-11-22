@@ -102,7 +102,10 @@ export async function PATCH(
       );
     }
 
-    const supplier = await updateSupplier(tenantId, id, parsed.data as UpdateSupplierInput);
+    const supplier = await updateSupplier(tenantId, id, parsed.data as UpdateSupplierInput, {
+      id: session.user.id,
+      role: session.user.role,
+    });
 
     return NextResponse.json({ success: true, data: supplier });
   } catch (error) {

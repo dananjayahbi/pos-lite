@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import type { StaffAvailabilityEntryInput, StaffTimeOffInput } from '@/lib/validators/appointment.validators';
+import { getAppointmentSettings } from '@/lib/services/appointment-settings.service';
 
 // ── Staff Availability ───────────────────────────────────────────────────────
 
@@ -21,6 +22,11 @@ export async function upsertStaffAvailability(
   staffId: string,
   entries: StaffAvailabilityEntryInput[],
 ) {
+  // ARGUS #124: an entry without an explicit duration uses the tenant's
+  // configured default instead of the old hard-coded 15 minutes.
+  const settings = await getAppointmentSettings(tenantId);
+  const fallbackDuration = settings.slotDurationMins;
+
   return prisma.$transaction(
     entries.map((entry) =>
       prisma.staffAvailability.upsert({
@@ -37,13 +43,13 @@ export async function upsertStaffAvailability(
           startTime: entry.startTime,
           endTime: entry.endTime,
           isAvailable: entry.isAvailable ?? true,
-          slotDurationMins: entry.slotDurationMins ?? 15,
+          slotDurationMins: entry.slotDurationMins ?? fallbackDuration,
         },
         update: {
           startTime: entry.startTime,
           endTime: entry.endTime,
           isAvailable: entry.isAvailable ?? true,
-          slotDurationMins: entry.slotDurationMins ?? 15,
+          slotDurationMins: entry.slotDurationMins ?? fallbackDuration,
         },
       }),
     ),
@@ -173,6 +179,10 @@ export async function generateSlotsForRange(
     },
   });
 
+  // ARGUS #124: the tenant slot duration is the fallback for any availability
+  // row without a usable duration.
+  const settings = await getAppointmentSettings(tenantId);
+
   const staffSet = new Set(availabilities.map((a) => a.staffId));
   const start = new Date(startDate);
   const end = new Date(endDate);
@@ -197,10 +207,11 @@ export async function generateSlotsForRange(
       slotEnd.setHours(endH, endM, 0, 0);
 
       // Generate slots at the configured duration
+      const slotDuration = avail.slotDurationMins || settings.slotDurationMins;
       let cursor = new Date(slotStart);
       while (cursor < slotEnd) {
         const next = new Date(cursor);
-        next.setMinutes(next.getMinutes() + avail.slotDurationMins);
+        next.setMinutes(next.getMinutes() + slotDuration);
 
         if (next > slotEnd) break;
 

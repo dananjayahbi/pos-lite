@@ -105,6 +105,21 @@ Tracking effects:
   requires a full (9+ digit) phone number, preventing timeline-note leaks and
   short-prefix enumeration.
 
+### Manual tracking refresh
+
+The delivery detail page's **Track** button calls
+`GET /api/store/shipments/:id/track`. That pipeline advances `Delivery.status`
+and writes `DeliveryEvent` rows, so a successful refresh invalidates the
+delivery detail query (badge + timeline) and the delivery list as well as
+caching the tracking payload. The button's busy state follows the mutation
+(`isPending`), not the initial tracking query, so it always returns to “Track”;
+failures raise a toast and are also shown inline under the button.
+
+The Shipment card displays the **courier shipment status** and the **delivery
+status** separately. They are different state machines, so the card explains a
+divergence (for example shipment `SUBMITTED` while the delivery is `DELIVERED`)
+instead of showing one status under a generic label.
+
 ## Cancellation and recovery
 
 - **Standard cancel** (`POST /api/store/deliveries/:id/cancel`) is only valid
@@ -142,6 +157,17 @@ Tracking effects:
   colours, header layout, page-size, field toggles, and footer-note controls
   were removed with the fixed design; the saved template is now
   `{ brandName, fromContact }` and older saved values are ignored safely.
+- **Template load state is explicit (ARGUS #298).** `GET
+  /api/store/delivery/label` returns `data` (the template) plus
+  `meta: { branding: { name, address, phoneNumber }, saved }`. The designer and
+  every Print surface resolve `error → loading → missing → ready`:
+  - a failed request shows an error card with **Retry**; the designer renders no
+    form (so Save cannot overwrite the saved sender) and Print stays disabled;
+  - Print is enabled only when the template loaded *and* a sender identity
+    resolved; the print helpers refuse a blank `brandName`;
+  - an empty/unsaved template is filled client-side from the tenant name and
+    contact number (`resolveLabelTemplate`), so the waybill never prints From
+    "-" / Contact "-". `saved: false` shows a “no saved template yet” hint.
 - Formatting rules live in `src/lib/delivery/waybill.ts` (DD/MM/YYYY dates,
   grouped money without a currency prefix, item/weight description, barcode
   fallback) and are covered by

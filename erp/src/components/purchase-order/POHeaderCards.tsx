@@ -2,7 +2,7 @@
 
 import { Card, CardContent } from '@/components/ui/card';
 
-import { formatPoDate } from './poDates';
+import { formatPoDate, poDueDay, todayIso } from './poDates';
 
 /**
  * The four at-a-glance facts about a PO: who it is from, when it arrives, how it
@@ -13,6 +13,7 @@ interface POHeaderCardsProps {
   supplierContact?: string | null | undefined;
   expectedDeliveryDate?: string | null | undefined;
   paymentTermDays: number | null;
+  paymentState?: string | undefined;
   orderDate: string;
   createdAt: string;
   createdByName: string;
@@ -23,10 +24,15 @@ export function POHeaderCards({
   supplierContact,
   expectedDeliveryDate,
   paymentTermDays,
+  paymentState,
   orderDate,
   createdAt,
   createdByName,
 }: POHeaderCardsProps) {
+  // ARGUS #233: show when the money is due, not when the order was raised.
+  const dueDay = poDueDay(orderDate, paymentTermDays);
+  const overdue = Boolean(dueDay && paymentState !== 'PAID' && dueDay < todayIso());
+
   return (
     <div className="grid gap-4 md:grid-cols-4">
       <Card>
@@ -50,9 +56,14 @@ export function POHeaderCards({
           </p>
           <p className="text-xs text-mist-ink">
             {paymentTermDays === null
-              ? 'Due on receipt'
-              : `Order date ${formatPoDate(orderDate)}`}
+              ? `Due on receipt (${formatPoDate(orderDate)})`
+              : dueDay
+                ? `Due ${formatPoDate(dueDay)}`
+                : `Due ${paymentTermDays} days after the order date`}
           </p>
+          {overdue ? (
+            <p className="text-xs font-medium text-amber-700">Overdue</p>
+          ) : null}
         </CardContent>
       </Card>
       <Card>

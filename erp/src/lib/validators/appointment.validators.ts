@@ -9,6 +9,7 @@ export const AppointmentServiceSchema = z.object({
   description: z.string().max(500).optional().nullable(),
   durationMins: z.number().int().min(5, 'Minimum 5 minutes').max(480, 'Maximum 8 hours'),
   price: z.number().min(0, 'Price cannot be negative').max(99999999.99, 'Price exceeds the maximum supported amount'),
+  taxRule: z.enum(['STANDARD_VAT', 'SSCL', 'EXEMPT']).optional(),
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, 'Must be a valid hex color')
@@ -81,7 +82,21 @@ export const UpdateAppointmentSchema = z
 // ── Cancel Appointment ───────────────────────────────────────────────────────
 
 export const CancelAppointmentSchema = z.object({
-  reason: z.string().max(500).optional(),
+  reason: z
+    .string()
+    .trim()
+    .min(1, 'A cancellation reason is required')
+    .max(500, 'Reason must be 500 characters or fewer'),
+});
+
+// ── Appointment Settings ─────────────────────────────────────────────────────
+// ARGUS #124: persisted in Tenant.settings.appointments.settings (no migration).
+export const AppointmentSettingsSchema = z.object({
+  slotDurationMins: z.number().int().min(5, 'Minimum 5 minutes').max(120, 'Maximum 120 minutes'),
+  reminder24hEnabled: z.boolean(),
+  reminder2hEnabled: z.boolean(),
+  autoConfirmOnBooking: z.boolean(),
+  requireConfirmation: z.boolean(),
 });
 
 // ── Staff Availability ────────────────────────────────────────────────────────
@@ -123,13 +138,27 @@ export const SlotGenerationSchema = z.object({
 
 // ── Appointment Filters ──────────────────────────────────────────────────────
 
+/**
+ * ARGUS #130: accept a plain `YYYY-MM-DD` (expanded to local day boundaries by
+ * the service) as well as a full ISO timestamp from calendar callers.
+ */
+const AppointmentDateFilterSchema = z.string().refine(
+  (value) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isNaN(new Date(value).getTime()),
+  { message: 'Must be a valid date' },
+);
+
 export const AppointmentFiltersSchema = z.object({
-  status: z.enum(['SCHEDULED', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS', 'COMPLETED', 'NO_SHOW', 'CANCELLED']).optional(),
+  /**
+   * ARGUS #126: OVERDUE is a derived filter (SCHEDULED/CONFIRMED past the grace
+   * window). It is not a stored AppointmentStatus.
+   */
+  status: z.enum(['SCHEDULED', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS', 'COMPLETED', 'NO_SHOW', 'CANCELLED', 'OVERDUE']).optional(),
   staffId: z.string().optional(),
   serviceId: z.string().optional(),
   customerId: z.string().optional(),
-  dateFrom: z.string().datetime().optional(),
-  dateTo: z.string().datetime().optional(),
+  dateFrom: AppointmentDateFilterSchema.optional(),
+  dateTo: AppointmentDateFilterSchema.optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
 });
@@ -150,6 +179,7 @@ export const FeatureModuleToggleSchema = z.object({
 export type CreateAppointmentInput = z.infer<typeof CreateAppointmentSchema>;
 export type UpdateAppointmentInput = z.infer<typeof UpdateAppointmentSchema>;
 export type CancelAppointmentInput = z.infer<typeof CancelAppointmentSchema>;
+export type AppointmentSettingsInput = z.infer<typeof AppointmentSettingsSchema>;
 export type AppointmentServiceInput = z.infer<typeof AppointmentServiceSchema>;
 export type UpdateAppointmentServiceInput = z.infer<typeof UpdateAppointmentServiceSchema>;
 export type StaffAvailabilityEntryInput = z.infer<typeof StaffAvailabilityEntrySchema>;

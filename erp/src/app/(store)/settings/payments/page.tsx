@@ -1,8 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { denialRouteFor } from '@/lib/auth/page-guards';
-import { hasPermission } from '@/lib/utils/permissions';
-import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import { readLankaQrSettingsFromTenantSettings } from '@/lib/payments/lanka-qr-config';
 import PaymentSettingsForm from '@/components/settings/PaymentSettingsForm';
@@ -12,7 +10,8 @@ export const metadata = { title: 'Payment Settings | AyurPOS' };
 export default async function PaymentSettingsPage() {
   const session = await auth();
   if (!session?.user?.tenantId) redirect(denialRouteFor(session?.user));
-  if (!hasPermission(session.user, PERMISSIONS.SETTINGS.managePayments)) redirect('/dashboard');
+  // The QR is a payment destination - only an owner may view/change it (ARGUS #509).
+  if (session.user.role !== 'OWNER' && session.user.role !== 'SUPER_ADMIN') redirect('/dashboard');
 
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: session.user.tenantId },

@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 import { Prisma } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
+import { computeBulkVariantPrice } from '@/lib/services/bulkPrice.core';
 import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 
 const BulkPriceUpdateSchema = z
@@ -82,30 +83,30 @@ export async function POST(request: NextRequest) {
 
     let updated = 0;
     let errors = 0;
+    const rejections: Array<{ variantId: string; productId: string; reason: string }> = [];
 
     await prisma.$transaction(async (tx) => {
       for (const variant of variants) {
         try {
-          const updateData: Record<string, unknown> = {};
-          const currentCost = Number(variant.costPrice);
-          const currentRetail = Number(variant.retailPrice);
-
-          if (mode === 'FIXED') {
-            updateData.costPrice = costPrice;
-            updateData.retailPrice = retailPrice;
-          } else {
-            const multiplier = direction === 'INCREASE' ? 1 + percentage! / 100 : 1 - percentage! / 100;
-            if (target === 'COST' || target === 'BOTH') {
-              updateData.costPrice = Math.round(currentCost * multiplier * 100) / 100;
-            }
-            if (target === 'RETAIL' || target === 'BOTH') {
-              updateData.retailPrice = Math.round(currentRetail * multiplier * 100) / 100;
-            }
+          const computed = computeBulkVariantPrice(
+            {
+              costPrice: Number(variant.costPrice),
+              retailPrice: Number(variant.retailPrice),
+            },
+            { mode, costPrice, retailPrice, percentage, direction, target },
+          );
+          if (!computed.ok) {
+            rejections.push({
+              variantId: variant.id,
+              productId: variant.productId,
+              reason: computed.reason,
+            });
+            continue;
           }
 
           await tx.productVariant.update({
             where: { id: variant.id },
-            data: updateData,
+            data: { costPrice: computed.costPrice, retailPrice: computed.retailPrice },
           });
           updated++;
         } catch {
@@ -137,7 +138,10 @@ export async function POST(request: NextRequest) {
       console.warn('[POST /api/store/products/bulk-price-update] Revalidation warning:', revalidateErr);
     }
 
-    return NextResponse.json({ success: true, data: { updated, errors } });
+    return NextResponse.json({
+      success: true,
+      data: { updated, errors, rejected: rejections.length, rejections },
+    });
   } catch (error) {
     console.error('POST /api/store/products/bulk-price-update error:', error);
     return NextResponse.json(

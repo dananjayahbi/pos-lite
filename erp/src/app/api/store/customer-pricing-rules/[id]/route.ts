@@ -10,6 +10,13 @@ import {
   UpdateCustomerPricingRuleSchema,
   type UpdateCustomerPricingRuleInput,
 } from '@/lib/validators/customer-pricing.validators';
+import { toWindowDate } from '@/lib/services/promotionWindow.core';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import {
+  assertCustomerTagInUse,
+  assertRulePriceAtOrBelowRetail,
+  getVariantRetailOr404,
+} from '@/lib/services/customerPricingRules.server';
 import type { Prisma } from '@/generated/prisma/client';
 
 /**
@@ -45,12 +52,39 @@ function variantScopesIntersect(a: string | null, b: string | null): boolean {
 async function findRuleOr404(tenantId: string, id: string) {
   const rule = await prisma.customerPricingRule.findFirst({
     where: { id, tenantId },
-    select: { id: true, customerTag: true, variantId: true, startsAt: true, endsAt: true, isActive: true },
+    select: {
+      id: true,
+      customerTag: true,
+      variantId: true,
+      price: true,
+      startsAt: true,
+      endsAt: true,
+      isActive: true,
+    },
   });
   if (!rule) {
     throw ApiError.notFound('Customer pricing rule not found');
   }
   return rule;
+}
+
+/** ARGUS #331: stable before/after audit shape for pricing rules. */
+function ruleAuditSnapshot(row: {
+  customerTag: string;
+  variantId: string | null;
+  price: { toString(): string };
+  startsAt: Date | null;
+  endsAt: Date | null;
+  isActive: boolean;
+}): Record<string, unknown> {
+  return {
+    customerTag: row.customerTag,
+    variantId: row.variantId,
+    price: row.price.toString(),
+    startsAt: row.startsAt ? row.startsAt.toISOString() : null,
+    endsAt: row.endsAt ? row.endsAt.toISOString() : null,
+    isActive: row.isActive,
+  };
 }
 
 export async function GET(
@@ -134,20 +168,26 @@ export async function PATCH(
     // Effective post-PATCH values (undefined = untouched → keep existing).
     const customerTag = data.customerTag ?? existing.customerTag;
     const variantId = data.variantId === undefined ? existing.variantId : data.variantId;
+    // ARGUS #327: date-only bounds are inclusive local days (see
+    // promotionWindow.core). Undefined keeps the stored instant untouched.
     const startsAt =
-      data.startsAt === undefined ? existing.startsAt : data.startsAt ? new Date(data.startsAt) : null;
+      data.startsAt === undefined ? existing.startsAt : (toWindowDate(data.startsAt, 'start') ?? null);
     const endsAt =
-      data.endsAt === undefined ? existing.endsAt : data.endsAt ? new Date(data.endsAt) : null;
+      data.endsAt === undefined ? existing.endsAt : (toWindowDate(data.endsAt, 'end') ?? null);
     const isActive = data.isActive ?? existing.isActive;
 
-    if (data.variantId) {
-      const variant = await prisma.productVariant.findFirst({
-        where: { id: data.variantId, tenantId },
-        select: { id: true },
-      });
-      if (!variant) {
-        throw ApiError.notFound('The selected variant was not found in this store.');
-      }
+    if (data.customerTag !== undefined) {
+      await assertCustomerTagInUse(tenantId, customerTag);
+    }
+
+    // ARGUS #333: check the EFFECTIVE variant/price pair. A PATCH that only
+    // changes the variant must still respect that variant's retail price.
+    if (variantId) {
+      const variant = await getVariantRetailOr404(tenantId, variantId);
+      const effectivePrice = data.price !== undefined
+        ? data.price
+        : Number(existing.price.toString());
+      assertRulePriceAtOrBelowRetail(effectivePrice, variant.retailPrice);
     }
 
     const updated = await lockingTx(async (tx) => {
@@ -186,6 +226,17 @@ export async function PATCH(
       });
     });
 
+    void createAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      actorRole: session.user.role,
+      entityType: 'CustomerPricingRule',
+      entityId: id,
+      action: AUDIT_ACTIONS.CUSTOMER_PRICING_RULE_UPDATED,
+      before: ruleAuditSnapshot(existing) as Prisma.InputJsonValue,
+      after: ruleAuditSnapshot(updated) as Prisma.InputJsonValue,
+    }).catch(() => {});
+
     return ok(updated);
   } catch (error) {
     return toErrorResponse(error, 'PATCH /api/store/customer-pricing-rules/[id]');
@@ -219,7 +270,7 @@ export async function DELETE(
     if (forbidden) return forbidden;
 
     const { id } = await params;
-    await findRuleOr404(tenantId, id);
+    const existing = await findRuleOr404(tenantId, id);
 
     // Soft-deactivate semantics (documented): CustomerPricingRule has no
     // deletedAt, so DELETE flips isActive=false and returns the updated row
@@ -229,6 +280,17 @@ export async function DELETE(
       data: { isActive: false },
       include: variantInclude,
     });
+
+    void createAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      actorRole: session.user.role,
+      entityType: 'CustomerPricingRule',
+      entityId: id,
+      action: AUDIT_ACTIONS.CUSTOMER_PRICING_RULE_DEACTIVATED,
+      before: ruleAuditSnapshot(existing) as Prisma.InputJsonValue,
+      after: ruleAuditSnapshot(deactivated) as Prisma.InputJsonValue,
+    }).catch(() => {});
 
     return ok({ ...deactivated, deactivated: true });
   } catch (error) {

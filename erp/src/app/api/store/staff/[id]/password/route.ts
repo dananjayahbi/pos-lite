@@ -18,9 +18,19 @@ import { getClientIp } from '@/lib/utils/request';
  * the real actor (M03-02).
  */
 
-const passwordSchema = z.object({
-  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
-});
+const passwordSchema = z
+  .object({
+    newPassword: z
+      .string()
+      .min(8, 'Password must be at least 8 characters')
+      .max(200, 'Password is too long'),
+    /** Optional echo of the confirmation so a buggy client cannot bypass it. */
+    confirmPassword: z.string().optional(),
+  })
+  .refine((value) => value.confirmPassword === undefined || value.confirmPassword === value.newPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
 
 export async function POST(
   request: Request,

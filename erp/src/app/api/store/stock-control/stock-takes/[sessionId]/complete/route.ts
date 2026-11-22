@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { StockTakeStatus, UserRole, NotificationType } from '@/generated/prisma/client';
+import { hasPermission } from '@/lib/utils/permissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
+import { StockTakeStatus, NotificationType, UserRole } from '@/generated/prisma/client';
+import { completeStockTakeSession } from '@/lib/services/inventory.service';
+import { stockTakeHasNoItems } from '@/lib/services/stockTakePolicy.core';
 
 export async function POST(
   _request: Request,
@@ -25,16 +29,73 @@ export async function POST(
       );
     }
 
+    // ARGUS #205 — completing submits counted data for approval; it requires
+    // the same stock-take permission as counting.
+    if (!hasPermission(session.user, PERMISSIONS.STOCK.conductStockTake)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
+      );
+    }
+
     const { sessionId } = await props.params;
 
     const stockTakeSession = await prisma.stockTakeSession.findFirst({
-      where: { id: sessionId, tenantId, status: StockTakeStatus.IN_PROGRESS },
+      where: { id: sessionId, tenantId },
+      select: {
+        id: true,
+        status: true,
+        initiatedById: true,
+        _count: { select: { items: true } },
+      },
     });
 
     if (!stockTakeSession) {
       return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message: 'In-progress stock take session not found' } },
+        { success: false, error: { code: 'NOT_FOUND', message: 'Stock take session not found' } },
         { status: 404 },
+      );
+    }
+
+    if (stockTakeSession.status !== StockTakeStatus.IN_PROGRESS) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'CONFLICT', message: 'Only an in-progress stock take can be completed' },
+        },
+        { status: 409 },
+      );
+    }
+
+    // Maker-checker: only the cashier who opened the count may submit it. The
+    // service repeats this guard; checking here yields a typed 403 instead of
+    // a generic 500.
+    if (stockTakeSession.initiatedById !== session.user.id) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Only the initiator can complete the stock take session',
+          },
+        },
+        { status: 403 },
+      );
+    }
+
+    // ARGUS #212: legacy empty sessions must not be submitted as a valid
+    // "everything matched" count.
+    if (stockTakeHasNoItems(stockTakeSession._count.items)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'EMPTY_SESSION',
+            message:
+              'This session has no items to count, so it cannot be completed. Cancel it and start a session with a scope that has countable variants.',
+          },
+        },
+        { status: 400 },
       );
     }
 
@@ -56,42 +117,66 @@ export async function POST(
       );
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.stockTakeSession.update({
-        where: { id: sessionId },
-        data: {
-          status: StockTakeStatus.PENDING_APPROVAL,
-          completedAt: new Date(),
-        },
-      });
+    // The service owns the status transition AND the STOCK_TAKE_COMPLETED
+    // audit row (ARGUS #205); the route must not duplicate either.
+    await completeStockTakeSession(sessionId, tenantId, session.user.id);
 
-      const recipients = await tx.user.findMany({
-        where: {
-          tenantId,
-          role: { in: [UserRole.OWNER, UserRole.MANAGER] },
-          isActive: true,
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
-
-      if (recipients.length > 0) {
-        await tx.notificationRecord.createMany({
-          data: recipients.map((r) => ({
-            tenantId,
-            recipientId: r.id,
-            type: NotificationType.STOCK_TAKE_SUBMITTED,
-            title: 'Stock take session submitted for approval',
-            body: 'A stock take session has been completed and requires your review.',
-            relatedEntityType: 'StockTakeSession',
-            relatedEntityId: sessionId,
-          })),
-        });
-      }
+    const recipients = await prisma.user.findMany({
+      where: {
+        tenantId,
+        role: { in: [UserRole.OWNER, UserRole.MANAGER] },
+        isActive: true,
+        deletedAt: null,
+      },
+      select: { id: true },
     });
 
+    if (recipients.length > 0) {
+      await prisma.notificationRecord.createMany({
+        data: recipients.map((r) => ({
+          tenantId,
+          recipientId: r.id,
+          type: NotificationType.STOCK_TAKE_SUBMITTED,
+          title: 'Stock take session submitted for approval',
+          body: 'A stock take session has been completed and requires your review.',
+          relatedEntityType: 'StockTakeSession',
+          relatedEntityId: sessionId,
+        })),
+      });
+    }
+
     return NextResponse.json({ success: true, data: { sessionId, status: 'PENDING_APPROVAL' } });
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+
+    // ARGUS #187 (BUG-42): never submit a legacy row with a negative or
+    // fractional count for approval.
+    if (message.startsWith('Invalid counted quantity')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'INVALID_COUNTED_QUANTITY', message } },
+        { status: 400 },
+      );
+    }
+
+    if (message.includes('not found or does not belong')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_FOUND', message: 'Stock take session not found' } },
+        { status: 404 },
+      );
+    }
+    if (message.includes('Only the initiator')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message } },
+        { status: 403 },
+      );
+    }
+    if (message.includes('not in progress') || message.includes('uncounted items remain')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'CONFLICT', message } },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to complete stock take session' } },
       { status: 500 },

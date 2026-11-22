@@ -7,7 +7,17 @@ import {
   StockAdjustmentSchema,
   MAX_STOCK_QUANTITY,
 } from '@/lib/validators/product.validators';
+import {
+  isManualAdjustmentReason,
+  manualAdjustmentDirectionError,
+} from '@/lib/services/manualAdjustment.core';
+import { recordManualAdjustmentSideEffects } from '@/lib/services/inventory.service';
+import { lockForUpdate } from '@/lib/api/race-guard';
+import { isLowStockVariant } from '@/lib/inventory/lowStockPredicate';
+import { createLowStockAlerts, selectLowStockAlerts } from '@/lib/notifications/low-stock-alert';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { revalidateTenantStorefront } from '@/lib/revalidate-website';
+import { stockAdjustmentRevalidationOptions } from '@/lib/website/storefront-revalidation.core';
 
 export async function POST(request: NextRequest) {
   try {
@@ -51,10 +61,52 @@ export async function POST(request: NextRequest) {
 
     const { variantId, quantityDelta, reason, note } = parsed.data;
 
+    // ARGUS #181: the movement enum is wider than the manual-adjustment
+    // allowlist. System-only reasons (SALE, PURCHASE_RECEIVED, INITIAL_STOCK,
+    // STOCK_TAKE_ADJUSTMENT, …) must go through the flow that owns them.
+    if (!isManualAdjustmentReason(reason)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_ADJUSTMENT_REASON',
+            message: `${reason} is a system-managed stock reason and cannot be used for a manual adjustment. Choose Found, Damaged, Stolen, Data Error or Returned to Supplier.`,
+            details: [{ path: 'reason', message: 'Reason is not a manual adjustment reason' }],
+          },
+        },
+        { status: 422 },
+      );
+    }
+
+    // ARGUS #193: direction is part of the reason's meaning.
+    const directionError = manualAdjustmentDirectionError(reason, quantityDelta);
+    if (directionError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_ADJUSTMENT_DIRECTION',
+            message: directionError,
+            details: [{ path: 'reason', message: directionError }],
+          },
+        },
+        { status: 422 },
+      );
+    }
+
     const result = await prisma.$transaction(async (tx) => {
+      // ARGUS #192: lock the variant before reading its stock. The route keeps
+      // its own low-stock notification transaction instead of delegating to
+      // adjustStock, so it must take the same row lock itself; otherwise two
+      // concurrent removals both pass the below-zero check.
+      await lockForUpdate(tx, 'product_variants', '"id" = $1 AND "tenantId" = $2', [
+        variantId,
+        tenantId,
+      ]);
+
       const variant = await tx.productVariant.findFirst({
         where: { id: variantId, tenantId, deletedAt: null },
-        include: { product: { select: { name: true } } },
+        include: { product: { select: { id: true, name: true } } },
       });
 
       if (!variant) {
@@ -90,44 +142,39 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Low stock notification logic
+      // Low stock notification logic. The threshold rule and notification row
+      // shape are shared with the sale path (ARGUS #55/#215).
       let lowStockTriggered = false;
       let productName = '';
       let sku = '';
 
-      if (
-        variant.lowStockThreshold > 0 &&
-        (newQty === 0 || (newQty > 0 && newQty <= variant.lowStockThreshold))
-      ) {
-        lowStockTriggered = true;
+      if (isLowStockVariant({ stockQuantity: newQty, lowStockThreshold: variant.lowStockThreshold })) {
         productName = variant.product.name;
         sku = variant.sku ?? variant.id;
 
-        const recipients = await tx.user.findMany({
-          where: {
-            tenantId,
-            role: { in: ['OWNER', 'MANAGER'] },
-            isActive: true,
-            deletedAt: null,
+        // ARGUS #217: only a downward crossing alerts. A restock from 4 to 5
+        // with a threshold of 5 was already low and is now healthier, so it
+        // must not notify anyone. `previousQuantity` makes the shared producer
+        // apply that direction rule; dedupe happens inside the writer.
+        const candidates = [
+          {
+            variantId,
+            productName,
+            sku,
+            stockQuantity: newQty,
+            lowStockThreshold: variant.lowStockThreshold,
+            previousQuantity: variant.stockQuantity,
           },
-          select: { id: true },
-        });
+        ];
+        lowStockTriggered = selectLowStockAlerts(candidates).length > 0;
 
-        if (recipients.length > 0) {
-          const title = `${productName} - ${sku} is low on stock`;
-          const body = `Current stock: ${newQty} units. Threshold: ${variant.lowStockThreshold} units. Adjusted by: ${staffDisplayName(session.user.email)}.`;
-
-          await tx.notificationRecord.createMany({
-            data: recipients.map((r) => ({
-              tenantId,
-              recipientId: r.id,
-              type: 'LOW_STOCK_ALERT' as const,
-              title,
-              body,
-              relatedEntityType: 'ProductVariant',
-              relatedEntityId: variantId,
-            })),
-          });
+        if (lowStockTriggered) {
+          await createLowStockAlerts(
+            tx,
+            tenantId,
+            candidates,
+            `Adjusted by: ${staffDisplayName(session.user.email)}`,
+          );
         }
       }
 
@@ -138,8 +185,32 @@ export async function POST(request: NextRequest) {
         lowStockTriggered,
         productName,
         sku,
+        productId: variant.product.id,
       };
     });
+
+    // ARGUS #181 / #186: the route owns the low-stock notification transaction,
+    // so it must also record the audit entry and emit the webhook the service
+    // path would have written. Await it so the writes complete before the
+    // response (fire-and-forget can be frozen in serverless).
+    await recordManualAdjustmentSideEffects({
+      tenantId,
+      variantId,
+      actorId: session.user.id,
+      options: { quantityDelta, reason, note },
+    });
+
+    // ARGUS #195: storefront availability is cached. Purge the adjusted
+    // product and catalog filters after the commit; a down website must not
+    // fail a successful adjustment.
+    try {
+      await revalidateTenantStorefront(
+        tenantId,
+        stockAdjustmentRevalidationOptions([result.productId]),
+      );
+    } catch (revalidateError) {
+      console.warn('[POST /api/store/stock-control/adjust] Revalidation warning:', revalidateError);
+    }
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {

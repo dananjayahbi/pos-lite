@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { zPrice, zSafeShortText } from '@/lib/validators/shared';
+import { windowIssues } from '@/lib/services/promotionWindow.core';
+import { canonicalCustomerTag } from '@/lib/services/customerTag.core';
 
 /**
  * M15-01 (BUG-46) — request validators for the `CustomerPricingRule` CRUD API
@@ -61,8 +63,9 @@ const RulePriceSchema = zPrice().refine(
 );
 
 const CustomerPricingRuleBaseSchema = z.object({
-  // Keys off the M05 tag model: exact match against a value in Customer.tags.
-  customerTag: zSafeShortText(60),
+  // ARGUS #333: keys off the M05 tag model, canonical upper-case so
+  // `wholesale` and `WHOLESALE` can never become two different rules.
+  customerTag: zSafeShortText(60).transform(canonicalCustomerTag),
   variantId: OptionalVariantSchema,
   price: RulePriceSchema,
   startsAt: OptionalWindowDateSchema,
@@ -71,7 +74,7 @@ const CustomerPricingRuleBaseSchema = z.object({
 });
 
 const CustomerPricingRuleUpdateBaseSchema = z.object({
-  customerTag: zSafeShortText(60).optional(),
+  customerTag: zSafeShortText(60).transform(canonicalCustomerTag).optional(),
   variantId: UpdateVariantSchema,
   price: RulePriceSchema.optional(),
   startsAt: UpdateWindowDateSchema,
@@ -82,12 +85,11 @@ const CustomerPricingRuleUpdateBaseSchema = z.object({
 type RuleWindow = { startsAt?: string | null | undefined; endsAt?: string | null | undefined };
 
 function assertWindowOrder(data: RuleWindow, ctx: z.RefinementCtx): void {
-  if (
-    data.startsAt &&
-    data.endsAt &&
-    new Date(data.endsAt).getTime() <= new Date(data.startsAt).getTime()
-  ) {
-    ctx.addIssue({ code: 'custom', path: ['endsAt'], message: 'End must be after start' });
+  // ARGUS #327: same-day date-only windows are valid. `windowIssues` expands
+  // the start to local 00:00:00.000 and the end to local 23:59:59.999 before
+  // comparing, instead of treating both YYYY-MM-DD values as UTC midnight.
+  for (const issue of windowIssues(data.startsAt, data.endsAt)) {
+    ctx.addIssue({ code: 'custom', path: [issue.path], message: issue.message });
   }
 }
 

@@ -3,9 +3,16 @@
 import { useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReportContext } from "@/lib/reports/ReportContext";
+import { formatRupee } from "@/lib/format";
+import { expenseCategoryLabel, reportMonthLabel } from "@/lib/reports/labels";
+import { resolveReportErrorMessage } from "@/lib/reports/reportError";
+import { buildProfitLossExportRows } from "@/lib/reports/reportRows";
+import { paymentMethodLabel } from "@/lib/sales/payment-method-label";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -27,18 +34,7 @@ function toYMD(d: Date): string {
 }
 
 function fmtCurrency(val: string): string {
-  const num = parseFloat(val);
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "LKR",
-    minimumFractionDigits: 2,
-  }).format(num);
-}
-
-function monthLabel(ym: string): string {
-  const [y, m] = ym.split("-");
-  const date = new Date(Number(y), Number(m) - 1);
-  return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+  return formatRupee(val);
 }
 
 // ── Types ────────────────────────────────────────────────────────
@@ -63,6 +59,25 @@ interface MonthlyRow {
   saleCount: number;
 }
 
+interface CogsSourceSummary {
+  total: number;
+  snapshotCogs: number;
+  fallbackCogs: number;
+  snapshotLines: number;
+  fallbackLines: number;
+  totalLines: number;
+  usesFallback: boolean;
+  fallbackPercent: number;
+  caveat: string | null;
+}
+
+interface CogsQuality {
+  sales: CogsSourceSummary;
+  returned: CogsSourceSummary;
+  usesFallback: boolean;
+  caveats: string[];
+}
+
 interface PLData {
   period: { from: string; to: string };
   grossRevenue: string;
@@ -80,6 +95,7 @@ interface PLData {
   expenseCategories: ExpenseCategoryRow[];
   netProfit: string;
   netMargin: string;
+  cogsQuality: CogsQuality;
   monthlyData: MonthlyRow[];
 }
 
@@ -100,9 +116,7 @@ async function fetchPL(from: string, to: string): Promise<PLData> {
   // "Failed to fetch report".
   const json = (await res.json().catch(() => null)) as PLResponse | null;
   if (!res.ok) {
-    throw new Error(
-      json?.error?.message ?? `Failed to fetch report (HTTP ${res.status})`,
-    );
+    throw new Error(resolveReportErrorMessage(res.status, json));
   }
   if (!json?.success) {
     throw new Error(json?.error?.message ?? "Unknown error");
@@ -116,76 +130,42 @@ export default function ProfitLossClient() {
   const searchParams = useSearchParams();
   const from = searchParams.get("from") ?? defaultFrom();
   const to = searchParams.get("to") ?? defaultTo();
-  const { setReportData } = useReportContext();
+  const { setReportData, setReportStatus } = useReportContext();
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["profit-loss", from, to],
     queryFn: () => fetchPL(from, to),
   });
 
-  // Push data to ReportContext for export
+  // Push data to ReportContext for export. ARGUS #441: one builder carries the
+  // visible statement rows (margins, COGS split), the monthly table and totals.
   useEffect(() => {
     if (!data) return;
-
-    const rows: Record<string, unknown>[] = [];
-
-    // Revenue section
-    for (const r of data.revenueByPaymentMethod) {
-      rows.push({ Section: "Revenue", Item: r.method, Amount: r.total });
-    }
-    rows.push({
-      Section: "Revenue",
-      Item: "Less: Returns",
-      Amount: `-${data.totalReturns}`,
-    });
-    rows.push({
-      Section: "Revenue",
-      Item: "Net Revenue",
-      Amount: data.netRevenue,
-    });
-
-    // COGS
-    rows.push({ Section: "COGS", Item: "Cost of Goods Sold", Amount: data.rawCOGS });
-    rows.push({
-      Section: "COGS",
-      Item: "Less: Returned COGS",
-      Amount: `-${data.returnedCOGS}`,
-    });
-    rows.push({ Section: "COGS", Item: "Net COGS", Amount: data.netCOGS });
-
-    // Gross Profit
-    rows.push({
-      Section: "Profit",
-      Item: "Gross Profit",
-      Amount: data.grossProfit,
-    });
-
-    // Expenses
-    for (const e of data.expenseCategories) {
-      rows.push({ Section: "Expenses", Item: e.category, Amount: e.total });
-    }
-    rows.push({
-      Section: "Expenses",
-      Item: "Total Expenses",
-      Amount: data.totalExpenses,
-    });
-
-    // Net Profit
-    rows.push({
-      Section: "Profit",
-      Item: "Net Profit",
-      Amount: data.netProfit,
-    });
-
-    setReportData(rows);
+    setReportData(buildProfitLossExportRows(data));
   }, [data, setReportData]);
+
+  // ARGUS #442: hide the layout's Export/Save controls while the report failed.
+  useEffect(() => {
+    if (error) setReportStatus("error");
+    else if (isLoading) setReportStatus("loading");
+  }, [error, isLoading, setReportStatus]);
 
   if (isLoading) return <LoadingSkeleton />;
 
   if (error) {
     return (
-      <div className="p-6 text-center text-red-600">
-        Failed to load report: {error.message}
+      <div className="mx-auto max-w-xl p-6 text-center">
+        <p className="text-red-600">Failed to load report: {error.message}</p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => {
+            void refetch();
+          }}
+        >
+          <RefreshCw className="mr-1 h-4 w-4" />
+          Retry
+        </Button>
       </div>
     );
   }
@@ -214,6 +194,17 @@ export default function ProfitLossClient() {
         <StatCard label="Net Margin" value={`${data.netMargin}%`} />
       </div>
 
+      {data.cogsQuality.usesFallback && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">COGS includes current-cost fallback</p>
+          {data.cogsQuality.caveats.map((caveat) => (
+            <p key={caveat} className="mt-1">
+              {caveat}
+            </p>
+          ))}
+        </div>
+      )}
+
       {/* ── P&L Statement Table ───────────────────────────── */}
       <Card>
         <CardContent className="overflow-x-auto p-0">
@@ -232,7 +223,7 @@ export default function ProfitLossClient() {
               {/* Revenue section */}
               <SectionHeader label="Revenue" />
               {data.revenueByPaymentMethod.map((r) => (
-                <Row key={r.method} label={r.method} amount={r.total} />
+                <Row key={r.method} label={paymentMethodLabel(r.method)} amount={r.total} />
               ))}
               <Row
                 label="Less: Returns"
@@ -243,7 +234,33 @@ export default function ProfitLossClient() {
 
               {/* COGS section */}
               <SectionHeader label="Cost of Goods Sold" />
+              {data.cogsQuality.sales.usesFallback && (
+                <>
+                  <Row
+                    label="COGS - snapshot cost"
+                    amount={data.cogsQuality.sales.snapshotCogs.toFixed(2)}
+                  />
+                  <Row
+                    label={`COGS - current-cost fallback (${data.cogsQuality.sales.fallbackLines} lines)`}
+                    amount={data.cogsQuality.sales.fallbackCogs.toFixed(2)}
+                  />
+                </>
+              )}
               <Row label="COGS (Sales)" amount={data.rawCOGS} />
+              {data.cogsQuality.returned.usesFallback && (
+                <>
+                  <Row
+                    label="Returned COGS - snapshot cost"
+                    amount={`-${data.cogsQuality.returned.snapshotCogs.toFixed(2)}`}
+                    negative
+                  />
+                  <Row
+                    label={`Returned COGS - current-cost fallback (${data.cogsQuality.returned.fallbackLines} lines)`}
+                    amount={`-${data.cogsQuality.returned.fallbackCogs.toFixed(2)}`}
+                    negative
+                  />
+                </>
+              )}
               <Row
                 label="Less: Returned COGS"
                 amount={`-${data.returnedCOGS}`}
@@ -264,7 +281,7 @@ export default function ProfitLossClient() {
               {data.expenseCategories.map((e) => (
                 <Row
                   key={e.category}
-                  label={e.category.replace(/_/g, " ")}
+                  label={expenseCategoryLabel(e.category)}
                   amount={e.total}
                 />
               ))}
@@ -290,7 +307,7 @@ export default function ProfitLossClient() {
         <Card>
           <CardContent className="p-4">
             <h3 className="mb-4 text-sm font-semibold text-espresso">
-              Monthly Gross Profit (Last 12 Months)
+              Monthly Gross Profit (Selected Period)
             </h3>
             <MonthlyChart months={data.monthlyData} />
 
@@ -329,7 +346,7 @@ export default function ProfitLossClient() {
                       className={i % 2 === 0 ? "bg-pearl/50" : ""}
                     >
                       <td className="px-2 py-1.5 text-espresso">
-                        {monthLabel(m.month)}
+                        {reportMonthLabel(m.month)}
                       </td>
                       <td className="px-2 py-1.5 text-right font-mono text-espresso">
                         {fmtCurrency(m.revenue)}
@@ -475,31 +492,55 @@ function MonthlyChart({ months }: { months: MonthlyRow[] }) {
     [values],
   );
 
+  // ARGUS #440: signed bars share one zero baseline. A negative month used to
+  // grow upwards from the same floor as positive bars and read as a gain.
   return (
-    <div className="flex items-end gap-1.5" style={{ height: 160 }}>
-      {months.map((m) => {
-        const val = parseFloat(m.grossProfit);
-        const pct = Math.abs(val) / maxAbs;
-        const heightPx = Math.max(pct * 140, 4);
-        const isPositive = val >= 0;
+    <div>
+      <div className="flex items-stretch gap-1.5" style={{ height: 160 }}>
+        {months.map((m) => {
+          const val = parseFloat(m.grossProfit);
+          const isPositive = val >= 0;
+          const heightPx = Math.max((Math.abs(val) / maxAbs) * 70, 2);
 
-        return (
-          <div
+          return (
+            <div key={m.month} className="flex flex-1 flex-col" style={{ height: 160 }}>
+              <div className="flex flex-1 items-end justify-center">
+                {isPositive && (
+                  <div
+                    className="w-full max-w-10 rounded-t bg-green-500/70"
+                    style={{ height: heightPx }}
+                    title={`${reportMonthLabel(m.month)}: ${fmtCurrency(m.grossProfit)}`}
+                  />
+                )}
+              </div>
+              <div className="h-px w-full bg-mist" aria-hidden="true" />
+              <div className="flex flex-1 items-start justify-center">
+                {!isPositive && (
+                  <div
+                    className="w-full max-w-10 rounded-b bg-red-400/70"
+                    style={{ height: heightPx }}
+                    title={`${reportMonthLabel(m.month)}: ${fmtCurrency(m.grossProfit)}`}
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-1 flex gap-1.5">
+        {months.map((m) => (
+          <span
             key={m.month}
-            className="flex flex-1 flex-col items-center justify-end"
-            style={{ height: 160 }}
+            className="flex-1 text-center text-[10px] text-espresso/60"
           >
-            <div
-              className={`w-full max-w-10 rounded-t ${isPositive ? "bg-green-500/70" : "bg-red-400/70"}`}
-              style={{ height: heightPx }}
-              title={`${monthLabel(m.month)}: ${fmtCurrency(m.grossProfit)}`}
-            />
-            <span className="mt-1 text-[10px] text-espresso/60">
-              {monthLabel(m.month)}
-            </span>
-          </div>
-        );
-      })}
+            {reportMonthLabel(m.month)}
+          </span>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] text-espresso/50">
+        Bars share a zero line: positive gross profit sits above it, negative
+        below.
+      </p>
     </div>
   );
 }

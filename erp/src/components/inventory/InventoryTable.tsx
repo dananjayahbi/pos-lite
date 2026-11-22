@@ -266,6 +266,7 @@ export function InventoryTable({
                   <TableCell>
                     <ProductStatusBadge
                       isArchived={product.isArchived}
+                      isDeleted={isDeletedView}
                       variants={product.variants ?? []}
                     />
                   </TableCell>

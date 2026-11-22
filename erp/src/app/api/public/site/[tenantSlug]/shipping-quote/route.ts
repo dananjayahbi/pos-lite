@@ -21,11 +21,12 @@ import {
 } from '@/lib/api/cors';
 import { isModuleEnabled } from '@/lib/feature-guard';
 import { estimateWebsiteShippingFee } from '@/lib/services/shipping-fee.service';
+import { MAX_RATE_WEIGHT_KG } from '@/lib/delivery/rateCardQuote.core';
 
 const QuoteSchema = z.object({
   cityName: z.string().min(1).max(120).optional(),
   districtName: z.string().max(120).optional(),
-  totalWeightKg: z.number().min(0).optional(),
+  totalWeightKg: z.number().min(0).max(MAX_RATE_WEIGHT_KG).optional(),
 });
 
 interface RouteContext {
@@ -81,6 +82,11 @@ export async function POST(
       cityName: parsed.data.cityName,
       districtName: parsed.data.districtName,
     });
+    // ARGUS #292: no active rate card is a configuration error, not free
+    // shipping. The storefront must show this instead of a zero quote.
+    if (!quote.configured) {
+      return errorWithCors(request, 409, 'Shipping is not configured for this store');
+    }
     return jsonWithCors(request, { success: true, data: { shippingFee: quote.shippingFee } }, { status: 200 });
   } catch (error) {
     console.error('POST /api/public/site/[tenantSlug]/shipping-quote error:', error);

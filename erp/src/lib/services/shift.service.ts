@@ -1,10 +1,24 @@
 import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
-import type { ShiftStatus, SaleStatus, PaymentMethod, ReturnRefundMethod } from '@/generated/prisma/client';
+import type { ShiftStatus, SaleStatus, ReturnRefundMethod } from '@/generated/prisma/client';
 import { sumPaymentBreakdown } from '@/lib/services/paymentBreakdown';
+import {
+  computeExpectedCash,
+  filterReturnsForShift,
+  sumShiftCashMovements,
+  sumShiftRefunds,
+  type ShiftRefundRow,
+} from '@/lib/services/shiftCash.core';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import {
+  emptyShiftSales,
+  groupShiftSalesByShift,
+} from '@/lib/shifts/shift-sales-count';
+import { buildZReportTopItems } from '@/lib/shifts/z-report-top-items';
+import { toShiftStatusCounts } from '@/lib/shifts/shift-status-counts';
+import { netRevenueOnSameTaxBasis } from '@/lib/shifts/z-report-net-revenue';
 
 // ── Open Shift ───────────────────────────────────────────────────────────────
 
@@ -55,6 +69,68 @@ export async function openShift(tenantId: string, cashierId: string, openingFloa
 
 // ── Close Shift ──────────────────────────────────────────────────────────────
 
+/**
+ * Returns owned by a shift (ARGUS #109).
+ *
+ * Primary attribution is the shift that recorded the original sale, so an
+ * overlapping shift can no longer claim the same refund by `createdAt`.
+ * Legacy returns with a shiftless original sale fall back to the initiator's
+ * covering shift (deterministic, single owner). The shared pure rule lives in
+ * `shiftCash.core.ts` and is also used by the closure-recompute script.
+ */
+async function getShiftReturns(
+  tenantId: string,
+  shift: { id: string; cashierId: string; openedAt: Date },
+  endAt: Date,
+): Promise<ShiftRefundRow[]> {
+  const [returns, cashierShifts] = await Promise.all([
+    prisma.return.findMany({
+      where: {
+        tenantId,
+        OR: [
+          { originalSale: { shiftId: shift.id } },
+          {
+            originalSale: { shiftId: null },
+            initiatedById: shift.cashierId,
+            createdAt: { gte: shift.openedAt, lte: endAt },
+          },
+        ],
+      },
+      select: {
+        refundAmount: true,
+        taxAmount: true,
+        refundMethod: true,
+        initiatedById: true,
+        createdAt: true,
+        originalSale: { select: { shiftId: true } },
+      },
+    }),
+    prisma.shift.findMany({
+      where: { tenantId, cashierId: shift.cashierId },
+      select: { id: true, cashierId: true, openedAt: true, closedAt: true },
+    }),
+  ]);
+
+  const attributed = filterReturnsForShift(
+    returns.map((ret) => ({
+      refundAmount: ret.refundAmount,
+      taxAmount: ret.taxAmount,
+      refundMethod: ret.refundMethod,
+      originalSaleShiftId: ret.originalSale.shiftId,
+      initiatedById: ret.initiatedById,
+      createdAt: ret.createdAt,
+    })),
+    cashierShifts,
+    shift.id,
+  );
+
+  return attributed.map((ret) => ({
+    refundAmount: ret.refundAmount,
+    taxAmount: ret.taxAmount,
+    refundMethod: ret.refundMethod,
+  }));
+}
+
 export async function closeShift(
   tenantId: string,
   shiftId: string,
@@ -98,90 +174,58 @@ export async function closeShift(
     },
   });
 
-  // Aggregate COMPLETED sales
-  const [salesAggregate, cashAggregate, cardAggregate, qrAggregate, salesCount] = await Promise.all([
+  // Aggregate COMPLETED sales. Tender totals come from the payment legs, not
+  // `Sale.paymentMethod`: a sale may be settled by a mix of tenders (SPLIT) or
+  // by store credit, and only the legs know how much money actually moved.
+  const [salesAggregate, shiftPayments, salesCount] = await Promise.all([
     prisma.sale.aggregate({
       where: { shiftId, status: 'COMPLETED' satisfies SaleStatus },
       _sum: { totalAmount: true },
     }),
-    prisma.sale.aggregate({
+    prisma.payment.findMany({
       where: {
-        shiftId,
-        status: 'COMPLETED' satisfies SaleStatus,
-        paymentMethod: 'CASH' satisfies PaymentMethod,
+        sale: { shiftId, tenantId, status: 'COMPLETED' satisfies SaleStatus },
       },
-      _sum: { totalAmount: true },
-    }),
-    prisma.sale.aggregate({
-      where: {
-        shiftId,
-        status: 'COMPLETED' satisfies SaleStatus,
-        paymentMethod: 'CARD' satisfies PaymentMethod,
-      },
-      _sum: { totalAmount: true },
-    }),
-    prisma.sale.aggregate({
-      where: {
-        shiftId,
-        status: 'COMPLETED' satisfies SaleStatus,
-        paymentMethod: 'LANKAQR' satisfies PaymentMethod,
-      },
-      _sum: { totalAmount: true },
+      select: { method: true, amount: true },
     }),
     prisma.sale.count({
       where: { shiftId, status: 'COMPLETED' satisfies SaleStatus },
     }),
   ]);
 
-  // NOTE: SPLIT payments are NOT included in cash/card totals until SubPhase 03.02
+  const paymentBreakdown = sumPaymentBreakdown(shiftPayments);
 
   const totalSalesAmount = new Decimal(salesAggregate._sum.totalAmount?.toString() ?? '0');
-  const totalCashAmount = new Decimal(cashAggregate._sum.totalAmount?.toString() ?? '0');
-  const totalCardAmount = new Decimal(cardAggregate._sum.totalAmount?.toString() ?? '0');
-  const totalQrAmount = new Decimal(qrAggregate._sum.totalAmount?.toString() ?? '0');
+  const totalCashAmount = paymentBreakdown.cash;
+  const totalCardAmount = paymentBreakdown.card;
+  const totalQrAmount = paymentBreakdown.lankaqr;
 
   const now = new Date();
 
-  // Aggregate returns during shift period
-  const shiftReturns = await prisma.return.findMany({
-    where: {
-      tenantId,
-      createdAt: { gte: shift.openedAt, lte: now },
-    },
-    select: { refundAmount: true, refundMethod: true },
-  });
+  // Aggregate the returns this shift owns. Attribution is by the shift that
+  // recorded the original sale, not by the return's createdAt window: an
+  // overlapping shift must never count the same refund (ARGUS #109).
+  const shiftReturns = await getShiftReturns(tenantId, shift, now);
 
-  let totalReturnsAmount = new Decimal(0);
-  let cashRefundsTotal = new Decimal(0);
-  for (const ret of shiftReturns) {
-    totalReturnsAmount = totalReturnsAmount.plus(new Decimal(ret.refundAmount.toString()));
-    if (ret.refundMethod === ('CASH' satisfies ReturnRefundMethod)) {
-      cashRefundsTotal = cashRefundsTotal.plus(new Decimal(ret.refundAmount.toString()));
-    }
-  }
+  const refunds = sumShiftRefunds(shiftReturns);
+  const totalReturnsAmount = refunds.total;
+  const cashRefundsTotal = refunds.cash;
   const totalReturnsCount = shiftReturns.length;
 
   // Aggregate cash movements (petty cash / manual deposits)
   const shiftCashMovements = await prisma.cashMovement.findMany({
     where: { shiftId, tenantId },
   });
+  const { deposited: cmDeposited, pettyOut: cmPettyCashOut } =
+    sumShiftCashMovements(shiftCashMovements);
 
-  let cmDeposited = new Decimal(0);
-  let cmPettyCashOut = new Decimal(0);
-  for (const cm of shiftCashMovements) {
-    if (cm.type === 'MANUAL_IN') {
-      cmDeposited = cmDeposited.plus(new Decimal(cm.amount.toString()));
-    } else if (cm.type === 'PETTY_CASH_OUT' || cm.type === 'MANUAL_OUT') {
-      cmPettyCashOut = cmPettyCashOut.plus(new Decimal(cm.amount.toString()));
-    }
-  }
-
-  const openingFloatDec = new Decimal(shift.openingFloat.toString());
-  const expectedCash = openingFloatDec
-    .plus(totalCashAmount)
-    .minus(cashRefundsTotal)
-    .plus(cmDeposited)
-    .minus(cmPettyCashOut);
+  const expectedCash = computeExpectedCash({
+    openingFloat: shift.openingFloat,
+    cashSales: totalCashAmount,
+    cashRefunds: cashRefundsTotal,
+    cashDeposited: cmDeposited,
+    pettyCashOut: cmPettyCashOut,
+  });
   const closingCashCountDec = new Decimal(input.closingCashCount);
   const cashDifference = closingCashCountDec.minus(expectedCash);
 
@@ -249,9 +293,17 @@ export async function getCurrentShift(tenantId: string, cashierId: string) {
 
 // ── Get Shift By ID ──────────────────────────────────────────────────────────
 
-export async function getShiftById(tenantId: string, shiftId: string) {
+export async function getShiftById(
+  tenantId: string,
+  shiftId: string,
+  viewerCashierId?: string | undefined,
+) {
   const shift = await prisma.shift.findFirst({
-    where: { id: shiftId, tenantId },
+    where: {
+      id: shiftId,
+      tenantId,
+      ...(viewerCashierId ? { cashierId: viewerCashierId } : {}),
+    },
     include: {
       cashier: { select: { id: true, email: true, role: true } },
       closure: true,
@@ -263,7 +315,7 @@ export async function getShiftById(tenantId: string, shiftId: string) {
     throw new Error('Shift not found');
   }
 
-  const [salesTotal, cashSalesTotal, shiftReturns, shiftCashMovements] = await Promise.all([
+  const [salesTotal, shiftPayments, shiftReturns, shiftCashMovements] = await Promise.all([
     prisma.sale.aggregate({
       where: {
         shiftId,
@@ -271,53 +323,30 @@ export async function getShiftById(tenantId: string, shiftId: string) {
       },
       _sum: { totalAmount: true },
     }),
-    prisma.sale.aggregate({
+    prisma.payment.findMany({
       where: {
-        shiftId,
-        status: 'COMPLETED' satisfies SaleStatus,
-        paymentMethod: 'CASH' satisfies PaymentMethod,
+        sale: { shiftId, tenantId, status: 'COMPLETED' satisfies SaleStatus },
       },
-      _sum: { totalAmount: true },
+      select: { method: true, amount: true },
     }),
-    prisma.return.findMany({
-      where: {
-        tenantId,
-        createdAt: {
-          gte: shift.openedAt,
-          lte: shift.closedAt ?? new Date(),
-        },
-      },
-      select: { refundAmount: true, refundMethod: true },
-    }),
+    getShiftReturns(tenantId, shift, shift.closedAt ?? new Date()),
     prisma.cashMovement.findMany({
       where: { shiftId, tenantId },
       select: { amount: true, type: true },
     }),
   ]);
 
-  let cashRefundsTotal = new Decimal(0);
-  for (const ret of shiftReturns) {
-    if (ret.refundMethod === ('CASH' satisfies ReturnRefundMethod)) {
-      cashRefundsTotal = cashRefundsTotal.plus(new Decimal(ret.refundAmount.toString()));
-    }
-  }
-
-  let cashDeposited = new Decimal(0);
-  let pettyCashOut = new Decimal(0);
-  for (const movement of shiftCashMovements) {
-    if (movement.type === 'MANUAL_IN') {
-      cashDeposited = cashDeposited.plus(new Decimal(movement.amount.toString()));
-    } else if (movement.type === 'PETTY_CASH_OUT' || movement.type === 'MANUAL_OUT') {
-      pettyCashOut = pettyCashOut.plus(new Decimal(movement.amount.toString()));
-    }
-  }
+  const cashRefundsTotal = sumShiftRefunds(shiftReturns).cash;
+  const { deposited: cashDeposited, pettyOut } = sumShiftCashMovements(shiftCashMovements);
 
   const openingFloat = new Decimal(shift.openingFloat.toString());
-  const expectedCash = openingFloat
-    .plus(new Decimal(cashSalesTotal._sum.totalAmount?.toString() ?? '0'))
-    .minus(cashRefundsTotal)
-    .plus(cashDeposited)
-    .minus(pettyCashOut);
+  const expectedCash = computeExpectedCash({
+    openingFloat,
+    cashSales: sumPaymentBreakdown(shiftPayments).cash,
+    cashRefunds: cashRefundsTotal,
+    cashDeposited,
+    pettyCashOut: pettyOut,
+  });
 
   return {
     ...shift,
@@ -358,22 +387,63 @@ export async function getShifts(tenantId: string, filters?: GetShiftsFilters) {
     where.openedAt = openedAt;
   }
 
-  const [shifts, total] = await Promise.all([
+  const [shifts, total, statusGroups] = await Promise.all([
     prisma.shift.findMany({
       where,
       include: {
         cashier: { select: { id: true, email: true, role: true } },
         closure: true,
-        _count: { select: { sales: true } },
       },
       orderBy: { openedAt: 'desc' },
       skip,
       take: limit,
     }),
     prisma.shift.count({ where }),
+    // ARGUS #116: the summary cards must count the filtered result set, not
+    // only the rows on this page. Same `where` as the list and total, so the
+    // two counters always add up to the filtered total.
+    prisma.shift.groupBy({
+      by: ['status'],
+      where,
+      _count: { _all: true },
+    }),
   ]);
 
-  return { shifts, total };
+  const statusCounts = toShiftStatusCounts(
+    statusGroups.map((group) => ({
+      status: group.status,
+      count: group._count._all,
+    })),
+  );
+
+  // ARGUS #110: `_count.sales` included OPEN (held) and VOIDED rows, so the list
+  // labelled voided transactions as "Sales" and disagreed with the closure/
+  // Z-report (COMPLETED only). Count by status for the page's shifts, keeping
+  // the same tenant scope as the shift query.
+  const shiftIds = shifts.map((shift) => shift.id);
+  const groupedSales = shiftIds.length
+    ? await prisma.sale.groupBy({
+        by: ['shiftId', 'status'],
+        where: { tenantId, shiftId: { in: shiftIds } },
+        _count: { _all: true },
+      })
+    : [];
+  const salesByShift = groupShiftSalesByShift(
+    groupedSales.map((row) => ({
+      shiftId: row.shiftId,
+      status: row.status,
+      count: row._count._all,
+    })),
+  );
+
+  return {
+    shifts: shifts.map((shift) => ({
+      ...shift,
+      salesCounts: salesByShift.get(shift.id) ?? emptyShiftSales(),
+    })),
+    total,
+    statusCounts,
+  };
 }
 
 // ── Z-Report Data ────────────────────────────────────────────────────────────
@@ -424,9 +494,17 @@ export interface ZReportData {
   }>;
 }
 
-export async function buildZReportData(tenantId: string, shiftId: string): Promise<ZReportData> {
+export async function buildZReportData(
+  tenantId: string,
+  shiftId: string,
+  viewerCashierId?: string | undefined,
+): Promise<ZReportData> {
   const shift = await prisma.shift.findFirst({
-    where: { id: shiftId, tenantId },
+    where: {
+      id: shiftId,
+      tenantId,
+      ...(viewerCashierId ? { cashierId: viewerCashierId } : {}),
+    },
     include: {
       cashier: { select: { email: true } },
       closure: true,
@@ -438,9 +516,20 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
   // Sales aggregation
   const completedSales = await prisma.sale.findMany({
     where: { shiftId, status: 'COMPLETED' satisfies SaleStatus },
-    include: {
+    select: {
+      status: true,
+      totalAmount: true,
+      taxAmount: true,
+      discountAmount: true,
       payments: true,
-      lines: true,
+      lines: {
+        select: {
+          productNameSnapshot: true,
+          variantDescriptionSnapshot: true,
+          quantity: true,
+          lineTotalAfterDiscount: true,
+        },
+      },
     },
   });
 
@@ -449,6 +538,7 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
   });
 
   let totalSalesAmount = new Decimal(0);
+  let totalSalesTax = new Decimal(0);
   const paymentBreakdown = sumPaymentBreakdown(
     completedSales.flatMap((s) => s.payments),
   );
@@ -456,6 +546,7 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
 
   for (const sale of completedSales) {
     totalSalesAmount = totalSalesAmount.plus(new Decimal(sale.totalAmount.toString()));
+    totalSalesTax = totalSalesTax.plus(new Decimal(sale.taxAmount.toString()));
     totalDiscountAmount = totalDiscountAmount.plus(new Decimal(sale.discountAmount.toString()));
   }
 
@@ -463,43 +554,18 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
   const cardSalesAmount = paymentBreakdown.card;
   const lankaqrSalesAmount = paymentBreakdown.lankaqr;
 
-  // Top products sold
-  const productSalesMap = new Map<string, { productName: string; variantDescription: string; totalQtySold: number; totalRevenue: Decimal }>();
-  for (const sale of completedSales) {
-    for (const line of sale.lines) {
-      const key = `${line.productNameSnapshot}|${line.variantDescriptionSnapshot}`;
-      const existing = productSalesMap.get(key);
-      if (existing) {
-        existing.totalQtySold += line.quantity;
-        existing.totalRevenue = existing.totalRevenue.plus(new Decimal(line.lineTotalAfterDiscount.toString()));
-      } else {
-        productSalesMap.set(key, {
-          productName: line.productNameSnapshot,
-          variantDescription: line.variantDescriptionSnapshot,
-          totalQtySold: line.quantity,
-          totalRevenue: new Decimal(line.lineTotalAfterDiscount.toString()),
-        });
-      }
-    }
-  }
+  // Top products sold — collected revenue after the cart discount (ARGUS #112).
+  // The old code summed lineTotalAfterDiscount (pre-cart-discount), so
+  // promotions and zero-value bank sales inflated the report above the
+  // completed-sales total.
+  const topProductsSold = buildZReportTopItems(completedSales);
 
-  const topProductsSold = Array.from(productSalesMap.values())
-    .sort((a, b) => b.totalQtySold - a.totalQtySold)
-    .slice(0, 10)
-    .map((p) => ({ ...p, totalRevenue: p.totalRevenue.toDecimalPlaces(2).toNumber() }));
-
-  // Returns aggregation — by time range
-  const shiftStart = shift.openedAt;
-  const shiftEnd = shift.closedAt ?? new Date();
-
-  const returns = await prisma.return.findMany({
-    where: {
-      tenantId,
-      createdAt: { gte: shiftStart, lte: shiftEnd },
-    },
-  });
+  // Returns aggregation — attributed to the shift that recorded the original
+  // sale (ARGUS #109), never by overlapping createdAt windows.
+  const returns = await getShiftReturns(tenantId, shift, shift.closedAt ?? new Date());
 
   let totalRefundAmount = new Decimal(0);
+  let totalRefundTax = new Decimal(0);
   let cashRefundAmount = new Decimal(0);
   let cardRefundAmount = new Decimal(0);
   let creditRefundAmount = new Decimal(0);
@@ -507,6 +573,9 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
 
   for (const ret of returns) {
     totalRefundAmount = totalRefundAmount.plus(new Decimal(ret.refundAmount.toString()));
+    if (ret.taxAmount !== undefined) {
+      totalRefundTax = totalRefundTax.plus(new Decimal(ret.taxAmount.toString()));
+    }
     switch (ret.refundMethod) {
       case 'CASH' satisfies ReturnRefundMethod:
         cashRefundAmount = cashRefundAmount.plus(new Decimal(ret.refundAmount.toString()));
@@ -528,28 +597,30 @@ export async function buildZReportData(tenantId: string, shiftId: string): Promi
     where: { shiftId, tenantId },
   });
 
-  let cashDeposited = new Decimal(0);
-  let pettyCashOutAmount = new Decimal(0);
-  for (const cm of cashMovements) {
-    if (cm.type === 'MANUAL_IN') {
-      cashDeposited = cashDeposited.plus(new Decimal(cm.amount.toString()));
-    } else if (cm.type === 'PETTY_CASH_OUT' || cm.type === 'MANUAL_OUT') {
-      pettyCashOutAmount = pettyCashOutAmount.plus(new Decimal(cm.amount.toString()));
-    }
-  }
+  const { deposited: cashDeposited, pettyOut: pettyCashOutAmount } =
+    sumShiftCashMovements(cashMovements);
 
   // Cash reconciliation
   // Expected = Opening Float + Cash Sales − Cash Refunds + Cash Deposited − Petty Cash Out
   const openingFloat = new Decimal(shift.openingFloat.toString());
-  const expectedCashInDrawer = openingFloat
-    .plus(cashSalesAmount)
-    .minus(cashRefundAmount)
-    .plus(cashDeposited)
-    .minus(pettyCashOutAmount);
+  const expectedCashInDrawer = computeExpectedCash({
+    openingFloat,
+    cashSales: cashSalesAmount,
+    cashRefunds: cashRefundAmount,
+    cashDeposited,
+    pettyCashOut: pettyCashOutAmount,
+  });
   const actualCashCounted = shift.closure ? new Decimal(shift.closure.closingCashCount.toString()) : null;
   const cashDifference = actualCashCounted ? actualCashCounted.minus(expectedCashInDrawer) : null;
 
-  const netRevenue = totalSalesAmount.minus(totalRefundAmount).toDecimalPlaces(2).toNumber();
+  // ARGUS #117: compare sales and refunds on the same tax basis (goods value)
+  // instead of subtracting a pre-tax refund from a tax-inclusive sales total.
+  const netRevenue = netRevenueOnSameTaxBasis({
+    salesTotal: totalSalesAmount,
+    salesTax: totalSalesTax,
+    refundTotal: totalRefundAmount,
+    refundTax: totalRefundTax,
+  }).toNumber();
 
   return {
     shift: {

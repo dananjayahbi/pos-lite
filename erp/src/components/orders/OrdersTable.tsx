@@ -3,6 +3,13 @@
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { formatRupee } from '@/lib/format';
+import {
+  deliverySourceLabel,
+  orderAmountSummary,
+  paymentMethodLabel,
+  paymentStatusLabel,
+} from './orderAmount';
+import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
 import { OrderStatusBadge } from './OrderStatusBadge';
 import type { DeliveryListItem } from '@/types/delivery';
 
@@ -20,6 +27,8 @@ interface OrdersTableProps {
   printingInvoiceId?: string | null;
   /** Any row-level print is running. */
   printBusy?: boolean;
+  /** Waybill template is still loading/failed; waybill print must stay disabled. */
+  waybillPrintDisabled?: boolean;
 }
 
 export function OrdersTable({
@@ -33,6 +42,7 @@ export function OrdersTable({
   printingWaybillId = null,
   printingInvoiceId = null,
   printBusy = false,
+  waybillPrintDisabled = false,
 }: OrdersTableProps) {
   const allSelected = orders.length > 0 && orders.every((o) => selectedIds.has(o.id));
 
@@ -44,7 +54,7 @@ export function OrdersTable({
             <th className="w-10 px-4 py-3">
               <input
                 type="checkbox"
-                aria-label="Select all"
+                aria-label="Select page"
                 checked={allSelected}
                 onChange={onToggleAll}
                 className="h-4 w-4 accent-espresso"
@@ -53,8 +63,10 @@ export function OrdersTable({
             <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Order Ref</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Customer</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">City</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Source</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Items</th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">COD</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Payment</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">To collect</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Status</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-espresso/60">Actions</th>
           </tr>
@@ -63,6 +75,8 @@ export function OrdersTable({
           {orders.map((order) => {
             const shipment = order.shipments?.[0];
             const waybill = order.waybill ?? shipment?.waybillId;
+            const amount = orderAmountSummary(order);
+            const recipientDecision = waybillRecipientPrintDecision(order.address);
             return (
               <tr key={order.id} className="border-b border-espresso/5 hover:bg-espresso/5 transition-colors">
                 <td className="px-4 py-3">
@@ -79,11 +93,36 @@ export function OrdersTable({
                   {order.customer?.name ?? order.address?.fullName ?? '-'}
                 </td>
                 <td className="px-4 py-3 text-sm text-espresso/60">{order.address?.cityName ?? '-'}</td>
+                <td className="px-4 py-3 text-sm text-espresso/60">
+                  {deliverySourceLabel(order.source)}
+                </td>
                 <td className="px-4 py-3 text-sm text-espresso/60">{order.itemCount ?? 1}</td>
-                <td className="px-4 py-3 text-sm text-espresso">{formatRupee(order.codAmount ?? 0)}</td>
+                <td className="px-4 py-3 text-sm text-espresso">
+                  <p>{paymentMethodLabel(order.paymentMethod)}</p>
+                  <p className="text-xs text-espresso/60">
+                    {paymentStatusLabel(order.paymentStatus)}
+                  </p>
+                </td>
+                <td className="px-4 py-3 text-sm text-espresso">
+                  {amount.isPrepaid ? (
+                    <p className="font-medium">Prepaid</p>
+                  ) : (
+                    <>
+                      <p>{formatRupee(amount.totalToCollect.toNumber())}</p>
+                      <p className="text-xs text-espresso/40">
+                        {amount.shippingFee.greaterThan(0)
+                          ? `Goods ${formatRupee(amount.goodsAmount.toNumber())} + shipping ${formatRupee(amount.shippingFee.toNumber())}`
+                          : 'Goods only'}
+                      </p>
+                    </>
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   <OrderStatusBadge status={order.status} />
                   {waybill && <p className="mt-0.5 text-xs text-espresso/40">{waybill}</p>}
+                  {!recipientDecision.canPrint && (
+                    <p className="mt-0.5 text-xs text-red-600">{recipientDecision.reason}</p>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5">
@@ -94,8 +133,15 @@ export function OrdersTable({
                       size="sm"
                       variant="outline"
                       onClick={() => onPrint(order)}
-                      disabled={printBusy}
+                      disabled={
+                        printBusy || waybillPrintDisabled || !recipientDecision.canPrint
+                      }
                       aria-busy={printingWaybillId === order.id}
+                      title={
+                        waybillPrintDisabled
+                          ? 'Waybill printing is disabled'
+                          : recipientDecision.reason ?? undefined
+                      }
                       data-testid={`order-waybill-${order.id}`}
                     >
                       {printingWaybillId === order.id ? (

@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { QrCode, Info } from 'lucide-react';
+import { QrCode, Info, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,6 +19,10 @@ import {
   isRenderableQrImageUrl,
   type LankaQrSettings,
 } from '@/lib/payments/lanka-qr-config';
+import {
+  LANKA_QR_IMAGE_ACCEPT,
+  lankaQrUploadError,
+} from '@/lib/payments/lanka-qr-upload.core';
 
 type Props = {
   initialValues: LankaQrSettings;
@@ -27,6 +31,9 @@ type Props = {
 export default function PaymentSettingsForm({ initialValues }: Props) {
   const [values, setValues] = useState<LankaQrSettings>(initialValues);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const update = useCallback(
     <K extends keyof LankaQrSettings>(key: K, value: LankaQrSettings[K]) => {
@@ -39,8 +46,38 @@ export default function PaymentSettingsForm({ initialValues }: Props) {
     () => JSON.stringify(values) !== JSON.stringify(initialValues),
     [initialValues, values],
   );
-  const canSave = isDirty && !saving;
+  const canSave = isDirty && !saving && !uploading;
   const qrPreview = isRenderableQrImageUrl(values.qrImageUrl);
+
+  async function handleQrUpload(file: File) {
+    const rejection = lankaQrUploadError({ type: file.type, size: file.size });
+    if (rejection) {
+      setUploadError(rejection);
+      return;
+    }
+
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/settings/payments/qr', {
+        method: 'POST',
+        body: formData,
+      });
+      const json = (await res.json()) as { success?: boolean; url?: string; error?: string };
+      if (!res.ok || !json.success || !json.url) {
+        setUploadError(json.error ?? 'Upload failed. Please try again.');
+        return;
+      }
+      update('qrImageUrl', json.url);
+      toast.success('QR image uploaded - press Save Payment Settings to apply it.');
+    } catch {
+      setUploadError('Network error - could not upload the QR image.');
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -137,18 +174,48 @@ export default function PaymentSettingsForm({ initialValues }: Props) {
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="lankaqr-image-url">Static QR image URL</Label>
-              <Input
-                id="lankaqr-image-url"
-                value={values.qrImageUrl}
-                onChange={(event) => update('qrImageUrl', event.target.value)}
-                placeholder="https://cdn.example.com/lankaqr.png or /uploads/lankaqr.png"
-                maxLength={2048}
-                className="font-mono text-xs"
-              />
+              <Label htmlFor="lankaqr-image-url">Static QR image</Label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  id="lankaqr-image-url"
+                  value={values.qrImageUrl}
+                  onChange={(event) => update('qrImageUrl', event.target.value)}
+                  placeholder="https://cdn.example.com/lankaqr.png or /uploads/lankaqr.png"
+                  maxLength={2048}
+                  className="font-mono text-xs"
+                />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept={LANKA_QR_IMAGE_ACCEPT}
+                  data-testid="lankaqr-upload-input"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = '';
+                    if (file) void handleQrUpload(file);
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={uploading || saving}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="shrink-0 border-sand text-espresso"
+                >
+                  <Upload className="mr-1 h-4 w-4" aria-hidden="true" />
+                  {uploading ? 'Uploading...' : 'Upload image'}
+                </Button>
+              </div>
+              {uploadError && (
+                <p className="text-xs text-[#9B2226]" role="alert">
+                  {uploadError}
+                </p>
+              )}
               <p className="text-xs text-mist-ink">
-                Use the QR image supplied by your bank. The cashier sees it in the payment modal -
-                customers scan it with their own banking app.
+                Paste the URL of the QR image supplied by your bank, or upload it here (JPEG, PNG
+                or WebP, max 2 MB). The cashier sees it in the payment modal - customers scan it
+                with their own banking app.
               </p>
             </div>
 
@@ -171,7 +238,7 @@ export default function PaymentSettingsForm({ initialValues }: Props) {
                   <p>
                     {qrPreview
                       ? 'This image is shown to the cashier when collecting a LankaQR payment.'
-                      : 'Paste a valid http(s) or /uploads image URL to preview your QR.'}
+                      : 'Upload the image or paste a valid http(s) / /uploads URL to preview your QR.'}
                   </p>
                 </div>
               </div>
@@ -243,6 +310,11 @@ export default function PaymentSettingsForm({ initialValues }: Props) {
           >
             {saving ? 'Saving…' : 'Save Payment Settings'}
           </Button>
+          {uploading && (
+            <p className="text-center text-xs text-sand-ink">
+              Save is disabled until the QR image upload finishes.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

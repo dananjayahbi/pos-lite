@@ -9,9 +9,13 @@
 
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
-import type { StockMovementReason, StockTakeStatus } from '@/generated/prisma/client';
+import type { StockMovementReason } from '@/generated/prisma/client';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { computeStockTakeApprovalPlan } from '@/lib/services/stockTakeApproval.core';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
+import { lockForUpdate } from '@/lib/api/race-guard';
+import { manualAdjustmentSideEffectSummary } from '@/lib/services/manualAdjustment.core';
+import { invalidCountedQuantityRows } from '@/lib/services/stockTakePolicy.core';
 
 // ── Transaction Client Type ──────────────────────────────────────────────────
 
@@ -72,9 +76,25 @@ export async function adjustStockInTx(
   tx: TxClient,
   tenantId: string,
   variantId: string,
-  actorId: string,
+  /**
+   * Nullable: `StockMovement.actorId` is optional, so a SYSTEM repair (audit /
+   * data-reconciliation CLI) can write a movement with no human actor. Every
+   * UI/service caller still passes the acting user.
+   */
+  actorId: string | null,
   options: AdjustStockOptions,
 ) {
+  // ARGUS #192: serialize every stock mutation on the variant row. Without
+  // this, two concurrent adjustments both read the same `stockQuantity`, both
+  // pass the negative-stock check, and their movement rows record the same
+  // false before→after chain. SELECT … FOR UPDATE makes the second writer
+  // wait, then re-read the committed value, so the ledger records the true
+  // before/after and stock can never cross zero.
+  await lockForUpdate(tx, 'product_variants', '"id" = $1 AND "tenantId" = $2', [
+    variantId,
+    tenantId,
+  ]);
+
   const variant = await tx.productVariant.findUnique({
     where: { id: variantId },
     select: { stockQuantity: true, tenantId: true },
@@ -124,39 +144,73 @@ export async function adjustStockInTx(
 
 // ── Step 2: adjustStock ──────────────────────────────────────────────────────
 
-const MANUAL_ADJUSTMENT_REASONS = new Set<string>(['FOUND', 'DAMAGED', 'STOLEN', 'DATA_ERROR', 'RETURNED_TO_SUPPLIER']);
-
 export async function adjustStock(input: AdjustStockInput) {
   const result = await prisma.$transaction(async (tx) => {
     return adjustStockInTx(tx, input.tenantId, input.variantId, input.actorId, input.options);
   });
 
-  if (MANUAL_ADJUSTMENT_REASONS.has(input.options.reason)) {
-    void createAuditLog({
-      tenantId: input.tenantId,
-      actorId: input.actorId,
-      actorRole: 'USER',
-      entityType: 'Stock',
-      entityId: input.variantId,
-      action: AUDIT_ACTIONS.STOCK_ADJUSTED,
-      after: { quantityDelta: input.options.quantityDelta, reason: input.options.reason, note: input.options.note },
-    }).catch(() => {});
-
-    void dispatchWebhooks(input.tenantId, 'stock.adjusted', {
-      variantId: input.variantId,
-      quantityDelta: input.options.quantityDelta,
-      reason: input.options.reason,
-      note: input.options.note ?? null,
-    });
-  }
+  await recordManualAdjustmentSideEffects(input);
 
   return result;
+}
+
+/**
+ * ARGUS #181 / #186 - audit + webhook for a manual adjustment.
+ *
+ * Extracted so the adjust API routes (which own their low-stock notification
+ * transactions) record the same audit trail as `adjustStock` instead of
+ * silently bypassing it. System-only reasons are ignored: their originating
+ * flows own the audit story.
+ *
+ * ARGUS #186: this is awaited by every caller. The previous fire-and-forget
+ * version could be frozen when a serverless request returned, dropping the
+ * STOCK_ADJUSTED row and the `stock.adjusted` delivery without any trace.
+ * Both writes stay best-effort (audit swallows its own errors; the webhook
+ * dispatch failure is logged) so a committed stock movement is never turned
+ * into a 500 by a side-effect outage.
+ */
+export async function recordManualAdjustmentSideEffects(input: AdjustStockInput): Promise<void> {
+  const summary = manualAdjustmentSideEffectSummary(input.options);
+  if (!summary) return;
+
+  await createAuditLog({
+    tenantId: input.tenantId,
+    actorId: input.actorId,
+    actorRole: 'USER',
+    entityType: 'Stock',
+    entityId: input.variantId,
+    action: AUDIT_ACTIONS.STOCK_ADJUSTED,
+    after: {
+      quantityDelta: summary.quantityDelta,
+      reason: summary.reason,
+      note: summary.note,
+    },
+  });
+
+  try {
+    await dispatchWebhooks(input.tenantId, 'stock.adjusted', {
+      variantId: input.variantId,
+      ...summary,
+    });
+  } catch (error) {
+    console.error('stock.adjusted webhook dispatch failed:', error);
+  }
 }
 
 // ── Step 3: bulkAdjustStock ──────────────────────────────────────────────────
 
 export async function bulkAdjustStock(input: BulkAdjustStockInput) {
-  return prisma.$transaction(async (tx) => {
+  const results = await prisma.$transaction(async (tx) => {
+    // ARGUS #192: same stable lock order as the bulk route so overlapping
+    // batches cannot deadlock; adjustStockInTx then serializes per row.
+    const variantIds = [...new Set(input.adjustments.map((a) => a.variantId))].sort();
+    for (const variantId of variantIds) {
+      await lockForUpdate(tx, 'product_variants', '"id" = $1 AND "tenantId" = $2', [
+        variantId,
+        input.tenantId,
+      ]);
+    }
+
     const results = [];
     for (const adj of input.adjustments) {
       const result = await adjustStockInTx(tx, input.tenantId, adj.variantId, input.actorId, {
@@ -172,6 +226,21 @@ export async function bulkAdjustStock(input: BulkAdjustStockInput) {
     }
     return results;
   });
+
+  // ARGUS #186: the service path emits the same per-row audit/webhook side
+  // effects as the bulk API route, so a future caller cannot bypass them.
+  await Promise.all(
+    input.adjustments.map((adj) =>
+      recordManualAdjustmentSideEffects({
+        tenantId: input.tenantId,
+        variantId: adj.variantId,
+        actorId: input.actorId,
+        options: adj,
+      }),
+    ),
+  );
+
+  return results;
 }
 
 // ── Step 4: getStockMovements ────────────────────────────────────────────────
@@ -325,9 +394,11 @@ export async function addStockTakeItem(
 export async function updateStockTakeItem(
   sessionId: string,
   itemId: string,
-  countedQuantity: number,
+  countedQuantity: number | null,
 ) {
-  if (countedQuantity < 0) {
+  // ARGUS #208: null clears the count (`not counted`); only a real number can
+  // be negative.
+  if (countedQuantity !== null && countedQuantity < 0) {
     throw new Error('Counted quantity cannot be negative');
   }
 
@@ -349,7 +420,8 @@ export async function updateStockTakeItem(
     throw new Error('Stock take session is not in progress');
   }
 
-  const discrepancy = countedQuantity - item.systemQuantity;
+  const discrepancy =
+    countedQuantity === null ? null : countedQuantity - item.systemQuantity;
 
   return prisma.stockTakeItem.update({
     where: { id: itemId },
@@ -384,6 +456,15 @@ export async function completeStockTakeSession(
     include: { variant: { select: { sku: true } } },
   });
 
+  // ARGUS #187 (BUG-42): a legacy or direct-database row with a negative count
+  // must not reach approval. Reject it before the status transition.
+  const invalidCounts = invalidCountedQuantityRows(items);
+  if (invalidCounts.length > 0) {
+    throw new Error(
+      `Invalid counted quantity for ${invalidCounts.map((row) => row.label).join(', ')}`,
+    );
+  }
+
   const uncounted = items.filter((i) => i.countedQuantity === null);
   if (uncounted.length > 0) {
     const skus = uncounted.map((i) => i.variant.sku).join(', ');
@@ -416,7 +497,7 @@ export async function approveStockTake(
 ) {
   const session = await prisma.stockTakeSession.findUnique({
     where: { id: sessionId },
-    select: { tenantId: true, status: true },
+    select: { tenantId: true, status: true, initiatedById: true },
   });
 
   if (!session || session.tenantId !== tenantId) {
@@ -425,27 +506,75 @@ export async function approveStockTake(
   if (session.status !== 'PENDING_APPROVAL') {
     throw new Error('Stock take session is not pending approval');
   }
+  // ARGUS #187 (BUG-43): the route checks this for a typed 403; the service
+  // repeats it so any direct caller cannot bypass maker-checker.
+  if (session.initiatedById === actorId) {
+    throw new Error('You cannot approve a stock take you initiated');
+  }
 
   const items = await prisma.stockTakeItem.findMany({
-    where: { sessionId, NOT: { discrepancy: 0 } },
-    select: { variantId: true, discrepancy: true },
+    where: { sessionId },
+    select: {
+      variantId: true,
+      countedQuantity: true,
+      systemQuantity: true,
+      discrepancy: true,
+    },
   });
 
-  // Filter only non-zero and non-null discrepancies
-  const adjustmentsToMake = items.filter(
-    (i): i is typeof i & { discrepancy: number } => i.discrepancy !== null && i.discrepancy !== 0,
-  );
+  // ARGUS #187 (BUG-42): defend the approval path against a legacy/manual row
+  // that still holds a negative or fractional count.
+  const invalidCounts = invalidCountedQuantityRows(items);
+  if (invalidCounts.length > 0) {
+    throw new Error(
+      `Invalid counted quantity for ${invalidCounts.map((row) => row.label).join(', ')}`,
+    );
+  }
 
   const result = await prisma.$transaction(async (tx) => {
-    for (const item of adjustmentsToMake) {
-      await adjustStockInTx(tx, tenantId, item.variantId, actorId, {
-        quantityDelta: item.discrepancy,
-        reason: 'STOCK_TAKE_ADJUSTMENT',
-        stockTakeSessionId: sessionId,
+    // Stock can move between the count and approval (sales, receipts,
+    // adjustments). Applying the session-start discrepancy would then leave the
+    // variant at the wrong quantity, so the delta is recomputed against the
+    // current stock and the variants end at exactly what was counted
+    // (ARGUS #138).
+    const variantIds = items
+      .filter((item) => item.countedQuantity !== null)
+      .map((item) => item.variantId);
+    const currentVariants =
+      variantIds.length > 0
+        ? await tx.productVariant.findMany({
+            where: { id: { in: variantIds }, tenantId },
+            select: { id: true, stockQuantity: true },
+          })
+        : [];
+    const currentById = new Map(currentVariants.map((variant) => [variant.id, variant.stockQuantity]));
+
+    const plan = computeStockTakeApprovalPlan(items, (variantId) => currentById.get(variantId));
+
+    if (plan.missingVariantIds.length > 0) {
+      throw new Error(
+        `Cannot approve: variant(s) no longer exist - ${plan.missingVariantIds.join(', ')}`,
+      );
+    }
+
+    for (const adjustment of plan.adjustments) {
+      if (adjustment.quantityDelta !== 0) {
+        await adjustStockInTx(tx, tenantId, adjustment.variantId, actorId, {
+          quantityDelta: adjustment.quantityDelta,
+          reason: 'STOCK_TAKE_ADJUSTMENT',
+          stockTakeSessionId: sessionId,
+        });
+      }
+
+      // Keep the stored line truthful for the session detail: its discrepancy
+      // now explains the adjustment that was actually applied.
+      await tx.stockTakeItem.updateMany({
+        where: { sessionId, variantId: adjustment.variantId },
+        data: { discrepancy: adjustment.quantityDelta },
       });
     }
 
-    return tx.stockTakeSession.update({
+    const session = await tx.stockTakeSession.update({
       where: { id: sessionId },
       data: {
         status: 'APPROVED',
@@ -453,6 +582,12 @@ export async function approveStockTake(
         approvedAt: new Date(),
       },
     });
+
+    return {
+      session,
+      adjustmentCount: plan.adjustments.filter((adjustment) => adjustment.quantityDelta !== 0).length,
+      adjustments: plan.adjustments,
+    };
   });
 
   await createAuditLog({
@@ -462,10 +597,14 @@ export async function approveStockTake(
     entityType: 'StockTakeSession',
     entityId: sessionId,
     action: 'STOCK_TAKE_APPROVED',
-    after: { adjustmentCount: adjustmentsToMake.length },
+    after: { adjustmentCount: result.adjustmentCount },
   });
 
-  return { session: result, adjustmentCount: adjustmentsToMake.length };
+  return {
+    session: result.session,
+    adjustmentCount: result.adjustmentCount,
+    adjustments: result.adjustments,
+  };
 }
 
 // ── Step 10: rejectStockTake ─────────────────────────────────────────────────

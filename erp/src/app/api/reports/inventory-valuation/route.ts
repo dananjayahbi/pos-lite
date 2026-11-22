@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import Decimal from "decimal.js";
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { isLowStockVariant } from '@/lib/inventory/lowStockPredicate';
+import { STOCK_SCOPE_PRISMA_WHERE } from '@/lib/inventory/stockScope';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -34,8 +36,7 @@ export async function GET(request: NextRequest) {
     const variants = await prisma.productVariant.findMany({
       where: {
         tenantId,
-        deletedAt: null,
-        product: { deletedAt: null, isArchived: false },
+        ...STOCK_SCOPE_PRISMA_WHERE,
       },
       include: {
         product: {
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
     const lastSaleMap = new Map<string, Date>();
     for (const row of lastSaleByVariant) {
       const d = row._max.createdAt;
-      if (d) lastSaleMap.set(row.variantId, d);
+      if (d && row.variantId) lastSaleMap.set(row.variantId, d);
     }
 
     // ── 3. Build full list with computed fields ──────────────────
@@ -139,9 +140,8 @@ export async function GET(request: NextRequest) {
     let filtered = allRows;
 
     if (lowStock) {
-      filtered = filtered.filter(
-        (r) => r.stockQuantity <= r.lowStockThreshold,
-      );
+      // ARGUS #215: threshold 0 disables low-stock alerting everywhere.
+      filtered = filtered.filter((r) => isLowStockVariant(r));
     }
 
     if (deadStock) {

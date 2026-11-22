@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
-import { ReturnRefundMethod, ReturnStatus } from '@/generated/prisma/client';
+import { ApiError } from '@/lib/api/errors';
+import { ReturnRefundMethod, ReturnStatus, PaymentEntrySource } from '@/generated/prisma/client';
 import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { kickCashDrawer } from '@/lib/hardware/cashDrawer';
@@ -7,8 +8,24 @@ import type { PrinterConfig } from '@/lib/hardware/printer';
 import Decimal from 'decimal.js';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
-
-const RETURN_WINDOW_DAYS = 30;
+import { computeReturnRefund } from '@/lib/services/returnRefund.core';
+import {
+  collectedTenderMethods,
+  refundMethodTenderMismatchReason,
+} from '@/lib/services/returnTender.core';
+import {
+  buildReturnAccountLegs,
+  postReturnRefundToAccounts,
+} from '@/lib/services/saleAccounts';
+import { resolveSaleIdByReference } from '@/lib/services/returnReference';
+import { issueCredit } from '@/lib/services/customer.service';
+import { postLedgerEntries } from '@/lib/services/paymentAccount.service';
+import { reconcileCommissionForSale } from '@/lib/services/commission.service';
+import { validateReturnCancellation } from '@/lib/services/returnCancellation.core';
+import {
+  saleReturnWindowEnd,
+  saleReturnWindowStart,
+} from '@/lib/sales/return-window';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,6 +41,46 @@ async function getRemainingReturnableQty(
     _sum: { quantity: true },
   });
   return result._sum.quantity ?? 0;
+}
+
+interface PriorReturnTotals {
+  quantity: number;
+  refundAmount: Decimal;
+  taxAmount: Decimal;
+}
+
+/**
+ * Quantities and amounts already refunded per sale line (ARGUS #104).
+ *
+ * The refund for a repeat partial return is computed from this remaining
+ * balance, so a final unit return takes the rounding residual instead of
+ * leaving one paisa on every rounded line.
+ */
+async function getPriorReturnTotals(
+  tx: TxClient,
+  saleLineIds: readonly string[],
+): Promise<Map<string, PriorReturnTotals>> {
+  if (saleLineIds.length === 0) return new Map();
+
+  const rows = await tx.returnLine.groupBy({
+    by: ['originalSaleLineId'],
+    where: {
+      originalSaleLineId: { in: [...saleLineIds] },
+      return: { status: ReturnStatus.COMPLETED },
+    },
+    _sum: { quantity: true, lineRefundAmount: true, lineTaxAmount: true },
+  });
+
+  return new Map(
+    rows.map((row) => [
+      row.originalSaleLineId,
+      {
+        quantity: row._sum.quantity ?? 0,
+        refundAmount: new Decimal(row._sum.lineRefundAmount?.toString() ?? '0'),
+        taxAmount: new Decimal(row._sum.lineTaxAmount?.toString() ?? '0'),
+      },
+    ]),
+  );
 }
 
 // ── Validation ───────────────────────────────────────────────────────────────
@@ -42,7 +99,7 @@ export async function validateReturnEligibility(
 ) {
   const sale = await tx.sale.findUnique({
     where: { id: originalSaleId },
-    include: { lines: true },
+    include: { lines: true, payments: true },
   });
 
   if (!sale) {
@@ -64,10 +121,11 @@ export async function validateReturnEligibility(
     );
   }
 
-  // Check return window
-  const saleDate = new Date(sale.createdAt);
-  const expiryDate = new Date(saleDate);
-  expiryDate.setDate(expiryDate.getDate() + RETURN_WINDOW_DAYS);
+  // Check return window. ARGUS #87: measured from the recorded selling date
+  // (the accounting date), not from the row's createdAt, so a backdated sale
+  // is not returnable for longer than the 30-day policy.
+  const saleDate = saleReturnWindowStart(sale);
+  const expiryDate = saleReturnWindowEnd(sale);
   const now = new Date();
 
   if (now > expiryDate) {
@@ -83,6 +141,14 @@ export async function validateReturnEligibility(
     if (!saleLine) {
       throw new Error(
         `RETURN_LINE_FOREIGN: line ${line.saleLineId} does not belong to sale ${originalSaleId}`,
+      );
+    }
+
+    // Service/appointment lines have no product variant and no stock to
+    // restock; they cannot go through the product return flow.
+    if (!saleLine.variantId) {
+      throw new Error(
+        `RETURN_SERVICE_LINE_NOT_RETURNABLE: line ${line.saleLineId} is a service`,
       );
     }
 
@@ -113,43 +179,77 @@ interface ComputedReturnLine {
   quantity: number;
   unitPrice: Decimal;
   lineRefundAmount: Decimal;
+  lineTaxAmount: Decimal;
   productNameSnapshot: string;
   variantDescriptionSnapshot: string;
 }
 
+/**
+ * Refund per returned line, including the tax actually collected (ARGUS #90).
+ *
+ * The goods part comes from `lineTotalAfterDiscount`; the tax part comes from
+ * the line's snapshotted `lineTax` (legacy rows fall back to apportioning the
+ * sale-level tax). Delivery charges are not refunded.
+ */
 export function computeLineRefundAmounts(
-  sale: { lines: Array<{ id: string; variantId: string; quantity: number; unitPrice: Decimal | { toString(): string }; lineTotalAfterDiscount: Decimal | { toString(): string }; productNameSnapshot: string; variantDescriptionSnapshot: string }> },
+  sale: {
+    taxAmount?: Decimal | { toString(): string } | number | null;
+    discountAmount?: Decimal | { toString(): string } | number | null;
+    lines: Array<{
+      id: string;
+      variantId: string | null;
+      quantity: number;
+      unitPrice: Decimal | { toString(): string };
+      lineTotalAfterDiscount: Decimal | { toString(): string };
+      lineTax?: Decimal | { toString(): string } | null;
+      productNameSnapshot: string;
+      variantDescriptionSnapshot: string;
+    }>;
+  },
   requestLines: ReturnLineInput[],
-): { lines: ComputedReturnLine[]; totalRefund: Decimal } {
-  const computed: ComputedReturnLine[] = [];
-  let totalRefund = new Decimal(0);
+  priorByLine: ReadonlyMap<
+    string,
+    { quantity: number; refundAmount: Decimal; taxAmount: Decimal }
+  > = new Map(),
+): { lines: ComputedReturnLine[]; totalRefund: Decimal; totalTaxRefund: Decimal } {
+  const refund = computeReturnRefund(
+    {
+      lines: sale.lines.map((line) => {
+        const prior = priorByLine.get(line.id);
+        return prior
+          ? {
+              ...line,
+              returnedQuantity: prior.quantity,
+              returnedRefundAmount: prior.refundAmount,
+              returnedTaxAmount: prior.taxAmount,
+            }
+          : line;
+      }),
+      taxAmount: sale.taxAmount ?? 0,
+      discountAmount: sale.discountAmount ?? 0,
+    },
+    requestLines,
+  );
 
-  for (const req of requestLines) {
-    const saleLine = sale.lines.find((sl) => sl.id === req.saleLineId)!;
-    const lineTotalAfterDiscount = new Decimal(saleLine.lineTotalAfterDiscount.toString());
-    const originalQty = new Decimal(saleLine.quantity);
-    const returnQty = new Decimal(req.quantity);
-    const unitPrice = new Decimal(saleLine.unitPrice.toString());
-
-    const lineRefundAmount = returnQty
-      .div(originalQty)
-      .mul(lineTotalAfterDiscount)
-      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-
-    totalRefund = totalRefund.plus(lineRefundAmount);
-
-    computed.push({
-      saleLineId: req.saleLineId,
-      variantId: req.variantId,
-      quantity: req.quantity,
-      unitPrice,
-      lineRefundAmount,
+  const computed: ComputedReturnLine[] = refund.lines.map((line) => {
+    const saleLine = sale.lines.find((sl) => sl.id === line.saleLineId)!;
+    return {
+      saleLineId: line.saleLineId,
+      variantId: saleLine.variantId ?? '',
+      quantity: line.quantity,
+      unitPrice: new Decimal(saleLine.unitPrice.toString()),
+      lineRefundAmount: line.lineRefundAmount,
+      lineTaxAmount: line.taxRefund,
       productNameSnapshot: saleLine.productNameSnapshot,
       variantDescriptionSnapshot: saleLine.variantDescriptionSnapshot,
-    });
-  }
+    };
+  });
 
-  return { lines: computed, totalRefund };
+  return {
+    lines: computed,
+    totalRefund: refund.totalRefund,
+    totalTaxRefund: refund.totalTaxRefund,
+  };
 }
 
 // ── Initiate Return ──────────────────────────────────────────────────────────
@@ -181,10 +281,43 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
       tx,
     );
 
-    // 2. Compute refunds
-    const { lines: computedLines, totalRefund } = computeLineRefundAmounts(sale, input.lines);
+    // ARGUS #96: the refund must leave through a tender the sale actually
+    // collected. Manager/owner authorization alone is not an override — that
+    // would let a card reversal be recorded against a cash sale and desync the
+    // drawer. Store credit/exchange stay available on every tender.
+    const tenderMismatch = refundMethodTenderMismatchReason(
+      input.refundMethod,
+      sale,
+    );
+    if (tenderMismatch) {
+      const collected = [...collectedTenderMethods(sale)];
+      throw new ApiError(
+        422,
+        'REFUND_METHOD_MISMATCH',
+        `${tenderMismatch} Original tender: ${collected.length > 0 ? collected.join(', ') : 'none recorded'}.`,
+      );
+    }
+
+    // 2. Compute refunds (goods + the tax actually collected)
+    const priorReturns = await getPriorReturnTotals(
+      tx,
+      input.lines.map((line) => line.saleLineId),
+    );
+    const {
+      lines: computedLines,
+      totalRefund,
+      totalTaxRefund,
+    } = computeLineRefundAmounts(sale, input.lines, priorReturns);
 
     // 3. Create Return record
+    // Store credit is held against a customer balance (the POS reads
+    // Customer.creditBalance). A guest sale has nobody to issue it to, so the
+    // refund method is rejected rather than creating an unusable credit row.
+    if (input.refundMethod === ReturnRefundMethod.STORE_CREDIT && !sale.customerId) {
+      throw new Error(
+        `RETURN_STORE_CREDIT_REQUIRES_CUSTOMER: sale ${input.originalSaleId} has no linked customer`,
+      );
+    }
     const returnRecord = await tx.return.create({
       data: {
         tenantId,
@@ -193,6 +326,7 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
         authorizedById: input.authorizedById,
         refundMethod: input.refundMethod,
         refundAmount: totalRefund.toFixed(2),
+        taxAmount: totalTaxRefund.toFixed(2),
         restockItems: input.restockItems,
         reason: input.reason,
         status: ReturnStatus.COMPLETED,
@@ -210,8 +344,20 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
         quantity: cl.quantity,
         unitPrice: cl.unitPrice.toFixed(2),
         lineRefundAmount: cl.lineRefundAmount.toFixed(2),
+        lineTaxAmount: cl.lineTaxAmount.toFixed(2),
         isRestocked: false,
       })),
+    });
+
+    // 4b. Claw back the returned share of the sale's commission (ARGUS #361).
+    // Runs in the same transaction as the return so the refund and the negative
+    // commission record either both commit or both roll back. The original
+    // (possibly paid) commission row is never mutated.
+    await reconcileCommissionForSale({
+      tenantId,
+      saleId: input.originalSaleId,
+      actorId: input.initiatedById,
+      tx,
     });
 
     // 5. Restock if enabled
@@ -234,18 +380,39 @@ export async function initiateReturn(tenantId: string, input: InitiateReturnInpu
       }
     }
 
-    // 6. Create StoreCredit if applicable
+    // 6. Issue store credit to the original sale's customer
     if (input.refundMethod === ReturnRefundMethod.STORE_CREDIT) {
-      await tx.storeCredit.create({
-        data: {
-          tenantId,
-          amount: totalRefund.toFixed(2),
-          note: `Return ref ${returnRecord.id}`,
-        },
-      });
+      await issueCredit(
+        tenantId,
+        sale.customerId!,
+        totalRefund,
+        `Return ref ${returnRecord.id}`,
+        tx,
+      );
     }
 
-    // 7. Return fully loaded record
+    // 7. Post the refund leg so account balances and cash flow reconcile
+    // (ARGUS #97). Cash leaves the cash account, a card reversal credits the
+    // card/gateway account the sale landed in, and store credit/exchange move
+    // no account money. Skipped when the tenant has no eligible account.
+    const returnReference = returnRecord.id.slice(0, 8).toUpperCase();
+    const refundAccountLegs = buildReturnAccountLegs({
+      refundMethod: input.refundMethod,
+      refundAmount: totalRefund,
+      originalTenders: collectedTenderMethods(sale),
+    });
+    if (refundAccountLegs.length > 0) {
+      await postReturnRefundToAccounts(
+        tx,
+        tenantId,
+        input.initiatedById,
+        returnRecord.id,
+        returnReference,
+        refundAccountLegs,
+      );
+    }
+
+    // 8. Return fully loaded record
     return tx.return.findUniqueOrThrow({
       where: { id: returnRecord.id },
       include: {
@@ -343,6 +510,137 @@ export async function getReturnById(tenantId: string, returnId: string) {
 
 // ── Get Returns (Paginated) ──────────────────────────────────────────────────
 
+// ── Cancel / reverse a completed return (ARGUS #102) ─────────────────────────
+
+/**
+ * Reverse a completed return that was entered in error.
+ *
+ * Controlled path (owner/manager, reason required): removes the restocked
+ * units, recovers the refund from the customer's store-credit balance or the
+ * payment account it was paid from, and marks the return CANCELLED. The
+ * original rows are never deleted; reports and the original sale's returnable
+ * quantity exclude CANCELLED returns. Commission clawback is not automatically
+ * restored - the operator must review it (documented).
+ */
+export async function cancelReturn(
+  tenantId: string,
+  returnId: string,
+  actorId: string,
+  reason: string,
+) {
+  if (!reason.trim()) {
+    throw new ApiError(400, 'RETURN_CANCEL_REASON_REQUIRED', 'A reason is required to reverse a return');
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.return.findFirst({
+      where: { id: returnId, tenantId },
+      include: {
+        lines: true,
+        originalSale: { select: { customerId: true } },
+        linkedSales: { select: { id: true } },
+      },
+    });
+
+    if (!existing) {
+      throw new ApiError(404, 'NOT_FOUND', 'Return not found');
+    }
+
+    const refundAmount = new Decimal(existing.refundAmount.toString());
+    const customerId = existing.originalSale.customerId;
+    let customerCreditBalance: number | undefined;
+    if (existing.refundMethod === ReturnRefundMethod.STORE_CREDIT && customerId) {
+      const customer = await tx.customer.findFirst({
+        where: { id: customerId, tenantId },
+        select: { creditBalance: true },
+      });
+      customerCreditBalance = customer ? new Decimal(customer.creditBalance.toString()).toNumber() : 0;
+    }
+
+    const cancellationProblem = validateReturnCancellation({
+      status: existing.status,
+      reason,
+      linkedSaleCount: existing.linkedSales.length,
+      refundMethod: existing.refundMethod,
+      refundAmount: refundAmount.toNumber(),
+      customerId,
+      customerCreditBalance,
+    });
+    if (cancellationProblem) {
+      throw new ApiError(
+        cancellationProblem.code === 'RETURN_CANCEL_REASON_REQUIRED' ? 400 : 409,
+        cancellationProblem.code,
+        cancellationProblem.message,
+      );
+    }
+
+    // 1. Remove the units that were restocked by the return.
+    for (const line of existing.lines) {
+      if (!line.isRestocked) continue;
+      await adjustStockInTx(tx, tenantId, line.variantId, actorId, {
+        quantityDelta: -line.quantity,
+        reason: 'SALE_RETURN',
+        note: `Reversal of cancelled return ${returnId.slice(0, 8).toUpperCase()}`,
+      });
+    }
+
+    // 2. Recover store credit from the customer's balance.
+    if (existing.refundMethod === ReturnRefundMethod.STORE_CREDIT) {
+      await tx.customer.update({
+        where: { id: customerId as string },
+        data: { creditBalance: { decrement: refundAmount.toNumber() } },
+      });
+    }
+
+    // 3. Reverse the ledger leg the refund posted (cash/card) so account
+    //    balances and cash flow no longer include the cancelled refund.
+    if (
+      existing.refundMethod === ReturnRefundMethod.CASH ||
+      existing.refundMethod === ReturnRefundMethod.CARD_REVERSAL
+    ) {
+      const entries = await tx.paymentAccountEntry.findMany({
+        where: { tenantId, source: 'SALE_REFUND', sourceId: returnId },
+        select: { accountId: true, debit: true, credit: true },
+      });
+      if (entries.length > 0) {
+        await postLedgerEntries(
+          tx,
+          tenantId,
+          actorId,
+          entries.map((entry) => ({
+            accountId: entry.accountId,
+            source: PaymentEntrySource.SALE_REFUND,
+            sourceId: `return-cancel:${returnId}`,
+            description: `Reversal of cancelled return ${returnId.slice(0, 8).toUpperCase()}`,
+            debit: new Decimal(entry.credit.toString()),
+            credit: new Decimal(entry.debit.toString()),
+            entryDate: new Date(),
+          })),
+        );
+      }
+    }
+
+    const updated = await tx.return.update({
+      where: { id: returnId },
+      data: { status: ReturnStatus.CANCELLED },
+      include: { lines: true, originalSale: true },
+    });
+
+    void createAuditLog({
+      tenantId,
+      actorId,
+      actorRole: 'USER',
+      entityType: 'Return',
+      entityId: returnId,
+      action: AUDIT_ACTIONS.RETURN_CANCELLED,
+      before: { status: 'COMPLETED', refundAmount: refundAmount.toFixed(2) },
+      after: { status: 'CANCELLED', reason: reason.trim() },
+    }).catch(() => {});
+
+    return updated;
+  });
+}
+
 interface GetReturnsFilters {
   originalSaleId?: string | undefined;
   initiatedById?: string | undefined;
@@ -360,8 +658,13 @@ export async function getReturns(tenantId: string, filters: GetReturnsFilters = 
 
   const where: Record<string, unknown> = { tenantId };
 
-  if (filters.originalSaleId !== undefined) {
-    where.originalSaleId = filters.originalSaleId;
+  if (filters.originalSaleId !== undefined && filters.originalSaleId.trim() !== '') {
+    // ARGUS #98: the filter accepts the printed 8-char reference, not only the
+    // full cuid. Ambiguous prefixes fail with a typed 409 (tenant-scoped).
+    where.originalSaleId = await resolveSaleIdByReference(
+      tenantId,
+      filters.originalSaleId,
+    );
   }
   if (filters.initiatedById !== undefined) {
     where.initiatedById = filters.initiatedById;

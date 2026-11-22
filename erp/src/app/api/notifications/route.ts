@@ -60,9 +60,67 @@ export async function GET(request: NextRequest) {
       prisma.notificationRecord.count({ where }),
     ]);
 
+    // ARGUS #52: a sale alert is stored as SALE_COMPLETED, but the sale may
+    // have been voided since. Join the linked sale so the client can label the
+    // row as voided (and show the reversed amount) without a schema change.
+    const saleIds = Array.from(
+      new Set(
+        notifications
+          .filter(
+            (notification) =>
+              notification.type === 'SALE_COMPLETED' &&
+              notification.relatedEntityType === 'Sale' &&
+              notification.relatedEntityId,
+          )
+          .map((notification) => notification.relatedEntityId as string),
+      ),
+    );
+
+    const relatedSales = saleIds.length
+      ? await prisma.sale.findMany({
+          where: { tenantId, id: { in: saleIds } },
+          // ARGUS #58: zero-value alerts also need the reason that was
+          // persisted on the sale, so the row can say more than `Rs. 0.00`.
+          // ARGUS #59: the buyer/product identifies the alert's title.
+          select: {
+            id: true,
+            status: true,
+            totalAmount: true,
+            zeroValueReason: true,
+            customer: { select: { name: true } },
+            lines: {
+              take: 1,
+              orderBy: { createdAt: 'asc' },
+              select: { productNameSnapshot: true },
+            },
+          },
+        })
+      : [];
+    const saleById = new Map(
+      relatedSales.map((sale) => [
+        sale.id,
+        {
+          id: sale.id,
+          status: sale.status,
+          totalAmount: sale.totalAmount,
+          zeroValueReason: sale.zeroValueReason,
+          customerName: sale.customer?.name ?? null,
+          productName: sale.lines[0]?.productNameSnapshot ?? null,
+        },
+      ]),
+    );
+
+    const enrichedNotifications = notifications.map((notification) => ({
+      ...notification,
+      relatedSale:
+        notification.type === 'SALE_COMPLETED' && notification.relatedEntityId
+          ? saleById.get(notification.relatedEntityId) ?? null
+          : null,
+    }));
+
     return NextResponse.json({
       success: true,
-      data: { notifications, unreadCount },
+      data: { notifications: enrichedNotifications, unreadCount },
       meta: {
         page,
         limit,

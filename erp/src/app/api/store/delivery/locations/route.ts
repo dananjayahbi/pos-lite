@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 
-import { requireDeliveryAuth, internalError, mapDeliveryError } from '@/lib/api/delivery-route';
+import { requireDeliveryAuth, internalError, validationError, mapDeliveryError } from '@/lib/api/delivery-route';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { SRI_LANKA_CITIES } from '@/lib/constants/sri-lanka-cities';
 import { getCachedLocations, syncLocations } from '@/lib/services/location-sync.service';
 import { buildCustomerCityOptions } from '@/lib/utils/customer-cities';
+import { CourierTestSchema } from '@/lib/validators/courier.validators';
 
 /**
  * City options for the manual delivery form.
@@ -38,12 +39,28 @@ export async function GET() {
   });
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   const guard = await requireDeliveryAuth(PERMISSIONS.DELIVERY.manageCourierSettings);
   if (!guard.ok) return guard.response;
 
+  // ARGUS #513: optional unsaved credentials from the form. Nothing is
+  // persisted here; the sync itself only writes the location cache.
+  const raw = await request.text();
+  let body: unknown = {};
+  if (raw.trim() !== '') {
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return validationError(null, 'Invalid JSON body');
+    }
+  }
+  const parsed = CourierTestSchema.safeParse(body);
+  if (!parsed.success) {
+    return validationError(parsed.error.issues, 'Validation failed');
+  }
+
   try {
-    const cache = await syncLocations(guard.tenantId);
+    const cache = await syncLocations(guard.tenantId, parsed.data);
     return NextResponse.json({ success: true, data: cache });
   } catch (error) {
     console.error('POST /api/store/delivery/locations error:', error);

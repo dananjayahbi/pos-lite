@@ -8,6 +8,14 @@ import { getStaffAttendanceReport } from '@/lib/services/timeclock.service';
 import { getCommissionSummaryForUser } from '@/lib/services/commission.service';
 import { AUDIT_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
 import {
+  PAYROLL_PENDING_ACCOUNT_PREFIX,
+  payrollPendingMarker,
+  planPayrollCommission,
+} from '@/lib/services/payrollCommission.core';
+import { buildPayrollPostingPlan } from '@/lib/services/payrollPosting.core';
+import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/paymentAccount.service';
+import { PaymentEntrySource } from '@/generated/prisma/client';
+import {
   PAYROLL_STATUTORY_RATES,
   calculatePayroll,
   countWeekdaysInMonth,
@@ -20,6 +28,15 @@ import {
   resolveWorkingDays,
   type PayrollSettings,
 } from '@/lib/payroll/payroll-settings';
+import { parseAttendanceCalendar } from '@/lib/attendance/attendanceCalendar.core';
+import { assessPayrollRunReadiness } from '@/lib/payroll/run-readiness';
+import { validatePayrollAdvance } from '@/lib/payroll/advance-validation.core';
+import {
+  assessAttendanceCompleteness,
+  summarizeAttendanceCompleteness,
+} from '@/lib/payroll/attendance-completeness.core';
+import type { PayrollRunPaymentInfo } from '@/lib/payroll/payroll-run-status';
+import { validatePayrollMonth } from '@/lib/payroll/payroll-month.core';
 import type {
   PayrollPreview,
   PayrollPreviewRow,
@@ -46,7 +63,13 @@ export async function buildPayrollPreview(
   month: string | null | undefined,
   overrides: PayrollRowOverride[] = [],
 ): Promise<PayrollPreview> {
-  const range = resolveAttendanceMonth(month);
+  // ARGUS #382: a payroll month is never in the future, whichever entry point
+  // (preview, generate, service test) reached this function.
+  const requestedMonth = validatePayrollMonth(month);
+  if (!requestedMonth.ok) {
+    throw new ApiError(400, 'VALIDATION_ERROR', requestedMonth.message);
+  }
+  const range = resolveAttendanceMonth(requestedMonth.month);
 
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: tenantId },
@@ -54,6 +77,9 @@ export async function buildPayrollPreview(
   });
   const settings = readPayrollSettingsFromTenantSettings(tenant.settings);
   const workingDays = resolveWorkingDays(settings, countWeekdaysInMonth(range.month));
+  // One calendar for the payroll preview's attendance: the same rule the daily
+  // page and the attendance report use (ARGUS #348).
+  const attendanceCalendar = parseAttendanceCalendar(tenant.settings);
 
   const [staff, existingRun] = await Promise.all([
     prisma.user.findMany({
@@ -90,7 +116,9 @@ export async function buildPayrollPreview(
   const rows: PayrollPreviewRow[] = await Promise.all(
     staff.map(async (member) => {
       const [attendance, commission] = await Promise.all([
-        getStaffAttendanceReport(tenantId, member.id, range.from, range.to),
+        getStaffAttendanceReport(tenantId, member.id, range.from, range.to, {
+          calendar: attendanceCalendar,
+        }),
         getCommissionSummaryForUser(tenantId, member.id, range.periodStart, range.periodEnd),
       ]);
 
@@ -108,6 +136,47 @@ export async function buildPayrollPreview(
       const basicSalary = member.basicSalary ?? new Decimal(0);
       const allowances = member.allowances ?? new Decimal(0);
 
+      // ARGUS #376: a scheduled working day without a punch is ABSENT in the
+      // shared calendar; this measures whether the month has any attendance
+      // evidence at all, so an empty month is not silently treated as normal.
+      const scheduledStatuses = new Set([
+        'PRESENT',
+        'ABSENT',
+        'INSUFFICIENT',
+        'LEAVE',
+        'HALF_DAY',
+      ]);
+      const expectedWorkingDays = attendance.rows.filter((day) =>
+        scheduledStatuses.has(day.status),
+      ).length;
+      const recordedDays = attendance.rows.filter(
+        (day) => day.punches > 0 || day.status === 'LEAVE',
+      ).length;
+      const attendanceCompleteness = assessAttendanceCompleteness({
+        expectedWorkingDays,
+        recordedDays,
+      });
+
+      // ARGUS #379: there is no advance register, so the safe guard is to cap
+      // the deduction at the employee's net pay before the advance.
+      const baseComputed = calculatePayroll({
+        basicSalary,
+        allowances,
+        overtimeMinutes: attendance.overtimeMinutes,
+        overtimeMultiplier: settings.overtimeMultiplier,
+        workingDays,
+        commissionAmount: commission.unpaid,
+        noPayDays,
+        advanceDeduction: 0,
+        employeeEpfRate: PAYROLL_STATUTORY_RATES.employeeEpf,
+        employerEpfRate: PAYROLL_STATUTORY_RATES.employerEpf,
+        employerEtfRate: PAYROLL_STATUTORY_RATES.employerEtf,
+      });
+      const advanceCheck = validatePayrollAdvance({
+        requested: advanceDeduction,
+        netBeforeAdvance: baseComputed.netSalary,
+      });
+
       const computed = calculatePayroll({
         basicSalary,
         allowances,
@@ -118,7 +187,7 @@ export async function buildPayrollPreview(
         // standalone commission payout is never paid twice.
         commissionAmount: commission.unpaid,
         noPayDays,
-        advanceDeduction,
+        advanceDeduction: advanceCheck.allowed,
         employeeEpfRate: PAYROLL_STATUTORY_RATES.employeeEpf,
         employerEpfRate: PAYROLL_STATUTORY_RATES.employerEpf,
         employerEtfRate: PAYROLL_STATUTORY_RATES.employerEtf,
@@ -136,9 +205,12 @@ export async function buildPayrollPreview(
         epfNumber: member.epfNumber,
         etfNumber: member.etfNumber,
         ...computed,
+        advanceLimit: advanceCheck.maxAdvance,
+        advanceCapped: advanceCheck.capped,
         hasSalaryConfig:
           (member.basicSalary !== null && member.basicSalary.greaterThan(0)) ||
           (member.allowances !== null && member.allowances.greaterThan(0)),
+        attendanceCompleteness,
       };
     }),
   );
@@ -172,6 +244,15 @@ export async function buildPayrollPreview(
     },
   );
 
+  const attendanceSummary = summarizeAttendanceCompleteness(
+    rows.map((row) => ({
+      userId: row.userId,
+      staffName: row.staffName,
+      netSalary: row.netSalary,
+      completeness: row.attendanceCompleteness,
+    })),
+  );
+
   return {
     month: range.month,
     label: range.label,
@@ -197,6 +278,7 @@ export async function buildPayrollPreview(
       net: moneyString(totals.net),
       companyCost: moneyString(totals.companyCost),
     },
+    attendanceSummary,
   };
 }
 
@@ -215,6 +297,10 @@ export interface GeneratePayrollInput {
   generatedByRole: string;
   overrides?: PayrollRowOverride[] | undefined;
   notes?: string | undefined;
+  /** ARGUS #375: explicit acknowledgement of zero/unsalaried rows. */
+  confirmZeroPayRun?: boolean | undefined;
+  /** ARGUS #376: explicit acknowledgement of missing attendance records. */
+  confirmIncompleteAttendance?: boolean | undefined;
 }
 
 export async function generatePayrollRun(input: GeneratePayrollInput) {
@@ -224,8 +310,41 @@ export async function generatePayrollRun(input: GeneratePayrollInput) {
   if (preview.alreadyGenerated) {
     throw ApiError.conflict(`Payroll for ${preview.label} has already been generated`);
   }
-  if (preview.rows.length === 0) {
-    throw ApiError.validation('No active staff members to pay');
+
+  // ARGUS #375: a zero/unconfigured preview must not silently consume the
+  // tenant/month uniqueness lock. No staff is a hard refusal; zero pay or
+  // unsalaried staff need an explicit acknowledgement.
+  const readiness = assessPayrollRunReadiness(preview.rows);
+  if (readiness.blocking) {
+    throw ApiError.validation(readiness.blocking.message, {
+      code: readiness.blocking.code,
+    });
+  }
+  if (readiness.requiresConfirmation && !input.confirmZeroPayRun) {
+    throw new ApiError(
+      422,
+      'PAYROLL_CONFIRMATION_REQUIRED',
+      readiness.confirmationMessage ?? 'Confirm the payroll warnings before generating',
+      { warnings: readiness.warnings },
+    );
+  }
+
+  // ARGUS #376: an empty attendance month must be a deliberate choice.
+  if (
+    preview.attendanceSummary.requiresConfirmation &&
+    !input.confirmIncompleteAttendance
+  ) {
+    throw new ApiError(
+      422,
+      'INCOMPLETE_ATTENDANCE',
+      preview.attendanceSummary.message ??
+        'Attendance is incomplete for this month; review it before generating payroll',
+      {
+        staffWithNoData: preview.attendanceSummary.staffWithNoData,
+        staffNotScheduled: preview.attendanceSummary.staffNotScheduled,
+        missingDays: preview.attendanceSummary.missingDays,
+      },
+    );
   }
 
   const costs = preview.rows.reduce(
@@ -315,32 +434,37 @@ export async function generatePayrollRun(input: GeneratePayrollInput) {
       include: { items: true },
     });
 
-    // Consume the unpaid commission records included in this payroll so the
-    // standalone Staff Commissions page cannot pay the same sale twice.
+    // ARGUS #372/#374: reserve the staff's current open commission against
+    // this run without settling it. The records stay unpaid/paidAmount 0; the
+    // linked payout is marked pending (hidden from payout history and from
+    // standalone payouts) until the run is marked paid.
     for (const row of preview.rows) {
       if (new Decimal(row.commissionAmount).lte(0)) continue;
 
-      const unpaid = await tx.commissionRecord.findMany({
+      const records = await tx.commissionRecord.findMany({
         where: {
           tenantId: input.tenantId,
           userId: row.userId,
-          isPaid: false,
-          createdAt: { gte: new Date(preview.periodStart), lte: new Date(preview.periodEnd) },
+          createdAt: { lte: new Date(preview.periodEnd) },
+          sale: { status: { not: 'VOIDED' } },
+          OR: [
+            { payoutId: null },
+            { payout: { paymentAccountName: null } },
+            {
+              payout: {
+                paymentAccountName: {
+                  not: { startsWith: PAYROLL_PENDING_ACCOUNT_PREFIX },
+                },
+              },
+            },
+          ],
         },
-        select: { id: true, earnedAmount: true, paidAmount: true },
+        select: { id: true, earnedAmount: true, paidAmount: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
       });
-      if (unpaid.length === 0) continue;
 
-      const total = unpaid.reduce(
-        (sum, record) =>
-          sum.add(
-            new Decimal(record.earnedAmount.toString()).minus(
-              new Decimal(record.paidAmount.toString()),
-            ),
-          ),
-        new Decimal(0),
-      );
-      if (total.lte(0)) continue;
+      const plan = planPayrollCommission(records);
+      if (plan.payable.lte(0)) continue;
 
       const payout = await tx.commissionPayout.create({
         data: {
@@ -348,19 +472,20 @@ export async function generatePayrollRun(input: GeneratePayrollInput) {
           userId: row.userId,
           periodStart: new Date(preview.periodStart),
           periodEnd: new Date(preview.periodEnd),
-          totalEarned: total,
+          totalEarned: plan.payable,
           authorizedById: input.generatedById,
-          notes: JSON.stringify({ note: `Included in ${preview.label} payroll` }),
+          // Pending marker: no account/expense yet and not a real payout.
+          paymentAccountName: payrollPendingMarker(created.id),
+          notes: JSON.stringify({
+            note: `Pending settlement from ${preview.label} payroll`,
+            payrollRunId: created.id,
+          }),
         },
       });
-      for (const record of unpaid) {
+      for (const record of plan.records) {
         await tx.commissionRecord.update({
           where: { id: record.id },
-          data: {
-            paidAmount: record.earnedAmount,
-            isPaid: true,
-            payoutId: payout.id,
-          },
+          data: { payoutId: payout.id },
         });
       }
     }
@@ -388,8 +513,228 @@ export async function generatePayrollRun(input: GeneratePayrollInput) {
   return getPayrollRun(input.tenantId, run.id);
 }
 
-export async function getPayrollRun(tenantId: string, runId: string) {
+export interface MarkPayrollPaidInput {
+  tenantId: string;
+  runId: string;
+  actorId: string;
+  actorRole: string;
+  /** Account the salary is paid from; mandatory from ARGUS #373 onward. */
+  paymentAccountId?: string | undefined;
+  paidDate?: Date | undefined;
+}
+
+/**
+ * ARGUS #372 — a generated run becomes PAID only through this action. It
+ * settles the commission records reserved at generation (paidAmount/isPaid)
+ * and moves the pending payroll payout onto its real payment date/account.
+ */
+export async function markPayrollRunPaid(input: MarkPayrollPaidInput) {
   const run = await prisma.payrollRun.findFirst({
+    where: { id: input.runId, tenantId: input.tenantId },
+    include: { items: true },
+  });
+  if (!run) throw ApiError.notFound('Payroll run not found');
+  if (run.status === 'PAID') throw ApiError.conflict('Payroll run is already paid');
+  if (run.status !== 'GENERATED') throw ApiError.conflict('Payroll run cannot be paid in its current state');
+
+  if (!input.paymentAccountId) {
+    throw new ApiError(422, 'VALIDATION_ERROR', 'Select a payment account to pay payroll');
+  }
+  const paymentAccountId = input.paymentAccountId;
+
+  const account = await prisma.paymentAccount.findFirst({
+    where: { id: paymentAccountId, tenantId: input.tenantId },
+    select: { id: true, name: true, status: true, pettyCashFund: { select: { id: true } } },
+  });
+  if (!account) throw ApiError.notFound('Payment account not found');
+  if (account.status !== 'ACTIVE') throw ApiError.conflict(`Account "${account.name}" is closed`);
+  if (account.pettyCashFund) {
+    throw ApiError.conflict('Payroll must be paid from a bank/cash account, not a petty-cash fund');
+  }
+
+  const paidAt = input.paidDate ?? new Date();
+  const marker = payrollPendingMarker(run.id);
+
+  const expenseIds = await prisma.$transaction(async (tx) => {
+    const payouts = await tx.commissionPayout.findMany({
+      where: { tenantId: input.tenantId, paymentAccountName: marker },
+      select: { id: true, userId: true, totalEarned: true },
+    });
+
+    const plan = buildPayrollPostingPlan({
+      periodMonth: run.periodMonth,
+      runId: run.id,
+      totalCompanyCost: run.totalCompanyCost.toString(),
+      commissionPayouts: payouts.map((payout) => ({
+        id: payout.id,
+        userId: payout.userId,
+        amount: payout.totalEarned.toString(),
+      })),
+    });
+
+    if (plan.legs.length > 0) {
+      await assertSufficientFunds(
+        tx,
+        input.tenantId,
+        paymentAccountId,
+        plan.total,
+      );
+    }
+
+    const createdExpenseIds: string[] = [];
+    for (const leg of plan.legs) {
+      const expense = await tx.expense.create({
+        data: {
+          tenantId: input.tenantId,
+          category: leg.category,
+          amount: new Decimal(leg.amount),
+          description: leg.description,
+          paymentAccountId,
+          recordedById: input.actorId,
+          expenseDate: paidAt,
+        },
+      });
+      createdExpenseIds.push(expense.id);
+
+      await postLedgerEntries(
+        tx,
+        input.tenantId,
+        input.actorId,
+        [
+          {
+            accountId: paymentAccountId,
+            source: PaymentEntrySource.EXPENSE,
+            sourceId: expense.id,
+            description: leg.description.slice(0, 200),
+            credit: leg.amount,
+            entryDate: paidAt,
+          },
+        ],
+        { allowPettyCashAccount: true },
+      );
+
+      if (leg.payoutId) {
+        const records = await tx.commissionRecord.findMany({
+          where: { tenantId: input.tenantId, payoutId: leg.payoutId },
+          select: { id: true, earnedAmount: true },
+        });
+        for (const record of records) {
+          await tx.commissionRecord.update({
+            where: { id: record.id },
+            data: { paidAmount: record.earnedAmount, isPaid: true },
+          });
+        }
+        await tx.commissionPayout.update({
+          where: { id: leg.payoutId },
+          data: {
+            paidAt,
+            paymentAccountId: account.id,
+            paymentAccountName: account.name,
+            expenseId: expense.id,
+          },
+        });
+      }
+    }
+
+    await tx.payrollRun.update({
+      where: { id: run.id },
+      data: { status: 'PAID' },
+    });
+
+    return createdExpenseIds;
+  });
+
+  await createAuditLog({
+    tenantId: input.tenantId,
+    actorId: input.actorId,
+    actorRole: input.actorRole,
+    entityType: 'PayrollRun',
+    entityId: run.id,
+    action: AUDIT_ACTIONS.PAYROLL_RUN_PAID,
+    after: {
+      status: 'PAID',
+      paidAt: paidAt.toISOString(),
+      paymentAccountId: account.id,
+      paymentAccountName: account.name,
+      expenseIds,
+      totalCompanyCost: run.totalCompanyCost.toString(),
+      totalCommission: run.totalCommission.toString(),
+    },
+  });
+
+  return getPayrollRun(input.tenantId, run.id);
+}
+
+/**
+ * ARGUS #375 - undo a generated (but unpaid) run.
+ *
+ * Generation reserves the staff's open commission with a pending payout that
+ * is not a real expense yet. Voiding releases those reservations and deletes
+ * the run + item snapshots so the month can be generated again. A PAID run is
+ * never touched because its expenses and ledger entries already exist.
+ */
+export async function voidPayrollRun(input: {
+  tenantId: string;
+  runId: string;
+  actorId: string;
+  actorRole: string;
+}) {
+  const run = await prisma.payrollRun.findFirst({
+    where: { id: input.runId, tenantId: input.tenantId },
+    select: { id: true, periodMonth: true, status: true, totalNet: true },
+  });
+  if (!run) throw ApiError.notFound('Payroll run not found');
+  if (run.status === 'PAID') {
+    throw ApiError.conflict(
+      'A paid payroll run cannot be voided because its expenses are already posted',
+    );
+  }
+  if (run.status !== 'GENERATED') {
+    throw ApiError.conflict('Only a generated payroll run can be voided');
+  }
+
+  const marker = payrollPendingMarker(run.id);
+
+  await prisma.$transaction(async (tx) => {
+    const payouts = await tx.commissionPayout.findMany({
+      where: { tenantId: input.tenantId, paymentAccountName: marker },
+      select: { id: true },
+    });
+
+    if (payouts.length > 0) {
+      const payoutIds = payouts.map((payout) => payout.id);
+      await tx.commissionRecord.updateMany({
+        where: { tenantId: input.tenantId, payoutId: { in: payoutIds } },
+        data: { payoutId: null },
+      });
+      await tx.commissionPayout.deleteMany({
+        where: { tenantId: input.tenantId, id: { in: payoutIds } },
+      });
+    }
+
+    // PayrollItem rows cascade with the run.
+    await tx.payrollRun.delete({ where: { id: run.id } });
+  });
+
+  await createAuditLog({
+    tenantId: input.tenantId,
+    actorId: input.actorId,
+    actorRole: input.actorRole,
+    entityType: 'PayrollRun',
+    entityId: run.id,
+    action: AUDIT_ACTIONS.PAYROLL_RUN_VOIDED,
+    before: {
+      runId: run.id,
+      periodMonth: run.periodMonth,
+      status: run.status,
+      totalNet: run.totalNet.toString(),
+    },
+  });
+
+  return { id: run.id, periodMonth: run.periodMonth };
+}
+
+export async function getPayrollRun(tenantId: string, runId: string) {  const run = await prisma.payrollRun.findFirst({
     where: { id: runId, tenantId },
     include: {
       items: { orderBy: [{ staffName: 'asc' }] },
@@ -397,6 +742,65 @@ export async function getPayrollRun(tenantId: string, runId: string) {
   });
   if (!run) throw ApiError.notFound('Payroll run not found');
   return run;
+}
+
+/**
+ * ARGUS #385: payment date/approver without new columns. The PAID audit entry
+ * written by markPayrollRunPaid already carries paidAt and the actor, so read
+ * the latest one instead of adding paidAt/paidById to the schema.
+ */
+export async function getPayrollRunPaymentInfo(
+  tenantId: string,
+  runId: string,
+  status: string,
+): Promise<PayrollRunPaymentInfo> {
+  if (status !== 'PAID') {
+    return { paidAt: null, approvedBy: null, approvedByRole: null, source: 'not-paid' };
+  }
+
+  const entry = await prisma.auditLog.findFirst({
+    where: {
+      tenantId,
+      entityType: 'PayrollRun',
+      entityId: runId,
+      action: AUDIT_ACTIONS.PAYROLL_RUN_PAID,
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { actorId: true, actorRole: true, after: true },
+  });
+
+  if (!entry) {
+    return { paidAt: null, approvedBy: null, approvedByRole: null, source: 'unavailable' };
+  }
+
+  const after =
+    typeof entry.after === 'object' && entry.after !== null && !Array.isArray(entry.after)
+      ? (entry.after as Record<string, unknown>)
+      : {};
+  const paidAt = typeof after.paidAt === 'string' ? after.paidAt : null;
+
+  let approvedBy: string | null = null;
+  if (entry.actorId) {
+    const actor = await prisma.user.findFirst({
+      where: { id: entry.actorId, tenantId },
+      select: { fullName: true, email: true },
+    });
+    approvedBy = actor?.fullName?.trim() || actor?.email || null;
+  }
+
+  return {
+    paidAt,
+    approvedBy,
+    approvedByRole: entry.actorRole ?? null,
+    source: 'audit-log',
+  };
+}
+
+/** Run detail for the Reports page, including derived payment metadata. */
+export async function getPayrollRunDetail(tenantId: string, runId: string) {
+  const run = await getPayrollRun(tenantId, runId);
+  const payment = await getPayrollRunPaymentInfo(tenantId, run.id, run.status);
+  return { ...run, payment };
 }
 
 export async function getPayrollRunForMonth(tenantId: string, month: string) {
@@ -423,6 +827,29 @@ export async function listPayrollRuns(tenantId: string, limit = 24) {
       _count: { select: { items: true } },
     },
   });
+}
+
+/**
+ * ARGUS #392: look up one month directly instead of scanning the latest N runs.
+ * The Reports page previously requested `limit=60` and treated a month outside
+ * that window as "no run exists", so an older run could not be downloaded.
+ */
+export async function getPayrollRunSummaryForMonth(tenantId: string, month: string) {
+  const range = resolveAttendanceMonth(month);
+  const run = await prisma.payrollRun.findUnique({
+    where: { tenantId_periodMonth: { tenantId, periodMonth: range.month } },
+    select: {
+      id: true,
+      periodMonth: true,
+      status: true,
+      totalGross: true,
+      totalNet: true,
+      totalCompanyCost: true,
+      generatedAt: true,
+      _count: { select: { items: true } },
+    },
+  });
+  return run ? [run] : [];
 }
 
 export async function getPayrollSettings(tenantId: string): Promise<PayrollSettings> {

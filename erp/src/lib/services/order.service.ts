@@ -7,7 +7,9 @@ import { setSentryTenantContext } from '@/lib/sentry/context';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { cancelDelivery } from '@/lib/services/delivery.service';
 import { estimateWebsiteShippingFee } from '@/lib/services/shipping-fee.service';
-import { isDeliveryStatusAdvance } from '@/lib/constants/courier';
+import { resolveShippingChargeDecision } from '@/lib/delivery/shippingConfig.core';
+import { ensureDeliveredCodEntry } from '@/lib/services/reconciliation-cod.service';
+import { bulkStatusRejection } from '@/lib/services/dispatchStatus.core';
 import type {
   BulkStatusChangeInput,
   BulkCreateDeliveryInput,
@@ -82,6 +84,27 @@ export async function createWebsiteOrder(
     cityName: input.cityName,
     districtName: input.districtName ?? undefined,
   });
+
+  // ARGUS #292: a missing rate card must not become a free-shipping order.
+  if (
+    resolveShippingChargeDecision({
+      configured: shipping.configured,
+      shippingFee: shipping.shippingFee,
+    }).blocked
+  ) {
+    throw new Error('SHIPPING_NOT_CONFIGURED');
+  }
+
+  // ARGUS #287: the catalogue has no per-unit weight, so the parcel weight has
+  // to come from checkout. When it is missing the quote silently falls back to
+  // the base rate; make that visible in logs and on the delivery audit trail
+  // instead of pricing every online order as a zero-weight parcel.
+  const weightSupplied = input.totalWeightKg !== undefined;
+  if (!weightSupplied) {
+    console.warn(
+      `[createWebsiteOrder] tenant=${tenantId} order has no parcel weight; base rate applied (${shipping.shippingFee})`,
+    );
+  }
 
   const requestedLines = input.lines ?? [];
 
@@ -166,8 +189,10 @@ export async function createWebsiteOrder(
           source: 'WEBSITE_CHECKOUT',
           status: 'PLACED',
           orderRef,
-          // Server-computed when lines are supplied; the client scalar is only a
-          // fallback for legacy payloads that send no lines.
+          // ARGUS #288: `codAmount` stores the GOODS value only - it is the
+          // PayHere amount basis and the invoice subtotal fallback. The
+          // courier-facing collectable is goods + `shippingFee`, derived by
+          // `collectableCodAmount` at dispatch / waybill / reconciliation time.
           codAmount: (hasLines
             ? computedCodAmount
             : new Prisma.Decimal(input.codAmount ?? 0)
@@ -244,7 +269,13 @@ export async function createWebsiteOrder(
     entityType: 'Delivery',
     entityId: delivery.id,
     action: AUDIT_ACTIONS.DELIVERY_CREATED,
-    after: { source: 'WEBSITE_CHECKOUT', orderRef: delivery.orderRef } as Prisma.InputJsonValue,
+    after: {
+      source: 'WEBSITE_CHECKOUT',
+      orderRef: delivery.orderRef,
+      weightKg: input.totalWeightKg ?? null,
+      weightSource: weightSupplied ? 'CHECKOUT' : 'MISSING',
+      shippingFee: shipping.shippingFee,
+    } as Prisma.InputJsonValue,
   });
 
   return {
@@ -270,29 +301,42 @@ export async function bulkChangeOrderStatus(
     where: { id: { in: input.deliveryIds }, tenantId, deletedAt: null },
     select: {
       id: true,
+      tenantId: true,
       orderRef: true,
       status: true,
       codAmount: true,
+      shippingFee: true,
       paymentMethod: true,
       paymentStatus: true,
+      shipments: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { id: true, waybillId: true },
+      },
     },
   });
 
-  const terminal = ['DELIVERED', 'CANCELED', 'RETURNED'];
-  const carrierDriven = ['DISPATCHED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'PENDING_PICKUP'];
-
+  const found = new Map(deliveries.map((delivery) => [delivery.id, delivery]));
   const results: BulkResultItem[] = [];
-  for (const delivery of deliveries) {
-    if (delivery.status === input.status) {
-      results.push({ id: delivery.id, ok: false, message: 'Already in this status' });
+
+  for (const id of input.deliveryIds) {
+    const delivery = found.get(id);
+    if (!delivery) {
+      results.push({ id, ok: false, message: 'Delivery not found' });
       continue;
     }
-    if (terminal.includes(delivery.status)) {
-      results.push({ id: delivery.id, ok: false, message: 'Delivery is already in a final state' });
-      continue;
-    }
-    if (!isDeliveryStatusAdvance(delivery.status as DeliveryStatus, input.status as DeliveryStatus)) {
-      results.push({ id: delivery.id, ok: false, message: 'Invalid status transition' });
+
+    // ARGUS #263: one shared transition rule for the dialog and the API.
+    // DELIVERED needs a dispatched parcel; FAILED/RETURNED belong to recovery
+    // (which owns restock, packaging reversal and COD clearing).
+    const shipment = delivery.shipments[0] ?? null;
+    const rejection = bulkStatusRejection(
+      delivery.status as DeliveryStatus,
+      input.status as DeliveryStatus,
+      Boolean(shipment),
+    );
+    if (rejection) {
+      results.push({ id: delivery.id, ok: false, message: rejection });
       continue;
     }
 
@@ -300,27 +344,8 @@ export async function bulkChangeOrderStatus(
       if (input.status === 'CANCELED') {
         // Cancellation has inventory, packaging and ledger side effects; reuse
         // the single source of truth instead of writing the status directly.
-        if (!['PLACED', 'PENDING_DISPATCH', 'HOLD'].includes(delivery.status)) {
-          results.push({
-            id: delivery.id,
-            ok: false,
-            message: 'Use Failed Deliveries & Recovery to cancel a dispatched parcel',
-          });
-          continue;
-        }
         await cancelDelivery(tenantId, delivery.id, userId, {});
         results.push({ id: delivery.id, ok: true });
-        continue;
-      }
-
-      const shipment = await prisma.courierShipment.findFirst({
-        where: { tenantId, deliveryId: delivery.id },
-        orderBy: { createdAt: 'desc' },
-        select: { waybillId: true },
-      });
-
-      if (carrierDriven.includes(input.status) && delivery.status !== 'DISPATCHED' && !shipment) {
-        results.push({ id: delivery.id, ok: false, message: 'Dispatch the delivery first' });
         continue;
       }
 
@@ -344,41 +369,13 @@ export async function bulkChangeOrderStatus(
         });
 
         if (input.status === 'DELIVERED') {
-          if (
-            delivery.paymentMethod === 'COD' &&
-            delivery.paymentStatus !== 'PAID' &&
-            delivery.codAmount.gt(0)
-          ) {
-            await tx.reconciliationLedgerEntry.upsert({
-              where: { deliveryId: delivery.id },
-              create: {
-                tenantId,
-                deliveryId: delivery.id,
-                waybillId: shipment?.waybillId ?? null,
-                expectedCod: delivery.codAmount,
-                status: 'PENDING_SETTLEMENT',
-              },
-              update: {},
-            });
-          }
-        }
-
-        if (input.status === 'RETURNED') {
-          await tx.reconciliationLedgerEntry.updateMany({
-            where: {
-              tenantId,
-              deliveryId: delivery.id,
-              status: { in: ['PENDING_SETTLEMENT', 'MATCHED', 'PARTIAL_MATCH', 'DISCREPANCY'] },
-            },
-            data: {
-              status: 'CLEARED',
-              expectedCod: 0,
-              expectedNetPayout: 0,
-              settledAmount: 0,
-              settledAt: new Date(),
-              discrepancyNote: 'Delivery returned',
-            },
-          });
+          // ARGUS #511: one ledger entry per delivered unpaid COD parcel,
+          // carrying the real waybill guaranteed by bulkStatusRejection.
+          await ensureDeliveredCodEntry(
+            tx,
+            { ...delivery, status: 'DELIVERED' },
+            shipment?.waybillId,
+          );
         }
       });
       results.push({ id: delivery.id, ok: true });

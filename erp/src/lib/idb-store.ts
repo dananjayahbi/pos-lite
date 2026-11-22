@@ -1,5 +1,6 @@
 import { openDB } from 'idb';
 import type { IDBPDatabase } from 'idb';
+import { isCartStoreKeyForShift } from '@/lib/pos/cartPersistence';
 
 const DB_NAME = 'ayurpos_offline_db';
 export const CART_PERSIST_STORE = 'cart_persist';
@@ -39,6 +40,25 @@ export async function clearCartSnapshot(storeKey: string): Promise<void> {
   if (!isBrowser()) return;
   const db = await getOfflineDB();
   await db.delete(CART_PERSIST_STORE, storeKey);
+}
+
+/** Remove every scoped cart snapshot for one shift (shift close). */
+export async function clearCartSnapshotsForShift(shiftId: string): Promise<void> {
+  if (!isBrowser()) return;
+  const db = await getOfflineDB();
+  const keys = (await db.getAllKeys(CART_PERSIST_STORE)) as string[];
+  const matching = keys.filter((key) => isCartStoreKeyForShift(key, shiftId));
+  if (matching.length === 0) return;
+  const tx = db.transaction(CART_PERSIST_STORE, 'readwrite');
+  await Promise.all(matching.map((key) => tx.store.delete(key)));
+  await tx.done;
+}
+
+/** Clear every cached cart on explicit sign-out (terminal handover). */
+export async function clearAllCartSnapshots(): Promise<void> {
+  if (!isBrowser()) return;
+  const db = await getOfflineDB();
+  await db.clear(CART_PERSIST_STORE);
 }
 
 export async function enqueueOfflineSale(payload: unknown): Promise<number> {

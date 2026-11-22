@@ -5,10 +5,20 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { CreateSaleSchema } from '@/lib/validators/sale.validators';
 import { createSale, getSales } from '@/lib/services/sale.service';
 import { createCommissionRecord } from '@/lib/services/commission.service';
+import { normalizeCommissionRate } from '@/lib/constants/commission-rate';
 import { parseQueryDate, parsePagination } from '@/lib/api/query-params';
-import { isApiError } from '@/lib/api/errors';
+import { ApiError, isApiError } from '@/lib/api/errors';
 import { prisma } from '@/lib/prisma';
-import type { SaleStatus } from '@/generated/prisma/client';
+import {
+  applySaleHistoryScope,
+  resolveSaleHistoryScope,
+} from '@/lib/sales/sale-history-scope';
+import { parseSalePaymentMethod, parseSaleStatus } from '@/lib/sales/sale-list-filters';
+import { buildSaleCompletedCopy } from '@/lib/notifications/sale-alert-copy';
+import {
+  lankaQrTenderRejection,
+  readLankaQrSettingsFromTenantSettings,
+} from '@/lib/payments/lanka-qr-config';
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,7 +38,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!hasPermission(session.user, PERMISSIONS.SALE.viewSale)) {
+    const canViewSale = hasPermission(session.user, PERMISSIONS.SALE.viewSale);
+    if (!canViewSale) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { status: 403 },
+      );
+    }
+
+    // ARGUS #78: the /sales page requires sale:view_history. Without it the
+    // endpoint still serves the POS (held sales / shift close) but only the
+    // caller's own records — never the tenant-wide ledger.
+    const scope = resolveSaleHistoryScope({
+      canViewSale,
+      canViewSaleHistory: hasPermission(session.user, PERMISSIONS.SALE.viewSaleHistory),
+      userId: session.user.id,
+    });
+    if (scope.kind === 'forbidden') {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
@@ -38,15 +64,44 @@ export async function GET(request: NextRequest) {
     const url = request.nextUrl;
     const shiftId = url.searchParams.get('shiftId') ?? undefined;
     const cashierId = url.searchParams.get('cashierId') ?? undefined;
-    const status = (url.searchParams.get('status') as SaleStatus) ?? undefined;
+    // ARGUS #79: enum filters are validated before Prisma — an unknown status
+    // used to reach the query and surface as a 500.
+    const statusParsed = parseSaleStatus(url.searchParams.get('status'));
+    if (!statusParsed.ok) {
+      throw new ApiError(400, 'VALIDATION_ERROR', statusParsed.message);
+    }
+    const paymentParsed = parseSalePaymentMethod(url.searchParams.get('paymentMethod'));
+    if (!paymentParsed.ok) {
+      throw new ApiError(400, 'VALIDATION_ERROR', paymentParsed.message);
+    }
+    const status = statusParsed.value;
+    const paymentMethod = paymentParsed.value;
     // M14-02 (BUG-45): XC-01 parsing — malformed from/to/page/limit now 400
     // VALIDATION_ERROR naming the param instead of leaking an Invalid Date /
     // NaN into Prisma and surfacing as an unhandled 500.
     const from = parseQueryDate(url.searchParams, 'from');
     const to = parseQueryDate(url.searchParams, 'to');
-    const { page, limit } = parsePagination(url.searchParams);
+    // One cap shared with getSales (ARGUS #80): the route used to allow 200
+    // while the query layer capped at 100, so a client requesting 200 silently
+    // lost rows and got misleading totalPages.
+    const { page, limit } = parsePagination(url.searchParams, { maxLimit: 100 });
 
-    const result = await getSales(tenantId, { shiftId, cashierId, status, from, to, page, limit });
+    const result = await getSales(
+      tenantId,
+      applySaleHistoryScope(
+        {
+          shiftId,
+          cashierId,
+          status,
+          paymentMethod,
+          from,
+          to,
+          page,
+          limit,
+        },
+        scope,
+      ),
+    );
 
     return NextResponse.json({
       success: true,
@@ -115,6 +170,29 @@ export async function POST(request: Request) {
       );
     }
 
+    // ARGUS #72: a LankaQR tender is only valid when this tenant has a
+    // scannable merchant QR. Enforce it here, not only by hiding the option in
+    // the POS, so a direct/stale request cannot record an unpayable tender.
+    if (parsed.data.paymentMethod === 'LANKAQR' || parsed.data.splitLegMethod === 'LANKAQR') {
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { settings: true },
+      });
+      const lankaQrRejection = lankaQrTenderRejection(
+        parsed.data,
+        readLankaQrSettingsFromTenantSettings(tenant?.settings),
+      );
+      if (lankaQrRejection) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: { code: 'LANKAQR_NOT_CONFIGURED', message: lankaQrRejection },
+          },
+          { status: 422 },
+        );
+      }
+    }
+
     // Sales created from the management page are intentionally shiftless. The
     // POS terminal still sends a shiftId and remains available to cashiers.
     // XC-03: the inline owner/manager comparison is replaced by a registry key,
@@ -140,13 +218,21 @@ export async function POST(request: Request) {
         where: { id: session.user.id },
         select: { commissionRate: true },
       });
-      if (cashier?.commissionRate) {
+      // ARGUS #342: a legacy stored rate outside 0-100 can never earn. Skip it
+      // loudly instead of writing a record the commission engine will reject.
+      const rate = normalizeCommissionRate(cashier?.commissionRate);
+      if (rate !== null && rate > 0) {
         await createCommissionRecord({
           tenantId,
           saleId: sale.id,
           userId: session.user.id,
           baseAmount: sale.totalAmount,
-          commissionRate: cashier.commissionRate,
+          commissionRate: rate.toString(),
+        });
+      } else if (rate === null && cashier?.commissionRate !== null && cashier?.commissionRate !== undefined) {
+        console.warn('Skipping commission: stored rate is outside 0-100', {
+          userId: session.user.id,
+          commissionRate: String(cashier.commissionRate),
         });
       }
     } catch (commissionError) {
@@ -160,14 +246,18 @@ export async function POST(request: Request) {
         select: { id: true },
       });
       if (recipients.length > 0) {
-        const shortId = sale.id.slice(0, 8).toUpperCase();
+        const { title, body } = buildSaleCompletedCopy(sale.id, sale.totalAmount.toString(), {
+          zeroValueReason: sale.zeroValueReason,
+          customerName: sale.customer?.name,
+          productName: sale.lines[0]?.productNameSnapshot,
+        });
         await prisma.notificationRecord.createMany({
           data: recipients.map((r) => ({
             tenantId,
             recipientId: r.id,
             type: 'SALE_COMPLETED' as const,
-            title: 'Sale Completed',
-            body: `Sale #${shortId} completed for Rs. ${Number(sale.totalAmount).toFixed(2)}.`,
+            title,
+            body,
             relatedEntityType: 'Sale',
             relatedEntityId: sale.id,
           })),
@@ -213,6 +303,30 @@ export async function POST(request: Request) {
     if (message.includes('discount cannot exceed')) {
       return NextResponse.json(
         { success: false, error: { code: 'BAD_REQUEST', message } },
+        { status: 400 },
+      );
+    }
+    if (message.startsWith('DISCOUNT_REQUIRES_MANAGER')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'DISCOUNT_REQUIRES_MANAGER', message } },
+        { status: 403 },
+      );
+    }
+    if (message.startsWith('PROMOTION_MISMATCH')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'PROMOTION_MISMATCH',
+            message: 'Promotions changed since the cart was priced - reload the cart and try again',
+          },
+        },
+        { status: 409 },
+      );
+    }
+    if (message.startsWith('INVALID_DISCOUNT')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'INVALID_DISCOUNT', message } },
         { status: 400 },
       );
     }

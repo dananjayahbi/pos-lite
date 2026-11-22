@@ -51,3 +51,32 @@ takes an `uploadUrl` prop. `BrandLogoUpload` wraps it for
 - `tests/07_settings_taxes_hardware.spec.ts` → `F10` mocks the upload endpoint,
   selects a PNG through the file input, asserts the preview and confirms the
   saved PATCH payload contains the uploaded `logoUrl`.
+
+## Sale receipt logo (ARGUS #474)
+
+The Store profile copy says the logo is shown on receipts. The A4 return
+receipt already printed it; the 80 mm browser sale receipt did not. The
+receipt route now selects `Tenant.logoUrl` and `buildThermalReceiptHtml`
+renders it above the store name (max 34 mm x 16 mm, `object-fit: contain`) with
+the alt text "{store name} logo". A tenant with no logo gets the plain name
+header, exactly as before. The URL is HTML-escaped like every other receipt
+value.
+
+`receipt-renderer.test.ts` pins the logo element, the no-logo case and the
+attribute-escaping case.
+
+## Failure messages are sanitised (ARGUS #494)
+
+Both store-profile write paths used to return the raw exception message, so a
+database or object-storage failure could expose hostnames, bucket names or SQL
+detail to the browser. They now:
+
+- log the full error server-side (`console.error` with the route name);
+- return a stable, friendly message:
+  - `PATCH /api/settings/store` -> `500 { code: "INTERNAL_ERROR", message:
+    "Failed to save store profile" }`;
+  - `POST /api/settings/store/logo` -> `500 { error: "Could not upload the logo.
+    Please try again." }` (the shape `LogoUploadField` already parses).
+
+Validation errors (400) remain specific because they describe the operator's
+input, not internals.

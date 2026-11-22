@@ -9,6 +9,8 @@ export interface AppointmentServiceRecord {
   description: string | null;
   durationMins: number;
   price: number | string | { toString(): string };
+  /** Tax treatment used when the appointment is converted (ARGUS #131). */
+  taxRule?: 'STANDARD_VAT' | 'SSCL' | 'EXEMPT' | null;
   color: string | null;
   isActive: boolean;
   sortOrder: number;

@@ -3,15 +3,19 @@ import 'server-only';
 import type Decimal from 'decimal.js';
 
 import { prisma } from '@/lib/prisma';
-import { computeNetPayout } from '@/lib/services/rate-engine.service';
+import { computeCourierFeeBreakdown } from '@/lib/delivery/courier-fees.core';
 import { getActiveRateCard } from '@/lib/services/shipping-fee.service';
 import type { DeductionAuditStatus } from '@/generated/prisma/client';
 
 /**
  * Net-payout + contract-compliance finance helpers for reconciliation.
  *
- * Net payout (doc 15): Net = grossCOD − (delivery fee + COD%·gross + VAT%·gross),
+ * Net payout (ARGUS #293):
+ *   commission = grossCOD x COD%
+ *   VAT        = (delivery fee + commission) x VAT%
+ *   net        = grossCOD - delivery fee - commission - VAT
  * using the active RateCard contract terms and the delivery's shipping fee.
+ * VAT is on the courier service, not on the cash collected.
  *
  * Contract-compliance audit (doc 16): compare the courier's stated deduction on
  * a statement row against the expected deduction re-derived from the RateCard.
@@ -22,8 +26,10 @@ export interface NetPayoutBreakdown {
   expectedNetPayout: string;
   /** COD commission amount (2dp string). */
   codCommissionAmount: string;
-  /** VAT amount (2dp string). */
+  /** VAT amount (2dp string): VAT% x (delivery fee + commission). */
   vatAmount: string;
+  /** Explicit VAT base (2dp string): delivery fee + commission. */
+  vatBase: string;
   /** Delivery fee used in the calculation (2dp string). */
   deliveryFee: string;
 }
@@ -39,26 +45,19 @@ export async function computeNetPayoutBreakdown(input: {
   deliveryFee?: Decimal | string | number | null;
 }): Promise<NetPayoutBreakdown> {
   const card = await getActiveRateCard(input.tenantId);
-  const coddCommissionPct = card?.coddCommissionPct ?? undefined;
-  const vatRatePct = card?.vatRatePct ?? undefined;
-
-  const net = computeNetPayout({
+  const breakdown = computeCourierFeeBreakdown({
     grossCod: input.grossCod,
     deliveryFee: input.deliveryFee ?? null,
-    coddCommissionPct: coddCommissionPct ?? null,
-    vatRatePct: vatRatePct ?? null,
+    coddCommissionPct: card?.coddCommissionPct ?? null,
+    vatRatePct: card?.vatRatePct ?? null,
   });
 
-  const gross = Number(input.grossCod.toString());
-  const fee = Number(input.deliveryFee?.toString() ?? 0);
-  const codPct = coddCommissionPct ? Number(coddCommissionPct.toString()) / 100 : 0;
-  const vatPct = vatRatePct ? Number(vatRatePct.toString()) / 100 : 0;
-
   return {
-    expectedNetPayout: net.toFixed(2),
-    codCommissionAmount: (gross * codPct).toFixed(2),
-    vatAmount: (gross * vatPct).toFixed(2),
-    deliveryFee: fee.toFixed(2),
+    expectedNetPayout: breakdown.netPayout.toFixed(2),
+    codCommissionAmount: breakdown.codCommission.toFixed(2),
+    vatAmount: breakdown.vatAmount.toFixed(2),
+    vatBase: breakdown.vatBase.toFixed(2),
+    deliveryFee: breakdown.deliveryFee.toFixed(2),
   };
 }
 
@@ -83,22 +82,22 @@ export interface AuditComparisonResult {
 
 /**
  * Audit a single row's courier deduction against the expected contract
- * deduction (fee + COD%·gross + VAT%·gross). Returns COMPLIANT when within
- * tolerance, OVER_CHARGED when the courier deducted more, UNDER_CHARGED when less.
+ * deduction (fee + COD%·gross + VAT%·(fee + commission)). Returns COMPLIANT
+ * when within tolerance, OVER_CHARGED when the courier deducted more,
+ * UNDER_CHARGED when less.
  */
 export async function auditDeductionCompliance(
   input: AuditComparisonInput,
 ): Promise<AuditComparisonResult> {
   const card = await getActiveRateCard(input.tenantId);
-  const coddCommissionPct = card?.coddCommissionPct ?? undefined;
-  const vatRatePct = card?.vatRatePct ?? undefined;
+  const breakdown = computeCourierFeeBreakdown({
+    grossCod: input.grossCod,
+    deliveryFee: input.deliveryFee ?? null,
+    coddCommissionPct: card?.coddCommissionPct ?? null,
+    vatRatePct: card?.vatRatePct ?? null,
+  });
 
-  const gross = Number(input.grossCod.toString());
-  const fee = Number(input.deliveryFee?.toString() ?? 0);
-  const codPct = coddCommissionPct ? Number(coddCommissionPct.toString()) / 100 : 0;
-  const vatPct = vatRatePct ? Number(vatRatePct.toString()) / 100 : 0;
-  const expectedDeduction = fee + gross * codPct + gross * vatPct;
-
+  const expectedDeduction = breakdown.totalDeduction.toNumber();
   const actual = Number(input.actualDeduction?.toString() ?? 0);
   const variance = actual - expectedDeduction;
 

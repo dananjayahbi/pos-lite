@@ -9,6 +9,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { LedgerTable } from '@/components/delivery/reconciliation/LedgerTable';
 import { RemittanceUpload } from '@/components/delivery/reconciliation/RemittanceUpload';
 import { StatementComparison } from '@/components/delivery/reconciliation/StatementComparison';
+import {
+  ImportHistory,
+  type StatementImportHistoryItem,
+} from '@/components/delivery/reconciliation/ImportHistory';
 
 interface AgingSummary {
   buckets: { under7: number; under14: number; overdue: number };
@@ -45,6 +49,7 @@ interface ReconciliationData {
   discrepancySummary?: Record<string, number>;
   audit?: AuditReport;
   openDisputes?: number;
+  imports?: StatementImportHistoryItem[];
 }
 
 const CATEGORY_CARDS: { key: string; label: string; tone: string }[] = [
@@ -218,6 +223,8 @@ export function ReconciliationClient() {
               }}
             />
           )}
+
+          <ImportHistory imports={reconciliation.imports ?? []} />
 
           <Card className="border-mist">
             <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">

@@ -96,7 +96,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const customer = await createCustomer(tenantId, parsed.data as CreateCustomerInput);
+    const customer = await createCustomer(tenantId, parsed.data as CreateCustomerInput, {
+      id: session.user.id,
+      role: session.user.role,
+    });
 
     return NextResponse.json({ success: true, data: customer }, { status: 201 });
   } catch (error) {

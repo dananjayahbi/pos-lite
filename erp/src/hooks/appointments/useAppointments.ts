@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { AppointmentStatus } from '@/generated/prisma/client';
 
 interface AppointmentFilters {
-  status?: AppointmentStatus;
+  status?: AppointmentStatus | 'OVERDUE';
   staffId?: string;
   serviceId?: string;
   customerId?: string;

@@ -2,56 +2,152 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { formatRupee } from '@/lib/format';
+import { formatShortDateTime } from '@/lib/format';
+import { collectableCodAmount } from '@/lib/delivery/cod';
+import { waitForPrintOverlayToClose } from '@/lib/print-session';
 import { StatusBadge } from './StatusBadge';
 import { FailureReasonTag } from './FailureReasonTag';
 import { DispatchSheet } from './DispatchSheet';
+import { CancelDeliveryDialog } from './CancelDeliveryDialog';
+import { canCancelDelivery } from './cancelDelivery';
+import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
+import { waybillSenderDecision } from '@/lib/delivery/sender';
+import {
+  deliveryPrintButtonState,
+  deliveryPrintKey,
+  type DeliveryPrintAction,
+} from './printState';
 import { printShippingLabel } from './labels/ShippingLabel';
 import { printOrderInvoice } from './invoices/printOrderInvoice';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useCancelDelivery, useLabelTemplate } from '@/hooks/delivery';
+import { useLabelTemplate } from '@/hooks/delivery';
+import { useBulkCreateDelivery } from '@/hooks/orders';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { DEFAULT_LABEL_TEMPLATE } from '@/lib/constants/label';
+import {
+  canPrintWaybill,
+  resolveLabelTemplate,
+  resolveLabelTemplateViewState,
+} from './labels/labelTemplateState';
+import { canPrepareDelivery } from './prepareDelivery';
 import type { DeliveryListItem } from '@/types/delivery';
 
 interface DeliveryTableProps {
   deliveries: DeliveryListItem[];
 }
 
-const PENDING_STATUSES = ['PLACED', 'PENDING_DISPATCH', 'HOLD'];
-
 function formatDate(value?: string | null) {
-  if (!value) return '-';
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatShortDateTime(value ?? null);
 }
 
 export function DeliveryTable({ deliveries }: DeliveryTableProps) {
   const router = useRouter();
   const { hasPermission } = usePermissions();
-  const { data: labelTemplate } = useLabelTemplate();
+  const {
+    data: labelTemplate,
+    branding,
+    isLoading: templateLoading,
+    isError: templateError,
+    isFetching: templateFetching,
+    refetch: refetchTemplate,
+  } = useLabelTemplate();
+  const templateState = resolveLabelTemplateViewState({
+    isError: templateError,
+    isLoading: templateLoading,
+    hasTemplate: Boolean(labelTemplate),
+  });
+  const waybillTemplate = resolveLabelTemplate(labelTemplate, branding);
+  const canPrintWaybillNow = canPrintWaybill(templateState, waybillTemplate);
+  const senderDecision = waybillSenderDecision(waybillTemplate);
+  const templateBlockedReason =
+    templateState === 'error'
+      ? 'Waybill template failed to load'
+      : 'Waybill template is still loading';
   const canDispatch = hasPermission(PERMISSIONS.DELIVERY.dispatchDelivery);
   const canCancel = hasPermission(PERMISSIONS.DELIVERY.cancelDelivery);
 
   const [dispatchTarget, setDispatchTarget] = useState<DeliveryListItem | null>(null);
   const [cancelTarget, setCancelTarget] = useState<DeliveryListItem | null>(null);
-  const cancelDelivery = useCancelDelivery();
+  const [preparingId, setPreparingId] = useState<string | null>(null);
+  const prepare = useBulkCreateDelivery();
+  /** Active print key (`waybill:<id>` / `invoice:<id>`) for row spinners. */
+  const [printing, setPrinting] = useState<string | null>(null);
+
+  const runPrint = async (
+    action: DeliveryPrintAction,
+    delivery: DeliveryListItem,
+    task: () => Promise<void>,
+  ) => {
+    setPrinting(deliveryPrintKey(action, delivery.id));
+    try {
+      await task();
+      await waitForPrintOverlayToClose();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Printing failed');
+    } finally {
+      setPrinting(null);
+    }
+  };
+
+  const handlePrint = (delivery: DeliveryListItem) => {
+    if (!canPrintWaybillNow) {
+      toast.error('Waybill template is not loaded');
+      return;
+    }
+    const decision = waybillRecipientPrintDecision(delivery.address);
+    if (!decision.canPrint) {
+      toast.error(decision.reason ?? 'Recipient address is incomplete');
+      return;
+    }
+    void runPrint('waybill', delivery, async () => {
+      printShippingLabel(delivery, waybillTemplate);
+    });
+  };
+
+  const handlePrintInvoice = (delivery: DeliveryListItem) => {
+    void runPrint('invoice', delivery, () => printOrderInvoice(delivery.id));
+  };
+
+  const handlePrepare = (delivery: DeliveryListItem) => {
+    setPreparingId(delivery.id);
+    prepare.mutate([delivery.id], { onSettled: () => setPreparingId(null) });
+  };
 
   return (
     <>
+      {templateState === 'error' && (
+        <div
+          role="alert"
+          className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 font-body text-sm text-red-700"
+        >
+          <span>Waybill template failed to load - printing is disabled.</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+            onClick={() => refetchTemplate()}
+            disabled={templateFetching}
+          >
+            {templateFetching ? 'Retrying…' : 'Retry'}
+          </Button>
+        </div>
+      )}
+      {senderDecision.missing.length > 0 && (
+        <div
+          role="alert"
+          className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 font-body text-sm text-amber-800"
+        >
+          <p className="font-medium">
+            {senderDecision.canPrint
+              ? 'Waybill sender address is missing.'
+              : 'Waybill printing is blocked - sender details are incomplete.'}
+          </p>
+          <p>{senderDecision.reason}. Update the Store Profile before printing.</p>
+        </div>
+      )}
       <div className="overflow-x-auto rounded-lg border border-espresso/10">
         <table className="w-full">
           <thead>
@@ -71,7 +167,10 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
             {deliveries.map((d) => {
               const shipment = d.shipments?.[0];
               const waybill = d.waybill ?? shipment?.waybillId;
-              const isPending = PENDING_STATUSES.includes(d.status);
+              const isPending = canCancelDelivery(d.status);
+              const waybillPrint = deliveryPrintButtonState(printing, 'waybill', d.id);
+              const invoicePrint = deliveryPrintButtonState(printing, 'invoice', d.id);
+              const recipientDecision = waybillRecipientPrintDecision(d.address);
               return (
                 <tr
                   key={d.id}
@@ -85,7 +184,7 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                     {d.address?.cityName ?? '-'}
                   </td>
                   <td className="px-4 py-3 text-sm text-espresso">
-                    {formatRupee(d.codAmount ?? 0)}
+                    {formatRupee(collectableCodAmount(d).toNumber())}
                   </td>
                   <td className="px-4 py-3 text-sm text-espresso/60">
                     {d.shippingFee != null ? formatRupee(d.shippingFee) : '-'}
@@ -96,7 +195,12 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                       {d.status === 'FAILED' && <FailureReasonTag reason={d.failureReason} />}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-espresso/60">{waybill ?? '-'}</td>
+                  <td className="px-4 py-3 text-sm text-espresso/60">
+                    {waybill ?? '-'}
+                    {!recipientDecision.canPrint && (
+                      <p className="mt-0.5 text-xs text-red-600">{recipientDecision.reason}</p>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm text-espresso/60">
                     {formatDate(d.dispatchedAt)}
                   </td>
@@ -112,22 +216,60 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => printShippingLabel(d, labelTemplate ?? DEFAULT_LABEL_TEMPLATE)}
+                        onClick={() => handlePrint(d)}
+                        disabled={!canPrintWaybillNow || !recipientDecision.canPrint || waybillPrint.isBusy}
+                        aria-busy={waybillPrint.isActive}
+                        title={
+                          !canPrintWaybillNow
+                            ? templateState === 'ready'
+                              ? senderDecision.reason ?? 'Sender details are incomplete'
+                              : templateBlockedReason
+                            : recipientDecision.reason ?? undefined
+                        }
+                        data-testid={`delivery-waybill-${d.id}`}
                       >
-                        Print
+                        {waybillPrint.isActive ? (
+                          <Loader2
+                            className="mr-1.5 h-3.5 w-3.5 animate-spin"
+                            data-testid="loading-spinner"
+                          />
+                        ) : null}
+                        {waybillPrint.isActive ? 'Preparing...' : 'Print'}
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => {
-                          void printOrderInvoice(d.id).catch((e: Error) => {
-                            // best-effort; user can retry from the detail page
-                            console.error(e);
-                          });
-                        }}
+                        onClick={() => handlePrintInvoice(d)}
+                        disabled={invoicePrint.isBusy}
+                        aria-busy={invoicePrint.isActive}
+                        data-testid={`delivery-invoice-${d.id}`}
                       >
-                        Invoice
+                        {invoicePrint.isActive ? (
+                          <Loader2
+                            className="mr-1.5 h-3.5 w-3.5 animate-spin"
+                            data-testid="loading-spinner"
+                          />
+                        ) : null}
+                        {invoicePrint.isActive ? 'Preparing...' : 'Invoice'}
                       </Button>
+                      {canDispatch && canPrepareDelivery(d.status) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handlePrepare(d)}
+                          disabled={prepare.isPending}
+                          aria-busy={preparingId === d.id}
+                          data-testid={`delivery-prepare-${d.id}`}
+                        >
+                          {preparingId === d.id ? (
+                            <Loader2
+                              className="mr-1.5 h-3.5 w-3.5 animate-spin"
+                              data-testid="loading-spinner"
+                            />
+                          ) : null}
+                          {preparingId === d.id ? 'Preparing...' : 'Prepare'}
+                        </Button>
+                      )}
                       {canDispatch && d.status === 'PENDING_DISPATCH' && (
                         <Button size="sm" variant="outline" onClick={() => setDispatchTarget(d)}>
                           Dispatch
@@ -158,35 +300,11 @@ export function DeliveryTable({ deliveries }: DeliveryTableProps) {
         onClose={() => setDispatchTarget(null)}
       />
 
-      <Dialog open={cancelTarget !== null} onOpenChange={(open) => !open && setCancelTarget(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="font-display">Cancel delivery</DialogTitle>
-            <DialogDescription>
-              Cancel {cancelTarget?.orderRef}? Reserved stock will be returned to inventory. This
-              cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelTarget(null)}>
-              Keep delivery
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={cancelDelivery.isPending}
-              onClick={() => {
-                if (!cancelTarget) return;
-                cancelDelivery.mutate(
-                  { id: cancelTarget.id },
-                  { onSuccess: () => setCancelTarget(null) },
-                );
-              }}
-            >
-              {cancelDelivery.isPending ? 'Cancelling...' : 'Cancel delivery'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CancelDeliveryDialog
+        delivery={cancelTarget}
+        open={!!cancelTarget}
+        onClose={() => setCancelTarget(null)}
+      />
     </>
   );
 }

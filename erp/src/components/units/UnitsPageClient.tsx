@@ -31,6 +31,13 @@ import {
   useUpdateRawMaterialUnit,
   type RawMaterialUnitItem,
 } from '@/hooks/useRawMaterialUnits';
+import { unitCapabilities } from '@/lib/services/rawMaterialUnitCapabilities.core';
+import {
+  unitDisplayChanged,
+  unitRenameWarning,
+} from '@/lib/services/rawMaterialUnitRename.core';
+import { formatUnitUsage } from '@/lib/units/unitUsage.core';
+import { deriveUnitShortLabel } from '@/lib/units/unitValidation.core';
 
 interface UnitsPageClientProps {
   canCreate: boolean;
@@ -55,18 +62,33 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
   const [editing, setEditing] = useState<RawMaterialUnitItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RawMaterialUnitItem | null>(null);
   const [form, setForm] = useState<UnitFormState>(EMPTY_FORM);
+  /** Rename is display-only; a changed label needs an explicit acknowledgement. */
+  const [renameConfirmed, setRenameConfirmed] = useState(false);
 
   const units = data?.data ?? [];
+  const derivedShortLabel = deriveUnitShortLabel(form.name);
+  const nextDisplay = {
+    name: form.name,
+    shortLabel: form.shortLabel.trim() || derivedShortLabel,
+  };
+  const renameNeedsConfirmation =
+    editing !== null &&
+    unitDisplayChanged(
+      { name: editing.name, shortLabel: editing.shortLabel },
+      nextDisplay,
+    );
 
   const openCreate = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
+    setRenameConfirmed(false);
     setFormOpen(true);
   };
 
   const openEdit = (unit: RawMaterialUnitItem) => {
     setEditing(unit);
     setForm({ name: unit.name, shortLabel: unit.shortLabel });
+    setRenameConfirmed(false);
     setFormOpen(true);
   };
 
@@ -74,13 +96,16 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
     const name = form.name.trim();
     const shortLabel = form.shortLabel.trim();
     if (!name) return;
+    if (renameNeedsConfirmation && !renameConfirmed) return;
 
     try {
       if (editing) {
         await updateMutation.mutateAsync({
           id: editing.id,
           name,
-          ...(shortLabel ? { shortLabel } : {}),
+          // Always send the field so a cleared label is honoured: null derives
+          // a complete label from the (possibly renamed) name (ARGUS #486).
+          shortLabel: shortLabel || null,
         });
         toast.success('Unit updated');
       } else {
@@ -92,6 +117,7 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
       }
       setFormOpen(false);
       setEditing(null);
+      setRenameConfirmed(false);
     } catch (submitError) {
       toast.error(submitError instanceof Error ? submitError.message : 'Could not save unit');
     }
@@ -123,7 +149,9 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
           <h1 className="font-display text-2xl font-bold text-espresso">Units</h1>
           <p className="mt-1 max-w-2xl font-body text-sm text-sand-ink">
             Units used across the system, including raw materials and bill-of-materials
-            quantities. Rename or add units here; existing materials keep their unit key.
+            quantities. Built-in units can be renamed but not deactivated or deleted. A
+            unit used by raw materials cannot be deleted until those materials are
+            reassigned; archived references are shown in the Used by column.
           </p>
         </div>
         {canCreate && (
@@ -162,14 +190,25 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
               </TableRow>
             </TableHeader>
             <TableBody>
-              {units.map((unit) => (
+              {units.map((unit) => {
+                const capabilities = unitCapabilities(unit);
+                return (
                 <TableRow key={unit.id}>
-                  <TableCell className="font-medium text-espresso">{unit.name}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-espresso">{unit.name}</span>
+                      {unit.isBuiltIn && (
+                        <Badge className="border border-sand/60 bg-linen text-sand-ink">
+                          Built-in
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="font-mono text-xs text-mist-ink">
                     {unit.shortLabel}
                   </TableCell>
                   <TableCell className="font-body text-sm text-sand-ink">
-                    {unit.usageCount} material{unit.usageCount === 1 ? '' : 's'}
+                    {formatUnitUsage(unit.usageCount, unit.archivedUsageCount)}
                   </TableCell>
                   <TableCell>
                     {unit.isActive ? (
@@ -192,14 +231,26 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
                             <Pencil className="h-3.5 w-3.5" />
                             Edit
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => void toggleActive(unit)}
-                            disabled={updateMutation.isPending}
-                          >
-                            {unit.isActive ? 'Deactivate' : 'Activate'}
-                          </Button>
+                          {capabilities.canActivate && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => void toggleActive(unit)}
+                              disabled={updateMutation.isPending}
+                            >
+                              Activate
+                            </Button>
+                          )}
+                          {capabilities.canDeactivate && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => void toggleActive(unit)}
+                              disabled={updateMutation.isPending}
+                            >
+                              Deactivate
+                            </Button>
+                          )}
                         </>
                       )}
                       {canDelete && (
@@ -207,7 +258,11 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
                           variant="ghost"
                           size="sm"
                           className="text-[#9B2226] hover:text-[#9B2226]/80"
-                          onClick={() => setDeleteTarget(unit)}
+                          onClick={() => {
+                            if (capabilities.canDelete) setDeleteTarget(unit);
+                          }}
+                          disabled={!capabilities.canDelete}
+                          title={capabilities.deleteBlockedReason ?? 'Delete unit'}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           Delete
@@ -216,7 +271,8 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         )}
@@ -226,7 +282,10 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
         open={formOpen}
         onOpenChange={(open) => {
           setFormOpen(open);
-          if (!open) setEditing(null);
+          if (!open) {
+            setEditing(null);
+            setRenameConfirmed(false);
+          }
         }}
       >
         <DialogContent className="sm:max-w-sm">
@@ -242,7 +301,10 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
               <Input
                 id="unit-name"
                 value={form.name}
-                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                onChange={(event) => {
+                  setForm((prev) => ({ ...prev, name: event.target.value }));
+                  setRenameConfirmed(false);
+                }}
                 placeholder="e.g. Bottles"
                 maxLength={80}
                 required
@@ -253,13 +315,36 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
               <Input
                 id="unit-short-label"
                 value={form.shortLabel}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, shortLabel: event.target.value }))
-                }
+                onChange={(event) => {
+                  setForm((prev) => ({ ...prev, shortLabel: event.target.value }));
+                  setRenameConfirmed(false);
+                }}
                 placeholder="e.g. bottle"
                 maxLength={20}
+                aria-describedby="unit-short-label-hint"
               />
+              <p id="unit-short-label-hint" className="text-[11px] text-mist-ink">
+                Leave blank to derive a label from the name
+                {form.shortLabel.trim() ? '.' : ` (${derivedShortLabel}).`}
+              </p>
             </div>
+            {renameNeedsConfirmation && editing && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="text-sm font-medium text-amber-900">Display change only</p>
+                <p className="mt-1 text-xs text-amber-800">
+                  {unitRenameWarning(editing.key)}
+                </p>
+                <label className="mt-2 flex items-start gap-2 text-xs text-amber-900">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={renameConfirmed}
+                    onChange={(event) => setRenameConfirmed(event.target.checked)}
+                  />
+                  <span>I understand existing quantities will not be converted.</span>
+                </label>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFormOpen(false)}>
@@ -270,7 +355,8 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
               disabled={
                 !form.name.trim() ||
                 createMutation.isPending ||
-                updateMutation.isPending
+                updateMutation.isPending ||
+                (renameNeedsConfirmation && !renameConfirmed)
               }
             >
               {editing ? 'Save changes' : 'Add unit'}
@@ -285,7 +371,7 @@ export function UnitsPageClient({ canCreate, canEdit, canDelete }: UnitsPageClie
             <DialogTitle>Delete unit</DialogTitle>
             <DialogDescription>
               Delete <span className="font-medium text-espresso">{deleteTarget?.name}</span>? Units
-              already used by a raw material cannot be deleted; deactivate them instead.
+              used by raw materials cannot be deleted. Remove or reassign those materials first.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

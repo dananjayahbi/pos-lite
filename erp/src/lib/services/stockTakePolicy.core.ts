@@ -1,0 +1,180 @@
+/**
+ * ARGUS #205/#206 — stock-take role and status policy.
+ *
+ * Pure so the routes, the session page and the list dialog all agree on who
+ * may count, complete and cancel. Permission strings are resolved by the
+ * caller (`stock:take` / `stock:take:approve`); this module only encodes the
+ * rules.
+ */
+
+export interface StockTakePolicyInput {
+  status: string | null | undefined;
+  userId: string;
+  initiatedById: string;
+  /** Holds `stock:take`. */
+  canConduct: boolean;
+  /** Holds `stock:take:approve`. */
+  canApprove: boolean;
+}
+
+/** Counting is only possible on an in-progress session with `stock:take`. */
+export function canEditStockTake(input: {
+  status: string | null | undefined;
+  canConduct: boolean;
+}): boolean {
+  return input.canConduct && input.status === 'IN_PROGRESS';
+}
+
+/** Completing is the initiator's step; a manager cannot submit someone else's count. */
+export function canCompleteStockTake(input: StockTakePolicyInput): boolean {
+  return (
+    canEditStockTake(input) &&
+    input.userId === input.initiatedById
+  );
+}
+
+/**
+ * Cancelling only discards counted data, so it never changes stock. The
+ * initiator may discard their own session; an approver may discard any
+ * in-progress session. Everyone else is refused.
+ */
+export function canCancelStockTake(input: StockTakePolicyInput): boolean {
+  // An approver may discard a stale in-progress or pending-approval session
+  // (ARGUS #147); the initiator may discard their own in-progress session.
+  if (input.status === 'IN_PROGRESS') {
+    if (input.canApprove) return true;
+    return input.canConduct && input.userId === input.initiatedById;
+  }
+  if (input.status === 'PENDING_APPROVAL') {
+    return input.canApprove;
+  }
+  return false;
+}
+
+/**
+ * ARGUS #187 (BUG-43) - maker-checker for approval.
+ *
+ * The approver needs `stock:take:approve`, the session must be waiting for
+ * approval, and the approver must not be the user who initiated the count.
+ * There is no documented override: an OWNER who counted must hand the session
+ * to a different approver (or cancel it and start again).
+ */
+export function canApproveStockTake(input: StockTakePolicyInput): boolean {
+  return (
+    input.canApprove &&
+    input.status === 'PENDING_APPROVAL' &&
+    input.userId !== input.initiatedById
+  );
+}
+
+/**
+ * ARGUS #187 (BUG-42) - counted quantities are non-negative integers.
+ *
+ * The PATCH validator enforces this on write, but legacy rows or a direct
+ * service/database path could still hold a negative, fractional or NaN count.
+ * Completion and approval refuse to act on such a row instead of letting it
+ * become a stock correction.
+ */
+export function isCountedQuantityValid(
+  countedQuantity: number | null | undefined,
+): boolean {
+  if (countedQuantity === null || countedQuantity === undefined) return true;
+  return Number.isInteger(countedQuantity) && countedQuantity >= 0;
+}
+
+export interface CountedQuantityRow {
+  variantId: string;
+  countedQuantity: number | null;
+}
+
+/**
+ * Rows whose counted quantity cannot be used. Empty means the session is safe
+ * to complete or approve. `label` is used in the typed error message.
+ */
+export function invalidCountedQuantityRows(
+  rows: readonly CountedQuantityRow[],
+): Array<CountedQuantityRow & { label: string }> {
+  const invalid: Array<CountedQuantityRow & { label: string }> = [];
+  for (const row of rows) {
+    if (!isCountedQuantityValid(row.countedQuantity)) {
+      invalid.push({
+        ...row,
+        label: `${row.variantId}=${String(row.countedQuantity)}`,
+      });
+    }
+  }
+  return invalid;
+}
+
+/**
+ * ARGUS #209 - parse and scope the optional stock-take category.
+ *
+ * Creating a session with a foreign/deleted category used to persist the id,
+ * resolve its name without a tenant filter (leaking it) and produce an empty
+ * session. The route only accepts a string id and looks it up through these
+ * tenant-scoped predicates before creating anything.
+ */
+export type StockTakeCategoryParseResult =
+  | { ok: true; categoryId: string | null }
+  | { ok: false; message: string };
+
+export function parseStockTakeCategoryId(raw: unknown): StockTakeCategoryParseResult {
+  if (raw === undefined || raw === null) return { ok: true, categoryId: null };
+  if (typeof raw !== 'string') {
+    return { ok: false, message: 'categoryId must be a string' };
+  }
+  const trimmed = raw.trim();
+  return { ok: true, categoryId: trimmed === '' ? null : trimmed };
+}
+
+export function stockTakeCategoryLookupWhere(tenantId: string, categoryId: string) {
+  return { id: categoryId, tenantId, deletedAt: null };
+}
+
+export function stockTakeCategoryListWhere(tenantId: string, categoryIds: readonly string[]) {
+  return { id: { in: [...categoryIds] }, tenantId, deletedAt: null };
+}
+
+export type StockTakeCancelDisposition = 'discard' | 'reject';
+/**
+ * Cancellation is discard-only (ARGUS #206). A request that tries to apply
+ * counted discrepancies is rejected; applying must go through
+ * complete → approve (which enforces `stock:take:approve` and maker-checker).
+ */
+export function cancelDisposition(
+  requestedAction: string | null | undefined,
+): StockTakeCancelDisposition {
+  return requestedAction === 'apply' ? 'reject' : 'discard';
+}
+
+/**
+ * ARGUS #212 - an empty session must never be created.
+ *
+ * A category with no live variants (or a tenant with no countable products)
+ * produced a 0-item session that held the single in-progress slot and could be
+ * completed and approved as if it were a real count. The route checks the
+ * actual variant count inside its transaction and refuses before committing.
+ */
+export type StockTakeScopeCheck = { ok: true } | { ok: false; message: string };
+
+export function validateStockTakeScope(input: {
+  categoryId: string | null;
+  countableVariantCount: number;
+}): StockTakeScopeCheck {
+  if (input.countableVariantCount > 0) return { ok: true };
+  return {
+    ok: false,
+    message: input.categoryId
+      ? 'The selected category has no countable variants, so this stock take would contain no items. Choose another category or count all products.'
+      : 'There are no countable variants in this store, so a stock take would contain no items.',
+  };
+}
+
+/**
+ * ARGUS #212 - a 0-item session may reach PENDING_APPROVAL from legacy data;
+ * completion and approval must still refuse it instead of recording an empty
+ * "verified" count.
+ */
+export function stockTakeHasNoItems(itemCount: number): boolean {
+  return itemCount <= 0;
+}

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma, StockMovementReason } from "@/generated/prisma/client";
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import { isStockMovementReason } from '@/lib/constants/stock-movement';
 
 const PAGE_SIZE = 50;
 
@@ -34,6 +35,16 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10));
     const variantSearch = url.searchParams.get("variantSearch")?.trim() ?? "";
     const movementType = url.searchParams.get("movementType") ?? "";
+
+    if (movementType && !isStockMovementReason(movementType)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: `Unknown movement type: ${movementType}` },
+        },
+        { status: 400 },
+      );
+    }
 
     // ── Build where clause ───────────────────────────────────────
     const dateFilter: Prisma.DateTimeFilter | undefined = (() => {

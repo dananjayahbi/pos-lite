@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,16 @@ import { CustomerSelector } from './CustomerSelector';
 import { ServiceSelector } from './ServiceSelector';
 import { StaffSelector } from './StaffSelector';
 import { NotesField } from './NotesField';
+import { fromDatetimeLocalValue, toDatetimeLocalValue } from '@/lib/appointments/datetime-local';
+import { formatAppointmentDateTime } from '@/lib/appointments/appointmentDisplay.core';
+import { useStaffAvailability, useStaffTimeOff } from '@/hooks/appointments';
+import {
+  appointmentAvailabilityIssue,
+  type AppointmentAvailabilityWindow,
+  type AppointmentTimeOffWindow,
+} from '@/lib/appointments/appointmentAvailability.core';
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 interface AppointmentFormData {
   title: string;
@@ -20,6 +30,8 @@ interface AppointmentFormData {
   staffId: string | null;
   durationMins: number;
   price: number;
+  /** Money already taken at booking; ARGUS #121 surfaced the field. */
+  depositAmount: number;
   notes: string;
   customerNotes: string;
 }
@@ -43,15 +55,24 @@ const defaultFormData: AppointmentFormData = {
   staffId: null,
   durationMins: 30,
   price: 0,
+  depositAmount: 0,
   notes: '',
   customerNotes: '',
 };
 
 export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting, defaultStartDate }: AppointmentFormProps) {
   const [form, setForm] = useState<AppointmentFormData>(() => {
-    const initial = {
+    const merged = {
       ...defaultFormData,
       ...((initialData ?? {}) as Partial<AppointmentFormData>),
+    };
+    // Prisma Decimals arrive as strings through the API; the money and duration
+    // inputs are numeric so coerce once here.
+    const initial: AppointmentFormData = {
+      ...merged,
+      durationMins: Number(merged.durationMins) || defaultFormData.durationMins,
+      price: Number(merged.price) || 0,
+      depositAmount: Number(merged.depositAmount) || 0,
     };
     if (defaultStartDate && !initial.startTime) {
       initial.startTime = defaultStartDate.toISOString();
@@ -65,6 +86,43 @@ export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting,
   const update = useCallback(<K extends keyof AppointmentFormData>(key: K, value: AppointmentFormData[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   }, []);
+
+  // ARGUS #127: advisory availability check. The create/update API is still the
+  // authority; this prevents the operator from selecting a slot the server will
+  // reject and explains why.
+  const availabilityQuery = useStaffAvailability(form.staffId ?? undefined);
+  const timeOffQuery = useStaffTimeOff(form.staffId ?? undefined);
+  const availabilityWindows = useMemo(
+    () => (availabilityQuery.data ?? []) as AppointmentAvailabilityWindow[],
+    [availabilityQuery.data],
+  );
+  const availabilityReady = availabilityQuery.data !== undefined && timeOffQuery.data !== undefined;
+
+  const availabilitySummary = useMemo(
+    () =>
+      availabilityWindows
+        .filter((window) => window.isAvailable !== false)
+        .map((window) => `${DAY_NAMES[window.dayOfWeek] ?? '?'} ${window.startTime}-${window.endTime}`)
+        .join(', '),
+    [availabilityWindows],
+  );
+
+  const availabilityIssue = useMemo(() => {
+    if (!form.staffId || !form.startTime || !form.endTime || !availabilityReady) return null;
+    return appointmentAvailabilityIssue({
+      startTime: form.startTime,
+      endTime: form.endTime,
+      availability: availabilityWindows,
+      timeOff: (timeOffQuery.data ?? []) as AppointmentTimeOffWindow[],
+    });
+  }, [
+    availabilityReady,
+    availabilityWindows,
+    form.endTime,
+    form.staffId,
+    form.startTime,
+    timeOffQuery.data,
+  ]);
 
   const handleServiceChange = (serviceId: string | null, durationMins?: number, price?: number) => {
     setForm((prev) => {
@@ -90,7 +148,19 @@ export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting,
     }
   };
 
-  const isValid = form.startTime && form.endTime && (form.customerId || (form.walkInName && form.walkInPhone));
+  const depositError =
+    form.depositAmount < 0
+      ? 'Deposit cannot be negative'
+      : form.depositAmount > form.price
+        ? 'Deposit cannot exceed the price'
+        : null;
+
+  const isValid =
+    !depositError &&
+    !availabilityIssue &&
+    form.startTime &&
+    form.endTime &&
+    (form.customerId || (form.walkInName && form.walkInPhone));
 
   return (
     <div className="space-y-4">
@@ -106,6 +176,19 @@ export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting,
 
       <StaffSelector value={form.staffId} onChange={(v) => update('staffId', v)} />
 
+      {form.staffId && availabilityReady ? (
+        <div className="space-y-1 text-xs">
+          <p className="text-espresso/60">
+            Availability: {availabilitySummary || 'No availability configured for this staff member.'}
+          </p>
+          {availabilityIssue ? (
+            <p role="alert" className="text-red-600">
+              {availabilityIssue.message}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="space-y-1.5">
         <Label className="text-sm font-medium">Title</Label>
         <Input
@@ -120,15 +203,24 @@ export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting,
           <Label className="text-sm font-medium">Start Time</Label>
           <Input
             type="datetime-local"
-            value={form.startTime ? form.startTime.slice(0, 16) : ''}
+            value={toDatetimeLocalValue(form.startTime)}
             onChange={(e) => {
-              const d = new Date(e.target.value);
-              update('startTime', d.toISOString());
-              const end = new Date(d);
+              const startIso = fromDatetimeLocalValue(e.target.value);
+              update('startTime', startIso);
+              if (!startIso) {
+                update('endTime', '');
+                return;
+              }
+              const end = new Date(startIso);
               end.setMinutes(end.getMinutes() + form.durationMins);
               update('endTime', end.toISOString());
             }}
           />
+          {form.startTime ? (
+            <p className="text-xs text-espresso/60">
+              {formatAppointmentDateTime(form.startTime)}
+            </p>
+          ) : null}
         </div>
         <div className="space-y-1.5">
           <Label className="text-sm font-medium">Duration (mins)</Label>
@@ -150,15 +242,47 @@ export function AppointmentForm({ initialData, onSubmit, onCancel, isSubmitting,
         </div>
       </div>
 
-      <div className="space-y-1.5">
-        <Label className="text-sm font-medium">Price ($)</Label>
-        <Input
-          type="number"
-          min={0}
-          step={0.01}
-          value={form.price}
-          onChange={(e) => update('price', parseFloat(e.target.value) || 0)}
-        />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-sm font-medium">Price (LKR)</Label>
+          <div className="relative">
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-mist-ink">
+              Rs.
+            </span>
+            <Input
+              type="number"
+              min={0}
+              step={0.01}
+              className="pl-10"
+              value={form.price}
+              onChange={(e) => update('price', parseFloat(e.target.value) || 0)}
+            />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-sm font-medium">Deposit Amount (LKR)</Label>
+          <div className="relative">
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-mist-ink">
+              Rs.
+            </span>
+            <Input
+              type="number"
+              min={0}
+              step={0.01}
+              className="pl-10"
+              value={form.depositAmount}
+              aria-invalid={depositError ? true : undefined}
+              onChange={(e) => update('depositAmount', parseFloat(e.target.value) || 0)}
+            />
+          </div>
+          {depositError ? (
+            <p role="alert" className="text-xs text-red-600">
+              {depositError}
+            </p>
+          ) : (
+            <p className="text-xs text-espresso/60">Collected at booking; the balance is due on completion.</p>
+          )}
+        </div>
       </div>
 
       <NotesField

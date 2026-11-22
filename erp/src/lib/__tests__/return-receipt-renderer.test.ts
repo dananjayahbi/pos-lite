@@ -45,6 +45,36 @@ function makeTenant(overrides: Partial<ReceiptTenant> = {}): ReceiptTenant {
 }
 
 describe('buildReturnReceiptHtml', () => {
+  it('shows the tax refunded and the original sale total (ARGUS #90)', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn({
+        refundAmount: dec(2459.12),
+        taxAmount: dec(375.12),
+        originalSale: {
+          totalAmount: dec(2934.12),
+          taxAmount: dec(375.12),
+          deliveryCharge: dec(475),
+        },
+      }),
+      makeTenant(),
+      'Nimal',
+      'Kamal',
+    );
+
+    expect(html).toContain('Tax refunded');
+    expect(html).toContain('Rs. 375.12');
+    expect(html).toContain('Original sale total');
+    expect(html).toContain('Rs. 2,934.12');
+    expect(html).toContain('Rs. 2,459.12');
+  });
+
+  it('omits the tax and sale-total rows when they are not available', () => {
+    const html = buildReturnReceiptHtml(makeReturn(), makeTenant(), 'Nimal', 'Kamal');
+
+    expect(html).not.toContain('Tax refunded');
+    expect(html).not.toContain('Original sale total');
+  });
+
   it('targets A4 portrait at a 180 mm content width instead of the old 80 mm slip', () => {
     const html = buildReturnReceiptHtml(makeReturn(), makeTenant(), 'Nimal', 'Kamal');
 
@@ -138,11 +168,11 @@ describe('buildReturnReceiptHtml', () => {
     expect(html).not.toContain('a"onmouseover="alert(1).png');
   });
 
-  it('labels each refund method and explains it', () => {
+  it('labels each refund method and explains it truthfully', () => {
     const cases: Array<[ReceiptReturn['refundMethod'], string, string]> = [
       ['CASH', 'Cash Refund', 'handed back'],
-      ['CARD_REVERSAL', 'Card Reversal', 'original card'],
-      ['STORE_CREDIT', 'Store Credit', 'credit note'],
+      ['CARD_REVERSAL', 'Card Reversal', 'original card/QR'],
+      ['STORE_CREDIT', 'Store Credit', 'store-credit balance'],
       ['EXCHANGE', 'Exchange', 'exchanged'],
     ];
 
@@ -156,6 +186,104 @@ describe('buildReturnReceiptHtml', () => {
       expect(html, method).toContain(label);
       expect(html, method).toContain(detail);
     }
+  });
+
+  it('shows goods, tax and total refund plus the amount not refunded', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn({
+        refundAmount: dec(2459.12),
+        taxAmount: dec(375.12),
+        originalSale: { totalAmount: dec(2934.12), taxAmount: dec(375.12) },
+      }),
+      makeTenant(),
+      'Nimal',
+      'Kamal',
+    );
+
+    expect(html).toContain('Goods refunded');
+    expect(html).toContain('Rs. 2,084.00');
+    expect(html).toContain('Tax refunded');
+    expect(html).toContain('Rs. 375.12');
+    expect(html).toContain('Original sale total');
+    expect(html).toContain('Not refunded (original');
+    expect(html).toContain('Rs. 475.00');
+    expect(html).toContain('Rs. 2,459.12');
+  });
+
+  it('shows a zero tax row when the return recorded zero tax', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn({ refundAmount: dec(100), taxAmount: dec(0) }),
+      makeTenant(),
+      'Nimal',
+      'Kamal',
+    );
+    expect(html).toContain('Tax refunded');
+    expect(html).toContain('Rs. 0.00');
+  });
+
+  it('omits the not-refunded row on a full refund', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn({
+        refundAmount: dec(100),
+        taxAmount: dec(0),
+        originalSale: { totalAmount: dec(100) },
+      }),
+      makeTenant(),
+      'Nimal',
+      'Kamal',
+    );
+    expect(html).not.toContain('Not refunded (original');
+  });
+
+  it('uses the original QR tender for a card reversal, not "original card"', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn({
+        refundMethod: 'CARD_REVERSAL',
+        originalSale: {
+          totalAmount: dec(2084),
+          paymentMethod: 'LANKAQR',
+          payments: [{ method: 'LANKAQR' }],
+        },
+      }),
+      makeTenant(),
+      'Nimal',
+      'Kamal',
+    );
+
+    expect(html).toContain('original LankaQR payment channel');
+    expect(html).not.toContain('original card payment channel');
+  });
+
+  it('names the card tender when the original sale was paid by card', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn({
+        refundMethod: 'CARD_REVERSAL',
+        originalSale: {
+          totalAmount: dec(2084),
+          paymentMethod: 'CARD',
+          payments: [{ method: 'CARD' }],
+        },
+      }),
+      makeTenant(),
+      'Nimal',
+      'Kamal',
+    );
+
+    expect(html).toContain('original card payment channel');
+  });
+
+  it('does not promise a separate store-credit note or expiry', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn({ refundMethod: 'STORE_CREDIT' }),
+      makeTenant(),
+      'Nimal',
+      'Kamal',
+    );
+
+    expect(html).toContain("customer's store-credit balance");
+    expect(html).toContain('future purchase');
+    expect(html).not.toContain('credit note was issued');
+    expect(html).not.toContain('redeemed');
   });
 
   it('distinguishes fully, partially and not-restocked returns', () => {
@@ -208,5 +336,63 @@ describe('buildReturnReceiptHtml', () => {
     expect(html).toContain('Thank you for shopping with us!');
     expect(html).toContain('Powered by AyurPOS');
     expect(html).toContain('window.print()');
+  });
+
+  it('marks a history reprint, without changing an original print (ARGUS #472)', () => {
+    const original = buildReturnReceiptHtml(makeReturn(), makeTenant(), 'Nimal', 'Kamal');
+    const reprint = buildReturnReceiptHtml(makeReturn(), makeTenant(), 'Nimal', 'Kamal', {
+      isReprint: true,
+    });
+
+    expect(original).not.toContain('Reprint - store details');
+    expect(reprint).toContain('Reprint - store details reflect the current profile');
+  });
+
+  it('keeps the sale line snapshots on a reprint', () => {
+    const html = buildReturnReceiptHtml(makeReturn(), makeTenant(), 'Nimal', 'Kamal', {
+      isReprint: true,
+    });
+
+    expect(html).toContain('Bhringraj Hair Oil');
+    expect(html).toContain('OIL / 100ml');
+    expect(html).toContain('Rs. 2,084.00');
+  });
+});
+
+/**
+ * ARGUS #491: the A4 return receipt uses the same footer fallback as the
+ * browser and ESC/POS sale receipts.
+ */
+describe('buildReturnReceiptHtml shared footer', () => {
+  it('uses the shared fallback when the saved footer is blank', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn(),
+      makeTenant({ settings: { address: '', phoneNumber: '', receiptFooter: '' } }),
+      'Nimal',
+      'Kamal',
+    );
+    expect(html).toContain('Thank you for shopping with us!');
+  });
+});
+
+/** ARGUS #492: the A4 header/footer keep the operator's line breaks. */
+describe('buildReturnReceiptHtml multi-line profile text', () => {
+  it('prints each address and footer line separately', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn(),
+      makeTenant({
+        settings: {
+          address: '12 Galle Road\nMatara',
+          phoneNumber: '041 222 3344',
+          receiptFooter: 'Thank you\nCome again',
+        },
+      }),
+      'Nimal',
+      'Kamal',
+    );
+    expect(html).toContain('<div class="brand-meta">12 Galle Road</div>');
+    expect(html).toContain('<div class="brand-meta">Matara</div>');
+    expect(html).toContain('<div>Thank you</div>');
+    expect(html).toContain('<div>Come again</div>');
   });
 });

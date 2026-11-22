@@ -228,3 +228,11 @@ body {
     outline-offset: 2px;
   }
 }
+
+/* ARGUS #69: success toasts are informational and never interactive, so they
+   pass clicks through instead of covering the POS cart rail's Clear Cart
+   button. Sonner's [data-sonner-toast] rule sets pointer-events; the extra
+   class keeps this override above it. */
+[data-sonner-toast].cn-toast-passive {
+  pointer-events: none;
+}

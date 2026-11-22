@@ -1,19 +1,51 @@
 import { prisma } from '@/lib/prisma';
 import Decimal from 'decimal.js';
 import type { TxClient } from '@/lib/services/inventory.service';
+import type { Gender } from '@/generated/prisma/client';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { ApiError } from '@/lib/api/errors';
+import { netSpendAfterVoid } from '@/lib/services/customerSpend.core';
+import {
+  customerAuditSnapshot,
+  type CustomerAuditActor,
+} from '@/lib/services/customerAudit.core';
+import {
+  buildCustomerMergePlan,
+  mergeCustomerIdsError,
+  type MergeCustomerSnapshot,
+} from '@/lib/services/customerMerge.core';
 
 // ── Private Helpers ──────────────────────────────────────────────────────────
 
 async function assertCustomerBelongsToTenant(tenantId: string, customerId: string) {
   const customer = await prisma.customer.findFirst({
     where: { id: customerId, tenantId, deletedAt: null },
-  });
+    });
   if (!customer) {
     throw new Error('Customer not found');
   }
   return customer;
+}
+
+/** Actor for customer master-data audit rows (ARGUS #315). */
+function writeCustomerAudit(input: {
+  tenantId: string;
+  actor: CustomerAuditActor | undefined;
+  entityId: string;
+  action: string;
+  before?: ReturnType<typeof customerAuditSnapshot> | undefined;
+  after?: ReturnType<typeof customerAuditSnapshot> | undefined;
+}): void {
+  void createAuditLog({
+    tenantId: input.tenantId,
+    actorId: input.actor?.id ?? null,
+    actorRole: input.actor?.role ?? 'SYSTEM',
+    entityType: 'Customer',
+    entityId: input.entityId,
+    action: input.action,
+    ...(input.before !== undefined ? { before: input.before } : {}),
+    ...(input.after !== undefined ? { after: input.after } : {}),
+  });
 }
 
 /**
@@ -52,7 +84,11 @@ interface CreateCustomerData {
   notes?: string | undefined;
 }
 
-export async function createCustomer(tenantId: string, data: CreateCustomerData) {
+export async function createCustomer(
+  tenantId: string,
+  data: CreateCustomerData,
+  actor?: CustomerAuditActor,
+) {
   // M05-03 (BUG-27 / D4 policy): the phone is RESERVED per tenant while any
   // row carries it — live or soft-deleted — because @@unique([tenantId, phone])
   // keeps archived rows holding the phone. This deletedAt-agnostic pre-check
@@ -77,7 +113,7 @@ export async function createCustomer(tenantId: string, data: CreateCustomerData)
   const address = optionalText(data.address);
   const city = optionalText(data.city);
 
-  return prisma.customer.create({
+  const created = await prisma.customer.create({
     data: {
       tenantId,
       name: data.name,
@@ -92,6 +128,16 @@ export async function createCustomer(tenantId: string, data: CreateCustomerData)
       ...(data.notes !== undefined && { notes: optionalText(data.notes) ?? null }),
     },
   });
+
+  writeCustomerAudit({
+    tenantId,
+    actor,
+    entityId: created.id,
+    action: AUDIT_ACTIONS.CUSTOMER_CREATED,
+    after: customerAuditSnapshot(created),
+  });
+
+  return created;
 }
 
 // ── Update ───────────────────────────────────────────────────────────────────
@@ -114,8 +160,9 @@ export async function updateCustomer(
   tenantId: string,
   customerId: string,
   data: UpdateCustomerData,
+  actor?: CustomerAuditActor,
 ) {
-  await assertCustomerBelongsToTenant(tenantId, customerId);
+  const existing = await assertCustomerBelongsToTenant(tenantId, customerId);
 
   if (data.phone !== undefined) {
     const existing = await prisma.customer.findFirst({
@@ -134,7 +181,7 @@ export async function updateCustomer(
   // M05-02: only pass birthday when it resolves to a valid Date (PATCH path).
   const birthday = toValidDate(data.birthday);
 
-  return prisma.customer.update({
+  const updated = await prisma.customer.update({
     where: { id: customerId },
     data: {
       ...(data.name !== undefined && { name: data.name }),
@@ -151,6 +198,17 @@ export async function updateCustomer(
       ...(data.notes !== undefined && { notes: optionalText(data.notes) ?? null }),
     },
   });
+
+  writeCustomerAudit({
+    tenantId,
+    actor,
+    entityId: customerId,
+    action: AUDIT_ACTIONS.CUSTOMER_UPDATED,
+    before: customerAuditSnapshot(existing),
+    after: customerAuditSnapshot(updated),
+  });
+
+  return updated;
 }
 
 // ── Get by ID ────────────────────────────────────────────────────────────────
@@ -159,7 +217,7 @@ export async function getCustomerById(tenantId: string, customerId: string) {
   const customer = await prisma.customer.findFirst({
     where: { id: customerId, tenantId, deletedAt: null },
     include: {
-      _count: { select: { sales: true } },
+      _count: { select: { sales: { where: { status: 'COMPLETED' } } } },
       sales: {
         take: 20,
         orderBy: { createdAt: 'desc' },
@@ -183,12 +241,34 @@ export async function getCustomerById(tenantId: string, customerId: string) {
 
   const preferredCategories = await getPreferredCategories(tenantId, customerId);
 
+  // ARGUS #310: returns belong to the customer through the original sale. The
+  // customer detail API previously returned none, so the Returns tab could
+  // never show a real row.
+  const returns = await prisma.return.findMany({
+    where: {
+      tenantId,
+      originalSale: { customerId, tenantId },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    select: {
+      id: true,
+      originalSaleId: true,
+      refundAmount: true,
+      refundMethod: true,
+      status: true,
+      createdAt: true,
+      lines: { select: { quantity: true } },
+    },
+  });
+
   return {
     ...customer,
     orderCount: visitCount,
     visitCount,
     avgOrderValue: avgOrderValue.toString(),
     preferredCategories,
+    returns,
   };
 }
 
@@ -213,7 +293,7 @@ export async function getPreferredCategories(
   customerId: string,
 ): Promise<PreferredCategory[]> {
   const lines = await prisma.saleLine.findMany({
-    where: { sale: { tenantId, customerId } },
+    where: { sale: { tenantId, customerId, status: 'COMPLETED' } },
     select: {
       quantity: true,
       lineTotalAfterDiscount: true,
@@ -232,6 +312,7 @@ export async function getPreferredCategories(
 
   const byCategory = new Map<string, PreferredCategory>();
   for (const line of lines) {
+    if (!line.variant) continue;
     const categoryId = line.variant.product.categoryId;
     const categoryName = line.variant.product.category.name;
     const lineTotal = new Decimal(line.lineTotalAfterDiscount.toString());
@@ -272,6 +353,111 @@ interface GetCustomersOptions {
 }
 
 /** Collect customer ids whose sale count meets the minimum (separate query path). */
+/**
+ * ARGUS #320 - merge a duplicate/typo customer into the one to keep.
+ *
+ * Re-points every dependent row (sales, appointments, shipping addresses,
+ * deliveries, birthday logs) at the primary, folds the lifecycle totals and
+ * tags, then soft-deletes the duplicate. The duplicate's phone stays reserved
+ * by the tenant-unique constraint, which is why merging never rewrites it.
+ */
+export async function mergeCustomers(
+  tenantId: string,
+  primaryId: string,
+  duplicateId: string,
+  actor: CustomerAuditActor,
+) {
+  const [primary, duplicate] = await Promise.all([
+    prisma.customer.findFirst({ where: { id: primaryId, tenantId, deletedAt: null } }),
+    prisma.customer.findFirst({ where: { id: duplicateId, tenantId, deletedAt: null } }),
+  ]);
+
+  const idError = mergeCustomerIdsError(
+    primaryId,
+    duplicateId,
+    Boolean(primary),
+    Boolean(duplicate),
+  );
+  if (idError) {
+    throw new ApiError(idError.includes('not found') ? 404 : 400, 'INVALID_MERGE', idError);
+  }
+  // Non-null after the guard above.
+  const keep = primary!;
+  const fold = duplicate!;
+
+  const plan = buildCustomerMergePlan(
+    {
+      ...(keep as unknown as MergeCustomerSnapshot),
+      creditBalance: keep.creditBalance.toString(),
+      totalSpend: keep.totalSpend.toString(),
+    },
+    {
+      ...(fold as unknown as MergeCustomerSnapshot),
+      creditBalance: fold.creditBalance.toString(),
+      totalSpend: fold.totalSpend.toString(),
+    },
+  );
+
+  const moved = await prisma.$transaction(async (tx) => {
+    const sales = await tx.sale.updateMany({
+      where: { tenantId, customerId: duplicateId },
+      data: { customerId: primaryId },
+    });
+    await tx.appointment.updateMany({
+      where: { tenantId, customerId: duplicateId },
+      data: { customerId: primaryId },
+    });
+    await tx.shippingAddress.updateMany({
+      where: { tenantId, customerId: duplicateId },
+      data: { customerId: primaryId },
+    });
+    await tx.delivery.updateMany({
+      where: { tenantId, customerId: duplicateId },
+      data: { customerId: primaryId },
+    });
+    await tx.birthdayGreetingLog.updateMany({
+      where: { tenantId, customerId: duplicateId },
+      data: { customerId: primaryId },
+    });
+
+    const updated = await tx.customer.update({
+      where: { id: primaryId },
+      data: {
+        ...plan.fields,
+        gender: plan.fields.gender as Gender | null,
+        // The duplicate is archived, not deleted: its phone remains reserved
+        // and the audit row is the durable pointer to it.
+        // (Its own unique phone is untouched.)
+      },
+    });
+    await tx.customer.update({
+      where: { id: duplicateId },
+      data: { deletedAt: new Date(), isActive: false },
+    });
+
+    return { updated, movedSales: sales.count };
+  });
+
+  await createAuditLog({
+    tenantId,
+    actorId: actor.id,
+    actorRole: actor.role ?? 'SYSTEM',
+    entityType: 'Customer',
+    entityId: primaryId,
+    action: AUDIT_ACTIONS.CUSTOMER_MERGED,
+    before: {
+      duplicate: customerAuditSnapshot(fold),
+    },
+    after: {
+      primary: customerAuditSnapshot(moved.updated),
+      movedSales: moved.movedSales,
+      ...plan.summary,
+    },
+  });
+
+  return { customer: moved.updated, movedSales: moved.movedSales, summary: plan.summary };
+}
+
 async function getCustomerIdsWithMinOrders(
   tenantId: string,
   minOrders: number,
@@ -334,7 +520,7 @@ export async function getCustomers(tenantId: string, options: GetCustomersOption
       orderBy: { createdAt: 'desc' },
       skip,
       take: limit,
-      include: { _count: { select: { sales: true } } },
+      include: { _count: { select: { sales: { where: { status: 'COMPLETED' } } } } },
     }),
     prisma.customer.count({ where }),
   ]);
@@ -353,16 +539,31 @@ export async function getCustomers(tenantId: string, options: GetCustomersOption
 
 // ── Soft Delete ──────────────────────────────────────────────────────────────
 
-export async function softDeleteCustomer(tenantId: string, customerId: string) {
-  await assertCustomerBelongsToTenant(tenantId, customerId);
+export async function softDeleteCustomer(
+  tenantId: string,
+  customerId: string,
+  actor?: CustomerAuditActor,
+) {
+  const existing = await assertCustomerBelongsToTenant(tenantId, customerId);
 
-  return prisma.customer.update({
+  const deleted = await prisma.customer.update({
     where: { id: customerId },
     data: {
       deletedAt: new Date(),
       isActive: false,
     },
   });
+
+  writeCustomerAudit({
+    tenantId,
+    actor,
+    entityId: customerId,
+    action: AUDIT_ACTIONS.CUSTOMER_DELETED,
+    before: customerAuditSnapshot(existing),
+    after: customerAuditSnapshot(deleted),
+  });
+
+  return deleted;
 }
 
 // ── Credit Operations ────────────────────────────────────────────────────────
@@ -395,6 +596,27 @@ export async function redeemCredit(
     throw new Error('Redeem amount must be greater than zero');
   }
 
+  // Consume issued credit notes FIFO so `usedAmount` stays truthful and a
+  // credit issued by a return can be traced to the sale that spent it.
+  const credits = await tx.storeCredit.findMany({
+    where: { tenantId, customerId },
+    orderBy: { createdAt: 'asc' },
+  });
+  let remaining = amount;
+  for (const credit of credits) {
+    if (remaining.lte(0)) break;
+    const available = new Decimal(credit.amount.toString()).minus(
+      new Decimal(credit.usedAmount.toString()),
+    );
+    if (available.lte(0)) continue;
+    const consumed = Decimal.min(available, remaining);
+    await tx.storeCredit.update({
+      where: { id: credit.id },
+      data: { usedAmount: { increment: consumed.toNumber() } },
+    });
+    remaining = remaining.minus(consumed);
+  }
+
   const updated = await tx.customer.update({
     where: { id: customerId },
     data: {
@@ -413,6 +635,94 @@ export async function redeemCredit(
   }).catch(() => {});
 
   return updated;
+}
+
+/**
+ * Issue store credit to a customer (e.g. a return refunded as credit).
+ *
+ * Both the redeemable balance (`Customer.creditBalance`, which the POS reads)
+ * and the credit-note ledger row are written together, so the credit can
+ * actually be spent and the issuance stays auditable (ARGUS #92).
+ */
+export async function issueCredit(
+  tenantId: string,
+  customerId: string,
+  amount: Decimal,
+  note: string,
+  tx: TxClient,
+) {
+  if (amount.lte(0)) {
+    throw new Error('Credit amount must be greater than zero');
+  }
+
+  const updated = await tx.customer.update({
+    where: { id: customerId },
+    data: {
+      creditBalance: { increment: amount.toNumber() },
+    },
+  });
+
+  await tx.storeCredit.create({
+    data: {
+      tenantId,
+      customerId,
+      amount: amount.toFixed(2),
+      note,
+    },
+  });
+
+  void createAuditLog({
+    tenantId,
+    actorId: null,
+    actorRole: 'SYSTEM',
+    entityType: 'Customer',
+    entityId: customerId,
+    action: AUDIT_ACTIONS.CUSTOMER_CREDIT_ADJUSTED,
+    after: {
+      amountIssued: amount.toString(),
+      newBalance: updated.creditBalance.toString(),
+      note,
+    },
+  }).catch(() => {});
+
+  return updated;
+}
+
+/**
+ * Reverse the spend accrued by a sale that is being voided (ARGUS #308).
+ *
+ * `addToSpendTotal` runs once at sale creation, so without this a void left the
+ * customer's lifetime spend (and the loyalty/broadcast segments derived from it)
+ * counting money that was never collected. `lastPurchaseAt` is recomputed from
+ * the most recent remaining completed sale.
+ */
+export async function reverseSpendOnVoid(
+  tenantId: string,
+  customerId: string,
+  amount: Decimal,
+  voidedSaleId: string,
+  tx: TxClient,
+) {
+  const customer = await tx.customer.findFirst({
+    where: { id: customerId, tenantId },
+    select: { totalSpend: true },
+  });
+  if (!customer) return;
+
+  const nextSpend = netSpendAfterVoid(customer.totalSpend.toString(), amount);
+  const lastSale = await tx.sale.findFirst({
+    where: { tenantId, customerId, status: 'COMPLETED', id: { not: voidedSaleId } },
+    orderBy: { createdAt: 'desc' },
+    select: { saleDate: true, createdAt: true },
+  });
+
+  await tx.customer.update({
+    where: { id: customerId },
+    data: {
+      totalSpend: nextSpend.toNumber(),
+      lastPurchaseAt: lastSale ? (lastSale.saleDate ?? lastSale.createdAt) : null,
+    },
+  });
 }
 
 // ── Spend Tracking ───────────────────────────────────────────────────────────

@@ -3,6 +3,9 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { convertAppointmentToSale } from '@/lib/services/appointment.service';
+import { createCommissionRecord } from '@/lib/services/commission.service';
+import { normalizeCommissionRate } from '@/lib/constants/commission-rate';
+import { prisma } from '@/lib/prisma';
 
 export async function POST(
   _request: Request,
@@ -39,6 +42,32 @@ export async function POST(
 
     const { id } = await params;
     const sale = await convertAppointmentToSale(tenantId, id, session.user.id, session.user.role);
+
+    // Commission side-effect — non-blocking, mirrors the POS sale route.
+    try {
+      const cashier = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { commissionRate: true },
+      });
+      // ARGUS #342: keep the same 0-100 contract as the staff API and engine.
+      const rate = normalizeCommissionRate(cashier?.commissionRate);
+      if (rate !== null && rate > 0) {
+        await createCommissionRecord({
+          tenantId,
+          saleId: sale.id,
+          userId: session.user.id,
+          baseAmount: sale.totalAmount,
+          commissionRate: rate.toString(),
+        });
+      } else if (rate === null && cashier?.commissionRate !== null && cashier?.commissionRate !== undefined) {
+        console.warn('Skipping commission: stored rate is outside 0-100', {
+          userId: session.user.id,
+          commissionRate: String(cashier.commissionRate),
+        });
+      }
+    } catch (commissionError) {
+      console.warn('Commission record creation failed for appointment conversion:', commissionError);
+    }
 
     return NextResponse.json({ success: true, data: sale }, { status: 201 });
   } catch (error) {

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { transExpressMapStatus } from '@/lib/courier/trans-express/adapter';
 import { toCourierOrderPayload } from '@/lib/courier/mappers';
+import { collectableCodAmount } from '@/lib/delivery/cod';
 import { isDeliveryStatusAdvance } from '@/lib/constants/courier';
 
 describe('transExpressMapStatus', () => {
@@ -56,6 +57,40 @@ describe('toCourierOrderPayload', () => {
   it('carries a manual waybill id when provided', () => {
     const p = toCourierOrderPayload(address, delivery, { waybillId: 'WB-99' });
     expect(p.waybillId).toBe('WB-99');
+  });
+
+  it('sends COD 0 for a paid card order (ARGUS #297)', () => {
+    const p = toCourierOrderPayload(address, {
+      ...delivery,
+      paymentStatus: 'PAID',
+    });
+    expect(p.cod).toBe(0);
+  });
+
+  it('keeps the COD amount for an unpaid cash-on-delivery order', () => {
+    const p = toCourierOrderPayload(address, {
+      ...delivery,
+      paymentStatus: 'PENDING',
+    });
+    expect(p.cod).toBe(1200.5);
+  });
+});
+
+describe('collectableCodAmount', () => {
+  it('zeroes a prepaid order while keeping the stored goods value', () => {
+    const delivery = { codAmount: '1590.00', paymentMethod: 'CARD', paymentStatus: 'PAID' };
+    expect(collectableCodAmount(delivery).toNumber()).toBe(0);
+    expect(delivery.codAmount).toBe('1590.00');
+  });
+
+  it('returns the recorded amount for an unpaid COD order', () => {
+    expect(
+      collectableCodAmount({ codAmount: '1590.00', paymentMethod: 'COD', paymentStatus: 'PENDING' }).toNumber(),
+    ).toBe(1590);
+  });
+
+  it('never returns a negative collectable amount', () => {
+    expect(collectableCodAmount({ codAmount: -50 }).toNumber()).toBe(0);
   });
 });
 

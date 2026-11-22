@@ -69,6 +69,7 @@ export async function GET(request: Request) {
           id: variant.product.id,
           name: variant.product.name,
           categoryId: variant.product.categoryId,
+          isArchived: variant.product.isArchived,
         },
       },
     });

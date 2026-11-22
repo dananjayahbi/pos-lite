@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
-import { updatePromotion, togglePromotion } from '@/lib/services/promotion.service';
+import { updatePromotion, deactivatePromotion, setPromotionActive } from '@/lib/services/promotion.service';
 import { UpdatePromotionSchema } from '@/lib/validators/promotion.validators';
+import { toErrorResponse } from '@/lib/api/error-envelope';
 
 export async function PATCH(
   request: Request,
@@ -43,13 +44,29 @@ export async function PATCH(
       );
     }
 
-    const promotion = await updatePromotion(tenantId, id, parsed.data);
+    // ARGUS #325: an explicit status-only PATCH is Activate/Deactivate, not a
+    // generic edit — it writes the ACTIVATED/ARCHIVED audit action.
+    const changedKeys = Object.keys(parsed.data);
+    if (changedKeys.length === 1 && changedKeys[0] === 'isActive') {
+      const promotion = await setPromotionActive(
+        tenantId,
+        id,
+        parsed.data.isActive === true,
+        session.user.id,
+        session.user.role,
+      );
+      return NextResponse.json({ success: true, data: promotion });
+    }
+
+    const promotion = await updatePromotion(tenantId, id, parsed.data, {
+      id: session.user.id,
+      role: session.user.role,
+    });
     return NextResponse.json({ success: true, data: promotion });
-  } catch {
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to update promotion' } },
-      { status: 500 },
-    );
+  } catch (error) {
+    // ARGUS #328/#330: foreign/missing ids are 404 NOT_FOUND (not 500), and
+    // duplicate promo codes are 409 CONFLICT.
+    return toErrorResponse(error, 'PATCH /api/store/promotions/[id]');
   }
 }
 
@@ -82,12 +99,9 @@ export async function DELETE(
       );
     }
 
-    const promotion = await togglePromotion(tenantId, id);
+    const promotion = await deactivatePromotion(tenantId, id, session.user.id, session.user.role);
     return NextResponse.json({ success: true, data: promotion });
-  } catch {
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to toggle promotion' } },
-      { status: 500 },
-    );
+  } catch (error) {
+    return toErrorResponse(error, 'DELETE /api/store/promotions/[id]');
   }
 }

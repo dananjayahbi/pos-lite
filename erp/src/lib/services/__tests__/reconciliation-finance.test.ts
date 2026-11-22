@@ -3,15 +3,26 @@ import { computeNetPayout } from '@/lib/services/rate-engine.service';
 import { classifyDeductionAudit } from '@/lib/services/reconciliation-finance.service';
 
 describe('computeNetPayout', () => {
-  it('nets gross minus fee, COD commission, and VAT', () => {
+  it('nets gross minus fee, COD commission, and VAT on fee + commission', () => {
     const net = computeNetPayout({
       grossCod: 1000,
       deliveryFee: 100,
       coddCommissionPct: 5,
       vatRatePct: 10,
     });
-    // 1000 − (100 + 1000*0.05 + 1000*0.10) = 1000 − (100 + 50 + 100) = 750
-    expect(net.toString()).toBe('750');
+    // commission 50; VAT base 150; VAT 15; 1000 - (100 + 50 + 15) = 835
+    expect(net.toString()).toBe('835');
+  });
+
+  it('keeps the 18% / Rs 10,000 COD contract example at Rs 99 VAT', () => {
+    const net = computeNetPayout({
+      grossCod: 10_000,
+      deliveryFee: 250,
+      coddCommissionPct: 3,
+      vatRatePct: 18,
+    });
+    // commission 300; VAT base 550; VAT 99; net 9351
+    expect(net.toString()).toBe('9351');
   });
 
   it('returns gross when no deductions are configured', () => {

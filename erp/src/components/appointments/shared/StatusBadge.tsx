@@ -10,6 +10,7 @@ const STATUS_COLORS: Record<string, string> = {
   COMPLETED: 'bg-green-100 text-green-800 hover:bg-green-100',
   NO_SHOW: 'bg-red-100 text-red-800 hover:bg-red-100',
   CANCELLED: 'bg-gray-100 text-gray-800 hover:bg-gray-100',
+  OVERDUE: 'bg-orange-100 text-orange-800 hover:bg-orange-100',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -20,6 +21,7 @@ const STATUS_LABELS: Record<string, string> = {
   COMPLETED: 'Completed',
   NO_SHOW: 'No Show',
   CANCELLED: 'Cancelled',
+  OVERDUE: 'Overdue',
 };
 
 export function StatusBadge({ status }: { status: string }) {

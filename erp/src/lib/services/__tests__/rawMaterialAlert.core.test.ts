@@ -10,13 +10,19 @@ function material(quantity: string, threshold: string) {
 }
 
 describe('rawMaterialAlert - evaluateRawMaterialAlert', () => {
-  it('returns null when no threshold is configured', () => {
+  it('returns null when no threshold is configured and stock is positive', () => {
     expect(evaluateRawMaterialAlert(material('10', '0'))).toBeNull();
   });
 
   it('flags CRITICAL when quantity is zero or negative', () => {
     expect(evaluateRawMaterialAlert(material('0', '5'))).toBe('CRITICAL');
     expect(evaluateRawMaterialAlert(material('-2', '5'))).toBe('CRITICAL');
+  });
+
+  it('flags CRITICAL for zero stock even when the threshold is zero (ARGUS #260)', () => {
+    expect(evaluateRawMaterialAlert(material('0', '0'))).toBe('CRITICAL');
+    expect(evaluateRawMaterialAlert(material('0.0000', '0'))).toBe('CRITICAL');
+    expect(evaluateRawMaterialAlert(material('-1', '0'))).toBe('CRITICAL');
   });
 
   it('flags LOW when quantity is at or below threshold but above zero', () => {

@@ -5,6 +5,10 @@ import {
   type AssignableRole,
 } from '@/lib/constants/permissions';
 import { zSriLankaPhone } from '@/lib/validators/shared';
+import {
+  COMMISSION_RATE_BOUND_MESSAGE,
+  COMMISSION_RATE_MAX,
+} from '@/lib/constants/commission-rate';
 
 /**
  * M03-01 (BUG-3): the role enum is derived from the shared ASSIGNABLE_ROLES
@@ -13,23 +17,26 @@ import { zSriLankaPhone } from '@/lib/validators/shared';
  * was the casualty of the old hand-written list.
  */
 const StaffRole = z.enum(ASSIGNABLE_ROLES as [AssignableRole, ...AssignableRole[]]);
-const PermissionValueSchema = z.string().refine((value) => ALL_PERMISSIONS.includes(value as (typeof ALL_PERMISSIONS)[number]), {
-  message: 'Invalid permission value',
-});
+const PermissionValueSchema = z.string().refine(
+  (value) => {
+    // ARGUS #464: a `!key` entry revokes a role default for one user.
+    const key = value.startsWith('!') ? value.slice(1) : value;
+    return ALL_PERMISSIONS.includes(key as (typeof ALL_PERMISSIONS)[number]);
+  },
+  { message: 'Invalid permission value' },
+);
 
 /**
- * M03-05 (BUG-7): the old shape-only regex let "1000.00" and 20-digit strings
- * through to parseFloat → Prisma Decimal(5,2) overflow → HTTP 500. The bound
- * is the column ceiling (D3 decision 2026-09-15: 0–999.99 — spec 03 §2.2
- * pins 999.99 accepted / 1000.00 rejected): anything wider is a typed 400
- * VALIDATION_ERROR naming the field. The 2-dp shape rule stays first.
+ * ARGUS #342: the contract is 0-100 percent everywhere. The old bound mirrored
+ * Decimal(5,2) and accepted 999.99, while the form capped at 100 and the
+ * commission engine rejected >100, so the account silently earned nothing.
+ * Shape is checked first, then the shared inclusive ceiling.
  */
-const COMMISSION_RATE_MAX = 999.99; // User.commissionRate @db.Decimal(5, 2)
 const CommissionRateSchema = z
   .string()
   .regex(/^\d+(\.\d{1,2})?$/, 'Must be a valid decimal (e.g. 5.00)')
   .refine((value) => Number(value) <= COMMISSION_RATE_MAX, {
-    message: `Commission rate must be between 0 and ${COMMISSION_RATE_MAX}`,
+    message: COMMISSION_RATE_BOUND_MESSAGE,
   });
 
 /** Optional free-text field. Empty strings are normalized by the service. */

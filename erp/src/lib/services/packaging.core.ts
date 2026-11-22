@@ -23,6 +23,105 @@ export function packagingConsumptionUnits(perParcel: Decimal | number | string):
 }
 
 /**
+ * ARGUS #285 - the displayed rate must match the deduction.
+ *
+ * The table printed the configured decimal (1.6 m per parcel) while dispatch
+ * deducts whole units (2 m). This resolves both numbers so the UI can show the
+ * effective consumption and, when they differ, the configured value it came
+ * from.
+ */
+export interface PackagingPerParcelRate {
+  configured: number;
+  effective: number;
+  rounded: boolean;
+}
+
+export function resolvePackagingPerParcelRate(
+  perParcel: Decimal | number | string,
+): PackagingPerParcelRate {
+  const configured = perParcel instanceof Decimal ? perParcel.toNumber() : Number(perParcel);
+  const safe = Number.isFinite(configured) && configured > 0 ? configured : 0;
+  const effective = packagingConsumptionUnits(safe);
+  return { configured: safe, effective, rounded: effective !== safe };
+}
+
+export interface PackagingDeductionPlanInput {
+  perParcel: Decimal | number | string;
+  quantityOnHand: number;
+  /** Consumption rows already recorded for this delivery + item. */
+  existingConsumptions: number;
+  /** Courier shipments (parcels) recorded for the delivery. */
+  parcelCount: number;
+}
+
+export interface PackagingDeductionPlan {
+  /** Parcels that still need a consumption row (never negative). */
+  missingParcels: number;
+  unitsPerParcel: number;
+  /** Whole units to remove now, capped by available stock. */
+  unitsToDeduct: number;
+  insufficient: boolean;
+}
+
+/**
+ * Idempotent per-parcel deduction plan (ARGUS #279).
+ *
+ * A parcel is one courier shipment. The schema has no shipment id on
+ * `PackagingConsumption`, so the service compares the number of shipments with
+ * the number of consumption rows for the same delivery + item: retries and
+ * webhook replays see `missingParcels = 0` and deduct nothing, while a
+ * redelivery (a second shipment) catches up exactly one parcel. The deduction
+ * is capped at what is on hand, so stock never goes negative.
+ */
+export function planPackagingDeduction(
+  input: PackagingDeductionPlanInput,
+): PackagingDeductionPlan {
+  const unitsPerParcel = packagingConsumptionUnits(input.perParcel);
+  const parcels = Math.max(Math.floor(input.parcelCount), 0);
+  const existing = Math.max(Math.floor(input.existingConsumptions), 0);
+  const missingParcels = Math.max(parcels - existing, 0);
+  const wantedUnits = unitsPerParcel * missingParcels;
+  const available = Math.max(Math.floor(input.quantityOnHand), 0);
+
+  return {
+    missingParcels,
+    unitsPerParcel,
+    unitsToDeduct: Math.min(wantedUnits, available),
+    insufficient: wantedUnits > available,
+  };
+}
+
+/**
+ * ARGUS #282 - should a dispatch be blocked by short packaging stock?
+ *
+ * The planner already reports `insufficient` per item. This decision reuses
+ * that flag: any shortage blocks unless the caller explicitly overrides. Pure
+ * so the service preflight and the UI explanation share the exact rule.
+ */
+export interface PackagingShortfallItem {
+  name: string;
+  requiredUnits: number;
+  availableUnits: number;
+  insufficient: boolean;
+}
+
+export interface PackagingShortfallDecision {
+  blocked: boolean;
+  shortItems: PackagingShortfallItem[];
+}
+
+export function decidePackagingShortfall(
+  items: PackagingShortfallItem[],
+  opts: { allowOverride?: boolean } = {},
+): PackagingShortfallDecision {
+  const shortItems = items.filter((item) => item.insufficient);
+  return {
+    blocked: shortItems.length > 0 && opts.allowOverride !== true,
+    shortItems,
+  };
+}
+
+/**
  * Derive the human-readable SKU stem for a packaging item, e.g. "Bubble Wrap
  * 50m" in BUBBLE_WRAP becomes `BUBB-BUBBLE-WRAP-50M`.
  */
@@ -59,6 +158,15 @@ export function isPackagingItemLowStock(
   lowStockThreshold: number,
 ): boolean {
   return quantityOnHand <= lowStockThreshold;
+}
+
+/**
+ * ARGUS #280 — a soft delete hides the item from stock queries without writing
+ * it off, so any units still on hand would silently vanish. Only empty items
+ * may be deleted.
+ */
+export function packagingItemHasStock(quantityOnHand: number): boolean {
+  return quantityOnHand > 0;
 }
 
 /** Category label for an item DTO, preferring the tenant's own category name. */

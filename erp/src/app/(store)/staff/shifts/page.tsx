@@ -27,8 +27,19 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { formatRupee } from '@/lib/format';
+import { formatShiftDateTime, formatShiftRupee } from '@/lib/shifts/shift-format';
 import { staffDisplayName } from '@/lib/utils/staff-name';
-import { Eye, PlusCircle, Wallet } from 'lucide-react';
+import {
+  emptyShiftSales,
+  shiftSalesDetailLabel,
+  type ShiftSalesSummary,
+} from '@/lib/shifts/shift-sales-count';
+import { Eye, PlusCircle, Wallet, AlertTriangle } from 'lucide-react';
+import {
+  isLongOpenShift,
+  longShiftWarning,
+  shiftOpenHours,
+} from '@/lib/shifts/shift-age';
 
 interface StaffMember {
   id: string;
@@ -47,21 +58,24 @@ interface ShiftRow {
     cashDifference?: number | string;
     closedAt?: string;
   } | null;
-  _count?: { sales: number };
+  salesCounts?: ShiftSalesSummary;
 }
 
 interface ShiftListResponse {
   success: boolean;
   data: ShiftRow[];
-  meta: { page: number; limit: number; total: number; totalPages: number };
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    /** ARGUS #116: counts across every filtered row, not just this page. */
+    statusCounts?: { open: number; closed: number };
+  };
 }
 
 function formatDateTime(value: string | null): string {
-  if (!value) return '-';
-  return new Date(value).toLocaleString('en-LK', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+  return formatShiftDateTime(value);
 }
 
 function StatusBadge({ status }: { status: ShiftRow['status'] }) {
@@ -71,6 +85,25 @@ function StatusBadge({ status }: { status: ShiftRow['status'] }) {
     <Badge variant="secondary" className="bg-slate-100 text-slate-700 hover:bg-slate-100">
       Closed
     </Badge>
+  );
+}
+
+/**
+ * ARGUS #110: a transaction is any sale row; only COMPLETED rows are sales.
+ * The completed figure is the one closures/Z-reports print.
+ */
+function ShiftSalesCells({ counts }: { counts?: ShiftSalesSummary | undefined }) {
+  const summary = counts ?? emptyShiftSales();
+  const detail = shiftSalesDetailLabel(summary);
+
+  return (
+    <>
+      <TableCell className="font-mono text-sm text-espresso">{summary.total}</TableCell>
+      <TableCell className="text-sm text-espresso">
+        <span className="font-mono">{summary.completed}</span>
+        {detail ? <span className="ml-2 text-xs text-sand-ink">{detail}</span> : null}
+      </TableCell>
+    </>
   );
 }
 
@@ -132,10 +165,20 @@ export default function StaffShiftsPage() {
 
   const shifts = data?.data ?? [];
   const meta = data?.meta ?? { page: 1, limit, total: 0, totalPages: 1 };
-  const openCount = shifts.filter((shift) => shift.status === 'OPEN').length;
-  const closedCount = shifts.filter((shift) => shift.status === 'CLOSED').length;
+  // ARGUS #116: prefer the API's filtered status counts. The page-local counts
+  // remain only as a fallback for an older API payload.
+  const openCount =
+    meta.statusCounts?.open ?? shifts.filter((shift) => shift.status === 'OPEN').length;
+  const closedCount =
+    meta.statusCounts?.closed ?? shifts.filter((shift) => shift.status === 'CLOSED').length;
   const currentShift = currentShiftData?.data ?? null;
   const staff = staffData?.data ?? [];
+  // ARGUS #115: a shift left open past the tolerance is a reconciliation risk.
+  // Surface every such shift, not just the caller's own current one.
+  const now = Date.now();
+  const longOpenShifts = shifts.filter(
+    (shift) => shift.status === 'OPEN' && isLongOpenShift(shift.openedAt, now),
+  );
 
   const refreshAfterShiftAction = () => {
     void refetch();
@@ -208,6 +251,38 @@ export default function StaffShiftsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {longOpenShifts.length > 0 && (
+        <div
+          role="alert"
+          className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+        >
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <div className="space-y-1">
+              <p className="font-semibold">
+                {longOpenShifts.length} open shift
+                {longOpenShifts.length === 1 ? ' has' : 's have'} been open longer than
+                12 hours.
+              </p>
+              <p className="text-amber-800">
+                Close {longOpenShifts.length === 1 ? 'it' : 'them'} to reconcile the
+                drawer. Until then no cash count is recorded for
+                {longOpenShifts.length === 1 ? ' this shift' : ' these shifts'}.
+              </p>
+              <ul className="list-inside list-disc font-body text-xs text-amber-800">
+                {longOpenShifts.map((shift) => (
+                  <li key={shift.id}>
+                    {shift.cashier ? staffDisplayName(shift.cashier.email) : 'Unknown cashier'} -
+                    opened {formatDateTime(shift.openedAt)} (
+                    {Math.floor(shiftOpenHours(shift.openedAt, now) ?? 0)}h)
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="rounded-2xl border border-mist/60 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-end gap-3">
@@ -315,8 +390,9 @@ export default function StaffShiftsPage() {
                   <TableHead>Opened</TableHead>
                   <TableHead>Closed</TableHead>
                   <TableHead>Opening Float</TableHead>
-                  <TableHead>Sales</TableHead>
-                  <TableHead>Difference</TableHead>
+                  <TableHead>Transactions</TableHead>
+                  <TableHead>Completed sales</TableHead>
+                  <TableHead>Recorded difference</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -332,17 +408,28 @@ export default function StaffShiftsPage() {
                     <TableCell>
                       <StatusBadge status={shift.status} />
                     </TableCell>
-                    <TableCell className="text-sm text-espresso">{formatDateTime(shift.openedAt)}</TableCell>
+                    <TableCell className="text-sm text-espresso">
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        {formatDateTime(shift.openedAt)}
+                        {shift.status === 'OPEN' && isLongOpenShift(shift.openedAt, now) && (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-body font-semibold text-amber-800"
+                            title={longShiftWarning(shift.openedAt, now) ?? undefined}
+                          >
+                            <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                            Long shift
+                          </span>
+                        )}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-sm text-espresso">{formatDateTime(shift.closedAt)}</TableCell>
                     <TableCell className="font-mono text-sm text-espresso">
                       {formatRupee(shift.openingFloat)}
                     </TableCell>
-                    <TableCell className="font-mono text-sm text-espresso">
-                      {shift._count?.sales ?? 0}
-                    </TableCell>
+                    <ShiftSalesCells counts={shift.salesCounts} />
                     <TableCell className="font-mono text-sm text-espresso">
                       {shift.closure?.cashDifference !== undefined && shift.closure?.cashDifference !== null
-                        ? formatRupee(shift.closure.cashDifference)
+                        ? formatShiftRupee(shift.closure.cashDifference)
                         : '-'}
                     </TableCell>
                     <TableCell>

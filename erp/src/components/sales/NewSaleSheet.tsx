@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Loader2, Minus, Plus, Search, Trash2 } from 'lucide-react';
@@ -13,6 +13,8 @@ import { toYMD } from '@/lib/date-range';
 import { CustomerPicker, type PickedCustomer } from '@/components/sales/CustomerPicker';
 import { ProductThumbnail, resolveProductThumbnail } from '@/components/sales/ProductThumbnail';
 import { saleQueryKey } from '@/components/sales/saleQueryKey';
+import { computeManagementSaleTotals } from '@/lib/pricing/managementSaleTotals';
+import type { TaxRuleValue } from '@/lib/constants/product-options';
 import {
   DEFAULT_LANKA_QR_SETTINGS,
   type LankaQrSettings,
@@ -34,6 +36,8 @@ interface ProductVariant {
 interface Product {
   id: string;
   name: string;
+  /** Product tax rule — drives the tax line the server will charge. */
+  taxRule?: TaxRuleValue | null;
   mainImageUrl: string | null;
   mainImageThumbnailUrl?: string | null;
   variants: ProductVariant[];
@@ -47,6 +51,7 @@ interface CartItem {
   unitPrice: number;
   quantity: number;
   discountPercent: number;
+  taxRule: TaxRuleValue;
   imageUrl: string | null;
 }
 
@@ -123,12 +128,54 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
     staleTime: 10_000,
   });
 
-  const cartSubtotal = cart.reduce((sum, item) => {
-    return sum + item.unitPrice * item.quantity * (1 - item.discountPercent / 100);
-  }, 0);
-  const discountAmt = Math.min(parseFloat(cartDiscount) || 0, cartSubtotal);
-  const deliveryAmt = Math.max(parseFloat(deliveryCharge) || 0, 0);
-  const total = cartSubtotal - discountAmt + deliveryAmt;
+  // Tenant VAT/SSCL rates: the sheet must price the sale the same way the API
+  // will (subtotal − discount, apportioned across lines, then per-line tax).
+  const { data: taxRates } = useQuery<{ vatRate: number; ssclRate: number }>({
+    queryKey: ['tax-rates'],
+    queryFn: async () => {
+      const res = await fetch('/api/settings/taxes');
+      if (!res.ok) return { vatRate: 0, ssclRate: 0 };
+      const json = (await res.json()) as {
+        success: boolean;
+        data?: { vatRate: number; ssclRate: number };
+      };
+      return json.data ?? { vatRate: 0, ssclRate: 0 };
+    },
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
+  });
+  const rates = useMemo(
+    () => ({ vatRate: taxRates?.vatRate ?? 0, ssclRate: taxRates?.ssclRate ?? 0 }),
+    [taxRates],
+  );
+
+  // Price the cart exactly like createSale: line discounts, then the cart
+  // discount apportioned across lines, then per-line VAT/SSCL/exempt tax.
+  const totals = useMemo(
+    () =>
+      computeManagementSaleTotals(
+        cart.map((item) => ({
+          unitPrice: item.unitPrice,
+          quantity: item.quantity,
+          discountPercent: item.discountPercent,
+          taxRule: item.taxRule,
+        })),
+        {
+          cartDiscount: parseFloat(cartDiscount) || 0,
+          deliveryCharge: parseFloat(deliveryCharge) || 0,
+          taxRates: rates,
+        },
+      ),
+    [cart, cartDiscount, deliveryCharge, rates],
+  );
+
+  const cartSubtotal = totals.subtotal;
+  const discountAmt = totals.discountAmount;
+  const deliveryAmt = totals.deliveryCharge;
+  const taxAmountNum = totals.taxAmount;
+  const total = totals.total;
+  const taxLabel =
+    totals.taxRatesApplied.length === 1 ? `Tax (${totals.taxRatesApplied[0]}%)` : 'Tax';
 
   const addVariant = useCallback((product: Product, variant: ProductVariant) => {
     const desc = [variant.form, variant.packSize].filter(Boolean).join(' / ') || 'Default';
@@ -149,6 +196,7 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
           unitPrice: parseFloat(variant.retailPrice),
           quantity: 1,
           discountPercent: 0,
+          taxRule: product.taxRule ?? 'STANDARD_VAT',
           imageUrl: resolveProductThumbnail(
             product.mainImageThumbnailUrl,
             product.mainImageUrl,
@@ -493,6 +541,10 @@ export function NewSaleSheet({ open, onOpenChange, onSuccess }: NewSaleSheetProp
                     <dd>−{formatRupee(discountAmt)}</dd>
                   </div>
                 )}
+                <div className="flex justify-between px-3 py-1.5">
+                  <dt className="text-sand-ink">{taxLabel}</dt>
+                  <dd className="text-espresso font-medium">{formatRupee(taxAmountNum)}</dd>
+                </div>
                 <div className="flex justify-between px-3 py-2">
                   <dt className="text-espresso font-semibold">Total</dt>
                   <dd className="text-espresso text-base font-bold">{formatRupee(total)}</dd>

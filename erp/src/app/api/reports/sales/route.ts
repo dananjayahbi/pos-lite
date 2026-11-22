@@ -6,7 +6,7 @@ import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { saleAccountingDateWhere, netRefundAmount } from '@/lib/reports/accounting';
 import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
-import { netUnitsSold } from '@/lib/reports/sales-report';
+import { allocatePercentOfTotal, netUnitsSold } from '@/lib/reports/sales-report';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -110,6 +110,7 @@ export async function GET(request: NextRequest) {
             grossRevenue: "0.00",
             totalReturns: "0.00",
             netRevenue: "0.00",
+            pctOfTotal: "0.00",
           },
         },
       });
@@ -142,6 +143,7 @@ export async function GET(request: NextRequest) {
       const shares = allocateCartDiscountShares(lineTotals, cartDiscount);
 
       lines.forEach((line, index) => {
+        if (!line.variantId) return; // service lines have no variant
         const netLine = lineTotals[index]!.minus(shares[index]!);
         const entry = salesByVariant.get(line.variantId) ?? {
           unitsSold: 0,
@@ -235,7 +237,14 @@ export async function GET(request: NextRequest) {
 
     const grandNet = grandGross.minus(grandReturns);
 
-    const products = rawProducts.map((p) => ({
+    // ARGUS #439: allocate the displayed percentages from the displayed net
+    // revenue so they reconcile to the footer total instead of summing to
+    // 100.01% after independent rounding.
+    const percentage = allocatePercentOfTotal(
+      rawProducts.map((p) => p.netRevenue.toFixed(2)),
+    );
+
+    const products = rawProducts.map((p, index) => ({
       variantId: p.variantId,
       productName: p.productName,
       variantDescription: p.variantDescription,
@@ -245,9 +254,7 @@ export async function GET(request: NextRequest) {
       grossRevenue: p.grossRevenue.toFixed(2),
       returns: p.returns.toFixed(2),
       netRevenue: p.netRevenue.toFixed(2),
-      pctOfTotal: grandNet.isZero()
-        ? "0.00"
-        : p.netRevenue.div(grandNet).mul(100).toFixed(2),
+      pctOfTotal: percentage.percents[index] ?? "0.00",
     }));
 
     return NextResponse.json({
@@ -261,6 +268,7 @@ export async function GET(request: NextRequest) {
           grossRevenue: grandGross.toFixed(2),
           totalReturns: grandReturns.toFixed(2),
           netRevenue: grandNet.toFixed(2),
+          pctOfTotal: percentage.total,
         },
       },
     });

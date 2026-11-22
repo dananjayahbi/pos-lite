@@ -10,8 +10,10 @@ import { prisma } from '@/lib/prisma';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
   DEFAULT_RAW_MATERIAL_CATEGORIES,
+  findDuplicateRawMaterialCategoryName,
   slugifyRawMaterialCategoryKey,
 } from '@/lib/services/rawMaterial.core';
+import { ApiError } from '@/lib/api/errors';
 
 export interface RawMaterialCategoryItem {
   id: string;
@@ -141,6 +143,17 @@ export async function createRawMaterialCategory(
     throw new Error('VALIDATION_ERROR');
   }
 
+  // ARGUS #247: two keys with the same display name made the edit form show
+  // duplicate options. Reject the duplicate label (case/space-insensitive).
+  const existingRows = await prisma.rawMaterialCategoryOption.findMany({
+    where: { tenantId, deletedAt: null },
+    select: { id: true, name: true },
+  });
+  const duplicate = findDuplicateRawMaterialCategoryName(name, existingRows);
+  if (duplicate) {
+    throw ApiError.conflict(`A category named "${duplicate.name}" already exists.`);
+  }
+
   const key = await nextAvailableKey(tenantId, slugifyRawMaterialCategoryKey(name));
 
   // Re-use a previously soft-deleted category when the key matches so history
@@ -192,6 +205,18 @@ export async function updateRawMaterialCategory(
   const name = input.name !== undefined ? input.name.trim() : undefined;
   if (name !== undefined && !name) {
     throw new Error('VALIDATION_ERROR');
+  }
+  if (name !== undefined && name !== existing.name) {
+    // ARGUS #247: renaming onto another live category's display name is the
+    // same duplicate-label problem as create.
+    const rows = await prisma.rawMaterialCategoryOption.findMany({
+      where: { tenantId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    const duplicate = findDuplicateRawMaterialCategoryName(name, rows, existing.id);
+    if (duplicate) {
+      throw ApiError.conflict(`A category named "${duplicate.name}" already exists.`);
+    }
   }
   if (input.isActive === false && DEFAULT_KEYS.has(existing.key)) {
     // Built-ins can be renamed but not deactivated, otherwise brand-new

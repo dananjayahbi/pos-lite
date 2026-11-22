@@ -3,6 +3,10 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { getCommissionSummaryForTenant } from '@/lib/services/commission.service';
+import {
+  CommissionPeriodError,
+  resolveCommissionPeriod,
+} from '@/lib/utils/commission-period';
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,10 +26,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (
-      !hasPermission(session.user, PERMISSIONS.STAFF.viewStaff) &&
-      !hasPermission(session.user, PERMISSIONS.STAFF.manageStaff)
-    ) {
+    if (!hasPermission(session.user, PERMISSIONS.PAYROLL.viewPayroll)) {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
@@ -33,15 +34,33 @@ export async function GET(request: NextRequest) {
     }
 
     const url = request.nextUrl;
-    const now = new Date();
-    const periodStart = url.searchParams.get('periodStart')
-      ? new Date(url.searchParams.get('periodStart')!)
-      : new Date(now.getFullYear(), now.getMonth(), 1);
-    const periodEnd = url.searchParams.get('periodEnd')
-      ? new Date(url.searchParams.get('periodEnd')!)
-      : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    let range: ReturnType<typeof resolveCommissionPeriod>;
+    try {
+      // ARGUS #343: date-only windows are inclusive LOCAL calendar days, so a
+      // default month always runs from the 1st to the last day (not 31 Oct -
+      // 29 Nov in a UTC+05:30 shop).
+      range = resolveCommissionPeriod(
+        url.searchParams.get('periodStart'),
+        url.searchParams.get('periodEnd'),
+      );
+    } catch (periodError) {
+      if (periodError instanceof CommissionPeriodError) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: periodError.message },
+          },
+          { status: 400 },
+        );
+      }
+      throw periodError;
+    }
 
-    const summaries = await getCommissionSummaryForTenant(tenantId, periodStart, periodEnd);
+    const summaries = await getCommissionSummaryForTenant(
+      tenantId,
+      range.periodStart,
+      range.periodEnd,
+    );
 
     return NextResponse.json({ success: true, data: summaries });
   } catch (error) {

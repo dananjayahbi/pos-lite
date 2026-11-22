@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useCartStore } from '@/stores/cartStore';
+import type { TaxRuleValue } from '@/lib/constants/product-options';
 
 const INTER_KEY_THRESHOLD_MS = 50;
 const FLUSH_TIMEOUT_MS = 100;
@@ -26,6 +27,8 @@ interface BarcodeScanResult {
   retailPrice: number;
   stockQuantity: number;
   productName: string;
+  categoryId?: string | null;
+  taxRule?: TaxRuleValue | null;
 }
 
 interface UseBarcodeScanner {
@@ -86,14 +89,22 @@ export function useBarcodeScanToCart(onScan?: (productName: string, variantDescr
           return { ok: false, productName: data.productName, variantDescription };
         }
 
-        addItem({
+        const addResult = addItem({
           variantId: data.id,
           productName: data.productName,
           variantDescription,
           sku: data.sku,
           unitPrice: Number(data.retailPrice),
           quantity: 1,
+          stockQuantity: data.stockQuantity,
+          taxRule: data.taxRule ?? 'STANDARD_VAT',
+          ...(data.categoryId ? { categoryId: data.categoryId } : {}),
         });
+        if (addResult.limited) {
+          toast.warning(
+            `Only ${data.stockQuantity} in stock: ${data.productName}${variantDescription !== 'Default' ? ` (${variantDescription})` : ''}`,
+          );
+        }
 
         onScan?.(data.productName, variantDescription);
         return { ok: true, productName: data.productName, variantDescription };

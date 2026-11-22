@@ -5,10 +5,20 @@ import type { DiscountType, Prisma } from '@/generated/prisma/client';
 import { adjustStockInTx } from '@/lib/services/inventory.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { computePurchaseOrderTotals } from '@/lib/services/purchaseOrderTotals';
+import { computePurchaseOrderPayable } from '@/lib/services/purchaseOrderPayable.core';
+import { computePurchaseOrderPaymentState } from '@/lib/services/purchaseOrderPaymentState.core';
+import { buildPurchaseOrderDateRange } from '@/lib/services/purchaseOrderDateRange.core';
+import { purchaseOrderDeliveryDateError } from '@/lib/services/purchaseOrderDelivery.core';
+import {
+  canCancelPurchaseOrder,
+  isPurchaseOrderFinanciallyLocked,
+} from '@/lib/services/purchaseOrderPermissions.core';
 import {
   generatePurchaseOrderReference,
   isPurchaseOrderReferenceTaken,
 } from '@/lib/services/purchaseOrderReference';
+import { purchaseOrderAuditSnapshot } from '@/lib/services/purchaseOrderAudit.core';
+import { AUDIT_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
 // ── Private Helpers ──────────────────────────────────────────────────────────
 
 function buildVariantDescription(variant: {
@@ -53,7 +63,12 @@ interface CreatePOInput {
 
 const MAX_REFERENCE_ATTEMPTS = 5;
 
-export async function createPO(tenantId: string, createdById: string, input: CreatePOInput) {
+export async function createPO(
+  tenantId: string,
+  createdById: string,
+  input: CreatePOInput,
+  actorRole = 'USER',
+) {
   if (input.lines.length === 0) {
     throw new Error('At least one line is required');
   }
@@ -110,6 +125,10 @@ export async function createPO(tenantId: string, createdById: string, input: Cre
 
   const orderDate = input.orderDate ? new Date(input.orderDate) : new Date();
 
+  // ARGUS #233: delivery must be on/after the order date.
+  const deliveryError = purchaseOrderDeliveryDateError(orderDate, input.expectedDeliveryDate);
+  if (deliveryError) throw new Error(deliveryError);
+
   const customReference = input.referenceNo?.trim();
 
   // A user-typed reference must be unique; a generated one can lose a race with
@@ -125,7 +144,7 @@ export async function createPO(tenantId: string, createdById: string, input: Cre
     }
 
     try {
-      return await prisma.purchaseOrder.create({
+      const created = await prisma.purchaseOrder.create({
         data: {
           tenantId,
           referenceNo,
@@ -155,6 +174,18 @@ export async function createPO(tenantId: string, createdById: string, input: Cre
           supplier: true,
         },
       });
+
+      await createAuditLog({
+        tenantId,
+        actorId: createdById,
+        actorRole,
+        entityType: 'PurchaseOrder',
+        entityId: created.id,
+        action: AUDIT_ACTIONS.PURCHASE_ORDER_CREATED,
+        after: purchaseOrderAuditSnapshot(created),
+      });
+
+      return created;
     } catch (error) {
       const isReferenceCollision =
         !customReference &&
@@ -180,6 +211,7 @@ export async function getPOById(tenantId: string, poId: string) {
       supplier: true,
       tenant: { select: { name: true } },
       createdBy: { select: { id: true, email: true } },
+      payments: { select: { amount: true } },
       lines: {
         include: {
           variant: {
@@ -202,8 +234,31 @@ export async function getPOById(tenantId: string, poId: string) {
     throw new Error('Purchase order not found');
   }
 
+  const costing = computePurchaseOrderPayable(po.lines, po.discountAmount, po.totalAmount);
+  const paidTotal = po.payments
+    .reduce((sum, payment) => sum.plus(payment.amount), new Decimal(0))
+    .toDecimalPlaces(2)
+    .toNumber();
+
+  const paymentSummary = computePurchaseOrderPaymentState(costing.payable, paidTotal);
+
   return {
     ...po,
+    /** Money already applied to this order (ARGUS #226). */
+    paidTotal,
+    hasPayments: paidTotal > 0,
+    /** Paid/outstanding/Paid-Partially paid-Unpaid state (ARGUS #228). */
+    outstanding: paymentSummary.outstanding,
+    paymentState: paymentSummary.state,
+    /**
+     * What the order owes right now: the received value once goods arrive,
+     * otherwise the expected total (ARGUS #225). The payment API and UI use
+     * this instead of the expected `totalAmount`.
+     */
+    payableAmount: costing.payable,
+    receivedValue: costing.receivedSubtotal,
+    /** Expected value of the ordered lines (before the discount). */
+    expectedSubtotal: costing.expectedSubtotal,
     /**
      * Whether the ordered lines may still be rewritten. Receiving goods creates
      * stock movements and per-line received quantities, so the line set freezes
@@ -238,11 +293,12 @@ export async function getPOs(tenantId: string, options: GetPOsOptions) {
   if (options.status !== undefined) {
     where.status = options.status;
   }
-  if (options.from !== undefined || options.to !== undefined) {
-    const createdAt: Record<string, Date> = {};
-    if (options.from !== undefined) createdAt.gte = new Date(options.from);
-    if (options.to !== undefined) createdAt.lte = new Date(options.to + 'T23:59:59.999Z');
-    where.createdAt = createdAt;
+  // ARGUS #230: the table shows Order Date, so the filter must compare that
+  // column, with both local day edges inclusive. Filtering the UTC createdAt
+  // made a 29 Oct order created late on 28 Oct UTC vanish from 29 Oct results.
+  const orderDateRange = buildPurchaseOrderDateRange(options.from, options.to);
+  if (orderDateRange) {
+    where.orderDate = orderDateRange;
   }
 
   const [purchaseOrders, total] = await Promise.all([
@@ -251,6 +307,15 @@ export async function getPOs(tenantId: string, options: GetPOsOptions) {
       include: {
         supplier: { select: { name: true } },
         _count: { select: { lines: true } },
+        lines: {
+          select: {
+            orderedQty: true,
+            receivedQty: true,
+            expectedCostPrice: true,
+            actualCostPrice: true,
+          },
+        },
+        payments: { select: { amount: true } },
       },
       orderBy: { createdAt: 'desc' },
       skip,
@@ -260,7 +325,24 @@ export async function getPOs(tenantId: string, options: GetPOsOptions) {
   ]);
 
   return {
-    purchaseOrders,
+    purchaseOrders: purchaseOrders.map(({ payments, ...po }) => {
+      const costing = computePurchaseOrderPayable(po.lines, po.discountAmount, po.totalAmount);
+      const paidTotal = payments
+        .reduce((sum, payment) => sum.plus(payment.amount), new Decimal(0))
+        .toDecimalPlaces(2)
+        .toNumber();
+      const paymentSummary = computePurchaseOrderPaymentState(costing.payable, paidTotal);
+
+      return {
+        ...po,
+        payableAmount: costing.payable,
+        receivedValue: costing.receivedSubtotal,
+        /** Money applied across instalments (ARGUS #228). */
+        paidTotal: paymentSummary.paidTotal,
+        outstanding: paymentSummary.outstanding,
+        paymentState: paymentSummary.state,
+      };
+    }),
     total,
     page,
     totalPages: Math.ceil(total / limit),
@@ -269,7 +351,13 @@ export async function getPOs(tenantId: string, options: GetPOsOptions) {
 
 // ── Update PO Status ─────────────────────────────────────────────────────────
 
-export async function updatePOStatus(tenantId: string, poId: string, newStatus: POStatus) {
+export async function updatePOStatus(
+  tenantId: string,
+  poId: string,
+  newStatus: POStatus,
+  actorId?: string | undefined,
+  actorRole = 'USER',
+) {
   const po = await prisma.purchaseOrder.findFirst({
     where: { id: poId, tenantId },
   });
@@ -283,10 +371,25 @@ export async function updatePOStatus(tenantId: string, poId: string, newStatus: 
     throw new Error(`Cannot transition from ${po.status} to ${newStatus}`);
   }
 
-  return prisma.purchaseOrder.update({
+  const updated = await prisma.purchaseOrder.update({
     where: { id: poId },
     data: { status: newStatus },
   });
+
+  // Sending (DRAFT -> SENT) and any future transition are one lifecycle event
+  // type: PO_STATUS_CHANGED (ARGUS #229).
+  await createAuditLog({
+    tenantId,
+    actorId: actorId ?? null,
+    actorRole,
+    entityType: 'PurchaseOrder',
+    entityId: poId,
+    action: AUDIT_ACTIONS.PO_STATUS_CHANGED,
+    before: { status: po.status },
+    after: { status: updated.status, referenceNo: updated.referenceNo },
+  });
+
+  return updated;
 }
 
 // ── Update PO (draft / sent only) ────────────────────────────────────────────
@@ -312,6 +415,8 @@ export async function updatePO(
     paymentAccountId?: string | null | undefined;
     lines?: Array<{ variantId: string; orderedQty: number; expectedCostPrice: number }> | undefined;
   },
+  actorId?: string | undefined,
+  actorRole = 'USER',
 ) {
   const po = await prisma.purchaseOrder.findFirst({
     where: { id: poId, tenantId },
@@ -328,6 +433,47 @@ export async function updatePO(
   // receiving already moved stock.
   if (po.status === POStatus.CANCELLED) {
     throw new Error('A cancelled purchase order cannot be edited');
+  }
+
+  // ARGUS #233: validate the effective pair, so editing just one side still
+  // cannot leave a delivery before the order date.
+  const effectiveOrderDate = input.orderDate ? new Date(input.orderDate) : po.orderDate;
+  const effectiveDelivery =
+    input.expectedDeliveryDate !== undefined
+      ? input.expectedDeliveryDate
+        ? new Date(input.expectedDeliveryDate)
+        : null
+      : po.expectedDeliveryDate;
+  const deliveryError = purchaseOrderDeliveryDateError(
+    effectiveOrderDate,
+    effectiveDelivery,
+  );
+  if (deliveryError) throw new Error(deliveryError);
+
+  // Once money has been applied, the figures a payment was based on are frozen.
+  // Changing the discount/lines/terms afterwards left `paidAt` and the paid
+  // amount describing a different order (ARGUS #226).
+  const paidAggregate = await prisma.purchaseOrderPayment.aggregate({
+    where: { tenantId, purchaseOrderId: poId },
+    _sum: { amount: true },
+  });
+  const paidTotal = new Decimal(paidAggregate._sum.amount ?? 0);
+  if (isPurchaseOrderFinanciallyLocked(paidTotal.toNumber())) {
+    const financialChanged =
+      (input.discountType !== undefined && (input.discountType ?? null) !== po.discountType) ||
+      (input.discountValue !== undefined &&
+        new Decimal(input.discountValue).toDecimalPlaces(4).toNumber() !==
+          Number(po.discountValue)) ||
+      (input.paymentTermDays !== undefined && input.paymentTermDays !== po.paymentTermDays) ||
+      (input.paymentAccountId !== undefined &&
+        (input.paymentAccountId ?? null) !== po.paymentAccountId) ||
+      input.lines !== undefined;
+
+    if (financialChanged) {
+      throw new Error(
+        'A paid purchase order cannot change its discount, lines, terms or payment account - record a refund or adjustment instead',
+      );
+    }
   }
 
   if (input.lines) {
@@ -409,7 +555,7 @@ export async function updatePO(
     { discountType: discountType ?? null, discountValue },
   );
 
-  return prisma.purchaseOrder.update({
+  const updated = await prisma.purchaseOrder.update({
     where: { id: poId },
     data: {
       ...(input.referenceNo !== undefined ? { referenceNo: input.referenceNo } : {}),
@@ -437,11 +583,29 @@ export async function updatePO(
     },
     include: { lines: true, supplier: true },
   });
+
+  await createAuditLog({
+    tenantId,
+    actorId: actorId ?? null,
+    actorRole,
+    entityType: 'PurchaseOrder',
+    entityId: poId,
+    action: AUDIT_ACTIONS.PURCHASE_ORDER_UPDATED,
+    before: purchaseOrderAuditSnapshot(po),
+    after: purchaseOrderAuditSnapshot(updated),
+  });
+
+  return updated;
 }
 
 // ── Cancel PO ────────────────────────────────────────────────────────────────
 
-export async function cancelPO(tenantId: string, poId: string) {
+export async function cancelPO(
+  tenantId: string,
+  poId: string,
+  actorId?: string | undefined,
+  actorRole = 'USER',
+) {
   const po = await prisma.purchaseOrder.findFirst({
     where: { id: poId, tenantId },
   });
@@ -450,14 +614,41 @@ export async function cancelPO(tenantId: string, poId: string) {
     throw new Error('Purchase order not found');
   }
 
-  if (po.status !== POStatus.DRAFT && po.status !== POStatus.SENT) {
-    throw new Error(`Cannot cancel a purchase order with status ${po.status}`);
+  if (!canCancelPurchaseOrder(po.status)) {
+    throw new Error(
+      `Cannot cancel a purchase order with status ${po.status} - cancel is only available before goods are received`,
+    );
   }
 
-  return prisma.purchaseOrder.update({
+  // Cancelling after money has been applied would leave the payment row and its
+  // ledger credit orphaned with no refund (ARGUS #226).
+  const paidAggregate = await prisma.purchaseOrderPayment.aggregate({
+    where: { tenantId, purchaseOrderId: poId },
+    _sum: { amount: true },
+  });
+  if (isPurchaseOrderFinanciallyLocked(Number(paidAggregate._sum.amount ?? 0))) {
+    throw new Error(
+      'Cannot cancel a purchase order with payments recorded - refund or reverse the payments first',
+    );
+  }
+
+  const cancelled = await prisma.purchaseOrder.update({
     where: { id: poId },
     data: { status: POStatus.CANCELLED },
   });
+
+  await createAuditLog({
+    tenantId,
+    actorId: actorId ?? null,
+    actorRole,
+    entityType: 'PurchaseOrder',
+    entityId: poId,
+    action: AUDIT_ACTIONS.PURCHASE_ORDER_CANCELLED,
+    before: { status: po.status, referenceNo: po.referenceNo },
+    after: { status: cancelled.status, referenceNo: cancelled.referenceNo },
+  });
+
+  return cancelled;
 }
 
 // ── Receive PO Lines ─────────────────────────────────────────────────────────
@@ -498,8 +689,9 @@ export async function receivePOLines(
   poId: string,
   input: ReceivePOLinesInput,
   actorId: string,
+  actorRole = 'USER',
 ) {
-  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const po = await tx.purchaseOrder.findFirst({
       where: { id: poId, tenantId },
       include: { lines: true },
@@ -695,9 +887,23 @@ export async function receivePOLines(
       newStatus = POStatus.PARTIALLY_RECEIVED;
     }
 
+    // The received value is now the payable (ARGUS #225). Re-sync the "paid"
+    // flag so a previously settled order that just received a higher invoice
+    // becomes unpaid again instead of claiming "Paid in full".
+    const costing = computePurchaseOrderPayable(updatedLines, po.discountAmount, po.totalAmount);
+    const paidAggregate = await tx.purchaseOrderPayment.aggregate({
+      where: { tenantId, purchaseOrderId: poId },
+      _sum: { amount: true },
+    });
+    const paidTotal = new Decimal(paidAggregate._sum.amount ?? 0);
+    const settled = costing.payable > 0 && paidTotal.greaterThanOrEqualTo(costing.payable);
+
     const updatedPO = await tx.purchaseOrder.update({
       where: { id: poId },
-      data: { status: newStatus },
+      data: {
+        status: newStatus,
+        paidAt: settled ? (po.paidAt ?? new Date()) : null,
+      },
       include: {
         lines: true,
         supplier: true,
@@ -705,11 +911,39 @@ export async function receivePOLines(
     });
 
     return {
-      updatedPO,
+      updatedPO: {
+        ...updatedPO,
+        payableAmount: costing.payable,
+        receivedValue: costing.receivedSubtotal,
+      },
       costPricesChanged,
       costPriceChangedCount: costPricesChanged.length,
+      /** Audit-only; stripped before the response is returned. */
+      previousStatus: po.status,
     };
   }, { timeout: 30000 });
+
+  const { previousStatus, ...response } = result;
+
+  await createAuditLog({
+    tenantId,
+    actorId,
+    actorRole,
+    entityType: 'PurchaseOrder',
+    entityId: poId,
+    action: AUDIT_ACTIONS.PO_STATUS_CHANGED,
+    before: { status: previousStatus },
+    after: {
+      status: result.updatedPO.status,
+      referenceNo: result.updatedPO.referenceNo,
+      receivedLines: input.receivedLines.map((line) => ({
+        lineId: line.lineId,
+        receivedQty: line.receivedQty,
+      })),
+    },
+  });
+
+  return response;
 }
 
 // ── Format PO for WhatsApp ───────────────────────────────────────────────────

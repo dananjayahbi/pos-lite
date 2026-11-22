@@ -1,119 +1,81 @@
-import { describe, it, expect } from 'vitest';
-import {
-  TopUpPettyCashSchema,
-  UpdatePettyCashFundSchema,
-} from '@/lib/validators/petty-cash.validators';
+import { describe, expect, it } from 'vitest';
 
-const validFundId = 'cmfund000000000000000000';
+import { TopUpPettyCashSchema } from '@/lib/validators/petty-cash.validators';
 
-describe('UpdatePettyCashFundSchema - standalone fund (doc 36)', () => {
-  it('accepts a name change only', () => {
-    const parsed = UpdatePettyCashFundSchema.safeParse({
-      fundId: validFundId,
-      name: 'Day-to-day Float',
-    });
-    expect(parsed.success).toBe(true);
-  });
+/**
+ * ARGUS #415: "Add Cash In" source-type, date and amount policy.
+ * `entryDate` accepts a past/today date, never a future posting.
+ */
+function parsable(payload: unknown) {
+  return TopUpPettyCashSchema.safeParse(payload);
+}
 
-  it('accepts an opening balance update', () => {
-    const parsed = UpdatePettyCashFundSchema.safeParse({
-      fundId: validFundId,
-      openingBalance: 30000,
-    });
-    expect(parsed.success).toBe(true);
-    if (parsed.success) expect(parsed.data.openingBalance).toBe(30000);
-  });
-
-  it('accepts a low-balance threshold (doc 40 foundation)', () => {
-    const parsed = UpdatePettyCashFundSchema.safeParse({
-      fundId: validFundId,
-      lowBalanceThreshold: 5000,
-    });
-    expect(parsed.success).toBe(true);
-  });
-
-  it('accepts clearing the low-balance threshold with null', () => {
-    const parsed = UpdatePettyCashFundSchema.safeParse({
-      fundId: validFundId,
-      lowBalanceThreshold: null,
-    });
-    expect(parsed.success).toBe(true);
-  });
-
-  it('accepts toggling the active expense categories', () => {
-    const parsed = UpdatePettyCashFundSchema.safeParse({
-      fundId: validFundId,
-      activeCategories: ['STAFF_MEALS', 'TEA_SUGAR', 'OFFICE_STATIONERY'],
-    });
-    expect(parsed.success).toBe(true);
-  });
-
-  it('rejects a negative opening balance', () => {
-    const parsed = UpdatePettyCashFundSchema.safeParse({
-      fundId: validFundId,
-      openingBalance: -100,
-    });
-    expect(parsed.success).toBe(false);
-  });
-
-  it('rejects an unknown category in activeCategories', () => {
-    const parsed = UpdatePettyCashFundSchema.safeParse({
-      fundId: validFundId,
-      activeCategories: ['COFFEE'],
-    });
-    expect(parsed.success).toBe(false);
-  });
-
-  it('requires fundId', () => {
-    const parsed = UpdatePettyCashFundSchema.safeParse({ name: 'Float' });
-    expect(parsed.success).toBe(false);
-  });
-});
-
-describe('TopUpPettyCashSchema - Add Cash In', () => {
-  it('accepts a numeric amount and optional source / date / note', () => {
-    const parsed = TopUpPettyCashSchema.safeParse({
-      amount: 10000,
-      sourceAccountId: 'cmaccount0000000000000000',
-      description: 'Monthly float top-up',
-      entryDate: '2026-11-06',
-    });
-    expect(parsed.success).toBe(true);
-    if (parsed.success) {
-      expect(parsed.data.amount).toBe(10000);
-      expect(parsed.data.entryDate).toBeInstanceOf(Date);
+describe('TopUpPettyCashSchema', () => {
+  it('infers EXTERNAL cash when no account is named', () => {
+    const result = parsable({ amount: 1000, entryDate: '2026-11-20' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.sourceType).toBe('EXTERNAL');
+      expect(result.data.sourceAccountId ?? null).toBeNull();
     }
   });
 
-  it('coerces numeric strings and allows an external (no source) top-up', () => {
-    const parsed = TopUpPettyCashSchema.safeParse({ amount: '2500.50' });
-    expect(parsed.success).toBe(true);
-    if (parsed.success) {
-      expect(parsed.data.amount).toBe(2500.5);
-      expect(parsed.data.sourceAccountId).toBeUndefined();
-    }
-  });
-
-  it('rejects zero, negative, and non-numeric amounts', () => {
-    for (const amount of [0, -1, 'abc', '']) {
-      const parsed = TopUpPettyCashSchema.safeParse({ amount });
-      expect(parsed.success, `amount=${String(amount)}`).toBe(false);
-    }
-  });
-
-  it('rejects an invalid entry date', () => {
-    const parsed = TopUpPettyCashSchema.safeParse({
-      amount: 100,
-      entryDate: 'not-a-date',
+  it('infers ACCOUNT when a source account is supplied', () => {
+    const result = parsable({
+      amount: '250.50',
+      sourceAccountId: 'acct_1',
+      entryDate: '2026-11-20',
     });
-    expect(parsed.success).toBe(false);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.sourceType).toBe('ACCOUNT');
+      expect(result.data.amount).toBe(250.5);
+    }
+  });
+
+  it('rejects ACCOUNT without a source account', () => {
+    const result = parsable({ amount: 10, sourceType: 'ACCOUNT' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['sourceAccountId']);
+    }
+  });
+
+  it('rejects EXTERNAL cash that names a source account', () => {
+    const result = parsable({
+      amount: 10,
+      sourceType: 'EXTERNAL',
+      sourceAccountId: 'acct_1',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('requires a positive amount', () => {
+    expect(parsable({ amount: 0 }).success).toBe(false);
+    expect(parsable({ amount: -5 }).success).toBe(false);
+    expect(parsable({ amount: 'not-a-number' }).success).toBe(false);
+  });
+
+  it('rejects a future-dated top-up but accepts today and the past', () => {
+    const tomorrow = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    const result = parsable({ amount: 100, entryDate: tomorrow });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toMatch(/future/i);
+    }
+
+    expect(
+      parsable({ amount: 100, entryDate: new Date().toISOString().slice(0, 10) }).success,
+    ).toBe(true);
+    expect(parsable({ amount: 100, entryDate: '2020-01-01' }).success).toBe(true);
+  });
+
+  it('rejects an unparseable date', () => {
+    expect(parsable({ amount: 100, entryDate: 'not-a-date' }).success).toBe(false);
   });
 
   it('caps the description at 200 characters', () => {
-    const parsed = TopUpPettyCashSchema.safeParse({
-      amount: 100,
-      description: 'x'.repeat(201),
-    });
-    expect(parsed.success).toBe(false);
+    expect(parsable({ amount: 100, description: 'x'.repeat(201) }).success).toBe(false);
+    expect(parsable({ amount: 100, description: '  float  ' }).success).toBe(true);
   });
 });

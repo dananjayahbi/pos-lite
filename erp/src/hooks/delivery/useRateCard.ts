@@ -2,6 +2,17 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import {
+  EMPTY_RATE_CARD_META,
+  type RateCardMeta,
+} from '@/lib/delivery/rateCardMeta.core';
+
+interface RateCardResponse {
+  success?: boolean;
+  data?: unknown;
+  error?: { message?: string };
+  meta?: { rateCardMeta?: RateCardMeta };
+}
 
 export function useRateCard() {
   const queryClient = useQueryClient();
@@ -10,10 +21,25 @@ export function useRateCard() {
     queryKey: ['ratecard'],
     queryFn: async () => {
       const res = await fetch('/api/store/delivery/ratecard');
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error?.message ?? 'Failed to fetch rate card');
-      return json.data;
+      const json = (await res.json().catch(() => null)) as RateCardResponse | null;
+
+      // ARGUS #289: the API intentionally returns `200 { data: null }` when a
+      // tenant has no card. A 404 therefore means the route/deployment is
+      // broken, not "create your first card" — surface it as a load error.
+      if (res.status === 404) {
+        throw new Error('Rate card service was not found. Retry or contact support.');
+      }
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? 'Failed to fetch rate card');
+      }
+      return {
+        card: json.data ?? null,
+        meta: json.meta?.rateCardMeta ?? EMPTY_RATE_CARD_META,
+      };
     },
+    // One retry smooths a transient blip without hiding a hard failure behind
+    // a long retry backoff; the page also offers an explicit Retry.
+    retry: 1,
     staleTime: 60_000,
   });
 
@@ -50,12 +76,22 @@ export function useRateCard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ratecard'] });
-      toast.success('Rate entries saved');
+      toast.success('Zone overrides saved');
     },
     onError: (error: Error) => {
       toast.error(error.message);
     },
   });
 
-  return { data: query.data, isLoading: query.isLoading, save, saveEntries };
+  return {
+    data: query.data?.card ?? null,
+    meta: query.data?.meta ?? EMPTY_RATE_CARD_META,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
+    isFetching: query.isFetching,
+    refetch: query.refetch,
+    save,
+    saveEntries,
+  };
 }

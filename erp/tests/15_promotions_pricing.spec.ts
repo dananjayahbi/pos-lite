@@ -360,7 +360,7 @@ test.describe('Module 15 - Promotions, Discounts & Customer Pricing', () => {
     state.promotionIds.push(promotion.id);
     const other = await browser.newPage();
     await login(other, TENANT_TWO);
-    expect((await other.request.patch(`/api/store/promotions/${promotion.id}`, { data: { value: 2 } })).status()).toBe(500);
+    expect((await other.request.patch(`/api/store/promotions/${promotion.id}`, { data: { value: 2 } })).status()).toBe(404);
     const foreignEvaluate = await evaluate(other, state.variant);
     expect(foreignEvaluate.result.data.appliedDiscounts.some((d: any) => d.promotionId === promotion.id)).toBe(false);
     await other.close();
@@ -447,9 +447,9 @@ test.describe('Module 15 - Promotions, Discounts & Customer Pricing', () => {
     const response = await post(page, '/api/store/promotions', {
       name: `M15 Bad Date ${RUN}`, type: 'CART_PERCENTAGE', value: 4, startsAt: 'not-a-date',
     });
-    // Defect pin: Date parsing currently reaches Prisma and may surface as 500.
-    expect([400, 500]).toContain(response.status());
-    if (response.status() === 201) state.promotionIds.push((await body(response)).data.id);
+    // ARGUS #328: typed client-input error, never a Prisma-backed 500.
+    expect(response.status()).toBe(400);
+    expect((await body(response)).error.code).toBe('VALIDATION_ERROR');
   });
 
   test('F10 promotions page content fills the available width like other store pages', async ({ page }) => {

@@ -3,6 +3,7 @@ import {
   DEFAULT_LANKA_QR_INSTRUCTIONS,
   DEFAULT_LANKA_QR_SETTINGS,
   isRenderableQrImageUrl,
+  lankaQrTenderRejection,
   parseLankaQrSettings,
   readLankaQrSettingsFromTenantSettings,
 } from '@/lib/payments/lanka-qr-config';
@@ -46,10 +47,35 @@ describe('parseLankaQrSettings', () => {
       referenceRequired: 'true',
     });
 
-    expect(parsed.enabled).toBe(true);
+    expect(parsed.enabled).toBe(false);
     expect(parsed.merchantName).toBe('');
     expect(parsed.instructions).toBe(DEFAULT_LANKA_QR_INSTRUCTIONS);
     expect(parsed.referenceRequired).toBe(false);
+  });
+
+  it('only reports enabled when the merchant can actually be scanned', () => {
+    expect(parseLankaQrSettings({ enabled: true }).enabled).toBe(false);
+    expect(
+      parseLankaQrSettings({
+        enabled: true,
+        merchantName: 'AyurPOS',
+        qrImageUrl: 'https://cdn.example.com/qr.png',
+      }).enabled,
+    ).toBe(true);
+    expect(
+      parseLankaQrSettings({
+        enabled: true,
+        merchantName: 'AyurPOS',
+        qrImageUrl: '',
+      }).enabled,
+    ).toBe(false);
+    expect(
+      parseLankaQrSettings({
+        enabled: true,
+        merchantName: '',
+        qrImageUrl: 'https://cdn.example.com/qr.png',
+      }).enabled,
+    ).toBe(false);
   });
 
   it('truncates over-long strings instead of throwing', () => {
@@ -93,5 +119,59 @@ describe('isRenderableQrImageUrl', () => {
     expect(isRenderableQrImageUrl('uploads/qr.png')).toBe(false);
     expect(isRenderableQrImageUrl('javascript:alert(1)')).toBe(false);
     expect(isRenderableQrImageUrl('ftp://cdn.example.com/qr.png')).toBe(false);
+  });
+});
+
+describe('lankaQrTenderRejection (ARGUS #72)', () => {
+  const configured = parseLankaQrSettings({
+    enabled: true,
+    merchantName: 'AyurPOS',
+    qrImageUrl: 'https://cdn.example.com/qr.png',
+    allowSplit: true,
+  });
+
+  it('ignores tenders that do not use LankaQR', () => {
+    expect(lankaQrTenderRejection({ paymentMethod: 'CASH' }, DEFAULT_LANKA_QR_SETTINGS)).toBeNull();
+    expect(lankaQrTenderRejection({ paymentMethod: 'SPLIT', splitLegMethod: 'CARD' }, DEFAULT_LANKA_QR_SETTINGS)).toBeNull();
+  });
+
+  it('blocks a direct LankaQR sale when no QR image is configured', () => {
+    const unconfigured = parseLankaQrSettings({ enabled: true, merchantName: 'AyurPOS', qrImageUrl: '' });
+    expect(lankaQrTenderRejection({ paymentMethod: 'LANKAQR' }, unconfigured)).toMatch(/not configured/i);
+    expect(lankaQrTenderRejection({ paymentMethod: 'LANKAQR' }, DEFAULT_LANKA_QR_SETTINGS)).toMatch(/not configured/i);
+  });
+
+  it('blocks a split LankaQR leg when no QR image is configured', () => {
+    const unconfigured = parseLankaQrSettings({ enabled: true, merchantName: 'AyurPOS', qrImageUrl: '' });
+    expect(
+      lankaQrTenderRejection({ paymentMethod: 'SPLIT', splitLegMethod: 'LANKAQR' }, unconfigured),
+    ).toMatch(/not configured/i);
+  });
+
+  it('blocks a disabled or split-disallowed LankaQR tender', () => {
+    expect(
+      lankaQrTenderRejection(
+        { paymentMethod: 'LANKAQR' },
+        parseLankaQrSettings({ enabled: false, merchantName: 'AyurPOS', qrImageUrl: 'https://cdn.example.com/qr.png' }),
+      ),
+    ).toMatch(/disabled/i);
+    expect(
+      lankaQrTenderRejection(
+        { paymentMethod: 'SPLIT', splitLegMethod: 'LANKAQR' },
+        parseLankaQrSettings({
+          enabled: true,
+          merchantName: 'AyurPOS',
+          qrImageUrl: 'https://cdn.example.com/qr.png',
+          allowSplit: false,
+        }),
+      ),
+    ).toMatch(/split payment/i);
+  });
+
+  it('allows a configured tender, including an allowed split leg', () => {
+    expect(lankaQrTenderRejection({ paymentMethod: 'LANKAQR' }, configured)).toBeNull();
+    expect(
+      lankaQrTenderRejection({ paymentMethod: 'SPLIT', splitLegMethod: 'LANKAQR' }, configured),
+    ).toBeNull();
   });
 });

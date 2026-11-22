@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Loader2,
   ClipboardList,
+  ClipboardCheck,
   ArrowLeft,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -37,33 +38,24 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useStockTakeSession, type StockTakeItemDetail } from '@/hooks/useStockTakeSession';
+import { canCompleteStockTake, canEditStockTake } from '@/lib/services/stockTakePolicy.core';
+import { parseStockTakeCountInput } from '@/lib/services/stockTakeCount.core';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 
 interface StockTakeSessionProps {
   sessionId: string;
   permissions: string[];
+  userId: string;
 }
 
 const PAGE_SIZE = 25;
 
 function formatDateTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  return (
-    d.toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }) +
-    ', ' +
-    d.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
-  );
+  return formatStockMovementTimestamp(dateStr);
 }
 
-export function StockTakeSession({ sessionId, permissions }: StockTakeSessionProps) {
+export function StockTakeSession({ sessionId, permissions, userId }: StockTakeSessionProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: sessionRes, isLoading } = useStockTakeSession(sessionId);
@@ -82,6 +74,19 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
   const stockSession = sessionRes?.data;
   const items = stockSession?.items ?? [];
   const isInProgress = stockSession?.status === 'IN_PROGRESS';
+  // ARGUS #205 — count inputs exist only for users who may count, and only
+  // while the session is open; completion is the initiator's step.
+  const canCount = canEditStockTake({
+    status: stockSession?.status,
+    canConduct: canManage,
+  });
+  const canComplete = canCompleteStockTake({
+    status: stockSession?.status,
+    userId,
+    initiatedById: stockSession?.initiatedById ?? '',
+    canConduct: canManage,
+    canApprove: permissions.includes('stock:take:approve'),
+  });
 
   const countedCount = items.filter((i) => i.countedQuantity !== null).length;
   const totalCount = items.length;
@@ -97,10 +102,10 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
 
   // Focus scan input on mount
   useEffect(() => {
-    if (isInProgress) {
+    if (canCount) {
       scanInputRef.current?.focus();
     }
-  }, [isInProgress]);
+  }, [canCount]);
 
   // Clear scan error after 4 seconds
   useEffect(() => {
@@ -156,8 +161,8 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
   );
 
   const handleItemUpdate = useCallback(
-    async (item: StockTakeItemDetail, countedQuantity: number) => {
-      if (isNaN(countedQuantity) || countedQuantity < 0) return;
+    async (item: StockTakeItemDetail, countedQuantity: number | null) => {
+      if (!canCount) return;
 
       try {
         const res = await fetch(
@@ -180,11 +185,12 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
         toast.error('Failed to save count');
       }
     },
-    [sessionId, queryClient],
+    [sessionId, queryClient, canCount],
   );
 
   const handleRecountToggle = useCallback(
     async (item: StockTakeItemDetail, checked: boolean) => {
+      if (!canCount) return;
       try {
         const res = await fetch(
           `/api/store/stock-control/stock-takes/${sessionId}/items/${item.id}`,
@@ -205,7 +211,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
         toast.error('Failed to update recount flag');
       }
     },
-    [sessionId, queryClient],
+    [sessionId, queryClient, canCount],
   );
 
   const handleCompleteClick = useCallback(() => {
@@ -369,8 +375,20 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
         </CardContent>
       </Card>
 
+      {/* Role / status notices (ARGUS #205) */}
+      {isInProgress && !canCount && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 font-body text-sm text-amber-800">
+          View only - you do not have permission to change counted quantities.
+        </div>
+      )}
+      {isInProgress && canManage && !canComplete && (
+        <div className="rounded-lg border border-sand/40 bg-pearl px-4 py-3 font-body text-sm text-mist-ink">
+          Only the staff member who started this count can submit it for approval.
+        </div>
+      )}
+
       {/* Barcode Scan Input */}
-      {isInProgress && (
+      {canCount && (
         <div className="relative">
           <div className="flex items-center gap-3">
             <div className="relative flex-1">
@@ -422,7 +440,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
               <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider text-center">
                 Discrepancy
               </TableHead>
-              {isInProgress && (
+              {canCount && (
                 <TableHead className="font-body text-xs text-mist-ink uppercase tracking-wider text-center">
                   Recount
                 </TableHead>
@@ -466,18 +484,29 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
                     {item.systemQuantity}
                   </TableCell>
                   <TableCell className="text-center">
-                    {isInProgress ? (
+                    {canCount ? (
                       <Input
                         type="number"
                         min={0}
                         step={1}
                         defaultValue={item.countedQuantity ?? ''}
                         onBlur={(e) => {
-                          const val = e.target.value;
-                          if (val === '') return;
-                          const num = parseInt(val, 10);
-                          if (num !== item.countedQuantity) {
-                            handleItemUpdate(item, num);
+                          const parsedCount = parseStockTakeCountInput(e.target.value);
+                          if (parsedCount.kind === 'invalid') {
+                            // ARGUS #208: tell the operator instead of silently
+                            // dropping the entry and keeping the old count.
+                            toast.error(parsedCount.message);
+                            e.target.value = String(item.countedQuantity ?? '');
+                            return;
+                          }
+                          if (parsedCount.kind === 'clear') {
+                            if (item.countedQuantity !== null) {
+                              void handleItemUpdate(item, null);
+                            }
+                            return;
+                          }
+                          if (parsedCount.value !== item.countedQuantity) {
+                            void handleItemUpdate(item, parsedCount.value);
                           }
                         }}
                         className="mx-auto h-8 w-20 text-center font-mono text-sm border-sand focus-visible:ring-espresso"
@@ -499,7 +528,7 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
                       <span className="text-red-600">{item.discrepancy}</span>
                     )}
                   </TableCell>
-                  {isInProgress && (
+                  {canCount && (
                     <TableCell className="text-center">
                       <Checkbox
                         checked={item.isRecounted}
@@ -555,17 +584,12 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
           {lastSaved && (
             <span>
               Last saved:{' '}
-              {lastSaved.toLocaleTimeString('en-US', {
-                hour: 'numeric',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: true,
-              })}
+              {formatStockMovementTimestamp(lastSaved)}
             </span>
           )}
         </div>
 
-        {isInProgress && canManage && (
+        {canComplete && (
           <Button
             onClick={handleCompleteClick}
             disabled={completing}
@@ -573,6 +597,15 @@ export function StockTakeSession({ sessionId, permissions }: StockTakeSessionPro
           >
             <CheckCircle2 className="mr-2 h-4 w-4" />
             Complete Session
+          </Button>
+        )}
+
+        {stockSession.status === 'PENDING_APPROVAL' && (
+          <Button asChild className="bg-espresso text-pearl hover:bg-espresso/90">
+            <Link href={`/stock-control/stock-takes/${sessionId}/review`}>
+              <ClipboardCheck className="mr-2 h-4 w-4" />
+              Review Session
+            </Link>
           </Button>
         )}
       </div>

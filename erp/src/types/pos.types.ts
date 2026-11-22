@@ -7,8 +7,12 @@ export interface CreateSalePayload {
     variantId: string;
     quantity: number;
     discountPercent: number;
+    /** Server re-resolves this; sent for diagnostics/evaluate parity. */
+    categoryId?: string | undefined;
   }>;
   cartDiscountAmount: number;
+  /** Manual cart discount before promotions; lets the API clamp correctly. */
+  manualCartDiscountAmount?: number | undefined;
   authorizingManagerId?: string;
   customerId?: string | undefined;
   /**
@@ -20,6 +24,8 @@ export interface CreateSalePayload {
   isGuestSale?: boolean | undefined;
   splitLegMethod?: 'CARD' | 'LANKAQR' | undefined;
   appliedStoreCredit?: string | undefined;
+  /** EXCHANGE return funding this replacement sale (ARGUS #93). */
+  linkedReturnId?: string | undefined;
   appliedPromotions?: unknown | undefined;
   promoCode?: string | undefined;
   // Doc 33 / 34: zero-value reason + linked original order reference.

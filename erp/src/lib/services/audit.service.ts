@@ -41,6 +41,9 @@ export const AUTH_ACTIONS = {
   // M01-02: forgot-password suppressed by the per-IP limiter (429 path).
   PASSWORD_RESET_THROTTLED: 'PASSWORD_RESET_THROTTLED',
   PASSWORD_RESET_COMPLETED: 'PASSWORD_RESET_COMPLETED',
+  PASSWORD_CHANGED: 'PASSWORD_CHANGED',
+  PASSWORD_CHANGE_FAILED: 'PASSWORD_CHANGE_FAILED',
+  PASSWORD_CHANGE_THROTTLED: 'PASSWORD_CHANGE_THROTTLED',
   SESSION_INVALIDATED_BY_VERSION_MISMATCH: 'SESSION_INVALIDATED_BY_VERSION_MISMATCH',
   FORCE_LOGOUT_TRIGGERED: 'FORCE_LOGOUT_TRIGGERED',
 } as const;
@@ -55,7 +58,13 @@ export const AUDIT_ACTIONS = {
   SALE_DETAILS_UPDATED: 'SALE_DETAILS_UPDATED',
   // Return
   RETURN_COMPLETED: 'RETURN_COMPLETED',
+  RETURN_CANCELLED: 'RETURN_CANCELLED',
   // Customer
+  CUSTOMER_CREATED: 'CUSTOMER_CREATED',
+  CUSTOMER_UPDATED: 'CUSTOMER_UPDATED',
+  CUSTOMER_DELETED: 'CUSTOMER_DELETED',
+  CUSTOMER_MERGED: 'CUSTOMER_MERGED',
+  CUSTOMER_IMPORTED: 'CUSTOMER_IMPORTED',
   CUSTOMER_CREDIT_ADJUSTED: 'CUSTOMER_CREDIT_ADJUSTED',
   // Purchase Order
   PURCHASE_ORDER_CREATED: 'PURCHASE_ORDER_CREATED',
@@ -66,19 +75,50 @@ export const AUDIT_ACTIONS = {
   // Staff
   STAFF_ROLE_CHANGED: 'STAFF_ROLE_CHANGED',
   STAFF_PERMISSION_CHANGED: 'STAFF_PERMISSION_CHANGED',
+  // ARGUS #340: creation, HR/contact/salary/bank edits, deactivation and
+  // commission-rate changes now carry an explicit action. The legacy generic
+  // action is retained so historical rows stay filterable.
+  STAFF_CREATED: 'STAFF_CREATED',
+  STAFF_UPDATED: 'STAFF_UPDATED',
+  STAFF_DEACTIVATED: 'STAFF_DEACTIVATED',
+  STAFF_REACTIVATED: 'STAFF_REACTIVATED',
+  STAFF_COMMISSION_RATE_CHANGED: 'STAFF_COMMISSION_RATE_CHANGED',
+  STAFF_DETAILS_UPDATED: 'STAFF_DETAILS_UPDATED',
+  // ARGUS #463: activating/deactivating an account is a security change with
+  // its own action (previously folded into the generic details row).
+  STAFF_STATUS_CHANGED: 'STAFF_STATUS_CHANGED',
   // Attendance / time clock
   ATTENDANCE_ADJUSTED: 'ATTENDANCE_ADJUSTED',
   ATTENDANCE_STATUS_SET: 'ATTENDANCE_STATUS_SET',
+  // ARGUS #357: every self-service clock-in/out, regardless of role.
+  ATTENDANCE_CLOCKED_IN: 'ATTENDANCE_CLOCKED_IN',
+  ATTENDANCE_CLOCKED_OUT: 'ATTENDANCE_CLOCKED_OUT',
+  // ARGUS #349: a manually added clock punch.
+  ATTENDANCE_PUNCH_ADDED: 'ATTENDANCE_PUNCH_ADDED',
+  // ARGUS #351: an open punch closed at the maximum-shift cap.
+  ATTENDANCE_PUNCH_AUTO_CAPPED: 'ATTENDANCE_PUNCH_AUTO_CAPPED',
+  // ARGUS #348: working-week/holiday calendar in Tenant.settings.attendance.
+  ATTENDANCE_CALENDAR_UPDATED: 'ATTENDANCE_CALENDAR_UPDATED',
   // M03-08 (GAP-2): admin set-password on a staff account.
   STAFF_PASSWORD_RESET: 'STAFF_PASSWORD_RESET',
   // Promotion
   PROMOTION_CREATED: 'PROMOTION_CREATED',
   PROMOTION_UPDATED: 'PROMOTION_UPDATED',
   PROMOTION_ARCHIVED: 'PROMOTION_ARCHIVED',
+  // ARGUS #325: explicit reactivation (distinct from PROMOTION_ARCHIVED).
+  PROMOTION_ACTIVATED: 'PROMOTION_ACTIVATED',
+  // ARGUS #331: customer-specific pricing rules are master data too.
+  CUSTOMER_PRICING_RULE_CREATED: 'CUSTOMER_PRICING_RULE_CREATED',
+  CUSTOMER_PRICING_RULE_UPDATED: 'CUSTOMER_PRICING_RULE_UPDATED',
+  CUSTOMER_PRICING_RULE_DEACTIVATED: 'CUSTOMER_PRICING_RULE_DEACTIVATED',
   // Stock
   STOCK_ADJUSTED: 'STOCK_ADJUSTED',
+  // ARGUS #211: session creation is an audited lifecycle event like approval,
+  // rejection and cancellation.
+  STOCK_TAKE_CREATED: 'STOCK_TAKE_CREATED',
   // Expense
   EXPENSE_CREATED: 'EXPENSE_CREATED',
+  EXPENSE_UPDATED: 'EXPENSE_UPDATED',
   EXPENSE_DELETED: 'EXPENSE_DELETED',
   // Petty Cash
   PETTY_CASH_FUND_CREATED: 'PETTY_CASH_FUND_CREATED',
@@ -97,15 +137,31 @@ export const AUDIT_ACTIONS = {
   COMMISSION_PAYOUT_CREATED: 'COMMISSION_PAYOUT_CREATED',
   // Payroll
   PAYROLL_RUN_GENERATED: 'PAYROLL_RUN_GENERATED',
+  PAYROLL_RUN_PAID: 'PAYROLL_RUN_PAID',
+  PAYROLL_RUN_VOIDED: 'PAYROLL_RUN_VOIDED',
+  PAYROLL_EXPORT_DOWNLOADED: 'PAYROLL_EXPORT_DOWNLOADED',
   PAYROLL_PAYSLIP_EMAILED: 'PAYROLL_PAYSLIP_EMAILED',
   PAYROLL_SETTINGS_UPDATED: 'PAYROLL_SETTINGS_UPDATED',
   // Settings
   SETTINGS_CHANGED: 'SETTINGS_CHANGED',
+  // Website CMS (ARGUS #498): config, slides and ads are destructive edits to
+  // the public storefront and each write gets its own action.
+  WEBSITE_CONFIG_UPDATED: 'WEBSITE_CONFIG_UPDATED',
+  WEBSITE_CONFIG_RESET: 'WEBSITE_CONFIG_RESET',
+  WEBSITE_HERO_SLIDE_CREATED: 'WEBSITE_HERO_SLIDE_CREATED',
+  WEBSITE_HERO_SLIDE_UPDATED: 'WEBSITE_HERO_SLIDE_UPDATED',
+  WEBSITE_HERO_SLIDE_DELETED: 'WEBSITE_HERO_SLIDE_DELETED',
+  WEBSITE_HERO_SLIDES_REPLACED: 'WEBSITE_HERO_SLIDES_REPLACED',
+  WEBSITE_AD_CREATED: 'WEBSITE_AD_CREATED',
+  WEBSITE_AD_UPDATED: 'WEBSITE_AD_UPDATED',
+  WEBSITE_AD_DELETED: 'WEBSITE_AD_DELETED',
+  WEBSITE_ADS_REPLACED: 'WEBSITE_ADS_REPLACED',
   // Delivery / Courier
   DELIVERY_CREATED: 'DELIVERY_CREATED',
   DELIVERY_UPDATED: 'DELIVERY_UPDATED',
   DELIVERY_CANCELED: 'DELIVERY_CANCELED',
   DELIVERY_DISPATCHED: 'DELIVERY_DISPATCHED',
+  DELIVERY_DISPATCH_ORPHANED: 'DELIVERY_DISPATCH_ORPHANED',
   DELIVERY_STATUS_CHANGED: 'DELIVERY_STATUS_CHANGED',
   DELIVERY_RECOVERY_LOGGED: 'DELIVERY_RECOVERY_LOGGED',
   DELIVERY_REDELIVERED: 'DELIVERY_REDELIVERED',
@@ -121,6 +177,8 @@ export const AUDIT_ACTIONS = {
   PACKAGING_CATEGORY_UPDATED: 'PACKAGING_CATEGORY_UPDATED',
   PACKAGING_CATEGORY_DELETED: 'PACKAGING_CATEGORY_DELETED',
   RECONCILIATION_IMPORTED: 'RECONCILIATION_IMPORTED',
+  /** ARGUS #511: historical delivered-COD ledger rows created by the backfill. */
+  RECONCILIATION_COD_BACKFILLED: 'RECONCILIATION_COD_BACKFILLED',
   // M26-02/OBS-40: dispute operations were all logged as RECONCILIATION_IMPORTED,
   // so the ledger could not tell open/update/resolve apart.
   RECONCILIATION_DISPUTE_OPENED: 'RECONCILIATION_DISPUTE_OPENED',
@@ -137,15 +195,28 @@ export const AUDIT_ACTIONS = {
   RAW_MATERIAL_UNIT_CREATED: 'RAW_MATERIAL_UNIT_CREATED',
   RAW_MATERIAL_UNIT_UPDATED: 'RAW_MATERIAL_UNIT_UPDATED',
   RAW_MATERIAL_UNIT_DELETED: 'RAW_MATERIAL_UNIT_DELETED',
+  // Saved reports (ARGUS #448)
+  SAVED_REPORT_CREATED: 'SAVED_REPORT_CREATED',
+  SAVED_REPORT_RENAMED: 'SAVED_REPORT_RENAMED',
+  SAVED_REPORT_DELETED: 'SAVED_REPORT_DELETED',
+  SAVED_REPORT_DOWNLOADED: 'SAVED_REPORT_DOWNLOADED',
   // Bill of Materials & Production (Factory)
   BOM_CREATED: 'BOM_CREATED',
+  BOM_RESTORED: 'BOM_RESTORED',
   BOM_UPDATED: 'BOM_UPDATED',
   BOM_DELETED: 'BOM_DELETED',
   PRODUCTION_LOGGED: 'PRODUCTION_LOGGED',
   // Product lifecycle (M02-03 — soft-delete recovery)
   PRODUCT_RESTORED: 'PRODUCT_RESTORED',
+  // Category lifecycle (ARGUS #172 — soft-delete recovery)
+  CATEGORY_RESTORED: 'CATEGORY_RESTORED',
   // Supplier lifecycle (M06-05 — archive recovery). Append-only.
   SUPPLIER_UNARCHIVED: 'SUPPLIER_UNARCHIVED',
+  // ARGUS #237: create/edit/archive were never audited, leaving the Supplier
+  // trail with restore events only.
+  SUPPLIER_CREATED: 'SUPPLIER_CREATED',
+  SUPPLIER_UPDATED: 'SUPPLIER_UPDATED',
+  SUPPLIER_ARCHIVED: 'SUPPLIER_ARCHIVED',
 } as const;
 
 export type AuthAction = (typeof AUTH_ACTIONS)[keyof typeof AUTH_ACTIONS];
@@ -164,30 +235,65 @@ export interface CreateAuditLogInput {
   userAgent?: string | undefined;
 }
 
+/**
+ * Build the Prisma payload once so the best-effort and transactional writers
+ * cannot drift. `null` before/after values are explicit JSON nulls, while an
+ * omitted field stays absent.
+ */
+export function buildAuditLogData(
+  input: CreateAuditLogInput,
+): Prisma.AuditLogUncheckedCreateInput {
+  const beforeData =
+    input.before === undefined ? undefined : input.before === null ? Prisma.JsonNull : input.before;
+  const afterData =
+    input.after === undefined ? undefined : input.after === null ? Prisma.JsonNull : input.after;
+
+  return {
+    tenantId: input.tenantId,
+    actorId: input.actorId,
+    actorRole: input.actorRole,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    action: input.action,
+    ...(beforeData !== undefined ? { before: beforeData } : {}),
+    ...(afterData !== undefined ? { after: afterData } : {}),
+    ...(input.ipAddress !== undefined ? { ipAddress: input.ipAddress } : {}),
+    ...(input.userAgent !== undefined ? { userAgent: input.userAgent } : {}),
+  };
+}
+
 export async function createAuditLog(input: CreateAuditLogInput): Promise<void> {
   try {
-    const beforeData =
-      input.before === undefined ? undefined : input.before === null ? Prisma.JsonNull : input.before;
-    const afterData =
-      input.after === undefined ? undefined : input.after === null ? Prisma.JsonNull : input.after;
-
-    await prisma.auditLog.create({
-      data: {
-        tenantId: input.tenantId,
-        actorId: input.actorId,
-        actorRole: input.actorRole,
-        entityType: input.entityType,
-        entityId: input.entityId,
-        action: input.action,
-        ...(beforeData !== undefined ? { before: beforeData } : {}),
-        ...(afterData !== undefined ? { after: afterData } : {}),
-        ...(input.ipAddress !== undefined ? { ipAddress: input.ipAddress } : {}),
-        ...(input.userAgent !== undefined ? { userAgent: input.userAgent } : {}),
-      },
-    });
+    await prisma.auditLog.create({ data: buildAuditLogData(input) });
   } catch (error) {
     console.error('Audit log write failed:', error);
   }
+}
+
+/**
+ * Financial audit rows that must commit or roll back with the money movement
+ * they describe (ARGUS #426).
+ *
+ * `createAuditLog` deliberately swallows failures and uses the global client,
+ * which is correct for view-ish events but wrong inside a money transaction:
+ * a rollback could leave an orphan audit row, or a commit could have no row.
+ * Callers pass their `tx` and this writer rethrows, so the audit is atomic with
+ * the ledger posting / account mutation.
+ */
+export const FINANCIAL_AUDIT_ACTIONS = new Set<string>([
+  AUDIT_ACTIONS.PAYMENT_ACCOUNT_CREATED,
+  AUDIT_ACTIONS.PAYMENT_ACCOUNT_UPDATED,
+  AUDIT_ACTIONS.PAYMENT_ACCOUNT_CLOSED,
+  AUDIT_ACTIONS.PAYMENT_ACCOUNT_TRANSFER,
+  AUDIT_ACTIONS.PAYMENT_ACCOUNT_DEPOSIT,
+  AUDIT_ACTIONS.PAYMENT_ACCOUNT_WITHDRAWAL,
+]);
+
+export async function createAuditLogInTransaction(
+  tx: Pick<Prisma.TransactionClient, 'auditLog'>,
+  input: CreateAuditLogInput,
+): Promise<void> {
+  await tx.auditLog.create({ data: buildAuditLogData(input) });
 }
 
 /**
@@ -199,14 +305,20 @@ export async function createAuditLog(input: CreateAuditLogInput): Promise<void> 
  * surfaces a 500. Best-effort/view-ish events keep using createAuditLog (or
  * fire-and-forget with a console error), never a silent `.catch(() => {})`.
  */
-export async function writeAuditLog(input: CreateAuditLogInput): Promise<void> {
+/** Minimal client shape shared by PrismaClient and a transaction client. */
+type AuditLogClient = Pick<typeof prisma, 'auditLog'>;
+
+async function writeAuditLogOn(
+  client: AuditLogClient,
+  input: CreateAuditLogInput,
+): Promise<void> {
   const beforeData =
     input.before === undefined ? undefined : input.before === null ? Prisma.JsonNull : input.before;
   const afterData =
     input.after === undefined ? undefined : input.after === null ? Prisma.JsonNull : input.after;
 
   try {
-    await prisma.auditLog.create({
+    await client.auditLog.create({
       data: {
         tenantId: input.tenantId,
         actorId: input.actorId,
@@ -234,6 +346,24 @@ export async function writeAuditLog(input: CreateAuditLogInput): Promise<void> {
   }
 }
 
+/**
+ * ARGUS #463 — transaction-aware durable audit writer.
+ *
+ * Use this inside the same `$transaction` as the security-sensitive write so a
+ * failed audit rolls the write back. The change can never be committed without
+ * its audit row.
+ */
+export async function writeAuditLogTx(
+  tx: Prisma.TransactionClient,
+  input: CreateAuditLogInput,
+): Promise<void> {
+  await writeAuditLogOn(tx, input);
+}
+
+export async function writeAuditLog(input: CreateAuditLogInput): Promise<void> {
+  await writeAuditLogOn(prisma, input);
+}
+
 export function hashEmailForAudit(email: string): string {
   return createHash('sha256').update(email.toLowerCase()).digest('hex').slice(0, 16);
 }
@@ -246,8 +376,25 @@ interface GetAuditLogsFilters {
   startDate?: Date | undefined;
   endDate?: Date | undefined;
   userId?: string | undefined;
+  /** Free-text/entity-id search across the forensic fields (ARGUS #457). */
+  search?: string | undefined;
   page?: number | undefined;
   pageSize?: number | undefined;
+}
+
+/** OR-of-contains search used by the list and full export. */
+function auditSearchClause(search: string | undefined): Prisma.AuditLogWhereInput | null {
+  const term = search?.trim();
+  if (!term) return null;
+  return {
+    OR: [
+      { entityId: { contains: term, mode: 'insensitive' } },
+      { entityType: { contains: term, mode: 'insensitive' } },
+      { action: { contains: term, mode: 'insensitive' } },
+      { ipAddress: { contains: term, mode: 'insensitive' } },
+      { userAgent: { contains: term, mode: 'insensitive' } },
+    ],
+  };
 }
 
 export async function getAuditLogs(tenantId: string, filters: GetAuditLogsFilters = {}) {
@@ -266,6 +413,8 @@ export async function getAuditLogs(tenantId: string, filters: GetAuditLogsFilter
   if (filters.userId !== undefined) {
     where.actorId = filters.userId;
   }
+  const search = auditSearchClause(filters.search);
+  if (search) Object.assign(where, search);
   if (filters.startDate !== undefined || filters.endDate !== undefined) {
     where.createdAt = {
       ...(filters.startDate !== undefined ? { gte: filters.startDate } : {}),
@@ -287,12 +436,44 @@ export async function getAuditLogs(tenantId: string, filters: GetAuditLogsFilter
 }
 
 /**
+ * Every row matching the filters, for a complete CSV export (ARGUS #453).
+ *
+ * The UI export used to reuse the paginated list (max 100 rows) and omit the
+ * before/after/userAgent evidence. This returns the full filtered set with all
+ * columns the detail modal shows.
+ */
+export async function getAuditLogsForExport(
+  tenantId: string | undefined,
+  filters: Omit<GetAuditLogsFilters, 'page' | 'pageSize'> = {},
+) {
+  const where: Prisma.AuditLogWhereInput = {};
+  if (tenantId !== undefined) where.tenantId = tenantId;
+  if (filters.entityType !== undefined) where.entityType = filters.entityType;
+  if (filters.action !== undefined) where.action = filters.action;
+  if (filters.userId !== undefined) where.actorId = filters.userId;
+  const search = auditSearchClause(filters.search);
+  if (search) Object.assign(where, search);
+  if (filters.startDate !== undefined || filters.endDate !== undefined) {
+    where.createdAt = {
+      ...(filters.startDate !== undefined ? { gte: filters.startDate } : {}),
+      ...(filters.endDate !== undefined ? { lte: filters.endDate } : {}),
+    };
+  }
+
+  return prisma.auditLog.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+/**
  * Resolve `actorId` values to human-readable user labels for the audit log UI
  * and export. System-generated rows (no actor) render as "System"; deleted or
  * unknown users fall back to a neutral label instead of leaking a bare CUID.
  */
 export async function attachAuditActorNames<T extends { actorId: string | null }>(
   entries: T[],
+  tenantId?: string | null,
 ): Promise<Array<T & { actorName: string }>> {
   const actorIds = Array.from(
     new Set(entries.map((entry) => entry.actorId).filter((id): id is string => Boolean(id))),
@@ -301,7 +482,10 @@ export async function attachAuditActorNames<T extends { actorId: string | null }
   const users =
     actorIds.length > 0
       ? await prisma.user.findMany({
-          where: { id: { in: actorIds } },
+          // Actor resolution must not leak another tenant's name when an audit
+          // row carries a foreign id (ARGUS #456). SUPER_ADMIN/cross-tenant
+          // views call without a tenant scope.
+          where: { id: { in: actorIds }, ...(tenantId ? { tenantId } : {}) },
           select: { id: true, email: true },
         })
       : [];

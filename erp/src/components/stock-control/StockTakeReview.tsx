@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
+import { useInvalidateStockQueries } from '@/hooks/useInvalidateStockQueries';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -38,7 +39,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useStockTakeSession, type StockTakeItemDetail } from '@/hooks/useStockTakeSession';
+import { StockTakeId } from '@/components/stock-control/StockTakeId';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 
 interface StockTakeReviewProps {
   sessionId: string;
@@ -48,20 +51,7 @@ interface StockTakeReviewProps {
 type TabKey = 'all' | 'discrepancies' | 'matches';
 
 function formatDateTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  return (
-    d.toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }) +
-    ', ' +
-    d.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
-  );
+  return formatStockMovementTimestamp(dateStr);
 }
 
 function DiscrepancyBadge({ value }: { value: number }) {
@@ -77,6 +67,9 @@ function DiscrepancyBadge({ value }: { value: number }) {
 export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  // ARGUS #210: approval applies stock corrections, so every stock cache and
+  // the storefront must refresh as well as the session record.
+  const invalidateStockQueries = useInvalidateStockQueries();
   const { data: sessionRes, isLoading } = useStockTakeSession(sessionId);
 
   const canManage = permissions.includes('stock:take');
@@ -245,6 +238,11 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
       await queryClient.invalidateQueries({
         queryKey: ['stock-take-session', sessionId],
       });
+      try {
+        await invalidateStockQueries();
+      } catch {
+        // Approval is committed; a cache refresh failure is not a failure.
+      }
       router.push('/stock-control/stock-takes');
     } catch {
       toast.error('Failed to approve stock take');
@@ -370,7 +368,7 @@ export function StockTakeReview({ sessionId, permissions }: StockTakeReviewProps
                 Session ID
               </dt>
               <dd className="font-mono text-sm text-espresso">
-                {sessionData.id.slice(0, 12)}…
+                <StockTakeId id={sessionData.id} />
               </dd>
             </div>
             <div>

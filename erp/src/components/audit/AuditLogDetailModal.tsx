@@ -7,6 +7,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { auditDetailMode, auditSnapshotRows } from '@/lib/audit/auditDetail.core';
+import {
+  formatAuditActionLabel,
+  formatAuditDateTime,
+  formatAuditRoleLabel,
+} from '@/lib/audit/auditPresentation.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,22 +39,6 @@ interface AuditLogDetailModalProps {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatActionName(action: string): string {
-  return action
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = d.toLocaleString('en-GB', { month: 'short' });
-  const year = d.getFullYear();
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  return `${day} ${month} ${year}, ${hours}:${minutes}`;
-}
-
 function displayValue(val: unknown): string {
   if (val === null || val === undefined) return '-';
   if (typeof val === 'object') return JSON.stringify(val);
@@ -67,17 +57,16 @@ function getAllKeys(before: Record<string, unknown> | null, after: Record<string
 export default function AuditLogDetailModal({ entry, open, onOpenChange }: AuditLogDetailModalProps) {
   if (!entry) return null;
 
-  const hasBefore = entry.before !== null && Object.keys(entry.before).length > 0;
-  const hasAfter = entry.after !== null && Object.keys(entry.after).length > 0;
+  const mode = auditDetailMode(entry.before, entry.after);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="font-display text-espresso">
-            {formatActionName(entry.action)}
+            {formatAuditActionLabel(entry.action)}
           </DialogTitle>
-          <p className="text-sm text-sand-ink">{formatDate(entry.createdAt)}</p>
+          <p className="text-sm text-sand-ink">{formatAuditDateTime(entry.createdAt)}</p>
         </DialogHeader>
 
         {/* Summary */}
@@ -96,22 +85,34 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
               {entry.actorName}
               {entry.actorRole && (
                 <Badge variant="outline" className="ml-2 text-xs border-mist">
-                  {entry.actorRole.replace('_', ' ')}
+                  {formatAuditRoleLabel(entry.actorRole)}
                 </Badge>
               )}
             </span>
           </div>
+          {entry.actorId && (
+            <div className="flex gap-2">
+              <span className="text-sand-ink">Actor ID:</span>
+              <span className="select-all font-mono text-xs text-espresso">{entry.actorId}</span>
+            </div>
+          )}
           {entry.ipAddress && (
             <div className="flex gap-2">
               <span className="text-sand-ink">IP:</span>
               <span className="font-mono text-espresso text-xs">{entry.ipAddress}</span>
             </div>
           )}
+          <div className="flex gap-2">
+            <span className="text-sand-ink">User agent:</span>
+            <span className="break-all font-mono text-xs text-espresso">
+              {entry.userAgent ?? '-'}
+            </span>
+          </div>
         </div>
 
         {/* Diff / Detail */}
         <div className="mt-4">
-          {hasBefore && hasAfter ? (
+          {mode === 'diff' ? (
             /* Before / After diff */
             <div className="rounded-lg border border-mist overflow-hidden">
               <table className="w-full text-sm">
@@ -144,7 +145,7 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
                 </tbody>
               </table>
             </div>
-          ) : hasAfter ? (
+          ) : mode === 'created' ? (
             /* Created With display */
             <div className="rounded-lg border border-mist overflow-hidden">
               <div className="bg-linen/40 px-3 py-2 text-sm font-medium text-espresso">
@@ -152,10 +153,27 @@ export default function AuditLogDetailModal({ entry, open, onOpenChange }: Audit
               </div>
               <table className="w-full text-sm">
                 <tbody>
-                  {Object.entries(entry.after!).map(([key, val]) => (
-                    <tr key={key} className="border-t border-mist/50">
-                      <td className="px-3 py-1.5 font-mono text-xs text-espresso">{key}</td>
-                      <td className="px-3 py-1.5 text-xs text-espresso">{displayValue(val)}</td>
+                  {auditSnapshotRows(entry.after).map((row) => (
+                    <tr key={row.field} className="border-t border-mist/50">
+                      <td className="px-3 py-1.5 font-mono text-xs text-espresso">{row.field}</td>
+                      <td className="px-3 py-1.5 text-xs text-espresso">{row.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : mode === 'deleted' ? (
+            /* Deleted values */
+            <div className="rounded-lg border border-mist overflow-hidden">
+              <div className="bg-terracotta/10 px-3 py-2 text-sm font-medium text-terracotta">
+                Deleted values
+              </div>
+              <table className="w-full text-sm">
+                <tbody>
+                  {auditSnapshotRows(entry.before).map((row) => (
+                    <tr key={row.field} className="border-t border-mist/50">
+                      <td className="px-3 py-1.5 font-mono text-xs text-espresso">{row.field}</td>
+                      <td className="px-3 py-1.5 text-xs text-espresso">{row.value}</td>
                     </tr>
                   ))}
                 </tbody>

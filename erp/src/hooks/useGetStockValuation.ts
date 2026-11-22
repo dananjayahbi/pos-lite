@@ -5,12 +5,29 @@ interface CategoryBreakdown {
   categoryName: string;
   variantCount: number;
   retailValue: number;
+  vatAmount?: number;
+  ssclAmount?: number;
+  taxAmount: number;
+  retailValueInclTax: number;
   costValue: number;
 }
 
 interface StockValuationData {
   retailValue: number;
+  vatAmount: number;
+  ssclAmount: number;
+  taxAmount: number;
+  retailValueInclTax: number;
+  taxRates: { vatRate: number; ssclRate: number };
   costValue: number;
+  /** ARGUS #218: the cost figure is a current-cost snapshot. */
+  costBasis?: 'current-cost';
+  costBasisNote?: string;
+  /** Raw-material stock value (ARGUS #243). */
+  rawMaterialValue: number;
+  rawMaterialCount: number;
+  /** costValue + rawMaterialValue. */
+  totalCostValue: number;
   estimatedMargin: number;
   estimatedMarginPercent: number;
   variantCount: number;

@@ -5,6 +5,9 @@ import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { downloadFile } from '@/lib/storage';
 import { getExtensionFromKey, buildDisplayFilename } from '@/lib/reports/saved-report-storage';
+import { savedReportPermission } from '@/lib/reports/savedReportAccess.core';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { getClientIp } from '@/lib/utils/request';
 
 /** MIME map keyed by saved-report file extension. */
 const MIME_BY_EXT: Record<string, string> = {
@@ -42,7 +45,8 @@ export async function GET(
       );
     }
 
-    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.viewSalesReport);
+    // Downloading a generated artifact is report:export (ARGUS #438).
+    const forbidden = requirePermissionResponse(session.user, PERMISSIONS.REPORT.exportReport);
     if (forbidden) return forbidden;
 
     const { id } = await params;
@@ -57,6 +61,12 @@ export async function GET(
         { status: 404 },
       );
     }
+
+    const typeForbidden = requirePermissionResponse(
+      session.user,
+      savedReportPermission(savedReport.reportType),
+    );
+    if (typeForbidden) return typeForbidden;
 
     if (!savedReport.storageKey) {
       return NextResponse.json(
@@ -74,6 +84,25 @@ export async function GET(
     const buffer = await downloadFile(savedReport.storageKey);
     const extension = getExtensionFromKey(savedReport.storageKey);
     const filename = buildDisplayFilename(savedReport.name, extension);
+
+    // ARGUS #448 - viewing/downloading an artifact is an audit-worthy read.
+    void createAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      actorRole: session.user.role,
+      entityType: 'SavedReport',
+      entityId: savedReport.id,
+      action: AUDIT_ACTIONS.SAVED_REPORT_DOWNLOADED,
+      after: {
+        name: savedReport.name,
+        reportType: savedReport.reportType,
+        format: extension,
+        inline: isInline,
+        bytes: buffer.byteLength,
+      },
+      ipAddress: getClientIp(request),
+      userAgent: request.headers.get('user-agent') ?? undefined,
+    }).catch(() => {});
 
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,

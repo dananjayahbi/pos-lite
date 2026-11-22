@@ -53,6 +53,8 @@ export const CreateSaleSchema = z
     shiftId: z.string().min(1).optional(),
     lines: z.array(CreateSaleLineSchema).min(1),
     cartDiscountAmount: z.number().min(0).default(0),
+    /** ARGUS #65: manual cart discount before promotions (for the clamp). */
+    manualCartDiscountAmount: z.number().min(0).optional(),
     paymentMethod: z.nativeEnum(PaymentMethod, { error: 'Invalid payment method' }),
     authorizingManagerId: z.string().min(1).optional(),
     cashReceived: z.number().positive().optional(),
@@ -64,6 +66,8 @@ export const CreateSaleSchema = z
     // all ("just put the bill"). Only meaningful when customerId is absent.
     isGuestSale: z.boolean().optional(),
     appliedStoreCredit: z.string().optional().default('0'),
+    // EXCHANGE return whose credit funds this replacement sale.
+    linkedReturnId: z.string().min(1).optional(),
     appliedPromotions: z.any().optional(),
     promoCode: z.string().max(50).optional(),
     // Backdated / missed-entry sales carry their own accounting date.
@@ -144,6 +148,36 @@ export const CreateSaleSchema = z
           message: 'Store credit cannot be applied to a guest sale - link a customer first',
         });
       }
+    }
+    // STORE_CREDIT is the "credit covers the whole sale" tender: it needs a
+    // linked customer and a positive credit amount. The service additionally
+    // checks that the credit really covers the computed total.
+    if (data.paymentMethod === 'STORE_CREDIT') {
+      if (!data.customerId) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['customerId'],
+          message: 'Store credit requires a linked customer',
+        });
+      }
+      const credit = Number.parseFloat(data.appliedStoreCredit ?? '0');
+      if (!Number.isFinite(credit) || credit <= 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['appliedStoreCredit'],
+          message: 'Store credit amount is required when paying by store credit',
+        });
+      }
+    }
+    // EXCHANGE_CREDIT is funded by the linked return, so that link is required.
+    // The service verifies the return exists, is an EXCHANGE, and that its
+    // credit covers the total (or that the remainder can be issued).
+    if (data.paymentMethod === 'EXCHANGE_CREDIT' && !data.linkedReturnId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['paymentMethod'],
+        message: 'Exchange credit requires a linked return',
+      });
     }
     // Doc 34: a replacement must point at an original order reference.
     // M14-04 (req 3.11 / D14 = BOTH): and must carry the defective item barcode.

@@ -17,6 +17,13 @@ import {
   auditDeductionCompliance,
   computeNetPayoutBreakdown,
 } from '@/lib/services/reconciliation-finance.service';
+import {
+  buildStatementRawRows,
+  readUnmatchedRows,
+  summarizeStatementImport,
+  unmatchedRowFromParsed,
+  type UnmatchedStatementRow,
+} from '@/lib/services/reconciliation-import.core';
 
 /**
  * Reconciliation service — COD settlement ledger + remittance statement import.
@@ -153,12 +160,13 @@ export async function importRemittanceStatement(
 
   let matchedCount = 0;
   let discrepancyCount = 0;
+  const unmatchedRows: UnmatchedStatementRow[] = [];
 
   for (const row of rows) {
     const match = await matchStatementRow(tenantId, row, statement.id);
     if (match === 'matched') matchedCount++;
     else if (match === 'discrepancy') discrepancyCount++;
-    // 'unmatched' rows are counted in the import totals below as skipped.
+    else unmatchedRows.push(unmatchedRowFromParsed(row));
   }
 
   const finalStatement = await prisma.statementImport.update({
@@ -167,6 +175,9 @@ export async function importRemittanceStatement(
       status: 'COMPLETED',
       matchedCount,
       discrepancyCount,
+      // ARGUS #512: keep the unmatched detail so the UI can explain a
+      // zero-match import instead of reporting a silent success.
+      rawRows: buildStatementRawRows(rows, unmatchedRows) as never,
       completedAt: new Date(),
     },
   });
@@ -178,10 +189,57 @@ export async function importRemittanceStatement(
     entityType: 'StatementImport',
     entityId: statement.id,
     action: AUDIT_ACTIONS.RECONCILIATION_IMPORTED,
-    after: { rowCount: rows.length, matchedCount, discrepancyCount },
+    after: {
+      rowCount: rows.length,
+      matchedCount,
+      discrepancyCount,
+      unmatchedCount: unmatchedRows.length,
+    },
   });
 
-  return finalStatement;
+  return {
+    ...finalStatement,
+    unmatchedCount: unmatchedRows.length,
+    unmatched: unmatchedRows,
+  };
+}
+
+/**
+ * Recent remittance imports for the reconciliation page (ARGUS #512).
+ * Exposes counts, parse errors and the stored unmatched detail — not raw rows.
+ */
+export async function getStatementImportHistory(tenantId: string, limit = 25) {
+  const rows = await prisma.statementImport.findMany({
+    where: { tenantId },
+    orderBy: { uploadedAt: 'desc' },
+    take: limit,
+    select: {
+      id: true,
+      filename: true,
+      status: true,
+      rowCount: true,
+      matchedCount: true,
+      discrepancyCount: true,
+      parseError: true,
+      uploadedAt: true,
+      completedAt: true,
+      rawRows: true,
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    filename: row.filename,
+    status: row.status,
+    rowCount: row.rowCount,
+    matchedCount: row.matchedCount,
+    discrepancyCount: row.discrepancyCount,
+    unmatchedCount: summarizeStatementImport(row).unmatchedCount,
+    unmatched: readUnmatchedRows(row.rawRows),
+    parseError: row.parseError,
+    uploadedAt: row.uploadedAt,
+    completedAt: row.completedAt,
+  }));
 }
 
 type MatchOutcome = 'matched' | 'discrepancy' | 'unmatched';

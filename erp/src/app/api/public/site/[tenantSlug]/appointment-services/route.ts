@@ -15,6 +15,7 @@ import {
   jsonWithCors,
 } from '@/lib/api/cors';
 import { isModuleEnabled } from '@/lib/feature-guard';
+import { isFixtureServiceName } from '@/lib/appointments/fixtures.core';
 
 interface RouteContext {
   params: Promise<{ tenantSlug: string }>;
@@ -80,10 +81,13 @@ export async function GET(
     serviceIds?: string[] | null;
   };
   const selectedIds = appointmentConfig.serviceIds ?? [];
+  // ARGUS #136: QA/Test/DeleteMe catalogue rows must never reach the public
+  // booking surface, even when the website config still lists their ids.
+  const bookableServices = services.filter((service) => !isFixtureServiceName(service.name));
   const publicServices =
     selectedIds.length > 0
-      ? services.filter((s) => selectedIds.includes(s.id))
-      : services;
+      ? bookableServices.filter((s) => selectedIds.includes(s.id))
+      : bookableServices;
 
   return jsonWithCors(request, { success: true, data: publicServices }, {
     headers: {

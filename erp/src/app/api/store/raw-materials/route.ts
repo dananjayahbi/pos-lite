@@ -10,6 +10,7 @@ import {
 import { CreateRawMaterialSchema } from '@/lib/validators/rawMaterial.validators';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { parseQueryInt } from '@/lib/api/query-params';
+import { parseRawMaterialStockStatus } from '@/lib/services/rawMaterial.core';
 
 export async function GET(request: NextRequest) {
   try {
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get('search') ?? undefined;
     const categoryRaw = searchParams.get('category') ?? undefined;
-    const stockStatus = searchParams.get('stockStatus') ?? undefined;
+    const stockStatus = parseRawMaterialStockStatus(searchParams.get('stockStatus'));
     // XC-01: Math.max(1,Number('abc')) is NaN — malformed page/limit now 400.
     const page = parseQueryInt(searchParams, 'page', { default: 1, min: 1 }) ?? 1;
     const limit = parseQueryInt(searchParams, 'limit', { default: 25, min: 1, max: 100 }) ?? 25;
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
     if (categoryRaw && categoryRaw.trim().length > 0) {
       filters.category = categoryRaw.trim();
     }
-    if (stockStatus === 'OK' || stockStatus === 'LOW' || stockStatus === 'OUT') {
+    if (stockStatus) {
       filters.stockStatus = stockStatus;
     }
 

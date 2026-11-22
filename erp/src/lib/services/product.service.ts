@@ -12,7 +12,17 @@ import { Prisma } from '@/generated/prisma/client';
 import type { HealthConcern, ProductSource, TaxRule } from '@/generated/prisma/client';
 import { createAuditLog, writeAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { ApiError } from '@/lib/api/errors';
+import { findNearDuplicateCategoryName, normalizeCategoryName } from '@/lib/categories/categoryName.core';
+import { assertProductHasNoStock } from '@/lib/services/productDelete.core';
+import { adjustStockInTx } from '@/lib/services/inventory.service';
+import { resolveOpeningStockQuantity } from '@/lib/services/openingStock.core';
+import { matchesStockStatusFilter, type StockStateVariant } from '@/lib/inventory/stockState';
 import { generateBarcode } from '@/lib/barcode';
+import {
+  brandAuditSnapshot,
+  categoryAuditSnapshot,
+  changedAuditFields,
+} from '@/lib/catalog/catalogAudit.core';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +67,10 @@ export interface ProductFilters {
   categoryIds?: string[] | undefined;
   brandId?: string | undefined;
   brandIds?: string[] | undefined;
+  /** Variant forms to match (OIL, POWDER, ...); a product matches when any live variant has one. */
+  forms?: string[] | undefined;
+  /** Inventory stock-state filter, applied before pagination (shared rule). */
+  stockStatus?: 'low_stock' | 'out_of_stock' | undefined;
   /** Fetch a specific set of products by ID (used to hydrate pickers). */
   ids?: string[] | undefined;
   isArchived?: boolean | undefined;
@@ -136,27 +150,27 @@ export interface UpdateVariantInput {
 
 export interface CreateCategoryInput {
   name: string;
-  description?: string;
+  description?: string | null;
   sortOrder?: number;
   imageUrl?: string | null;
 }
 
 export interface UpdateCategoryInput {
   name?: string;
-  description?: string;
+  description?: string | null;
   sortOrder?: number;
   imageUrl?: string | null;
 }
 
 export interface CreateBrandInput {
   name: string;
-  description?: string;
+  description?: string | null;
   logoUrl?: string;
 }
 
 export interface UpdateBrandInput {
   name?: string;
-  description?: string;
+  description?: string | null;
   logoUrl?: string | null;
 }
 
@@ -173,7 +187,7 @@ function generateSku(brandName: string | null, form: string | undefined | null, 
 // ── Product Functions ────────────────────────────────────────────────────────
 
 export async function getAllProducts(tenantId: string, filters: ProductFilters = {}) {
-  const { search, categoryId, categoryIds, brandId, brandIds, ids, isArchived, includeDeleted, page = 1, limit = 20 } = filters;
+  const { search, categoryId, categoryIds, brandId, brandIds, forms, stockStatus, ids, isArchived, includeDeleted, page = 1, limit = 20 } = filters;
 
   // M02-03: `includeDeleted` flips the hard filter into the "Deleted" view —
   // ONLY soft-deleted rows. Default behavior (deletedAt: null) is unchanged.
@@ -209,11 +223,70 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
     where.brandId = brandId;
   }
 
+  if (forms && forms.length > 0) {
+    // The form is a variant attribute, so a product matches when any of its
+    // live variants uses one of the selected forms (ARGUS #141). This is a
+    // real query filter now, not just a URL chip. Matching is case-insensitive
+    // because historical imports stored lowercase form values.
+    where.variants = {
+      some: {
+        OR: forms.map((form) => ({
+          form: { equals: form, mode: 'insensitive' as const },
+        })),
+        ...(includeDeleted ? {} : { deletedAt: null }),
+      },
+    };
+  }
+
   if (isArchived !== undefined) {
     where.isArchived = isArchived;
   }
 
-  const [products, total] = await Promise.all([
+  if (stockStatus) {
+    // Prisma cannot compare two columns, so the shared stock-state rule is
+    // evaluated over the tenant's live variants and the matching product IDs
+    // are pushed into the query BEFORE pagination. This keeps `total`,
+    // `totalPages` and the page rows consistent (ARGUS #142).
+    const variants = await prisma.productVariant.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        product: { tenantId, deletedAt: null },
+      },
+      select: { productId: true, stockQuantity: true, lowStockThreshold: true },
+    });
+
+    const variantsByProduct = new Map<string, StockStateVariant[]>();
+    for (const variant of variants) {
+      const list = variantsByProduct.get(variant.productId);
+      if (list) list.push(variant);
+      else variantsByProduct.set(variant.productId, [variant]);
+    }
+
+    const matchingIds = [...variantsByProduct.entries()]
+      .filter(([, productVariants]) => matchesStockStatusFilter(productVariants, stockStatus))
+      .map(([productId]) => productId);
+
+    // A product with no live variants can never be sold, so the shared rule
+    // calls it out of stock. It has no variant rows to appear in the map above,
+    // so include it explicitly and keep the filter in step with the badge
+    // (ARGUS #153).
+    if (stockStatus === 'out_of_stock') {
+      const emptyProducts = await prisma.product.findMany({
+        where: { AND: [where, { variants: { none: { deletedAt: null } } }] },
+        select: { id: true },
+      });
+      for (const product of emptyProducts) matchingIds.push(product.id);
+    }
+
+    const currentIds = (where.id as { in?: string[] } | undefined)?.in;
+    const matchingSet = new Set(matchingIds);
+    where.id = {
+      in: currentIds ? currentIds.filter((id) => matchingSet.has(id)) : matchingIds,
+    };
+  }
+
+  const [products, total, variantTotal] = await Promise.all([
     prisma.product.findMany({
       where,
       include: {
@@ -260,9 +333,19 @@ export async function getAllProducts(tenantId: string, filters: ProductFilters =
       take: limit,
     }),
     prisma.product.count({ where }),
+    // Variant rows are what lists and label printing actually show, so expose a
+    // faithful variant total for the same product filter (ARGUS #158). The
+    // relation filter reuses `where`, keeping the two totals consistent.
+    prisma.productVariant.count({
+      where: {
+        tenantId,
+        deletedAt: includeDeleted ? { not: null } : null,
+        product: where,
+      },
+    }),
   ]);
 
-  return { products, total };
+  return { products, total, variantTotal };
 }
 
 export async function getProductById(tenantId: string, productId: string) {
@@ -322,6 +405,7 @@ export async function createProduct(tenantId: string, actorId: string, data: Cre
 
 export async function createProductVariants(
   tenantId: string,
+  actorId: string,
   productId: string,
   variants: CreateVariantInput[],
 ) {
@@ -399,12 +483,34 @@ export async function createProductVariants(
         costPrice: v.costPrice,
         retailPrice: v.retailPrice,
         wholesalePrice: v.wholesalePrice ?? null,
-        stockQuantity: v.initialStock ?? v.stockQuantity ?? 0,
+        // Opening stock is applied below as an INITIAL_STOCK movement so the
+        // stock ledger explains the balance (ARGUS #139).
+        stockQuantity: 0,
         lowStockThreshold: v.lowStockThreshold ?? 5,
         imageUrls: v.imageUrls ?? [],
         thumbnailImageUrls: v.thumbnailImageUrls ?? [],
       })),
     });
+
+    const createdVariants = await tx.productVariant.findMany({
+      where: {
+        productId,
+        tenantId,
+        sku: { in: resolvedVariants.map((v) => v.sku) },
+      },
+    });
+
+    for (const variant of createdVariants) {
+      const input = withBarcodes.find((v) => v.sku === variant.sku);
+      const openingStock = resolveOpeningStockQuantity(input ?? {});
+      if (openingStock <= 0) continue;
+
+      await adjustStockInTx(tx, tenantId, variant.id, actorId, {
+        quantityDelta: openingStock,
+        reason: 'INITIAL_STOCK',
+        note: 'Opening stock recorded on product creation',
+      });
+    }
 
     return tx.productVariant.findMany({
       where: {
@@ -559,6 +665,16 @@ export async function softDeleteProduct(tenantId: string, productId: string, act
     throw new Error('Product not found');
   }
 
+  // Deleting a product with stock on hand would silently remove those units
+  // from inventory/valuation without any stock movement (ARGUS #137). Refuse
+  // until the stock is explicitly adjusted to zero or the product is archived.
+  const stock = await prisma.productVariant.aggregate({
+    where: { productId, deletedAt: null },
+    _sum: { stockQuantity: true },
+  });
+  const unitsOnHand = stock._sum.stockQuantity ?? 0;
+  assertProductHasNoStock(unitsOnHand);
+
   const now = new Date();
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -712,7 +828,7 @@ export async function getVariantById(tenantId: string, variantId: string) {
   const variant = await prisma.productVariant.findUnique({
     where: { id: variantId, deletedAt: null },
     include: {
-      product: { select: { id: true, name: true, categoryId: true, taxRule: true } },
+      product: { select: { id: true, name: true, categoryId: true, taxRule: true, isArchived: true } },
     },
   });
 
@@ -788,9 +904,14 @@ export async function getCategoryById(tenantId: string, categoryId: string) {
   return category;
 }
 
-export async function getAllCategories(tenantId: string) {
+export async function getAllCategories(
+  tenantId: string,
+  view: 'active' | 'deleted' = 'active',
+) {
   return prisma.category.findMany({
-    where: { tenantId, deletedAt: null },
+    // ARGUS #172: the Deleted view lists exactly the soft-deleted rows so a
+    // category can be restored instead of staying unreachable.
+    where: { tenantId, deletedAt: view === 'deleted' ? { not: null } : null },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     include: {
       _count: {
@@ -802,26 +923,29 @@ export async function getAllCategories(tenantId: string) {
   });
 }
 
-export async function createCategory(tenantId: string, data: CreateCategoryInput) {
+export async function createCategory(tenantId: string, actorId: string, data: CreateCategoryInput) {
   // M04-01 (D4 policy): the name is reserved while ANY row carries it — live
   // or soft-deleted — because @@unique([tenantId, name]) keeps archived rows
-  // holding the name. A deletedAt-agnostic pre-check surfaces the friendly
-  // 409 from the service instead of letting the DB throw a raw P2002 dump;
-  // mapPrismaError in toErrorResponse stays the belt-and-braces safety net
-  // for races between this check and the insert (BUG-21).
-  const existing = await prisma.category.findFirst({
-    where: { tenantId, name: data.name },
+  // holding the name. ARGUS #173: uniqueness is normalised (trimmed,
+  // whitespace-collapsed, case-insensitive) so a direct API caller cannot add
+  // "ayurvedic oils" next to "Ayurvedic Oils". mapPrismaError in
+  // toErrorResponse stays the belt-and-braces safety net for exact races.
+  const existingRows = await prisma.category.findMany({
+    where: { tenantId },
+    select: { id: true, name: true, deletedAt: true },
   });
+  const duplicate = findNearDuplicateCategoryName(data.name, existingRows);
 
-  if (existing) {
+  if (duplicate) {
+    const archived = existingRows.find((row) => row.id === duplicate.id)?.deletedAt;
     throw ApiError.conflict(
-      existing.deletedAt
+      archived
         ? 'A category with this name already exists (an archived record uses this name)'
         : 'A category with this name already exists',
     );
   }
 
-  return prisma.category.create({
+  const created = await prisma.category.create({
     data: {
       tenantId,
       name: data.name,
@@ -830,11 +954,25 @@ export async function createCategory(tenantId: string, data: CreateCategoryInput
       imageUrl: data.imageUrl ?? null,
     },
   });
+
+  // Non-blocking: an audit hiccup must never fail the create (ARGUS #167).
+  await createAuditLog({
+    tenantId,
+    actorId,
+    actorRole: 'SYSTEM',
+    entityType: 'Category',
+    entityId: created.id,
+    action: 'CATEGORY_CREATED',
+    after: categoryAuditSnapshot(created) as unknown as Prisma.InputJsonValue,
+  });
+
+  return created;
 }
 
 export async function updateCategory(
   tenantId: string,
   categoryId: string,
+  actorId: string,
   data: UpdateCategoryInput,
 ) {
   const existing = await prisma.category.findUnique({
@@ -846,15 +984,21 @@ export async function updateCategory(
   }
 
   // Check name conflict on rename — M04-01 (D4): archived rows still reserve
-  // the name at the DB, so the pre-check is deletedAt-agnostic and throws a
-  // typed 409 with the friendly message (P2002 mapper stays the safety net).
-  if (data.name && data.name !== existing.name) {
-    const conflict = await prisma.category.findFirst({
-      where: { tenantId, name: data.name, id: { not: categoryId } },
+  // the name at the DB, so the pre-check is deletedAt-agnostic. ARGUS #173 adds
+  // the same normalised (case/whitespace-insensitive) comparison as create.
+  if (
+    data.name !== undefined &&
+    normalizeCategoryName(data.name) !== normalizeCategoryName(existing.name)
+  ) {
+    const candidates = await prisma.category.findMany({
+      where: { tenantId },
+      select: { id: true, name: true, deletedAt: true },
     });
+    const conflict = findNearDuplicateCategoryName(data.name, candidates, categoryId);
     if (conflict) {
+      const archived = candidates.find((row) => row.id === conflict.id)?.deletedAt;
       throw ApiError.conflict(
-        conflict.deletedAt
+        archived
           ? 'A category with this name already exists (an archived record uses this name)'
           : 'A category with this name already exists',
       );
@@ -870,10 +1014,29 @@ export async function updateCategory(
   if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
   if (data.imageUrl !== undefined) updateData.imageUrl = data.imageUrl;
 
-  return prisma.category.update({
+  const updated = await prisma.category.update({
     where: { id: categoryId },
     data: updateData,
   });
+
+  // Non-blocking write with a before/after snapshot (ARGUS #167). A PATCH that
+  // repeats the stored values has nothing to audit, so it is skipped.
+  const before = categoryAuditSnapshot(existing);
+  const after = categoryAuditSnapshot(updated);
+  if (changedAuditFields(before, after).length > 0) {
+    await createAuditLog({
+      tenantId,
+      actorId,
+      actorRole: 'SYSTEM',
+      entityType: 'Category',
+      entityId: categoryId,
+      action: 'CATEGORY_UPDATED',
+      before: before as unknown as Prisma.InputJsonValue,
+      after: after as unknown as Prisma.InputJsonValue,
+    });
+  }
+
+  return updated;
 }
 
 export async function softDeleteCategory(tenantId: string, categoryId: string, actorId: string) {
@@ -912,6 +1075,50 @@ export async function softDeleteCategory(tenantId: string, categoryId: string, a
   return updated;
 }
 
+/**
+ * ARGUS #172 - undo a category soft delete.
+ *
+ * Restoring a live category is a 409 (stale UI should not silently no-op).
+ * Archived rows keep the name reserved at the database, so the row itself is
+ * always the one restored; its products were already required to be zero at
+ * delete time.
+ */
+export async function restoreCategory(
+  tenantId: string,
+  categoryId: string,
+  actorId: string,
+) {
+  const existing = await prisma.category.findFirst({
+    where: { id: categoryId, tenantId },
+  });
+
+  if (!existing) {
+    throw new Error('Category not found');
+  }
+
+  if (!existing.deletedAt) {
+    throw ApiError.conflict('Category is not deleted');
+  }
+
+  const restored = await prisma.category.update({
+    where: { id: categoryId },
+    data: { deletedAt: null },
+  });
+
+  await createAuditLog({
+    tenantId,
+    actorId,
+    actorRole: 'SYSTEM',
+    entityType: 'Category',
+    entityId: categoryId,
+    action: AUDIT_ACTIONS.CATEGORY_RESTORED,
+    before: { deletedAt: existing.deletedAt } as unknown as Prisma.InputJsonValue,
+    after: { deletedAt: null } as unknown as Prisma.InputJsonValue,
+  });
+
+  return restored;
+}
+
 // ── Brand Functions ──────────────────────────────────────────────────────────
 
 export async function getBrandById(tenantId: string, brandId: string) {
@@ -947,7 +1154,7 @@ export async function getAllBrands(tenantId: string) {
   });
 }
 
-export async function createBrand(tenantId: string, data: CreateBrandInput) {
+export async function createBrand(tenantId: string, actorId: string, data: CreateBrandInput) {
   // M04-01 (D4 policy): deletedAt-agnostic name reservation — see
   // createCategory above for the full rationale (BUG-21 belt-and-braces).
   const existing = await prisma.brand.findFirst({
@@ -962,7 +1169,7 @@ export async function createBrand(tenantId: string, data: CreateBrandInput) {
     );
   }
 
-  return prisma.brand.create({
+  const created = await prisma.brand.create({
     data: {
       tenantId,
       name: data.name,
@@ -970,9 +1177,27 @@ export async function createBrand(tenantId: string, data: CreateBrandInput) {
       logoUrl: data.logoUrl ?? null,
     },
   });
+
+  // Non-blocking: an audit hiccup must never fail the create (ARGUS #175).
+  await createAuditLog({
+    tenantId,
+    actorId,
+    actorRole: 'SYSTEM',
+    entityType: 'Brand',
+    entityId: created.id,
+    action: 'BRAND_CREATED',
+    after: brandAuditSnapshot(created) as unknown as Prisma.InputJsonValue,
+  });
+
+  return created;
 }
 
-export async function updateBrand(tenantId: string, brandId: string, data: UpdateBrandInput) {
+export async function updateBrand(
+  tenantId: string,
+  brandId: string,
+  actorId: string,
+  data: UpdateBrandInput,
+) {
   const existing = await prisma.brand.findUnique({
     where: { id: brandId, deletedAt: null },
   });
@@ -1004,10 +1229,29 @@ export async function updateBrand(tenantId: string, brandId: string, data: Updat
   if (data.description !== undefined) updateData.description = data.description;
   if (data.logoUrl !== undefined) updateData.logoUrl = data.logoUrl;
 
-  return prisma.brand.update({
+  const updated = await prisma.brand.update({
     where: { id: brandId },
     data: updateData,
   });
+
+  // Non-blocking write with a before/after snapshot (ARGUS #175). A PATCH that
+  // repeats the stored values has nothing to audit, so it is skipped.
+  const before = brandAuditSnapshot(existing);
+  const after = brandAuditSnapshot(updated);
+  if (changedAuditFields(before, after).length > 0) {
+    await createAuditLog({
+      tenantId,
+      actorId,
+      actorRole: 'SYSTEM',
+      entityType: 'Brand',
+      entityId: brandId,
+      action: 'BRAND_UPDATED',
+      before: before as unknown as Prisma.InputJsonValue,
+      after: after as unknown as Prisma.InputJsonValue,
+    });
+  }
+
+  return updated;
 }
 
 export async function softDeleteBrand(tenantId: string, brandId: string, actorId: string) {

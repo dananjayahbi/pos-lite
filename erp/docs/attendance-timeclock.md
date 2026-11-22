@@ -6,7 +6,8 @@
 compact variant, so any signed-in user can clock in/out from any page that uses
 the store layout. The widget reads the current user's status from
 `GET /api/store/timeclock/me` and invalidates both the header status and the
-attendance table after a punch.
+attendance table after a punch. On `/staff/timeclock` it is hidden for users
+without `staff:attendance:view` (ARGUS #355).
 
 The old "Clock actions" card was removed from the attendance page; clocking is
 now exclusively in the header.
@@ -30,11 +31,44 @@ A **Date** picker and **Today** shortcut switch the day. Changing the date
 re-fetches the whole table. Summary cards show Present / Absent / On Leave /
 Half Day counts and total OT for the selected day.
 
-Status derivation:
+Status derivation (ARGUS #348 + #350):
 
 - An `AttendanceDay` override (Leave/Absent/Half Day/Holiday/Present) wins.
-- Otherwise any punch on that day means **Present**.
-- Otherwise **Absent**.
+- Weekends, configured holidays and days before the person joined are never
+  absent (Off / Holiday).
+- Future working days are Scheduled.
+- Today is provisional: any punch shows Present while the day is running.
+- Past working days are graded by worked minutes against the tenant calendar:
+  - `>= fullDayMinutes` (default 480) → **Present**
+  - `>= halfDayMinutes` (default 240) → **Half Day**
+  - below that (including a 0-minute punch) → **Insufficient hours**
+- A day with no punch at all is **Absent**.
+
+`Insufficient hours` is a no-pay day: the monthly report/payroll input counts
+it in `daysAbsent` (plus half a day per `HALF_DAY`), so the manager's daily
+count and payroll agree.
+
+### Attendance calendar settings
+
+Stored in the tenant settings JSON (no migration):
+
+```json
+{
+  "attendance": {
+    "workingDays": [1, 2, 3, 4, 5],
+    "holidays": ["2026-12-25"],
+    "fullDayMinutes": 480,
+    "halfDayMinutes": 240,
+    "maxShiftMinutes": 960
+  }
+}
+```
+
+Configured from the attendance page's **Attendance calendar** card
+(`GET/PATCH /api/store/timeclock/settings`, `staff:attendance:view` /
+`staff:attendance:manage`). Every save is audited
+(`ATTENDANCE_CALENDAR_UPDATED`). The daily table, the monthly CSV/payslip and
+the payroll preview all read the same calendar.
 
 ## Overtime
 
@@ -46,9 +80,29 @@ overtimeMinutes = max(0, workedMinutes − 480)
 regularMinutes  = workedMinutes − overtimeMinutes
 ```
 
-Open punches count up to the current time; the table shows them with an
-**Active** badge until they are closed. Multiple punches in one day are summed
-before the OT split.
+Open punches count up to the current time, capped at the tenant's
+`maxShiftMinutes` (default 16h). The table shows them with an **Active** badge;
+an open punch beyond the cap is displayed at the cap with a **Needs review**
+badge. Multiple punches in one day are summed before the OT split.
+
+## Forgotten clock-out (ARGUS #351)
+
+- An open punch is capped at `maxShiftMinutes` for every duration display
+  (header widget, daily table, monthly CSV, payslip inputs, time-clock
+  summary), so it can never grow unbounded.
+- Clocking out after the cap stores the clock-out at the cap (not at "now")
+  and writes an `ATTENDANCE_PUNCH_AUTO_CAPPED` audit row.
+- Clocking in while a punch from a **previous local day** is still open returns
+  `409 OPEN_PUNCH_FROM_PREVIOUS_DAY` with
+  `{ punchId, clockedInAt, cappedEndAt, maxShiftMinutes, suggestedCloseAt }`.
+  The header widget opens a dialog to close that punch at a real time; the
+  confirmation is sent back to the same endpoint as
+  `{ closePreviousPunchAt: "<ISO>" }`, which closes the old punch and starts the
+  new shift in one transaction (audited `ATTENDANCE_ADJUSTED`, reason
+  `CLOSED_BEFORE_NEXT_CLOCK_IN`). A same-day open punch still returns
+  `409 ALREADY_CLOCKED_IN`.
+- The daily page shows a warning banner + per-row **Needs review** badge; the
+  monthly CSV adds a `Needs Review` column. The real fix is Adjust clock times.
 
 ## Adjust clock times
 
@@ -79,6 +133,8 @@ case).
 Upserts one `AttendanceDay` row per tenant/user/date. Statuses: `PRESENT`,
 `ABSENT`, `LEAVE`, `HALF_DAY`, `HOLIDAY`. The row is an overlay — the punches
 remain intact, so switching back to Present still shows the worked time.
+Leave/Absent/Holiday clear the derived worked/OT minutes and Half Day caps them
+at the tenant threshold; see `attendance-status-hours.md` (ARGUS #358).
 Status changes are audited (`ATTENDANCE_STATUS_SET`).
 
 ## Data model
@@ -93,7 +149,9 @@ carries the human status.
 
 ## Permissions
 
-- View the table: `staff:attendance:view` (`PERMISSIONS.STAFF.viewAttendance`)
+- View the table: `staff:attendance:view` (`PERMISSIONS.STAFF.viewAttendance`).
+  The `/staff/timeclock` layout redirects users without it to `/pos`; see
+  `attendance-page-access.md`.
 - Adjust punches / mark status: `staff:attendance:manage`
   (`PERMISSIONS.STAFF.manageAttendance`) — OWNER and MANAGER have it.
 
@@ -111,3 +169,33 @@ without forcing a re-login.
 - open punch counted to now
 - negative-duration guard
 - `YYYY-MM-DD` date parsing/formatting
+
+`src/lib/attendance/__tests__/attendanceCalendar.core.test.ts` covers the shared
+calendar: weekends/holidays are never absent, future days stay scheduled,
+overrides win, hour-based Present/Half Day/Insufficient grading (including
+zero-minute punches) and the payroll no-pay consistency.
+
+`src/lib/attendance/__tests__/openPunch.core.test.ts` covers the forgotten
+clock-out rules: cap at the maximum shift, overdue detection, previous-day
+detection and the suggested close time.
+
+`src/lib/attendance/__tests__/punchTimes.core.test.ts` covers manual
+punch/overlap validation. `timeclock-attendance.test.ts` also pins the
+overdue-open-punch cap (16h → 480 regular + 480 OT).
+
+## Attendance page actions (ARGUS #359)
+
+- **My clock**: the page shows the signed-in user's open punch and a Clock in /
+  Clock out button, so the global header widget is no longer the only path.
+- **Bulk status**: managers can select several staff and mark Leave, Half Day,
+  Absent, Holiday or Present for the selected day in one action. Each write
+  still goes through `POST /api/store/timeclock/attendance`, so tenant scope,
+  permissions and audit rows are unchanged.
+- **Range export**: "Export CSV" downloads every staff/day row for an inclusive
+  `from`/`to` window (max 92 days) from
+  `GET /api/store/timeclock/attendance/export`. The previous CSV existed only on
+  one staff member's detail page.
+- **Adjust** now exposes the punch note field and sends it with the PATCH.
+  Server-side, a punch cannot be moved to another calendar day
+  (`punchDay.core.ts`); future clock-outs and overlapping punches were already
+  rejected by `punchTimes.core.ts`.

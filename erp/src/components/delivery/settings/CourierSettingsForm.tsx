@@ -23,10 +23,16 @@ import {
 } from '@/components/ui/select';
 import { useCourierSettings } from '@/hooks/delivery';
 import type { CourierEnv } from '@/generated/prisma/client';
+import {
+  buildCourierSettingsPayload,
+  validateCourierActivation,
+} from '@/lib/courier/settings.core';
 
 interface CourierAccountData {
   env?: CourierEnv | null;
   email?: string | null;
+  // GET returns a redacted mask when a secret is stored (never the secret).
+  password?: string | null;
   apiKey?: string | null;
   originDistrictId?: number | null;
   originCityId?: number | null;
@@ -68,33 +74,65 @@ export function CourierSettingsForm() {
   }, [account]);
 
   function buildPayload(): Record<string, unknown> {
-    const payload: Record<string, unknown> = { env, isActive };
-    if (email) payload.email = email;
-    if (password) payload.password = password;
-    if (apiKey) payload.apiKey = apiKey;
-    if (originDistrictId) payload.originDistrictId = Number(originDistrictId);
-    if (originCityId) payload.originCityId = Number(originCityId);
-    if (pickupAddress) payload.pickupAddress = pickupAddress;
-    return payload;
+    // ARGUS #513: always send the clearable fields so an empty email, pickup
+    // address or origin actually clears the stored value.
+    return buildCourierSettingsPayload({
+      env,
+      email,
+      password,
+      apiKey,
+      originDistrictId,
+      originCityId,
+      pickupAddress,
+      isActive,
+    });
+  }
+
+  /** Client-side activation guard; the server re-checks the merged account. */
+  function activationIssues() {
+    const hasStoredSecret = Boolean(account?.password || account?.apiKey);
+    return validateCourierActivation({
+      isActive,
+      email,
+      password: password || (hasStoredSecret ? 'stored' : ''),
+      apiKey: apiKey || (hasStoredSecret ? 'stored' : ''),
+      originDistrictId: originDistrictId ? Number(originDistrictId) : null,
+      originCityId: originCityId ? Number(originCityId) : null,
+      pickupAddress,
+    });
   }
 
   async function handleSave() {
+    if (isActive) {
+      const [issue] = activationIssues();
+      if (issue) {
+        toast.error(issue.message);
+        return;
+      }
+    }
     save.mutate(buildPayload());
   }
 
-  /** Persist the current account first, then sync locations so master data can be pulled. */
+  /**
+   * ARGUS #513: sync against the UNSAVED form values. Nothing is persisted
+   * except the location cache, so a failed sync cannot leave a bad account
+   * active.
+   */
   async function handleSyncLocations() {
-    if (!email && !apiKey) {
+    if (!email && !apiKey && !account?.email) {
       toast.error('Add an email or API key to your Trans Express account first');
       return;
     }
     setSyncingLocations(true);
     try {
-      await save.mutateAsync(buildPayload());
-      const res = await fetch('/api/store/delivery/locations', { method: 'POST' });
+      const res = await fetch('/api/store/delivery/locations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildPayload()),
+      });
       const json = (await res.json()) as { success: boolean; error?: { message?: string } };
       if (!json.success) throw new Error(json.error?.message ?? 'Location sync failed');
-      toast.success('Locations synced from Trans Express');
+      toast.success('Locations synced. Save the account to keep these changes.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to sync locations');
     } finally {
@@ -103,23 +141,27 @@ export function CourierSettingsForm() {
   }
 
   /**
-   * M24-01: verify the saved credentials before dispatching. Persists the form
-   * first (so the test runs against what the operator just typed), then calls
-   * the test-connection probe which reports auth failures distinctly from an
-   * upstream outage.
+   * M24-01: verify credentials before dispatching.
+   *
+   * ARGUS #513: this is a dry run against the current form values. It does NOT
+   * save first, so a failed test never leaves invalid or partial credentials
+   * (or an activated account) persisted.
    */
   async function handleTestConnection() {
-    if (!email && !apiKey) {
+    if (!email && !apiKey && !account?.email) {
       toast.error('Add an email or API key to your Trans Express account first');
       return;
     }
     setTestingConnection(true);
     try {
-      await save.mutateAsync(buildPayload());
-      const res = await fetch('/api/store/delivery/settings', { method: 'POST' });
+      const res = await fetch('/api/store/delivery/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildPayload()),
+      });
       const json = (await res.json()) as { success: boolean; error?: { message?: string } };
       if (!json.success) throw new Error(json.error?.message ?? 'Connection test failed');
-      toast.success('Trans Express connection verified');
+      toast.success('Trans Express connection verified. Save the account to keep these changes.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Connection test failed');
     } finally {

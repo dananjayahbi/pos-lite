@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import {
   Bell,
+  XCircle,
 } from 'lucide-react';
 import {
   Popover,
@@ -10,50 +11,17 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
+import { normalizeRupeeText } from '@/lib/format';
 import { useGetNotifications, useInvalidateNotifications } from '@/hooks/useGetNotifications';
 import { getNotificationIcon } from '@/lib/constants/notification-types';
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatRelativeTime(dateStr: string): string {
-  const now = Date.now();
-  const date = new Date(dateStr).getTime();
-  const diff = now - date;
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString();
-}
-
-function getNotificationHref(type: string, relatedEntityId: string | null): string | null {
-  switch (type) {
-    case 'LOW_STOCK_ALERT':
-      return '/stock-control/low-stock';
-    case 'PETTY_CASH_LOW':
-      return '/petty-cash';
-    case 'STOCK_TAKE_SUBMITTED':
-    case 'STOCK_TAKE_APPROVED':
-    case 'STOCK_TAKE_REJECTED':
-      return relatedEntityId
-        ? `/stock-control/stock-takes/${relatedEntityId}/review`
-        : null;
-    case 'SALE_COMPLETED':
-      return '/sales';
-    case 'RETURN_PROCESSED':
-      return '/returns';
-    case 'SHIFT_CLOSED':
-      return relatedEntityId ? `/staff/shifts/${relatedEntityId}` : '/staff/shifts';
-    default:
-      return null;
-  }
-}
-
-// ── Component ────────────────────────────────────────────────────────────────
+import { getNotificationHref } from '@/lib/notifications/notification-href';
+import { formatNotificationTime } from '@/lib/notifications/notification-time';
+import {
+  SALE_VOIDED_TITLE,
+  buildSaleCompletedCopy,
+  buildSaleVoidedCopy,
+  isVoidedSaleAlert,
+} from '@/lib/notifications/sale-alert-copy';
 
 export function NotificationPopover() {
   const router = useRouter();
@@ -70,15 +38,13 @@ export function NotificationPopover() {
 
   const handleNotificationClick = async (
     id: string,
-    type: string,
-    relatedEntityId: string | null,
+    href: string | null,
     isRead: boolean,
   ) => {
     if (!isRead) {
       await fetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
       invalidate();
     }
-    const href = getNotificationHref(type, relatedEntityId);
     if (href) router.push(href);
   };
 
@@ -121,13 +87,35 @@ export function NotificationPopover() {
             </div>
           ) : (
             notifications.map((n) => {
-              const Icon = getNotificationIcon(n.type);
+              const isVoidedSale = isVoidedSaleAlert(n.type, n.relatedSale);
+              const completedCopy =
+                !isVoidedSale && n.type === 'SALE_COMPLETED' && n.relatedSale
+                  ? buildSaleCompletedCopy(n.relatedEntityId ?? '', n.relatedSale.totalAmount, {
+                      zeroValueReason: n.relatedSale.zeroValueReason,
+                      customerName: n.relatedSale.customerName,
+                      productName: n.relatedSale.productName,
+                    })
+                  : null;
+              const Icon = isVoidedSale ? XCircle : getNotificationIcon(n.type);
+              const title = isVoidedSale
+                ? SALE_VOIDED_TITLE
+                : (completedCopy?.title ?? n.title);
+              const body = normalizeRupeeText(
+                isVoidedSale && n.relatedSale
+                  ? buildSaleVoidedCopy(n.relatedEntityId ?? '', n.relatedSale.totalAmount).body
+                  : (completedCopy?.body ?? n.body),
+              );
+
+              const href = getNotificationHref({
+                type: n.type,
+                relatedEntityId: n.relatedEntityId,
+                relatedEntityType: n.relatedEntityType,
+              });
+
               return (
                 <button
                   key={n.id}
-                  onClick={() =>
-                    handleNotificationClick(n.id, n.type, n.relatedEntityId, n.isRead)
-                  }
+                  onClick={() => handleNotificationClick(n.id, href, n.isRead)}
                   className={`flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-linen/60 ${
                     !n.isRead ? 'bg-pearl/60' : ''
                   }`}
@@ -136,14 +124,19 @@ export function NotificationPopover() {
                     <Icon className="h-4 w-4 text-terracotta" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-body text-sm font-medium text-espresso">
-                      {n.title}
+                    <p className="flex items-center gap-1.5 truncate font-body text-sm font-medium text-espresso">
+                      {title}
+                      {isVoidedSale && (
+                        <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 font-body text-[10px] font-semibold uppercase tracking-wide text-red-800">
+                          Voided
+                        </span>
+                      )}
                     </p>
                     <p className="mt-0.5 line-clamp-2 font-body text-xs text-mist-ink">
-                      {n.body}
+                      {body}
                     </p>
                     <p className="mt-1 font-mono text-[10px] text-mist-ink/70">
-                      {formatRelativeTime(n.createdAt)}
+                      {formatNotificationTime(n.createdAt)}
                     </p>
                   </div>
                   {!n.isRead && (

@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 export interface PrefillProduct {
   id: string;
   name: string;
+  isArchived?: boolean;
   category?: { name: string } | null;
   brand?: { name: string } | null;
 }

@@ -36,7 +36,11 @@ export async function GET(
     }
 
     const { id } = await params;
-    const staff = await getStaffById(tenantId, id);
+    // ARGUS #341: directory viewers get identity/access data only. Salary,
+    // bank and statutory fields need the stronger staff:manage key; the
+    // account number is masked when it is not needed for an edit.
+    const includeSensitive = hasPermission(session.user, PERMISSIONS.STAFF.manageStaff);
+    const staff = await getStaffById(tenantId, id, { includeSensitive });
 
     return NextResponse.json({ success: true, data: staff });
   } catch (error) {
@@ -94,21 +98,23 @@ export async function PATCH(
       );
     }
 
-    const wantsPermissionsUpdate = 'permissions' in parsed.data;
-    const wantsStaffUpdate = ['email', 'role', 'isActive', 'commissionRate'].some(
-      (field) => field in parsed.data,
-    );
-
-    if (wantsPermissionsUpdate && !hasPermission(session.user, PERMISSIONS.STAFF.assignPermissions)) {
+    // Every staff PATCH is a management operation (ARGUS #336). Previously
+    // only email/role/status/commission were gated, so any signed-in user
+    // could change salary, bank details or PII by sending those fields alone.
+    if (!hasPermission(session.user, PERMISSIONS.STAFF.manageStaff)) {
       return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions to assign overrides' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
       );
     }
 
-    if (wantsStaffUpdate && !hasPermission(session.user, PERMISSIONS.STAFF.manageStaff)) {
+    const wantsPermissionsUpdate = 'permissions' in parsed.data;
+    if (wantsPermissionsUpdate && !hasPermission(session.user, PERMISSIONS.STAFF.assignPermissions)) {
       return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        {
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Insufficient permissions to assign overrides' },
+        },
         { status: 403 },
       );
     }

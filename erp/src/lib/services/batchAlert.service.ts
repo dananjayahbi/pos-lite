@@ -77,7 +77,10 @@ export async function notifyBatchAlert(
 /** Currently flagged batches for a tenant. */
 export async function listBatchAlerts(tenantId: string): Promise<BatchAlert[]> {
   const rows = await prisma.batchTracking.findMany({
-    where: { tenantId },
+    where: {
+      tenantId,
+      variant: { deletedAt: null, product: { deletedAt: null } },
+    },
     select: {
       id: true,
       batchNumber: true,

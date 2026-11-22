@@ -11,26 +11,28 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useGetStockValuation, useInvalidateStockValuation } from '@/hooks/useGetStockValuation';
+import { useGetStockValuation } from '@/hooks/useGetStockValuation';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 import { formatRupee } from '@/lib/format';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
+import { VALUATION_COST_BASIS_NOTE } from '@/lib/pricing/valuationBasis';
+import {
+  buildValuationCsv,
+  valuationCsvFilename,
+} from '@/lib/pricing/valuationCsv.core';
+import { valuationRefreshOutcome } from '@/components/stock-control/valuationRefresh';
 
 type SortColumn = 'categoryName' | 'variantCount' | 'retailValue' | 'costValue' | 'marginPercent' | 'share';
 type SortDirection = 'asc' | 'desc';
 
 function formatTimestamp(iso: string): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  }).format(new Date(iso));
+  return formatStockMovementTimestamp(iso);
 }
 
 function marginColor(percent: number): string {
@@ -41,8 +43,7 @@ function marginColor(percent: number): string {
 
 export function StockValuationClient() {
   const { hasPermission, isLoading: permLoading } = usePermissions();
-  const { data, isLoading, isError, error } = useGetStockValuation();
-  const invalidate = useInvalidateStockValuation();
+  const { data, isLoading, isError, error, refetch } = useGetStockValuation();
   const [sortColumn, setSortColumn] = useState<SortColumn>('retailValue');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -61,7 +62,11 @@ export function StockValuationClient() {
     );
   }
 
-  if (!hasPermission('product:view_cost_price')) {
+  // ARGUS #185: the valuation API is governed by stock:valuation:view, so the
+  // page must use the same gate. product:view_cost_price is a narrower
+  // product-editing key (STOCK_CLERK holds it) and let the page render KPI
+  // cards that then failed with the API's 403.
+  if (!hasPermission(PERMISSIONS.STOCK.viewStockValuation)) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center p-6">
         <Card className="w-full max-w-md text-center">
@@ -90,23 +95,42 @@ export function StockValuationClient() {
   async function handleRefresh() {
     setIsRefreshing(true);
     try {
-      await invalidate();
-      toast.success('Valuation refreshed');
+      // ARGUS #221: invalidation resolves even when the refetch fails. Await
+      // the actual refetch result and only confirm success with fresh data.
+      const result = await refetch();
+      const outcome = valuationRefreshOutcome(result.error);
+      if (outcome.ok) {
+        toast.success(outcome.message);
+      } else {
+        toast.error(outcome.message);
+      }
+    } catch (refreshError) {
+      toast.error(
+        valuationRefreshOutcome(
+          refreshError instanceof Error ? refreshError : null,
+        ).message,
+      );
     } finally {
       setIsRefreshing(false);
     }
   }
 
   async function handleExport() {
+    // ARGUS #223: export the snapshot on screen, not a fresh live query, so the
+    // file and the cards cannot disagree inside the 5-minute cache window.
+    if (!valuation) {
+      toast.error('No valuation snapshot to export');
+      return;
+    }
+
     setIsExporting(true);
     try {
-      const res = await fetch('/api/store/stock-control/valuation?format=csv');
-      if (!res.ok) throw new Error('Export failed');
-      const blob = await res.blob();
+      const csv = buildValuationCsv(valuation);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `stock-valuation-${new Date().toISOString().split('T')[0]}.csv`;
+      a.download = valuationCsvFilename(valuation.calculatedAt);
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -166,7 +190,10 @@ export function StockValuationClient() {
         <div>
           <h1 className="font-display text-2xl font-semibold text-espresso">Stock Valuation</h1>
           {valuation && (
-            <p className="mt-1 font-body text-sm text-mist-ink">As of {formatTimestamp(valuation.calculatedAt)}</p>
+            <p className="mt-1 font-body text-sm text-mist-ink">
+              {isError ? 'Last successful snapshot:' : 'As of'}{' '}
+              {formatTimestamp(valuation.calculatedAt)}
+            </p>
           )}
         </div>
         <div className="flex gap-2">
@@ -194,35 +221,64 @@ export function StockValuationClient() {
 
       {/* KPI cards */}
       {isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-32 w-full rounded-xl" />
           ))}
         </div>
       ) : valuation ? (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="font-body text-sm font-medium text-mist-ink">Total Retail Value</CardTitle>
+                <CardTitle className="font-body text-sm font-medium text-mist-ink">
+                  Till Value (Incl. Tax)
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="font-display text-2xl font-semibold text-espresso">
-                  {formatRupee(valuation.retailValue)}
+                  {formatRupee(valuation.retailValueInclTax)}
                 </p>
-                <p className="mt-1 font-body text-xs text-mist-ink">What your stock could sell for</p>
+                <p className="mt-1 font-body text-xs text-mist-ink">
+                  Retail excl. tax {formatRupee(valuation.retailValue)}
+                </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="font-body text-sm font-medium text-mist-ink">Total Cost Value</CardTitle>
+                <CardTitle className="font-body text-sm font-medium text-mist-ink">
+                  VAT / SSCL
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="font-display text-2xl font-semibold text-espresso">
-                  {formatRupee(valuation.costValue)}
+                  {formatRupee(valuation.taxAmount)}
                 </p>
-                <p className="mt-1 font-body text-xs text-mist-ink">What your current stock cost to acquire</p>
+                <p className="mt-1 font-body text-xs text-mist-ink">
+                  VAT {formatRupee(valuation.vatAmount)}
+                  {valuation.ssclAmount > 0 ? ` · SSCL ${formatRupee(valuation.ssclAmount)}` : ''}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="font-body text-sm font-medium text-mist-ink">
+                  Total Cost Value (at current cost)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="font-display text-2xl font-semibold text-espresso">
+                  {formatRupee(valuation.totalCostValue ?? valuation.costValue)}
+                </p>
+                <p className="mt-1 font-body text-xs text-mist-ink">
+                  Products {formatRupee(valuation.costValue)} + raw materials{' '}
+                  {formatRupee(valuation.rawMaterialValue ?? 0)}
+                </p>
+                <p className="mt-1 font-body text-xs text-mist-ink">
+                  {VALUATION_COST_BASIS_NOTE}
+                </p>
               </CardContent>
             </Card>
 
@@ -232,9 +288,11 @@ export function StockValuationClient() {
               </CardHeader>
               <CardContent>
                 <p className={`font-display text-2xl font-semibold ${marginColor(valuation.estimatedMarginPercent)}`}>
-                  {valuation.estimatedMarginPercent.toFixed(1)}%
+                  {valuation.estimatedMarginPercent.toFixed(2)}%
                 </p>
-                <p className="mt-1 font-body text-xs text-mist-ink">{formatRupee(valuation.estimatedMargin)}</p>
+                <p className="mt-1 font-body text-xs text-mist-ink">
+                  {formatRupee(valuation.estimatedMargin)} on retail excl. tax
+                </p>
               </CardContent>
             </Card>
 
@@ -246,7 +304,7 @@ export function StockValuationClient() {
                 <p className="font-display text-2xl font-semibold text-espresso">
                   {valuation.variantCount.toLocaleString()}
                 </p>
-                <p className="mt-1 font-body text-xs text-mist-ink">Active product variants with stock</p>
+                <p className="mt-1 font-body text-xs text-mist-ink">Active product variants holding stock</p>
               </CardContent>
             </Card>
           </div>
@@ -254,8 +312,9 @@ export function StockValuationClient() {
           {/* Info note */}
           <div className="rounded-lg border border-sand bg-linen px-4 py-3">
             <p className="font-body text-xs text-mist-ink">
-              Values are based on current stock quantities multiplied by retail and cost prices. Actual margins may differ
-              due to discounts, promotions, or price changes.
+              Retail prices are shown excluding tax. The till value adds VAT/SSCL per line
+              using each product&apos;s tax rule; exempt products add nothing. Actual margins may
+              differ due to discounts, promotions, or price changes.
             </p>
           </div>
 
@@ -281,7 +340,7 @@ export function StockValuationClient() {
                         className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist-ink hover:text-espresso"
                         onClick={() => handleSort('variantCount')}
                       >
-                        Variants <ArrowUpDown className="h-3 w-3" />
+                        Variants in Stock <ArrowUpDown className="h-3 w-3" />
                       </button>
                     </TableHead>
                     <TableHead className="text-right">
@@ -290,8 +349,14 @@ export function StockValuationClient() {
                         className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist-ink hover:text-espresso"
                         onClick={() => handleSort('retailValue')}
                       >
-                        Retail Value <ArrowUpDown className="h-3 w-3" />
+                        Retail (Excl. Tax) <ArrowUpDown className="h-3 w-3" />
                       </button>
+                    </TableHead>
+                    <TableHead className="text-right font-body text-xs font-medium text-mist-ink">
+                      Tax
+                    </TableHead>
+                    <TableHead className="text-right font-body text-xs font-medium text-mist-ink">
+                      Retail (Incl. Tax)
                     </TableHead>
                     <TableHead className="text-right">
                       <button
@@ -299,7 +364,7 @@ export function StockValuationClient() {
                         className="ml-auto flex items-center gap-1 font-body text-xs font-medium text-mist-ink hover:text-espresso"
                         onClick={() => handleSort('costValue')}
                       >
-                        Cost Value <ArrowUpDown className="h-3 w-3" />
+                        Cost Value (at current cost) <ArrowUpDown className="h-3 w-3" />
                       </button>
                     </TableHead>
                     <TableHead className="text-right">
@@ -325,7 +390,7 @@ export function StockValuationClient() {
                 <TableBody>
                   {sortedCategories.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-8 text-center font-body text-sm text-mist-ink">
+                      <TableCell colSpan={8} className="py-8 text-center font-body text-sm text-mist-ink">
                         No category data available
                       </TableCell>
                     </TableRow>
@@ -338,14 +403,20 @@ export function StockValuationClient() {
                           {formatRupee(cat.retailValue)}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm text-espresso">
+                          {formatRupee(cat.taxAmount)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm text-espresso">
+                          {formatRupee(cat.retailValueInclTax)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm text-espresso">
                           {formatRupee(cat.costValue)}
                         </TableCell>
                         <TableCell className={`text-right font-mono text-sm ${marginColor(cat.marginPercent)}`}>
-                          {cat.marginPercent.toFixed(1)}%
+                          {cat.marginPercent.toFixed(2)}%
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <span className="font-mono text-sm text-espresso">{cat.share.toFixed(1)}%</span>
+                            <span className="font-mono text-sm text-espresso">{cat.share.toFixed(2)}%</span>
                             <div className="h-2 w-16 overflow-hidden rounded-full bg-sand/30">
                               <div
                                 className="h-full rounded-full bg-espresso"
@@ -358,8 +429,42 @@ export function StockValuationClient() {
                     ))
                   )}
                 </TableBody>
+                {sortedCategories.length > 0 && valuation && (
+                  <TableFooter>
+                    <TableRow className="bg-linen/60 font-semibold">
+                      <TableCell className="font-body text-sm text-espresso">
+                        Total
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-espresso">
+                        {valuation.variantCount}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-espresso">
+                        {formatRupee(valuation.retailValue)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-espresso">
+                        {formatRupee(valuation.taxAmount)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-espresso">
+                        {formatRupee(valuation.retailValueInclTax)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-espresso">
+                        {formatRupee(valuation.costValue)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-espresso">
+                        {valuation.estimatedMarginPercent.toFixed(2)}%
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-espresso">
+                        {valuation.retailValue > 0 ? '100.00%' : '0.00%'}
+                      </TableCell>
+                    </TableRow>
+                  </TableFooter>
+                )}
               </Table>
             </div>
+            <p className="mt-2 font-body text-xs text-mist-ink">
+              The KPI cards and this totals row are column sums of the same
+              category snapshot, so the table and cards cannot disagree.
+            </p>
           </div>
         </>
       ) : null}

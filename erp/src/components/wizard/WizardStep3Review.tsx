@@ -20,8 +20,10 @@ import {
 import {
   PRODUCT_FORM_LABELS,
   PRODUCT_FORM_ICONS,
+  taxRuleLabel,
   type ProductFormValue,
 } from '@/lib/constants/product-options';
+import { useTaxRates } from '@/hooks/useTaxRates';
 
 export function WizardStep3Review() {
   const router = useRouter();
@@ -34,6 +36,7 @@ export function WizardStep3Review() {
 
   const { data: categoriesRes } = useCategories();
   const { data: brandsRes } = useBrands();
+  const { data: taxRates } = useTaxRates();
 
   const categories = categoriesRes?.data ?? [];
   const brands = brandsRes?.data ?? [];
@@ -231,7 +234,7 @@ export function WizardStep3Review() {
           <div className="grid grid-cols-3 gap-2 px-4 py-2.5">
             <dt className="text-sand-ink">Tax Rule</dt>
             <dd className="col-span-2 text-espresso">
-              {step1Data.taxRule.replace(/_/g, ' ')}
+              {taxRuleLabel(step1Data.taxRule, taxRates)}
             </dd>
           </div>
           <div className="grid grid-cols-3 gap-2 px-4 py-2.5">

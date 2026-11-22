@@ -5,12 +5,14 @@ import { setSentryTenantContext } from '@/lib/sentry/context';
 import { updateShipmentStatus } from '@/lib/services/shipment.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { resolveAdapterForAccount } from '@/lib/courier/registry';
+import { decryptCourierAccount } from '@/lib/courier/credentials';
 import {
   TERMINAL_SHIPMENT_STATUSES,
   isDeliveryStatusAdvance,
   MIN_TRACKING_INTERVAL_MS,
   TRACKING_BATCH_SIZE,
 } from '@/lib/constants/courier';
+import { ensureDeliveredCodEntry } from '@/lib/services/reconciliation-cod.service';
 import type { CourierAdapter, CourierTracking } from '@/lib/courier/types';
 import type { DeliveryStatus } from '@/generated/prisma/client';
 
@@ -108,21 +110,12 @@ export async function applyTrackingUpdate(
       });
 
       if (mapped.delivery === 'DELIVERED') {
-        // Only an unpaid COD parcel is a receivable. A CARD order that was
-        // already PAID must never inflate the COD aging report.
-        if (delivery.paymentMethod === 'COD' && delivery.paymentStatus !== 'PAID' && delivery.codAmount.gt(0)) {
-          await tx.reconciliationLedgerEntry.upsert({
-            where: { deliveryId },
-            create: {
-              tenantId,
-              deliveryId,
-              waybillId: shipment.waybillId,
-              expectedCod: delivery.codAmount,
-              status: 'PENDING_SETTLEMENT',
-            },
-            update: {},
-          });
-        }
+        // ARGUS #511: one ledger entry per delivered unpaid COD parcel.
+        await ensureDeliveredCodEntry(
+          tx,
+          { ...delivery, status: 'DELIVERED' },
+          shipment.waybillId,
+        );
       }
 
       if (mapped.delivery === 'RETURNED') {
@@ -184,11 +177,12 @@ export async function processDueTrackingChecks(): Promise<{ processed: number; f
     const account = await prisma.courierAccount.findFirst({ where: { tenantId, isActive: true } });
     if (!account) continue;
     const adapter = resolveAdapterForAccount(account);
+    const credentials = decryptCourierAccount(account);
     const auth = await adapter.authenticate({
-      email: account.email ?? undefined,
-      password: account.password ?? undefined,
-      apiKey: account.apiKey ?? undefined,
-      env: account.env,
+      email: credentials.email ?? undefined,
+      password: credentials.password ?? undefined,
+      apiKey: credentials.apiKey ?? undefined,
+      env: credentials.env,
     });
     if (auth.ok) tokensByTenant.set(tenantId, { token: auth.data, adapter });
   }

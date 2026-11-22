@@ -97,6 +97,21 @@ async function processReturn(page: Page, createdSale: any, state: any, overrides
   });
 }
 
+/**
+ * Refund expected by the server for a single-line sale: the line total less its
+ * share of the cart discount, plus the tax charged on the returned quantity
+ * (ARGUS #90/#91). Rounding matches the service (each part rounded to 2dp).
+ */
+function expectedRefund(createdSale: any, quantity: number): string {
+  const line = createdSale.lines[0];
+  const lineTotal = Number(line.lineTotalAfterDiscount);
+  const discountShare = Math.min(Number(createdSale.discountAmount ?? 0), lineTotal);
+  const paidBase = lineTotal - discountShare;
+  const ratio = quantity / Number(line.quantity);
+  const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+  return (round2(paidBase * ratio) + round2(Number(line.lineTax ?? 0) * ratio)).toFixed(2);
+}
+
 test.describe('Module 17 - Returns & Refunds', () => {
   test.describe.configure({ mode: 'serial', timeout: 180_000 });
   const state: { fixture?: any; customer?: any; ownerId?: string; returnIds: string[]; saleIds: string[] } = { returnIds: [], saleIds: [] };
@@ -132,7 +147,7 @@ test.describe('Module 17 - Returns & Refunds', () => {
     state.returnIds.push(returned.id);
     expect(returned.status).toBe('COMPLETED');
     expect(returned.refundMethod).toBe('CASH');
-    expect(Number(returned.refundAmount).toFixed(2)).toBe(Number(createdSale.lines[0].lineTotalAfterDiscount).toFixed(2));
+    expect(Number(returned.refundAmount).toFixed(2)).toBe(expectedRefund(createdSale, 1));
     expect(returned.lines[0].isRestocked).toBe(true);
     const after = (await json(await page.request.get(`/api/store/products/${state.fixture.product.id}`))).data.variants.find((v: any) => v.id === state.fixture.variant.id).stockQuantity;
     expect(after).toBe(before);
@@ -152,7 +167,7 @@ test.describe('Module 17 - Returns & Refunds', () => {
     const returned = (await json(response)).data;
     state.returnIds.push(returned.id);
     expect(returned.refundMethod).toBe('STORE_CREDIT');
-    expect(Number(returned.refundAmount).toFixed(2)).toBe((Number(createdSale.lines[0].lineTotalAfterDiscount) / 2).toFixed(2));
+    expect(Number(returned.refundAmount).toFixed(2)).toBe(expectedRefund(createdSale, 1));
     expect(returned.lines[0].isRestocked).toBe(false);
   });
 

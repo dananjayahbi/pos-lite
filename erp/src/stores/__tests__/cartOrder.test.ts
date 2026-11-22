@@ -3,13 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useCartStore } from '@/stores/cartStore';
 import type { CartItem } from '@/stores/cartStore';
 
-const item = (variantId: string): Omit<CartItem, 'discountPercent'> => ({
+const item = (variantId: string, overrides: Partial<CartItem> = {}): Omit<CartItem, 'discountPercent'> => ({
   variantId,
   productName: `Product ${variantId}`,
   variantDescription: 'Default',
   sku: variantId.toUpperCase(),
   unitPrice: 100,
   quantity: 1,
+  stockQuantity: 10,
+  ...overrides,
 });
 
 describe('cart item order', () => {
@@ -44,5 +46,34 @@ describe('cart item order', () => {
     const lines = useCartStore.getState().items;
     expect(lines.map((line) => line.variantId)).toEqual(['first', 'second']);
     expect(lines[0]?.quantity).toBe(2);
+  });
+
+  it('caps the quantity at the available stock (ARGUS #64)', () => {
+    const result = useCartStore.getState().addItem(item('oil', { quantity: 7, stockQuantity: 5 }));
+
+    expect(result).toEqual({ added: 5, limited: true });
+    expect(useCartStore.getState().items[0]?.quantity).toBe(5);
+  });
+
+  it('adds only the remaining stock to an existing line', () => {
+    useCartStore.getState().addItem(item('oil', { quantity: 3, stockQuantity: 5 }));
+    const result = useCartStore.getState().addItem(item('oil', { quantity: 3, stockQuantity: 5 }));
+
+    expect(result).toEqual({ added: 2, limited: true });
+    expect(useCartStore.getState().items[0]?.quantity).toBe(5);
+  });
+
+  it('does not add an out-of-stock item', () => {
+    const result = useCartStore.getState().addItem(item('sold-out', { stockQuantity: 0 }));
+
+    expect(result).toEqual({ added: 0, limited: true });
+    expect(useCartStore.getState().items).toHaveLength(0);
+  });
+
+  it('clamps a manual quantity update to the stock', () => {
+    useCartStore.getState().addItem(item('oil', { stockQuantity: 4 }));
+    useCartStore.getState().updateQuantity('oil', 99);
+
+    expect(useCartStore.getState().items[0]?.quantity).toBe(4);
   });
 });

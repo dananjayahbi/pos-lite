@@ -63,6 +63,20 @@ Permissions: `settings:payments`. OWNER and MANAGER hold it; CASHIER does not.
 Cashiers still see the tender because the POS layout resolves the config for
 them server-side.
 
+## Configuration ownership and enablement (ARGUS #509)
+
+- The LankaQR config is a payment destination: `GET`/`PATCH
+  /api/settings/payments` and `/settings/payments` are **OWNER/SUPER_ADMIN only**
+  (managers can no longer view or change it), and every PATCH writes a durable
+  `SETTINGS_CHANGED` audit row with before/after.
+- `PATCH` rejects `enabled: true` unless a merchant name and a renderable QR
+  image are supplied.
+- The parser (`parseLankaQrSettings`) only reports `enabled: true` when the
+  configuration is actually usable, and `DEFAULT_LANKA_QR_SETTINGS.enabled` is
+  `false`. A tenant with no/legacy config therefore no longer offers an
+  unscannable LankaQR tender in the POS or back-office sale sheet until it is
+  configured.
+
 ## API
 
 - `PATCH /api/store/sales` with `paymentMethod: "LANKAQR"` records the sale and
@@ -80,3 +94,24 @@ them server-side.
   gateway payment account.
 - `src/lib/validators/__tests__/sale.validators.test.ts` — split sale with a
   LankaQR leg is accepted.
+
+## Uploading the static QR (ARGUS #516)
+
+The page introduction said "paste or upload it here" but the form only had a
+URL input. It now has both:
+
+- **Upload image** -> `POST /api/settings/payments/qr` (multipart `file`).
+  The endpoint is OWNER/SUPER_ADMIN only (same rule as the payments PATCH,
+  ARGUS #509), always uses the session tenant, accepts JPEG/PNG/WebP up to
+  2 MB, stores `{tenantId}/lankaqr/static-qr` through the configured provider
+  and returns `{ success: true, url }`.
+- The returned URL (or a pasted URL) is only a form value until **Save Payment
+  Settings** persists `settings.lankaQr` with the audited PATCH.
+- Save is disabled while an upload is in flight, so the previous URL cannot be
+  persisted by a fast click (same race as the store logo, ARGUS #489).
+- SVG is rejected (a QR must be a raster image the modal can render), and
+  storage errors return a friendly message while the detail is logged
+  server-side.
+
+Pure validation/tests: `src/lib/payments/lanka-qr-upload.core.ts` and
+`src/lib/payments/__tests__/lanka-qr-upload.core.test.ts`.

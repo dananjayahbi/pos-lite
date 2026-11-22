@@ -1,18 +1,39 @@
 import Decimal from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/lib/api/errors';
-import type { SaleStatus, TaxRule } from '@/generated/prisma/client';
+import type { Prisma, SaleStatus, TaxRule, PaymentMethod } from '@/generated/prisma/client';
 import { adjustStockInTx, type TxClient } from '@/lib/services/inventory.service';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { createPayment } from '@/lib/services/payment.service';
 import { buildSaleAccountLegs, postSaleToAccounts, reverseSaleAccounts } from '@/lib/services/saleAccounts';
-import { redeemCredit, addToSpendTotal } from '@/lib/services/customer.service';
+import { redeemCredit, addToSpendTotal, issueCredit, reverseSpendOnVoid } from '@/lib/services/customer.service';
 import { kickCashDrawer } from '@/lib/hardware/cashDrawer';
 import type { PrinterConfig } from '@/lib/hardware/printer';
 import type { CreateSaleInput, HoldSaleInput, UpdateSaleInput } from '@/lib/validators/sale.validators';
 import { setSentryTenantContext } from '@/lib/sentry/context';
 import { dispatchWebhooks } from '@/lib/webhooks/dispatch';
 import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
+import { buildSaleTenderLegs, sumRedeemedCreditLegs } from '@/lib/services/saleTender.core';
+import { resolveCashTender } from '@/lib/services/saleCashTender.core';
+import { assertSaleVoidable } from '@/lib/services/saleVoid.core';
+import { assertCompletedSaleShape } from '@/lib/services/saleCompleteness.core';
+import { preserveSellingTimestamp } from '@/lib/sales/sale-edit';
+import { resolveActiveTaxRates } from '@/lib/settings/taxSettingsChange.core';
+import {
+  assertDiscountsAuthorized,
+  cartDiscountPercent,
+  clampPromotionDiscounts,
+  reconcileSaleDiscount,
+  sumClientPromotionDiscount,
+} from '@/lib/services/saleDiscountValidation.core';
+import { evaluatePromotions } from '@/lib/services/promotion.service';
+import { notifySaleVoided } from '@/lib/notifications/sale-alert-service';
+import {
+  createLowStockAlerts,
+  type LowStockAlertCandidate,
+} from '@/lib/notifications/low-stock-alert';
+import { reconcileCommissionForSale } from '@/lib/services/commission.service';
+import { resolveTaxRate } from '@/lib/pricing/taxRules.core';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -23,22 +44,15 @@ function buildVariantDescription(form: string | null, packSize: string | null): 
   return 'Default';
 }
 
-function getTaxRate(taxRule: TaxRule, vatRate: number, ssclRate: number): Decimal {
-  switch (taxRule) {
-    case 'STANDARD_VAT':
-      return new Decimal(vatRate).div(100);
-    case 'SSCL':
-      return new Decimal(ssclRate).div(100);
-    case 'EXEMPT':
-      return new Decimal(0);
-  }
-}
+// Tax rules are mutually exclusive: exactly one of VAT, SSCL or exempt applies
+// per line (ARGUS #469). The shared pure resolver is also used by the cart
+// preview so the two can never drift.
 
-function extractTenantRates(settings: unknown): { vatRate: number; ssclRate: number } {
-  const s = settings as Record<string, unknown>;
-  const vatRate = typeof s.vatRate === 'number' ? s.vatRate : 0;
-  const ssclRate = typeof s.ssclRate === 'number' ? s.ssclRate : 0;
-  return { vatRate, ssclRate };
+export function extractTenantRates(settings: unknown): { vatRate: number; ssclRate: number } {
+  // Future-dated tax changes must not charge early (ARGUS #475). The shared
+  // resolver is also used by the settings screen and the API, so the money
+  // path and the displayed schedule can never disagree.
+  return resolveActiveTaxRates(settings);
 }
 
 // ── Create Sale ──────────────────────────────────────────────────────────────
@@ -50,6 +64,10 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     userId: input.cashierId,
     userEmail: '',
   });
+
+  // Filled inside the transaction from the committed stock adjustments, used
+  // after commit for the low-stock inbox alert (ARGUS #55).
+  const lowStockCandidates: LowStockAlertCandidate[] = [];
 
   const result = await prisma.$transaction(async (tx: TxClient) => {
     // POS sales must belong to an open shift. Management sales may be
@@ -81,6 +99,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     }
     // `isGuestSale` without an open shift is a management back-office sale; it
     // is persisted as customerId = null exactly like a shiftless one.
+    let linkedCreditBalance: Decimal | null = null;
     if (input.customerId) {
       const linkedCustomer = await tx.customer.findFirst({
         where: { id: input.customerId, tenantId, deletedAt: null },
@@ -91,6 +110,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       if (!linkedCustomer.name || !linkedCustomer.phone) {
         throw new Error('Linked customer must have a name and a mobile number');
       }
+      linkedCreditBalance = new Decimal(linkedCustomer.creditBalance.toString());
     }
 
     // Get tenant settings for tax
@@ -102,6 +122,50 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       throw new Error('Tenant not found');
     }
     const { vatRate, ssclRate } = extractTenantRates(tenant.settings);
+
+    // ── Linked EXCHANGE return (ARGUS #93) ─────────────────────────────
+    // An exchange refunds the returned goods as credit toward the replacement
+    // sale. The return supplies the credit; the sale records the link so the
+    // customer's value is traceable and cannot be spent twice.
+    let linkedReturn: { id: string; refundAmount: Decimal } | null = null;
+    if (input.linkedReturnId) {
+      const exchangeReturn = await tx.return.findFirst({
+        where: { id: input.linkedReturnId, tenantId },
+        select: { id: true, refundMethod: true, status: true, refundAmount: true },
+      });
+      if (!exchangeReturn) {
+        throw new ApiError(400, 'RETURN_NOT_FOUND', 'The linked return was not found');
+      }
+      if (exchangeReturn.status !== 'COMPLETED') {
+        throw new ApiError(
+          400,
+          'RETURN_NOT_COMPLETED',
+          'Only a completed return can fund a replacement sale',
+        );
+      }
+      if (exchangeReturn.refundMethod !== 'EXCHANGE') {
+        throw new ApiError(
+          400,
+          'RETURN_NOT_EXCHANGE',
+          'Only an exchange return can be linked to a replacement sale',
+        );
+      }
+      const alreadyLinked = await tx.sale.findFirst({
+        where: { tenantId, linkedReturnId: exchangeReturn.id },
+        select: { id: true },
+      });
+      if (alreadyLinked) {
+        throw new ApiError(
+          409,
+          'RETURN_ALREADY_LINKED',
+          'This return already has a linked replacement sale',
+        );
+      }
+      linkedReturn = {
+        id: exchangeReturn.id,
+        refundAmount: new Decimal(exchangeReturn.refundAmount.toString()),
+      };
+    }
 
     // Resolve variants and compute line data
     const lineData: Array<{
@@ -174,7 +238,98 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       .reduce((sum, l) => sum.plus(l.lineTotalAfterDiscount), new Decimal(0))
       .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
-    const cartDiscount = new Decimal(input.cartDiscountAmount);
+    // ── Discount / promotion authorization (ARGUS #321) ────────────────
+    // The cart sends one combined `cartDiscountAmount` (manual + promotions),
+    // and the promotion records are opaque. Re-evaluate promotions server-side
+    // and reject a stale/mismatched claim; enforce the cashier thresholds with
+    // a real manager override instead of trusting the client.
+    const cashier = await tx.user.findUnique({
+      where: { id: input.cashierId },
+      select: { role: true },
+    });
+    const hasManagerRole =
+      cashier?.role === 'MANAGER' || cashier?.role === 'OWNER' || cashier?.role === 'SUPER_ADMIN';
+
+    let hasValidOverride = false;
+    if (input.authorizingManagerId) {
+      const manager = await tx.user.findFirst({
+        where: {
+          id: input.authorizingManagerId,
+          tenantId,
+          isActive: true,
+          role: { in: ['MANAGER', 'OWNER', 'SUPER_ADMIN'] },
+        },
+        select: { id: true },
+      });
+      if (!manager) {
+        throw new ApiError(
+          400,
+          'INVALID_AUTHORIZING_MANAGER',
+          'The authorizing manager is not an active manager/owner in this store',
+          { path: ['authorizingManagerId'] },
+        );
+      }
+      hasValidOverride = true;
+    }
+    const canOverrideDiscounts = hasManagerRole || hasValidOverride;
+
+    let cartDiscount: Decimal;
+    let serverPromotions: unknown;
+    if (input.appliedPromotions !== undefined || input.promoCode !== undefined) {
+      const cartLines = lineData.map((line) => {
+        const manualDiscount = line.discountPercent.greaterThan(0)
+          ? line.lineTotalBeforeDiscount
+              .mul(line.discountPercent)
+              .div(100)
+              .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+          : new Decimal(0);
+        return {
+          variantId: line.variantId,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice.toString(),
+          ...(manualDiscount.greaterThan(0)
+            ? { manualDiscountAmount: manualDiscount.toString() }
+            : {}),
+        };
+      });
+      const evaluation = await evaluatePromotions(
+        tenantId,
+        cartLines,
+        input.customerId,
+        input.promoCode,
+      );
+      const reconciled = reconcileSaleDiscount({
+        subtotal,
+        submittedDiscount: input.cartDiscountAmount,
+        clientPromoTotal: sumClientPromotionDiscount(input.appliedPromotions),
+        serverPromoTotal: evaluation.totalDiscountAmount,
+        ...(input.manualCartDiscountAmount !== undefined
+          ? { manualDiscount: input.manualCartDiscountAmount }
+          : {}),
+      });
+      cartDiscount = reconciled.cartDiscount;
+      serverPromotions = clampPromotionDiscounts(
+        evaluation.appliedDiscounts,
+        reconciled.appliedPromotionTotal,
+      );
+
+      assertDiscountsAuthorized({
+        canOverride: canOverrideDiscounts,
+        lineDiscountPercents: lineData.map((line) => line.discountPercent.toNumber()),
+        cartDiscountPercent: cartDiscountPercent(reconciled.manualDiscount, subtotal),
+      });
+    } else {
+      cartDiscount = new Decimal(input.cartDiscountAmount).toDecimalPlaces(
+        2,
+        Decimal.ROUND_HALF_UP,
+      );
+      assertDiscountsAuthorized({
+        canOverride: canOverrideDiscounts,
+        lineDiscountPercents: lineData.map((line) => line.discountPercent.toNumber()),
+        cartDiscountPercent: cartDiscountPercent(cartDiscount, subtotal),
+      });
+    }
+
     if (cartDiscount.greaterThan(subtotal)) {
       throw new Error('Cart discount cannot exceed subtotal');
     }
@@ -190,7 +345,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     );
     lineData.forEach((line, index) => {
       const taxableLine = Decimal.max(line.lineTotalAfterDiscount.minus(discountShares[index]!), 0);
-      const taxRate = getTaxRate(line.taxRule, vatRate, ssclRate);
+      const taxRate = resolveTaxRate(line.taxRule, { vatRate, ssclRate });
       line.lineTax = taxableLine.mul(taxRate).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     });
 
@@ -211,11 +366,95 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       });
     }
 
-    const totalAmount = subtotal
-      .minus(cartDiscount)
-      .plus(totalTax)
-      .plus(deliveryCharge)
+    const totalAmount = Decimal.max(
+      subtotal
+        .minus(cartDiscount)
+        .plus(totalTax)
+        .plus(deliveryCharge),
+      0,
+    ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+    // ── Store credit (ARGUS #61) ─────────────────────────────────────────
+    // Credit is a tender, not a display-only deduction: it settles part (or
+    // all) of the sale and moves no cash. Payment legs carry it so
+    // `sum(payments) === totalAmount` and the shift drawer reconciles against
+    // what was actually collected instead of the full sale value.
+    const creditAmount = new Decimal(input.appliedStoreCredit ?? '0').toDecimalPlaces(
+      2,
+      Decimal.ROUND_HALF_UP,
+    );
+    if (creditAmount.isNegative()) {
+      throw new ApiError(400, 'INVALID_STORE_CREDIT', 'Store credit cannot be negative', {
+        path: ['appliedStoreCredit'],
+      });
+    }
+    if (creditAmount.greaterThan(0)) {
+      if (!input.customerId) {
+        throw new ApiError(
+          400,
+          'STORE_CREDIT_REQUIRES_CUSTOMER',
+          'Store credit cannot be applied to a guest sale - link a customer first',
+          { path: ['appliedStoreCredit'] },
+        );
+      }
+      if (creditAmount.greaterThan(totalAmount)) {
+        throw new ApiError(
+          400,
+          'STORE_CREDIT_EXCEEDS_TOTAL',
+          'Store credit cannot exceed the sale total',
+          { path: ['appliedStoreCredit'] },
+        );
+      }
+      if (linkedCreditBalance && creditAmount.greaterThan(linkedCreditBalance)) {
+        throw new ApiError(
+          400,
+          'STORE_CREDIT_EXCEEDS_BALANCE',
+          'Store credit cannot exceed the customer\u2019s available balance',
+          { path: ['appliedStoreCredit'] },
+        );
+      }
+    }
+    // What the cashier still has to collect after store credit and the linked
+    // exchange credit. The exchange applies up to what is still owed; any
+    // remainder is issued as store credit to the customer (never silently
+    // dropped).
+    const afterStoreCredit = totalAmount
+      .minus(creditAmount)
       .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const requestedExchangeCredit = linkedReturn?.refundAmount ?? new Decimal(0);
+    const exchangeCreditAmount = Decimal.min(
+      requestedExchangeCredit,
+      Decimal.max(afterStoreCredit, 0),
+    ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const exchangeCreditRemainder = requestedExchangeCredit
+      .minus(exchangeCreditAmount)
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    if (exchangeCreditRemainder.greaterThan(0) && !input.customerId) {
+      throw new ApiError(
+        400,
+        'EXCHANGE_CREDIT_REMAINDER_REQUIRES_CUSTOMER',
+        'The exchange credit exceeds this sale - link a customer to receive the remainder as store credit',
+      );
+    }
+    const payableAmount = afterStoreCredit
+      .minus(exchangeCreditAmount)
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    if (input.paymentMethod === 'STORE_CREDIT' && payableAmount.greaterThan(0)) {
+      throw new ApiError(
+        400,
+        'STORE_CREDIT_DOES_NOT_COVER_TOTAL',
+        'Store credit does not cover the whole sale - choose a tender for the remaining amount',
+        { path: ['paymentMethod'] },
+      );
+    }
+    if (input.paymentMethod === 'EXCHANGE_CREDIT' && payableAmount.greaterThan(0)) {
+      throw new ApiError(
+        400,
+        'EXCHANGE_CREDIT_DOES_NOT_COVER_TOTAL',
+        'Exchange credit does not cover the whole sale - choose a tender for the remaining amount',
+        { path: ['paymentMethod'] },
+      );
+    }
 
     // ── Zero-value verification (doc 33 / 34) ───────────────────────────
     // A zero (or negative) total is only permitted with a recorded reason; a
@@ -231,7 +470,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       throw new ApiError(
         422,
         'NONE_PAYMENT_REQUIRES_ZERO_VALUE',
-        'A non-zero sale requires CASH/CARD/SPLIT/LANKAQR - NONE is reserved for zero-value sales',
+        'A non-zero sale requires CASH/CARD/SPLIT/LANKAQR or store credit - NONE is reserved for zero-value sales',
       );
     }
     if (isZeroValue && !input.zeroValueReason) {
@@ -282,8 +521,47 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       }
     }
 
-    // Zero-value sales settle with no payment leg.
-    const effectivePaymentMethod = isZeroValue ? 'NONE' : input.paymentMethod;
+    // Zero-value sales settle with no payment leg. A sale fully settled by
+    // store credit is NOT a zero-value sale: it has a real total and a credit
+    // tender, and must never require a zero-value reason.
+    const effectivePaymentMethod: PaymentMethod = isZeroValue
+      ? 'NONE'
+      : payableAmount.lte(0) && exchangeCreditAmount.greaterThan(0)
+        ? 'EXCHANGE_CREDIT'
+        : payableAmount.lte(0) && creditAmount.greaterThan(0)
+          ? 'STORE_CREDIT'
+          : input.paymentMethod;
+
+    // ── Completed-shape invariant (ARGUS #76) ────────────────────────────
+    // Build the tender legs before writing the row so a COMPLETED sale can
+    // never be persisted with a total but no line item or no payment. This is
+    // the same guard the validator applies, repeated at the only service that
+    // creates completed sales (internal callers bypass the HTTP validator).
+    if (input.paymentMethod === 'SPLIT' && payableAmount.greaterThan(0)) {
+      const digitalAmt = new Decimal(input.cardAmount ?? 0);
+      if (digitalAmt.greaterThan(payableAmount)) {
+        throw new ApiError(
+          400,
+          'CARD_AMOUNT_EXCEEDS_PAYABLE',
+          'The card portion cannot exceed the amount still payable after store credit',
+          { path: ['cardAmount'] },
+        );
+      }
+    }
+    const tenderLegs = buildSaleTenderLegs({
+      paymentMethod: input.paymentMethod,
+      payableAmount,
+      creditAmount,
+      exchangeCreditAmount,
+      ...(input.cardAmount !== undefined ? { cardAmount: new Decimal(input.cardAmount) } : {}),
+      ...(input.splitLegMethod !== undefined ? { splitLegMethod: input.splitLegMethod } : {}),
+    });
+    assertCompletedSaleShape({
+      status: 'COMPLETED',
+      lineCount: lineData.length,
+      paymentCount: tenderLegs.length,
+      totalAmount,
+    });
 
     // Create Sale
     const sale = await tx.sale.create({
@@ -295,9 +573,10 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
         ...(input.authorizingManagerId
           ? { authorizingManager: { connect: { id: input.authorizingManagerId } } }
           : {}),
-        ...(input.appliedPromotions !== undefined && {
-          appliedPromotions: input.appliedPromotions,
+        ...(serverPromotions !== undefined && {
+          appliedPromotions: serverPromotions as Prisma.InputJsonValue,
         }),
+        ...(linkedReturn ? { linkedReturn: { connect: { id: linkedReturn.id } } } : {}),
         subtotal: subtotal.toNumber(),
         discountAmount: cartDiscount.toNumber(),
         taxAmount: totalTax.toNumber(),
@@ -327,96 +606,105 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
             discountAmount: l.discountAmount.toNumber(),
             lineTotalBeforeDiscount: l.lineTotalBeforeDiscount.toNumber(),
             lineTotalAfterDiscount: l.lineTotalAfterDiscount.toNumber(),
+            lineTax: l.lineTax.toNumber(),
           })),
         },
       },
       include: { lines: true },
     });
 
-    // Adjust stock for each line
+    // Adjust stock for each line. Collect post-sale quantities for the
+    // low-stock inbox alert (ARGUS #55): the threshold rule lives in the shared
+    // notification producer, not here.
     for (const l of lineData) {
-      await adjustStockInTx(tx, tenantId, l.variantId, input.cashierId, {
+      const updatedVariant = await adjustStockInTx(tx, tenantId, l.variantId, input.cashierId, {
         quantityDelta: -l.quantity,
         reason: 'SALE',
         saleId: sale.id,
       });
+      lowStockCandidates.push({
+        variantId: l.variantId,
+        productName: l.productNameSnapshot,
+        sku: updatedVariant.sku ?? l.sku,
+        stockQuantity: updatedVariant.stockQuantity,
+        lowStockThreshold: updatedVariant.lowStockThreshold,
+        // Crossing only: a sale that leaves an already-low variant low must not
+        // add another alert on every transaction.
+        previousQuantity: updatedVariant.stockQuantity + l.quantity,
+      });
     }
 
-    // Create Payment records
-    if (input.paymentMethod === 'CASH') {
-      await createPayment({ saleId: sale.id, method: 'CASH', amount: totalAmount }, tx);
-    } else if (input.paymentMethod === 'CARD') {
+    // Create Payment records. The credit leg settles whatever the customer's
+    // balance covers; the chosen tender settles only the remaining payable.
+    for (const leg of tenderLegs) {
       await createPayment(
         {
           saleId: sale.id,
-          method: 'CARD',
-          amount: totalAmount,
-          ...(input.cardReferenceNumber !== undefined && {
-            cardReferenceNumber: input.cardReferenceNumber,
-          }),
+          method: leg.method,
+          amount: leg.amount,
+          ...(input.cardReferenceNumber !== undefined &&
+            leg.method !== 'CASH' &&
+            leg.method !== 'STORE_CREDIT' && { cardReferenceNumber: input.cardReferenceNumber }),
         },
         tx,
       );
-    } else if (input.paymentMethod === 'LANKAQR') {
-      await createPayment(
-        {
-          saleId: sale.id,
-          method: 'LANKAQR',
-          amount: totalAmount,
-          ...(input.cardReferenceNumber !== undefined && {
-            cardReferenceNumber: input.cardReferenceNumber,
-          }),
-        },
-        tx,
-      );
-    } else if (input.paymentMethod === 'SPLIT') {
-      const digitalAmt = new Decimal(input.cardAmount!);
-      const cashAmt = totalAmount.minus(digitalAmt);
-      const digitalLegMethod = input.splitLegMethod ?? 'CARD';
-      await createPayment(
-        {
-          saleId: sale.id,
-          method: digitalLegMethod,
-          amount: digitalAmt,
-          ...(input.cardReferenceNumber !== undefined && {
-            cardReferenceNumber: input.cardReferenceNumber,
-          }),
-        },
-        tx,
-      );
-      await createPayment({ saleId: sale.id, method: 'CASH', amount: cashAmt }, tx);
     }
 
-    // Compute and save change given for CASH / SPLIT
-    if (input.paymentMethod === 'CASH' || input.paymentMethod === 'SPLIT') {
-      const cashPortionAmount =
-        input.paymentMethod === 'CASH'
-          ? totalAmount
-          : totalAmount.minus(new Decimal(input.cardAmount!));
-      const cashReceivedDec = new Decimal(input.cashReceived!);
-      const changeGiven = cashReceivedDec.minus(cashPortionAmount);
-      if (changeGiven.greaterThan(0)) {
-        await tx.sale.update({
-          where: { id: sale.id },
-          data: { changeGiven: changeGiven.toNumber() },
-        });
-      }
+    // ── Cash tender (ARGUS #62) ─────────────────────────────────────────
+    // Short cash must never be persisted as a fully-paid sale. The server, not
+    // the terminal, owns the cash portion: for CASH it is the whole payable
+    // amount, for SPLIT only the remainder after the card/QR leg. Payable is
+    // already net of discounts, store credit and exchange credit. Overpayment
+    // is recorded as change; an exact tender stores no change. A missing or
+    // malformed `cashReceived` counts as zero tendered rather than crashing.
+    // See docs/pos-cash-tender.md.
+    const cashTender = resolveCashTender({
+      paymentMethod: input.paymentMethod,
+      payableAmount,
+      cardAmount: input.cardAmount,
+      cashReceived: input.cashReceived,
+    });
+    if (cashTender.status === 'SHORT') {
+      throw new ApiError(
+        400,
+        'INSUFFICIENT_CASH',
+        `Cash received (${cashTender.cashReceived.toFixed(2)}) is less than the cash due (${cashTender.cashDue.toFixed(2)}) after discounts and credit`,
+        { path: ['cashReceived'] },
+      );
+    }
+    if (cashTender.status === 'SETTLED' && cashTender.changeGiven.greaterThan(0)) {
+      await tx.sale.update({
+        where: { id: sale.id },
+        data: { changeGiven: cashTender.changeGiven.toNumber() },
+      });
     }
 
     // Customer credit redemption and spend tracking. Guest sales never reach
     // this block: with no customerId there is no ledger to touch, so a walk-in
     // bill accrues no loyalty spend and consumes no store credit.
     if (input.customerId) {
-      const creditAmount = new Decimal(input.appliedStoreCredit ?? '0');
       if (creditAmount.greaterThan(0)) {
         await redeemCredit(tenantId, input.customerId, creditAmount, tx);
+      }
+      if (exchangeCreditRemainder.greaterThan(0) && linkedReturn) {
+        // The replacement is cheaper than the returned goods; the difference
+        // stays with the customer as store credit rather than disappearing.
+        await issueCredit(
+          tenantId,
+          input.customerId,
+          exchangeCreditRemainder,
+          `Exchange remainder for return ${linkedReturn.id}`,
+          tx,
+        );
       }
       await addToSpendTotal(tenantId, input.customerId, totalAmount, tx);
     }
 
-    // Route the collected money into payment accounts. Inside the transaction
-    // so the sale and the money commit together; a tenant with no accounts yet
-    // simply writes nothing and the sale still completes.
+    // Route the collected money into payment accounts. Only the payable part
+    // was collected; the credit leg reduces the customer's balance instead of
+    // landing in a cash/bank account. Inside the transaction so the sale and
+    // the money commit together; a tenant with no accounts yet simply writes
+    // nothing and the sale still completes.
     await postSaleToAccounts(
       tx,
       tenantId,
@@ -425,7 +713,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
       sale.id.slice(0, 8).toUpperCase(),
       buildSaleAccountLegs({
         paymentMethod: effectivePaymentMethod,
-        totalAmount,
+        totalAmount: payableAmount,
         ...(input.cardAmount !== undefined && { cardAmount: input.cardAmount }),
         ...(input.splitLegMethod !== undefined && { splitLegMethod: input.splitLegMethod }),
       }),
@@ -434,7 +722,9 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
 
     const completeSale = await tx.sale.findUniqueOrThrow({
       where: { id: sale.id },
-      include: { lines: true, payments: true },
+      // ARGUS #59: the sale-completed notification names the buyer when one is
+      // linked; this include is additive and only adds `customer.name`.
+      include: { lines: true, payments: true, customer: { select: { name: true } } },
     });
     return completeSale;
   }, { maxWait: 10_000, timeout: 30_000 });
@@ -450,6 +740,7 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     after: {
       totalAmount: result.totalAmount,
       paymentMethod: result.paymentMethod,
+      linkedReturnId: result.linkedReturnId,
       lineCount: result.lines.length,
       deliveryCharge: result.deliveryCharge,
       customerId: result.customerId ?? null,
@@ -467,6 +758,20 @@ export async function createSale(tenantId: string, input: CreateSaleInput & { ca
     itemCount: result.lines.length,
     customerId: result.customerId ?? null,
   });
+
+  // ARGUS #55: a completed sale that drops a variant to/below its threshold
+  // must reach the inbox like a manual adjustment does. Best-effort and after
+  // commit - a notification failure never fails a paid sale.
+  if (lowStockCandidates.length > 0) {
+    void createLowStockAlerts(
+      prisma,
+      tenantId,
+      lowStockCandidates,
+      `Sold via sale ${result.id.slice(0, 8).toUpperCase()}`,
+    ).catch((notificationError) => {
+      console.warn('Sale low-stock notification failed:', notificationError);
+    });
+  }
 
   // Kick cash drawer for cash payments (fire-and-forget)
   if (input.paymentMethod === 'CASH' || input.paymentMethod === 'SPLIT') {
@@ -542,7 +847,10 @@ export async function getSaleById(tenantId: string, saleId: string) {
       lines: {
         include: {
           variant: { include: { product: true } },
-          returnLines: { select: { quantity: true } },
+          returnLines: {
+            where: { return: { status: 'COMPLETED' } },
+            select: { quantity: true, lineRefundAmount: true, lineTaxAmount: true },
+          },
         },
       },
       cashier: { select: { id: true, email: true } },
@@ -564,6 +872,16 @@ export async function getSaleById(tenantId: string, saleId: string) {
     lines: sale.lines.map((line) => ({
       ...line,
       returnedQuantity: line.returnLines.reduce((sum, rl) => sum + rl.quantity, 0),
+      // Amounts already refunded, so the return preview also works from the
+      // remaining balance on a repeat partial return (ARGUS #104).
+      returnedRefundAmount: line.returnLines.reduce(
+        (sum, rl) => sum + Number(rl.lineRefundAmount.toString()),
+        0,
+      ),
+      returnedTaxAmount: line.returnLines.reduce(
+        (sum, rl) => sum + Number(rl.lineTaxAmount.toString()),
+        0,
+      ),
     })),
   };
 }
@@ -574,6 +892,8 @@ export interface GetSalesFilters {
   shiftId?: string | undefined;
   cashierId?: string | undefined;
   status?: SaleStatus | undefined;
+  /** Exact tender (CASH, CARD, ...). Server-side so totals/pages stay correct. */
+  paymentMethod?: PaymentMethod | undefined;
   from?: Date | undefined;
   to?: Date | undefined;
   page?: number | undefined;
@@ -589,6 +909,7 @@ export async function getSales(tenantId: string, filters: GetSalesFilters) {
   if (filters.shiftId) where.shiftId = filters.shiftId;
   if (filters.cashierId) where.cashierId = filters.cashierId;
   if (filters.status) where.status = filters.status;
+  if (filters.paymentMethod) where.paymentMethod = filters.paymentMethod;
   if (filters.from || filters.to) {
     // Backdated sales must be findable under their accounting date, so the
     // range matches `saleDate` when it is set and falls back to `createdAt`
@@ -603,12 +924,19 @@ export async function getSales(tenantId: string, filters: GetSalesFilters) {
     prisma.sale.findMany({
       where,
       include: {
-        lines: { include: { returnLines: { select: { quantity: true } } } },
+        lines: { include: { returnLines: { where: { return: { status: 'COMPLETED' } }, select: { quantity: true } } } },
         // TASK B: the management table shows the customer name, so the list
         // response carries the minimum identity fields (never the full record).
         customer: { select: { id: true, name: true, phone: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        // ARGUS #82: the ledger is ordered by the same accounting date the row
+        // displays, not the entry timestamp, so a backdated sale sits in its
+        // recorded period and the Date column stays monotonic. Legacy rows
+        // without a saleDate fall back to createdAt and sort after dated rows.
+        { saleDate: { sort: 'desc', nulls: 'last' } },
+        { createdAt: 'desc' },
+      ],
       skip,
       take: limit,
     }),
@@ -832,9 +1160,12 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
     if (!sale) {
       throw new Error('Sale not found');
     }
-    if (sale.status !== 'COMPLETED') {
-      throw new Error('Only completed sales can be voided');
-    }
+    // A return already restocked/refunded part of this sale; voiding would
+    // double-restock and over-reverse the ledger (ARGUS #94).
+    const completedReturnCount = await tx.return.count({
+      where: { originalSaleId: saleId, tenantId, status: 'COMPLETED' },
+    });
+    assertSaleVoidable({ status: sale.status, completedReturnCount });
 
     // Shift-bound sales can only be voided while their shift is open.
     // Management sales have no shift and can be voided by an authorized actor.
@@ -859,6 +1190,7 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
 
     // Reverse stock for each line
     for (const line of sale.lines) {
+      if (!line.variantId) continue;
       await adjustStockInTx(tx, tenantId, line.variantId, actorId, {
         quantityDelta: line.quantity,
         reason: 'VOID_REVERSAL',
@@ -869,6 +1201,51 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
     // Put the money back where it came from. Mirrors the entries written by
     // `postSaleToAccounts` at collection time.
     await reverseSaleAccounts(tx, tenantId, actorId, sale.id, sale.id.slice(0, 8).toUpperCase());
+
+    // Store/exchange credit redeemed on this sale must return to the customer.
+    // The tender legs are the source of truth; voiding previously reversed only
+    // the payment account legs, so the redeemed balance vanished.
+    const creditLegs = await tx.payment.findMany({
+      where: {
+        saleId: sale.id,
+        method: { in: ['STORE_CREDIT', 'EXCHANGE_CREDIT'] },
+      },
+      select: { method: true, amount: true },
+    });
+    const redeemedCredit = sumRedeemedCreditLegs(
+      creditLegs.map((leg) => ({ method: leg.method, amount: new Decimal(leg.amount.toString()) })),
+    );
+    if (sale.customerId && redeemedCredit.total.greaterThan(0)) {
+      await issueCredit(
+        tenantId,
+        sale.customerId,
+        redeemedCredit.total,
+        `Void of sale ${sale.id.slice(0, 8).toUpperCase()} - restored store/exchange credit`,
+        tx,
+      );
+    }
+
+    // Voided sales must stop counting toward the customer's lifetime spend and
+    // visit/loyalty metrics (ARGUS #308).
+    if (sale.customerId) {
+      await reverseSpendOnVoid(
+        tenantId,
+        sale.customerId,
+        new Decimal(sale.totalAmount.toString()),
+        sale.id,
+        tx,
+      );
+    }
+
+    // Commission on a voided sale is fully clawed back as a negative
+    // outstanding record (ARGUS #361); a paid original row is left untouched.
+    await reconcileCommissionForSale({
+      tenantId,
+      saleId,
+      voided: true,
+      actorId,
+      tx,
+    });
 
     return updatedSale;
   });
@@ -883,6 +1260,15 @@ export async function voidSale(tenantId: string, saleId: string, actorId: string
     before: { status: 'COMPLETED' },
     after: { status: 'VOIDED', voidedById: actorId },
   }).catch(() => {});
+
+  // ARGUS #52: the "Sale Completed" alert must not keep advertising a voided
+  // sale. Best-effort — a notification failure never fails the void.
+  void notifySaleVoided(tenantId, {
+    id: result.id,
+    totalAmount: result.totalAmount.toString(),
+  }).catch((notifError) => {
+    console.warn('Sale void notification update failed:', notifError);
+  });
 
   return result;
 }
@@ -950,7 +1336,14 @@ export async function updateSale(
   } = {};
 
   if (input.customerId !== undefined) data.customerId = input.customerId ?? null;
-  if (input.saleDate !== undefined) data.saleDate = input.saleDate ?? null;
+  if (input.saleDate !== undefined) {
+    // ARGUS #88: a day-granular edit that stays on the same calendar day keeps
+    // the recorded clock time; only an intentional day change moves the anchor.
+    data.saleDate =
+      input.saleDate === null
+        ? null
+        : preserveSellingTimestamp(before.saleDate ?? before.createdAt, input.saleDate);
+  }
 
   let nextTotal = previousTotal;
   if (input.deliveryCharge !== undefined) {
@@ -1012,21 +1405,46 @@ export async function updateSale(
     // Re-scale existing tender legs so they still sum to the new total. The
     // split shape (how many legs, which methods, which card references) is
     // preserved; only the amounts follow the total.
+    //
+    // A STORE_CREDIT leg is a fixed redemption — its amount is pinned to the
+    // customer's balance and cannot move with a delivery charge — so only the
+    // cash/card/QR legs absorb the delta.
     if (
       !nextTotal.equals(previousTotal) &&
       before.payments.length > 0 &&
       previousTotal.greaterThan(0)
     ) {
-      const legs = before.payments;
+      const creditTotal = before.payments
+        .filter((p) => p.method === 'STORE_CREDIT')
+        .reduce((sum, p) => sum.plus(new Decimal(p.amount.toString())), new Decimal(0));
+      const moneyLegs = before.payments.filter((p) => p.method !== 'STORE_CREDIT');
+      const previousMoney = previousTotal.minus(creditTotal);
+      const targetMoney = nextTotal.minus(creditTotal);
+
+      if (targetMoney.isNegative()) {
+        throw new ApiError(
+          400,
+          'INVALID_DELIVERY_CHARGE',
+          'This delivery charge would reduce the total below the store credit already redeemed - void the sale instead',
+        );
+      }
+      if (moneyLegs.length === 0 && targetMoney.greaterThan(0)) {
+        throw new ApiError(
+          400,
+          'INVALID_DELIVERY_CHARGE',
+          'This delivery charge cannot be collected on a store-credit-only sale - void the sale instead',
+        );
+      }
+
       let allocated = new Decimal(0);
-      for (let i = 0; i < legs.length; i += 1) {
-        const leg = legs[i]!;
-        const isLast = i === legs.length - 1;
+      for (let i = 0; i < moneyLegs.length; i += 1) {
+        const leg = moneyLegs[i]!;
+        const isLast = i === moneyLegs.length - 1;
         const amount = isLast
-          ? nextTotal.minus(allocated)
+          ? targetMoney.minus(allocated)
           : new Decimal(leg.amount.toString())
-              .mul(nextTotal)
-              .div(previousTotal)
+              .mul(targetMoney)
+              .div(previousMoney)
               .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
         if (amount.isNegative()) {
           throw new ApiError(
@@ -1047,7 +1465,7 @@ export async function updateSale(
       where: { id: saleId },
       data,
       include: {
-        lines: { include: { returnLines: { select: { quantity: true } } } },
+        lines: { include: { returnLines: { where: { return: { status: 'COMPLETED' } }, select: { quantity: true } } } },
         customer: { select: { id: true, name: true, phone: true } },
       },
     });

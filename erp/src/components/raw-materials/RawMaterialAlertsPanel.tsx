@@ -1,19 +1,31 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertTriangle, PackageX } from 'lucide-react';
+import { AlertTriangle, PackageX, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useRawMaterialAlerts } from '@/hooks/useRawMaterialAlerts';
-import { getUnitShortLabel } from '@/lib/services/rawMaterial.core';
+import {
+  factoryFeedErrorMessage,
+  resolveFactoryFeedState,
+} from '@/components/raw-materials/factoryDashboardState';
 
 interface RawMaterialAlertsPanelProps {
   permissions: string[];
 }
 
 export function RawMaterialAlertsPanel({ permissions }: RawMaterialAlertsPanelProps) {
-  const { data } = useRawMaterialAlerts();
+  const { data, isError, isLoading, error, isFetching, refetch } = useRawMaterialAlerts();
   const alerts = data?.data ?? [];
+
+  // ARGUS #244 — error first: a failed alerts call must never print the green
+  // "all raw materials are above their thresholds" all-clear.
+  const viewState = resolveFactoryFeedState({
+    isError,
+    isLoading,
+    itemCount: alerts.length,
+  });
 
   const critical = alerts.filter((a) => a.severity === 'CRITICAL');
   const low = alerts.filter((a) => a.severity === 'LOW');
@@ -27,7 +39,37 @@ export function RawMaterialAlertsPanel({ permissions }: RawMaterialAlertsPanelPr
         <AlertTriangle className="h-4 w-4 text-amber-500" />
       </CardHeader>
       <CardContent>
-        {alerts.length === 0 ? (
+        {viewState === 'error' ? (
+          <div
+            role="alert"
+            className="flex flex-col items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-5 text-center"
+          >
+            <AlertTriangle className="h-6 w-6 text-red-500" />
+            <p className="font-body text-sm font-medium text-red-800">Alerts check failed</p>
+            <p className="font-body text-xs text-red-600">
+              {factoryFeedErrorMessage(error, 'The raw material alerts could not be loaded.')}
+            </p>
+            <p className="font-body text-xs text-red-600">
+              Stock alerts are unknown until the feed loads.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={`mr-2 h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+              {isFetching ? 'Retrying…' : 'Retry'}
+            </Button>
+          </div>
+        ) : viewState === 'loading' ? (
+          <div className="space-y-2 py-1">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-9 w-full" />
+            ))}
+          </div>
+        ) : viewState === 'empty' ? (
           <p className="py-2 text-sm text-mist-ink">
             All raw materials are above their low-stock thresholds.
           </p>
@@ -49,8 +91,8 @@ export function RawMaterialAlertsPanel({ permissions }: RawMaterialAlertsPanelPr
                   <div>
                     <p className="text-sm font-medium text-espresso">{alert.name}</p>
                     <p className="text-xs text-mist-ink">
-                      {alert.quantity} {getUnitShortLabel(alert.unit as 'LITERS' | 'KILOGRAMS')} on
-                      hand · threshold {alert.lowStockThreshold}
+                      {alert.quantity} {alert.unitShortLabel} on hand · threshold{' '}
+                      {alert.lowStockThreshold}
                     </p>
                   </div>
                   <span

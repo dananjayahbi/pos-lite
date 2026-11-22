@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { formatRupee } from '@/lib/format';
-import { staffDisplayName } from '@/lib/utils/staff-name';
+import { formatRupee, formatShortDateTime } from '@/lib/format';
+import { returnStaffLabel } from '@/components/returns/returnAuthorizer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -43,7 +43,7 @@ interface SaleData {
   discountAmount: number;
   taxAmount: number;
   totalAmount: number;
-  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | null;
+  paymentMethod: 'CASH' | 'CARD' | 'LANKAQR' | 'SPLIT' | 'STORE_CREDIT' | 'EXCHANGE_CREDIT' | 'NONE' | null;
   status: 'OPEN' | 'COMPLETED' | 'VOIDED';
   authorizingManagerId: string | null;
   createdAt: string;
@@ -72,7 +72,8 @@ interface ReturnRecord {
   lines: ReturnLine[];
   originalSale: SaleData;
   initiatedBy: { id: string; email: string };
-  authorizedBy: { id: string; email: string };
+  // Nullable: legacy rows and non-manager refunds have no recorded authorizer.
+  authorizedBy: { id: string; email: string } | null;
 }
 
 interface Filters {
@@ -98,16 +99,7 @@ const refundMethodBadgeClass: Record<string, string> = {
 };
 
 function formatDateTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  return (
-    d.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    }) +
-    ' ' +
-    d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-  );
+  return formatShortDateTime(dateStr);
 }
 
 export function ReturnsHistoryTable() {
@@ -147,7 +139,7 @@ export function ReturnsHistoryTable() {
     return params.toString();
   }, [debouncedSaleId, filters.refundMethod, filters.from, filters.to, filters.page]);
 
-  const { data, isLoading } = useQuery<{
+  const { data, isLoading, error } = useQuery<{
     success: boolean;
     data: ReturnRecord[];
     pagination: { total: number; page: number; limit: number; totalPages: number };
@@ -155,8 +147,18 @@ export function ReturnsHistoryTable() {
     queryKey: ['returns', debouncedSaleId, filters.refundMethod, filters.from, filters.to, filters.page],
     queryFn: async () => {
       const res = await fetch(`/api/store/returns?${buildParams()}`);
-      if (!res.ok) throw new Error('Failed to fetch returns');
-      return res.json();
+      const json = (await res.json().catch(() => null)) as {
+        success: boolean;
+        data: ReturnRecord[];
+        pagination: { total: number; page: number; limit: number; totalPages: number };
+        error?: { message?: string };
+      } | null;
+      // ARGUS #98: surface the server's clear "reference matches more than one
+      // sale" message instead of a generic failure.
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? 'Failed to fetch returns');
+      }
+      return json;
     },
     staleTime: 30_000,
   });
@@ -164,6 +166,10 @@ export function ReturnsHistoryTable() {
   const returns = data?.data ?? [];
   const pagination = data?.pagination;
   const hasFilters = filters.originalSaleId || filters.refundMethod || filters.from || filters.to;
+  // ARGUS #105: a short/ambiguous reference is a lookup problem, so it belongs
+  // beside the input rather than only replacing the whole table.
+  const lookupError =
+    debouncedSaleId.trim() !== '' && error instanceof Error ? error.message : null;
 
   const clearFilters = () => {
     setFilters({ originalSaleId: '', refundMethod: '', from: '', to: '', page: 1 });
@@ -212,13 +218,24 @@ export function ReturnsHistoryTable() {
           </Select>
         </div>
         <div className="space-y-1">
-          <label className="font-body text-xs text-mist-ink">Sale ID</label>
+          <label className="font-body text-xs text-mist-ink">Sale Ref</label>
           <Input
-            placeholder="Search by sale ID…"
+            placeholder="Search by sale reference..."
             value={filters.originalSaleId}
             onChange={(e) => setFilters((prev) => ({ ...prev, originalSaleId: e.target.value }))}
             className="h-9 w-50 font-body text-sm"
+            aria-invalid={lookupError !== null}
+            aria-describedby={lookupError ? 'returns-sale-ref-error' : undefined}
           />
+          {lookupError && (
+            <p
+              id="returns-sale-ref-error"
+              role="alert"
+              className="max-w-64 font-body text-[11px] leading-snug text-[#9B2226]"
+            >
+              {lookupError}
+            </p>
+          )}
         </div>
         {hasFilters && (
           <Button variant="outline" size="sm" onClick={clearFilters} className="h-9">
@@ -234,6 +251,23 @@ export function ReturnsHistoryTable() {
             <Skeleton key={i} className="h-12 rounded bg-linen" />
           ))}
         </div>
+      ) : error ? (
+        lookupError ? (
+          <p className="py-10 text-center font-body text-xs text-sand-ink">
+            Fix the reference above to see matching returns, or clear the filter.
+          </p>
+        ) : (
+          <div className="flex flex-col items-center justify-center space-y-2 py-16">
+            <p className="max-w-md text-center font-body text-sm text-[#9B2226]">
+              {error instanceof Error ? error.message : 'Failed to load returns'}
+            </p>
+            {hasFilters && (
+              <Button variant="outline" size="sm" onClick={clearFilters}>
+                Clear Filters
+              </Button>
+            )}
+          </div>
+        )
       ) : returns.length === 0 ? (
         <div className="flex flex-col items-center justify-center space-y-2 py-16">
           <p className="font-body text-sm text-mist-ink">No returns found</p>
@@ -309,7 +343,7 @@ export function ReturnsHistoryTable() {
                       )}
                     </TableCell>
                     <TableCell className="font-body text-xs text-espresso">
-                      {staffDisplayName(returnRecord.authorizedBy.email)}
+                      {returnStaffLabel(returnRecord.authorizedBy)}
                     </TableCell>
                     <TableCell className="text-center">
                       <Button

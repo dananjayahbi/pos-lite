@@ -156,17 +156,42 @@ test.describe('Module 20 - Timeclock & Staff Commissions', () => {
     expect(Array.isArray(payoutBody?.data?.records ?? [])).toBe(true);
 
     for (const row of (summaryBody?.data ?? []) as Array<{ totalEarned?: string; totalPaid?: string; unpaid?: string }>) {
-      expect(Number(row.totalEarned ?? 0)).toBeGreaterThanOrEqual(0);
-      expect(Number(row.totalPaid ?? 0)).toBeGreaterThanOrEqual(0);
-      expect(Number(row.unpaid ?? 0)).toBeGreaterThanOrEqual(0);
+      // ARGUS #347: unpaid is money, not the derived isPaid flag.
+      expect(Number(row.unpaid ?? 0)).toBeCloseTo(
+        Number(row.totalEarned ?? 0) - Number(row.totalPaid ?? 0),
+        2,
+      );
+    }
+
+    for (const payout of (payoutBody?.data?.records ?? []) as Array<{
+      periodStart?: string;
+      periodEnd?: string;
+    }>) {
+      // A payout is listed when its commission window overlaps the selected one.
+      expect(new Date(payout.periodEnd!).getTime()).toBeGreaterThanOrEqual(
+        new Date(periodStart).getTime(),
+      );
+      expect(new Date(payout.periodStart!).getTime()).toBeLessThanOrEqual(
+        new Date(periodEnd).getTime(),
+      );
     }
   });
 
-  test('T4 payout creation validates payloads and either accepts or returns a domain-level 400', async ({ page }) => {
+  test('T4 payout creation requires a payment account and validates payloads', async ({ page }) => {
     await login(page, OWNER);
     const staff = await fetchStaff(page);
     const ownerUser = staff.find((u) => u.email === OWNER.email);
     expect(ownerUser).toBeTruthy();
+
+    // ARGUS #347: createCommissionPayout requires paymentAccountId, so the
+    // contract test must send one (or expect a typed 422 when none exists).
+    const accountsResponse = await page.request.get(
+      '/api/store/payment-accounts?status=ACTIVE',
+    );
+    expect(accountsResponse.status()).toBe(200);
+    const accountsBody = await json(accountsResponse);
+    const accounts = (accountsBody?.data?.accounts ?? []) as Array<{ id: string }>;
+    const paymentAccountId = accounts[0]?.id;
 
     const validPayload = {
       userId: ownerUser!.id,
@@ -175,6 +200,7 @@ test.describe('Module 20 - Timeclock & Staff Commissions', () => {
       paymentMethod: 'Bank Transfer',
       proofReference: 'QA-REF-20',
       notes: 'QA payout validation',
+      ...(paymentAccountId ? { paymentAccountId } : {}),
     };
 
     const payoutRequest = await page.request.post('/api/store/staff/commissions/payout', {
@@ -183,14 +209,21 @@ test.describe('Module 20 - Timeclock & Staff Commissions', () => {
     });
 
     const payoutBody = await json(payoutRequest);
-    // M20-02: an empty period now returns a typed 409 (no unpaid commissions)
-    // rather than a raw 500; a real payout still 201s.
-    expect([200, 201, 409]).toContain(payoutRequest.status());
-    if (payoutRequest.status() === 201) {
-      expect(payoutBody?.success).toBe(true);
-      expect(payoutBody?.data?.userId).toBe(ownerUser!.id);
+    if (!paymentAccountId) {
+      // No active account configured: the required account is a typed 422, not
+      // a raw 500 or a phantom payout.
+      expect(payoutRequest.status()).toBe(422);
+      expect(payoutBody?.error?.code).toBe('VALIDATION_ERROR');
     } else {
-      expect(['NO_UNPAID_COMMISSIONS', 'CONFLICT']).toContain(payoutBody?.error?.code ?? '');
+      // M20-02: an empty period returns a typed 409 (no unpaid commissions)
+      // rather than a raw 500; a real payout still 201s.
+      expect([200, 201, 409]).toContain(payoutRequest.status());
+      if (payoutRequest.status() === 201) {
+        expect(payoutBody?.success).toBe(true);
+        expect(payoutBody?.data?.userId).toBe(ownerUser!.id);
+      } else {
+        expect(['NO_UNPAID_COMMISSIONS', 'CONFLICT']).toContain(payoutBody?.error?.code ?? '');
+      }
     }
 
     // M20-02: malformed / unknown-staff payloads are typed 400/404 — never 500.
@@ -210,18 +243,24 @@ test.describe('Module 20 - Timeclock & Staff Commissions', () => {
         userId: 'clx0000000000000000000000',
         periodStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
         periodEnd: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 59, 999).toISOString(),
+        ...(paymentAccountId ? { paymentAccountId } : {}),
       },
       headers: { 'content-type': 'application/json' },
     });
     // An unknown/foreign staff member has no unpaid records → typed 409, not 500.
-    expect(foreignStaff.status()).toBe(409);
-    expect((await json(foreignStaff))?.error?.code).toBe('NO_UNPAID_COMMISSIONS');
+    if (paymentAccountId) {
+      expect(foreignStaff.status()).toBe(409);
+      expect((await json(foreignStaff))?.error?.code).toBe('NO_UNPAID_COMMISSIONS');
+    } else {
+      expect(foreignStaff.status()).toBe(422);
+    }
 
     const inverted = await page.request.post('/api/store/staff/commissions/payout', {
       data: {
         userId: ownerUser!.id,
         periodStart: new Date(2026, 5, 1).toISOString(),
         periodEnd: new Date(2026, 4, 1).toISOString(),
+        ...(paymentAccountId ? { paymentAccountId } : {}),
       },
       headers: { 'content-type': 'application/json' },
     });
@@ -313,5 +352,81 @@ test.describe('Module 20 - Timeclock & Staff Commissions', () => {
 
     const badPage = await page.request.get('/api/store/timeclock?userId=invalid-user&page=0&pageSize=0');
     expect([200, 400, 403, 404]).toContain(badPage.status());
+  });
+
+  test('T9 attendance page renders the daily table, summary and self clock controls', async ({ page }) => {
+    await login(page, OWNER);
+    await page.goto(`${BASE_URL}/staff/timeclock`, { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByRole('heading', { name: 'Attendance' })).toBeVisible();
+    await expect(page.getByText('All Staff Attendance')).toBeVisible();
+    await expect(page.getByText('My clock')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Clock (in|out)$/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Export CSV' })).toBeVisible();
+
+    for (const header of ['Staff', 'Status', 'Clock In', 'Punches', 'Worked', 'OT']) {
+      await expect(
+        page.getByRole('columnheader', { name: header, exact: true }),
+      ).toBeVisible();
+    }
+
+    // The per-row punches action opens the interval detail (daily table parity).
+    const punches = page.getByRole('button', { name: /punch(es)?$/ }).first();
+    if ((await punches.count()) > 0) {
+      await punches.click();
+      await expect(page.getByRole('dialog')).toContainText('Punches');
+    }
+    await page.keyboard.press('Escape');
+  });
+
+  test('T10 adjust and status dialogs expose their fields', async ({ page }) => {
+    await login(page, OWNER);
+    await page.goto(`${BASE_URL}/staff/timeclock`, { waitUntil: 'domcontentloaded' });
+
+    const adjust = page.getByRole('button', { name: 'Adjust' }).first();
+    if ((await adjust.count()) > 0) {
+      await adjust.click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toContainText('Clock Times');
+      await expect(dialog.getByLabel('Clock In')).toBeVisible();
+      await expect(dialog.getByLabel(/^Notes/)).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
+
+    const status = page.getByRole('button', { name: 'Status' }).first();
+    if ((await status.count()) > 0) {
+      await status.click();
+      await expect(page.getByRole('dialog')).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
+  });
+
+  test('T11 a punch cannot be moved to another calendar day', async ({ page }) => {
+    await login(page, OWNER);
+    const staff = await fetchStaff(page);
+    const ownerUser = staff.find((u) => u.email === OWNER.email);
+    expect(ownerUser).toBeTruthy();
+
+    const created = await page.request.post('/api/store/timeclock/records', {
+      data: {
+        userId: ownerUser!.id,
+        clockedInAt: '2024-03-01T09:00:00.000Z',
+        clockedOutAt: '2024-03-01T17:00:00.000Z',
+        notes: 'QA day-move guard',
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect([201, 409]).toContain(created.status());
+    if (created.status() !== 201) return;
+
+    const recordId = (await json(created))?.data?.id as string;
+    const moved = await page.request.patch(`/api/store/timeclock/${recordId}`, {
+      data: { clockedInAt: '2024-02-28T09:00:00.000Z' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(moved.status()).toBe(400);
+    const movedBody = await json(moved);
+    expect(movedBody?.error?.code).toBe('VALIDATION_ERROR');
+    expect(String(movedBody?.error?.message)).toContain('another day');
   });
 });

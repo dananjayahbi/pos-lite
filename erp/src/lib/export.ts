@@ -55,6 +55,30 @@ export function csvCell(value: string | number | null | undefined): string {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+/**
+ * ARGUS #201 - neutralise spreadsheet formula injection in user-entered text.
+ *
+ * A cell beginning with `=`, `+`, `-` or `@` (or a tab/CR that some importers
+ * strip before parsing) can be executed as a formula when the CSV is opened in
+ * Excel/Sheets. Prefixing a single apostrophe forces the cell to text. Numbers
+ * are left alone: a negative quantity or signed delta is data, not a formula,
+ * so callers should apply this only to text columns.
+ *
+ * Apply BEFORE `csvCell`, so a neutralised value containing a comma or quote is
+ * still quoted correctly (`'=cmd,1` -> `"'=cmd,1"`).
+ */
+export function neutralizeCsvFormula(
+  value: string | number | null | undefined,
+): string | number | null | undefined {
+  if (typeof value !== 'string') return value;
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
+/** Neutralise formula-leading text and quote it per RFC-4180. */
+export function csvTextCell(value: string | number | null | undefined): string {
+  return csvCell(neutralizeCsvFormula(value));
+}
+
 /** Serialize a header row + data rows into a CSV string (no BOM). */
 export function toCsvLines(headers: readonly string[], rows: Iterable<readonly (string | number | null | undefined)[]>): string {
   const headerLine = headers.join(',');

@@ -4,7 +4,6 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { ReturnCreateSchema } from '@/lib/validators/return.validators';
 import { initiateReturn, getReturns } from '@/lib/services/return.service';
-import { createNegativeCommissionRecord } from '@/lib/services/commission.service';
 import { prisma } from '@/lib/prisma';
 import { parsePagination, parseQueryDate } from '@/lib/api/query-params';
 import { toErrorResponse } from '@/lib/api/error-envelope';
@@ -77,10 +76,24 @@ export async function POST(request: Request) {
 
     const data = parsed.data;
 
-    // If an authorizing manager was provided, verify they are a manager+ in the same tenant
-    if (data.authorizedById) {
+    // ARGUS #95: require an authorizer for manager-tier actors. A manager or
+    // owner processing a return authorizes it themselves, so when a client
+    // omits `authorizedById` (e.g. the POS wizard before it learned the role)
+    // the session user is recorded rather than persisting a null authorizer.
+    // Deliberate exception: a non-manager holding an explicit `sale:refund`
+    // override may still refund without an authorizer; those legacy/direct
+    // rows render as "Not recorded" instead of crashing the returns ledger.
+    const actorMayAuthorize = ['MANAGER', 'OWNER', 'SUPER_ADMIN'].includes(
+      session.user.role,
+    );
+    const authorizedById =
+      data.authorizedById ?? (actorMayAuthorize ? session.user.id : null);
+
+    // If an authorizing manager was provided (or derived), verify they are a
+    // manager+ in the same tenant.
+    if (authorizedById) {
       const authorizer = await prisma.user.findFirst({
-        where: { id: data.authorizedById, tenantId, isActive: true },
+        where: { id: authorizedById, tenantId, isActive: true },
         select: { role: true },
       });
 
@@ -94,7 +107,7 @@ export async function POST(request: Request) {
 
     const result = await initiateReturn(tenantId, {
       initiatedById: session.user.id,
-      authorizedById: data.authorizedById ?? null,
+      authorizedById,
       originalSaleId: data.originalSaleId,
       lines: data.lines,
       refundMethod: data.refundMethod,
@@ -102,12 +115,8 @@ export async function POST(request: Request) {
       reason: data.reason,
     });
 
-    // Negative commission side-effect — non-blocking
-    try {
-      await createNegativeCommissionRecord(result.id, tenantId);
-    } catch (commissionError) {
-      console.warn('Negative commission record creation failed:', commissionError);
-    }
+    // Negative commission side-effect is written inside initiateReturn's
+    // transaction (ARGUS #361), so it cannot be skipped silently here.
 
     // Notification side-effect — non-blocking
     try {
@@ -160,7 +169,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!hasPermission(session.user, PERMISSIONS.SALE.viewSale)) {
+    if (!hasPermission(session.user, PERMISSIONS.SALE.viewSaleHistory)) {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },

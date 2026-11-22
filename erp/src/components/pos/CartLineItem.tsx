@@ -123,7 +123,15 @@ export function CartLineItem({ item }: CartLineItemProps) {
         <button
           type="button"
           onClick={() => updateQuantity(item.variantId, item.quantity + 1)}
-          className="inline-flex h-10 w-10 items-center justify-center text-terracotta hover:text-espresso rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta"
+          disabled={
+            Number.isFinite(item.stockQuantity) && item.quantity >= (item.stockQuantity as number)
+          }
+          title={
+            Number.isFinite(item.stockQuantity) && item.quantity >= (item.stockQuantity as number)
+              ? `Only ${item.stockQuantity} in stock`
+              : undefined
+          }
+          className="inline-flex h-10 w-10 items-center justify-center text-terracotta hover:text-espresso disabled:opacity-40 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta"
           aria-label={`Increase quantity of ${item.productName}`}
         >
           <Plus className="h-3.5 w-3.5" />

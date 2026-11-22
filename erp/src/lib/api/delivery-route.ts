@@ -11,8 +11,9 @@ import type { PermissionKey } from '@/lib/constants/permissions';
 // INF-02: the typed error builders live in the canonical modules now; this
 // file re-exports them so the delivery route family keeps compiling
 // unchanged (back-compat per the INF-02 design).
-import { unauthorized, forbidden, badRequest, conflict, notFound, upstreamError } from './error-envelope';
+import { unauthorized, forbidden, badRequest, conflict, notFound, upstreamError, internalError } from './error-envelope';
 import { Prisma } from '@/generated/prisma/client';
+import { CourierCredentialError } from '@/lib/courier/credentials';
 export { unauthorized, forbidden, validationError, notFound, conflict, badRequest, internalError } from './error-envelope';
 
 /**
@@ -22,7 +23,8 @@ export { unauthorized, forbidden, validationError, notFound, conflict, badReques
  */
 
 export async function requireDeliveryAuth(permission?: PermissionKey): Promise<
-  { ok: true; tenantId: string; userId: string } | { ok: false; response: NextResponse }
+  | { ok: true; tenantId: string; userId: string; email: string; role: string }
+  | { ok: false; response: NextResponse }
 > {
   const session = await auth();
   if (!session?.user) {
@@ -42,7 +44,13 @@ export async function requireDeliveryAuth(permission?: PermissionKey): Promise<
     return { ok: false, response: forbidden('Insufficient permissions') };
   }
 
-  return { ok: true, tenantId, userId: session.user.id };
+  return {
+    ok: true,
+    tenantId,
+    userId: session.user.id,
+    email: session.user.email ?? '',
+    role: session.user.role,
+  };
 }
 
 /**
@@ -56,6 +64,11 @@ export function mapDeliveryError(error: unknown): NextResponse | null {
     return conflict('A record with this unique value already exists');
   }
   const message = error instanceof Error ? error.message : '';
+  if (error instanceof CourierCredentialError) {
+    return internalError(
+      'Saved courier credentials could not be decrypted. Re-enter them in Courier Settings.',
+    );
+  }
   if (message === 'DELIVERY_NOT_FOUND') return notFound('Delivery not found');
   if (message === 'CUSTOMER_NOT_FOUND') return badRequest('Customer not found');
   if (message === 'SALE_NOT_FOUND') return badRequest('Sale not found');
@@ -75,6 +88,16 @@ export function mapDeliveryError(error: unknown): NextResponse | null {
   if (message === 'DELIVERY_MISSING_ADDRESS') return badRequest('Delivery has no shipping address');
   // NEW-F (M24-01): payment-settlement block is a state conflict, not a crash.
   if (message === 'DELIVERY_PAYMENT_NOT_SETTLED') return conflict('Delivery payment has not been settled');
+  // ARGUS #292: missing pricing config is a state conflict, not free delivery.
+  if (message === 'SHIPPING_NOT_CONFIGURED') {
+    return conflict(
+      'Shipping is not configured for this store. Set an active rate card before creating orders or deliveries.',
+    );
+  }
+  // ARGUS #296: absurd parcel weight is a client input error, not a 500.
+  if (message === 'RATE_WEIGHT_EXCEEDED') {
+    return badRequest('Parcel weight exceeds the 500 kg limit');
+  }
 
   // M26-02/BUG-66: reconciliation-dispute sentinels. These were unmapped, so
   // routine client errors (unknown id, double-dispute, cross-tenant id) 500'd

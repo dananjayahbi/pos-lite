@@ -258,15 +258,24 @@ export function VariantSelectionModal({
                 const desc =
                   [selectedVariant.form, selectedVariant.packSize].filter(Boolean).join(' / ') ||
                   'Default';
-                addItem({
+                const result = addItem({
                   variantId: selectedVariant.id,
                   productName: product.name,
                   variantDescription: desc,
                   sku: selectedVariant.sku,
                   unitPrice: Number(selectedVariant.retailPrice),
                   quantity,
+                  stockQuantity: selectedVariant.stockQuantity,
+                  taxRule: product.taxRule ?? 'STANDARD_VAT',
+                  ...(product.category?.id ? { categoryId: product.category.id } : {}),
                 });
-                toast.success(`Added ${quantity}× ${product.name} ${desc} to cart`);
+                if (result.limited) {
+                  toast.warning(
+                    `Only ${selectedVariant.stockQuantity} in stock - added ${result.added} to cart`,
+                  );
+                } else {
+                  toast.success(`Added ${quantity}× ${product.name} ${desc} to cart`);
+                }
                 onClose();
               }}
               className="w-full bg-espresso text-pearl font-body py-2.5 rounded-lg hover:bg-espresso/90 disabled:opacity-50"

@@ -10,11 +10,13 @@ without exposing raw database identifiers as the primary label.
 | Entity Type | Badge for the affected entity |
 | Action | Humanized audit action |
 | User | Resolved actor email, or `System` for automated work |
-| Date | Local date/time |
+| Entity ID | Mono id, full value on hover (ARGUS #457) |
+| Date | Local date/time with seconds and timezone |
 
-The previous `Entity ID` and `Performed By` columns were removed from the
-table. Entity IDs remain available in the row detail modal (click a row), and
-the raw `actorId` is still returned by the API for filtering and integrations.
+The `Performed By` column was removed; the `User` column carries the resolved
+name and (since ARGUS #457) the actor role beneath it. Entity ID is back in the
+table for investigation, and the raw `actorId` is still returned by the API for
+filtering and integrations.
 
 ## Resolution rules
 
@@ -22,8 +24,10 @@ the raw `actorId` is still returned by the API for filtering and integrations.
 
 1. `actorId == null` → `System` (cron jobs, webhooks, auth events without an
    actor).
-2. Known user → the user's email address.
-3. Deleted/unknown user id → `Unknown user` (never a bare CUID).
+2. Known user → a display name derived from the login mailbox, e.g.
+   `owner@dilani-ayurwellness.lk` → `Owner`, `cashier1@ayurpos.dev` →
+   `Cashier 1`.
+3. Deleted/unknown user id → `Unknown` (never a bare CUID).
 
 CSV export adds an `actorName` column next to `actorId`, so exports show the
 same friendly label. The `?userId=` filter still filters by actor id.

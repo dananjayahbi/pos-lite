@@ -1,18 +1,57 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { DeliveryStatus } from '@/generated/prisma/client';
 import type { BulkResultItem } from '@/lib/validators/order.validators';
+import { bulkResultToast } from '@/components/orders/bulkResult';
+
+function toastBulkResult(results: BulkResultItem[], action: string) {
+  const { level, message } = bulkResultToast(results, action);
+  if (level === 'success') toast.success(message);
+  else if (level === 'warning') toast.warning(message);
+  else toast.error(message);
+}
+
+export const ORDERS_PAGE_SIZE = 50;
 
 /** Fetch orders (deliveries) for the Orders management page. */
-export function useOrders(filters: { status?: DeliveryStatus | null; search?: string } = {}) {
+export function useOrders(
+  filters: {
+    status?: DeliveryStatus | null;
+    /** Multiple statuses (dispatch queue default, ARGUS #269). */
+    statuses?: DeliveryStatus[] | null;
+    search?: string;
+    includeCounts?: boolean;
+    page?: number;
+    limit?: number;
+  } = {},
+) {
+  const page = filters.page ?? 1;
+  const limit = filters.limit ?? ORDERS_PAGE_SIZE;
   const params = new URLSearchParams();
   if (filters.status) params.set('status', filters.status);
+  if (filters.statuses && filters.statuses.length > 0) {
+    params.set('statuses', filters.statuses.join(','));
+  }
+  if (filters.includeCounts) params.set('includeCounts', '1');
   if (filters.search) params.set('search', filters.search);
+  // ARGUS #262: without an explicit page the API caps the response at its
+  // default 50, making rows 51+ unreachable.
+  params.set('page', String(page));
+  params.set('limit', String(limit));
+
+  const queryFilters = {
+    status: filters.status ?? null,
+    statuses: filters.statuses ?? null,
+    includeCounts: filters.includeCounts ?? false,
+    search: filters.search ?? '',
+    page,
+    limit,
+  };
 
   return useQuery({
-    queryKey: ['orders', filters],
+    queryKey: ['orders', queryFilters],
     queryFn: async () => {
       const res = await fetch(`/api/store/deliveries?${params.toString()}`);
       const json = await res.json();
@@ -22,8 +61,10 @@ export function useOrders(filters: { status?: DeliveryStatus | null; search?: st
         total: number;
         page: number;
         limit: number;
+        statusCounts?: Record<string, number>;
       };
     },
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   });
 }
@@ -45,8 +86,8 @@ export function useBulkStatusChange() {
     onSuccess: (results) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['deliveries'] });
-      const ok = results.filter((r) => r.ok).length;
-      toast.success(`Updated ${ok} order(s)`);
+      // ARGUS #265: report per-id rejections, not just the OK count.
+      toastBulkResult(results, 'Updated');
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -71,8 +112,11 @@ export function useBulkCreateDelivery() {
     onSuccess: (results) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['deliveries'] });
-      const ok = results.filter((r) => r.ok).length;
-      toast.success(`Prepared ${ok} order(s) for delivery`);
+      // The delivery detail also exposes prepare for PLACED/HOLD (ARGUS #275).
+      queryClient.invalidateQueries({ queryKey: ['delivery'] });
+      // ARGUS #265: prepare failures (already dispatched, wrong status) used to
+      // disappear behind a success toast that only counted the OK rows.
+      toastBulkResult(results, 'Prepared for delivery');
     },
     onError: (error: Error) => {
       toast.error(error.message);

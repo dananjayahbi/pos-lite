@@ -2,18 +2,21 @@
 
 import type { Category } from '@/hooks/useCategories';
 import { Badge } from '@/components/ui/badge';
-import { Pencil } from 'lucide-react';
+import { Pencil, RotateCcw } from 'lucide-react';
 import { ResourceDeleteButton, productsAssignedReason } from '@/components/shared/ResourceDeleteButton';
 import { CategoryIcon } from '@/components/categories/CategoryIcon';
+import { shouldHandleRowKey } from '@/lib/catalog/listRowKeyboard.core';
 
 interface CategoryListProps {
   categories: Category[];
   canEdit: boolean;
   canDelete: boolean;
-  selectedId?: string | null;
-  onSelect?: (category: Category) => void;
-  onEdit?: (category: Category) => void;
-  onDelete?: (category: Category) => void;
+  selectedId?: string | null | undefined;
+  onSelect?: ((category: Category) => void) | undefined;
+  onEdit?: ((category: Category) => void) | undefined;
+  onDelete?: ((category: Category) => void) | undefined;
+  /** Called from the Deleted view to restore a soft-deleted category. */
+  onRestore?: ((category: Category) => void) | undefined;
 }
 
 export function CategoryList({
@@ -24,6 +27,7 @@ export function CategoryList({
   onSelect,
   onEdit,
   onDelete,
+  onRestore,
 }: CategoryListProps) {
   if (categories.length === 0) {
     return (
@@ -37,23 +41,29 @@ export function CategoryList({
     <div className="rounded-lg border border-sand bg-pearl p-2">
       {categories.map((cat) => {
         const isSelected = selectedId === cat.id;
+        const isDeleted = Boolean(cat.deletedAt);
 
         return (
           <div
             key={cat.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => onSelect?.(cat)}
+            role={isDeleted ? undefined : 'button'}
+            tabIndex={isDeleted ? -1 : 0}
+            onClick={isDeleted ? undefined : () => onSelect?.(cat)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
+              // Keys pressed on the edit/delete buttons bubble here; only keys
+              // that originate on the row itself may select it (ARGUS #171).
+              if (
+                !isDeleted &&
+                shouldHandleRowKey(e.key, e.target === e.currentTarget)
+              ) {
                 e.preventDefault();
                 onSelect?.(cat);
               }
             }}
-            className={`flex cursor-pointer items-center gap-3 rounded px-2 py-1.5 transition-colors hover:bg-sand/50 ${
-              isSelected ? 'bg-sand/70 ring-1 ring-espresso/20' : ''
-            }`}
-            aria-pressed={isSelected}
+            className={`flex items-center gap-3 rounded px-2 py-1.5 transition-colors ${
+              isDeleted ? '' : 'cursor-pointer hover:bg-sand/50'
+            } ${isSelected ? 'bg-sand/70 ring-1 ring-espresso/20' : ''}`}
+            aria-pressed={isDeleted ? undefined : isSelected}
           >
             <CategoryIcon
               imageUrl={cat.imageUrl}
@@ -73,31 +83,45 @@ export function CategoryList({
 
             {/* Actions */}
             <div className="flex items-center gap-1">
-              {canEdit && (
+              {isDeleted ? (
                 <button
                   type="button"
-                  className="rounded p-1 text-text-muted transition-colors hover:text-espresso"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEdit?.(cat);
-                  }}
-                  aria-label={`Edit ${cat.name}`}
+                  className="flex items-center gap-1 rounded px-1.5 py-1 text-xs text-espresso transition-colors hover:bg-sand/70"
+                  onClick={() => onRestore?.(cat)}
+                  aria-label={`Restore ${cat.name}`}
                 >
-                  <Pencil className="h-3.5 w-3.5" />
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Restore
                 </button>
-              )}
-              {canDelete && (
-                <ResourceDeleteButton
-                  canDelete
-                  label={cat.name}
-                  isDeleting={false}
-                  onDelete={() => onDelete?.(cat)}
-                  blockedReason={
-                    cat._count.products > 0
-                      ? productsAssignedReason(cat._count.products)
-                      : undefined
-                  }
-                />
+              ) : (
+                <>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      className="rounded p-1 text-text-muted transition-colors hover:text-espresso"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEdit?.(cat);
+                      }}
+                      aria-label={`Edit ${cat.name}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  {canDelete && (
+                    <ResourceDeleteButton
+                      canDelete
+                      label={cat.name}
+                      isDeleting={false}
+                      onDelete={() => onDelete?.(cat)}
+                      blockedReason={
+                        cat._count.products > 0
+                          ? productsAssignedReason(cat._count.products)
+                          : undefined
+                      }
+                    />
+                  )}
+                </>
               )}
             </div>
           </div>

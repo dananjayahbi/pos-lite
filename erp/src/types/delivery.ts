@@ -61,6 +61,17 @@ export interface DeliveryRecoveryAttempt {
   staff?: { id: string; email: string } | null;
 }
 
+/** An ordered item snapshot on a delivery (website/manual orders). */
+export interface DeliveryLineItem {
+  id?: string;
+  variantId: string;
+  productNameSnapshot: string;
+  skuSnapshot?: string | null;
+  quantity: number;
+  unitPrice: number | string;
+  lineTotal: number | string;
+}
+
 /** Full delivery detail payload returned by /api/store/deliveries/[id]. */
 export interface DeliveryDetail {
   id: string;
@@ -74,6 +85,8 @@ export interface DeliveryDetail {
   hubWeightKg?: number | string | null;
   shippingFee?: number | string | null;
   deliveryFee?: number | string | null;
+  paymentMethod?: string | null;
+  paymentStatus?: string | null;
   holdExpiresAt?: string | null;
   dispatchedAt?: string | null;
   deliveredAt?: string | null;
@@ -85,6 +98,7 @@ export interface DeliveryDetail {
   shipments?: DeliveryShipment[];
   events?: DeliveryEvent[];
   attempts?: DeliveryRecoveryAttempt[];
+  lines?: DeliveryLineItem[];
 }
 
 /** A single row in the delivery list. */
@@ -94,15 +108,20 @@ export interface DeliveryListItem {
   source: DeliverySource;
   status: DeliveryStatus;
   codAmount: number | string;
+  declaredValue?: number | string | null;
   shippingFee?: number | string | null;
   totalWeightKg?: number | string | null;
   itemCount: number;
+  paymentMethod?: string | null;
+  paymentStatus?: string | null;
   dispatchedAt?: string | null;
   failureReason?: string | null;
   waybill?: string | null;
   address?: DeliveryAddress | null;
   customer?: DeliveryCustomer | null;
   shipments?: DeliveryShipment[];
+  /** First ordered line (product + SKU) for the waybill description. */
+  lines?: Pick<DeliveryLineItem, 'productNameSnapshot' | 'skuSnapshot'>[] | null;
 }
 
 export type { CourierShipment };

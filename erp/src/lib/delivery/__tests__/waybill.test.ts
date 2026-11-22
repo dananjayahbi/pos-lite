@@ -1,10 +1,59 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildWaybillAddress,
   buildWaybillDescription,
+  dedupeLocality,
   formatWaybillAmount,
   formatWaybillDate,
+  formatWaybillItem,
+  formatWaybillWeight,
+  isDraftWaybill,
   waybillBarcodeValue,
 } from '@/lib/delivery/waybill';
+
+describe('buildWaybillAddress (ARGUS #302)', () => {
+  it('prints one locality when city and district match', () => {
+    expect(
+      buildWaybillAddress({
+        addressLine1: '123 Main Street',
+        addressLine2: 'Colombo 3',
+        cityName: 'Colombo',
+        districtName: 'Colombo',
+        postalCode: '00100',
+      }),
+    ).toBe('123 Main Street, Colombo 3, Colombo, 00100');
+
+    expect(
+      buildWaybillAddress({
+        addressLine1: 'Main Road',
+        cityName: 'Deiyandara',
+        districtName: 'Deiyandara',
+        postalCode: '81320',
+      }),
+    ).toBe('Main Road, Deiyandara, 81320');
+  });
+
+  it('keeps both names when the city and district differ', () => {
+    expect(dedupeLocality('Moratuwa', 'Colombo')).toBe('Moratuwa, Colombo');
+    expect(dedupeLocality('Deiyandara', 'deiyandara')).toBe('Deiyandara');
+  });
+
+  it('collapses an address line that already repeats the city', () => {
+    expect(
+      buildWaybillAddress({
+        addressLine1: '45 Temple Road',
+        addressLine2: 'Kandy',
+        cityName: 'Kandy',
+        districtName: 'Kandy',
+      }),
+    ).toBe('45 Temple Road, Kandy');
+  });
+
+  it('omits missing parts without leaving stray commas', () => {
+    expect(buildWaybillAddress({ addressLine1: '  Main Street ' })).toBe('Main Street');
+    expect(buildWaybillAddress({ cityName: null, districtName: 'Galle' })).toBe('Galle');
+  });
+});
 
 describe('formatWaybillDate', () => {
   it('prints DD/MM/YYYY like the courier sheet', () => {
@@ -33,7 +82,7 @@ describe('formatWaybillAmount', () => {
 });
 
 describe('buildWaybillDescription', () => {
-  it('combines item count and weight', () => {
+  it('combines item count and a two-decimal weight', () => {
     expect(
       buildWaybillDescription({
         itemCount: 2,
@@ -41,7 +90,7 @@ describe('buildWaybillDescription', () => {
         showItemCount: true,
         showWeight: true,
       }),
-    ).toBe('2 items · 1.5 kg');
+    ).toBe('2 items · 1.50 kg');
   });
 
   it('singularizes one item and honours the field toggles', () => {
@@ -60,7 +109,23 @@ describe('buildWaybillDescription', () => {
         showItemCount: false,
         showWeight: true,
       }),
-    ).toBe('2 kg');
+    ).toBe('2.00 kg');
+  });
+
+  it('states an explicit missing weight instead of silently omitting it (ARGUS #303)', () => {
+    for (const totalWeightKg of [null, undefined, '', 'not-a-number']) {
+      expect(
+        buildWaybillDescription({
+          itemCount: 1,
+          totalWeightKg,
+          showItemCount: true,
+          showWeight: true,
+        }),
+      ).toBe('1 item · weight n/a');
+    }
+    expect(formatWaybillWeight(1)).toBe('1.00');
+    expect(formatWaybillWeight('1.567')).toBe('1.57');
+    expect(formatWaybillWeight(null)).toBeNull();
   });
 
   it('falls back to the order reference when all fields are hidden', () => {
@@ -74,20 +139,43 @@ describe('buildWaybillDescription', () => {
       }),
     ).toBe('ORD-00001');
   });
+
+  it('includes the first product and SKU for courier identification (ARGUS #307)', () => {
+    expect(
+      buildWaybillDescription({
+        itemCount: 1,
+        totalWeightKg: 1,
+        showItemCount: true,
+        showWeight: true,
+        itemLabel: formatWaybillItem('Herbal Soap', 'HB-01'),
+      }),
+    ).toBe('1 item · 1.00 kg · Herbal Soap (HB-01)');
+  });
+
+  it('formats a product with a missing SKU or only a SKU', () => {
+    expect(formatWaybillItem('Herbal Soap', null)).toBe('Herbal Soap');
+    expect(formatWaybillItem(null, 'HB-01')).toBe('HB-01');
+    expect(formatWaybillItem('  ', '  ')).toBe('');
+  });
 });
 
 describe('waybillBarcodeValue', () => {
-  it('prefers the courier waybill', () => {
+  it('uses the courier waybill when present', () => {
     expect(waybillBarcodeValue({ waybillId: 'BA123456', orderRef: 'ORD-1', showOrderRef: true })).toBe(
       'BA123456',
     );
   });
 
-  it('falls back to the order ref only when enabled, otherwise null', () => {
-    expect(waybillBarcodeValue({ waybillId: null, orderRef: 'ORD-1', showOrderRef: true })).toBe(
-      'ORD-1',
-    );
-    expect(waybillBarcodeValue({ waybillId: null, orderRef: 'ORD-1', showOrderRef: false })).toBeNull();
+  it('never substitutes the internal order ref as a courier barcode', () => {
+    expect(waybillBarcodeValue({ waybillId: null, orderRef: 'ORD-1', showOrderRef: true })).toBeNull();
     expect(waybillBarcodeValue({ waybillId: null, orderRef: null, showOrderRef: true })).toBeNull();
+  });
+});
+
+describe('isDraftWaybill', () => {
+  it('marks a pre-dispatch label as a draft', () => {
+    expect(isDraftWaybill(null)).toBe(true);
+    expect(isDraftWaybill(undefined)).toBe(true);
+    expect(isDraftWaybill('BA123456')).toBe(false);
   });
 });

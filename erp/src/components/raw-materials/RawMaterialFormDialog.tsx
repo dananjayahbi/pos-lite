@@ -25,6 +25,8 @@ import {
 } from '@/components/ui/select';
 import type { RawMaterialItem } from '@/hooks/useRawMaterials';
 import { RawMaterialCategoryManagerDialog } from '@/components/raw-materials/RawMaterialCategoryManagerDialog';
+import { invalidateRawMaterialSurfaces } from '@/lib/factory/factoryQueries';
+import { dedupeLabeledOptions } from '@/lib/services/rawMaterial.core';
 import {
   useCreateRawMaterialCategory,
   useRawMaterialCategories,
@@ -46,6 +48,7 @@ interface FormState {
   unit: string;
   quantity: string;
   lowStockThreshold: string;
+  unitCost: string;
   description: string;
 }
 
@@ -57,6 +60,7 @@ const EMPTY: FormState = {
   unit: 'LITERS',
   quantity: '0',
   lowStockThreshold: '0',
+  unitCost: '0',
   description: '',
 };
 
@@ -68,6 +72,7 @@ function toFormState(material: RawMaterialItem | null): FormState {
     unit: material.unit,
     quantity: String(material.quantity),
     lowStockThreshold: String(material.lowStockThreshold),
+    unitCost: String(material.unitCost),
     description: material.description ?? '',
   };
 }
@@ -95,18 +100,25 @@ export function RawMaterialFormDialog({
   const [newUnitName, setNewUnitName] = useState('');
   const [newUnitShortLabel, setNewUnitShortLabel] = useState('');
   const isEdit = material !== null;
+  // ARGUS #241: stock is not editable here, and the unit cannot change while a
+  // positive quantity is stored (there is no conversion factor — "17 kg" must
+  // not silently become "17 L").
+  const quantityOnHand = material?.quantity ?? 0;
+  const unitLocked = isEdit && quantityOnHand > 0;
 
   // Keep the select valid when the tenant removed the material's category, and
   // fall back to the first active category when creating a new material.
   const currentCategoryMissing =
     Boolean(form.category) && !categories.some((category) => category.key === form.category);
-  const categoryOptions =
+  const categoryOptions = dedupeLabeledOptions(
     isEdit && currentCategoryMissing
       ? [
           { id: 'current', key: form.category, name: material?.categoryName ?? form.category },
           ...categories,
         ]
-      : categories;
+      : categories,
+    form.category,
+  );
   const selectedCategory =
     isEdit && currentCategoryMissing
       ? form.category
@@ -119,7 +131,7 @@ export function RawMaterialFormDialog({
   // active unit from the tenant's catalog.
   const currentUnitMissing =
     Boolean(form.unit) && !units.some((unit) => unit.key === form.unit);
-  const unitOptions =
+  const unitOptions = dedupeLabeledOptions(
     isEdit && currentUnitMissing
       ? [
           {
@@ -130,7 +142,9 @@ export function RawMaterialFormDialog({
           },
           ...units,
         ]
-      : units;
+      : units,
+    form.unit,
+  );
   const selectedUnit =
     isEdit && currentUnitMissing
       ? form.unit
@@ -192,14 +206,19 @@ export function RawMaterialFormDialog({
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const payload = {
+      const sharedPayload = {
         name: form.name,
         category: selectedCategory,
         unit: selectedUnit,
-        quantity: form.quantity || '0',
         lowStockThreshold: form.lowStockThreshold || '0',
+        unitCost: form.unitCost || '0',
         description: form.description || undefined,
       };
+      // ARGUS #241: the edit payload never carries `quantity`; opening stock is
+      // only settable at creation, then evolves through Adjust stock.
+      const payload = isEdit
+        ? sharedPayload
+        : { ...sharedPayload, quantity: form.quantity || '0' };
       const res = await fetch(
         isEdit ? `/api/store/raw-materials/${material?.id}` : '/api/store/raw-materials',
         {
@@ -214,8 +233,7 @@ export function RawMaterialFormDialog({
     },
     onSuccess: () => {
       toast.success(isEdit ? 'Raw material updated' : 'Raw material created');
-      queryClient.invalidateQueries({ queryKey: ['raw-materials'] });
-      queryClient.invalidateQueries({ queryKey: ['raw-material-stats'] });
+      void invalidateRawMaterialSurfaces(queryClient);
       onOpenChange(false);
     },
     onError: (err: Error) => {
@@ -334,6 +352,7 @@ export function RawMaterialFormDialog({
               <Select
                 value={selectedUnit}
                 onValueChange={(value) => setForm({ ...form, unit: value })}
+                disabled={unitLocked}
               >
                 <SelectTrigger id="rm-unit">
                   <SelectValue placeholder="Select unit" />
@@ -349,6 +368,12 @@ export function RawMaterialFormDialog({
                   ))}
                 </SelectContent>
               </Select>
+              {unitLocked ? (
+                <p className="text-xs text-amber-700">
+                  Unit is locked while stock is on hand ({quantityOnHand}{' '}
+                  {material?.unitShortLabel}). Adjust the stock to zero to change it.
+                </p>
+              ) : null}
               {addingUnit ? (
                 <div className="space-y-2">
                   <Input
@@ -392,14 +417,28 @@ export function RawMaterialFormDialog({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="rm-quantity">Quantity</Label>
-              <Input
-                id="rm-quantity"
-                inputMode="decimal"
-                value={form.quantity}
-                onChange={(e) => setForm({ ...form, quantity: e.target.value })}
-                placeholder="0"
-              />
+              {isEdit ? (
+                <>
+                  <Label>Quantity on hand</Label>
+                  <div className="flex h-9 items-center rounded-md border border-mist bg-mist/20 px-3 font-body text-sm text-espresso">
+                    {quantityOnHand} {material?.unitShortLabel}
+                  </div>
+                  <p className="text-xs text-mist-ink">
+                    Stock changes only through Adjust stock, which records a delta and a reason.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Label htmlFor="rm-quantity">Opening quantity</Label>
+                  <Input
+                    id="rm-quantity"
+                    inputMode="decimal"
+                    value={form.quantity}
+                    onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+                    placeholder="0"
+                  />
+                </>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="rm-threshold">Low stock threshold</Label>
@@ -411,6 +450,30 @@ export function RawMaterialFormDialog({
                 placeholder="0"
               />
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="rm-unit-cost">Cost per unit (Rs)</Label>
+              <Input
+                id="rm-unit-cost"
+                inputMode="decimal"
+                value={form.unitCost}
+                onChange={(e) => setForm({ ...form, unitCost: e.target.value })}
+                placeholder="0.00"
+              />
+              <p className="text-xs text-mist-ink">
+                Used for raw-material valuation and the material cost of production.
+              </p>
+            </div>
+            {isEdit ? (
+              <div className="space-y-2">
+                <Label>Stock value</Label>
+                <div className="flex h-9 items-center rounded-md border border-mist bg-mist/20 px-3 font-body text-sm text-espresso">
+                  Rs {material?.stockValue.toFixed(2)}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="space-y-2">

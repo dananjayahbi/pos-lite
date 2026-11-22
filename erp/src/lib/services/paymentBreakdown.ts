@@ -33,6 +33,10 @@ export function sumPaymentBreakdown(
       case 'LANKAQR':
         total.lankaqr = total.lankaqr.plus(amount);
         break;
+      case 'STORE_CREDIT':
+      case 'EXCHANGE_CREDIT':
+        // Settled from a customer balance / linked return: no money moved.
+        break;
     }
   }
   return total;

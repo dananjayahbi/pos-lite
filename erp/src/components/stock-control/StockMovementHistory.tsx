@@ -6,20 +6,37 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowDown,
   ArrowUp,
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   Download,
   Loader2,
   PackageSearch,
+  RefreshCw,
   Search,
   ShieldX,
   X,
 } from 'lucide-react';
-import { STOCK_MOVEMENT_REASONS } from '@/lib/constants/stock-movement';
+import {
+  STOCK_MOVEMENT_REASONS,
+  STOCK_MOVEMENT_REASON_BADGE_VARIANT,
+  STOCK_MOVEMENT_REASON_DOT_COLOR,
+  STOCK_MOVEMENT_REASON_LABELS,
+  isStockMovementReason,
+  parseStockMovementReasons,
+  serializeStockMovementReasons,
+  stockMovementReasonLabel,
+  toggleStockMovementReason,
+  type StockMovementReasonValue,
+} from '@/lib/constants/stock-movement';
 import { mergeSearchParams } from '@/lib/urlUtils';
 import { useGlobalStockMovements } from '@/hooks/useGlobalStockMovements';
 import { useStockActors } from '@/hooks/useStockActors';
 import { stockActorLabel } from '@/lib/stock/actor-label';
+import { resolveStockMovementSource } from '@/lib/stock/movement-source';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
+import { movementDateRangeError } from '@/lib/stock/movement-date-range';
+import { formatVariantLabel, VARIANT_LABEL_SEPARATOR } from '@/lib/products/variant-label';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -41,60 +58,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { toast } from 'sonner';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const REASON_LABELS: Record<string, string> = {
-  FOUND: 'Found',
-  DAMAGED: 'Damaged',
-  STOLEN: 'Stolen or Lost',
-  DATA_ERROR: 'Data Entry Correction',
-  RETURNED_TO_SUPPLIER: 'Returned to Supplier',
-  INITIAL_STOCK: 'Initial Stock Entry',
-  SALE_RETURN: 'Customer Return',
-  PURCHASE_RECEIVED: 'Received from Purchase',
-  STOCK_TAKE_ADJUSTMENT: 'Stock Take Adjustment',
-  SALE: 'Sale',
-  VOID_REVERSAL: 'Void Reversal',
-};
-
-const REASON_BADGE_VARIANT: Record<string, 'success' | 'destructive' | 'info' | 'warning'> = {
-  FOUND: 'success',
-  INITIAL_STOCK: 'success',
-  PURCHASE_RECEIVED: 'success',
-  DAMAGED: 'destructive',
-  STOLEN: 'destructive',
-  DATA_ERROR: 'info',
-  STOCK_TAKE_ADJUSTMENT: 'info',
-  RETURNED_TO_SUPPLIER: 'warning',
-  SALE_RETURN: 'warning',
-  SALE: 'info',
-  VOID_REVERSAL: 'warning',
-};
-
-const REASON_DOT_COLOR: Record<string, string> = {
-  FOUND: 'bg-green-500',
-  INITIAL_STOCK: 'bg-green-500',
-  PURCHASE_RECEIVED: 'bg-green-500',
-  DAMAGED: 'bg-red-500',
-  STOLEN: 'bg-red-500',
-  DATA_ERROR: 'bg-blue-500',
-  STOCK_TAKE_ADJUSTMENT: 'bg-blue-500',
-  RETURNED_TO_SUPPLIER: 'bg-amber-500',
-  SALE_RETURN: 'bg-amber-500',
-  SALE: 'bg-blue-400',
-  VOID_REVERSAL: 'bg-amber-400',
-};
-
 const ALL_REASONS = [...STOCK_MOVEMENT_REASONS];
 const PAGE_SIZE = 25;
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  const time = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true });
-  return `${date}, ${time}`;
-}
 
 function getDefaultFrom(): string {
   const d = new Date();
@@ -145,12 +114,25 @@ function StockMovementHistoryInner() {
   const page = Number(searchParams.get('page') ?? '1');
   const from = searchParams.get('from') ?? getDefaultFrom();
   const to = searchParams.get('to') ?? '';
-  const reasonsParam = searchParams.get('reasons') ?? ALL_REASONS.join(',');
+  // ARGUS #204: an inverted range can never match, so say so instead of
+  // showing the ordinary empty result.
+  const dateRangeError = movementDateRangeError(from, to);
+  const reasonsParam = searchParams.get('reasons');
   const search = searchParams.get('search') ?? '';
   const actorId = searchParams.get('actorId') ?? '';
   const sortOrder = (searchParams.get('sortOrder') as 'asc' | 'desc') ?? 'desc';
 
-  const selectedReasons = useMemo(() => new Set(reasonsParam.split(',').filter(Boolean)), [reasonsParam]);
+  const selectedReasons = useMemo(
+    () => new Set<StockMovementReasonValue>(parseStockMovementReasons(reasonsParam)),
+    [reasonsParam],
+  );
+  // ARGUS #183: serialize through the shared 13-reason config. `null` means
+  // "every reason", so a partial URL never drops the newer enum members when
+  // the operator toggles a chip.
+  const reasonFilter = useMemo(
+    () => serializeStockMovementReasons(selectedReasons),
+    [selectedReasons],
+  );
 
   // ── Local state for debounced search ───────────────────────────────────────
   const [searchInput, setSearchInput] = useState(search);
@@ -186,15 +168,15 @@ function StockMovementHistoryInner() {
       limit: PAGE_SIZE,
       from: from || undefined,
       to: to || undefined,
-      reasons: reasonsParam !== ALL_REASONS.join(',') ? reasonsParam : undefined,
+      reasons: reasonFilter ?? undefined,
       search: search || undefined,
       actorId: actorId || undefined,
       sortOrder,
     }),
-    [page, from, to, reasonsParam, search, actorId, sortOrder],
+    [page, from, to, reasonFilter, search, actorId, sortOrder],
   );
 
-  const { data, isLoading } = useGlobalStockMovements(filters);
+  const { data, isLoading, isError, error, isFetching, refetch } = useGlobalStockMovements(filters);
   const { data: actorsData } = useStockActors();
 
   const movements = data?.data ?? [];
@@ -205,19 +187,34 @@ function StockMovementHistoryInner() {
   const [exporting, setExporting] = useState(false);
 
   const handleExport = useCallback(async () => {
+    if (dateRangeError) {
+      toast.error(dateRangeError);
+      return;
+    }
     setExporting(true);
     try {
       const params = new URLSearchParams();
       if (from) params.set('from', from);
       if (to) params.set('to', to);
-      if (reasonsParam !== ALL_REASONS.join(',')) params.set('reasons', reasonsParam);
+      if (reasonFilter) params.set('reasons', reasonFilter);
       if (search) params.set('search', search);
       if (actorId) params.set('actorId', actorId);
       params.set('sortOrder', sortOrder);
       params.set('format', 'csv');
 
       const res = await fetch(`/api/store/stock-control/movements?${params}`);
-      if (!res.ok) throw new Error('Export failed');
+      if (!res.ok) {
+        // ARGUS #202: never stop the spinner silently. Surface the server's
+        // message when it sent one (permission, bad filter, export failure).
+        let message = 'Failed to export stock movements';
+        try {
+          const body = (await res.json()) as { error?: { message?: string } };
+          if (body?.error?.message) message = body.error.message;
+        } catch {
+          // Non-JSON error body - keep the generic message.
+        }
+        throw new Error(message);
+      }
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -231,26 +228,27 @@ function StockMovementHistoryInner() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-    } catch {
-      // silently fail — could add toast if desired
+      toast.success('Stock movements exported');
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to export stock movements',
+      );
     } finally {
       setExporting(false);
     }
-  }, [from, to, reasonsParam, search, actorId, sortOrder]);
+  }, [from, to, reasonFilter, search, actorId, sortOrder, dateRangeError]);
 
   // ── Reason chip toggle ─────────────────────────────────────────────────────
   const toggleReason = useCallback(
-    (reason: string) => {
-      const next = new Set(selectedReasons);
-      if (next.has(reason)) {
-        next.delete(reason);
-      } else {
-        next.add(reason);
-      }
-      const value = next.size === ALL_REASONS.length ? null : [...next].join(',');
-      updateParams({ reasons: value || null, page: '1' });
+    (reason: StockMovementReasonValue) => {
+      updateParams({
+        reasons: toggleStockMovementReason(reasonFilter, reason),
+        page: '1',
+      });
     },
-    [selectedReasons, updateParams],
+    [reasonFilter, updateParams],
   );
 
   // ── Sort toggle ────────────────────────────────────────────────────────────
@@ -262,7 +260,7 @@ function StockMovementHistoryInner() {
   const hasNonDefaultFilters =
     from !== getDefaultFrom() ||
     to !== '' ||
-    reasonsParam !== ALL_REASONS.join(',') ||
+    reasonFilter !== null ||
     search !== '' ||
     actorId !== '';
 
@@ -293,7 +291,7 @@ function StockMovementHistoryInner() {
           <h1 className="font-display text-2xl font-semibold text-espresso">Stock Movement History</h1>
           <p className="mt-1 font-body text-sm text-mist-ink">View and export all stock movements across your inventory.</p>
         </div>
-        <Button variant="outline" onClick={handleExport} disabled={exporting}>
+        <Button variant="outline" onClick={handleExport} disabled={exporting || Boolean(dateRangeError)}>
           {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
           Export CSV
         </Button>
@@ -392,8 +390,7 @@ function StockMovementHistoryInner() {
             </div>
 
             {/* Search */}
-            <div className="space-y-1 flex-1 min-w-50">
-              <label className="text-xs font-medium text-mist-ink">Product / SKU</label>
+            <div className="space-y-1 flex-1 min-w-50">              <label className="text-xs font-medium text-mist-ink">Product / SKU</label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-mist-ink" />
                 <Input
@@ -425,6 +422,12 @@ function StockMovementHistoryInner() {
             </div>
           </div>
 
+          {dateRangeError && (
+            <p role="alert" className="font-body text-xs font-medium text-red-600">
+              {dateRangeError}
+            </p>
+          )}
+
           {/* Row 2: reason chips */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-mist-ink">Reasons</label>
@@ -441,8 +444,8 @@ function StockMovementHistoryInner() {
                         : 'border-transparent bg-linen/50 text-mist-ink'
                     }`}
                   >
-                    <span className={`h-2 w-2 rounded-full ${REASON_DOT_COLOR[r]}`} />
-                    {REASON_LABELS[r]}
+                    <span className={`h-2 w-2 rounded-full ${STOCK_MOVEMENT_REASON_DOT_COLOR[r]}`} />
+                    {STOCK_MOVEMENT_REASON_LABELS[r]}
                   </button>
                 );
               })}
@@ -496,12 +499,11 @@ function StockMovementHistoryInner() {
               </button>
             </Badge>
           )}
-          {reasonsParam !== ALL_REASONS.join(',') && (
+          {reasonFilter !== null && (
             <Badge variant="secondary" className="gap-1">
-              {/* M09-03 (OBS-22): the chips are an exclusion model (all
-                  reasons start selected; clicking one excludes it), so the
-                  pill spells that out instead of reading inverted. */}
-              Showing {selectedReasons.size} of {ALL_REASONS.length} reasons - click to exclude
+              {/* ARGUS #183: the count is always against the full 13-reason
+                  enum, so a partial URL can never hide a newer reason. */}
+              Showing {selectedReasons.size} of {ALL_REASONS.length} reasons - click to toggle
               <button onClick={() => updateParams({ reasons: null, page: '1' })} aria-label="Reset reasons filter">
                 <X className="h-3 w-3" />
               </button>
@@ -524,6 +526,7 @@ function StockMovementHistoryInner() {
               <TableHead>Product</TableHead>
               <TableHead>Variant</TableHead>
               <TableHead>Reason</TableHead>
+              <TableHead>Source</TableHead>
               <TableHead className="text-right">Change</TableHead>
               <TableHead className="text-right">Before</TableHead>
               <TableHead className="text-right">After</TableHead>
@@ -532,20 +535,66 @@ function StockMovementHistoryInner() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading
+            {dateRangeError ? (
+              <TableRow>
+                <TableCell colSpan={10} className="h-40">
+                  <div className="flex flex-col items-center justify-center gap-2 text-center text-red-700">
+                    <AlertTriangle className="h-8 w-8 text-red-500" />
+                    <p className="text-sm font-medium">{dateRangeError}</p>
+                    <p className="text-xs">
+                      Adjust the dates to run the query - this is not an empty result.
+                    </p>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : isLoading
               ? Array.from({ length: 7 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 9 }).map((_, j) => (
+                    {Array.from({ length: 10 }).map((_, j) => (
                       <TableCell key={j}>
                         <Skeleton className="h-4 w-full" />
                       </TableCell>
                     ))}
                   </TableRow>
                 ))
-              : movements.length === 0
+              : isError
                 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="h-40">
+                      <TableCell colSpan={10} className="h-40">
+                        <div
+                          role="alert"
+                          className="flex flex-col items-center justify-center gap-2 text-center"
+                        >
+                          <AlertTriangle className="h-8 w-8 text-red-500" />
+                          <p className="text-sm font-medium text-red-800">
+                            Stock movements could not be loaded
+                          </p>
+                          <p className="max-w-md text-xs text-red-600">
+                            {error instanceof Error && error.message
+                              ? error.message
+                              : 'The movement query failed.'}{' '}
+                            This is a load failure, not an empty ledger.
+                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+                            onClick={() => void refetch()}
+                            disabled={isFetching}
+                          >
+                            <RefreshCw
+                              className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`}
+                            />
+                            {isFetching ? 'Retrying…' : 'Retry'}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                : movements.length === 0
+                ? (
+                    <TableRow>
+                      <TableCell colSpan={10} className="h-40">
                         <div className="flex flex-col items-center justify-center gap-2 text-mist-ink">
                           <PackageSearch className="h-10 w-10" />
                           <p className="text-sm">No stock movements found for the selected filters</p>
@@ -555,10 +604,12 @@ function StockMovementHistoryInner() {
                   )
                 : movements.map((m) => {
                     const isLow = m.quantityAfter <= m.variant.lowStockThreshold;
+                    const source = resolveStockMovementSource(m);
+                    const variantLabel = formatVariantLabel(m.variant);
                     return (
                       <TableRow key={m.id}>
                         <TableCell className="whitespace-nowrap text-sm">
-                          {formatDate(m.createdAt)}
+                          {formatStockMovementTimestamp(m.createdAt)}
                         </TableCell>
                         <TableCell>
                           <Link
@@ -571,16 +622,47 @@ function StockMovementHistoryInner() {
                         </TableCell>
                         <TableCell>
                           <span className="font-mono text-xs">{m.variant.sku}</span>
-                          {(m.variant.form || m.variant.packSize) && (
+                          {variantLabel && (
                             <span className="ml-1.5 text-xs text-mist-ink">
-                              {[m.variant.form, m.variant.packSize].filter(Boolean).join(' / ')}
+                              {VARIANT_LABEL_SEPARATOR.trim()} {variantLabel}
                             </span>
                           )}
                         </TableCell>
                         <TableCell>
-                          <Badge variant={REASON_BADGE_VARIANT[m.reason] ?? 'secondary'}>
-                            {REASON_LABELS[m.reason] ?? m.reason}
+                          <Badge
+                            variant={
+                              isStockMovementReason(m.reason)
+                                ? STOCK_MOVEMENT_REASON_BADGE_VARIANT[m.reason]
+                                : 'secondary'
+                            }
+                          >
+                            {stockMovementReasonLabel(m.reason)}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {source ? (
+                            source.href ? (
+                              <Link
+                                href={source.href}
+                                title={source.id}
+                                className="text-espresso hover:underline"
+                              >
+                                {source.label}{' '}
+                                <span className="font-mono text-xs text-mist-ink">
+                                  {source.reference}
+                                </span>
+                              </Link>
+                            ) : (
+                              <span title={source.id}>
+                                {source.label}{' '}
+                                <span className="font-mono text-xs text-mist-ink">
+                                  {source.reference}
+                                </span>
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-mist-ink/50">-</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">
                           <span className={m.quantityDelta > 0 ? 'text-green-600' : 'text-red-600'}>
@@ -607,7 +689,7 @@ function StockMovementHistoryInner() {
       </div>
 
       {/* Pagination */}
-      {meta && meta.totalPages > 0 && (
+      {meta && !isError && !dateRangeError && meta.totalPages > 0 && (
         <div className="flex items-center justify-between text-sm">
           <p className="text-mist-ink">
             Showing {startItem}–{endItem} of {meta.total}

@@ -14,6 +14,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatRupee } from '@/lib/format';
+import { useCartStore } from '@/stores/cartStore';
+import { clearCartSnapshotsForShift } from '@/lib/idb-store';
 
 interface ShiftCloseModalProps {
   shiftId: string;
@@ -136,6 +138,10 @@ export function ShiftCloseModal({
       }
 
       toast.success('Shift closed successfully');
+      // ARGUS #66: the closed shift owns the active cart. Drop it so the next
+      // cashier/shift cannot inherit an unposted cart.
+      useCartStore.getState().clearCart();
+      void clearCartSnapshotsForShift(shiftId).catch(() => {});
       onOpenChange(false);
       if (onSuccess) {
         onSuccess();

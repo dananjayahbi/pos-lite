@@ -14,17 +14,31 @@ import type {
 } from '@/generated/prisma/client';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
+  bomCreateDecision,
   buildProductionBatchNumber,
+  canModifyBom,
+  bomUpdateChangesRecipe,
   computeConsumptionPlan,
+  findDuplicateRawMaterialIds,
   getInsufficientIngredients,
   hasInsufficientIngredients,
   isSourceEligibleForProduction,
+  isVariantEligibleForBom,
   toBomIngredient,
   type ConsumptionLine,
 } from '@/lib/services/bom.core';
+import { lockForUpdate } from '@/lib/api/race-guard';
 import { adjustStockInTx } from '@/lib/services/inventory.service';
+import { consumeRawMaterialQuantity } from '@/lib/services/rawMaterial.core';
+import { listRawMaterialUnitCatalog } from '@/lib/services/rawMaterialUnit.service';
+import { resolveRawMaterialUnitLabels } from '@/lib/services/rawMaterialUnitCatalog.core';
+import { computeMaterialCost } from '@/lib/services/rawMaterialValuation.core';
 import { createBatchInTx } from '@/lib/services/batchTracking.service';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import {
+  readProductionBatchNumber,
+  scaleProductionConsumption,
+} from '@/lib/services/productionHistory.core';
 
 // ── Public list item shape ──────────────────────────────────────────────────
 
@@ -37,6 +51,8 @@ export interface BomItemView {
   isActive: boolean;
   notes: string | null;
   rawMaterialCount: number;
+  /** Production runs recorded against this recipe (ARGUS #248). */
+  productionLogCount: number;
   ingredients: { rawMaterialId: string; name: string; quantityPerUnit: number }[];
   createdAt: Date;
   updatedAt: Date;
@@ -60,6 +76,8 @@ export interface BomDetailView {
   isActive: boolean;
   notes: string | null;
   ingredients: BomIngredientView[];
+  /** Production runs recorded against this recipe (ARGUS #248). */
+  productionLogCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -69,8 +87,9 @@ type BomWithItems = BillOfMaterials & {
     product: { name: string; productSource: 'MANUFACTURED' | 'TRADED' };
   };
   items: (BillOfMaterialsItem & {
-    rawMaterial: Pick<RawMaterial, 'id' | 'name' | 'unit' | 'quantity'>;
+    rawMaterial: Pick<RawMaterial, 'id' | 'name' | 'unit' | 'quantity' | 'unitCost'>;
   })[];
+  _count: { productionLogs: number };
 };
 
 function toBomItemView(bom: BomWithItems): BomItemView {
@@ -83,6 +102,7 @@ function toBomItemView(bom: BomWithItems): BomItemView {
     isActive: bom.isActive,
     notes: bom.notes,
     rawMaterialCount: bom.items.length,
+    productionLogCount: bom._count.productionLogs,
     ingredients: bom.items.map((item) => ({
       rawMaterialId: item.rawMaterialId,
       name: item.rawMaterial.name,
@@ -110,6 +130,7 @@ function toBomDetailView(bom: BomWithItems): BomDetailView {
       quantityPerUnit: item.quantityPerUnit.toNumber(),
       available: item.rawMaterial.quantity.toNumber(),
     })),
+    productionLogCount: bom._count.productionLogs,
     createdAt: bom.createdAt,
     updatedAt: bom.updatedAt,
   };
@@ -126,10 +147,11 @@ const bomInclude = {
   items: {
     include: {
       rawMaterial: {
-        select: { id: true, name: true, unit: true, quantity: true },
+        select: { id: true, name: true, unit: true, quantity: true, unitCost: true },
       },
     },
   },
+  _count: { select: { productionLogs: true } },
 } as const;
 
 type TxClient = Omit<
@@ -184,6 +206,55 @@ export async function listBoms(tenantId: string, filters: ListBomsFilters = {}) 
   return { items: rows.map(toBomItemView), total };
 }
 
+// ── Eligible variants (New BOM picker) ───────────────────────────────────────
+
+export interface BomEligibleVariantView {
+  id: string;
+  sku: string;
+  productName: string;
+}
+
+/**
+ * ARGUS #250 - variants that can actually receive a new BOM: live
+ * MANUFACTURED variants with no BOM row yet. The same rules are enforced again
+ * by `createBom`, so a stale picker can never save an ineligible variant.
+ */
+export async function listBomEligibleVariants(
+  tenantId: string,
+): Promise<BomEligibleVariantView[]> {
+  const variants = await prisma.productVariant.findMany({
+    where: {
+      tenantId,
+      deletedAt: null,
+      product: { tenantId, deletedAt: null },
+    },
+    select: {
+      id: true,
+      sku: true,
+      product: { select: { name: true, productSource: true } },
+      _count: {
+        // Only a live BOM makes the variant ineligible. A soft-deleted row can
+        // be revived by createBom, so the variant must stay in the picker.
+        select: { billOfMaterials: { where: { deletedAt: null } } },
+      },
+    },
+    orderBy: [{ sku: 'asc' }],
+  });
+
+  return variants
+    .filter((variant) =>
+      isVariantEligibleForBom({
+        productSource: variant.product.productSource,
+        hasExistingBom: variant._count.billOfMaterials > 0,
+      }),
+    )
+    .map((variant) => ({
+      id: variant.id,
+      sku: variant.sku,
+      productName: variant.product.name,
+    }));
+}
+
 // ── Get by id ────────────────────────────────────────────────────────────────
 
 export async function getBomById(tenantId: string, id: string) {
@@ -205,6 +276,16 @@ export interface CreateBomInput {
   ingredients: BomIngredientInput[];
 }
 
+/**
+ * ARGUS #249 - the same raw material twice would hit the DB composite unique
+ * constraint and surface as a 500. Reject it as a typed 400 instead.
+ */
+function assertNoDuplicateIngredients(ingredients: BomIngredientInput[]): void {
+  if (findDuplicateRawMaterialIds(ingredients).length > 0) {
+    throw new Error('INGREDIENT_DUPLICATE');
+  }
+}
+
 export async function createBom(
   tenantId: string,
   actorId: string,
@@ -213,6 +294,7 @@ export async function createBom(
   if (input.ingredients.length === 0) {
     throw new Error('NO_INGREDIENTS');
   }
+  assertNoDuplicateIngredients(input.ingredients);
 
   return prisma.$transaction(async (tx) => {
     const variant = await tx.productVariant.findUnique({
@@ -233,8 +315,10 @@ export async function createBom(
 
     const existing = await tx.billOfMaterials.findUnique({
       where: { tenantId_variantId: { tenantId, variantId: input.variantId } },
+      select: { id: true, deletedAt: true },
     });
-    if (existing && !existing.deletedAt) throw new Error('BOM_EXISTS');
+    const decision = bomCreateDecision(existing);
+    if (decision === 'exists') throw new Error('BOM_EXISTS');
 
     const rawMaterialIds = [...new Set(input.ingredients.map((i) => i.rawMaterialId))];
     const ownedMaterials = await tx.rawMaterial.findMany({
@@ -244,6 +328,45 @@ export async function createBom(
     const ownedIdSet = new Set(ownedMaterials.map((m) => m.id));
     for (const id of rawMaterialIds) {
       if (!ownedIdSet.has(id)) throw new Error('INGREDIENT_NOT_FOUND');
+    }
+
+    // A soft-deleted BOM still occupies `[tenantId, variantId]`. Recreate it
+    // in place instead of leaving the variant permanently without a recipe.
+    if (decision === 'revive' && existing) {
+      const revived = await tx.billOfMaterials.update({
+        where: { id: existing.id },
+        data: {
+          deletedAt: null,
+          isActive: true,
+          name: input.name.trim(),
+          notes: input.notes?.trim() || null,
+          items: {
+            deleteMany: {},
+            create: input.ingredients.map((ing) => ({
+              rawMaterialId: ing.rawMaterialId,
+              quantityPerUnit: new Prisma.Decimal(ing.quantityPerUnit),
+            })),
+          },
+        },
+        include: bomInclude,
+      });
+
+      void createAuditLog({
+        tenantId,
+        actorId,
+        actorRole: 'USER',
+        entityType: 'BillOfMaterials',
+        entityId: revived.id,
+        action: AUDIT_ACTIONS.BOM_RESTORED,
+        before: { variantId: input.variantId, restoredFrom: existing.id },
+        after: {
+          variantId: input.variantId,
+          name: revived.name,
+          ingredientCount: input.ingredients.length,
+        },
+      }).catch(() => {});
+
+      return toBomDetailView(revived);
     }
 
     const bom = await tx.billOfMaterials.create({
@@ -298,6 +421,19 @@ export async function updateBom(
   return prisma.$transaction(async (tx) => {
     await findOwnedBom(tx, tenantId, id);
 
+    // ARGUS #248: once a production run references this recipe it must stay
+    // frozen, otherwise past runs silently point at a different ingredient list.
+    // ARGUS #251: an isActive-only update is lifecycle, not a recipe edit, so a
+    // used BOM can still be retired.
+    const productionLogCount = await tx.productionLog.count({ where: { bomId: id } });
+    if (bomUpdateChangesRecipe(input) && !canModifyBom(productionLogCount)) {
+      throw new Error('BOM_LOCKED');
+    }
+
+    if (input.ingredients !== undefined) {
+      assertNoDuplicateIngredients(input.ingredients);
+    }
+
     const bom = await tx.billOfMaterials.update({
       where: { id },
       data: {
@@ -331,6 +467,7 @@ export async function updateBom(
         ...(input.ingredients !== undefined
           ? { ingredientCount: input.ingredients.length }
           : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
       },
     }).catch(() => {});
 
@@ -343,6 +480,12 @@ export async function updateBom(
 export async function deleteBom(tenantId: string, actorId: string, id: string) {
   return prisma.$transaction(async (tx) => {
     await findOwnedBom(tx, tenantId, id);
+
+    // ARGUS #248: deleting a used recipe would leave its production runs with
+    // no viewable BOM, so it is refused while any run references it.
+    const productionLogCount = await tx.productionLog.count({ where: { bomId: id } });
+    if (!canModifyBom(productionLogCount)) throw new Error('BOM_LOCKED');
+
     await tx.billOfMaterials.update({
       where: { id },
       data: { deletedAt: new Date(), isActive: false },
@@ -363,11 +506,17 @@ export async function deleteBom(tenantId: string, actorId: string, id: string) {
 
 // ── Production logging ───────────────────────────────────────────────────────
 
+export type ProductionPlanConsumptionLine = ConsumptionLine & {
+  /** Tenant-defined unit labels (ARGUS #481). */
+  unitName: string;
+  unitShortLabel: string;
+};
+
 export interface ProductionPlanView {
   bomId: string;
   variantId: string;
   quantity: number;
-  consumption: ConsumptionLine[];
+  consumption: ProductionPlanConsumptionLine[];
   sufficient: boolean;
 }
 
@@ -377,8 +526,14 @@ export interface ProductionPlanView {
  */
 export async function planProduction(tenantId: string, bomId: string, quantity: number) {
   const bom = await findOwnedBom(prisma, tenantId, bomId);
-  const ingredients = bom.items.map(toBomIngredient);
-  const consumption = computeConsumptionPlan(ingredients, quantity);
+  const [ingredients, unitCatalog] = await Promise.all([
+    Promise.resolve(bom.items.map(toBomIngredient)),
+    listRawMaterialUnitCatalog(tenantId),
+  ]);
+  const consumption = computeConsumptionPlan(ingredients, quantity).map((line) => {
+    const labels = resolveRawMaterialUnitLabels(unitCatalog, line.unit);
+    return { ...line, unitName: labels.name, unitShortLabel: labels.shortLabel };
+  });
   return {
     bomId,
     variantId: bom.variantId,
@@ -418,15 +573,72 @@ export async function produceGoods(
       );
     }
 
-    // 1) Deduct each raw material within the same transaction.
-    for (const line of consumption) {
+    // ARGUS #245: lock every consumed material in a stable order, then re-read
+    // the committed quantity and re-run the sufficiency check. Two concurrent
+    // production runs used to both pass the snapshot check and drive stock
+    // negative. Locking first makes the check + decrement atomic.
+    const consumedIds = [...new Set(consumption.map((line) => line.rawMaterialId))].sort();
+    for (const rawMaterialId of consumedIds) {
+      await lockForUpdate(tx, 'raw_materials', '"id" = $1 AND "tenantId" = $2', [
+        rawMaterialId,
+        tenantId,
+      ]);
+    }
+    const lockedMaterials = await tx.rawMaterial.findMany({
+      where: { tenantId, id: { in: consumedIds } },
+      select: { id: true, quantity: true },
+    });
+    if (lockedMaterials.length !== consumedIds.length) {
+      throw new Error('INGREDIENT_NOT_FOUND');
+    }
+    const lockedQuantityById = new Map(
+      lockedMaterials.map((row) => [row.id, row.quantity]),
+    );
+    const freshConsumption = computeConsumptionPlan(
+      bom.items.map((item) => {
+        const ingredient = toBomIngredient(item);
+        const locked = lockedQuantityById.get(item.rawMaterialId);
+        return {
+          ...ingredient,
+          available: locked ? locked.toNumber() : ingredient.available,
+        };
+      }),
+      quantity,
+    );
+    if (hasInsufficientIngredients(freshConsumption)) {
+      const short = getInsufficientIngredients(freshConsumption);
+      throw new Error(
+        `INSUFFICIENT_STOCK:${short
+          .map((s) => `${s.rawMaterialName}:${s.required}:${s.available}`)
+          .join('|')}`,
+      );
+    }
+
+    // Value of the materials consumed, at the unit cost recorded on each raw
+    // material (ARGUS #243). Stored with the log so finished-goods COGS can be
+    // explained even after the material cost changes.
+    const unitCostByMaterial = new Map(
+      bom.items.map((item) => [item.rawMaterialId, item.rawMaterial.unitCost.toNumber()]),
+    );
+    const materialCost = computeMaterialCost(
+      consumption.map((line) => ({
+        required: line.required,
+        unitCost: unitCostByMaterial.get(line.rawMaterialId) ?? 0,
+      })),
+    );
+
+    // 1) Deduct each raw material within the same transaction. The rows are
+    //    already locked, so the absolute Decimal result cannot race another
+    //    adjustment or production run.
+    for (const line of freshConsumption) {
+      const locked = lockedQuantityById.get(line.rawMaterialId);
+      if (!locked) {
+        throw new Error('INGREDIENT_NOT_FOUND');
+      }
+      const remaining = consumeRawMaterialQuantity(locked, line.required);
       await tx.rawMaterial.update({
         where: { id: line.rawMaterialId },
-        data: {
-          quantity: {
-            decrement: new Prisma.Decimal(line.required),
-          },
-        },
+        data: { quantity: remaining },
       });
     }
 
@@ -439,6 +651,7 @@ export async function produceGoods(
         bomId,
         variantId: bom.variantId,
         quantity,
+        materialCost,
         actorId,
         note: note?.trim() || null,
       },
@@ -478,6 +691,7 @@ export async function produceGoods(
         quantity,
         batchId: batch.id,
         batchNumber,
+        materialCost,
         consumption: consumption.map((c) => ({
           rawMaterialId: c.rawMaterialId,
           required: c.required,
@@ -490,6 +704,7 @@ export async function produceGoods(
       batchId: batch.id,
       batchNumber,
       quantity,
+      materialCost,
       consumption,
     };
   });
@@ -497,14 +712,30 @@ export async function produceGoods(
 
 // ── Production history ───────────────────────────────────────────────────────
 
+export interface ProductionConsumptionItem {
+  rawMaterialId: string;
+  rawMaterialName: string;
+  quantity: number;
+  unit: string;
+  unitShortLabel: string;
+}
+
 export interface ProductionHistoryItem {
   id: string;
   quantity: number;
+  /** Raw-material value consumed (ARGUS #243). */
+  materialCost: number;
   note: string | null;
   createdAt: Date;
   actorName: string;
   variantSku: string;
   variantName: string;
+  /** Recipe used for the run (ARGUS #259). */
+  bomName: string;
+  /** Batch number recorded with the production audit row, when available. */
+  batchNumber: string | null;
+  /** Frozen recipe scaled by the produced quantity (ARGUS #259). */
+  consumption: ProductionConsumptionItem[];
 }
 
 export async function listProductionLogs(
@@ -516,14 +747,26 @@ export async function listProductionLogs(
   if (bomId) where.bomId = bomId;
   if (variantId) where.variantId = variantId;
 
-  const [rows, total] = await Promise.all([
+  const [rows, total, unitCatalog] = await Promise.all([
     prisma.productionLog.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
       include: {
-        bom: { select: { name: true } },
+        bom: {
+          select: {
+            name: true,
+            // A BOM cannot be edited after its first production run (ARGUS
+            // #248), so these lines are the recipe that this run actually used.
+            items: {
+              select: {
+                quantityPerUnit: true,
+                rawMaterial: { select: { id: true, name: true, unit: true } },
+              },
+            },
+          },
+        },
         variant: {
           select: { sku: true, product: { select: { name: true } } },
         },
@@ -531,17 +774,66 @@ export async function listProductionLogs(
       },
     }),
     prisma.productionLog.count({ where }),
+    listRawMaterialUnitCatalog(tenantId),
   ]);
 
-  const items: ProductionHistoryItem[] = rows.map((row) => ({
-    id: row.id,
-    quantity: row.quantity,
-    note: row.note,
-    createdAt: row.createdAt,
-    actorName: staffDisplayName(row.actor.email),
-    variantSku: row.variant.sku,
-    variantName: row.variant.product.name,
-  }));
+  // The batch number lives in the PRODUCTION_LOGGED audit payload because the
+  // ProductionLog model has no batch column; read it for this page in one query.
+  const auditRows =
+    rows.length > 0
+      ? await prisma.auditLog.findMany({
+          where: {
+            tenantId,
+            entityType: 'ProductionLog',
+            action: AUDIT_ACTIONS.PRODUCTION_LOGGED,
+            entityId: { in: rows.map((row) => row.id) },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { entityId: true, after: true },
+        })
+      : [];
+  const batchNumberByLogId = new Map<string, string>();
+  for (const audit of auditRows) {
+    const batchNumber = readProductionBatchNumber(audit.after);
+    if (batchNumber && !batchNumberByLogId.has(audit.entityId)) {
+      batchNumberByLogId.set(audit.entityId, batchNumber);
+    }
+  }
+
+  const items: ProductionHistoryItem[] = rows.map((row) => {
+    const consumption = scaleProductionConsumption(
+      row.bom.items.map((item) => ({
+        rawMaterialId: item.rawMaterial.id,
+        rawMaterialName: item.rawMaterial.name,
+        unit: item.rawMaterial.unit,
+        quantityPerUnit: item.quantityPerUnit.toNumber(),
+      })),
+      row.quantity,
+    ).map((line) => {
+      const labels = resolveRawMaterialUnitLabels(unitCatalog, line.unit);
+      return {
+        rawMaterialId: line.rawMaterialId,
+        rawMaterialName: line.rawMaterialName,
+        quantity: line.quantity,
+        unit: line.unit,
+        unitShortLabel: labels.shortLabel,
+      };
+    });
+
+    return {
+      id: row.id,
+      quantity: row.quantity,
+      materialCost: row.materialCost.toNumber(),
+      note: row.note,
+      createdAt: row.createdAt,
+      actorName: staffDisplayName(row.actor.email),
+      variantSku: row.variant.sku,
+      variantName: row.variant.product.name,
+      bomName: row.bom.name,
+      batchNumber: batchNumberByLogId.get(row.id) ?? null,
+      consumption,
+    };
+  });
 
   return { items, total };
 }

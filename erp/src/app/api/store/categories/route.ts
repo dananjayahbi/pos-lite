@@ -8,7 +8,7 @@ import { revalidateTenantStorefront } from '@/lib/revalidate-website';
 import { CategorySchema } from '@/lib/validators/category.validators';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await auth();
 
@@ -27,7 +27,12 @@ export async function GET() {
       );
     }
 
-    const categories = await getAllCategories(tenantId);
+    // ARGUS #172: `?deleted=true` powers the Deleted view used to restore a
+    // soft-deleted category. Anything else keeps the active list.
+    const view = new URL(request.url).searchParams.get('deleted') === 'true'
+      ? 'deleted'
+      : 'active';
+    const categories = await getAllCategories(tenantId, view);
 
     return NextResponse.json({ success: true, data: categories });
   } catch (error) {
@@ -78,7 +83,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const category = await createCategory(tenantId, parsed.data as CreateCategoryInput);
+    const category = await createCategory(tenantId, session.user.id, parsed.data as CreateCategoryInput);
 
     // Revalidate so the new category shows as a storefront filter immediately.
     try {

@@ -5,12 +5,25 @@
  */
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
+import { lockForUpdate } from '@/lib/api/race-guard';
 import type { RawMaterial } from '@/generated/prisma/client';
-import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
-  applyQuantityDelta,
+  attachAuditActorNames,
+  createAuditLog,
+  AUDIT_ACTIONS,
+} from '@/lib/services/audit.service';
+import {
+  isRawMaterialAdjustmentReason,
+  mapRawMaterialAdjustmentAudit,
+  type RawMaterialAdjustmentHistoryItem,
+  type RawMaterialAdjustmentReason,
+} from '@/lib/services/rawMaterialAdjustment.core';
+import {
+  applyQuantityDeltaDecimal,
+  roundRawMaterialQuantity,
   getRawMaterialCategoryLabel,
   getRawMaterialStockStatus,
+  matchesRawMaterialStockStatus,
   type RawMaterialStockStatus,
 } from '@/lib/services/rawMaterial.core';
 import {
@@ -22,6 +35,12 @@ import {
   getRawMaterialUnitMap,
   type RawMaterialUnitOption,
 } from '@/lib/services/rawMaterialUnit.service';
+
+import {
+  assertRawMaterialDeletable,
+  assertRawMaterialUnitChangeAllowed,
+} from '@/lib/services/rawMaterialGuards.core';
+import { computeRawMaterialStockValue } from '@/lib/services/rawMaterialValuation.core';
 
 // ── Public list item shape (Decimal → number for the client) ────────────────
 
@@ -35,6 +54,10 @@ export interface RawMaterialItem {
   unitShortLabel: string;
   quantity: number;
   lowStockThreshold: number;
+  /** Cost of one base unit (ARGUS #243). */
+  unitCost: number;
+  /** quantity x unitCost, for raw-material valuation. */
+  stockValue: number;
   description: string | null;
   isActive: boolean;
   createdAt: Date;
@@ -49,6 +72,7 @@ export function toRawMaterialItem(
 ): RawMaterialItem {
   const quantity = m.quantity.toNumber();
   const lowStockThreshold = m.lowStockThreshold.toNumber();
+  const unitCost = m.unitCost.toNumber();
   return {
     id: m.id,
     name: m.name,
@@ -59,6 +83,8 @@ export function toRawMaterialItem(
     unitShortLabel: unit?.shortLabel ?? m.unit,
     quantity,
     lowStockThreshold,
+    unitCost,
+    stockValue: computeRawMaterialStockValue(quantity, unitCost),
     description: m.description,
     isActive: m.isActive,
     createdAt: m.createdAt,
@@ -95,6 +121,30 @@ export async function listRawMaterials(
     where.category = category;
   }
 
+  if (stockStatus) {
+    // ARGUS #242: Prisma cannot compare two columns, so the shared stock-state
+    // rule is evaluated over the tenant's live materials and the matching ids
+    // are pushed into the query BEFORE pagination. This keeps `total`,
+    // `totalPages` and the page rows describing the filtered set, instead of
+    // paging first and filtering the page in memory.
+    const candidates = await prisma.rawMaterial.findMany({
+      where,
+      select: { id: true, quantity: true, lowStockThreshold: true },
+    });
+
+    where.id = {
+      in: candidates
+        .filter((row) =>
+          matchesRawMaterialStockStatus(
+            row.quantity.toNumber(),
+            row.lowStockThreshold.toNumber(),
+            stockStatus,
+          ),
+        )
+        .map((row) => row.id),
+    };
+  }
+
   const skip = (page - 1) * limit;
 
   const [rows, total, categoryNames, unitMap] = await Promise.all([
@@ -109,13 +159,9 @@ export async function listRawMaterials(
     getRawMaterialUnitMap(tenantId),
   ]);
 
-  let items = rows.map((row) =>
+  const items = rows.map((row) =>
     toRawMaterialItem(row, categoryNames.get(row.category), unitMap.get(row.unit)),
   );
-
-  if (stockStatus) {
-    items = items.filter((item) => item.stockStatus === stockStatus);
-  }
 
   return { items, total };
 }
@@ -141,6 +187,7 @@ export interface CreateRawMaterialInput {
   unit: string;
   quantity?: string | undefined;
   lowStockThreshold?: string | undefined;
+  unitCost?: string | undefined;
   description?: string | undefined;
 }
 
@@ -160,6 +207,7 @@ export async function createRawMaterial(
       unit: input.unit,
       quantity: new Prisma.Decimal(input.quantity ?? '0'),
       lowStockThreshold: new Prisma.Decimal(input.lowStockThreshold ?? '0'),
+      unitCost: new Prisma.Decimal(input.unitCost ?? '0'),
       description: input.description?.trim() || null,
     },
   });
@@ -191,8 +239,8 @@ export interface UpdateRawMaterialInput {
   name?: string | undefined;
   category?: string | undefined;
   unit?: string | undefined;
-  quantity?: string | undefined;
   lowStockThreshold?: string | undefined;
+  unitCost?: string | undefined;
   description?: string | undefined;
   isActive?: boolean | undefined;
 }
@@ -211,7 +259,19 @@ export async function updateRawMaterial(
   }
 
   return prisma.$transaction(async (tx) => {
-    await findOwnedMaterial(tx, tenantId, id);
+    const existing = await findOwnedMaterial(tx, tenantId, id);
+
+    // ARGUS #241: quantity is deliberately NOT updatable here — stock changes
+    // go through `adjustRawMaterialStock` (delta + reason + audit). A unit
+    // change would reinterpret the stored number, so it is blocked while stock
+    // is on hand.
+    if (input.unit !== undefined) {
+      assertRawMaterialUnitChangeAllowed({
+        currentUnit: existing.unit,
+        nextUnit: input.unit,
+        quantityOnHand: existing.quantity.toNumber(),
+      });
+    }
 
     const updated = await tx.rawMaterial.update({
       where: { id },
@@ -219,11 +279,11 @@ export async function updateRawMaterial(
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
         ...(input.category !== undefined ? { category: input.category } : {}),
         ...(input.unit !== undefined ? { unit: input.unit } : {}),
-        ...(input.quantity !== undefined
-          ? { quantity: new Prisma.Decimal(input.quantity) }
-          : {}),
         ...(input.lowStockThreshold !== undefined
           ? { lowStockThreshold: new Prisma.Decimal(input.lowStockThreshold) }
+          : {}),
+        ...(input.unitCost !== undefined
+          ? { unitCost: new Prisma.Decimal(input.unitCost) }
           : {}),
         ...(input.description !== undefined
           ? { description: input.description.trim() || null }
@@ -269,20 +329,35 @@ export async function adjustRawMaterialStock(
   tenantId: string,
   actorId: string,
   id: string,
-  quantityDelta: number,
+  quantityDelta: string | number,
+  reason: RawMaterialAdjustmentReason,
 ) {
-  if (quantityDelta === 0) {
+  // ARGUS #246: the route validator makes this required, but enforce the fixed
+  // vocabulary here too so no internal caller can write a free-text reason.
+  if (!isRawMaterialAdjustmentReason(reason)) {
+    throw new Error('INVALID_REASON');
+  }
+  // ARGUS #245: Decimal arithmetic at the shared four-decimal scale. The delta
+  // is rounded first, so a sub-scale value is a no-op rather than a float leak.
+  const delta = roundRawMaterialQuantity(quantityDelta);
+  if (delta.isZero()) {
     throw new Error('DELTA_ZERO');
   }
 
   return prisma.$transaction(async (tx) => {
+    // Lock the material BEFORE reading its quantity. Two concurrent
+    // adjustments used to read the same snapshot and lose one update.
+    await lockForUpdate(tx, 'raw_materials', '"id" = $1 AND "tenantId" = $2', [
+      id,
+      tenantId,
+    ]);
     const material = await findOwnedMaterial(tx, tenantId, id);
-    const currentQuantity = material.quantity.toNumber();
-    const newQuantity = applyQuantityDelta(currentQuantity, quantityDelta);
+    const currentQuantity = roundRawMaterialQuantity(material.quantity);
+    const newQuantity = applyQuantityDeltaDecimal(currentQuantity, delta);
 
     const updated = await tx.rawMaterial.update({
       where: { id },
-      data: { quantity: new Prisma.Decimal(newQuantity) },
+      data: { quantity: newQuantity },
     });
 
     void createAuditLog({
@@ -292,7 +367,13 @@ export async function adjustRawMaterialStock(
       entityType: 'RawMaterial',
       entityId: id,
       action: AUDIT_ACTIONS.RAW_MATERIAL_STOCK_ADJUSTED,
-      after: { quantityDelta, quantityBefore: currentQuantity, quantityAfter: newQuantity },
+      before: { quantity: currentQuantity.toFixed(4) },
+      after: {
+        quantityDelta: delta.toFixed(4),
+        quantityBefore: currentQuantity.toFixed(4),
+        quantityAfter: newQuantity.toFixed(4),
+        reason,
+      },
     }).catch(() => {});
 
     return toRawMaterialItem(updated);
@@ -307,7 +388,21 @@ export async function deleteRawMaterial(
   id: string,
 ) {
   return prisma.$transaction(async (tx) => {
-    await findOwnedMaterial(tx, tenantId, id);
+    const existing = await findOwnedMaterial(tx, tenantId, id);
+
+    // ARGUS #241: a soft delete hides the row from the list/stats/valuation but
+    // writes no stock movement, so units on hand would vanish from the books.
+    // Active BOMs would also be left pointing at a hidden material.
+    const activeBomCount = await tx.billOfMaterialsItem.count({
+      where: {
+        rawMaterialId: id,
+        bom: { tenantId, isActive: true, deletedAt: null },
+      },
+    });
+    assertRawMaterialDeletable({
+      quantityOnHand: existing.quantity.toNumber(),
+      activeBomCount,
+    });
 
     const updated = await tx.rawMaterial.update({
       where: { id },
@@ -321,6 +416,10 @@ export async function deleteRawMaterial(
       entityType: 'RawMaterial',
       entityId: id,
       action: AUDIT_ACTIONS.RAW_MATERIAL_DELETED,
+      before: {
+        quantityOnHand: existing.quantity.toString(),
+        activeBomCount,
+      },
     }).catch(() => {});
 
     return toRawMaterialItem(updated);
@@ -355,6 +454,49 @@ export async function getRawMaterialStats(tenantId: string) {
     totalMaterials: total,
     lowStockCount,
     outOfStockCount,
+  };
+}
+
+// ── Adjustment history ───────────────────────────────────────────────────────
+
+/**
+ * ARGUS #246: raw materials have no dedicated movement table, so the per-material
+ * history is the durable `RAW_MATERIAL_STOCK_ADJUSTED` audit trail. Newest first.
+ */
+export async function listRawMaterialAdjustments(
+  tenantId: string,
+  rawMaterialId: string,
+  limit = 50,
+): Promise<{ items: RawMaterialAdjustmentHistoryItem[] }> {
+  const material = await prisma.rawMaterial.findFirst({
+    where: { id: rawMaterialId, tenantId },
+    select: { id: true },
+  });
+  if (!material) {
+    throw new Error('NOT_FOUND');
+  }
+
+  const rows = await prisma.auditLog.findMany({
+    where: {
+      tenantId,
+      entityType: 'RawMaterial',
+      entityId: rawMaterialId,
+      action: AUDIT_ACTIONS.RAW_MATERIAL_STOCK_ADJUSTED,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: Math.min(Math.max(limit, 1), 200),
+  });
+
+  const withActors = await attachAuditActorNames(rows, tenantId);
+  return {
+    items: withActors.map((row) =>
+      mapRawMaterialAdjustmentAudit({
+        id: row.id,
+        createdAt: row.createdAt,
+        actorName: row.actorName,
+        after: row.after,
+      }),
+    ),
   };
 }
 

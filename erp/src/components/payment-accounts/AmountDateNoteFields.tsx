@@ -13,6 +13,9 @@ interface AmountDateNoteFieldsProps {
   amountError?: string | undefined;
   /** Rendered under the amount field while the entry is still valid. */
   amountHint?: string | undefined;
+  /** Latest selectable date, e.g. the server/local "today". */
+  dateMax?: string | undefined;
+  dateError?: string | undefined;
   disabled?: boolean;
   idPrefix: string;
 }
@@ -33,6 +36,8 @@ export function AmountDateNoteFields({
   onNoteChange,
   amountError,
   amountHint,
+  dateMax,
+  dateError,
   disabled,
   idPrefix,
 }: AmountDateNoteFieldsProps) {
@@ -72,9 +77,13 @@ export function AmountDateNoteFields({
           type="date"
           value={entryDate}
           onChange={(event) => onEntryDateChange(event.target.value)}
+          max={dateMax}
           className="mt-1.5 border-mist"
           disabled={disabled}
         />
+        {dateError && (
+          <p className="mt-1 font-body text-xs text-[#9B2226]">{dateError}</p>
+        )}
       </div>
 
       <div>

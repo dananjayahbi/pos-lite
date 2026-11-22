@@ -206,6 +206,103 @@ describe('CreateSaleSchema - mandatory customer (doc 32)', () => {
   });
 });
 
+describe('CreateSaleSchema - store credit tender (ARGUS #61)', () => {
+  it('accepts a sale fully settled by store credit', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'STORE_CREDIT',
+      appliedStoreCredit: '100.00',
+      customerId: 'cust-1',
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('requires a linked customer', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'STORE_CREDIT',
+      appliedStoreCredit: '100.00',
+      isGuestSale: true,
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((i) => i.path.includes('customerId'))).toBe(true);
+    }
+  });
+
+  it('requires a positive credit amount', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'STORE_CREDIT',
+      customerId: 'cust-1',
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((i) => i.path.includes('appliedStoreCredit'))).toBe(true);
+    }
+  });
+
+  it('still allows a partial credit with a cash tender for the rest', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'CASH',
+      cashReceived: 100,
+      appliedStoreCredit: '25.00',
+      customerId: 'cust-1',
+    });
+    expect(parsed.success).toBe(true);
+  });
+});
+
+describe('CreateSaleSchema - exchange credit (ARGUS #93)', () => {
+  it('accepts an exchange sale linked to a return', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'EXCHANGE_CREDIT',
+      linkedReturnId: 'ret-1',
+      customerId: 'cust-1',
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('requires linkedReturnId when EXCHANGE_CREDIT is the tender', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'EXCHANGE_CREDIT',
+      customerId: 'cust-1',
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((i) => i.path.includes('paymentMethod'))).toBe(true);
+    }
+  });
+
+  it('accepts a linked return alongside a cash tender for the remainder', () => {
+    const parsed = CreateSaleSchema.safeParse({
+      shiftId: 'shift-1',
+      lines: baseLine,
+      cartDiscountAmount: 0,
+      paymentMethod: 'CASH',
+      cashReceived: 100,
+      linkedReturnId: 'ret-1',
+      customerId: 'cust-1',
+    });
+    expect(parsed.success).toBe(true);
+  });
+});
+
 describe('CreateSaleSchema - zero-value reason (docs 33 & 34)', () => {
   it('accepts a zero-value sale with NONE payment and a BANK_PAYMENT reason', () => {
     const parsed = CreateSaleSchema.safeParse({

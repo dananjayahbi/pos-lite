@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { ShoppingBag } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatRupee } from '@/lib/format';
+import { productCardStockState } from '@/components/pos/productStockState';
 import type { ProductListItem } from '@/hooks/useProducts';
 
 interface ProductCardProps {
@@ -23,7 +24,8 @@ export function ProductCard({
   onFocus,
 }: ProductCardProps) {
   const variants = product.variants ?? [];
-  const totalStock = variants.reduce((sum, v) => sum + v.stockQuantity, 0);
+  const { totalStock, outOfStock, hasLowStockVariant, lowStockVariantCount } =
+    productCardStockState(variants);
 
   // Icon-size surface: prefer the generated thumbnail; fall back to the full
   // image for legacy products that predate thumbnail generation.
@@ -49,7 +51,7 @@ export function ProductCard({
     : 0;
 
   const handleClick = () => {
-    if (totalStock === 0) {
+    if (outOfStock) {
       toast('This product is out of stock');
       return;
     }
@@ -65,8 +67,14 @@ export function ProductCard({
       role="button"
       data-pos-product=""
       tabIndex={tabIndex}
-      aria-label={`${product.name}, ${formatRupee(minPrice)}${totalStock === 0 ? ', out of stock' : ''}`}
-      aria-disabled={totalStock === 0}
+      aria-label={`${product.name}, ${formatRupee(minPrice)}${
+        outOfStock
+          ? ', out of stock'
+          : hasLowStockVariant
+            ? `, low stock on ${lowStockVariantCount} variant${lowStockVariantCount === 1 ? '' : 's'}`
+            : ''
+      }`}
+      aria-disabled={outOfStock}
       onFocus={onFocus}
       onClick={handleClick}
       onKeyDown={(e) => {
@@ -76,7 +84,7 @@ export function ProductCard({
         }
       }}
       className={`relative cursor-pointer rounded-lg bg-white shadow-sm hover:shadow-md transition-shadow overflow-hidden h-[165px] focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta focus-visible:ring-offset-2 focus-visible:ring-offset-linen ${
-        totalStock === 0 ? 'opacity-60' : ''
+        outOfStock ? 'opacity-60' : ''
       }`}
     >
       {/* Image area — upper 60% */}
@@ -96,14 +104,17 @@ export function ProductCard({
         )}
 
         {/* Stock badge */}
-        {totalStock === 0 && (
+        {outOfStock && (
           <span className="absolute top-1 right-1 flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-body text-[#9B2226] bg-[#9B2226]/10">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#9B2226]" />
             Out of Stock
           </span>
         )}
-        {totalStock > 0 && totalStock <= 5 && (
-          <span className="absolute top-1 right-1 flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-body text-[#B7791F] bg-[#B7791F]/10">
+        {!outOfStock && hasLowStockVariant && (
+          <span
+            className="absolute top-1 right-1 flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-body text-[#B7791F] bg-[#B7791F]/10"
+            title={`${lowStockVariantCount} variant${lowStockVariantCount === 1 ? '' : 's'} at or below the low-stock threshold`}
+          >
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#B7791F]" />
             Low
           </span>
@@ -129,7 +140,7 @@ export function ProductCard({
       </div>
 
       {/* Out of stock overlay */}
-      {totalStock === 0 && (
+      {outOfStock && (
         <div className="absolute inset-0 flex items-center justify-center bg-linen/60">
           <span className="text-terracotta text-xs font-body">Out of Stock</span>
         </div>

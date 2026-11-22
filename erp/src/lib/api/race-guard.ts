@@ -66,13 +66,20 @@ export async function lockingTx<R>(
 }
 
 /**
+ * Minimal shape needed to take a row lock. Prisma's interactive
+ * `Prisma.TransactionClient` satisfies it, and so does the service layer's
+ * `TxClient` alias (which is not assignable to the full transaction type).
+ */
+type RowLockClient = Pick<Prisma.TransactionClient, '$executeRawUnsafe'>;
+
+/**
  * Take a row lock inside a lockingTx transaction. `whereSql` is a fragment
  * WITHOUT the WHERE keyword, e.g. `lockingTx(tx => lockForUpdate(tx, 'product_variants', '"id" = $1', [id]))`.
  * Column/table names come from code, never user input (they are interpolated,
  * not parameterized).
  */
 export async function lockForUpdate(
-  tx: Prisma.TransactionClient,
+  tx: RowLockClient,
   table: string,
   whereSql: string,
   params: unknown[] = [],

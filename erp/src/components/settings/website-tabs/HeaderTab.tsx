@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { DeferredMediaUploader } from '@/components/shared/DeferredMediaUploader';
 import { toast } from 'sonner';
+import { isSafeWebsiteHrefOrEmpty } from '@/lib/website/link-validation.core';
 import type { WebsiteConfigData } from '@/types/website.types';
 
 interface HeaderTabProps {
@@ -96,7 +97,14 @@ export function HeaderTab({ config, onChange }: HeaderTabProps) {
                         }
                         placeholder="e.g. /shop"
                         className="h-9 text-sm"
+                        aria-invalid={!isSafeWebsiteHrefOrEmpty(item.href)}
                       />
+                      {!isSafeWebsiteHrefOrEmpty(item.href) && (
+                        <p className="text-[11px] text-[#9B2226]">
+                          Use a /path, #section, mailto:, tel: or http(s) URL. A bare
+                          # is a placeholder, not a destination.
+                        </p>
+                      )}
                     </div>
                   </div>
                   <Button

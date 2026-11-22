@@ -4,9 +4,12 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { toErrorResponse, unauthorized } from '@/lib/api/error-envelope';
 import {
+  allowsIncompleteExport,
+  buildPayrollExportPreflight,
   formatExtension,
   getPayrollExportContext,
   periodLabel,
+  recordPayrollExportDownload,
   toStatutoryRows,
 } from '@/lib/services/payroll-exports.service';
 import {
@@ -34,6 +37,27 @@ export async function GET(
 
     const { id } = await params;
     const context = await getPayrollExportContext(tenantId, id);
+
+    // ARGUS #378: NIC, EPF/ETF staff numbers and employer numbers are required
+    // for a usable C-form / ETF return; never emit blank fallbacks silently.
+    const preflight = buildPayrollExportPreflight(context, 'statutory');
+    const incompleteOverride = allowsIncompleteExport(
+      request.nextUrl.searchParams.get('allowIncomplete'),
+    );
+    if (!preflight.complete && !incompleteOverride) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'EXPORT_INCOMPLETE',
+            message: preflight.message ?? 'Statutory return is missing staff details',
+            details: preflight,
+          },
+        },
+        { status: 422 },
+      );
+    }
+
     const extension = formatExtension(request.nextUrl.searchParams.get('format'));
     const meta = {
       companyName: context.companyName,
@@ -45,11 +69,25 @@ export async function GET(
       employerEpfRate: Number(context.run.employerEpfRate),
       employerEtfRate: Number(context.run.employerEtfRate),
       generatedAt: context.generatedAt,
+      status: context.run.status,
+      payment: context.payment,
+      provenanceNote: context.provenance.caveat,
     };
     const rows = toStatutoryRows(context);
 
     if (extension === 'xlsx') {
       const buffer = generateStatutoryReturnXlsx(meta, rows);
+      await recordPayrollExportDownload({
+        tenantId,
+        runId: context.run.id,
+        actorId: session.user.id,
+        actorRole: session.user.role ?? 'UNKNOWN',
+        exportType: 'statutory',
+        format: 'xlsx',
+        periodMonth: context.run.periodMonth,
+        itemCount: rows.length,
+        incompleteOverride,
+      });
       return new Response(new Uint8Array(buffer), {
         headers: {
           'Content-Type':
@@ -61,6 +99,17 @@ export async function GET(
     }
 
     const buffer = generateStatutoryReturnPdf(meta, rows);
+    await recordPayrollExportDownload({
+      tenantId,
+      runId: context.run.id,
+      actorId: session.user.id,
+      actorRole: session.user.role ?? 'UNKNOWN',
+      exportType: 'statutory',
+      format: 'pdf',
+      periodMonth: context.run.periodMonth,
+      itemCount: rows.length,
+      incompleteOverride,
+    });
     return new Response(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'application/pdf',

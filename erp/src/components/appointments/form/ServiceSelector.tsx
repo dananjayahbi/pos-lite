@@ -3,6 +3,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { useAppointmentServices } from '@/hooks/appointments';
+import { formatRupee } from '@/lib/format';
 
 interface ServiceSelectorProps {
   value: string | null;
@@ -11,7 +12,7 @@ interface ServiceSelectorProps {
 
 export function ServiceSelector({ value, onChange }: ServiceSelectorProps) {
   const { data: services = [] } = useAppointmentServices();
-  const activeServices = (services as Array<{ id: string; name: string; durationMins: number; price: number; isActive: boolean }>).filter((s) => s.isActive);
+  const activeServices = (services as Array<{ id: string; name: string; durationMins: number; price: number | string; isActive: boolean }>).filter((s) => s.isActive);
 
   return (
     <div className="space-y-1.5">
@@ -30,7 +31,7 @@ export function ServiceSelector({ value, onChange }: ServiceSelectorProps) {
           <SelectItem value="">No service</SelectItem>
           {activeServices.map((s) => (
             <SelectItem key={s.id} value={s.id}>
-              {s.name} - {s.durationMins}min - ${Number(s.price).toFixed(2)}
+              {s.name} - {s.durationMins}min - {formatRupee(s.price)}
             </SelectItem>
           ))}
         </SelectContent>

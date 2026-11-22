@@ -9,45 +9,71 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DELIVERY_STATUSES } from '@/lib/validators/delivery.validators';
-import type { DeliveryStatus } from '@/generated/prisma/client';
+import {
+  dispatchQueueLabel,
+  type DispatchStatusSelection,
+} from './dispatchQueue';
 
 interface OrderFiltersProps {
   search: string;
-  status: DeliveryStatus | null;
+  /** `'queue'` is the dispatch-focused default; `null` means all statuses. */
+  selection: DispatchStatusSelection;
+  /** Per-status workload counts for the current search (ARGUS #269). */
+  counts?: Record<string, number> | undefined;
   onSearchChange: (value: string) => void;
-  onStatusChange: (value: DeliveryStatus | null) => void;
+  onSelectionChange: (value: DispatchStatusSelection) => void;
+}
+
+function withCount(label: string, count: number | undefined): string {
+  return count === undefined ? label : `${label} (${count})`;
 }
 
 export function OrderFilters({
   search,
-  status,
+  selection,
+  counts,
   onSearchChange,
-  onStatusChange,
+  onSelectionChange,
 }: OrderFiltersProps) {
+  const queueCount =
+    (counts?.PLACED ?? 0) + (counts?.PENDING_DISPATCH ?? 0);
+
   return (
     <div className="flex flex-wrap items-center gap-3">
       <Input
         value={search}
         onChange={(e) => onSearchChange(e.target.value)}
-        placeholder="Search orders, customers..."
+        placeholder="Search orders, customers, phone, waybills..."
         className="w-72"
       />
       <Select
-        value={status ?? '__all'}
-        onValueChange={(v) => onStatusChange(v === '__all' ? null : (v as DeliveryStatus))}
+        value={selection ?? '__all'}
+        onValueChange={(v) => {
+          if (v === '__all') onSelectionChange(null);
+          else if (v === 'queue') onSelectionChange('queue');
+          else onSelectionChange(v as Exclude<DispatchStatusSelection, 'queue' | null>);
+        }}
       >
-        <SelectTrigger className="w-48">
-          <SelectValue placeholder="All statuses" />
+        <SelectTrigger className="w-56">
+          <SelectValue placeholder="Dispatch queue" />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value="queue">
+            {counts === undefined ? 'Dispatch queue' : dispatchQueueLabel(queueCount)}
+          </SelectItem>
           <SelectItem value="__all">All statuses</SelectItem>
           {DELIVERY_STATUSES.map((s) => (
             <SelectItem key={s} value={s}>
-              {s.replace(/_/g, ' ').toLowerCase()}
+              {withCount(s.replace(/_/g, ' ').toLowerCase(), counts?.[s])}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
+      {counts && counts.DELIVERED !== undefined && (
+        <span className="font-body text-xs text-espresso/60">
+          {counts.DELIVERED} delivered · {counts.CANCELED ?? 0} canceled
+        </span>
+      )}
     </div>
   );
 }

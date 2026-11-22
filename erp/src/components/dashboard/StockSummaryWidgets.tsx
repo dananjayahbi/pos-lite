@@ -6,6 +6,7 @@ import { useStockSummary } from '@/hooks/useStockSummary';
 import { formatRupee } from '@/lib/format';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 interface StockSummaryWidgetsProps {
   permissions: string[];
@@ -42,7 +43,8 @@ function SummaryCard({
 
 export function StockSummaryWidgets({ permissions }: StockSummaryWidgetsProps) {
   const { data, isLoading } = useStockSummary();
-  const canViewValue = permissions.includes('product:view_cost_price');
+  // ARGUS #185: same gate as the valuation page and API.
+  const canViewValue = permissions.includes(PERMISSIONS.STOCK.viewStockValuation);
   const summary = data?.data;
 
   const cards = [
@@ -56,14 +58,14 @@ export function StockSummaryWidgets({ permissions }: StockSummaryWidgetsProps) {
     {
       label: 'Low Stock Variants',
       value: summary?.lowStockVariants ?? 0,
-      helper: 'Variants already below threshold',
+      helper: 'Variants at or below threshold',
       href: '/stock-control/low-stock',
       icon: <AlertTriangle className="h-6 w-6" />,
     },
     {
       label: 'Pending Stock Takes',
       value: summary?.pendingStockTakes ?? 0,
-      helper: 'Counts waiting for approval',
+      helper: 'Stock takes waiting for approval',
       href: '/stock-control/stock-takes',
       icon: <ClipboardList className="h-6 w-6" />,
     },
@@ -77,7 +79,7 @@ export function StockSummaryWidgets({ permissions }: StockSummaryWidgetsProps) {
             <Lock className="h-4 w-4" /> Restricted
           </span>
         ),
-      helper: canViewValue ? 'Snapshot across active variants' : 'Requires cost-price permission',
+      helper: canViewValue ? 'Snapshot across active variants' : 'Requires valuation permission',
       href: '/stock-control/valuation',
       icon: <Wallet className="h-6 w-6" />,
     },

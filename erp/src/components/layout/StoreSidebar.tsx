@@ -90,6 +90,7 @@ export default function StoreSidebar({
               <ul className="flex flex-col">
                 {visibleItems.map((item) => {
                   const isActive = item.href === activeHref;
+                  const Icon = item.icon;
 
                   const isPosLink =
                     item.href === '/pos' && (userRole === 'OWNER' || userRole === 'MANAGER');
@@ -99,15 +100,29 @@ export default function StoreSidebar({
                       <Link
                         href={item.href}
                         aria-current={isActive ? 'page' : undefined}
+                        title={item.name}
                         {...(onNavigate ? { onClick: onNavigate } : {})}
                         {...(isPosLink ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                        className={`flex h-9 items-center rounded-r-md border-l-[3px] px-3 text-sm font-medium transition-colors ${
+                        className={`group flex h-9 items-center gap-2.5 rounded-r-md border-l-[3px] px-3 text-sm font-medium transition-colors ${
                           isActive
                             ? 'border-terracotta bg-linen text-espresso'
                             : 'text-espresso/70 hover:bg-linen hover:text-espresso border-transparent'
                         }`}
                       >
-                        {item.name}
+                        {/*
+                         * Every item carries its own glyph: operators recognise
+                         * the section by icon first and by label second. The
+                         * lighter 1.75px stroke keeps the rail from reading as a
+                         * stack of bold text.
+                         */}
+                        <Icon
+                          aria-hidden="true"
+                          strokeWidth={1.75}
+                          className={`h-4 w-4 shrink-0 transition-colors ${
+                            isActive ? 'text-terracotta' : 'text-sand-ink group-hover:text-espresso'
+                          }`}
+                        />
+                        <span className="min-w-0 truncate">{item.name}</span>
                       </Link>
                     </li>
                   );

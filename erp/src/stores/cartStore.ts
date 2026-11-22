@@ -2,8 +2,12 @@ import { create } from 'zustand';
 import Decimal from 'decimal.js';
 import type { AppliedDiscount, SkippedPromotion } from '@/lib/services/promotion.service';
 import type { CFDCartPayload } from '@/lib/cfdEmitter';
+import { allocateCartDiscountShares } from '@/lib/services/saleDiscount.core';
+import { clampPromotionDiscounts } from '@/lib/services/saleDiscountValidation.core';
 import { createCartPromotionSnapshot } from '@/stores/cartPromotions';
 import type { CartPromotionSnapshot } from '@/stores/cartPromotions';
+import type { TaxRuleValue } from '@/lib/constants/product-options';
+import { resolveTaxRate } from '@/lib/pricing/taxRules.core';
 
 export interface CartItem {
   variantId: string;
@@ -13,6 +17,18 @@ export interface CartItem {
   unitPrice: number;       // serialized as number, Decimal used internally for math
   quantity: number;
   discountPercent: number;  // 0-100
+  /** Real product category, used by category promotions/UI. */
+  categoryId?: string | undefined;
+  /** Available stock when the line was added; caps the cart quantity. */
+  stockQuantity?: number | undefined;
+  /** Product tax rule; drives the per-line VAT/SSCL/exempt preview. */
+  taxRule?: TaxRuleValue | undefined;
+}
+
+/** Store-wide rates used to preview the tax the sale service will charge. */
+export interface CartTaxRates {
+  vatRate: number;
+  ssclRate: number;
 }
 
 interface CartState {
@@ -21,7 +37,10 @@ interface CartState {
   cartDiscountAmount: number;
   authorizingManagerId: string | null;
   activeLineId: string | null;
-  taxRate: number; // approximate display tax rate (e.g. 18)
+  /** Tenant VAT rate (percent), used for the per-line cart tax preview. */
+  vatRate: number;
+  /** Tenant SSCL rate (percent), used for the per-line cart tax preview. */
+  ssclRate: number;
   linkedReturnId: string | null;
   exchangeCredit: number | null;
   exchangeReturnRef: string | null;
@@ -42,14 +61,14 @@ interface CartState {
   heldSaleId: string | null;
 
   // Mutators
-  addItem: (item: Omit<CartItem, 'discountPercent'>) => void;
+  addItem: (item: Omit<CartItem, 'discountPercent'>) => { added: number; limited: boolean };
   removeItem: (variantId: string) => void;
   updateQuantity: (variantId: string, quantity: number) => void;
   setLineDiscount: (variantId: string, discountPercent: number) => void;
   setCartDiscount: (mode: 'percent' | 'fixed', value: number) => void;
   setAuthorizingManager: (managerId: string | null) => void;
   setActiveLine: (variantId: string | null) => void;
-  setTaxRate: (rate: number) => void;
+  setTaxRates: (vatRate: number, ssclRate: number) => void;
   clearCart: () => void;
   replaceCart: (items: CartItem[], cartDiscountPercent: number, cartDiscountAmount: number) => void;
   restoreCartWithPromotions: (snapshot: {
@@ -57,6 +76,8 @@ interface CartState {
     cartDiscountPercent: number;
     cartDiscountAmount: number;
     promotions?: CartPromotionSnapshot;
+    /** Credit from an EXCHANGE return, persisted so a reload keeps it. */
+    exchange?: { returnId: string; credit: number; ref: string } | null;
   }) => void;
   setExchangeCredit: (returnId: string, credit: number, ref: string) => void;
   clearExchangeCredit: () => void;
@@ -102,7 +123,8 @@ function sendCFDUpdate(
     state.items,
     state.cartDiscountPercent,
     state.cartDiscountAmount,
-    state.taxRate,
+    { vatRate: state.vatRate, ssclRate: state.ssclRate },
+    state.totalPromotionDiscount,
   );
 
   const payload: Omit<CFDCartPayload, 'tenantSlug'> = {
@@ -131,7 +153,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   cartDiscountAmount: 0,
   authorizingManagerId: null,
   activeLineId: null,
-  taxRate: 0, // will be set on terminal init
+  vatRate: 0, // loaded from tenant settings by the POS cart
+  ssclRate: 0, // loaded from tenant settings by the POS cart
   linkedReturnId: null,
   exchangeCredit: null,
   exchangeReturnRef: null,
@@ -149,22 +172,52 @@ export const useCartStore = create<CartState>((set, get) => ({
   heldSaleId: null,
 
   addItem: (item) => {
+    // Never let the cart exceed the stock known at add time; checkout would
+    // fail with Insufficient stock and waste the cashier's time (ARGUS #64).
+    const existing = get().items.find((i) => i.variantId === item.variantId);
+    const currentQty = existing?.quantity ?? 0;
+    const available = Number.isFinite(item.stockQuantity)
+      ? Math.max(0, Math.floor(item.stockQuantity as number))
+      : Number.POSITIVE_INFINITY;
+    const requestedQty = currentQty + item.quantity;
+    const nextQty = Math.min(requestedQty, available);
+    const added = Math.max(0, nextQty - currentQty);
+
+    if (added <= 0) {
+      return { added: 0, limited: true };
+    }
+
     set((state) => {
       // The cart is newest-first so the product the cashier just scanned is
       // always visible at the top of the list instead of below the fold.
-      const existing = state.items.find((i) => i.variantId === item.variantId);
-      if (existing) {
+      const current = state.items.find((i) => i.variantId === item.variantId);
+      if (current) {
         return {
           items: [
-            { ...existing, quantity: existing.quantity + item.quantity },
+            {
+              ...current,
+              quantity: nextQty,
+              stockQuantity: item.stockQuantity ?? current.stockQuantity,
+              ...(item.categoryId !== undefined ? { categoryId: item.categoryId } : {}),
+            },
             ...state.items.filter((i) => i.variantId !== item.variantId),
           ],
         };
       }
-      return { items: [{ ...item, discountPercent: 0 }, ...state.items] };
+      return {
+        items: [
+          {
+            ...item,
+            quantity: nextQty,
+            discountPercent: 0,
+          },
+          ...state.items,
+        ],
+      };
     });
     schedulePromoEval(get);
     sendCFDUpdate(get());
+    return { added, limited: nextQty < requestedQty };
   },
 
   removeItem: (variantId) => {
@@ -178,9 +231,13 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   updateQuantity: (variantId, quantity) => {
     set((state) => ({
-      items: state.items.map((i) =>
-        i.variantId === variantId ? { ...i, quantity: Math.max(1, quantity) } : i,
-      ),
+      items: state.items.map((item) => {
+        if (item.variantId !== variantId) return item;
+        const max = Number.isFinite(item.stockQuantity)
+          ? Math.max(1, Math.floor(item.stockQuantity as number))
+          : Number.POSITIVE_INFINITY;
+        return { ...item, quantity: Math.min(Math.max(1, quantity), max) };
+      }),
     }));
     schedulePromoEval(get);
     sendCFDUpdate(get());
@@ -215,7 +272,10 @@ export const useCartStore = create<CartState>((set, get) => ({
       activeLineId: state.activeLineId === variantId ? null : variantId,
     })),
 
-  setTaxRate: (rate) => set({ taxRate: rate }),
+  setTaxRates: (vatRate, ssclRate) => {
+    set({ vatRate, ssclRate });
+    sendCFDUpdate(get());
+  },
 
   clearCart: () => {
     set({
@@ -255,7 +315,13 @@ export const useCartStore = create<CartState>((set, get) => ({
    * Promotion state is then re-evaluated in the background to catch promotions
    * that changed while the cart was parked.
    */
-  restoreCartWithPromotions: ({ items, cartDiscountPercent, cartDiscountAmount, promotions }) => {
+  restoreCartWithPromotions: ({
+    items,
+    cartDiscountPercent,
+    cartDiscountAmount,
+    promotions,
+    exchange,
+  }) => {
     const restored = createCartPromotionSnapshot(promotions);
     set({
       items,
@@ -268,6 +334,9 @@ export const useCartStore = create<CartState>((set, get) => ({
       totalPromotionDiscount: restored.totalPromotionDiscount,
       appliedPromoCode: restored.appliedPromoCode,
       isEvaluatingPromotions: false,
+      linkedReturnId: exchange?.returnId ?? null,
+      exchangeCredit: exchange?.credit ?? null,
+      exchangeReturnRef: exchange?.ref ?? null,
     });
     sendCFDUpdate(get());
     if (items.length > 0) schedulePromoEval(get);
@@ -309,6 +378,7 @@ export const useCartStore = create<CartState>((set, get) => ({
         variantId: item.variantId,
         quantity: item.quantity,
         unitPrice: String(item.unitPrice),
+        ...(item.categoryId !== undefined && { categoryId: item.categoryId }),
         ...(manualDisc !== undefined && { manualDiscountAmount: manualDisc }),
       };
     });
@@ -325,10 +395,35 @@ export const useCartStore = create<CartState>((set, get) => ({
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => {
         if (json?.success && json.data) {
+          // ARGUS #65: do not display/claim promotion money beyond what the
+          // manual cart discount left. This keeps the preview, payload and
+          // persisted sale on the same clamped numbers.
+          const subtotal = getCartSubtotal(state.items);
+          const manualDiscount = Decimal.min(
+            Decimal.max(
+              getCartDiscountEffective(
+                subtotal,
+                state.cartDiscountPercent,
+                state.cartDiscountAmount,
+              ),
+              0,
+            ),
+            subtotal,
+          );
+          const promotionCapacity = Decimal.max(subtotal.minus(manualDiscount), 0);
+          const appliedPromotions = clampPromotionDiscounts(
+            json.data.appliedDiscounts as AppliedDiscount[],
+            promotionCapacity,
+          ).filter((promotion) => new Decimal(promotion.discountAmount).greaterThan(0));
+          const totalPromotionDiscount = appliedPromotions
+            .reduce((sum, promotion) => sum.plus(promotion.discountAmount), new Decimal(0))
+            .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+            .toFixed(2);
+
           set({
-            appliedPromotions: json.data.appliedDiscounts,
+            appliedPromotions,
             skippedPromotions: json.data.skippedPromotions,
-            totalPromotionDiscount: json.data.totalDiscountAmount,
+            totalPromotionDiscount,
             isEvaluatingPromotions: false,
           });
         } else {
@@ -376,8 +471,18 @@ export function getCartDiscountEffective(
   return new Decimal(cartDiscountAmount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 }
 
-export function getCartTaxAmount(subtotalAfterDiscount: Decimal, taxRate: number): Decimal {
-  return subtotalAfterDiscount.times(taxRate).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+/**
+ * Effective tax rate (as a fraction) for one cart line, exactly as the sales
+ * service resolves it from the product's tax rule and the tenant rates.
+ *
+ * Tax rules are mutually exclusive (ARGUS #469): an SSCL line uses only the
+ * SSCL rate, never VAT + SSCL. Delegates to the shared pure resolver.
+ */
+export function getLineTaxRate(
+  taxRule: TaxRuleValue | undefined,
+  { vatRate, ssclRate }: CartTaxRates,
+): Decimal {
+  return resolveTaxRate(taxRule, { vatRate, ssclRate });
 }
 
 /**
@@ -395,9 +500,19 @@ export function getSaleDiscountAmount(
   cartDiscountEffective: Decimal | number | string,
   totalPromotionDiscount: Decimal | number | string,
 ): Decimal {
-  const subtotalDecimal = new Decimal(subtotal);
-  const combined = new Decimal(cartDiscountEffective).plus(new Decimal(totalPromotionDiscount));
-  return Decimal.min(combined, Decimal.max(subtotalDecimal, 0)).toDecimalPlaces(
+  const subtotalDecimal = Decimal.max(new Decimal(subtotal), 0);
+  const manualDiscount = Decimal.min(
+    Decimal.max(new Decimal(cartDiscountEffective), 0),
+    subtotalDecimal,
+  );
+  // ARGUS #65: promotions cannot consume more than the manual/line discounts
+  // left; a 100% manual discount therefore applies 0 promotion money.
+  const promotionCapacity = Decimal.max(subtotalDecimal.minus(manualDiscount), 0);
+  const promotionDiscount = Decimal.min(
+    Decimal.max(new Decimal(totalPromotionDiscount), 0),
+    promotionCapacity,
+  );
+  return manualDiscount.plus(promotionDiscount).toDecimalPlaces(
     2,
     Decimal.ROUND_HALF_UP,
   );
@@ -407,12 +522,63 @@ export function getCartTotal(
   items: CartItem[],
   cartDiscountPercent: number,
   cartDiscountAmount: number,
-  taxRate: number,
-): { subtotal: Decimal; discountEffective: Decimal; taxAmount: Decimal; total: Decimal } {
+  taxRates: CartTaxRates,
+  totalPromotionDiscount: Decimal | number | string = 0,
+): {
+  subtotal: Decimal;
+  discountEffective: Decimal;
+  promotionDiscount: Decimal;
+  saleDiscount: Decimal;
+  taxAmount: Decimal;
+  taxRatesApplied: number[];
+  total: Decimal;
+} {
   const subtotal = getCartSubtotal(items);
-  const discountEffective = getCartDiscountEffective(subtotal, cartDiscountPercent, cartDiscountAmount);
-  const subtotalAfterDiscount = subtotal.minus(discountEffective);
-  const taxAmount = getCartTaxAmount(subtotalAfterDiscount, taxRate);
-  const total = subtotalAfterDiscount.plus(taxAmount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-  return { subtotal, discountEffective, taxAmount, total };
+  const manualDiscount = Decimal.min(
+    Decimal.max(
+      getCartDiscountEffective(subtotal, cartDiscountPercent, cartDiscountAmount),
+      0,
+    ),
+    subtotal,
+  );
+  const promotionCapacity = Decimal.max(subtotal.minus(manualDiscount), 0);
+  const promotionDiscount = Decimal.min(
+    Decimal.max(new Decimal(totalPromotionDiscount), 0),
+    promotionCapacity,
+  ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  const discountEffective = manualDiscount.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  // The sales API receives one combined discount (manual cart discount +
+  // promotions) and apportions it across the lines before taxing them.
+  // Mirrored here so the cart's tax and total match the saved sale.
+  const saleDiscount = getSaleDiscountAmount(subtotal, discountEffective, promotionDiscount);
+  const lineTotals = items.map(getLineTotalAfterDiscount);
+  const discountShares = allocateCartDiscountShares(lineTotals, saleDiscount);
+
+  const ratesApplied = new Set<number>();
+  let taxAmount = new Decimal(0);
+  items.forEach((item, index) => {
+    const taxableLine = Decimal.max(lineTotals[index]!.minus(discountShares[index]!), 0);
+    const rate = getLineTaxRate(item.taxRule, taxRates);
+    if (rate.greaterThan(0)) ratesApplied.add(rate.times(100).toNumber());
+    taxAmount = taxAmount.plus(
+      taxableLine.times(rate).toDecimalPlaces(2, Decimal.ROUND_HALF_UP),
+    );
+  });
+  taxAmount = taxAmount.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+  // ARGUS #65: the sale total has a hard lower bound of zero.
+  const total = Decimal.max(
+    subtotal.minus(saleDiscount).plus(taxAmount),
+    0,
+  ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+  return {
+    subtotal,
+    discountEffective,
+    promotionDiscount,
+    saleDiscount,
+    taxAmount,
+    taxRatesApplied: [...ratesApplied],
+    total,
+  };
 }

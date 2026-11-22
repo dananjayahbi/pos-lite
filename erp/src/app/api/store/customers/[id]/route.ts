@@ -96,7 +96,10 @@ export async function PATCH(
     }
 
     const { id } = await params;
-    const updated = await updateCustomer(tenantId, id, parsed.data as UpdateCustomerInput);
+    const updated = await updateCustomer(tenantId, id, parsed.data as UpdateCustomerInput, {
+      id: session.user.id,
+      role: session.user.role,
+    });
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
@@ -137,7 +140,10 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    const deleted = await softDeleteCustomer(tenantId, id);
+    const deleted = await softDeleteCustomer(tenantId, id, {
+      id: session.user.id,
+      role: session.user.role,
+    });
 
     return NextResponse.json({ success: true, data: deleted });
   } catch (error) {

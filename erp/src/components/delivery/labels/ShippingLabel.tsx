@@ -4,12 +4,18 @@ import Barcode from 'react-barcode';
 import type { ReactNode } from 'react';
 import { renderPrintOverlay } from '@/lib/print-overlay';
 import {
+  buildWaybillAddress,
   buildWaybillDescription,
+  dedupeLocality,
   formatWaybillAmount,
   formatWaybillDate,
+  formatWaybillItem,
+  isDraftWaybill,
   waybillBarcodeValue,
 } from '@/lib/delivery/waybill';
 import type { DeliveryLabelTemplate } from '@/types/delivery-label';
+import { collectableCodAmount, isPrepaidOrder } from '@/lib/delivery/cod';
+import { waybillRecipientPrintDecision } from '@/lib/delivery/waybillCompleteness';
 import { buildSampleLabelProps, buildSampleSheetProps } from './sampleLabel';
 
 interface Address {
@@ -26,11 +32,20 @@ interface Address {
 interface DeliveryLike {
   orderRef: string;
   codAmount: string | number;
+  shippingFee?: string | number | null | undefined;
+  paymentStatus?: string | null | undefined;
   itemCount?: number | undefined;
   totalWeightKg?: string | number | null | undefined;
+  /** First ordered line, used for the product/SKU description (ARGUS #307). */
+  lines?: WaybillLineLike[] | undefined;
   deliveredAt?: string | null | undefined;
   dispatchedAt?: string | null | undefined;
   createdAt?: string | null | undefined;
+}
+
+interface WaybillLineLike {
+  productNameSnapshot?: string | null | undefined;
+  skuSnapshot?: string | null | undefined;
 }
 
 interface ShippingLabelProps {
@@ -47,9 +62,12 @@ interface ShippingLabelProps {
 interface LabelDeliveryLike {
   orderRef: string;
   codAmount?: string | number | null;
+  shippingFee?: string | number | null;
+  paymentStatus?: string | null;
   itemCount?: number | null;
   totalWeightKg?: string | number | null;
   waybill?: string | null;
+  lines?: WaybillLineLike[] | null;
   deliveredAt?: string | null;
   dispatchedAt?: string | null;
   createdAt?: string | null;
@@ -90,41 +108,30 @@ function SectionTitle({ children }: { children: ReactNode }) {
  *
  * The layout is fixed to the courier's sticker: logo + waybill barcode header,
  * sender block, customer block, order description, and the courier's company
- * footer. Only the sender name/contact come from the tenant template.
+ * footer. The sender identity and pickup address come from the tenant's Store
+ * Profile (ARGUS #301), not a stale saved label value.
  *
  * The component fills its parent cell; printing places two of those cells on
  * one A4 landscape sheet (see `printShippingLabels`).
  */
 export function ShippingLabel({ template, address, delivery, waybillId }: ShippingLabelProps) {
-  const fullAddress = [
-    address.addressLine1,
-    address.addressLine2,
-    [address.cityName, address.districtName].filter(Boolean).join(', '),
-    address.postalCode,
-  ]
-    .filter(Boolean)
-    .join(', ');
+  const fullAddress = buildWaybillAddress(address);
 
-  const barcodeValue = waybillBarcodeValue({
-    waybillId,
-    orderRef: delivery.orderRef,
-    showOrderRef: true,
-  });
-  const branchParts = [address.cityName, address.districtName].filter(
-    (part): part is string => Boolean(part),
-  );
-  const branch =
-    branchParts.length > 0
-      ? branchParts.every((part) => part === branchParts[0])
-        ? branchParts[0]!
-        : branchParts.join(' / ')
-      : '';
+  const barcodeValue = waybillBarcodeValue({ waybillId });
+  const draft = isDraftWaybill(waybillId);
+  const branch = dedupeLocality(address.cityName, address.districtName, ' / ');
   const contact = [address.phone, address.phone2].filter(Boolean).join(' / ');
   const description = buildWaybillDescription({
     itemCount: delivery.itemCount,
     totalWeightKg: delivery.totalWeightKg,
     showItemCount: true,
     showWeight: true,
+    itemLabel: (() => {
+      const line = delivery.lines?.[0];
+      return line
+        ? formatWaybillItem(line.productNameSnapshot, line.skuSnapshot)
+        : '';
+    })(),
     fallback: delivery.orderRef,
   });
   const date = delivery.deliveredAt ?? delivery.dispatchedAt ?? delivery.createdAt ?? null;
@@ -156,6 +163,13 @@ export function ShippingLabel({ template, address, delivery, waybillId }: Shippi
             </p>
           </div>
         )}
+        {draft && (
+          <div className="border-2 border-black px-[3mm] py-[1.5mm] text-center text-[10pt] font-extrabold uppercase leading-tight">
+            Draft
+            <br />
+            No courier waybill
+          </div>
+        )}
       </header>
 
       <SectionTitle>Proof of Delivery</SectionTitle>
@@ -163,6 +177,9 @@ export function ShippingLabel({ template, address, delivery, waybillId }: Shippi
       <div className="mt-[1mm]">
         <WaybillRow label="From" value={template.brandName || '-'} />
         <WaybillRow label="Contact" value={template.fromContact || '-'} />
+        {template.pickupAddress?.trim() && (
+          <WaybillRow label="Pickup address" value={template.pickupAddress} />
+        )}
         <WaybillRow label="Date" value={formatWaybillDate(date)} />
         <WaybillRow label="Order No" value={delivery.orderRef || '-'} />
       </div>
@@ -174,7 +191,14 @@ export function ShippingLabel({ template, address, delivery, waybillId }: Shippi
         <WaybillRow label="Address" value={fullAddress || '-'} />
         <WaybillRow label="Branch" value={branch || '-'} />
         <WaybillRow label="Contact" value={contact || '-'} />
-        <WaybillRow label="COD" value={formatWaybillAmount(delivery.codAmount)} />
+        <WaybillRow
+          label="COD"
+          value={
+            isPrepaidOrder(delivery)
+              ? 'PREPAID'
+              : formatWaybillAmount(collectableCodAmount(delivery).toNumber())
+          }
+        />
       </div>
 
       <div className="mt-[3.5mm] flex items-start justify-between gap-[4mm] border-b border-black pb-[1.7mm]">
@@ -215,8 +239,11 @@ export function toLabelProps(delivery: LabelDeliveryLike): {
     delivery: {
       orderRef: delivery.orderRef ?? '',
       codAmount: delivery.codAmount ?? 0,
+      shippingFee: delivery.shippingFee ?? 0,
+      paymentStatus: delivery.paymentStatus ?? null,
       itemCount: delivery.itemCount ?? 1,
       totalWeightKg: delivery.totalWeightKg,
+      lines: delivery.lines ?? [],
       deliveredAt: delivery.deliveredAt ?? null,
       dispatchedAt: delivery.dispatchedAt ?? null,
       createdAt: delivery.createdAt ?? null,
@@ -238,10 +265,26 @@ const WAYBILL_SHEET_CSS = `@page { size: A4 landscape; margin: 0; }
 }`;
 
 /**
+ * ARGUS #300: never render a courier-facing waybill with a blank recipient
+ * block. The UI disables the buttons and lists the missing fields; this throw
+ * protects every remaining caller.
+ */
+function assertWaybillRecipient(delivery: LabelDeliveryLike): void {
+  const decision = waybillRecipientPrintDecision(delivery.address);
+  if (!decision.canPrint) {
+    throw new Error(`Waybill cannot be printed for ${delivery.orderRef || 'this order'} - ${decision.reason}`);
+  }
+}
+
+/**
  * Renders a real delivery's label into a print overlay. Only the label is
  * printed; the rest of the app is hidden via injected print CSS.
  */
 export function printShippingLabel(delivery: LabelDeliveryLike, template: DeliveryLabelTemplate): void {
+  if (!template.brandName?.trim()) {
+    throw new Error('Waybill template is not loaded - the sender identity is missing');
+  }
+  assertWaybillRecipient(delivery);
   renderPrintOverlay(
     <div className="waybill-sheet">
       <div className="waybill-page">
@@ -289,6 +332,30 @@ export function printShippingLabels(
   template: DeliveryLabelTemplate,
 ): void {
   if (deliveries.length === 0) return;
+  if (!template.brandName?.trim()) {
+    throw new Error('Waybill template is not loaded - the sender identity is missing');
+  }
+
+  const blocked = deliveries
+    .map((delivery) => ({
+      delivery,
+      decision: waybillRecipientPrintDecision(delivery.address),
+    }))
+    .filter(({ decision }) => !decision.canPrint);
+  if (blocked.length > 0) {
+    const details = blocked
+      .slice(0, 3)
+      .map(
+        ({ delivery, decision }) =>
+          `${delivery.orderRef || 'order'} (${decision.missing.join(', ')})`,
+      )
+      .join('; ');
+    const more = blocked.length > 3 ? `; +${blocked.length - 3} more` : '';
+    throw new Error(
+      `Waybill printing blocked for ${blocked.length} order(s): ${details}${more}`,
+    );
+  }
+
   renderPrintOverlay(
     <div className="waybill-sheet">
       {deliveries.map((delivery, index) => (

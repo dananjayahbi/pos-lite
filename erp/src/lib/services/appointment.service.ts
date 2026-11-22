@@ -1,13 +1,43 @@
 import { prisma } from '@/lib/prisma';
-import type { Prisma } from '@/generated/prisma/client';
+import Decimal from 'decimal.js';
+import type { Prisma, TaxRule } from '@/generated/prisma/client';
 import { createAuditLog } from '@/lib/services/audit.service';
 import { getCurrentShift } from '@/lib/services/shift.service';
 import { scheduleReminders } from '@/lib/services/appointment-reminder.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
+import { createPayment } from '@/lib/services/payment.service';
+import { addToSpendTotal, issueCredit } from '@/lib/services/customer.service';
+import { buildSaleAccountLegs, postSaleToAccounts } from '@/lib/services/saleAccounts';
+import { extractTenantRates } from '@/lib/services/sale.service';
+import { computeAppointmentSalePricing, resolveAppointmentSaleOwner } from '@/lib/appointments/appointmentSale.core';
+import { createCommissionRecord } from '@/lib/services/commission.service';
+import { normalizeCommissionRate } from '@/lib/constants/commission-rate';
 import {
-  APPOINTMENT_BACKDATE_GRACE_MINUTES,
-  isAppointmentStatusTransitionAllowed,
-} from '@/lib/constants/appointments';
+  appointmentCancellationBlockReason,
+  appointmentDepositAmount,
+  appointmentDepositDisposition,
+} from '@/lib/appointments/appointmentCancellation.core';
+import { summarizeAppointmentRevenue } from '@/lib/appointments/appointmentRevenue.core';
+import {
+  isAppointmentTransitionAllowedBySettings,
+  resolveInitialAppointmentStatus,
+} from '@/lib/appointments/appointmentSettings.core';
+import { getAppointmentSettings } from '@/lib/services/appointment-settings.service';
+import { APPOINTMENT_BACKDATE_GRACE_MINUTES } from '@/lib/constants/appointments';
+import {
+  APPOINTMENT_OVERDUE_STATUSES,
+  appointmentOverdueCutoff,
+} from '@/lib/appointments/appointmentOverdue.core';
+import { appointmentAvailabilityIssue } from '@/lib/appointments/appointmentAvailability.core';
+import { APPOINTMENT_OPEN_STATUSES } from '@/lib/appointments/appointmentList.core';
+import {
+  parseAppointmentDateEnd,
+  parseAppointmentDateStart,
+} from '@/lib/appointments/appointmentDateFilters.core';
+import {
+  appointmentActionBlockReason,
+  type AppointmentLifecycleAction,
+} from '@/lib/appointments/appointmentLifecycle.core';
 import type {
   CreateAppointmentInput,
   UpdateAppointmentInput,
@@ -25,6 +55,23 @@ async function assertAppointmentBelongsToTenant(tenantId: string, appointmentId:
 }
 
 /**
+ * ARGUS #125: every action endpoint walks the same lifecycle map as the generic
+ * PATCH. Without this, a direct POST could skip confirmation/check-in or
+ * resurrect a terminal row.
+ */
+async function assertAppointmentActionAllowed(
+  tenantId: string,
+  appointmentId: string,
+  action: AppointmentLifecycleAction,
+) {
+  const existing = await assertAppointmentBelongsToTenant(tenantId, appointmentId);
+  const settings = await getAppointmentSettings(tenantId);
+  const blockReason = appointmentActionBlockReason(existing.status, action, settings);
+  if (blockReason) throw new Error(blockReason);
+  return existing;
+}
+
+/**
  * M27-04 / OBS-79 backdate policy: a booking may be recorded up to
  * `APPOINTMENT_BACKDATE_GRACE_MINUTES` in the past (clinics legitimately record
  * a walk-in after the fact), beyond which the caller must hold
@@ -38,6 +85,53 @@ async function assertBackdateAllowed(
   const cutoff = new Date(Date.now() - APPOINTMENT_BACKDATE_GRACE_MINUTES * 60_000);
   if (startTime >= cutoff || actorHasManageSettings) return;
   throw new Error('BACKDATE_NOT_ALLOWED');
+}
+
+/**
+ * ARGUS #127: a specific staff member can only be booked inside their
+ * configured availability and outside approved time off / blocked slots.
+ * The issue code is the API's typed 422 reason.
+ */
+async function assertStaffAvailability(
+  tenantId: string,
+  staffId: string,
+  startTime: Date,
+  endTime: Date,
+): Promise<void> {
+  const dayStart = new Date(startTime);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(startTime);
+  dayEnd.setHours(23, 59, 59, 999);
+
+  const [availability, timeOff, blockedSlots] = await Promise.all([
+    prisma.staffAvailability.findMany({ where: { tenantId, staffId } }),
+    prisma.staffTimeOff.findMany({
+      where: {
+        tenantId,
+        staffId,
+        isApproved: true,
+        date: { gte: dayStart, lte: dayEnd },
+      },
+    }),
+    prisma.appointmentSlot.findMany({
+      where: {
+        tenantId,
+        staffId,
+        isBlocked: true,
+        startTime: { lt: endTime },
+        endTime: { gt: startTime },
+      },
+    }),
+  ]);
+
+  const issue = appointmentAvailabilityIssue({
+    startTime,
+    endTime,
+    availability,
+    timeOff,
+    blockedSlots,
+  });
+  if (issue) throw new Error(issue.code);
 }
 
 const appointmentInclude = {
@@ -61,32 +155,89 @@ export async function getAppointments(tenantId: string, filters: Partial<Appoint
     limit = 50,
   } = filters as AppointmentFilters;
 
+  const startTimeFilter: { gte?: Date; lte?: Date } = {};
+  if (dateFrom) startTimeFilter.gte = parseAppointmentDateStart(dateFrom);
+  if (dateTo) startTimeFilter.lte = parseAppointmentDateEnd(dateTo);
+  if (status === 'OVERDUE') {
+    // ARGUS #126: derived filter — active rows whose start is past the grace
+    // window. This only restricts the query; it never writes status.
+    const cutoff = appointmentOverdueCutoff();
+    if (!startTimeFilter.lte || startTimeFilter.lte > cutoff) {
+      startTimeFilter.lte = cutoff;
+    }
+  }
+
   const where: Prisma.AppointmentWhereInput = {
     tenantId,
-    ...(status && { status }),
+    ...(status === 'OVERDUE'
+      ? { status: { in: [...APPOINTMENT_OVERDUE_STATUSES] } }
+      : status
+        ? { status }
+        : {}),
     ...(staffId && { staffId }),
     ...(serviceId && { serviceId }),
     ...(customerId && { customerId }),
-    ...(dateFrom || dateTo
-      ? {
-          startTime: {
-            ...(dateFrom && { gte: new Date(dateFrom) }),
-            ...(dateTo && { lte: new Date(dateTo) }),
-          },
-        }
-      : {}),
+    ...(Object.keys(startTimeFilter).length > 0 ? { startTime: startTimeFilter } : {}),
   };
 
-  const [appointments, total] = await Promise.all([
-    prisma.appointment.findMany({
+  // ARGUS #129: upcoming active rows first (nearest first), then past/terminal
+  // rows (most recent first). Pagination is applied across that global order,
+  // so cancelled QA rows cannot occupy page 1 ahead of upcoming bookings.
+  const now = new Date();
+  const upcomingWhere: Prisma.AppointmentWhereInput = {
+    AND: [
       where,
-      include: appointmentInclude,
-      orderBy: { startTime: 'asc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
+      { status: { in: [...APPOINTMENT_OPEN_STATUSES] } },
+      { startTime: { gte: now } },
+    ],
+  };
+  const pastWhere: Prisma.AppointmentWhereInput = {
+    AND: [
+      where,
+      {
+        OR: [
+          { status: { notIn: [...APPOINTMENT_OPEN_STATUSES] } },
+          { startTime: { lt: now } },
+        ],
+      },
+    ],
+  };
+
+  const skip = (page - 1) * limit;
+  const [total, upcomingCount] = await Promise.all([
     prisma.appointment.count({ where }),
+    prisma.appointment.count({ where: upcomingWhere }),
   ]);
+
+  let appointments;
+  if (skip < upcomingCount) {
+    const fromUpcoming = await prisma.appointment.findMany({
+      where: upcomingWhere,
+      include: appointmentInclude,
+      orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
+      skip,
+      take: limit,
+    });
+    const remaining = limit - fromUpcoming.length;
+    const fromPast =
+      remaining > 0
+        ? await prisma.appointment.findMany({
+            where: pastWhere,
+            include: appointmentInclude,
+            orderBy: [{ startTime: 'desc' }, { id: 'asc' }],
+            take: remaining,
+          })
+        : [];
+    appointments = [...fromUpcoming, ...fromPast];
+  } else {
+    appointments = await prisma.appointment.findMany({
+      where: pastWhere,
+      include: appointmentInclude,
+      orderBy: [{ startTime: 'desc' }, { id: 'asc' }],
+      skip: skip - upcomingCount,
+      take: limit,
+    });
+  }
 
   return { appointments, total, page, limit };
 }
@@ -129,6 +280,16 @@ export async function createAppointment(
   // M27-04/OBS-79: reject far-past bookings unless the actor may manage settings.
   await assertBackdateAllowed(startTime, canManageSettings);
 
+  // ARGUS #127: booking a specific staff member must respect their roster.
+  if (input.staffId) {
+    await assertStaffAvailability(tenantId, input.staffId, startTime, endTime);
+  }
+
+  // ARGUS #124: the tenant decides whether new bookings arrive already
+  // confirmed; defaults keep the historical SCHEDULED behaviour.
+  const settings = await getAppointmentSettings(tenantId);
+  const initialStatus = resolveInitialAppointmentStatus(settings);
+
   // M27-06/BUG-92: the overlap check used to run OUTSIDE the transaction
   // (TOCTOU — 3 concurrent same-slot bookings all 201'd). It is now performed
   // inside the transaction after locking the staff member's row, so same-staff
@@ -167,6 +328,7 @@ export async function createAppointment(
           durationMins: input.durationMins,
           price: input.price,
           depositAmount: input.depositAmount ?? 0,
+          status: initialStatus,
           notes: input.notes ?? null,
           customerNotes: input.customerNotes ?? null,
           walkInName: input.walkInName ?? null,
@@ -213,12 +375,43 @@ export async function updateAppointment(
 ) {
   const existing = await assertAppointmentBelongsToTenant(tenantId, id);
 
+  // ARGUS #127: re-validate the roster only when the schedule/staff actually
+  // changes. Status/notes edits on an existing row (including legacy rows that
+  // predate enforcement) must remain possible.
+  const scheduleTouched =
+    input.staffId !== undefined ||
+    input.startTime !== undefined ||
+    input.endTime !== undefined ||
+    input.durationMins !== undefined;
+  if (scheduleTouched) {
+    const effectiveStaffId = input.staffId !== undefined ? input.staffId : existing.staffId;
+    if (effectiveStaffId) {
+      await assertStaffAvailability(
+        tenantId,
+        effectiveStaffId,
+        input.startTime ? new Date(input.startTime) : existing.startTime,
+        input.endTime ? new Date(input.endTime) : existing.endTime,
+      );
+    }
+  }
+
   // M27-04/BUG-88: the PATCH path used to write any status the client sent
   // (SCHEDULED→COMPLETED skipping check-in, COMPLETED→CANCELLED erasing revenue).
   // Restrict to the legal lifecycle edges; terminal rows reject status edits.
   if (input.status !== undefined && input.status !== existing.status) {
-    if (!isAppointmentStatusTransitionAllowed(existing.status, input.status)) {
+    // ARGUS #124: the tenant's "require confirmation" toggle decides whether a
+    // SCHEDULED booking may skip straight to check-in/completion. With the
+    // default settings this is exactly the canonical lifecycle map.
+    const settings = await getAppointmentSettings(tenantId);
+    if (!isAppointmentTransitionAllowedBySettings(existing.status, input.status, settings)) {
       throw new Error('INVALID_STATUS_TRANSITION');
+    }
+    // ARGUS #120: cancellation carries bookkeeping the generic edit path cannot
+    // provide (cancelledAt/By, deposit refund, cancellation audit). Faking the
+    // status here would also skip the sale guard, so cancellation must go
+    // through `cancelAppointment`.
+    if (input.status === 'CANCELLED') {
+      throw new Error('CANCELLATION_REQUIRES_CANCEL_ENDPOINT');
     }
   }
 
@@ -262,26 +455,58 @@ export async function cancelAppointment(
   reason?: string,
   actorRole = 'UNKNOWN',
 ) {
-  await assertAppointmentBelongsToTenant(tenantId, id);
+  const existing = await assertAppointmentBelongsToTenant(tenantId, id);
 
-  const appointment = await prisma.appointment.update({
-    where: { id },
-    data: {
-      status: 'CANCELLED',
-      cancelledAt: new Date(),
-      cancelledById: userId,
-      cancellationReason: reason ?? null,
-    },
-    include: appointmentInclude,
-  });
-
-  // Free the slot if linked
-  if (appointment.slotId) {
-    await prisma.appointmentSlot.update({
-      where: { id: appointment.slotId },
-      data: { isBooked: false, appointmentId: null },
-    });
+  // ARGUS #120: cancelling is a lifecycle transition, not a free-form write.
+  // A converted appointment has a completed Sale — cancelling it would leave
+  // paid revenue attached to a cancelled booking (ARGUS #119) — and terminal
+  // rows must not be re-cancelled. Void the sale through its own flow instead.
+  const blockReason = appointmentCancellationBlockReason(existing);
+  if (blockReason) {
+    throw new Error(blockReason);
   }
+
+  // ARGUS #120: the deposit is money already collected at booking. An unpaid
+  // deposit on a customer-linked booking is returned as store credit (balance +
+  // credit-note ledger, same helper returns use); a walk-in has no ledger, so
+  // the amount is recorded in the cancellation audit for manual follow-up.
+  const depositDisposition = appointmentDepositDisposition(existing);
+  const depositAmount = appointmentDepositAmount(existing);
+  const depositRefunded =
+    depositDisposition === 'REFUND_TO_STORE_CREDIT' && existing.customerId !== null;
+
+  const appointment = await prisma.$transaction(async (tx) => {
+    if (depositDisposition === 'REFUND_TO_STORE_CREDIT' && existing.customerId) {
+      await issueCredit(
+        tenantId,
+        existing.customerId,
+        new Decimal(depositAmount),
+        `Deposit refund for cancelled appointment ${id.slice(0, 8).toUpperCase()}`,
+        tx,
+      );
+    }
+
+    const updated = await tx.appointment.update({
+      where: { id },
+      data: {
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        cancelledById: userId,
+        cancellationReason: reason ?? null,
+      },
+      include: appointmentInclude,
+    });
+
+    // Free the slot if linked
+    if (updated.slotId) {
+      await tx.appointmentSlot.update({
+        where: { id: updated.slotId },
+        data: { isBooked: false, appointmentId: null },
+      });
+    }
+
+    return updated;
+  }, { maxWait: 10_000, timeout: 30_000 });
 
   await createAuditLog({
     tenantId,
@@ -290,6 +515,13 @@ export async function cancelAppointment(
     entityType: 'Appointment',
     entityId: id,
     action: 'CANCEL',
+    before: { status: existing.status },
+    after: {
+      status: 'CANCELLED',
+      depositAmount,
+      depositDisposition,
+      depositRefunded,
+    },
   });
 
   return appointment;
@@ -298,7 +530,7 @@ export async function cancelAppointment(
 // ── Check In ─────────────────────────────────────────────────────────────────
 
 export async function checkInAppointment(tenantId: string, id: string, userId: string) {
-  await assertAppointmentBelongsToTenant(tenantId, id);
+  await assertAppointmentActionAllowed(tenantId, id, 'check_in');
 
   return prisma.appointment.update({
     where: { id },
@@ -314,7 +546,7 @@ export async function checkInAppointment(tenantId: string, id: string, userId: s
 // ── Mark In Progress ─────────────────────────────────────────────────────────
 
 export async function markInProgress(tenantId: string, id: string) {
-  await assertAppointmentBelongsToTenant(tenantId, id);
+  await assertAppointmentActionAllowed(tenantId, id, 'start');
 
   return prisma.appointment.update({
     where: { id },
@@ -326,7 +558,7 @@ export async function markInProgress(tenantId: string, id: string) {
 // ── Complete ─────────────────────────────────────────────────────────────────
 
 export async function completeAppointment(tenantId: string, id: string) {
-  await assertAppointmentBelongsToTenant(tenantId, id);
+  await assertAppointmentActionAllowed(tenantId, id, 'complete');
 
   return prisma.appointment.update({
     where: { id },
@@ -341,7 +573,7 @@ export async function completeAppointment(tenantId: string, id: string) {
 // ── Mark No Show ─────────────────────────────────────────────────────────────
 
 export async function markNoShow(tenantId: string, id: string) {
-  await assertAppointmentBelongsToTenant(tenantId, id);
+  await assertAppointmentActionAllowed(tenantId, id, 'no_show');
 
   const appointment = await prisma.appointment.update({
     where: { id },
@@ -363,7 +595,8 @@ export async function markNoShow(tenantId: string, id: string) {
 // ── Confirm ──────────────────────────────────────────────────────────────────
 
 export async function confirmAppointment(tenantId: string, id: string) {
-  await assertAppointmentBelongsToTenant(tenantId, id);
+  await assertAppointmentActionAllowed(tenantId, id, 'confirm');
+
   return prisma.appointment.update({
     where: { id },
     data: { status: 'CONFIRMED' },
@@ -395,6 +628,7 @@ export async function createAppointmentService(
     description?: string | null | undefined;
     durationMins: number;
     price: number;
+    taxRule?: TaxRule | undefined;
     color?: string | null | undefined;
     isActive?: boolean | undefined;
     sortOrder?: number | undefined;
@@ -415,6 +649,7 @@ export async function createAppointmentService(
       description: input.description ?? null,
       durationMins: input.durationMins,
       price: input.price,
+      taxRule: input.taxRule ?? 'STANDARD_VAT',
       color: input.color ?? null,
       isActive: input.isActive ?? true,
       sortOrder: input.sortOrder ?? 0,
@@ -430,6 +665,7 @@ export async function updateAppointmentService(
     description?: string | null | undefined;
     durationMins?: number | undefined;
     price?: number | undefined;
+    taxRule?: TaxRule | undefined;
     color?: string | null | undefined;
     isActive?: boolean | undefined;
     sortOrder?: number | undefined;
@@ -454,6 +690,7 @@ export async function updateAppointmentService(
       ...(input.description !== undefined && { description: input.description }),
       ...(input.durationMins !== undefined && { durationMins: input.durationMins }),
       ...(input.price !== undefined && { price: input.price }),
+      ...(input.taxRule !== undefined && { taxRule: input.taxRule }),
       ...(input.color !== undefined && { color: input.color }),
       ...(input.isActive !== undefined && { isActive: input.isActive }),
       ...(input.sortOrder !== undefined && { sortOrder: input.sortOrder }),
@@ -502,7 +739,14 @@ export async function getAppointmentStats(tenantId: string, dateFrom?: string, d
       : {}),
   };
 
-  const [total, byStatusList, revenue] = await Promise.all([
+  // ARGUS #121: "revenue" used to sum the price of every COMPLETED appointment,
+  // including visits nobody had paid for. It now counts money actually held:
+  // the full price once the visit is marked paid, otherwise only the deposit
+  // that was collected at booking. Cancelled bookings are excluded because
+  // their deposit is returned as store credit on cancellation.
+  const collectedWhere: Prisma.AppointmentWhereInput = { ...where, status: { not: 'CANCELLED' } };
+
+  const [total, byStatusList, paidAgg, depositAgg, completedUnpaidAgg] = await Promise.all([
     prisma.appointment.count({ where }),
     prisma.appointment.groupBy({
       by: ['status'],
@@ -510,8 +754,17 @@ export async function getAppointmentStats(tenantId: string, dateFrom?: string, d
       _count: true,
     }),
     prisma.appointment.aggregate({
-      where: { ...where, status: 'COMPLETED' },
+      where: { ...collectedWhere, isPaid: true },
       _sum: { price: true },
+    }),
+    prisma.appointment.aggregate({
+      where: { ...collectedWhere, isPaid: false },
+      _sum: { depositAmount: true },
+    }),
+    prisma.appointment.aggregate({
+      where: { ...where, status: 'COMPLETED', isPaid: false },
+      _count: true,
+      _sum: { price: true, depositAmount: true },
     }),
   ]);
 
@@ -523,11 +776,28 @@ export async function getAppointmentStats(tenantId: string, dateFrom?: string, d
   const noShowCount = byStatus['NO_SHOW'] || 0;
   const noShowRate = total > 0 ? (noShowCount / total) * 100 : 0;
 
+  const paidRevenue = Number(paidAgg._sum.price ?? 0);
+  const depositsHeld = Number(depositAgg._sum.depositAmount ?? 0);
+  const completedUnpaid = completedUnpaidAgg._count;
+
+  const revenueSummary = summarizeAppointmentRevenue({
+    paidPrice: paidRevenue,
+    unpaidDeposits: depositsHeld,
+    completedUnpaidPrice: completedUnpaidAgg._sum.price ?? 0,
+    completedUnpaidDeposits: completedUnpaidAgg._sum.depositAmount ?? 0,
+  });
+
   return {
     total,
     byStatus,
     noShowRate: Math.round(noShowRate * 100) / 100,
-    revenue: Number(revenue._sum.price ?? 0),
+    /** Money actually collected (paid visits at price, otherwise deposits). */
+    revenue: revenueSummary.revenue,
+    /** Completed visits with no payment recorded, and what they still owe. */
+    completedUnpaidCount: completedUnpaid,
+    outstandingBalance: revenueSummary.outstandingBalance,
+    /** Deposits collected on bookings that are not settled as paid yet. */
+    depositsHeld: revenueSummary.depositsHeld,
   };
 }
 
@@ -549,35 +819,151 @@ export async function convertAppointmentToSale(
     throw new Error('ALREADY_CONVERTED');
   }
 
-  // M27-01/BUG-85: `shiftId: ''` is neither NULL nor a valid id, so every
-  // convert attempt died on the Shift FK. Resolve the acting cashier's OPEN
-  // shift (same lookup POS checkout uses); when there is none we link the sale
-  // shift-lessly (Sale.shiftId is nullable) so an owner-initiated conversion
-  // still works outside POS hours.
-  const activeShift = await getCurrentShift(tenantId, userId);
+  // Attribute the converted sale to the appointment's staff/doctor; if none is
+  // set, fall back to the operator who clicked Convert (ARGUS #132).
+  const attributedUserId = resolveAppointmentSaleOwner({
+    staffId: appointment.staffId,
+    operatorId: userId,
+  });
 
-  // Create the sale
-  const sale = await prisma.sale.create({
-    data: {
+  // M27-01/BUG-85: resolve the attributable user's OPEN shift (same lookup POS
+  // checkout uses); when there is none we link the sale shift-lessly.
+  const activeShift = await getCurrentShift(tenantId, attributedUserId);
+
+  // Price the service like a sale: the tenant VAT rate applies to the
+  // appointment price, so the persisted sale carries a tax amount and a line
+  // item instead of a bare total (ARGUS #119).
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { settings: true },
+  });
+  const { vatRate, ssclRate } = extractTenantRates(tenant?.settings);
+  // The service's tax rule decides VAT/SSCL/exempt; an explicit exempt service
+  // is documented on the service rather than silently producing zero tax
+  // (ARGUS #131).
+  const serviceTaxRule = appointment.serviceId
+    ? (
+        await prisma.appointmentService.findFirst({
+          where: { id: appointment.serviceId, tenantId },
+          select: { taxRule: true },
+        })
+      )?.taxRule ?? 'STANDARD_VAT'
+    : 'STANDARD_VAT';
+  // The service price is the subtotal; the appointment's deposit is money
+  // already collected at booking.
+  const pricing = computeAppointmentSalePricing({
+    price: appointment.price,
+    vatRate,
+    ssclRate,
+    taxRule: serviceTaxRule,
+    deposit: appointment.depositAmount,
+  });
+  const { subtotal, taxAmount: lineTax, totalAmount, depositApplied, balanceDue } = pricing;
+
+  // The sale is dated at the appointment, not at conversion time.
+  const saleDate = appointment.completedAt ?? appointment.startTime;
+
+  const sale = await prisma.$transaction(async (tx) => {
+    const created = await tx.sale.create({
+      data: {
+        tenant: { connect: { id: tenantId } },
+        ...(activeShift ? { shift: { connect: { id: activeShift.id } } } : {}),
+        ...(appointment.customerId
+          ? { customer: { connect: { id: appointment.customerId } } }
+          : {}),
+        cashier: { connect: { id: attributedUserId } },
+        subtotal: subtotal.toNumber(),
+        discountAmount: 0,
+        taxAmount: lineTax.toNumber(),
+        totalAmount: totalAmount.toNumber(),
+        deliveryCharge: 0,
+        paymentMethod: 'CASH',
+        status: 'COMPLETED',
+        saleDate,
+        completedAt: new Date(),
+        lines: {
+          create: [
+            {
+              // Service lines have no product variant (and no stock movement).
+              productNameSnapshot: appointment.title || 'Appointment',
+              variantDescriptionSnapshot: 'Service',
+              sku: `SVC-${appointment.id.slice(-6).toUpperCase()}`,
+              unitPrice: subtotal.toNumber(),
+              costPriceSnapshot: 0,
+              quantity: 1,
+              discountPercent: 0,
+              discountAmount: 0,
+              lineTotalBeforeDiscount: subtotal.toNumber(),
+              lineTotalAfterDiscount: subtotal.toNumber(),
+              lineTax: lineTax.toNumber(),
+            },
+          ],
+        },
+      },
+    });
+
+    if (depositApplied.greaterThan(0)) {
+      await createPayment({ saleId: created.id, method: 'CASH', amount: depositApplied }, tx);
+    }
+    if (balanceDue.greaterThan(0)) {
+      await createPayment({ saleId: created.id, method: 'CASH', amount: balanceDue }, tx);
+    }
+
+    if (appointment.customerId) {
+      await addToSpendTotal(tenantId, appointment.customerId, totalAmount, tx);
+    }
+
+    await postSaleToAccounts(
+      tx,
       tenantId,
-      ...(activeShift ? { shiftId: activeShift.id } : {}),
-      customerId: appointment.customerId,
-      cashierId: userId,
-      subtotal: appointment.price,
-      discountAmount: 0,
-      taxAmount: 0,
-      totalAmount: appointment.price,
-      status: 'COMPLETED',
-      completedAt: new Date(),
-      paymentMethod: 'CASH',
-    },
-  });
+      userId,
+      created.id,
+      created.id.slice(0, 8).toUpperCase(),
+      buildSaleAccountLegs({ paymentMethod: 'CASH', totalAmount }),
+    );
 
-  // Link appointment to sale
-  await prisma.appointment.update({
-    where: { id: appointmentId },
-    data: { saleId: sale.id },
-  });
+    await tx.appointment.update({
+      where: { id: appointmentId },
+      data: { saleId: created.id, isPaid: true },
+    });
+
+    return tx.sale.findUniqueOrThrow({
+      where: { id: created.id },
+      include: { lines: true, payments: true },
+    });
+  }, { maxWait: 10_000, timeout: 30_000 });
+
+  // Commission belongs to the appointment's staff/doctor, not the operator who
+  // clicked Convert (ARGUS #132). Non-blocking like the normal sale route.
+  try {
+    const attributedStaff = await prisma.user.findUnique({
+      where: { id: attributedUserId },
+      select: { commissionRate: true },
+    });
+    // ARGUS #342: only a rate inside 0-100 can earn; legacy out-of-range
+    // values are skipped with a signal instead of failing silently.
+    const rate = normalizeCommissionRate(attributedStaff?.commissionRate);
+    if (rate !== null && rate > 0) {
+      await createCommissionRecord({
+        tenantId,
+        saleId: sale.id,
+        userId: attributedUserId,
+        baseAmount: sale.totalAmount,
+        commissionRate: rate.toString(),
+      });
+    } else if (
+      rate === null &&
+      attributedStaff?.commissionRate !== null &&
+      attributedStaff?.commissionRate !== undefined
+    ) {
+      console.warn('Skipping appointment commission: stored rate is outside 0-100', {
+        userId: attributedUserId,
+        commissionRate: String(attributedStaff.commissionRate),
+      });
+    }
+  } catch (commissionError) {
+    console.warn('Appointment conversion commission failed:', commissionError);
+  }
 
   await createAuditLog({
     tenantId,
@@ -586,6 +972,12 @@ export async function convertAppointmentToSale(
     entityType: 'Appointment',
     entityId: appointmentId,
     action: 'CONVERT_TO_SALE',
+    after: {
+      saleId: sale.id,
+      totalAmount: sale.totalAmount.toString(),
+      taxAmount: sale.taxAmount.toString(),
+      depositApplied: depositApplied.toString(),
+    },
   });
 
   return sale;

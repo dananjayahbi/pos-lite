@@ -30,7 +30,22 @@ import {
 } from '@/components/ui/table';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
+import Decimal from 'decimal.js';
+import { fetchPayrollEnvelope, resolvePayrollLoadState } from '@/lib/payroll/api-load-state';
+import type {
+  PayrollExportKind,
+  PayrollExportPreflight,
+} from '@/lib/payroll/export-preflight';
+import {
+  describePayrollRunStatus,
+  type PayrollRunPaymentInfo,
+} from '@/lib/payroll/payroll-run-status';
+import { PAYROLL_EXPORT_PROVENANCE_CAVEAT } from '@/lib/payroll/export-provenance';
+import { payslipUrl } from '@/lib/payroll/payslip-links.core';
+import { summarizePayrollHeadcount } from '@/lib/payroll/export-eligibility.core';
+import { PAYROLL_TAX_NOT_CONFIGURED_MESSAGE } from '@/lib/payroll/tax-disclosure.core';
 import { formatRupee } from '@/lib/format';
+import { currentPayrollMonth } from '@/lib/payroll/payroll-month.core';
 
 interface PayrollRunSummary {
   id: string;
@@ -85,12 +100,15 @@ interface PayrollRunDetail extends PayrollRunSummary {
   totalEmployeeEpf: string;
   totalEmployerEpf: string;
   totalEmployerEtf: string;
+  /** Notes entered when the run was generated (ARGUS #382). */
+  notes: string | null;
   items: PayrollRunItem[];
+  /** ARGUS #385: derived from the PAYROLL_RUN_PAID audit entry. */
+  payment?: PayrollRunPaymentInfo | null;
 }
 
 function currentMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  return currentPayrollMonth();
 }
 
 function downloadUrl(
@@ -101,8 +119,8 @@ function downloadUrl(
   return `/api/store/payroll/runs/${runId}/exports/${kind}?format=${format}`;
 }
 
-function payslipUrl(runId: string, userId: string) {
-  return `/api/store/payroll/runs/${runId}/payslips/${userId}`;
+function payslipDownloadUrl(runId: string, userId: string) {
+  return payslipUrl(runId, userId, 'download');
 }
 
 export default function PayrollReportsClient() {
@@ -122,36 +140,31 @@ function PayrollReportsContent() {
   const [sendingUserId, setSendingUserId] = useState<string | null>(null);
 
   const runsQuery = useQuery<PayrollRunSummary[]>({
-    queryKey: ['payroll-runs'],
-    queryFn: async () => {
-      const res = await fetch('/api/store/payroll/runs?limit=60');
-      const json = (await res.json()) as { success: boolean; data?: PayrollRunSummary[] };
-      return json.data ?? [];
-    },
+    queryKey: ['payroll-runs', 'month', month],
+    queryFn: () =>
+      fetchPayrollEnvelope<PayrollRunSummary[]>(
+        `/api/store/payroll/runs?month=${encodeURIComponent(month)}`,
+      ),
   });
 
-  const summary = (runsQuery.data ?? []).find((run) => run.periodMonth === month);
+  const summary = runsQuery.data?.[0];
 
   const runQuery = useQuery<PayrollRunDetail>({
     queryKey: ['payroll-run', summary?.id],
-    queryFn: async () => {
-      const res = await fetch(`/api/store/payroll/runs/${summary!.id}`);
-      const json = (await res.json()) as {
-        success: boolean;
-        data?: PayrollRunDetail;
-        error?: { message: string };
-      };
-      if (!res.ok || !json.success || !json.data) {
-        throw new Error(json.error?.message ?? 'Failed to load payroll run');
-      }
-      return json.data;
-    },
+    queryFn: () =>
+      fetchPayrollEnvelope<PayrollRunDetail>(`/api/store/payroll/runs/${summary!.id}`),
     enabled: Boolean(summary?.id),
+  });
+
+  const runsState = resolvePayrollLoadState({
+    isLoading: runsQuery.isLoading,
+    isError: runsQuery.isError,
+    hasData: (runsQuery.data?.length ?? 0) > 0,
   });
 
   const emailMutation = useMutation({
     mutationFn: async (userId: string) => {
-      const res = await fetch(`${payslipUrl(runQuery.data!.id, userId)}/email`, { method: 'POST' });
+      const res = await fetch(`${payslipDownloadUrl(runQuery.data!.id, userId)}/email`, { method: 'POST' });
       const json = (await res.json()) as {
         success: boolean;
         data?: { delivered: boolean; reason: string | null; status: string };
@@ -180,6 +193,23 @@ function PayrollReportsContent() {
   });
 
   const run = runQuery.data;
+  const runStatus = run
+    ? describePayrollRunStatus({ status: run.status, payment: run.payment })
+    : null;
+  const totalDeductionsIncludingEpf = run
+    ? new Decimal(run.totalDeductions).add(run.totalEmployeeEpf).toFixed(2)
+    : '0.00';
+  const headcount = run ? summarizePayrollHeadcount(run.items) : null;
+
+  // ARGUS #378: completeness gate for the bank sheet and statutory exports.
+  const preflightQuery = useQuery<Record<PayrollExportKind, PayrollExportPreflight>>({
+    queryKey: ['payroll-export-preflight', run?.id],
+    queryFn: () =>
+      fetchPayrollEnvelope<Record<PayrollExportKind, PayrollExportPreflight>>(
+        `/api/store/payroll/runs/${run!.id}/exports/preflight`,
+      ),
+    enabled: Boolean(run?.id),
+  });
 
   return (
     <PageContainer className="space-y-6">
@@ -189,8 +219,8 @@ function PayrollReportsContent() {
             Payroll reports & bank sheets
           </h1>
           <p className="text-sand-ink mt-1 text-sm">
-            Monthly bank payment file, EPF/ETF returns and the company cost summary for a generated
-            payroll run.
+            Monthly bank salary worksheet, EPF/ETF returns and the company cost summary for a
+            generated payroll run.
           </p>
         </div>
         <div className="flex items-end gap-3">
@@ -205,6 +235,7 @@ function PayrollReportsContent() {
               id="report-month"
               type="month"
               value={month}
+              max={currentMonth()}
               onChange={(event) => {
                 if (event.target.value) setMonth(event.target.value);
               }}
@@ -220,7 +251,42 @@ function PayrollReportsContent() {
         </div>
       </div>
 
-      {runsQuery.isLoading || runQuery.isLoading ? (
+      {runsState === 'error' ? (
+        <Card className="border-mist">
+          <CardContent className="text-sand-ink py-10 text-center text-sm">
+            <p>
+              Could not load payroll runs:{' '}
+              {runsQuery.error instanceof Error
+                ? runsQuery.error.message
+                : 'the request failed'}
+            </p>
+            <Button variant="outline" className="mt-4" onClick={() => void runsQuery.refetch()}>
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ) : summary && runQuery.isError ? (
+        <Card className="border-mist">
+          <CardContent className="text-sand-ink py-10 text-center text-sm">
+            <p>
+              Could not load the {month} payroll run:{' '}
+              {runQuery.error instanceof Error
+                ? runQuery.error.message
+                : 'the request failed'}
+            </p>
+            <Button
+              variant="outline"
+              className="mt-4"
+              onClick={() => {
+                void runsQuery.refetch();
+                void runQuery.refetch();
+              }}
+            >
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ) : runsState === 'loading' || (summary && runQuery.isLoading) ? (
         <Skeleton className="bg-linen h-48 rounded" />
       ) : !summary ? (
         <Card className="border-mist">
@@ -234,12 +300,54 @@ function PayrollReportsContent() {
         </Card>
       ) : run ? (
         <>
+          {runStatus && (
+            <div
+              className={`rounded-lg border p-4 ${
+                runStatus.paid
+                  ? 'border-[#2D6A4F]/30 bg-[#E8F3ED]'
+                  : 'border-[#B7791F]/40 bg-[#FDF6E7]'
+              }`}
+            >
+              <p className="text-espresso text-sm font-semibold">
+                {runStatus.statusLabel} - {run.periodMonth}
+              </p>
+              <p className="text-sand-ink mt-1 text-xs">{runStatus.statusDetail}</p>
+            </div>
+          )}
+
+          {run.notes && (
+            <div className="border-mist rounded-lg border p-4">
+              <p className="text-espresso text-sm font-semibold">Run notes</p>
+              <p className="text-sand-ink mt-1 whitespace-pre-wrap text-xs">{run.notes}</p>
+            </div>
+          )}
+
+          <div className="rounded-lg border border-[#B7791F]/40 bg-[#FDF6E7] p-4">
+            <p className="text-espresso text-sm font-semibold">PAYE/APIT not configured</p>
+            <p className="text-sand-ink mt-1 text-xs">{PAYROLL_TAX_NOT_CONFIGURED_MESSAGE}</p>
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Employees" value={String(run.items.length)} />
+            <Stat
+              label="Paid employees"
+              value={
+                headcount ? `${headcount.paid} of ${headcount.total}` : String(run.items.length)
+              }
+            />
             <Stat label="Gross salary" value={formatRupee(run.totalGross)} />
-            <Stat label="Net payable" value={formatRupee(run.totalNet)} />
+            <Stat
+              label={runStatus?.netLabel ?? 'Net payable'}
+              value={formatRupee(run.totalNet)}
+            />
             <Stat label="Total company cost" value={formatRupee(run.totalCompanyCost)} />
           </div>
+          {headcount && headcount.zeroEarnings > 0 && (
+            <p className="text-mist-ink -mt-3 text-xs">
+              {headcount.zeroEarnings} zero-earnings staff
+              {headcount.zeroEarnings === 1 ? ' is' : ' are'} excluded from the bank worksheet
+              and statutory return rows and totals.
+            </p>
+          )}
 
           <Card className="border-mist">
             <CardHeader>
@@ -258,11 +366,16 @@ function PayrollReportsContent() {
               <CostRow label="Overtime" value={run.totalOvertime} />
               <CostRow label="Sales commission" value={run.totalCommission} />
               <CostRow label="Gross salary" value={run.totalGross} strong />
-              <CostRow label="Deductions (no-pay + advances)" value={run.totalDeductions} />
+              <CostRow label="No-pay + advances" value={run.totalDeductions} />
               <CostRow label="Employee EPF" value={run.totalEmployeeEpf} />
+              <CostRow
+                label="Total deductions incl. employee EPF"
+                value={totalDeductionsIncludingEpf}
+                strong
+              />
               <CostRow label="Employer EPF" value={run.totalEmployerEpf} />
               <CostRow label="Employer ETF" value={run.totalEmployerEtf} />
-              <CostRow label="Net salaries paid" value={run.totalNet} strong />
+              <CostRow label={runStatus?.netLabel ?? 'Net payable'} value={run.totalNet} strong />
               <CostRow label="Total company cost" value={run.totalCompanyCost} strong />
             </CardContent>
           </Card>
@@ -270,12 +383,16 @@ function PayrollReportsContent() {
           <div className="grid gap-4 lg:grid-cols-3">
             <ExportCard
               icon={<FileSpreadsheet className="h-5 w-5 text-[#2D6A4F]" />}
-              title="Bank salary sheet"
-              description="Employee names, bank accounts and net salary - ready for corporate banking batch upload."
+              title="Bank salary worksheet"
+              description="Employee NIC, bank details and net salary for manual upload - this is not a bank batch file."
               links={[
                 { href: downloadUrl(run.id, 'bank-sheet', 'xlsx'), label: 'Excel' },
                 { href: downloadUrl(run.id, 'bank-sheet', 'pdf'), label: 'PDF' },
               ]}
+              preflight={preflightQuery.data?.['bank-sheet']}
+              preflightLoading={preflightQuery.isLoading}
+              preflightError={preflightQuery.isError}
+              onRetryPreflight={() => void preflightQuery.refetch()}
             />
             <ExportCard
               icon={<FileText className="h-5 w-5 text-[#1D4E89]" />}
@@ -285,6 +402,10 @@ function PayrollReportsContent() {
                 { href: downloadUrl(run.id, 'statutory', 'xlsx'), label: 'Excel' },
                 { href: downloadUrl(run.id, 'statutory', 'pdf'), label: 'PDF' },
               ]}
+              preflight={preflightQuery.data?.statutory}
+              preflightLoading={preflightQuery.isLoading}
+              preflightError={preflightQuery.isError}
+              onRetryPreflight={() => void preflightQuery.refetch()}
             />
             <ExportCard
               icon={<Download className="text-terracotta h-5 w-5" />}
@@ -294,6 +415,10 @@ function PayrollReportsContent() {
                 { href: downloadUrl(run.id, 'summary', 'pdf'), label: 'PDF' },
                 { href: downloadUrl(run.id, 'summary', 'xlsx'), label: 'Excel' },
               ]}
+              preflight={preflightQuery.data?.summary}
+              preflightLoading={preflightQuery.isLoading}
+              preflightError={preflightQuery.isError}
+              onRetryPreflight={() => void preflightQuery.refetch()}
             />
           </div>
 
@@ -307,6 +432,9 @@ function PayrollReportsContent() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              <p className="text-sand-ink mb-3 text-xs">
+                Net pay = Gross - no-pay + advances - employee EPF, per employee.
+              </p>
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -314,7 +442,8 @@ function PayrollReportsContent() {
                       <TableHead className="min-w-[170px]">Employee</TableHead>
                       <TableHead>Bank account</TableHead>
                       <TableHead className="text-right">Gross</TableHead>
-                      <TableHead className="text-right">Deductions</TableHead>
+                      <TableHead className="text-right">No-pay + advances</TableHead>
+                      <TableHead className="text-right">Employee EPF</TableHead>
                       <TableHead className="text-right">Net pay</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -339,6 +468,9 @@ function PayrollReportsContent() {
                         <TableCell className="text-right font-mono text-xs">
                           {formatRupee(item.totalDeductions)}
                         </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {formatRupee(item.employeeEpf)}
+                        </TableCell>
                         <TableCell className="text-right font-mono text-xs font-semibold">
                           {formatRupee(item.netSalary)}
                         </TableCell>
@@ -359,9 +491,10 @@ function PayrollReportsContent() {
                               size="sm"
                               variant="outline"
                               onClick={() =>
-                                window.open(payslipUrl(run.id, item.userId), '_blank', 'noopener')
+                                window.open(payslipUrl(run.id, item.userId, 'view'), '_blank', 'noopener')
                               }
-                              title="Print or download payslip"
+                              title="Open a print view of the payslip"
+                              aria-label={`Print payslip for ${item.staffName}`}
                             >
                               <Printer className="h-4 w-4" />
                             </Button>
@@ -369,9 +502,14 @@ function PayrollReportsContent() {
                               size="sm"
                               variant="outline"
                               onClick={() =>
-                                window.open(payslipUrl(run.id, item.userId), '_blank', 'noopener')
+                                window.open(
+                                  payslipDownloadUrl(run.id, item.userId),
+                                  '_blank',
+                                  'noopener',
+                                )
                               }
-                              title="Download payslip PDF"
+                              title="Download the payslip PDF"
+                              aria-label={`Download payslip for ${item.staffName}`}
                             >
                               <Download className="h-4 w-4" />
                             </Button>
@@ -404,6 +542,17 @@ function PayrollReportsContent() {
         <Card className="border-mist">
           <CardContent className="text-sand-ink py-10 text-center text-sm">
             Could not load this payroll run.
+            <div className="mt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  void runsQuery.refetch();
+                  void runQuery.refetch();
+                }}
+              >
+                Retry
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -438,12 +587,22 @@ function ExportCard({
   title,
   description,
   links,
+  preflight,
+  preflightLoading,
+  preflightError,
+  onRetryPreflight,
 }: {
   icon: React.ReactNode;
   title: string;
   description: string;
   links: Array<{ href: string; label: string }>;
+  preflight?: PayrollExportPreflight | undefined;
+  preflightLoading?: boolean | undefined;
+  preflightError?: boolean | undefined;
+  onRetryPreflight?: (() => void) | undefined;
 }) {
+  const incomplete = preflight ? !preflight.complete : false;
+
   return (
     <Card className="border-mist">
       <CardContent className="space-y-3 p-4">
@@ -452,16 +611,72 @@ function ExportCard({
           <h2 className="font-display text-espresso text-sm font-semibold">{title}</h2>
         </div>
         <p className="text-sand-ink text-xs">{description}</p>
-        <div className="flex flex-wrap gap-2">
-          {links.map((link) => (
-            <Button key={link.href} size="sm" variant="outline" asChild>
-              <a href={link.href} download>
-                <Download className="mr-1.5 h-3.5 w-3.5" />
-                {link.label}
-              </a>
+
+        {preflightError ? (
+          <div className="rounded-md border border-[#9B2226]/30 bg-[#FBECEC] p-2 text-xs">
+            <p className="text-espresso font-semibold">Completeness check failed</p>
+            <p className="text-sand-ink mt-1">
+              Downloads are blocked until the check succeeds.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              onClick={onRetryPreflight}
+            >
+              Retry check
             </Button>
-          ))}
+          </div>
+        ) : incomplete && preflight ? (
+          <div className="rounded-md border border-[#B7791F]/40 bg-[#FDF6E7] p-2 text-xs">
+            <p className="text-espresso font-semibold">
+              {preflight.affectedStaffCount > 0
+                ? `Incomplete details - ${preflight.affectedStaffCount} of ${preflight.staffCount} employees`
+                : 'Incomplete details - employer settings'}
+            </p>
+            <p className="text-sand-ink mt-1">{preflight.message}</p>
+            {preflight.affectedStaff.length > 0 && (
+              <ul className="text-sand-ink mt-1.5 list-disc space-y-0.5 pl-4">
+                {preflight.affectedStaff.slice(0, 5).map((member) => (
+                  <li key={member.staffName}>
+                    {member.staffName}: {member.missingFields.join(', ')}
+                  </li>
+                ))}
+                {preflight.affectedStaff.length > 5 && (
+                  <li>and {preflight.affectedStaff.length - 5} more</li>
+                )}
+              </ul>
+            )}
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2">
+          {preflightLoading && !preflightError ? (
+            <p className="text-mist-ink text-xs">Checking required details...</p>
+          ) : (
+            !preflightError &&
+            links.map((link) => (
+              <Button key={link.href} size="sm" variant="outline" asChild>
+                <a
+                  href={incomplete ? `${link.href}&allowIncomplete=1` : link.href}
+                  download
+                >
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  {incomplete ? `${link.label} anyway` : link.label}
+                </a>
+              </Button>
+            ))
+          )}
         </div>
+
+        {incomplete && (
+          <p className="text-mist-ink text-[10px]">
+            A flagged download includes blank cells for the listed staff. Complete their
+            profiles, then reload to download a clean file.
+          </p>
+        )}
+
+        <p className="text-mist-ink text-[10px]">{PAYROLL_EXPORT_PROVENANCE_CAVEAT}</p>
       </CardContent>
     </Card>
   );

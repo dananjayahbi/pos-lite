@@ -17,6 +17,9 @@ import { test, expect, type Page, type Browser, type APIResponse } from '@playwr
  *         src/app/api/admin/users/[userId]/force-logout/route.ts (POST)
  *         src/app/api/audit-logs/route.ts             (GET)
  *   Core  src/lib/services/staff.service.ts
+ *         src/lib/services/permissionSet.core.ts
+ *         src/lib/services/permissionGrid.core.ts
+ *         src/lib/services/staffRosterFilter.core.ts
  *         src/lib/validators/staff.validators.ts
  *         src/lib/constants/permissions.ts
  *         src/lib/auth.ts / src/lib/auth.config.ts / middleware.ts
@@ -68,6 +71,7 @@ const PERM = {
   assignPermissions: 'staff:permissions:assign',
   manageUsers: 'settings:users',
   saleCreate: 'sale:create',
+  viewSalesReport: 'report:view_sales',
   viewAuditLog: 'settings:view_audit_log',
 } as const;
 
@@ -83,6 +87,11 @@ const qaEmail = (tag: string) => `qa03.${RUN_ID}.${tag}@ayurpos-qa.test`;
  */
 async function performLogin(page: Page, key: UserKey): Promise<void> {
   const { email, password } = USERS[key];
+  await performLoginWith(page, email, password);
+}
+
+/** Same UI login flow for a throwaway QA identity (not in USERS). */
+async function performLoginWith(page: Page, email: string, password: string): Promise<void> {
   await page.goto('/login');
   await page.fill('#email', email);
   await page.fill('#password', password);
@@ -336,18 +345,26 @@ test.describe('1b. Permission editor (UI)', () => {
     await row.getByRole('button', { name: /Manage/i }).click();
 
     const dialog = page.getByRole('dialog');
+    // ARGUS #465/#467: the editor title carries the stable identity (email).
     await expect(dialog.getByText(`Manage ${USERS.cashier.email}`)).toBeVisible();
 
-    // sale:create is a CASHIER role default -> Inherited badge + disabled control.
+    // sale:create is a CASHIER role default -> Inherited badge. ARGUS #464/#466:
+    // the inherited control is no longer locked; unchecking it revokes just
+    // that capability (no role change).
     const inherited = dialog.locator('label').filter({ hasText: PERM.saleCreate }).first();
     await expect(inherited, 'sale:create row present').toBeVisible();
     await expect(inherited.getByText('Inherited'), 'sale:create marked Inherited').toBeVisible();
-    await expect(inherited.locator('[role=checkbox]')).toBeDisabled();
+    const inheritedBox = inherited.locator('[role=checkbox]');
+    await expect(inheritedBox).toBeEnabled();
+    await expect(inheritedBox).toBeChecked();
 
     // settings:users is NOT a cashier default -> editable and unchecked.
     const extra = dialog.locator('label').filter({ hasText: PERM.manageUsers }).first();
     await expect(extra.locator('[role=checkbox]'), 'explicit override is editable').toBeEnabled();
     await expect(extra.locator('[role=checkbox]')).not.toBeChecked();
+
+    // No changes yet -> Save is disabled (ARGUS #466 dirty contract).
+    await expect(dialog.getByRole('button', { name: /Save changes/i })).toBeDisabled();
 
     await page.keyboard.press('Escape');
     await ctx.close();
@@ -373,12 +390,163 @@ test.describe('1b. Permission editor (UI)', () => {
     const page = await ctx.newPage();
     await page.goto('/settings/users');
     const row = page.getByRole('row').filter({ hasText: email }).first();
-    await expect(row.getByRole('cell').nth(3), 'Extra permissions column shows 2').toHaveText('2');
+    // Columns: User | Email | Role | Status | Extra permissions | Actions.
+    // ARGUS #466 names the overrides; the count is still the leading text.
+    await expect(row.getByRole('cell').nth(4), 'Extra permissions names/count show 2').toContainText(
+      '2 extra',
+    );
+
+    await ctx.close();
+  });
+
+  test('1.7 Duplicate stored extras are normalized to one explicit override', async ({
+    browser,
+  }) => {
+    const ctx = await authedContext(browser, 'owner');
+    const req = ctx.request;
+    const email = qaEmail('dupes');
+
+    const created = await req.post('/api/store/staff', { data: { email, role: 'CASHIER' } });
+    const id = (await json(created))?.data?.id;
+
+    const patch = await req.patch(`/api/store/staff/${id}`, {
+      data: { permissions: [PERM.viewSalesReport, PERM.viewSalesReport] },
+    });
+    expect(patch.status()).toBe(200);
+    expect(((await json(patch))?.data?.permissions ?? []) as string[]).toEqual([
+      PERM.viewSalesReport,
+    ]);
+
+    const page = await ctx.newPage();
+    await page.goto('/settings/users');
+    const row = page.getByRole('row').filter({ hasText: email }).first();
+    await expect(row).toBeVisible({ timeout: 20_000 });
+    // One distinct extra, not the two stored entries.
+    await expect(row.getByRole('cell').nth(4)).toContainText('1 extra');
+
+    await ctx.close();
+  });
+
+  test('1.8 View-only roster access cannot save: the UI matches the PATCH keys', async ({
+    browser,
+  }) => {
+    const ownerCtx = await authedContext(browser, 'owner');
+    const req = ownerCtx.request;
+    const email = qaEmail('viewer');
+    const password = 'viewer123!';
+
+    const created = await req.post('/api/store/staff', { data: { email, role: 'CASHIER' } });
+    const id = (await json(created))?.data?.id;
+    // staff:view only: the page and roster load, Save/Manage stay hidden.
+    const grant = await req.patch(`/api/store/staff/${id}`, {
+      data: { permissions: [PERM.staffView] },
+    });
+    expect(grant.status()).toBe(200);
+    expect(
+      (await req.post(`/api/store/staff/${id}/password`, { data: { newPassword: password } })).status(),
+    ).toBe(200);
+
+    const viewerCtx = await browser.newContext({ baseURL: BASE_URL });
+    const page = await viewerCtx.newPage();
+    await performLoginWith(page, email, password);
+    await page.goto('/settings/users');
+    await expect(page.getByRole('heading', { name: /Team & permissions/i })).toBeVisible();
+    await expect(page.getByRole('row').filter({ hasText: email }).first()).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByRole('button', { name: /^Manage/i })).toHaveCount(0);
+    await expect(page.getByText(/You can view the team directory/i)).toBeVisible();
+
+    await viewerCtx.close();
+    await ownerCtx.close();
+  });
+
+  test('1.9 A high-risk grant needs the explicit confirmation step', async ({ browser }) => {
+    const ctx = await authedContext(browser, 'owner');
+    const page = await ctx.newPage();
+    await page.goto('/settings/users');
+
+    const row = page.getByRole('row').filter({ hasText: USERS.cashier.email }).first();
+    await expect(row).toBeVisible({ timeout: 20_000 });
+    await row.getByRole('button', { name: /Manage/i }).click();
+
+    const dialog = page.getByRole('dialog');
+    await dialog
+      .locator('label')
+      .filter({ hasText: PERM.manageUsers })
+      .first()
+      .locator('[role=checkbox]')
+      .click();
+
+    await dialog.getByRole('button', { name: /Save changes/i }).click();
+    const confirm = page.getByRole('dialog').filter({ hasText: /Confirm high-risk permission/i });
+    await expect(confirm).toBeVisible();
+    await expect(confirm.getByText(PERM.manageUsers)).toBeVisible();
+    await confirm.getByRole('button', { name: /Cancel/i }).click();
+
+    await page.keyboard.press('Escape');
+    await ctx.close();
+  });
+
+  test('1.10 A manager cannot deactivate themselves; the last owner stays protected', async ({
+    browser,
+  }) => {
+    const ctx = await authedContext(browser, 'owner');
+    const req = ctx.request;
+
+    const roster = await req.get('/api/store/staff');
+    const members = ((await json(roster))?.data ?? []) as Array<{
+      id: string;
+      email: string;
+      role: string;
+    }>;
+    const owners = members.filter((member) => member.role === 'OWNER');
+    if (owners.length === 1) {
+      const self = owners[0]!;
+      const res = await req.patch(`/api/store/staff/${self.id}`, { data: { isActive: false } });
+      expect(res.status(), 'last owner cannot be deactivated').toBe(409);
+      expect(apiError(res, await json(res))).toBe('LAST_OWNER_REQUIRED');
+      const after = ((await json(await req.get('/api/store/staff')))?.data ?? []) as Array<{
+        email: string;
+        isActive: boolean;
+      }>;
+      expect(after.find((member) => member.email === self.email)?.isActive).toBe(true);
+    }
+
+    await ctx.close();
+  });
+
+  test('1.11 A roster load failure shows an error with Retry, never an empty list', async ({
+    browser,
+  }) => {
+    const ctx = await authedContext(browser, 'owner');
+    const page = await ctx.newPage();
+
+    await page.route('**/api/store/staff', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: false,
+            error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' },
+          }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto('/settings/users');
+    await expect(page.getByText(/Team members could not be loaded/i)).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByRole('button', { name: /Retry/i })).toBeVisible();
+    await expect(page.getByText(/No team members yet/i)).toHaveCount(0);
 
     await ctx.close();
   });
 });
-
 // ════════════════════════════════════════════════════════════════════════════
 // 2. FINANCIAL & CALCULATION PRECISION
 // ════════════════════════════════════════════════════════════════════════════
@@ -410,24 +578,23 @@ test.describe('2. Financial & Calculation Precision (commissionRate)', () => {
     await ctx.close();
   });
 
-  test('2.2 Boundary: Decimal(5,2) ceiling 999.99 accepted, 1000.00 rejected', async ({
-    browser,
-  }) => {
+  test('2.2 Boundary: the shared 0-100 commission ceiling is enforced', async ({ browser }) => {
     const ctx = await authedContext(browser, 'owner');
     const req = ctx.request;
 
     const ok = await req.post('/api/store/staff', {
-      data: { email: qaEmail('max'), role: 'CASHIER', commissionRate: '999.99' },
+      data: { email: qaEmail('max'), role: 'CASHIER', commissionRate: '100' },
     });
-    expect(ok.status(), '999.99 fits Decimal(5,2)').toBe(201);
+    expect(ok.status(), '100% is the ceiling').toBe(201);
 
-    // The zod regex ^\d+(\.\d{1,2})?$ permits values the column cannot hold.
-    const over = await req.post('/api/store/staff', {
-      data: { email: qaEmail('over'), role: 'CASHIER', commissionRate: '1000.00' },
-    });
-    const overBody = await json(over);
-    expect(over.status(), '1000.00 must not be silently accepted').toBe(400);
-    expect(apiError(over, overBody)).toBe('VALIDATION_ERROR');
+    for (const rate of ['100.01', '999.99', '1000.00']) {
+      const over = await req.post('/api/store/staff', {
+        data: { email: qaEmail(`over-${rate.replace(/\D/g, 'x')}`), role: 'CASHIER', commissionRate: rate },
+      });
+      const overBody = await json(over);
+      expect(over.status(), `${rate} must not be silently accepted`).toBe(400);
+      expect(apiError(over, overBody)).toBe('VALIDATION_ERROR');
+    }
 
     await ctx.close();
   });
@@ -707,7 +874,17 @@ test.describe('5. Button Spamming & Race Conditions', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
+    // ARGUS #466: Save is disabled until the draft actually changes, so make
+    // one real (non-high-risk) grant before testing the double-click guard.
+    await dialog
+      .locator('label')
+      .filter({ hasText: PERM.viewSalesReport })
+      .first()
+      .locator('[role=checkbox]')
+      .click();
+
     const save = dialog.getByRole('button', { name: /Save changes/i });
+    await expect(save).toBeEnabled();
     await Promise.all([save.click({ noWaitAfter: true }), save.click({ noWaitAfter: true })]);
     await page.waitForTimeout(2500);
 
@@ -760,8 +937,16 @@ test.describe('7. Network Resilience & Error Handling', () => {
     const row = page.getByRole('row').filter({ hasText: USERS.cashier.email }).first();
     await expect(row).toBeVisible({ timeout: 20_000 });
     await row.getByRole('button', { name: /Manage/i }).click();
-    await page
-      .getByRole('dialog')
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    // A real change is required: Save is disabled for an unchanged draft.
+    await dialog
+      .locator('label')
+      .filter({ hasText: PERM.viewSalesReport })
+      .first()
+      .locator('[role=checkbox]')
+      .click();
+    await dialog
       .getByRole('button', { name: /Save changes/i })
       .click();
 
@@ -812,6 +997,13 @@ test.describe('7. Network Resilience & Error Handling', () => {
     await row.getByRole('button', { name: /Manage/i }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
+    // Dirty the draft so Save is enabled (ARGUS #466).
+    await dialog
+      .locator('label')
+      .filter({ hasText: PERM.viewSalesReport })
+      .first()
+      .locator('[role=checkbox]')
+      .click();
     await dialog.getByRole('button', { name: /Save changes/i }).click({ noWaitAfter: true });
 
     await expect(page.getByRole('dialog'), 'dialog survives offline failure').toBeVisible({
@@ -898,12 +1090,12 @@ test.describe('8. Security, RBAC & Tenant Isolation', () => {
     expect(page.url(), 'must not land on the tenant users page').not.toMatch(/\/settings\/users$/);
     await expect(page.getByRole('heading', { name: /Team & permissions/i })).toHaveCount(0);
 
-    // Contract property: middleware.ts:170-173 promises a bounce to the platform
-    // console for SUPER_ADMIN on store paths. Observed instead: 307 -> /login
-    // (the page guard fires first because SUPER_ADMIN has tenantId = null).
+    // Contract: SUPER_ADMIN is bounced to the platform console, not the login
+    // form (src/lib/auth/page-guards.ts denialRouteFor). ARGUS #467 aligned the
+    // assertion with the guard; both the proxy funnel and the page agree.
     expect(
       page.url(),
-      'middleware should redirect SUPER_ADMIN to /superadmin/dashboard, not /login',
+      'SUPER_ADMIN on a store page must land on /superadmin/dashboard',
     ).toMatch(/\/superadmin\/dashboard/);
 
     await ctx.close();
@@ -1490,4 +1682,32 @@ test.afterAll('cleanup: deactivate QA-created staff accounts', async ({ browser 
   } finally {
     await ctx.close();
   }
+});
+
+/**
+ * ARGUS #347: every staff PATCH is a management/HR operation. A cashier (or any
+ * signed-in user without staff:manage) cannot change salary, bank details or
+ * commission, and the /staff page redirects them before it renders.
+ */
+test('8.12 staff PATCH is HR-only and the staff page is guarded', async ({ browser }) => {
+  const ownerCtx = await authedContext(browser, 'owner');
+  const list = await ownerCtx.request.get('/api/store/staff');
+  expect(list.status()).toBe(200);
+  const staff = (await json(list))?.data ?? [];
+  const cashier = staff.find((u: { email?: string }) => u.email === USERS.cashier.email);
+  expect(cashier?.id, 'seeded cashier must be listed').toBeTruthy();
+
+  const cashierCtx = await authedContext(browser, 'cashier');
+  const patch = await cashierCtx.request.patch(`/api/store/staff/${cashier.id}`, {
+    data: { commissionRate: '10.00', basicSalary: '99999.00' },
+  });
+  expect(patch.status(), 'cashier cannot edit staff fields').toBe(403);
+  expect(apiError(patch, await json(patch))).toBe('FORBIDDEN');
+
+  const page = await cashierCtx.newPage();
+  await page.goto(`${BASE_URL}/staff`, { waitUntil: 'domcontentloaded' });
+  await expect.poll(() => page.url()).toMatch(/\/dashboard/);
+
+  await cashierCtx.close();
+  await ownerCtx.close();
 });

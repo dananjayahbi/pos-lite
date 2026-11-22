@@ -21,7 +21,9 @@ export const CreateExpenseSchema = z.object({
   description: z.string().min(1).max(500),
   expenseDate: z.string().min(1),
   receiptImageUrl: z.string().url().optional(),
-  pettyCashFundId: z.string().cuid().optional(),
+  // ARGUS #400: explicit null is how an edit clears a fund link. Omitting the
+  // field still means "leave unchanged".
+  pettyCashFundId: z.string().cuid().nullable().optional(),
   // Which payment account the money left. Every expense should name one — it is
   // what makes the cash-flow report reconcile — but it stays optional so the
   // petty-cash path (which already debits the fund) keeps working unchanged.

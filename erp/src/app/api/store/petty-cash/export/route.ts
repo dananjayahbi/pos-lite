@@ -4,6 +4,8 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { buildPettyCashExportData } from '@/lib/services/petty-cash.service';
 import { toCsv, csvDownloadResponse, type CsvColumn } from '@/lib/export';
+import { toErrorResponse } from '@/lib/api/error-envelope';
+import { buildPettyCashCashInCsv } from '@/lib/petty-cash/export-cash-in';
 
 const CATEGORY_LABEL: Record<string, string> = {
   RENT: 'Rent',
@@ -36,7 +38,7 @@ export async function GET(request: Request) {
         { status: 401 },
       );
     }
-    if (!hasPermission(session.user, PERMISSIONS.EXPENSE.viewExpense)) {
+    if (!hasPermission(session.user, PERMISSIONS.PETTY_CASH.viewPettyCash)) {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
         { status: 403 },
@@ -62,12 +64,36 @@ export async function GET(request: Request) {
       { header: 'Amount', value: (r) => r.value },
     ];
     const statementRows = [
-      { label: 'Opening Balance', value: data.balance.openingBalance.toFixed(2) },
-      { label: 'Cash In (Top-ups)', value: data.balance.totalTopUps.toFixed(2) },
-      { label: 'Total Expenses', value: data.balance.totalExpenses.toFixed(2) },
-      { label: 'Current Balance', value: data.balance.currentBalance.toFixed(2) },
+      {
+        label: data.period.filtered
+          ? 'Opening Balance (period start)'
+          : 'Opening Balance (all time)',
+        value: data.balance.openingBalance.toFixed(2),
+      },
+      {
+        label: data.period.filtered ? 'Cash In (Top-ups) (period)' : 'Cash In (Top-ups)',
+        value: data.balance.totalTopUps.toFixed(2),
+      },
+      {
+        label: data.period.filtered ? 'Total Expenses (period)' : 'Total Expenses',
+        value: data.balance.totalExpenses.toFixed(2),
+      },
+      {
+        label: data.period.filtered
+          ? 'Closing Balance (period end)'
+          : 'Closing Balance (all time)',
+        value: data.balance.closingBalance.toFixed(2),
+      },
     ];
     const statementCsv = toCsv(statementColumns, statementRows);
+    const basisLines = [
+      `Basis: ${data.period.label}`,
+      ...(data.period.categoryFiltered
+        ? [
+            'The balance statement and cash-in rows cover the whole fund; the category filter applies only to the expenses and category totals below.',
+          ]
+        : []),
+    ];
 
     const expenseColumns: CsvColumn<(typeof data.expenses)[number]>[] = [
       { header: 'Date', value: (r) => r.expenseDate.slice(0, 10) },
@@ -85,12 +111,18 @@ export async function GET(request: Request) {
       { header: 'Total', value: (r) => r.total.toFixed(2) },
     ];
     const categoriesCsv = toCsv(categoryColumns, data.byCategory);
+    const cashInCsv = buildPettyCashCashInCsv(data.topUps);
 
     const sections = [
       `${data.fund.name} - Petty Cash Audit Trail`,
       '',
+      ...basisLines,
+      '',
       'BALANCE STATEMENT',
       statementCsv,
+      '',
+      'CASH IN (TOP-UPS)',
+      cashInCsv,
       '',
       'EXPENSES',
       expensesCsv,
@@ -103,10 +135,6 @@ export async function GET(request: Request) {
     const filename = `petty-cash-export-${new Date().toISOString().slice(0, 10)}.csv`;
     return csvDownloadResponse(csv, filename);
   } catch (error) {
-    console.error('GET /api/store/petty-cash/export error:', error);
-    return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to export petty cash' } },
-      { status: 500 },
-    );
+    return toErrorResponse(error, 'GET /api/store/petty-cash/export');
   }
 }

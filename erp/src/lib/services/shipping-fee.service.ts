@@ -33,6 +33,8 @@ export interface WebsiteShippingFeeInput {
 export interface WebsiteShippingFeeResult {
   /** Formatted to 2dp string, ready to store on `Delivery.shippingFee`. */
   shippingFee: string;
+  /** False when there is no active rate card (ARGUS #292); fee is not "free". */
+  configured: boolean;
   /** Resolved numeric ids so the address snapshot can carry them too. */
   destinationCityId?: number | null | undefined;
   destinationDistrictId?: number | null | undefined;
@@ -61,6 +63,7 @@ export async function estimateWebsiteShippingFee(
 
   return {
     shippingFee: result.shippingFee.toFixed(2),
+    configured: result.configured,
     destinationCityId,
     destinationDistrictId,
   };
@@ -68,7 +71,8 @@ export async function estimateWebsiteShippingFee(
 
 /**
  * Load the active rate-card metadata for a tenant. Returns null when no active
- * card is configured so callers can signal "delivery free / not priced".
+ * card is configured; callers must treat that as "shipping not configured", not
+ * as free delivery (ARGUS #292).
  */
 export async function getActiveRateCard(tenantId: string) {
   return prisma.rateCard.findFirst({

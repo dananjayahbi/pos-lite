@@ -96,6 +96,9 @@ export const PERMISSIONS = {
     viewPayroll: 'payroll:view',
     runPayroll: 'payroll:run',
     managePayrollSettings: 'payroll:settings:manage',
+    // ARGUS #367: paying staff commissions moves real money and stays with the
+    // owner by default (manager defaults exclude it).
+    payCommission: 'payroll:commission:payout',
   },
   REPORT: {
     viewSalesReport: 'report:view_sales',
@@ -248,6 +251,10 @@ const managerExcluded = new Set<PermissionKey>([
   PERMISSIONS.PRODUCT.deleteProduct,
   PERMISSIONS.SETTINGS.manageSettings,
   PERMISSIONS.SETTINGS.manageUsers,
+  // ARGUS #468: tax rates are owner-only (VAT/SSCL drive every sale). Removing
+  // it from the MANAGER defaults hides the hub/nav entry; the API additionally
+  // checks the role so a per-user override cannot bypass the policy.
+  PERMISSIONS.SETTINGS.manageTax,
   PERMISSIONS.SUPPLIER.approvePurchaseOrder,
   PERMISSIONS.PROMOTION.deletePromotion,
   PERMISSIONS.BILLING.manageBilling,
@@ -256,9 +263,35 @@ const managerExcluded = new Set<PermissionKey>([
   PERMISSIONS.DELIVERY.manageRateCard,
   PERMISSIONS.REPORT.viewZeroValueReport,
   PERMISSIONS.PETTY_CASH.manageFundSettings,
+  // ARGUS #367: commission payouts leave a payment account; an owner must
+  // approve who can do that, so managers do not get it by default.
+  PERMISSIONS.PAYROLL.payCommission,
 ]);
 
 export type AssignableRole = Exclude<UserRole, 'SUPER_ADMIN'>;
+
+/**
+ * ARGUS #464 - explicit deny/revoke marker for `User.permissions`.
+ *
+ * The model was additive-only: a role default was unconditional, so taking one
+ * capability away from a single manager meant changing their whole role. A
+ * stored entry prefixed with `!` now means "revoke this role default for this
+ * user" (e.g. `!staff:manage`). No schema change is needed because
+ * `User.permissions` is already a `String[]`; only the resolver, validator and
+ * editor had to learn the prefix.
+ */
+export const PERMISSION_DENY_PREFIX = '!';
+
+export function isDeniedPermissionEntry(entry: string): boolean {
+  return entry.startsWith(PERMISSION_DENY_PREFIX);
+}
+
+/** Strip the deny marker: `!sale:void` -> `sale:void`. */
+export function permissionKeyFromEntry(entry: string): string {
+  return isDeniedPermissionEntry(entry)
+    ? entry.slice(PERMISSION_DENY_PREFIX.length)
+    : entry;
+}
 
 /**
  * M03-01 (BUG-3) — SINGLE SOURCE OF TRUTH for roles an operator may be
@@ -364,15 +397,24 @@ export function getEffectivePermissions(
     ? assignedPermissions.filter((permission): permission is string => typeof permission === 'string')
     : [];
 
+  // ARGUS #464: `!key` entries revoke a role default for this user. Denies are
+  // resolved here - the same function every session, page guard, API guard and
+  // hook calls - so a revoked capability is gone server-side, not just hidden.
+  const denied = new Set(
+    normalized
+      .filter(isDeniedPermissionEntry)
+      .map((entry) => permissionKeyFromEntry(entry)),
+  );
+  const granted = normalized.filter((entry) => !isDeniedPermissionEntry(entry));
+
   if (!role) {
-    return normalized;
+    return granted.filter((permission) => !denied.has(permission));
   }
 
   const roleDefaults = ROLE_PERMISSIONS[role] ?? [];
 
-  if (normalized.length === 0) {
-    return [...roleDefaults];
-  }
+  const effective =
+    granted.length === 0 ? [...roleDefaults] : Array.from(new Set([...roleDefaults, ...granted]));
 
-  return Array.from(new Set([...roleDefaults, ...normalized]));
+  return effective.filter((permission) => !denied.has(permission));
 }

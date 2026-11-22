@@ -2,7 +2,15 @@
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Trash2, Plus } from 'lucide-react';
+import { formatRupee } from '@/lib/format';
 
 interface RateEntry {
   id?: string;
@@ -13,24 +21,62 @@ interface RateEntry {
   extraKgRate?: number | null;
 }
 
+export interface RateZoneDistrictOption {
+  id: number;
+  text: string;
+}
+
+export interface RateZoneCityOption {
+  id: number | null;
+  name: string;
+}
+
 interface RateMatrixTableProps {
   entries: RateEntry[];
   onChange: (entries: RateEntry[]) => void;
+  /** Synced courier districts; empty when locations have not been synced. */
+  districts?: RateZoneDistrictOption[];
+  /** Synced/fallback courier cities; entries without a numeric id are omitted. */
+  cities?: RateZoneCityOption[];
 }
 
-const NUMERIC_FIELDS: { key: keyof RateEntry; label: string; placeholder: string }[] = [
-  { key: 'originDistrictId', label: 'Origin District ID', placeholder: 'e.g. 12' },
-  { key: 'destinationDistrictId', label: 'Dest District ID', placeholder: 'e.g. 14' },
-  { key: 'destinationCityId', label: 'Dest City ID', placeholder: 'e.g. 201' },
+const ANY_VALUE = '__any__';
+
+const NUMERIC_FIELDS: {
+  key: 'baseRate' | 'extraKgRate';
+  label: string;
+  placeholder: string;
+}[] = [
   { key: 'baseRate', label: 'Base Rate (Rs)', placeholder: 'e.g. 250' },
   { key: 'extraKgRate', label: 'Extra Kg Rate (Rs)', placeholder: 'e.g. 40' },
 ];
 
+interface SelectOption {
+  value: string;
+  label: string;
+}
+
+function withCurrentValue(options: SelectOption[], current: number | null | undefined): SelectOption[] {
+  if (current === null || current === undefined) return options;
+  const value = String(current);
+  if (options.some((option) => option.value === value)) return options;
+  return [...options, { value, label: `ID ${current} (not in synced list)` }];
+}
+
 /**
- * Editable zone-override rate matrix. Rows are upserted against the active rate
+ * Editable destination zone matrix. Rows are upserted against the active rate
  * card on save (entries with an `id` are updated, others are created).
+ *
+ * ARGUS #290: district/city are picked by name from the synced courier master
+ * data, not typed as raw numeric ids. There is no origin column because the
+ * pricing engine does not read `originDistrictId`.
  */
-export function RateMatrixTable({ entries, onChange }: RateMatrixTableProps) {
+export function RateMatrixTable({
+  entries,
+  onChange,
+  districts = [],
+  cities = [],
+}: RateMatrixTableProps) {
   const updateRow = (index: number, key: keyof RateEntry, value: number | null) => {
     const next = entries.map((entry, i) =>
       i === index ? { ...entry, [key]: value } : entry,
@@ -55,31 +101,102 @@ export function RateMatrixTable({ entries, onChange }: RateMatrixTableProps) {
     onChange(entries.filter((_, i) => i !== index));
   };
 
+  const districtOptions: SelectOption[] = [
+    { value: ANY_VALUE, label: 'Any district' },
+    ...districts.map((district) => ({
+      value: String(district.id),
+      label: district.text,
+    })),
+  ];
+
+  const cityOptions: SelectOption[] = [
+    { value: ANY_VALUE, label: 'Any city' },
+    ...cities
+      .filter((city): city is { id: number; name: string } => city.id !== null)
+      .map((city) => ({ value: String(city.id), label: city.name })),
+  ];
+
+  const renderLocationSelect = (
+    index: number,
+    key: 'destinationDistrictId' | 'destinationCityId',
+    label: string,
+    baseOptions: SelectOption[],
+    current: number | null | undefined,
+  ) => {
+    const options = withCurrentValue(baseOptions, current);
+    return (
+      <Select
+        value={current === null || current === undefined ? ANY_VALUE : String(current)}
+        onValueChange={(value) =>
+          updateRow(index, key, value === ANY_VALUE ? null : Number(value))
+        }
+      >
+        <SelectTrigger className="h-8 min-w-36 text-sm" aria-label={`${label} for row ${index + 1}`}>
+          <SelectValue placeholder={label} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  };
+
   return (
     <div className="space-y-3">
       <div className="overflow-x-auto rounded-lg border border-espresso/10">
         <table className="w-full min-w-180">
           <thead>
             <tr className="border-b border-espresso/10 bg-espresso/5">
-              <th className="px-3 py-2 text-left text-xs font-medium text-espresso/60">Origin District</th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-espresso/60">Dest District</th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-espresso/60">Dest City</th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-espresso/60">Base Rate (Rs)</th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-espresso/60">Extra Kg (Rs)</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-espresso/60">
+                Dest District
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-espresso/60">
+                Dest City
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-espresso/60">
+                Base Rate (Rs)
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-espresso/60">
+                Extra Kg (Rs)
+              </th>
               <th className="px-3 py-2 w-12" />
             </tr>
           </thead>
           <tbody>
             {entries.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-sm text-espresso/40">
-                  No zone overrides yet. Add a row to define a specific origin → destination rate.
+                <td colSpan={5} className="px-3 py-8 text-center text-sm text-espresso/40">
+                  No zone overrides yet. Add a row to define a destination-specific rate.
                 </td>
               </tr>
             ) : (
               entries.map((entry, index) => (
                 <tr key={entry.id ?? index} className="border-b border-espresso/5 last:border-0">
-                  {NUMERIC_FIELDS.map((field) => (
+                  <td className="px-3 py-2">
+                    {renderLocationSelect(
+                      index,
+                      'destinationDistrictId',
+                      'Destination district',
+                      districtOptions,
+                      entry.destinationDistrictId,
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    {renderLocationSelect(
+                      index,
+                      'destinationCityId',
+                      'Destination city',
+                      cityOptions,
+                      entry.destinationCityId,
+                    )}
+                  </td>
+                  {NUMERIC_FIELDS.map((field) => {
+                    const amount = entry[field.key];
+                    return (
                     <td key={field.key} className="px-3 py-2">
                       <Input
                         type="number"
@@ -94,8 +211,14 @@ export function RateMatrixTable({ entries, onChange }: RateMatrixTableProps) {
                         }}
                         className="h-8 text-sm"
                       />
+                      <span className="mt-0.5 block text-xs text-espresso/50">
+                        {amount !== null && amount !== undefined
+                          ? formatRupee(amount)
+                          : 'No override'}
+                      </span>
                     </td>
-                  ))}
+                    );
+                  })}
                   <td className="px-3 py-2">
                     <Button
                       type="button"

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { prisma } from '@/lib/prisma';
+import { computeRecoveryRate } from '@/lib/reports/recoveryRate.core';
 
 /**
  * Recovery staff-performance aggregation (doc 45). Aggregates `DeliveryRecovery`
@@ -19,7 +20,8 @@ export interface RecoveryStaffRow {
   redelivered: number;
   cancelled: number;
   totalAttempts: number;
-  recoveryRate: number;
+  /** Null when no actionable outcome exists (ARGUS #517). */
+  recoveryRate: number | null;
 }
 
 export interface RecoveryStatsTotals {
@@ -27,7 +29,8 @@ export interface RecoveryStatsTotals {
   totalAssignedFailed: number;
   totalRedelivered: number;
   totalCancelled: number;
-  overallRecoveryRate: number;
+  /** Null when no actionable outcome exists (ARGUS #517). */
+  overallRecoveryRate: number | null;
 }
 
 export interface RecoveryStaffPerformance {
@@ -64,7 +67,7 @@ export function aggregateRecoveryStaff(
         redelivered: 0,
         cancelled: 0,
         totalAttempts: 0,
-        recoveryRate: 0,
+        recoveryRate: null,
       };
       byStaff.set(staffId, row);
     }
@@ -82,14 +85,12 @@ export function aggregateRecoveryStaff(
   }
 
   const staff = [...byStaff.values()].map((row) => {
-    const actionable = row.redelivered + row.cancelled;
-    row.recoveryRate = actionable === 0 ? 0 : Math.round((row.redelivered / actionable) * 1000) / 10;
+    row.recoveryRate = computeRecoveryRate(row.redelivered, row.cancelled);
     return row;
   });
 
   const totalRedelivered = staff.reduce((sum, r) => sum + r.redelivered, 0);
   const totalCancelled = staff.reduce((sum, r) => sum + r.cancelled, 0);
-  const overallActionable = totalRedelivered + totalCancelled;
 
   return {
     staff,
@@ -98,8 +99,7 @@ export function aggregateRecoveryStaff(
       totalAssignedFailed: staff.reduce((sum, r) => sum + r.assignedFailed, 0),
       totalRedelivered,
       totalCancelled,
-      overallRecoveryRate:
-        overallActionable === 0 ? 0 : Math.round((totalRedelivered / overallActionable) * 1000) / 10,
+      overallRecoveryRate: computeRecoveryRate(totalRedelivered, totalCancelled),
     },
   };
 }

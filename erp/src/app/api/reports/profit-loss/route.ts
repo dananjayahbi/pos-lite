@@ -6,6 +6,8 @@ import Decimal from "decimal.js";
 import { requirePermissionResponse } from '@/lib/api/permission-guard';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { saleAccountingDateWhere, netRefundAmount } from '@/lib/reports/accounting';
+import { summarizeCogsSource } from '@/lib/reports/cogsSource';
+import { filterMonthKeysInPeriod } from '@/lib/reports/monthlyPeriod';
 
 function errorJson(code: string, message: string, status: number) {
   return NextResponse.json(
@@ -53,10 +55,15 @@ export async function GET(request: NextRequest) {
     }
 
     // ── 1. Revenue: completed sales aggregate ────────────────────
+    // Revenue only from sales that actually have line items: legacy zero-line
+    // sales carry a header subtotal but no product revenue/COGS, so counting
+    // them made the P&L disagree with Sales by Product by Rs 10,000
+    // (ARGUS #435).
     const revenueAgg = await prisma.sale.aggregate({
       where: {
         tenantId,
         status: "COMPLETED",
+        lines: { some: {} },
         ...saleAccountingDateWhere(from, to),
       },
       _sum: { subtotal: true, discountAmount: true },
@@ -102,6 +109,7 @@ export async function GET(request: NextRequest) {
       where: {
         tenantId,
         status: "COMPLETED",
+        lines: { some: {} },
         ...saleAccountingDateWhere(from, to),
       },
       _sum: { subtotal: true, discountAmount: true },
@@ -114,11 +122,25 @@ export async function GET(request: NextRequest) {
         .toFixed(2),
     }));
 
-    // ── 4. COGS: join sale_lines → product_variants for costPrice ─
+    // ── 4. COGS: split snapshot cost from current-cost fallback (ARGUS #436) ─
+    // The snapshot is historical truth; a missing snapshot falls back to the
+    // variant's current cost, which is reported separately instead of being
+    // silently mixed into one COGS number.
     const cogsResult = await prisma.$queryRaw<
-      { total_cogs: Decimal | null }[]
+      {
+        snapshot_cogs: Decimal | null;
+        fallback_cogs: Decimal | null;
+        snapshot_lines: bigint | number | null;
+        fallback_lines: bigint | number | null;
+      }[]
     >(Prisma.sql`
-      SELECT COALESCE(SUM(COALESCE(sl."costPriceSnapshot", pv."costPrice") * sl."quantity"), 0) AS total_cogs
+      SELECT
+        COALESCE(SUM(CASE WHEN sl."costPriceSnapshot" IS NOT NULL
+          THEN sl."costPriceSnapshot" * sl."quantity" ELSE 0 END), 0) AS snapshot_cogs,
+        COALESCE(SUM(CASE WHEN sl."costPriceSnapshot" IS NULL
+          THEN pv."costPrice" * sl."quantity" ELSE 0 END), 0) AS fallback_cogs,
+        COUNT(*) FILTER (WHERE sl."costPriceSnapshot" IS NOT NULL) AS snapshot_lines,
+        COUNT(*) FILTER (WHERE sl."costPriceSnapshot" IS NULL) AS fallback_lines
       FROM sale_lines sl
       JOIN sales s ON sl."saleId" = s."id"
       JOIN product_variants pv ON sl."variantId" = pv."id"
@@ -128,13 +150,30 @@ export async function GET(request: NextRequest) {
         AND COALESCE(s."saleDate", s."createdAt") <= ${to}
     `);
 
-    const rawCOGS = new Decimal(cogsResult[0]?.total_cogs?.toString() ?? "0");
+    const salesCogsSource = summarizeCogsSource({
+      snapshotCogs: cogsResult[0]?.snapshot_cogs?.toString() ?? "0",
+      fallbackCogs: cogsResult[0]?.fallback_cogs?.toString() ?? "0",
+      snapshotLines: Number(cogsResult[0]?.snapshot_lines ?? 0),
+      fallbackLines: Number(cogsResult[0]?.fallback_lines ?? 0),
+    });
+    const rawCOGS = new Decimal(salesCogsSource.total);
 
-    // ── 5. Returned COGS ─────────────────────────────────────────
+    // ── 5. Returned COGS (same snapshot/fallback split) ─────────
     const returnedCogsResult = await prisma.$queryRaw<
-      { total_cogs: Decimal | null }[]
+      {
+        snapshot_cogs: Decimal | null;
+        fallback_cogs: Decimal | null;
+        snapshot_lines: bigint | number | null;
+        fallback_lines: bigint | number | null;
+      }[]
     >(Prisma.sql`
-      SELECT COALESCE(SUM(COALESCE(sl."costPriceSnapshot", pv."costPrice") * rl."quantity"), 0) AS total_cogs
+      SELECT
+        COALESCE(SUM(CASE WHEN sl."costPriceSnapshot" IS NOT NULL
+          THEN sl."costPriceSnapshot" * rl."quantity" ELSE 0 END), 0) AS snapshot_cogs,
+        COALESCE(SUM(CASE WHEN sl."costPriceSnapshot" IS NULL
+          THEN pv."costPrice" * rl."quantity" ELSE 0 END), 0) AS fallback_cogs,
+        COUNT(*) FILTER (WHERE sl."costPriceSnapshot" IS NOT NULL) AS snapshot_lines,
+        COUNT(*) FILTER (WHERE sl."costPriceSnapshot" IS NULL) AS fallback_lines
       FROM return_lines rl
       JOIN returns r ON rl."returnId" = r."id"
       JOIN sale_lines sl ON sl."id" = rl."originalSaleLineId"
@@ -145,9 +184,13 @@ export async function GET(request: NextRequest) {
         AND r."createdAt" <= ${to}
     `);
 
-    const returnedCOGS = new Decimal(
-      returnedCogsResult[0]?.total_cogs?.toString() ?? "0",
-    );
+    const returnedCogsSource = summarizeCogsSource({
+      snapshotCogs: returnedCogsResult[0]?.snapshot_cogs?.toString() ?? "0",
+      fallbackCogs: returnedCogsResult[0]?.fallback_cogs?.toString() ?? "0",
+      snapshotLines: Number(returnedCogsResult[0]?.snapshot_lines ?? 0),
+      fallbackLines: Number(returnedCogsResult[0]?.fallback_lines ?? 0),
+    });
+    const returnedCOGS = new Decimal(returnedCogsSource.total);
 
     // ── 6. Expenses ──────────────────────────────────────────────
     const expensesByCategory = await prisma.expense.groupBy({
@@ -189,7 +232,11 @@ export async function GET(request: NextRequest) {
       FROM sales
       WHERE "tenantId" = ${tenantId}
         AND "status" = 'COMPLETED'
-        AND COALESCE("saleDate", "createdAt") >= NOW() - INTERVAL '12 months'
+        AND EXISTS (
+          SELECT 1 FROM sale_lines sl WHERE sl."saleId" = sales."id"
+        )
+        AND COALESCE("saleDate", "createdAt") >= ${from}
+        AND COALESCE("saleDate", "createdAt") <= ${to}
       GROUP BY DATE_TRUNC('month', COALESCE("saleDate", "createdAt"))
       ORDER BY month
     `);
@@ -204,7 +251,8 @@ export async function GET(request: NextRequest) {
       JOIN product_variants pv ON sl."variantId" = pv."id"
       WHERE s."tenantId" = ${tenantId}
         AND s."status" = 'COMPLETED'
-        AND COALESCE(s."saleDate", s."createdAt") >= NOW() - INTERVAL '12 months'
+        AND COALESCE(s."saleDate", s."createdAt") >= ${from}
+        AND COALESCE(s."saleDate", s."createdAt") <= ${to}
       GROUP BY DATE_TRUNC('month', COALESCE(s."saleDate", s."createdAt"))
       ORDER BY month
     `);
@@ -223,7 +271,8 @@ export async function GET(request: NextRequest) {
       JOIN sales s ON s."id" = r."originalSaleId"
       WHERE r."tenantId" = ${tenantId}
         AND r."status" = 'COMPLETED'
-        AND r."createdAt" >= NOW() - INTERVAL '12 months'
+        AND r."createdAt" >= ${from}
+        AND r."createdAt" <= ${to}
       GROUP BY DATE_TRUNC('month', r."createdAt")
       ORDER BY month
     `);
@@ -239,7 +288,8 @@ export async function GET(request: NextRequest) {
       JOIN product_variants pv ON rl."variantId" = pv."id"
       WHERE r."tenantId" = ${tenantId}
         AND r."status" = 'COMPLETED'
-        AND r."createdAt" >= NOW() - INTERVAL '12 months'
+        AND r."createdAt" >= ${from}
+        AND r."createdAt" <= ${to}
       GROUP BY DATE_TRUNC('month', r."createdAt")
       ORDER BY month
     `);
@@ -251,7 +301,8 @@ export async function GET(request: NextRequest) {
              COALESCE(SUM("amount"), 0) AS expenses
       FROM expenses
       WHERE "tenantId" = ${tenantId}
-        AND "expenseDate" >= NOW() - INTERVAL '12 months'
+        AND "expenseDate" >= ${from}
+        AND "expenseDate" <= ${to}
       GROUP BY DATE_TRUNC('month', "expenseDate")
       ORDER BY month
     `);
@@ -314,23 +365,25 @@ export async function GET(request: NextRequest) {
       monthMap.set(key, entry);
     }
 
-    const monthlyData = Array.from(monthMap.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, d]) => {
-        const netRevenue = d.revenue.minus(d.returns);
-        const netCogs = d.cogs.minus(d.returnedCogs);
-        const grossProfit = netRevenue.minus(netCogs);
-        const netProfit = grossProfit.minus(d.expenses);
-        return {
-          month,
-          revenue: netRevenue.toFixed(2),
-          cogs: netCogs.toFixed(2),
-          grossProfit: grossProfit.toFixed(2),
-          expenses: d.expenses.toFixed(2),
-          netProfit: netProfit.toFixed(2),
-          saleCount: d.saleCount,
-        };
-      });
+    // Keep the monthly detail inside the selected From/To period. The SQL
+    // already filters, but this guard prevents a stale/NOW-based row from
+    // leaking back in as an unrelated trend (ARGUS #437).
+    const monthlyData = filterMonthKeysInPeriod(monthMap.keys(), from, to).map((month) => {
+      const d = monthMap.get(month) ?? emptyMonth();
+      const netRevenue = d.revenue.minus(d.returns);
+      const netCogs = d.cogs.minus(d.returnedCogs);
+      const grossProfit = netRevenue.minus(netCogs);
+      const netProfit = grossProfit.minus(d.expenses);
+      return {
+        month,
+        revenue: netRevenue.toFixed(2),
+        cogs: netCogs.toFixed(2),
+        grossProfit: grossProfit.toFixed(2),
+        expenses: d.expenses.toFixed(2),
+        netProfit: netProfit.toFixed(2),
+        saleCount: d.saleCount,
+      };
+    });
 
     // ── Computed totals ──────────────────────────────────────────
     const netRevenue = grossRevenue.minus(totalReturns);
@@ -345,6 +398,19 @@ export async function GET(request: NextRequest) {
     const netMargin = netRevenue.isZero()
       ? new Decimal(0)
       : netProfit.div(netRevenue).times(100);
+
+    const cogsQuality = {
+      sales: salesCogsSource,
+      returned: returnedCogsSource,
+      usesFallback:
+        salesCogsSource.usesFallback || returnedCogsSource.usesFallback,
+      caveats: [
+        ...(salesCogsSource.caveat ? [`Sales COGS: ${salesCogsSource.caveat}`] : []),
+        ...(returnedCogsSource.caveat
+          ? [`Returned COGS: ${returnedCogsSource.caveat}`]
+          : []),
+      ],
+    };
 
     return NextResponse.json({
       success: true,
@@ -365,6 +431,7 @@ export async function GET(request: NextRequest) {
         expenseCategories,
         netProfit: netProfit.toFixed(2),
         netMargin: netMargin.toFixed(1),
+        cogsQuality,
         monthlyData,
       },
     });

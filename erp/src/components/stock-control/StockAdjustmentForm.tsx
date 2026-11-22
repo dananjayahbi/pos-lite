@@ -8,10 +8,15 @@ import { z } from 'zod';
 import { toast } from 'sonner';
 import { Search, Plus, Minus, Lock, Loader2, ChevronRight } from 'lucide-react';
 import {
-  STOCK_MOVEMENT_REASON,
-  STOCK_MOVEMENT_REASONS,
-  type StockMovementReasonValue,
-} from '@/lib/constants/stock-movement';
+  MANUAL_ADJUSTMENT_REASONS,
+  MANUAL_ADJUSTMENT_REASON_LABELS,
+  isManualReasonDirectionValid,
+  manualAdjustmentDirectionError,
+  validManualReasonsForDirection,
+  type ManualAdjustmentDirection,
+  type ManualAdjustmentReason,
+} from '@/lib/services/manualAdjustment.core';
+import { MAX_STOCK_ADJUSTMENT_DELTA } from '@/lib/validators/product.validators';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,6 +36,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useVariantPrefill } from '@/hooks/useVariantPrefill';
+import { useInvalidateStockQueries } from '@/hooks/useInvalidateStockQueries';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -56,30 +62,40 @@ interface VariantData {
 
 // ── Reason labels ────────────────────────────────────────────────────────────
 
-const REASON_LABELS: Record<StockMovementReasonValue, string> = {
-  FOUND: 'Found',
-  DAMAGED: 'Damaged',
-  STOLEN: 'Stolen',
-  DATA_ERROR: 'Data Error',
-  RETURNED_TO_SUPPLIER: 'Returned to Supplier',
-  INITIAL_STOCK: 'Initial Stock',
-  SALE_RETURN: 'Sale Return',
-  PURCHASE_RECEIVED: 'Purchase Received',
-  STOCK_TAKE_ADJUSTMENT: 'Stock Take Adjustment',
-  SALE: 'Sale',
-  VOID_REVERSAL: 'Void Reversal',
-};
+// ARGUS #189: labels come from the movement-ledger map so the form and the
+// ledger cannot disagree about the same reason.
+const REASON_LABELS = MANUAL_ADJUSTMENT_REASON_LABELS;
 
 // ── Form schema ──────────────────────────────────────────────────────────────
 
-const FormSchema = z.object({
-  productId: z.string().min(1, { error: 'Select a product' }),
-  variantId: z.string().min(1, { error: 'Select a variant' }),
-  adjustmentType: z.enum(['add', 'remove'], { error: 'Select adjustment type' }),
-  quantity: z.number().int().min(1, { error: 'Min quantity is 1' }),
-  reason: z.enum(STOCK_MOVEMENT_REASONS, { error: 'Select a reason' }),
-  note: z.string().max(500).optional(),
-});
+const FormSchema = z
+  .object({
+    productId: z.string().min(1, { error: 'Select a product' }),
+    variantId: z.string().min(1, { error: 'Select a variant' }),
+    adjustmentType: z.enum(['add', 'remove'], { error: 'Select adjustment type' }),
+    // ARGUS #190: the API caps a manual delta at 1,000,000; the form now
+    // enforces the same bound instead of only warning above 999.
+    quantity: z
+      .number()
+      .int()
+      .min(1, { error: 'Min quantity is 1' })
+      .max(MAX_STOCK_ADJUSTMENT_DELTA, {
+        error: `Max quantity is ${MAX_STOCK_ADJUSTMENT_DELTA.toLocaleString('en-GB')}`,
+      }),
+    reason: z.enum(MANUAL_ADJUSTMENT_REASONS, { error: 'Select a reason' }),
+    note: z.string().max(500).optional(),
+  })
+  .superRefine((values, ctx) => {
+    // ARGUS #193: Damaged/Stolen/Returned to Supplier are removal-only and
+    // Found/Data Error work either way. The same rule runs server-side.
+    const directionError = manualAdjustmentDirectionError(
+      values.reason,
+      values.adjustmentType === 'add' ? 1 : -1,
+    );
+    if (directionError) {
+      ctx.addIssue({ code: 'custom', path: ['reason'], message: directionError });
+    }
+  });
 
 type FormValues = z.infer<typeof FormSchema>;
 
@@ -147,6 +163,10 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
   const [searchResults, setSearchResults] = useState<ProductSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
+  // ARGUS #196: distinguish a failed search from "no matches" and let the
+  // operator page beyond the first page of results.
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchLimit, setSearchLimit] = useState(10);
   // M09-03 (OBS-18): highlighted result index for keyboard/scanner selection
   // inside the search popover. Enter selects it instead of dismissing.
   const [activeIndex, setActiveIndex] = useState(0);
@@ -155,6 +175,8 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
   const [selectedVariant, setSelectedVariant] = useState<VariantData | null>(null);
   const [isLoadingVariants, setIsLoadingVariants] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // ARGUS #194: refresh every cache a successful adjustment touches.
+  const invalidateStockQueries = useInvalidateStockQueries();
 
   // Resolve variantId query param → product + variant (from Low Stock record)
   const {
@@ -183,6 +205,24 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
   const quantity = form.watch('quantity');
   const noteValue = form.watch('note') ?? '';
 
+  // ARGUS #193: the reason list follows the selected direction, so an invalid
+  // pairing (positive Damaged, negative Found, …) cannot be chosen at all.
+  const direction: ManualAdjustmentDirection | null = adjustmentType ?? null;
+  const validReasons = direction
+    ? validManualReasonsForDirection(direction)
+    : MANUAL_ADJUSTMENT_REASONS;
+
+  const setAdjustmentType = (next: ManualAdjustmentDirection) => {
+    form.setValue('adjustmentType', next, { shouldValidate: true });
+    const currentReason = form.getValues('reason');
+    if (
+      currentReason &&
+      !isManualReasonDirectionValid(currentReason, next === 'add' ? 1 : -1)
+    ) {
+      form.resetField('reason');
+    }
+  };
+
   // ── Apply prefill once resolved ────────────────────────────────────────────
 
   useEffect(() => {
@@ -193,7 +233,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
       name: prefilledProduct.name,
       category: prefilledProduct.category ?? null,
       brand: prefilledProduct.brand ?? null,
-      isArchived: false,
+      isArchived: prefilledProduct.isArchived ?? false,
     });
     setSelectedVariant({
       ...prefilledVariant,
@@ -225,25 +265,34 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
 
   // ── Product search with debounce ───────────────────────────────────────────
 
-  const searchProducts = useCallback(async (term: string): Promise<ProductSearchResult[]> => {
+  const searchProducts = useCallback(async (term: string, limit = 10): Promise<ProductSearchResult[]> => {
     if (term.length < 1) {
       setSearchResults([]);
+      setSearchError(null);
       return [];
     }
     setIsSearching(true);
+    setSearchError(null);
     try {
+      // ARGUS #196: archived products cannot be adjusted from this picker.
+      // Only live products are offered, and the API still owns tenant scope.
       const res = await fetch(
-        `/api/store/products?search=${encodeURIComponent(term)}&limit=10`,
+        `/api/store/products?search=${encodeURIComponent(term)}&status=active&limit=${limit}`,
       );
-      const json = await res.json();
-      if (json.success) {
-        const results: ProductSearchResult[] = json.data ?? [];
-        setSearchResults(results);
-        return results;
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        setSearchError(
+          json?.error?.message ?? 'Product search failed. Check the connection and retry.',
+        );
+        setSearchResults([]);
+        return [];
       }
-      return [];
+      const results: ProductSearchResult[] = json.data ?? [];
+      setSearchResults(results);
+      return results;
     } catch {
-      // silently fail search
+      setSearchError('Product search failed. Check the connection and retry.');
+      setSearchResults([]);
       return [];
     } finally {
       setIsSearching(false);
@@ -252,12 +301,14 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    setSearchError(null);
+    setSearchLimit(10);
     if (productSearch.trim().length === 0) {
       setSearchResults([]);
       return;
     }
     debounceRef.current = setTimeout(() => {
-      searchProducts(productSearch.trim());
+      searchProducts(productSearch.trim(), 10);
     }, 300);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -268,6 +319,15 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
   useEffect(() => {
     setActiveIndex(0);
   }, [searchResults]);
+
+  // ARGUS #196: page through the picker instead of silently capping at 10.
+  const handleShowMore = () => {
+    const term = productSearch.trim();
+    if (!term) return;
+    const next = Math.min(searchLimit + 10, 50);
+    setSearchLimit(next);
+    void searchProducts(term, next);
+  };
 
   // ── Scanner/keyboard resolve: Enter selects the highlighted result ─────────
   // M09-03 (OBS-18): a hardware scanner terminates its keystroke burst with
@@ -381,6 +441,17 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
         );
       }
 
+      // ARGUS #194: product, low-stock, summary, valuation and movement
+      // screens all cache this figure. Invalidate before resetting so the
+      // Low Stock action target (and the current page's widgets) refetch
+      // instead of showing pre-adjustment numbers for 30 s - 5 min.
+      try {
+        await invalidateStockQueries();
+      } catch {
+        // The adjustment is already committed; a cache refresh failure must
+        // not turn success into a network-error toast.
+      }
+
       // Reset form
       form.reset();
       setSelectedProduct(null);
@@ -449,12 +520,28 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                   }`}
                 >
                   <div>
-                    <p className="font-body text-sm font-medium text-espresso">
-                      {selectedProduct.name}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-body text-sm font-medium text-espresso">
+                        {selectedProduct.name}
+                      </p>
+                      {selectedProduct.isArchived && (
+                        <Badge
+                          variant="secondary"
+                          className="bg-gray-100 text-gray-700 hover:bg-gray-100"
+                        >
+                          Archived
+                        </Badge>
+                      )}
+                    </div>
                     {selectedProduct.category && (
                       <p className="font-body text-xs text-mist-ink">
                         {selectedProduct.category.name}
+                      </p>
+                    )}
+                    {selectedProduct.isArchived && (
+                      <p className="mt-1 font-body text-xs text-amber-700">
+                        This product is archived. Adjust it only to correct existing stock;
+                        archived products cannot be sold.
                       </p>
                     )}
                   </div>
@@ -514,38 +601,71 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                         <Loader2 className="h-4 w-4 animate-spin text-mist-ink" />
                         <span className="ml-2 font-body text-sm text-mist-ink">Searching…</span>
                       </div>
+                    ) : searchError ? (
+                      <div role="alert" className="space-y-2 px-3 py-4 text-center">
+                        <p className="font-body text-sm font-medium text-red-700">
+                          Product search failed
+                        </p>
+                        <p className="font-body text-xs text-red-600">{searchError}</p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="border-red-200 text-red-700 hover:bg-red-50"
+                          onClick={() => void searchProducts(productSearch.trim(), searchLimit)}
+                        >
+                          Retry
+                        </Button>
+                      </div>
                     ) : searchResults.length === 0 ? (
                       <p className="px-3 py-4 text-center font-body text-sm text-mist-ink">
                         {productSearch.trim().length > 0
-                          ? 'No products found'
+                          ? 'No active products found'
                           : 'Type to search products'}
                       </p>
                     ) : (
-                      <ul className="max-h-60 overflow-y-auto py-1">
-                        {searchResults.map((p, i) => (
-                          <li key={p.id}>
-                            <button
-                              type="button"
-                              data-highlighted={i === activeIndex ? '' : undefined}
-                              className={`flex w-full flex-col px-3 py-2 text-left hover:bg-linen/60 ${
-                                i === activeIndex ? 'bg-linen/80' : ''
-                              }`}
-                              onMouseEnter={() => setActiveIndex(i)}
-                              onClick={() => handleSelectProduct(p)}
-                            >
-                              <span className="font-body text-sm font-medium text-espresso">
-                                {p.name}
-                              </span>
-                              {p.category && (
-                                <span className="font-body text-xs text-mist-ink">
-                                  {p.category.name}
-                                  {p.brand ? ` · ${p.brand.name}` : ''}
+                      <>
+                        <ul className="max-h-60 overflow-y-auto py-1">
+                          {searchResults.map((p, i) => (
+                            <li key={p.id}>
+                              <button
+                                type="button"
+                                data-highlighted={i === activeIndex ? '' : undefined}
+                                className={`flex w-full flex-col px-3 py-2 text-left hover:bg-linen/60 ${
+                                  i === activeIndex ? 'bg-linen/80' : ''
+                                }`}
+                                onMouseEnter={() => setActiveIndex(i)}
+                                onClick={() => handleSelectProduct(p)}
+                              >
+                                <span className="font-body text-sm font-medium text-espresso">
+                                  {p.name}
                                 </span>
-                              )}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
+                                {(p.category || p.isArchived) && (
+                                  <span className="font-body text-xs text-mist-ink">
+                                    {p.category?.name}
+                                    {p.category && p.brand ? ' · ' : ''}
+                                    {p.brand ? p.brand.name : ''}
+                                    {p.isArchived ? ' · Archived' : ''}
+                                  </span>
+                                )}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                        {searchResults.length >= searchLimit && searchLimit < 50 && (
+                          <div className="border-t border-sand/40 p-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="w-full text-xs"
+                              onClick={handleShowMore}
+                            >
+                              Show more results
+                            </Button>
+                          </div>
+                        )}
+                      </>
                     )}
                   </PopoverContent>
                 </Popover>
@@ -658,7 +778,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                       : 'border-sand/40 text-mist-ink hover:border-green-400 hover:bg-green-50/50'
                   }`}
                   onClick={() =>
-                    form.setValue('adjustmentType', 'add', { shouldValidate: true })
+                    setAdjustmentType('add')
                   }
                 >
                   <Plus className="h-5 w-5" />
@@ -672,7 +792,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                       : 'border-sand/40 text-mist-ink hover:border-red-400 hover:bg-red-50/50'
                   }`}
                   onClick={() =>
-                    form.setValue('adjustmentType', 'remove', { shouldValidate: true })
+                    setAdjustmentType('remove')
                   }
                 >
                   <Minus className="h-5 w-5" />
@@ -694,6 +814,8 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
               <Input
                 type="number"
                 min={1}
+                max={MAX_STOCK_ADJUSTMENT_DELTA}
+                step={1}
                 placeholder="Enter quantity"
                 {...form.register('quantity', { valueAsNumber: true })}
               />
@@ -740,7 +862,7 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
               <Select
                 value={form.watch('reason') || undefined}
                 onValueChange={(val) =>
-                  form.setValue('reason', val as StockMovementReasonValue, {
+                  form.setValue('reason', val as ManualAdjustmentReason, {
                     shouldValidate: true,
                   })
                 }
@@ -749,12 +871,9 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                   <SelectValue placeholder="Select a reason" />
                 </SelectTrigger>
                 <SelectContent>
-                  {STOCK_MOVEMENT_REASONS.map((r) => (
+                  {validReasons.map((r) => (
                     <SelectItem key={r} value={r}>
                       {REASON_LABELS[r]}
-                      {r === STOCK_MOVEMENT_REASON.STOCK_TAKE_ADJUSTMENT && (
-                        <span className="ml-1 text-xs text-mist-ink">(used by stock takes)</span>
-                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -764,6 +883,13 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
                   {form.formState.errors.reason.message}
                 </p>
               )}
+              <p className="font-body text-[11px] text-mist-ink">
+                {direction === 'add'
+                  ? 'Adding stock allows Found or Data Error.'
+                  : direction === 'remove'
+                    ? 'Removing stock allows Found, Data Error, Damaged, Stolen or Returned to Supplier.'
+                    : 'Choose Add or Remove to see the valid reasons.'}
+              </p>
             </div>
 
             {/* Note */}

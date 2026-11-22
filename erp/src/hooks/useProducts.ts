@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import type { TaxRuleValue } from '@/lib/constants/product-options';
 
 /**
  * Product filters for the inventory list.
@@ -14,6 +15,8 @@ export interface ProductFilters {
   categories?: string | undefined;
   brandId?: string | undefined;
   brands?: string | undefined;
+  /** Comma-separated variant forms (OIL, POWDER, ...). */
+  forms?: string | undefined;
   isArchived?: string | undefined;
   status?: string | undefined;
   page?: number | undefined;
@@ -26,6 +29,8 @@ export interface ProductListItem {
   description: string | null;
   isArchived: boolean;
   tags: string[];
+  /** Product tax rule — feeds the POS cart's per-line tax preview. */
+  taxRule?: TaxRuleValue | null;
   mainImageUrl: string | null;
   mainImageThumbnailUrl: string | null;
   category: { id: string; name: string } | null;
@@ -54,7 +59,14 @@ export interface ProductListItem {
 interface ProductListResponse {
   success: boolean;
   data: ProductListItem[];
-  meta: { page: number; limit: number; total: number; totalPages: number };
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    /** Live variant rows matching the same filters (ARGUS #158). */
+    variantTotal?: number;
+    totalPages: number;
+  };
 }
 
 export function useProducts(filters: ProductFilters = {}) {
@@ -65,6 +77,7 @@ export function useProducts(filters: ProductFilters = {}) {
   if (filters.isArchived) params.set('isArchived', filters.isArchived);
   if (filters.categories) params.set('categories', filters.categories);
   if (filters.brands) params.set('brands', filters.brands);
+  if (filters.forms) params.set('forms', filters.forms);
   if (filters.status) params.set('status', filters.status);
   params.set('page', String(filters.page ?? 1));
   params.set('limit', String(filters.limit ?? 25));

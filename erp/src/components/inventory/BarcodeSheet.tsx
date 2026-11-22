@@ -1,18 +1,27 @@
 'use client';
 
 import Barcode from 'react-barcode';
-import { BARCODE_SHEET_COLUMNS, BARCODE_SHEET_ROWS } from '@/lib/barcode-sheet.core';
+import {
+  BARCODE_SHEET_COLUMNS,
+  BARCODE_SHEET_ROWS,
+} from '@/lib/barcode-sheet.core';
+import { getBarcodeLabelTemplate } from '@/lib/barcode-label-templates.core';
 
-// ── Geometry ─────────────────────────────────────────────────────────────────
-// CSS px at 96 dpi: A4 = 210 × 297 mm = 793.7 × 1122.5 px, and one label is
-// 63.5 × 33.9 mm (the common 24-up A4 label sheet). The preview and the print
+// Geometry comes from the shared A4 template (ARGUS #157) rather than from
+// numbers duplicated in this component, so a size change is made in one place.
+// CSS px at 96 dpi: A4 = 210 x 297 mm = 793.7 x 1122.5 px, and one label is
+// 63.5 x 33.9 mm (the common 24-up A4 label sheet). The preview and the print
 // overlay render the same component, so what the operator sees is what prints.
 
-export const A4_WIDTH_PX = 793.7;
-export const A4_HEIGHT_PX = 1122.5;
-const SHEET_PADDING_PX = 18.9; // 5 mm
-const LABEL_WIDTH_PX = 240; // 63.5 mm
-const LABEL_HEIGHT_PX = 128; // 33.9 mm
+const A4_TEMPLATE = getBarcodeLabelTemplate('a4-24up');
+const MM_TO_CSS_PX = 96 / 25.4;
+const toPx = (mm: number): number => Math.round(mm * MM_TO_CSS_PX * 100) / 100;
+
+export const A4_WIDTH_PX = toPx(A4_TEMPLATE.sheet?.widthMm ?? 210);
+export const A4_HEIGHT_PX = toPx(A4_TEMPLATE.sheet?.heightMm ?? 297);
+const SHEET_PADDING_PX = toPx(A4_TEMPLATE.sheet?.marginMm ?? 5);
+const LABEL_WIDTH_PX = toPx(A4_TEMPLATE.widthMm);
+const LABEL_HEIGHT_PX = toPx(A4_TEMPLATE.heightMm);
 
 export interface SheetLabelData {
   /** Stable key used by React; unique per printed copy (not per variant). */
@@ -23,6 +32,8 @@ export interface SheetLabelData {
   form?: string | null;
   packSize?: string | null;
   retailPrice?: number | null;
+  /** "incl. VAT" / "incl. SSCL" / "VAT exempt" (ARGUS #160). */
+  priceQualifier?: string | null;
 }
 
 function formatPrice(value: number): string {
@@ -151,8 +162,22 @@ export function BarcodeSheetLabel({ label }: { label: SheetLabelData }) {
           {label.sku}
         </span>
         {typeof label.retailPrice === 'number' ? (
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#2f2418' }}>
-            {formatPrice(label.retailPrice)}
+          <span
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-end',
+              lineHeight: 1.05,
+            }}
+          >
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#2f2418' }}>
+              {formatPrice(label.retailPrice)}
+            </span>
+            {label.priceQualifier ? (
+              <span style={{ fontSize: 7, color: '#6b5a45' }}>
+                {label.priceQualifier}
+              </span>
+            ) : null}
           </span>
         ) : null}
       </div>

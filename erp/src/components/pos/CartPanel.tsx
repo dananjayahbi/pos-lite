@@ -6,7 +6,8 @@ import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Decimal from 'decimal.js';
 import { formatRupee } from '@/lib/format';
-import { useCartStore, getCartTotal, getSaleDiscountAmount } from '@/stores/cartStore';
+import { useCartStore, getCartTotal } from '@/stores/cartStore';
+import { summarizeCartDiscounts } from '@/components/pos/cartDiscountSummary';
 import { createCartPromotionSnapshot } from '@/stores/cartPromotions';
 import { CartLineItems } from '@/components/pos/CartLineItems';
 import { CartDiscountControl } from '@/components/pos/CartDiscountControl';
@@ -19,6 +20,7 @@ import { CardPaymentModal } from '@/components/pos/CardPaymentModal';
 import { SplitPaymentModal } from '@/components/pos/SplitPaymentModal';
 import { LankaQRPaymentModal } from '@/components/pos/LankaQRPaymentModal';
 import { ZeroValuePaymentModal } from '@/components/pos/ZeroValuePaymentModal';
+import { CreditCoverPaymentModal } from '@/components/pos/CreditCoverPaymentModal';
 import { AddCustomerDialog } from '@/components/pos/AddCustomerDialog';
 import { ReceiptPreviewDialog } from '@/components/pos/ReceiptPreviewDialog';
 import type { CreateSalePayload, CompletedSale } from '@/types/pos.types';
@@ -30,6 +32,8 @@ import { usePersistCartEffect } from '@/hooks/usePersistCartEffect';
 import { usePOSShortcuts } from '@/hooks/usePOSShortcuts';
 import { focusPOSBarcodeInput, isPOSDialogOpen } from '@/lib/pos/keyboard';
 import { clearCartSnapshot } from '@/lib/idb-store';
+import { buildCartStoreKey } from '@/lib/pos/cartPersistence';
+import { useSession } from 'next-auth/react';
 
 interface CartPanelProps {
   shiftId: string;
@@ -51,7 +55,9 @@ export function CartPanel({
   const items = useCartStore((s) => s.items);
   const cartDiscountPercent = useCartStore((s) => s.cartDiscountPercent);
   const cartDiscountAmount = useCartStore((s) => s.cartDiscountAmount);
-  const taxRate = useCartStore((s) => s.taxRate);
+  const vatRate = useCartStore((s) => s.vatRate);
+  const ssclRate = useCartStore((s) => s.ssclRate);
+  const setTaxRates = useCartStore((s) => s.setTaxRates);
   const clearCart = useCartStore((s) => s.clearCart);
   const authorizingManagerId = useCartStore((s) => s.authorizingManagerId);
   const linkedCustomerId = useCartStore((s) => s.linkedCustomerId);
@@ -59,6 +65,9 @@ export function CartPanel({
   const linkedCustomerPhone = useCartStore((s) => s.linkedCustomerPhone);
   const linkedCustomerCreditBalance = useCartStore((s) => s.linkedCustomerCreditBalance);
   const appliedStoreCredit = useCartStore((s) => s.appliedStoreCredit);
+  const linkedReturnId = useCartStore((s) => s.linkedReturnId);
+  const exchangeCredit = useCartStore((s) => s.exchangeCredit);
+  const exchangeReturnRef = useCartStore((s) => s.exchangeReturnRef);
   const linkCustomer = useCartStore((s) => s.linkCustomer);
   const unlinkCustomer = useCartStore((s) => s.unlinkCustomer);
   const setAppliedStoreCredit = useCartStore((s) => s.setAppliedStoreCredit);
@@ -68,32 +77,56 @@ export function CartPanel({
   const appliedPromoCode = useCartStore((s) => s.appliedPromoCode);
   const setPromoCode = useCartStore((s) => s.setPromoCode);
   const evaluatePromotionsAction = useCartStore((s) => s.evaluatePromotions);
-
-  // Persist cart to IndexedDB
-  usePersistCartEffect({
-    items,
-    cartDiscountPercent,
-    cartDiscountAmount,
-    promotions: {
-      appliedPromotions,
-      skippedPromotions,
-      totalPromotionDiscount,
-      appliedPromoCode,
-    },
+  const { data: session } = useSession();
+  const cartStoreKey = buildCartStoreKey({
+    userId: session?.user?.id ?? null,
+    shiftId,
   });
 
-  const { subtotal, discountEffective, taxAmount, total } = getCartTotal(
+  // Persist cart to IndexedDB, scoped to this cashier + shift (ARGUS #66).
+  usePersistCartEffect(
+    {
+      items,
+      cartDiscountPercent,
+      cartDiscountAmount,
+      promotions: {
+        appliedPromotions,
+        skippedPromotions,
+        totalPromotionDiscount,
+        appliedPromoCode,
+      },
+      exchange:
+        linkedReturnId !== null && exchangeCredit !== null && exchangeReturnRef !== null
+          ? { returnId: linkedReturnId, credit: exchangeCredit, ref: exchangeReturnRef }
+          : null,
+    },
+    { userId: session?.user?.id ?? null, shiftId },
+  );
+
+  const { subtotal, discountEffective, promotionDiscount, saleDiscount, taxAmount, taxRatesApplied, total } = getCartTotal(
     items,
     cartDiscountPercent,
     cartDiscountAmount,
-    taxRate,
+    { vatRate, ssclRate },
+    totalPromotionDiscount,
   );
+
+  const discountSummary = summarizeCartDiscounts({
+    items,
+    subtotal,
+    manualDiscount: discountEffective,
+    promotionDiscount,
+    cartDiscountPercent,
+    promoCode: appliedPromoCode,
+  });
 
   const [retrieveOpen, setRetrieveOpen] = useState(false);
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card' | 'split' | 'lankaqr' | null>(null);
   const [paymentMethodOpen, setPaymentMethodOpen] = useState(false);
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
   const [zeroValueOpen, setZeroValueOpen] = useState(false);
+  const [storeCreditOpen, setStoreCreditOpen] = useState(false);
+  const [exchangeCreditOpen, setExchangeCreditOpen] = useState(false);
   const [completedSale, setCompletedSale] = useState<CompletedSale | null>(null);
   const [changeAmount, setChangeAmount] = useState<Decimal | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -126,6 +159,25 @@ export function CartPanel({
   });
   const heldCount = heldSalesData?.total ?? 0;
 
+  // Tenant VAT/SSCL rates. The cart computes tax per line with the product's
+  // tax rule, exactly like the sales API, so the Tax row and Total here match
+  // what is persisted when the sale is charged.
+  const { data: tenantTaxRates } = useQuery({
+    queryKey: ['tax-rates'],
+    queryFn: async () => {
+      const res = await fetch('/api/settings/taxes');
+      if (!res.ok) return null;
+      const json = await res.json();
+      return (json.data ?? null) as { vatRate: number; ssclRate: number } | null;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  useEffect(() => {
+    if (tenantTaxRates) setTaxRates(tenantTaxRates.vatRate, tenantTaxRates.ssclRate);
+  }, [tenantTaxRates, setTaxRates]);
+  const taxLabel =
+    taxRatesApplied.length === 1 ? `Tax (${taxRatesApplied[0]}%)` : 'Tax';
+
   const hasItems = items.length > 0;
   // Guest-by-default (task "Walk-In customer issue"): a POS sale no longer
   // requires a customer. An unlinked cart is a guest sale — the cashier can
@@ -135,11 +187,31 @@ export function CartPanel({
   const hasValidCustomer = isGuestSale || !!linkedCustomerPhone;
   const totalDiscount = discountEffective.toNumber();
   const appliedCreditDec = new Decimal(appliedStoreCredit);
-  const promoDiscountDec = new Decimal(totalPromotionDiscount);
-  const amountDue = total.minus(appliedCreditDec).minus(promoDiscountDec).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-  // Zero-value gate (doc 33): a cart whose total is zero or negative must be
-  // completed through the reason-selection flow instead of a payment modal.
-  const isZeroValue = hasItems && amountDue.lte(0);
+  // Exchange credit from a linked return applies after store credit, mirroring
+  // the API (which also issues any remainder as store credit).
+  const exchangeCreditDec = new Decimal(exchangeCredit ?? 0);
+  const exchangeApplied = Decimal.min(
+    exchangeCreditDec,
+    Decimal.max(total.minus(appliedCreditDec), 0),
+  ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  // `total` already nets the manual cart discount, promotions and the tax on
+  // what is actually charged, so only store credit and exchange credit remain.
+  const amountDue = total
+    .minus(appliedCreditDec)
+    .minus(exchangeApplied)
+    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  // Zero-value gate (doc 33): only a genuinely zero (or negative) SALE value
+  // needs the reason-selection flow. A sale fully covered by credit is a paid
+  // sale — it is confirmed through the matching credit tender instead.
+  const isZeroValue = hasItems && total.lte(0);
+  const isExchangeCovered =
+    hasItems && !isZeroValue && exchangeApplied.greaterThan(0) && amountDue.lte(0);
+  const isCreditCovered =
+    hasItems &&
+    !isZeroValue &&
+    !isExchangeCovered &&
+    appliedCreditDec.greaterThan(0) &&
+    amountDue.lte(0);
   const promoCodeError = appliedPromoCode
     ? skippedPromotions.find((s) => !appliedPromotions.some((a) => a.promotionId === s.promotionId))?.reason
     : undefined;
@@ -147,12 +219,11 @@ export function CartPanel({
   // Recap store credit when items change or promotions update
   useEffect(() => {
     if (appliedCreditDec.lte(0)) return;
-    const netTotal = total.minus(promoDiscountDec);
-    if (appliedCreditDec.greaterThan(netTotal)) {
-      setAppliedStoreCredit(Decimal.max(0, netTotal).toDecimalPlaces(2).toFixed(2));
+    if (appliedCreditDec.greaterThan(total)) {
+      setAppliedStoreCredit(Decimal.max(0, total).toDecimalPlaces(2).toFixed(2));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [total.toString(), promoDiscountDec.toString()]);
+  }, [total.toString()]);
 
   const salePayload: CreateSalePayload = {
     shiftId,
@@ -160,20 +231,18 @@ export function CartPanel({
       variantId: item.variantId,
       quantity: item.quantity,
       discountPercent: Number(item.discountPercent),
+      ...(item.categoryId ? { categoryId: item.categoryId } : {}),
     })),
     // ISSUE 7: promotions are a real discount, and the API only knows one
     // discount field. Sending the cart discount alone persisted a promotion-
     // discounted sale at full price and made a promotion-zeroed cart fail as a
     // non-zero NONE tender, so both are folded into `cartDiscountAmount`.
-    cartDiscountAmount: getSaleDiscountAmount(
-      subtotal,
-      discountEffective,
-      promoDiscountDec,
-    ).toNumber(),
-    ...(authorizingManagerId ? { authorizingManagerId } : {}),
+    cartDiscountAmount: saleDiscount.toNumber(),
+    manualCartDiscountAmount: discountEffective.toNumber(),
     ...(authorizingManagerId ? { authorizingManagerId } : {}),
     ...(linkedCustomerId ? { customerId: linkedCustomerId } : { isGuestSale: true }),
     ...(appliedCreditDec.greaterThan(0) ? { appliedStoreCredit } : {}),
+    ...(linkedReturnId ? { linkedReturnId } : {}),
     ...(appliedPromotions.length > 0 ? { appliedPromotions } : {}),
     ...(appliedPromoCode ? { promoCode: appliedPromoCode } : {}),
   };
@@ -189,7 +258,7 @@ export function CartPanel({
     // way (X, backdrop, Esc) and the cashier may navigate straight back to the
     // grid — without this the sold items stay in the cart and get charged twice.
     clearCart();
-    clearCartSnapshot('ayurpos_cart_default').catch(() => {});
+    if (cartStoreKey) clearCartSnapshot(cartStoreKey).catch(() => {});
     setDiscountExpanded(false);
     setPromoCodeInput('');
     toast.success(`Sale completed - ${formatRupee(sale.totalAmount)}`);
@@ -230,7 +299,7 @@ export function CartPanel({
       appliedPromoCode,
     });
     clearCart();
-    clearCartSnapshot('ayurpos_cart_default').catch(() => {});
+    if (cartStoreKey) clearCartSnapshot(cartStoreKey).catch(() => {});
     setDiscountExpanded(false);
     setPromoCodeInput('');
     toast('Cart cleared', {
@@ -256,6 +325,14 @@ export function CartPanel({
     if (!hasItems || !hasValidCustomer) return;
     if (isZeroValue) {
       setZeroValueOpen(true);
+      return;
+    }
+    if (isExchangeCovered) {
+      setExchangeCreditOpen(true);
+      return;
+    }
+    if (isCreditCovered) {
+      setStoreCreditOpen(true);
       return;
     }
     setPaymentMethodOpen(true);
@@ -441,8 +518,7 @@ export function CartPanel({
                   onCheckedChange={(checked) => {
                     if (checked) {
                       const credit = new Decimal(linkedCustomerCreditBalance);
-                      const netTotal = total.minus(promoDiscountDec);
-                      const validAmount = Decimal.min(credit, netTotal).toDecimalPlaces(2).toFixed(2);
+                      const validAmount = Decimal.min(credit, total).toDecimalPlaces(2).toFixed(2);
                       setAppliedStoreCredit(validAmount);
                     } else {
                       setAppliedStoreCredit('0');
@@ -472,6 +548,7 @@ export function CartPanel({
             if (!next) setPromoCodeInput('');
           }}
           activePromoCode={appliedPromoCode}
+          discountSummary={discountSummary}
         >
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
@@ -553,11 +630,11 @@ export function CartPanel({
                 <span className="font-mono">-{formatRupee(totalDiscount)}</span>
               </div>
             )}
-            {promoDiscountDec.greaterThan(0) && (
+            {promotionDiscount.greaterThan(0) && (
               <div className="space-y-0.5">
                 <div className="flex justify-between font-body text-sm text-green-700">
                   <span>Promotions</span>
-                  <span className="font-mono">-{formatRupee(promoDiscountDec.toNumber())}</span>
+                  <span className="font-mono">-{formatRupee(promotionDiscount.toNumber())}</span>
                 </div>
                 {appliedPromotions.map((p) => (
                   <div key={p.promotionId} className="flex justify-between font-body text-xs text-green-600 pl-2">
@@ -573,8 +650,17 @@ export function CartPanel({
                 <span className="font-mono">-{formatRupee(appliedStoreCredit)}</span>
               </div>
             )}
+            {exchangeApplied.greaterThan(0) && (
+              <div className="flex justify-between font-body text-sm text-green-700">
+                <span>
+                  Exchange credit
+                  {exchangeReturnRef ? ` (${exchangeReturnRef})` : ''}
+                </span>
+                <span className="font-mono">-{formatRupee(exchangeApplied.toNumber())}</span>
+              </div>
+            )}
             <div className="flex justify-between font-body text-sm text-espresso">
-              <span>Tax {taxRate > 0 ? `(${taxRate}%)` : ''}</span>
+              <span>{taxLabel}</span>
               <span className="font-mono">{formatRupee(taxAmount.toNumber())}</span>
             </div>
             <div className="flex justify-between items-baseline pt-1.5 border-t border-mist/30">
@@ -603,6 +689,28 @@ export function CartPanel({
                 className="min-h-12 w-full rounded-lg bg-terracotta py-3 font-body text-base font-bold text-pearl transition-colors hover:bg-terracotta/90 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Zero-Value Sale
+              </button>
+            ) : isExchangeCovered ? (
+              <button
+                type="button"
+                disabled={!hasItems || !hasValidCustomer}
+                onClick={() => setExchangeCreditOpen(true)}
+                aria-keyshortcuts="F4"
+                title="Complete the exchange (F4)"
+                className="min-h-12 w-full rounded-lg bg-[#2D6A4F] py-3 font-body text-base font-bold text-pearl transition-colors hover:bg-[#2D6A4F]/90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Complete Exchange
+              </button>
+            ) : isCreditCovered ? (
+              <button
+                type="button"
+                disabled={!hasItems || !hasValidCustomer}
+                onClick={() => setStoreCreditOpen(true)}
+                aria-keyshortcuts="F4"
+                title="Complete with store credit (F4)"
+                className="min-h-12 w-full rounded-lg bg-[#2D6A4F] py-3 font-body text-base font-bold text-pearl transition-colors hover:bg-[#2D6A4F]/90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Complete with Store Credit
               </button>
             ) : (
               <button
@@ -675,6 +783,32 @@ export function CartPanel({
         }}
         onSaleComplete={handleSaleComplete}
         totalAmount={amountDue}
+        salePayload={salePayload}
+      />
+      <CreditCoverPaymentModal
+        open={storeCreditOpen}
+        onClose={() => {
+          setStoreCreditOpen(false);
+          focusPOSBarcodeInput();
+        }}
+        onSaleComplete={handleSaleComplete}
+        method="STORE_CREDIT"
+        creditLabel="Store credit applied"
+        saleTotal={total}
+        creditAmount={appliedCreditDec}
+        salePayload={salePayload}
+      />
+      <CreditCoverPaymentModal
+        open={exchangeCreditOpen}
+        onClose={() => {
+          setExchangeCreditOpen(false);
+          focusPOSBarcodeInput();
+        }}
+        onSaleComplete={handleSaleComplete}
+        method="EXCHANGE_CREDIT"
+        creditLabel="Exchange credit applied"
+        saleTotal={total}
+        creditAmount={exchangeApplied}
         salePayload={salePayload}
       />
       <AddCustomerDialog

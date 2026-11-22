@@ -34,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -51,9 +52,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { formatRupee } from '@/lib/format';
+import { canCancelPurchaseOrder } from '@/lib/services/purchaseOrderPermissions.core';
 
 import { cancelPurchaseOrder } from './poApi';
-import { formatPoDate } from './poDates';
+import { formatPoDate, poDueDay, poDueState } from './poDates';
 import { POStatusBadge } from './POStatusBadge';
 import { poQueryKeys } from './poQueryKeys';
 import type { PurchaseOrderListResponse, PurchaseOrderListItem } from './poTypes';
@@ -71,9 +73,39 @@ const STATUS_OPTIONS = [
 interface SupplierOption {
   id: string;
   name: string;
+  isActive?: boolean;
 }
 
-export function PurchaseOrdersListClient() {
+/** ARGUS #233: due date + overdue/paid state for the PO list. */
+function PoDueCell({ po }: { po: PurchaseOrderListItem }) {
+  const dueDay = poDueDay(po.orderDate, po.paymentTermDays);
+  const state = poDueState({
+    dueDay,
+    status: po.status,
+    outstanding: po.outstanding,
+  });
+
+  if (state === 'not_applicable' || !dueDay) {
+    return <span className="text-xs text-mist-ink">-</span>;
+  }
+
+  return (
+    <div>
+      <span className={state === 'overdue' ? 'font-medium text-amber-700' : 'text-mist-ink'}>
+        {formatPoDate(dueDay)}
+      </span>
+      {state === 'overdue' ? (
+        <Badge className="ml-1 bg-amber-100 text-amber-800 hover:bg-amber-100" variant="secondary">
+          Overdue
+        </Badge>
+      ) : state === 'paid' ? (
+        <span className="block text-[10px] text-green-700">Paid</span>
+      ) : null}
+    </div>
+  );
+}
+
+export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }) {
   const queryClient = useQueryClient();
 
   const [supplierId, setSupplierId] = useState('ALL');
@@ -112,7 +144,11 @@ export function PurchaseOrdersListClient() {
     data: { suppliers: SupplierOption[] };
   }>({
     queryKey: poQueryKeys.supplierOptions(),
-    queryFn: () => fetch('/api/store/suppliers?limit=100').then((r) => r.json()),
+    // ARGUS #238: the PO list is a historical view, so its supplier filter must
+    // include archived suppliers that still own POs. New-PO selection uses the
+    // active-only supplier list elsewhere.
+    queryFn: () =>
+      fetch('/api/store/suppliers?limit=100&includeArchived=true').then((r) => r.json()),
     staleTime: 60_000,
   });
   const suppliers = suppliersData?.data?.suppliers ?? [];
@@ -208,6 +244,7 @@ export function PurchaseOrdersListClient() {
             {suppliers.map((supplier) => (
               <SelectItem key={supplier.id} value={supplier.id}>
                 {supplier.name}
+                {supplier.isActive === false ? ' (archived)' : ''}
               </SelectItem>
             ))}
           </SelectContent>
@@ -226,20 +263,30 @@ export function PurchaseOrdersListClient() {
           </SelectContent>
         </Select>
 
-        <Input
-          type="date"
-          value={fromDate}
-          onChange={(event) => changeFromDate(event.target.value)}
-          className="w-[160px]"
-          aria-label="Created from"
-        />
-        <Input
-          type="date"
-          value={toDate}
-          onChange={(event) => changeToDate(event.target.value)}
-          className="w-[160px]"
-          aria-label="Created to"
-        />
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="po-order-date-from" className="text-xs text-mist-ink">
+            Order date from
+          </Label>
+          <Input
+            id="po-order-date-from"
+            type="date"
+            value={fromDate}
+            onChange={(event) => changeFromDate(event.target.value)}
+            className="w-[160px]"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="po-order-date-to" className="text-xs text-mist-ink">
+            Order date to
+          </Label>
+          <Input
+            id="po-order-date-to"
+            type="date"
+            value={toDate}
+            onChange={(event) => changeToDate(event.target.value)}
+            className="w-[160px]"
+          />
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-sand/30 bg-pearl">
@@ -254,6 +301,7 @@ export function PurchaseOrdersListClient() {
               <TableHead className="text-right">Total</TableHead>
               <TableHead>Order Date</TableHead>
               <TableHead>Expected Delivery</TableHead>
+              <TableHead>Due</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -261,7 +309,7 @@ export function PurchaseOrdersListClient() {
             {isLoading ? (
               Array.from({ length: 5 }).map((_, rowIndex) => (
                 <TableRow key={rowIndex}>
-                  {Array.from({ length: 9 }).map((__, cellIndex) => (
+                  {Array.from({ length: 10 }).map((__, cellIndex) => (
                     <TableCell key={cellIndex}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
@@ -270,7 +318,7 @@ export function PurchaseOrdersListClient() {
               ))
             ) : pos.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-mist-ink">
+                <TableCell colSpan={10} className="py-8 text-center text-mist-ink">
                   No purchase orders found
                 </TableCell>
               </TableRow>
@@ -290,18 +338,32 @@ export function PurchaseOrdersListClient() {
                     <POStatusBadge status={po.status} />
                   </TableCell>
                   <TableCell>
-                    {po.paidAt ? (
+                    {po.paymentState === 'PAID' ? (
                       <Badge className="bg-green-50 text-green-700" variant="secondary">
                         Paid
                       </Badge>
+                    ) : po.paymentState === 'PARTIALLY_PAID' ? (
+                      <div>
+                        <Badge className="bg-amber-50 text-amber-700" variant="secondary">
+                          Partially paid
+                        </Badge>
+                        <span className="mt-1 block text-[10px] text-mist-ink">
+                          {formatRupee(po.paidTotal ?? 0)} paid,{' '}
+                          {formatRupee(po.outstanding ?? 0)} due
+                        </span>
+                      </div>
                     ) : (
                       <span className="text-xs text-mist-ink">Unpaid</span>
                     )}
                   </TableCell>
                   <TableCell className="text-center">{po._count.lines}</TableCell>
                   <TableCell className="text-right font-mono">
-                    {formatRupee(po.totalAmount)}
-                    {Number(po.discountAmount) > 0 ? (
+                    {formatRupee(po.payableAmount ?? po.totalAmount)}
+                    {Number(po.payableAmount ?? po.totalAmount) !== Number(po.totalAmount) ? (
+                      <span className="ml-1 block text-[10px] font-normal text-mist-ink">
+                        Ordered {formatRupee(po.totalAmount)}
+                      </span>
+                    ) : Number(po.discountAmount) > 0 ? (
                       <span className="ml-1 block text-[10px] font-normal text-mist-ink line-through">
                         {formatRupee(po.subtotalAmount)}
                       </span>
@@ -310,6 +372,9 @@ export function PurchaseOrdersListClient() {
                   <TableCell className="text-mist-ink">{formatPoDate(po.orderDate)}</TableCell>
                   <TableCell className="text-mist-ink">
                     {po.expectedDeliveryDate ? formatPoDate(po.expectedDeliveryDate) : '-'}
+                  </TableCell>
+                  <TableCell>
+                    <PoDueCell po={po} />
                   </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
@@ -339,7 +404,7 @@ export function PurchaseOrdersListClient() {
                             </Link>
                           </DropdownMenuItem>
                         ) : null}
-                        {po.status === 'DRAFT' ? (
+                        {po.status === 'DRAFT' && canApprove ? (
                           <DropdownMenuItem
                             className="flex cursor-pointer items-center gap-2"
                             onClick={() => void handleMarkSent(po)}
@@ -359,9 +424,7 @@ export function PurchaseOrdersListClient() {
                             </Link>
                           </DropdownMenuItem>
                         ) : null}
-                        {po.status === 'DRAFT' ||
-                        po.status === 'SENT' ||
-                        po.status === 'PARTIALLY_RECEIVED' ? (
+                        {canCancelPurchaseOrder(po.status) ? (
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -370,6 +433,17 @@ export function PurchaseOrdersListClient() {
                             >
                               <XCircle className="h-4 w-4" />
                               Cancel PO
+                            </DropdownMenuItem>
+                          </>
+                        ) : po.status === 'PARTIALLY_RECEIVED' ? (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              disabled
+                              className="flex cursor-not-allowed items-center gap-2 text-mist-ink"
+                            >
+                              <XCircle className="h-4 w-4" />
+                              Cancel unavailable - goods received
                             </DropdownMenuItem>
                           </>
                         ) : null}

@@ -14,14 +14,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { formatRupee } from '@/lib/format';
+import { formatRupee, formatShortDateTime } from '@/lib/format';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDateTime(date: Date | string | null): string {
   if (!date) return '-';
-  return new Date(date).toLocaleString('en-LK', { dateStyle: 'medium', timeStyle: 'short' });
+  return formatShortDateTime(date);
 }
 
 function SaleStatusBadge({ status }: { status: string }) {
@@ -106,7 +106,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
           )}
         </div>
         <div className="border-mist rounded-xl border bg-white px-4 py-3">
-          <p className="text-sand-ink text-xs">Date</p>
+          <p className="text-sand-ink text-xs">Selling date</p>
           <p className="text-espresso mt-1 text-sm font-medium">
             {formatDateTime(sale.saleDate ?? sale.createdAt)}
           </p>
@@ -187,6 +187,11 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
         <section className="border-mist/60 overflow-hidden rounded-2xl border bg-white shadow-sm">
           <div className="border-mist border-b px-5 py-3">
             <h2 className="text-espresso text-sm font-semibold">Payments</h2>
+            {sale.status === 'VOIDED' && (
+              <p className="mt-1 text-xs text-[#9B2226]">
+                This sale was voided. The tenders below were reversed and are no longer collected.
+              </p>
+            )}
           </div>
           <Table>
             <TableHeader>
@@ -201,6 +206,11 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ sal
                 <TableRow key={payment.id}>
                   <TableCell className="text-espresso font-medium">
                     {payment.method.replace(/_/g, ' ')}
+                    {sale.status === 'VOIDED' && (
+                      <span className="ml-2 text-[10px] font-normal text-[#9B2226]">
+                        reversed
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="text-espresso text-right font-mono text-sm font-medium">
                     {formatRupee(Number(payment.amount))}

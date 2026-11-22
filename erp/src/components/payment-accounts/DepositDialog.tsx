@@ -137,6 +137,7 @@ function DepositForm({ account, accounts, onSubmit, onCancel }: DepositFormProps
               onValueChange={setFromAccountId}
               placeholder="Outside the business / owner's cash"
               excludeAccountId={account.id}
+              excludePettyCash
               noneLabel="Outside the business"
               disabled={isSubmitting}
               className="w-full border-mist"

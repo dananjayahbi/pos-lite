@@ -10,6 +10,9 @@ import {
 } from '@/lib/services/rawMaterial.service';
 import { UpdateRawMaterialSchema } from '@/lib/validators/rawMaterial.validators';
 import { getRawMaterialCategoryNameMap } from '@/lib/services/rawMaterialCategory.service';
+import { getRawMaterialUnitMap } from '@/lib/services/rawMaterialUnit.service';
+import { isApiError } from '@/lib/api/errors';
+import { envelopeError } from '@/lib/api/error-envelope';
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -36,6 +39,24 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
     const { id } = await context.params;
     const body: unknown = await request.json();
+
+    // ARGUS #241: an absolute quantity overwrite through the edit form bypasses
+    // the adjustment workflow (no delta, no reason, no stock audit). Reject it
+    // explicitly rather than silently dropping the field.
+    if (body !== null && typeof body === 'object' && 'quantity' in body) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'RAW_MATERIAL_QUANTITY_READ_ONLY',
+            message:
+              'Quantity cannot be edited directly. Use Adjust stock so the change records a delta and a reason.',
+          },
+        },
+        { status: 400 },
+      );
+    }
+
     const parsed = UpdateRawMaterialSchema.safeParse(body);
     if (!parsed.success) {
       const errors = parsed.error.issues.map((i) => ({
@@ -51,6 +72,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const material = await updateRawMaterial(tenantId, session.user.id, id, parsed.data);
     return NextResponse.json({ success: true, data: material });
   } catch (error) {
+    // ARGUS #241: guard violations arrive as typed ApiErrors (409) with the
+    // operator-facing explanation intact.
+    if (isApiError(error)) return envelopeError(error);
     if (error instanceof Error && error.message === 'NOT_FOUND') {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Raw material not found' } },
@@ -110,6 +134,8 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
     await deleteRawMaterial(tenantId, session.user.id, id);
     return NextResponse.json({ success: true });
   } catch (error) {
+    // ARGUS #241: RAW_MATERIAL_HAS_STOCK / RAW_MATERIAL_IN_BOM are typed 409s.
+    if (isApiError(error)) return envelopeError(error);
     if (error instanceof Error && error.message === 'NOT_FOUND') {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Raw material not found' } },
@@ -167,9 +193,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       );
     }
     const categoryNames = await getRawMaterialCategoryNameMap(tenantId);
+    const unitMap = await getRawMaterialUnitMap(tenantId);
     return NextResponse.json({
       success: true,
-      data: toRawMaterialItem(material, categoryNames.get(material.category)),
+      data: toRawMaterialItem(
+        material,
+        categoryNames.get(material.category),
+        unitMap.get(material.unit),
+      ),
     });
   } catch (error) {
     console.error('GET /api/store/raw-materials/[id] error:', error);
