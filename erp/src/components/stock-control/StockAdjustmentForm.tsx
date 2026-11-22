@@ -16,6 +16,7 @@ import {
   type ManualAdjustmentDirection,
   type ManualAdjustmentReason,
 } from '@/lib/services/manualAdjustment.core';
+import { MAX_STOCK_ADJUSTMENT_DELTA } from '@/lib/validators/product.validators';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -72,7 +73,15 @@ const FormSchema = z
     productId: z.string().min(1, { error: 'Select a product' }),
     variantId: z.string().min(1, { error: 'Select a variant' }),
     adjustmentType: z.enum(['add', 'remove'], { error: 'Select adjustment type' }),
-    quantity: z.number().int().min(1, { error: 'Min quantity is 1' }),
+    // ARGUS #190: the API caps a manual delta at 1,000,000; the form now
+    // enforces the same bound instead of only warning above 999.
+    quantity: z
+      .number()
+      .int()
+      .min(1, { error: 'Min quantity is 1' })
+      .max(MAX_STOCK_ADJUSTMENT_DELTA, {
+        error: `Max quantity is ${MAX_STOCK_ADJUSTMENT_DELTA.toLocaleString('en-GB')}`,
+      }),
     reason: z.enum(MANUAL_ADJUSTMENT_REASONS, { error: 'Select a reason' }),
     note: z.string().max(500).optional(),
   })
@@ -805,6 +814,8 @@ function AdjustmentFormInner({ prefillVariantId }: { prefillVariantId?: string |
               <Input
                 type="number"
                 min={1}
+                max={MAX_STOCK_ADJUSTMENT_DELTA}
+                step={1}
                 placeholder="Enter quantity"
                 {...form.register('quantity', { valueAsNumber: true })}
               />
