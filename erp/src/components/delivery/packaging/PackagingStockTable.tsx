@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { PackagingItemRow } from '@/hooks/delivery/usePackaging';
 import { formatPackagingQuantity } from '@/lib/constants/packaging';
+import { resolvePackagingPerParcelRate } from '@/lib/services/packaging.core';
 
 interface PackagingStockTableProps {
   items: PackagingItemRow[];
@@ -119,7 +120,23 @@ export function PackagingStockTable({
                   )}
                 </td>
                 <td className="text-espresso/60 px-4 py-3 text-right text-sm">
-                  {item.consumptionPerParcel != null ? Number(item.consumptionPerParcel) : '-'}
+                  {item.consumptionPerParcel != null
+                    ? (() => {
+                        const rate = resolvePackagingPerParcelRate(item.consumptionPerParcel);
+                        return (
+                          <>
+                            <span>
+                              {formatPackagingQuantity(rate.effective, item.unit)} / parcel
+                            </span>
+                            {rate.rounded ? (
+                              <span className="text-espresso/40 block text-[10px]">
+                                {rate.configured} configured, rounded up
+                              </span>
+                            ) : null}
+                          </>
+                        );
+                      })()
+                    : '-'}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-1">

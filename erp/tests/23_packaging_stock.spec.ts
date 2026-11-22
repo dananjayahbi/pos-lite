@@ -211,7 +211,7 @@ test.describe('Module 23: Packaging Consumables Stock', () => {
     (global as any).__MODULE23_ITEM_ID_FRACTION = json.data.id;
   });
 
-  test('§2.P2 — quantityOnHand precision: integer stock, auto-deduct rounds consumption down', async ({ page }) => {
+  test('§2.P2 — quantityOnHand precision: integer stock, auto-deduct rounds consumption up to whole units', async ({ page }) => {
     // Create item with 10 pieces stock, 0.5 consumption per parcel
     const payload = {
       category: 'LABEL',

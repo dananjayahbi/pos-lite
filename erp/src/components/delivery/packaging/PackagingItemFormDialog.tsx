@@ -37,6 +37,7 @@ import {
   getPackagingUnitShortLabel,
   formatPackagingQuantity,
 } from '@/lib/constants/packaging';
+import { resolvePackagingPerParcelRate } from '@/lib/services/packaging.core';
 
 type FormInput = z.input<typeof CreatePackagingItemSchema>;
 
@@ -123,6 +124,11 @@ export function PackagingItemFormDialog({
 
   const unit = (form.watch('unit') ?? 'PIECE') as PackagingUnit;
   const suffix = getPackagingUnitShortLabel(unit);
+  const perParcelValue = form.watch('consumptionPerParcel');
+  const perParcelRate =
+    perParcelValue != null && Number.isFinite(Number(perParcelValue))
+      ? resolvePackagingPerParcelRate(Number(perParcelValue))
+      : null;
   const autoSku = form.watch('autoGenerateSku') ?? false;
 
   const onSubmit = (values: z.output<typeof CreatePackagingItemSchema>) => {
@@ -302,6 +308,15 @@ export function PackagingItemFormDialog({
                 })}
                 placeholder="1"
               />
+              {perParcelRate && perParcelRate.effective > 0 ? (
+                <p className="text-espresso/50 text-xs">
+                  Dispatch deducts {formatPackagingQuantity(perParcelRate.effective, unit)} per
+                  parcel
+                  {perParcelRate.rounded
+                    ? ` (rounded up from ${perParcelRate.configured}).`
+                    : '.'}
+                </p>
+              ) : null}
             </div>
           </div>
 

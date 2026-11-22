@@ -10,6 +10,7 @@ import {
   packagingItemHasStock,
   packagingQuantityLabel,
   planPackagingDeduction,
+  resolvePackagingPerParcelRate,
 } from '@/lib/services/packaging.core';
 import {
   DEFAULT_PACKAGING_CATEGORIES,
@@ -237,5 +238,36 @@ describe('category constants', () => {
       { category: 'LABEL', name: 'Z' },
       { category: 'TAPE', name: 'B' },
     ]);
+  });
+});
+
+describe('resolvePackagingPerParcelRate (ARGUS #285)', () => {
+  it('shows the effective whole-unit rate and flags rounding', () => {
+    expect(resolvePackagingPerParcelRate(1.6)).toEqual({
+      configured: 1.6,
+      effective: 2,
+      rounded: true,
+    });
+    expect(resolvePackagingPerParcelRate(0.5)).toEqual({
+      configured: 0.5,
+      effective: 1,
+      rounded: true,
+    });
+  });
+
+  it('does not flag a whole rate', () => {
+    expect(resolvePackagingPerParcelRate(3)).toEqual({
+      configured: 3,
+      effective: 3,
+      rounded: false,
+    });
+  });
+
+  it('treats zero as no deduction', () => {
+    expect(resolvePackagingPerParcelRate(0)).toEqual({
+      configured: 0,
+      effective: 0,
+      rounded: false,
+    });
   });
 });

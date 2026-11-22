@@ -22,6 +22,29 @@ export function packagingConsumptionUnits(perParcel: Decimal | number | string):
   return Decimal.max(units, 1).toNumber();
 }
 
+/**
+ * ARGUS #285 - the displayed rate must match the deduction.
+ *
+ * The table printed the configured decimal (1.6 m per parcel) while dispatch
+ * deducts whole units (2 m). This resolves both numbers so the UI can show the
+ * effective consumption and, when they differ, the configured value it came
+ * from.
+ */
+export interface PackagingPerParcelRate {
+  configured: number;
+  effective: number;
+  rounded: boolean;
+}
+
+export function resolvePackagingPerParcelRate(
+  perParcel: Decimal | number | string,
+): PackagingPerParcelRate {
+  const configured = perParcel instanceof Decimal ? perParcel.toNumber() : Number(perParcel);
+  const safe = Number.isFinite(configured) && configured > 0 ? configured : 0;
+  const effective = packagingConsumptionUnits(safe);
+  return { configured: safe, effective, rounded: effective !== safe };
+}
+
 export interface PackagingDeductionPlanInput {
   perParcel: Decimal | number | string;
   quantityOnHand: number;
