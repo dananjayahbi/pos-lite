@@ -18,6 +18,7 @@ import {
   findOverlappingPunch,
   validatePunchTimes,
 } from '@/lib/attendance/punchTimes.core';
+import { punchDayChanged } from '@/lib/attendance/punchDay.core';
 import {
   DEFAULT_MAX_SHIFT_MINUTES,
   capPunchEnd,
@@ -880,6 +881,16 @@ export async function updateTimeClockRecord(
   );
   if (validation) {
     throw new ApiError(400, 'VALIDATION_ERROR', validation.message);
+  }
+
+  // ARGUS #359: an edit fixes the time on that day; moving a punch to another
+  // day would silently change attendance for two days.
+  if (input.clockedInAt !== undefined && punchDayChanged(existing.clockedInAt, nextClockedInAt)) {
+    throw new ApiError(
+      400,
+      'VALIDATION_ERROR',
+      'A clock punch cannot be moved to another day; add a new punch for that day instead',
+    );
   }
 
   // ARGUS #349: edits must not create an overlapping punch either.
