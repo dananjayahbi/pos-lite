@@ -79,3 +79,23 @@ Fields added to `OrderInvoiceData`: `paymentMethod`, `paymentStatus`,
 - `src/components/delivery/invoices/printOrderInvoice.tsx`
 - `src/lib/services/order-invoice.service.ts`
 - `src/types/order-invoice.ts`
+
+## Seller contact on the order invoice (ARGUS #490)
+
+The delivery/order invoice used to print only the tenant name and logo, so
+filling the store profile address/phone changed receipts but not the invoice.
+`getOrderInvoiceData` now reads `Tenant.settings` and adds a `seller` block
+(`mapInvoiceSeller`):
+
+- multi-line postal address (split on the operator's line breaks),
+- `Tel: <phoneNumber>`,
+- the new optional profile `email` (stored as `settings.email`, max 120,
+  validated as an email when present).
+
+The header renders the block under the brand name in 10 px muted espresso, and
+omits empty lines. The invoice remains A4, light-surface, with the existing
+espresso rule. Older profile PATCH clients that do not send `email` keep the
+stored value instead of clearing it.
+
+The store profile form exposes the email field with the same counter/limit
+pattern as the other fields; profile audits now include `email`.

@@ -28,12 +28,23 @@ export interface OrderInvoiceAddress {
   postalCode?: string | null;
 }
 
+export interface OrderInvoiceSeller {
+  /** Tenant trading name (same value as `brandName`). */
+  name: string;
+  /** Multi-line seller address, printed as entered in the store profile. */
+  address: string;
+  phone: string;
+  email: string;
+}
+
 export interface OrderInvoiceData {
   orderRef: string;
   createdAt: string;
   // Branding resolved from the tenant label template (keeps label/invoice coherent).
   brandName: string;
   logoUrl: string | null;
+  /** Seller contact block (ARGUS #490). Empty fields are simply not printed. */
+  seller: OrderInvoiceSeller;
   accentColor: string;
   borderColor: string;
   customer?: OrderInvoiceCustomer | null;

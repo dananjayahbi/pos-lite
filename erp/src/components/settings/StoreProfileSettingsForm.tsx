@@ -33,6 +33,7 @@ type StoreProfileValues = {
   logoUrl: string;
   address: string;
   phoneNumber: string;
+  email: string;
   receiptFooter: string;
 };
 
@@ -68,6 +69,7 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
     values.logoUrl !== initialValues.logoUrl ||
     values.address !== initialValues.address ||
     values.phoneNumber !== initialValues.phoneNumber ||
+    values.email !== initialValues.email ||
     values.receiptFooter !== initialValues.receiptFooter;
 
   const canSave =
@@ -210,6 +212,26 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
               <span className="text-[#9B2226]">{fieldErrors.phoneNumber}</span>
               <span className="ml-auto shrink-0 text-sand-ink">
                 {values.phoneNumber.length}/{STORE_PROFILE_LIMITS.phoneNumber}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="email">Email (invoice header)</Label>
+            <Input
+              id="email"
+              type="email"
+              value={values.email}
+              onChange={(event) => update('email', event.target.value)}
+              placeholder="hello@example.lk"
+              maxLength={STORE_PROFILE_LIMITS.email}
+              aria-invalid={Boolean(fieldErrors.email)}
+              aria-describedby="email-help"
+            />
+            <div id="email-help" className="flex items-start justify-between gap-3 text-xs">
+              <span className="text-[#9B2226]">{fieldErrors.email}</span>
+              <span className="ml-auto shrink-0 text-sand-ink">
+                {values.email.length}/{STORE_PROFILE_LIMITS.email}
               </span>
             </div>
           </div>

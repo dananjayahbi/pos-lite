@@ -17,6 +17,7 @@ export interface StoreProfileSnapshot {
   logoUrl: string | null;
   address: string;
   phoneNumber: string;
+  email: string;
   receiptFooter: string;
 }
 
@@ -66,6 +67,7 @@ export function readStoreProfileSnapshot(input: {
     logoUrl: input.logoUrl ?? null,
     address: typeof values.address === 'string' ? values.address : '',
     phoneNumber: typeof values.phoneNumber === 'string' ? values.phoneNumber : '',
+    email: typeof values.email === 'string' ? values.email : '',
     receiptFooter: typeof values.receiptFooter === 'string' ? values.receiptFooter : '',
   };
 }

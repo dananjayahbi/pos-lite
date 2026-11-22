@@ -3,7 +3,7 @@ import 'server-only';
 import { prisma } from '@/lib/prisma';
 import { getTenantBranding } from '@/lib/tenant-branding';
 import { collectableCodAmount } from '@/lib/delivery/cod';
-import type { OrderInvoiceData, OrderInvoiceLine } from '@/types/order-invoice';
+import type { OrderInvoiceData, OrderInvoiceLine, OrderInvoiceSeller } from '@/types/order-invoice';
 
 /** Invoice chrome stays neutral: the waybill design owns the courier palette. */
 const INVOICE_ACCENT = '#3A2D28';
@@ -69,6 +69,24 @@ export function selectInvoiceLines(
   return saleLines.length > 0 ? saleLines : deliveryLines;
 }
 
+/** Map the store profile into the invoice's seller block. Pure + testable. */
+export function mapInvoiceSeller(input: {
+  name: string;
+  settings: unknown;
+}): OrderInvoiceSeller {
+  const settings =
+    typeof input.settings === 'object' && input.settings !== null
+      ? (input.settings as Record<string, unknown>)
+      : {};
+  const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+  return {
+    name: input.name.trim(),
+    address: text(settings.address),
+    phone: text(settings.phoneNumber),
+    email: text(settings.email),
+  };
+}
+
 /**
  * Assemble the printable invoice payload for a delivery (order). Fetches the
  * sale + line items, customer, shipping address, shipping fee and totals, and
@@ -96,6 +114,10 @@ export async function getOrderInvoiceData(
   if (!delivery) throw new Error('DELIVERY_NOT_FOUND');
 
   const branding = await getTenantBranding(tenantId);
+  const tenantProfile = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { settings: true },
+  });
 
   const sale = delivery.sale;
   // POS sales carry the authoritative item lines. Website/manual deliveries
@@ -114,6 +136,9 @@ export async function getOrderInvoiceData(
     createdAt: delivery.createdAt.toISOString(),
     brandName: branding.name,
     logoUrl: branding.logoUrl,
+    // ARGUS #490: the profile contact details print on the invoice header too,
+    // not only on receipts.
+    seller: mapInvoiceSeller({ name: branding.name, settings: tenantProfile?.settings }),
     accentColor: INVOICE_ACCENT,
     borderColor: INVOICE_BORDER,
     customer: delivery.customer

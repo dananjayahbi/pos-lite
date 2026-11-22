@@ -53,6 +53,7 @@ export default async function StoreProfileSettingsPage() {
     logoUrl: typeof tenant.logoUrl === 'string' ? tenant.logoUrl : '',
     address: typeof settings.address === 'string' ? settings.address : '',
     phoneNumber: typeof settings.phoneNumber === 'string' ? settings.phoneNumber : '',
+    email: typeof settings.email === 'string' ? settings.email : '',
     receiptFooter: typeof settings.receiptFooter === 'string' ? settings.receiptFooter : '',
   };
 

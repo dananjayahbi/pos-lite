@@ -35,6 +35,16 @@ const storeProfileSchema = z.object({
     .string()
     .trim()
     .max(STORE_PROFILE_LIMITS.phoneNumber, 'Phone number must be 40 characters or less'),
+  // Optional: printed on the order invoice header (ARGUS #490). Absent in older
+  // clients, in which case the stored value is preserved.
+  email: z
+    .string()
+    .trim()
+    .max(STORE_PROFILE_LIMITS.email, 'Email must be 120 characters or less')
+    .refine((value) => value === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value), {
+      message: 'Enter a valid email address',
+    })
+    .optional(),
   receiptFooter: z
     .string()
     .trim()
@@ -105,8 +115,12 @@ export async function PATCH(request: NextRequest) {
       ...currentSettings,
       address: parsed.data.address,
       phoneNumber: parsed.data.phoneNumber,
+      email:
+        parsed.data.email ??
+        (typeof currentSettings.email === 'string' ? currentSettings.email : ''),
       receiptFooter: parsed.data.receiptFooter,
     };
+    const email = typeof updatedSettings.email === 'string' ? updatedSettings.email : '';
 
     // ARGUS #468: profile edits stay manager-editable, but every write carries
     // an audit row with actor + the profile fields only (never other settings).
@@ -121,6 +135,7 @@ export async function PATCH(request: NextRequest) {
         logoUrl: parsed.data.logoUrl || null,
         address: parsed.data.address,
         phoneNumber: parsed.data.phoneNumber,
+        email,
         receiptFooter: parsed.data.receiptFooter,
       },
     );
