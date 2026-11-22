@@ -13,6 +13,11 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
+import {
+  PASSWORD_MAX_BYTES,
+  PASSWORD_MIN_LENGTH,
+  validatePasswordChange,
+} from '@/lib/auth/password-policy.core';
 
 type PasswordFormState = {
   currentPassword: string;
@@ -40,24 +45,11 @@ export default function AccountPasswordForm() {
   };
 
   function validate(): boolean {
-    const next: Partial<Record<keyof PasswordFormState, string>> = {};
-
-    if (!values.currentPassword) next.currentPassword = 'Current password is required';
-
-    if (values.newPassword.length < 8) {
-      next.newPassword = 'New password must be at least 8 characters';
-    }
-
-    if (values.newPassword && values.newPassword === values.currentPassword) {
-      next.newPassword = 'New password must be different from the current password';
-    }
-
-    if (values.confirmPassword !== values.newPassword) {
-      next.confirmPassword = 'Passwords do not match';
-    }
-
-    setErrors(next);
-    return Object.keys(next).length === 0;
+    // ARGUS #505: one policy for the form and the API (including the bcrypt
+    // 72-byte cap, which is what actually gets hashed).
+    const result = validatePasswordChange(values);
+    setErrors(result.errors);
+    return result.ok;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -74,10 +66,26 @@ export default function AccountPasswordForm() {
 
       const json = (await res.json()) as {
         success: boolean;
-        error?: { message: string };
+        error?: {
+          message: string;
+          details?: Array<{ path: string; message: string }>;
+        };
       };
 
       if (!res.ok || !json.success) {
+        const fieldErrors: Partial<Record<keyof PasswordFormState, string>> = {};
+        for (const detail of json.error?.details ?? []) {
+          if (
+            detail.path === 'currentPassword' ||
+            detail.path === 'newPassword' ||
+            detail.path === 'confirmPassword'
+          ) {
+            fieldErrors[detail.path] = detail.message;
+          }
+        }
+        if (Object.keys(fieldErrors).length > 0) {
+          setErrors(fieldErrors);
+        }
         toast.error(json.error?.message ?? 'Failed to update password');
         return;
       }
@@ -129,6 +137,9 @@ export default function AccountPasswordForm() {
             value={values.newPassword}
             onChange={(e) => update('newPassword', e.target.value)}
           />
+          <p className="text-xs text-sand-ink">
+            {PASSWORD_MIN_LENGTH}–{PASSWORD_MAX_BYTES} characters (bcrypt hashes at most 72 bytes).
+          </p>
           {errors.newPassword && <p className="text-xs text-terracotta">{errors.newPassword}</p>}
         </div>
 
