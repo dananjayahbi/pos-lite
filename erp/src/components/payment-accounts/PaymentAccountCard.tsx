@@ -74,6 +74,20 @@ export function PaymentAccountCard({
           {account.note && (
             <p className="mt-1 max-w-xl truncate font-body text-xs text-mist-ink">{account.note}</p>
           )}
+          {account.details && account.details.length > 0 && (
+            <dl className="mt-2 flex max-w-xl flex-wrap gap-x-5 gap-y-1 border-t border-mist/50 pt-2">
+              {account.details.map((detail, index) => (
+                <div key={`${detail.label}-${index}`} className="min-w-0">
+                  <dt className="font-body text-[10px] uppercase tracking-wide text-mist-ink">
+                    {detail.label || 'Detail'}
+                  </dt>
+                  <dd className="truncate font-body text-xs text-espresso">
+                    {detail.value || '-'}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
         </div>
 
         <div className="text-right">
@@ -106,9 +120,14 @@ export function PaymentAccountCard({
             size="sm"
             onClick={() => onEdit(account)}
             className="font-body text-espresso"
+            title={
+              isClosed
+                ? 'Closed accounts keep their history; identification details can still be corrected.'
+                : undefined
+            }
           >
             <Pencil className="h-3.5 w-3.5" />
-            Edit
+            {isClosed ? 'Edit details' : 'Edit'}
           </Button>
         )}
 

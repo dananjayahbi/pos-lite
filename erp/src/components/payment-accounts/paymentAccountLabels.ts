@@ -42,6 +42,20 @@ export function formatEntryDate(value: string): string {
   });
 }
 
+/**
+ * Recorded time for a ledger row (ARGUS #433). The entry date may be a
+ * date-only manual entry, so same-day rows were visually indistinguishable.
+ * The creation timestamp orders them and is shown next to the entry date.
+ */
+export function formatEntryTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 /** Money as a plain number, or `null` when the string is not numeric. */
 export function parseMoney(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined) return null;

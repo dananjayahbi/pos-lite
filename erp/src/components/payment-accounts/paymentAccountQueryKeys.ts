@@ -10,6 +10,11 @@ import type {
  * every account book and the cash-flow view after any money movement.
  */
 
+interface AccountListFilters {
+  search: string;
+  status: 'ALL' | 'ACTIVE' | 'CLOSED';
+}
+
 interface AccountBookFilters {
   accountId: string;
   dateFrom: string;
@@ -31,7 +36,8 @@ export const paymentAccountKeys = {
   all: [ROOT] as const,
 
   lists: () => [ROOT, 'list'] as const,
-  list: () => [ROOT, 'list', 'all'] as const,
+  list: (filters: AccountListFilters = { search: '', status: 'ALL' }) =>
+    [ROOT, 'list', filters.status, filters.search] as const,
 
   accounts: () => [ROOT, 'account'] as const,
   account: (accountId: string) => [ROOT, 'account', accountId] as const,

@@ -25,7 +25,7 @@ import { AccountTypeBadge } from './AccountTypeBadge';
 import { LedgerPagination } from './LedgerPagination';
 import { paymentAccountKeys } from './paymentAccountQueryKeys';
 import { buildQuery, getJson } from './paymentAccountApi';
-import { ENTRY_SOURCE_LABELS, formatEntryDate, parseMoney } from './paymentAccountLabels';
+import { ENTRY_SOURCE_LABELS, formatEntryDate, formatEntryTime, parseMoney } from './paymentAccountLabels';
 import type { CashFlowResult, PaymentAccount } from './paymentAccountTypes';
 
 const PAGE_SIZE = 25;
@@ -150,7 +150,7 @@ export function CashFlowTable({ accounts }: CashFlowTableProps) {
           <Table>
             <TableHeader>
               <TableRow className="bg-linen/40">
-                <TableHead className="text-espresso">Date</TableHead>
+                <TableHead className="text-espresso">Date / recorded</TableHead>
                 <TableHead className="text-espresso">Account</TableHead>
                 <TableHead className="text-espresso">Description</TableHead>
                 <TableHead className="text-espresso">Source</TableHead>
@@ -172,7 +172,10 @@ export function CashFlowTable({ accounts }: CashFlowTableProps) {
                 entries.map((entry) => (
                   <TableRow key={entry.id} className="hover:bg-linen/20">
                     <TableCell className="whitespace-nowrap font-mono text-xs">
-                      {formatEntryDate(entry.entryDate)}
+                      <div>{formatEntryDate(entry.entryDate)}</div>
+                      <div className="text-[10px] text-mist-ink">
+                        rec {formatEntryTime(entry.createdAt)}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {entry.account ? (
