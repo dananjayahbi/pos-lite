@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { zSriLankaPhone } from '@/lib/validators/shared';
+import { isInvalidCustomerBirthday } from '@/lib/services/customerImport.core';
 
 /**
  * CSV import row for customers.
@@ -48,7 +49,14 @@ export const CustomerCsvRowSchema = z.object({
     .pipe(z.enum(['MALE', 'FEMALE', 'OTHER']))
     .optional()
     .or(z.literal('')),
-  Birthday: z.string().trim().optional().or(z.literal('')),
+  Birthday: z
+    .string()
+    .trim()
+    .refine((value) => !isInvalidCustomerBirthday(value), {
+      message: 'Birthday must be a real date in YYYY-MM-DD format',
+    })
+    .optional()
+    .or(z.literal('')),
   Tags: z.string().trim().optional().or(z.literal('')),
   Notes: z.string().trim().max(500).optional().or(z.literal('')),
 });
