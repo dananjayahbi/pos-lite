@@ -473,4 +473,141 @@ test.describe('Module 19 - Expenses & Petty Cash', () => {
     await expect(page.getByText(/Could not load expenses/i)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('button', { name: /^Retry$/i })).toBeVisible();
   });
+
+  test('F17 a fund-linked expense must use one of the fund Active Categories', async ({
+    page,
+  }) => {
+    await login(page, OWNER);
+    const fund = await getFund(page);
+
+    const restrict = await page.request.patch('/api/store/petty-cash', {
+      data: {
+        fundId: fund.id,
+        name: fund.name,
+        lowBalanceThreshold: fund.lowBalanceThreshold ? Number(fund.lowBalanceThreshold) : null,
+        activeCategories: ['MISCELLANEOUS'],
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(restrict.status()).toBe(200);
+
+    try {
+      const denied = await createExpense(page, {
+        category: 'TRAVEL',
+        amount: 5,
+        description: 'QA disabled category',
+        expenseDate: new Date().toISOString().slice(0, 10),
+        pettyCashFundId: fund.id,
+      });
+      expect(denied.response.status()).toBe(422);
+      expect(denied.body?.error?.code).toBe('CATEGORY_NOT_ENABLED');
+    } finally {
+      await page.request.patch('/api/store/petty-cash', {
+        data: {
+          fundId: fund.id,
+          name: fund.name,
+          lowBalanceThreshold: fund.lowBalanceThreshold ? Number(fund.lowBalanceThreshold) : null,
+          activeCategories: ['MISCELLANEOUS', 'TRAVEL', 'STAFF_MEALS'],
+        },
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+  });
+
+  test('F18 GET /api/store/petty-cash is read-only (no lazy fund or balance write)', async ({
+    page,
+  }) => {
+    await login(page, OWNER);
+    const before = await getFund(page);
+    const second = await page.request.get('/api/store/petty-cash');
+    expect(second.status()).toBe(200);
+    const body = await json(second);
+    expect(body?.data?.id).toBe(before.id);
+    expect(Number(body?.data?.currentBalance)).toBeCloseTo(Number(before.currentBalance), 2);
+    expect(body?.balance?.currentBalance).toBeCloseTo(Number(before.currentBalance), 2);
+
+    // A second read must produce identical state.
+    const third = await json(await page.request.get('/api/store/petty-cash'));
+    expect(third?.balance?.currentBalance).toBeCloseTo(
+      Number(body?.balance?.currentBalance),
+      2,
+    );
+  });
+
+  test('F19 Add Cash In enforces source type and entry-date rules', async ({ page }) => {
+    await login(page, OWNER);
+
+    const future = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+    const futureRes = await page.request.post('/api/store/petty-cash/top-up', {
+      data: { amount: 100, sourceType: 'EXTERNAL', entryDate: future },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(futureRes.status()).toBe(400);
+    expect((await json(futureRes))?.error?.code).toBe('VALIDATION_ERROR');
+
+    const missingAccount = await page.request.post('/api/store/petty-cash/top-up', {
+      data: { amount: 100, sourceType: 'ACCOUNT' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(missingAccount.status()).toBe(400);
+    expect((await json(missingAccount))?.error?.code).toBe('VALIDATION_ERROR');
+
+    const amount = 137.77;
+    const description = `QA external top-up ${Date.now()}`;
+    const ok = await page.request.post('/api/store/petty-cash/top-up', {
+      data: {
+        amount,
+        sourceType: 'EXTERNAL',
+        description,
+        entryDate: new Date().toISOString().slice(0, 10),
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(ok.status()).toBe(200);
+    const okBody = await json(ok);
+    expect(okBody?.data?.sourceType).toBe('EXTERNAL');
+    expect(Number(okBody?.data?.amount)).toBeCloseTo(amount, 2);
+
+    // Audit payload names the amount and source type.
+    const audit = await json(
+      await page.request.get('/api/audit-logs?action=PETTY_CASH_TOP_UP&pageSize=20'),
+    );
+    const rows = audit?.data?.data ?? audit?.data ?? [];
+    const row = rows.find(
+      (entry: { after?: { amount?: number } }) =>
+        Math.abs(Number(entry.after?.amount) - amount) < 0.001,
+    );
+    expect(row, 'PETTY_CASH_TOP_UP audit row').toBeTruthy();
+    expect(JSON.stringify(row.after)).toContain('EXTERNAL');
+  });
+
+  test('F20 fund settings audit records the threshold and category changes', async ({ page }) => {
+    await login(page, OWNER);
+    const fund = await getFund(page);
+    const threshold = 312.34;
+    const categories = ['MISCELLANEOUS', 'TRAVEL'];
+
+    const patch = await page.request.patch('/api/store/petty-cash', {
+      data: {
+        fundId: fund.id,
+        name: fund.name,
+        lowBalanceThreshold: threshold,
+        activeCategories: categories,
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(patch.status()).toBe(200);
+
+    const audit = await json(
+      await page.request.get('/api/audit-logs?action=PETTY_CASH_FUND_UPDATED&pageSize=20'),
+    );
+    const rows = audit?.data?.data ?? audit?.data ?? [];
+    const row = rows.find(
+      (entry: { entityId?: string; after?: { lowBalanceThreshold?: number } }) =>
+        entry.entityId === fund.id &&
+        Math.abs(Number(entry.after?.lowBalanceThreshold) - threshold) < 0.001,
+    );
+    expect(row, 'fund update audit row with threshold').toBeTruthy();
+    expect(row.after.activeCategories).toEqual(expect.arrayContaining(categories));
+  });
 });
