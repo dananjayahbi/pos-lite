@@ -165,3 +165,29 @@ describe('buildThermalReceiptHtml shared footer', () => {
     expect(html).not.toContain('Thank you for your purchase!');
   });
 });
+
+/**
+ * ARGUS #492: address and footer are multi-row textareas; their line breaks
+ * must survive on the printed HTML instead of collapsing into one line.
+ */
+describe('buildThermalReceiptHtml multi-line profile text', () => {
+  it('prints each address line separately', () => {
+    const html = buildThermalReceiptHtml(
+      makeSale(),
+      makeTenant({
+        settings: {
+          address: '12 Galle Road\r\nMatara',
+          phoneNumber: '041 222 3344',
+          receiptFooter: 'Thank you\nCome again',
+        },
+      }),
+      'Nimal',
+    );
+    expect(html).toContain('<div class="store-info">12 Galle Road</div>');
+    expect(html).toContain('<div class="store-info">Matara</div>');
+    expect(html).toContain('<div class="store-info">Tel: 041 222 3344</div>');
+    expect(html).toContain('<div>Thank you</div>');
+    expect(html).toContain('<div>Come again</div>');
+    expect(html).not.toContain('12 Galle Road\r\nMatara');
+  });
+});

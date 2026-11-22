@@ -24,3 +24,19 @@ unchanged (it was already stored and printed verbatim, escaped in HTML).
 fallback; `receiptIdentity.core.test.ts` pins the contact policy. The printer
 buffer itself needs a live printer, so its header block is verified by the
 shared helper and code review.
+
+## Multi-line address and footer (ARGUS #492)
+
+The profile fields are textareas (address 3 rows, footer 4 rows), but the
+browser and A4 receipts wrapped the whole value in one block, so a multi-line
+address printed as a single line. Both renderers now use
+`receiptContactLines` / `receiptFooterLines`:
+
+- address lines become separate header rows (no `white-space` trick needed);
+- the phone is appended as its own `Tel: ...` line;
+- footer lines become separate centred rows on 80 mm and A4;
+- ESC/POS splits the footer into one `line()` per stored line and prints the
+  contact block the same way.
+
+CRLF, LF and CR are all accepted and blank lines are dropped, so pasting a
+Windows-formatted address from the profile form prints cleanly.

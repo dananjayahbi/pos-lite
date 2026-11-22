@@ -6,7 +6,7 @@ import { sumPaymentBreakdown } from '@/lib/services/paymentBreakdown';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import {
   receiptContactLines,
-  resolveReceiptFooter,
+  receiptFooterLines,
 } from '@/lib/settings/receiptIdentity.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -239,14 +239,13 @@ export async function printSaleReceipt(saleId: string): Promise<void> {
   // Footer
   parts.push(ESC_ALIGN_CENTER);
 
+  // ARGUS #491/#492: one contact policy; each stored line prints on its own.
   parts.push(
-    ...line(
-      resolveReceiptFooter(
-        typeof (settings as any)?.receiptFooter === 'string'
-          ? (settings as any).receiptFooter
-          : '',
-      ),
-    ),
+    ...receiptFooterLines(
+      typeof (settings as any)?.receiptFooter === 'string'
+        ? (settings as any).receiptFooter
+        : '',
+    ).flatMap((footerLine) => line(centerText(footerLine, w))),
   );
 
   parts.push(...line(''));

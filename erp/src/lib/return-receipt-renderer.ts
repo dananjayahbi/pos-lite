@@ -1,6 +1,10 @@
 import { formatRupee } from '@/lib/format';
 import { reprintIdentityNotice } from '@/lib/receipt-identity.core';
-import { resolveReceiptFooter } from '@/lib/settings/receiptIdentity.core';
+import {
+  receiptContactLines,
+  receiptFooterLines,
+  resolveReceiptFooter,
+} from '@/lib/settings/receiptIdentity.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -153,6 +157,12 @@ export function buildReturnReceiptHtml(
   const receiptFooter = resolveReceiptFooter(
     typeof s.receiptFooter === 'string' ? s.receiptFooter : '',
   );
+  // ARGUS #492: keep the operator's line breaks on the A4 header and footer.
+  const contactLines = receiptContactLines({
+    address: storeAddress,
+    phoneNumber: storePhone,
+  });
+  const footerLines = receiptFooterLines(receiptFooter);
   const logoUrl = typeof tenant.logoUrl === 'string' ? tenant.logoUrl.trim() : '';
 
   // ── Line items ──
@@ -550,8 +560,7 @@ export function buildReturnReceiptHtml(
       ${logoHtml}
       <div>
         <div class="brand-name">${esc(tenant.name)}</div>
-        ${storeAddress ? `<div class="brand-meta">${esc(storeAddress)}</div>` : ''}
-        ${storePhone ? `<div class="brand-meta">Tel: ${esc(storePhone)}</div>` : ''}
+        ${contactLines.map((contactLine) => `<div class="brand-meta">${esc(contactLine)}</div>`).join('')}
       </div>
     </div>
     <div class="doc-id">
@@ -639,7 +648,7 @@ export function buildReturnReceiptHtml(
   </div>
 
   <footer class="doc-footer">
-    ${esc(receiptFooter)}
+    ${footerLines.map((footerLine) => `<div>${esc(footerLine)}</div>`).join('')}
     <div class="powered">Powered by AyurPOS &middot; Printed ${printTimestamp}</div>
   </footer>
 
