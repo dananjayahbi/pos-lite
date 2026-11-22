@@ -73,6 +73,7 @@ const STATUS_OPTIONS = [
 interface SupplierOption {
   id: string;
   name: string;
+  isActive?: boolean;
 }
 
 export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }) {
@@ -114,7 +115,11 @@ export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }
     data: { suppliers: SupplierOption[] };
   }>({
     queryKey: poQueryKeys.supplierOptions(),
-    queryFn: () => fetch('/api/store/suppliers?limit=100').then((r) => r.json()),
+    // ARGUS #238: the PO list is a historical view, so its supplier filter must
+    // include archived suppliers that still own POs. New-PO selection uses the
+    // active-only supplier list elsewhere.
+    queryFn: () =>
+      fetch('/api/store/suppliers?limit=100&includeArchived=true').then((r) => r.json()),
     staleTime: 60_000,
   });
   const suppliers = suppliersData?.data?.suppliers ?? [];
@@ -210,6 +215,7 @@ export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }
             {suppliers.map((supplier) => (
               <SelectItem key={supplier.id} value={supplier.id}>
                 {supplier.name}
+                {supplier.isActive === false ? ' (archived)' : ''}
               </SelectItem>
             ))}
           </SelectContent>
