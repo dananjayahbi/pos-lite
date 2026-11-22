@@ -35,3 +35,15 @@ export function formatBarcodeVariantRange(input: BarcodeVariantRangeInput): stri
 export function formatBarcodeProductPage(page: number, totalPages: number): string {
   return `Products page ${page} of ${totalPages}`;
 }
+
+/**
+ * A label may only print a real saved barcode (ARGUS #163). The old flow
+ * substituted the SKU whenever `barcode` was empty, producing a Code 128 symbol
+ * that scanned as the SKU and looked like the product's catalogue barcode.
+ * The picker blocks those variants and the label marks itself "SKU only".
+ */
+export function hasPrintableBarcode(
+  value: string | null | undefined,
+): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}

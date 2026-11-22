@@ -1,6 +1,7 @@
 'use client';
 
 import Barcode from 'react-barcode';
+import { hasPrintableBarcode } from '@/lib/barcode-printing.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,8 +41,9 @@ export function BarcodeLabel({
   lowStockThreshold,
   isPreview = false,
 }: BarcodeLabelProps) {
-  const barcodeValue = barcode || sku;
-  const hasBarcodeValue = barcodeValue.length > 0;
+  // ARGUS #163: never print the SKU as if it were the catalogue barcode.
+  const barcodeValue = hasPrintableBarcode(barcode) ? barcode.trim() : '';
+  const hasBarcode = barcodeValue.length > 0;
   const isLowStock = stockQuantity <= lowStockThreshold && stockQuantity >= 0;
 
   const formPackParts: string[] = [];
@@ -66,7 +68,7 @@ export function BarcodeLabel({
           productName={productName}
           sku={sku}
           barcodeValue={barcodeValue}
-          hasBarcodeValue={hasBarcodeValue}
+          hasBarcodeValue={hasBarcode}
           formPackText={formPackText}
           retailPrice={retailPrice}
           priceQualifier={priceQualifier}
@@ -90,7 +92,7 @@ export function BarcodeLabel({
         productName={productName}
         sku={sku}
         barcodeValue={barcodeValue}
-        hasBarcodeValue={hasBarcodeValue}
+        hasBarcodeValue={hasBarcode}
         formPackText={formPackText}
         retailPrice={retailPrice}
         isLowStock={isLowStock}
@@ -165,8 +167,8 @@ function LabelContent({
             renderer="svg"
           />
         ) : (
-          <span className="font-body text-[8px] text-mist-ink italic">
-            No barcode available
+          <span className="font-body text-[8px] text-[#9B2226] italic">
+            SKU only - no barcode
           </span>
         )}
       </div>

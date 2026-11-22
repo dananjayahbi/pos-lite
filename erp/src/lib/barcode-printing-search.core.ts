@@ -14,7 +14,8 @@
 export interface BarcodeSearchRow {
   productName: string;
   sku: string;
-  barcode: string;
+  /** Null when the variant has no saved barcode (ARGUS #163). */
+  barcode: string | null;
 }
 
 export type BarcodeSearchMatch = 'exact' | 'product' | 'variant' | 'none';
@@ -35,7 +36,7 @@ export function selectBarcodeSearchRows<T extends BarcodeSearchRow>(
 
   const exact = rows.filter(
     (row) =>
-      row.barcode.toLowerCase() === needle || row.sku.toLowerCase() === needle,
+      (row.barcode ?? '').toLowerCase() === needle || row.sku.toLowerCase() === needle,
   );
   // A scan or a typed barcode must not offer sibling packs as equal choices.
   if (exact.length > 0) {
@@ -55,7 +56,7 @@ export function selectBarcodeSearchRows<T extends BarcodeSearchRow>(
 
     if (
       row.sku.toLowerCase().includes(needle) ||
-      row.barcode.toLowerCase().includes(needle)
+      (row.barcode ?? '').toLowerCase().includes(needle)
     ) {
       matches.push({ row, match: 'variant' });
       seen.add(row);

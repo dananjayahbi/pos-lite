@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatBarcodeProductPage,
   formatBarcodeVariantRange,
+  hasPrintableBarcode,
 } from '@/lib/barcode-printing.core';
 
 /** ARGUS #158: the range must describe products and variant rows separately. */
@@ -81,5 +82,20 @@ describe('barcode printing range labels', () => {
   it('labels the product pagination explicitly', () => {
     expect(formatBarcodeProductPage(1, 2)).toBe('Products page 1 of 2');
     expect(formatBarcodeProductPage(2, 2)).toBe('Products page 2 of 2');
+  });
+});
+
+/** ARGUS #163: a missing barcode must never be replaced by the SKU. */
+describe('barcode printability', () => {
+  it('accepts a real saved barcode', () => {
+    expect(hasPrintableBarcode('2003424422401')).toBe(true);
+    expect(hasPrintableBarcode('  ABC-1  ')).toBe(true);
+  });
+
+  it('rejects missing, blank and non-string values', () => {
+    expect(hasPrintableBarcode(null)).toBe(false);
+    expect(hasPrintableBarcode(undefined)).toBe(false);
+    expect(hasPrintableBarcode('   ')).toBe(false);
+    expect(hasPrintableBarcode('')).toBe(false);
   });
 });

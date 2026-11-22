@@ -36,6 +36,7 @@ import {
 import {
   formatBarcodeProductPage,
   formatBarcodeVariantRange,
+  hasPrintableBarcode,
 } from '@/lib/barcode-printing.core';
 import { selectBarcodeSearchRows } from '@/lib/barcode-printing-search.core';
 import { labelPriceDisplay } from '@/lib/pricing/label-price.core';
@@ -56,7 +57,8 @@ interface VariantOption {
   productName: string;
   brandName: string | null;
   sku: string;
-  barcode: string;
+  /** Null when no barcode is saved; never silently replaced with the SKU. */
+  barcode: string | null;
   form: string | null;
   packSize: string | null;
   retailPrice: number;
@@ -67,7 +69,11 @@ interface VariantOption {
   imageUrl: string | null;
 }
 
-interface QueueItem extends VariantOption {
+interface BarcodeReadyVariant extends VariantOption {
+  barcode: string;
+}
+
+interface QueueItem extends BarcodeReadyVariant {
   copies: number;
 }
 
@@ -126,9 +132,9 @@ export function BarcodePrintingClient() {
           productName: product.name,
           brandName: product.brand?.name ?? null,
           sku: variant.sku,
-          // Legacy rows without a barcode fall back to the SKU, mirroring the
-          // inventory label dialog, so printing is never blocked.
-          barcode: variant.barcode ?? variant.sku,
+          // ARGUS #163: never substitute the SKU. A missing barcode blocks the
+          // Add action and is named in the picker row.
+          barcode: hasPrintableBarcode(variant.barcode) ? variant.barcode : null,
           form: variant.form,
           packSize: variant.packSize,
           retailPrice: Number(variant.retailPrice),
@@ -149,7 +155,7 @@ export function BarcodePrintingClient() {
     return selectBarcodeSearchRows(rows, searchTerm).map((entry) => entry.row);
   }, [data, searchTerm]);
 
-  const addVariant = useCallback((option: VariantOption) => {
+  const addVariant = useCallback((option: BarcodeReadyVariant) => {
     setQueue((current) => {
       const existing = current.find((item) => item.variantId === option.variantId);
       if (existing) {
@@ -193,6 +199,13 @@ export function BarcodePrintingClient() {
 
   const handleAdd = useCallback(
     (option: VariantOption) => {
+      if (!hasPrintableBarcode(option.barcode)) {
+        setCopyNotice(
+          `${option.productName} (${option.sku}) has no saved barcode - set one in Inventory before printing.`,
+        );
+        return;
+      }
+      const printable: BarcodeReadyVariant = { ...option, barcode: option.barcode };
       const existing = queue.find((item) => item.variantId === option.variantId);
       if (existing) {
         const next = clampCopies(existing.copies + 1);
@@ -204,7 +217,7 @@ export function BarcodePrintingClient() {
       } else {
         setCopyNotice(`Added ${option.sku} - 1 copy queued.`);
       }
-      addVariant(option);
+      addVariant(printable);
     },
     [queue, addVariant],
   );
@@ -475,7 +488,13 @@ export function BarcodePrintingClient() {
                             {variantText ? `${variantText} · ` : ''}
                             <span className="font-mono">{option.sku}</span>
                             {' · '}
-                            <span className="font-mono">{option.barcode}</span>
+                            {hasPrintableBarcode(option.barcode) ? (
+                              <span className="font-mono">{option.barcode}</span>
+                            ) : (
+                              <span className="text-[#9B2226]">
+                                no barcode saved - set one in Inventory
+                              </span>
+                            )}
                           </div>
                         </div>
                         <Button
@@ -488,14 +507,26 @@ export function BarcodePrintingClient() {
                               : 'bg-espresso text-pearl hover:bg-espresso/90'
                           }
                           aria-label={
-                            added
-                              ? `Add another copy of ${option.sku}`
-                              : `Add ${option.sku}`
+                            hasPrintableBarcode(option.barcode)
+                              ? added
+                                ? `Add another copy of ${option.sku}`
+                                : `Add ${option.sku}`
+                              : `${option.sku} has no saved barcode and cannot be printed`
+                          }
+                          disabled={!hasPrintableBarcode(option.barcode)}
+                          title={
+                            hasPrintableBarcode(option.barcode)
+                              ? undefined
+                              : 'Add a barcode to this variant in Inventory first'
                           }
                           onClick={() => handleAdd(option)}
                         >
                           <Plus className="mr-1 h-3.5 w-3.5" />
-                          {added ? 'Add another' : 'Add'}
+                          {hasPrintableBarcode(option.barcode)
+                            ? added
+                              ? 'Add another'
+                              : 'Add'
+                            : 'No barcode'}
                         </Button>
                       </li>
                     );
