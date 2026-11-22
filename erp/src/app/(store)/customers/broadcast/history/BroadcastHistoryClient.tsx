@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { staffDisplayName } from '@/lib/utils/staff-name';
+import { formatShortDateTime } from '@/lib/format';
 
 interface BroadcastHistoryItem {
   id: string;
@@ -102,7 +103,7 @@ export function BroadcastHistoryClient() {
                       )}
                     </div>
                     <p className="line-clamp-2 font-medium text-espresso">{broadcast.message}</p>
-                    <p className="text-xs text-sand-ink">Sent {new Date(broadcast.sentAt).toLocaleString()} by {staffDisplayName(broadcast.sentByEmail)}</p>
+                    <p className="text-xs text-sand-ink">Sent {formatShortDateTime(broadcast.sentAt)} by {staffDisplayName(broadcast.sentByEmail)}</p>
                     <div className="flex flex-wrap gap-2 text-xs text-sand-ink">
                       <span className="rounded-full bg-pearl px-2 py-1">Recipients {broadcast.recipientCount}</span>
                       <span className="rounded-full bg-pearl px-2 py-1">Sent {sent}</span>

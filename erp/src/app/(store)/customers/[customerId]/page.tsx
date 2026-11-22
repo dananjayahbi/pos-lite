@@ -25,7 +25,8 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Pencil, Trash2, AlertCircle } from 'lucide-react';
-import { formatRupee } from '@/lib/format';
+import { formatRupee, formatShortDate } from '@/lib/format';
+import { formatCustomerPhone } from '@/lib/services/customerDisplay.core';
 import { CustomerSheet } from '@/components/customers/CustomerSheet';
 import { LoyaltyBadge } from '@/components/customers/LoyaltyBadge';
 import { CustomerValueInsights } from '@/components/customers/CustomerValueInsights';
@@ -219,12 +220,8 @@ export default function CustomerDetailPage({
       .join('')
       .toUpperCase();
 
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString('en-LK', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+  // ARGUS #319: the shared day-first formatter replaces `en-LK` month-first.
+  const formatDate = (dateStr: string) => formatShortDate(dateStr);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'purchases', label: 'Purchase History' },
@@ -336,10 +333,10 @@ export default function CustomerDetailPage({
             )}
           </div>
           <div className="mt-0.5 space-y-0.5">
-            <p className="text-sm text-sand-ink font-mono">{customer.phone}</p>
+            <p className="text-sm text-sand-ink font-mono">{formatCustomerPhone(customer.phone)}</p>
             {customer.phone2 && (
               <p className="text-sm text-sand-ink font-mono">
-                Alt: {customer.phone2}
+                Alt: {formatCustomerPhone(customer.phone2)}
               </p>
             )}
           </div>
@@ -584,7 +581,7 @@ export default function CustomerDetailPage({
             <div>
               <p className="text-xs uppercase text-sand-ink tracking-wide mb-1">Contact No 2</p>
               <p className="text-sm text-espresso font-mono">
-                {customer.phone2 ?? '-'}
+                {customer.phone2 ? formatCustomerPhone(customer.phone2) : '-'}
               </p>
             </div>
             <div>

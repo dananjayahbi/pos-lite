@@ -3,7 +3,7 @@
 import { CalendarClock, Tags } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { formatRelativeDate, formatRupee } from '@/lib/format';
+import { formatRelativeDate, formatRupee, formatShortDate } from '@/lib/format';
 
 export interface PreferredCategory {
   categoryId: string;
@@ -45,11 +45,7 @@ export function CustomerValueInsights({
             <div>
               <p className="text-xl font-mono font-semibold text-espresso">{relative}</p>
               <p className="text-xs text-sand-ink mt-1">
-                {new Date(lastPurchaseAt!).toLocaleDateString('en-LK', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric',
-                })}
+                {formatShortDate(lastPurchaseAt!)}
               </p>
             </div>
           ) : (
@@ -70,18 +66,25 @@ export function CustomerValueInsights({
           {preferredCategories.length === 0 ? (
             <p className="text-sm text-sand-ink">No purchase data yet</p>
           ) : (
-            <ul className="space-y-2">
-              {preferredCategories.map((c) => (
-                <li key={c.categoryId} className="flex items-center justify-between gap-2">
-                  <Badge variant="secondary" className="text-xs">
-                    {c.categoryName}
-                  </Badge>
-                  <span className="text-xs font-mono text-sand-ink">
-                    {c.quantity} unit{c.quantity === 1 ? '' : 's'} · {formatRupee(c.lineTotal)}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="space-y-2">
+                {preferredCategories.map((c) => (
+                  <li key={c.categoryId} className="flex items-center justify-between gap-2">
+                    <Badge variant="secondary" className="text-xs">
+                      {c.categoryName}
+                    </Badge>
+                    <span className="text-xs font-mono text-sand-ink">
+                      {c.quantity} unit{c.quantity === 1 ? '' : 's'} · {formatRupee(c.lineTotal)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {/* ARGUS #319: these are after-discount line totals, not the
+                  customer's gross spend, so say so. */}
+              <p className="mt-2 text-[11px] text-sand-ink">
+                Amounts are line totals after discount, before tax.
+              </p>
+            </>
           )}
         </CardContent>
       </Card>
