@@ -314,4 +314,80 @@ test.describe('Module 20 - Timeclock & Staff Commissions', () => {
     const badPage = await page.request.get('/api/store/timeclock?userId=invalid-user&page=0&pageSize=0');
     expect([200, 400, 403, 404]).toContain(badPage.status());
   });
+
+  test('T9 attendance page renders the daily table, summary and self clock controls', async ({ page }) => {
+    await login(page, OWNER);
+    await page.goto(`${BASE_URL}/staff/timeclock`, { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByRole('heading', { name: 'Attendance' })).toBeVisible();
+    await expect(page.getByText('All Staff Attendance')).toBeVisible();
+    await expect(page.getByText('My clock')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Clock (in|out)$/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Export CSV' })).toBeVisible();
+
+    for (const header of ['Staff', 'Status', 'Clock In', 'Punches', 'Worked', 'OT']) {
+      await expect(
+        page.getByRole('columnheader', { name: header, exact: true }),
+      ).toBeVisible();
+    }
+
+    // The per-row punches action opens the interval detail (daily table parity).
+    const punches = page.getByRole('button', { name: /punch(es)?$/ }).first();
+    if ((await punches.count()) > 0) {
+      await punches.click();
+      await expect(page.getByRole('dialog')).toContainText('Punches');
+    }
+    await page.keyboard.press('Escape');
+  });
+
+  test('T10 adjust and status dialogs expose their fields', async ({ page }) => {
+    await login(page, OWNER);
+    await page.goto(`${BASE_URL}/staff/timeclock`, { waitUntil: 'domcontentloaded' });
+
+    const adjust = page.getByRole('button', { name: 'Adjust' }).first();
+    if ((await adjust.count()) > 0) {
+      await adjust.click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toContainText('Clock Times');
+      await expect(dialog.getByLabel('Clock In')).toBeVisible();
+      await expect(dialog.getByLabel(/^Notes/)).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
+
+    const status = page.getByRole('button', { name: 'Status' }).first();
+    if ((await status.count()) > 0) {
+      await status.click();
+      await expect(page.getByRole('dialog')).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
+  });
+
+  test('T11 a punch cannot be moved to another calendar day', async ({ page }) => {
+    await login(page, OWNER);
+    const staff = await fetchStaff(page);
+    const ownerUser = staff.find((u) => u.email === OWNER.email);
+    expect(ownerUser).toBeTruthy();
+
+    const created = await page.request.post('/api/store/timeclock/records', {
+      data: {
+        userId: ownerUser!.id,
+        clockedInAt: '2024-03-01T09:00:00.000Z',
+        clockedOutAt: '2024-03-01T17:00:00.000Z',
+        notes: 'QA day-move guard',
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect([201, 409]).toContain(created.status());
+    if (created.status() !== 201) return;
+
+    const recordId = (await json(created))?.data?.id as string;
+    const moved = await page.request.patch(`/api/store/timeclock/${recordId}`, {
+      data: { clockedInAt: '2024-02-28T09:00:00.000Z' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(moved.status()).toBe(400);
+    const movedBody = await json(moved);
+    expect(movedBody?.error?.code).toBe('VALIDATION_ERROR');
+    expect(String(movedBody?.error?.message)).toContain('another day');
+  });
 });
