@@ -13,6 +13,10 @@ import {
   scheduleBroadcastDispatch,
   type BroadcastContent,
 } from '@/lib/services/broadcast-dispatch.service';
+import {
+  broadcastAudienceLimitMessage,
+  isBroadcastAudienceTooLarge,
+} from '@/lib/services/broadcastAudience.core';
 
 /**
  * POST /api/broadcast/send — create an Email or SMS marketing broadcast.
@@ -64,6 +68,20 @@ export async function POST(request: Request) {
     const { channel, subject, message, html, imageUrls, filters } = parsed.data;
 
     const audience = await fetchBroadcastAudience(tenantId, channel, filters ?? {});
+    // ARGUS #320: match the legacy route's 200-recipient ceiling so one
+    // mis-scoped filter cannot queue the whole customer book.
+    if (isBroadcastAudienceTooLarge(audience.total)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'TOO_MANY_RECIPIENTS',
+            message: broadcastAudienceLimitMessage(audience.total),
+          },
+        },
+        { status: 422 },
+      );
+    }
     if (audience.total === 0) {
       return NextResponse.json(
         {

@@ -38,6 +38,30 @@ describe('New security permission keys', () => {
   });
 });
 
+describe('explicit revokes (ARGUS #464)', () => {
+  it('removes a denied role default from the effective set', () => {
+    const permissions = getEffectivePermissions('MANAGER', ['!sale:void']);
+    expect(permissions).not.toContain(PERMISSIONS.SALE.voidSale);
+    // Everything else the role grants is untouched.
+    expect(permissions).toContain(PERMISSIONS.SALE.createSale);
+    expect(permissions).toContain(PERMISSIONS.STAFF.manageStaff);
+  });
+
+  it('keeps additive extras and denies independent', () => {
+    const permissions = getEffectivePermissions('CASHIER', [
+      'report:view_sales',
+      '!sale:create',
+    ]);
+    expect(permissions).toContain('report:view_sales');
+    expect(permissions).not.toContain(PERMISSIONS.SALE.createSale);
+  });
+
+  it('never lets a deny strip platform-wide SUPER_ADMIN access', () => {
+    const permissions = getEffectivePermissions('SUPER_ADMIN', ['!billing:manage']);
+    expect(permissions).toEqual(ALL_PERMISSIONS);
+  });
+});
+
 describe('requirePermissionResponse (doc 46/49 guard)', () => {
   it('returns null when the user has the permission', () => {
     const result = requirePermissionResponse(

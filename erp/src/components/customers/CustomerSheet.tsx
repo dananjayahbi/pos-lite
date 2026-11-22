@@ -420,7 +420,9 @@ export function CustomerSheet({ customer, open, onOpenChange, onSuccess }: Custo
               </div>
             )}
 
+            <Label htmlFor="customer-tag-input">Add tag</Label>
             <Input
+              id="customer-tag-input"
               value={tagInput}
               onChange={(e) => setTagInput(e.target.value)}
               onKeyDown={handleTagKeyDown}

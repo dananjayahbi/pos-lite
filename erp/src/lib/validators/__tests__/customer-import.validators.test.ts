@@ -86,6 +86,23 @@ describe('CustomerCsvRowSchema', () => {
       false,
     );
   });
+
+  it('rejects an unparseable or impossible birthday as a row error (ARGUS #318)', () => {
+    for (const Birthday of ['not-a-date', '2026-02-31', '17/09/1990', '2026-13-01']) {
+      const parsed = CustomerCsvRowSchema.safeParse(row({ Birthday }));
+      expect(parsed.success, Birthday).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues[0]?.message).toMatch(/YYYY-MM-DD/);
+      }
+    }
+  });
+
+  it('accepts a real birthday and an empty cell', () => {
+    const valid = CustomerCsvRowSchema.safeParse(row({ Birthday: '1990-09-17' }));
+    expect(valid.success).toBe(true);
+    if (valid.success) expect(valid.data.Birthday).toBe('1990-09-17');
+    expect(CustomerCsvRowSchema.safeParse(row({ Birthday: '' })).success).toBe(true);
+  });
 });
 
 describe('import template sync', () => {

@@ -11,15 +11,17 @@ import {
 } from '@/lib/services/petty-cash.service';
 import { PaymentEntrySource } from '@/generated/prisma/client';
 import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/paymentAccount.service';
-import { parseRangeStart, parseRangeEnd } from '@/lib/dates/inclusiveRange';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { ApiError } from '@/lib/api/errors';
 import { categoryDenialReason } from '@/lib/petty-cash/category-policy';
 import { resolveExpenseLinkUpdate } from '@/lib/expenses/link';
 import { expenseAuditSnapshot, expenseChangedFields } from '@/lib/expenses/audit';
+import { buildExpenseFilterWhere } from '@/lib/expenses/filter';
 
 interface ExpenseFilters {
   category?: string | undefined;
+  /** Free-text description search (ARGUS #404). */
+  search?: string | undefined;
   dateFrom?: string | undefined;
   dateTo?: string | undefined;
   page?: number | undefined;
@@ -106,24 +108,7 @@ async function recheckFundsLowBalance(tenantId: string, fundIds: readonly (strin
 }
 
 function buildExpenseWhere(tenantId: string, filters: ExpenseFilters): Record<string, unknown> {
-  const where: Record<string, unknown> = { tenantId };
-
-  if (filters.category) {
-    where.category = filters.category as ExpenseCategory;
-  }
-
-  const dateFilter: Record<string, Date> = {};
-  if (filters.dateFrom) {
-    dateFilter.gte = parseRangeStart(filters.dateFrom);
-  }
-  if (filters.dateTo) {
-    dateFilter.lte = parseRangeEnd(filters.dateTo);
-  }
-  if (Object.keys(dateFilter).length > 0) {
-    where.expenseDate = dateFilter;
-  }
-
-  return where;
+  return buildExpenseFilterWhere(tenantId, filters);
 }
 
 export async function getExpenses(tenantId: string, filters: ExpenseFilters) {
@@ -133,7 +118,7 @@ export async function getExpenses(tenantId: string, filters: ExpenseFilters) {
 
   const where = buildExpenseWhere(tenantId, filters);
 
-  const [expenses, total] = await Promise.all([
+  const [expenses, total, aggregate] = await Promise.all([
     prisma.expense.findMany({
       where,
       include: expenseRelations,
@@ -142,9 +127,17 @@ export async function getExpenses(tenantId: string, filters: ExpenseFilters) {
       take: pageSize,
     }),
     prisma.expense.count({ where }),
+    // ARGUS #404: the register total covers every filtered row, not this page.
+    prisma.expense.aggregate({ where, _sum: { amount: true } }),
   ]);
 
-  return { expenses, total, page, pageSize };
+  return {
+    expenses,
+    total,
+    totalAmount: (aggregate._sum.amount?.toFixed(2) ?? '0.00'),
+    page,
+    pageSize,
+  };
 }
 
 /**

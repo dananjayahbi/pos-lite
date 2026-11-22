@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import Decimal from 'decimal.js';
 import type { TxClient } from '@/lib/services/inventory.service';
+import type { Gender } from '@/generated/prisma/client';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import { ApiError } from '@/lib/api/errors';
 import { netSpendAfterVoid } from '@/lib/services/customerSpend.core';
@@ -8,6 +9,11 @@ import {
   customerAuditSnapshot,
   type CustomerAuditActor,
 } from '@/lib/services/customerAudit.core';
+import {
+  buildCustomerMergePlan,
+  mergeCustomerIdsError,
+  type MergeCustomerSnapshot,
+} from '@/lib/services/customerMerge.core';
 
 // ── Private Helpers ──────────────────────────────────────────────────────────
 
@@ -347,6 +353,111 @@ interface GetCustomersOptions {
 }
 
 /** Collect customer ids whose sale count meets the minimum (separate query path). */
+/**
+ * ARGUS #320 - merge a duplicate/typo customer into the one to keep.
+ *
+ * Re-points every dependent row (sales, appointments, shipping addresses,
+ * deliveries, birthday logs) at the primary, folds the lifecycle totals and
+ * tags, then soft-deletes the duplicate. The duplicate's phone stays reserved
+ * by the tenant-unique constraint, which is why merging never rewrites it.
+ */
+export async function mergeCustomers(
+  tenantId: string,
+  primaryId: string,
+  duplicateId: string,
+  actor: CustomerAuditActor,
+) {
+  const [primary, duplicate] = await Promise.all([
+    prisma.customer.findFirst({ where: { id: primaryId, tenantId, deletedAt: null } }),
+    prisma.customer.findFirst({ where: { id: duplicateId, tenantId, deletedAt: null } }),
+  ]);
+
+  const idError = mergeCustomerIdsError(
+    primaryId,
+    duplicateId,
+    Boolean(primary),
+    Boolean(duplicate),
+  );
+  if (idError) {
+    throw new ApiError(idError.includes('not found') ? 404 : 400, 'INVALID_MERGE', idError);
+  }
+  // Non-null after the guard above.
+  const keep = primary!;
+  const fold = duplicate!;
+
+  const plan = buildCustomerMergePlan(
+    {
+      ...(keep as unknown as MergeCustomerSnapshot),
+      creditBalance: keep.creditBalance.toString(),
+      totalSpend: keep.totalSpend.toString(),
+    },
+    {
+      ...(fold as unknown as MergeCustomerSnapshot),
+      creditBalance: fold.creditBalance.toString(),
+      totalSpend: fold.totalSpend.toString(),
+    },
+  );
+
+  const moved = await prisma.$transaction(async (tx) => {
+    const sales = await tx.sale.updateMany({
+      where: { tenantId, customerId: duplicateId },
+      data: { customerId: primaryId },
+    });
+    await tx.appointment.updateMany({
+      where: { tenantId, customerId: duplicateId },
+      data: { customerId: primaryId },
+    });
+    await tx.shippingAddress.updateMany({
+      where: { tenantId, customerId: duplicateId },
+      data: { customerId: primaryId },
+    });
+    await tx.delivery.updateMany({
+      where: { tenantId, customerId: duplicateId },
+      data: { customerId: primaryId },
+    });
+    await tx.birthdayGreetingLog.updateMany({
+      where: { tenantId, customerId: duplicateId },
+      data: { customerId: primaryId },
+    });
+
+    const updated = await tx.customer.update({
+      where: { id: primaryId },
+      data: {
+        ...plan.fields,
+        gender: plan.fields.gender as Gender | null,
+        // The duplicate is archived, not deleted: its phone remains reserved
+        // and the audit row is the durable pointer to it.
+        // (Its own unique phone is untouched.)
+      },
+    });
+    await tx.customer.update({
+      where: { id: duplicateId },
+      data: { deletedAt: new Date(), isActive: false },
+    });
+
+    return { updated, movedSales: sales.count };
+  });
+
+  await createAuditLog({
+    tenantId,
+    actorId: actor.id,
+    actorRole: actor.role ?? 'SYSTEM',
+    entityType: 'Customer',
+    entityId: primaryId,
+    action: AUDIT_ACTIONS.CUSTOMER_MERGED,
+    before: {
+      duplicate: customerAuditSnapshot(fold),
+    },
+    after: {
+      primary: customerAuditSnapshot(moved.updated),
+      movedSales: moved.movedSales,
+      ...plan.summary,
+    },
+  });
+
+  return { customer: moved.updated, movedSales: moved.movedSales, summary: plan.summary };
+}
+
 async function getCustomerIdsWithMinOrders(
   tenantId: string,
   minOrders: number,

@@ -13,6 +13,11 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
+import {
+  PASSWORD_MAX_BYTES,
+  PASSWORD_MIN_LENGTH,
+  validatePasswordChange,
+} from '@/lib/auth/password-policy.core';
 
 type PasswordFormState = {
   currentPassword: string;
@@ -39,25 +44,22 @@ export default function AccountPasswordForm() {
     setSuccess(false);
   };
 
+  /**
+   * ARGUS #507: Clear must reset the form AND every stale message; it used to
+   * empty the fields while leaving the last validation error visible.
+   */
+  function resetForm() {
+    setValues(EMPTY_FORM);
+    setErrors({});
+    setSuccess(false);
+  }
+
   function validate(): boolean {
-    const next: Partial<Record<keyof PasswordFormState, string>> = {};
-
-    if (!values.currentPassword) next.currentPassword = 'Current password is required';
-
-    if (values.newPassword.length < 8) {
-      next.newPassword = 'New password must be at least 8 characters';
-    }
-
-    if (values.newPassword && values.newPassword === values.currentPassword) {
-      next.newPassword = 'New password must be different from the current password';
-    }
-
-    if (values.confirmPassword !== values.newPassword) {
-      next.confirmPassword = 'Passwords do not match';
-    }
-
-    setErrors(next);
-    return Object.keys(next).length === 0;
+    // ARGUS #505: one policy for the form and the API (including the bcrypt
+    // 72-byte cap, which is what actually gets hashed).
+    const result = validatePasswordChange(values);
+    setErrors(result.errors);
+    return result.ok;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -74,16 +76,33 @@ export default function AccountPasswordForm() {
 
       const json = (await res.json()) as {
         success: boolean;
-        error?: { message: string };
+        error?: {
+          message: string;
+          details?: Array<{ path: string; message: string }>;
+        };
       };
 
       if (!res.ok || !json.success) {
+        const fieldErrors: Partial<Record<keyof PasswordFormState, string>> = {};
+        for (const detail of json.error?.details ?? []) {
+          if (
+            detail.path === 'currentPassword' ||
+            detail.path === 'newPassword' ||
+            detail.path === 'confirmPassword'
+          ) {
+            fieldErrors[detail.path] = detail.message;
+          }
+        }
+        if (Object.keys(fieldErrors).length > 0) {
+          setErrors(fieldErrors);
+        }
         toast.error(json.error?.message ?? 'Failed to update password');
         return;
       }
 
       toast.success('Password updated. You will be signed out for security.');
       setSuccess(true);
+      setErrors({});
       setValues(EMPTY_FORM);
       // Bump the session so the user re-authenticates after a short delay.
       setTimeout(() => {
@@ -129,6 +148,9 @@ export default function AccountPasswordForm() {
             value={values.newPassword}
             onChange={(e) => update('newPassword', e.target.value)}
           />
+          <p className="text-xs text-sand-ink">
+            {PASSWORD_MIN_LENGTH}–{PASSWORD_MAX_BYTES} characters (bcrypt hashes at most 72 bytes).
+          </p>
           {errors.newPassword && <p className="text-xs text-terracotta">{errors.newPassword}</p>}
         </div>
 
@@ -147,16 +169,20 @@ export default function AccountPasswordForm() {
         </div>
 
         {success && (
-          <div className="rounded-md border border-success/30 bg-success/10 px-4 py-3 text-sm text-espresso">
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-md border border-success/30 bg-success/10 px-4 py-3 text-sm text-espresso"
+          >
             Your password has been updated. Signing you out…
           </div>
         )}
 
         <div className="flex items-center justify-end gap-2 pt-2">
-          <Button type="button" variant="ghost" onClick={() => setValues(EMPTY_FORM)}>
+          <Button type="button" variant="ghost" onClick={resetForm} disabled={saving}>
             Clear
           </Button>
-          <Button type="submit" disabled={saving}>
+          <Button type="submit" disabled={saving || success}>
             {saving ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />

@@ -10,6 +10,8 @@ interface ExpenseExportButtonProps {
   dateFrom?: string;
   dateTo?: string;
   category?: string;
+  /** Description search filter, mirroring the on-page list (ARGUS #404). */
+  search?: string;
 }
 
 /**
@@ -21,6 +23,7 @@ export function ExpenseExportButton({
   dateFrom,
   dateTo,
   category,
+  search,
 }: ExpenseExportButtonProps) {
   const [downloading, setDownloading] = useState(false);
 
@@ -31,6 +34,7 @@ export function ExpenseExportButton({
       if (dateFrom) params.set('dateFrom', dateFrom);
       if (dateTo) params.set('dateTo', dateTo);
       if (category && category !== 'ALL') params.set('category', category);
+      if (search && search.trim() !== '') params.set('search', search.trim());
 
       const res = await fetch(`/api/store/expenses/export?${params.toString()}`);
       if (!res.ok) {

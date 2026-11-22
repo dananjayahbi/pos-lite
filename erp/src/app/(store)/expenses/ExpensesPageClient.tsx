@@ -45,7 +45,6 @@ import { CreateExpenseSchema, EXPENSE_CATEGORIES } from '@/lib/validators/expens
 import type { CreateExpenseInput } from '@/lib/validators/expense.validators';
 import { formatRupee } from '@/lib/format';
 import { staffDisplayName } from '@/lib/utils/staff-name';
-import Decimal from 'decimal.js';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ReceiptUploader } from '@/components/expenses/ReceiptUploader';
 import { PettyCashFundPicker } from '@/components/expenses/PettyCashFundPicker';
@@ -77,6 +76,8 @@ interface Expense {
 interface ExpenseListResponse {
   expenses: Expense[];
   total: number;
+  /** Sum across every row matching the filters, not only this page (ARGUS #404). */
+  totalAmount: string;
   page: number;
   pageSize: number;
 }
@@ -139,9 +140,21 @@ export default function ExpensesPageClient({
 
   // Filters
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
+
+  // ARGUS #404: description search, debounced so typing does not refetch per
+  // keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   // Dialog / Sheet state
   const [createOpen, setCreateOpen] = useState(Boolean(initialFundId) && canCreate);
@@ -155,15 +168,16 @@ export default function ExpensesPageClient({
   const buildParams = useCallback(() => {
     const p = new URLSearchParams();
     if (categoryFilter !== 'ALL') p.set('category', categoryFilter);
+    if (debouncedSearch.trim()) p.set('search', debouncedSearch.trim());
     if (dateFrom) p.set('dateFrom', dateFrom);
     if (dateTo) p.set('dateTo', dateTo);
     p.set('page', String(page));
     p.set('pageSize', '20');
     return p.toString();
-  }, [categoryFilter, dateFrom, dateTo, page]);
+  }, [categoryFilter, debouncedSearch, dateFrom, dateTo, page]);
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<ExpenseListResponse>({
-    queryKey: ['expenses', categoryFilter, dateFrom, dateTo, page],
+    queryKey: ['expenses', categoryFilter, debouncedSearch, dateFrom, dateTo, page],
     queryFn: async () => {
       const res = await fetch(`/api/store/expenses?${buildParams()}`);
       const json = await res.json();
@@ -177,11 +191,6 @@ export default function ExpensesPageClient({
     isLoading,
     count: data?.expenses?.length ?? 0,
   });
-
-  const totalAmount = (data?.expenses ?? []).reduce(
-    (acc, e) => acc.plus(e.amount),
-    new Decimal(0),
-  );
 
   // Petty cash fund for optional linkage of standalone expenses (doc 36).
   const { data: pettyCash } = useQuery<{
@@ -246,7 +255,9 @@ export default function ExpensesPageClient({
     resolver: standardSchemaResolver(CreateExpenseSchema),
     defaultValues: {
       category: 'MISCELLANEOUS',
-      amount: 0,
+      // ARGUS #404: the schema requires >= 0.01, so start empty rather than
+      // seeding 0 (which the form would immediately reject).
+      amount: '' as unknown as number,
       description: '',
       expenseDate: new Date().toISOString().slice(0, 10),
       pettyCashFundId: initialFundId ?? undefined,
@@ -381,12 +392,24 @@ export default function ExpensesPageClient({
             dateFrom={dateFrom}
             dateTo={dateTo}
             category={categoryFilter}
+            search={debouncedSearch}
           />
         </div>
       </div>
 
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-4">
+        <div className="min-w-56">
+          <Label htmlFor="expense-search" className="text-sm text-sand-ink">Description</Label>
+          <Input
+            id="expense-search"
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search descriptions..."
+            className="border-mist"
+          />
+        </div>
         <div className="w-48">
           <Label className="text-sm text-sand-ink">Category</Label>
           <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setPage(1); }}>
@@ -459,6 +482,7 @@ export default function ExpensesPageClient({
                   type="number"
                   step="0.01"
                   min="0.01"
+                  placeholder="0.01"
                   {...createForm.register('amount', { valueAsNumber: true })}
                   className="border-mist"
                 />
@@ -624,13 +648,16 @@ export default function ExpensesPageClient({
             </Table>
           </div>
 
-          {/* Summary Row */}
-          {(data?.expenses ?? []).length > 0 && (
-            <div className="flex justify-end">
+          {/* Summary Row: filtered grand total, not just this page (ARGUS #404). */}
+          {(data?.total ?? 0) > 0 && (
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <span className="text-sm text-sand-ink">
+                {data?.total} expense{(data?.total ?? 0) === 1 ? '' : 's'} matching the filters
+              </span>
               <div className="rounded-lg border border-mist bg-linen/30 px-6 py-3">
-                <span className="text-sm text-sand-ink">Total (this page): </span>
+                <span className="text-sm text-sand-ink">Filtered total: </span>
                 <span className="font-display text-lg font-bold text-espresso">
-                  {formatRupee(totalAmount.toFixed(2))}
+                  {formatRupee(data?.totalAmount ?? '0.00')}
                 </span>
               </div>
             </div>
@@ -779,6 +806,16 @@ export default function ExpensesPageClient({
                   }}
                   placeholder="Select account"
                   noneLabel="No account (unlinked)"
+                  fallbackOption={
+                    editExpense?.paymentAccount
+                      ? {
+                          id: editExpense.paymentAccount.id,
+                          label: editExpense.paymentAccount.name,
+                        }
+                      : editFundId && fund?.paymentAccount
+                        ? { id: fund.paymentAccount.id, label: fund.paymentAccount.name }
+                        : null
+                  }
                 />
                 <p className="mt-1 text-xs text-sand-ink">
                   {editFundId

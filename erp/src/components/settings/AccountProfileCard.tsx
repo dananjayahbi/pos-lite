@@ -2,30 +2,25 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Mail, ShieldCheck, Clock, Tag } from 'lucide-react';
-import { staffDisplayName } from '@/lib/utils/staff-name';
+import {
+  formatAccountTimestamp,
+  resolveAccountDisplayName,
+} from '@/lib/services/accountProfile.core';
 
 export interface AccountProfile {
   id: string;
   email: string;
+  /** Stored staff full name; null until an owner fills it in. */
+  fullName?: string | null;
   role: string;
   lastLoginAt: string | null;
   createdAt: string;
   tenantId: string | null;
 }
 
-function formatDate(value?: string | null): string {
-  if (!value) return '-';
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 export default function AccountProfileCard({ profile }: { profile: AccountProfile }) {
-  const displayName = staffDisplayName(profile.email);
+  // ARGUS #506: prefer the stored staff name; the mailbox alias is a fallback.
+  const displayName = resolveAccountDisplayName(profile);
 
   return (
     <Card className="border border-espresso/10">
@@ -47,8 +42,8 @@ export default function AccountProfileCard({ profile }: { profile: AccountProfil
         <div className="grid gap-3 text-sm sm:grid-cols-2">
           <Row icon={Mail} label="Email" value={profile.email} />
           <Row icon={ShieldCheck} label="Role" value={profile.role.replace(/_/g, ' ')} />
-          <Row icon={Clock} label="Last sign-in" value={formatDate(profile.lastLoginAt)} />
-          <Row icon={Tag} label="Member since" value={formatDate(profile.createdAt)} />
+          <Row icon={Clock} label="Last sign-in" value={formatAccountTimestamp(profile.lastLoginAt)} />
+          <Row icon={Tag} label="Member since" value={formatAccountTimestamp(profile.createdAt)} />
         </div>
       </CardContent>
     </Card>

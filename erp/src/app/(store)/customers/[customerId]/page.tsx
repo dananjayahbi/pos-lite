@@ -24,11 +24,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Pencil, Trash2, AlertCircle } from 'lucide-react';
-import { formatRupee } from '@/lib/format';
+import { ArrowLeft, Pencil, Trash2, AlertCircle, GitMerge } from 'lucide-react';
+import { formatRupee, formatShortDate } from '@/lib/format';
+import { formatCustomerPhone } from '@/lib/services/customerDisplay.core';
 import { CustomerSheet } from '@/components/customers/CustomerSheet';
 import { LoyaltyBadge } from '@/components/customers/LoyaltyBadge';
 import { CustomerValueInsights } from '@/components/customers/CustomerValueInsights';
+import { CustomerMergeDialog } from '@/components/customers/CustomerMergeDialog';
 import {
   returnItemCount,
   summarizeCustomerReturns,
@@ -135,6 +137,7 @@ export default function CustomerDetailPage({
 
   const [activeTab, setActiveTab] = useState<Tab>('purchases');
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -219,12 +222,8 @@ export default function CustomerDetailPage({
       .join('')
       .toUpperCase();
 
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString('en-LK', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+  // ARGUS #319: the shared day-first formatter replaces `en-LK` month-first.
+  const formatDate = (dateStr: string) => formatShortDate(dateStr);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'purchases', label: 'Purchase History' },
@@ -284,6 +283,7 @@ export default function CustomerDetailPage({
   const customerReturns = customer.returns ?? [];
   const returnSummary = summarizeCustomerReturns(customerReturns);
   const canDeleteCustomer = !permissionsLoading && hasPermission(PERMISSIONS.CUSTOMER.deleteCustomer);
+  const canMergeCustomer = !permissionsLoading && hasPermission(PERMISSIONS.CUSTOMER.mergeCustomer);
   const { canEdit: canEditCustomer } = resolveCustomerEditAccess({
     permissionsLoading,
     hasEditPermission: hasPermission(PERMISSIONS.CUSTOMER.editCustomer),
@@ -323,6 +323,12 @@ export default function CustomerDetailPage({
                 Edit
               </Button>
             )}
+            {canMergeCustomer && (
+              <Button variant="outline" size="sm" onClick={() => setMergeOpen(true)}>
+                <GitMerge className="mr-1.5 h-3.5 w-3.5" />
+                Merge
+              </Button>
+            )}
             {canDeleteCustomer && (
               <Button
                 variant="outline"
@@ -336,10 +342,10 @@ export default function CustomerDetailPage({
             )}
           </div>
           <div className="mt-0.5 space-y-0.5">
-            <p className="text-sm text-sand-ink font-mono">{customer.phone}</p>
+            <p className="text-sm text-sand-ink font-mono">{formatCustomerPhone(customer.phone)}</p>
             {customer.phone2 && (
               <p className="text-sm text-sand-ink font-mono">
-                Alt: {customer.phone2}
+                Alt: {formatCustomerPhone(customer.phone2)}
               </p>
             )}
           </div>
@@ -482,6 +488,11 @@ export default function CustomerDetailPage({
               )}
             </TableBody>
           </Table>
+          {completedSales.length < customer.visitCount && (
+            <p className="border-t border-sand/30 px-4 py-2 text-xs text-sand-ink">
+              Showing {completedSales.length} of {customer.visitCount} completed sales (latest first).
+            </p>
+          )}
         </div>
       )}
 
@@ -584,7 +595,7 @@ export default function CustomerDetailPage({
             <div>
               <p className="text-xs uppercase text-sand-ink tracking-wide mb-1">Contact No 2</p>
               <p className="text-sm text-espresso font-mono">
-                {customer.phone2 ?? '-'}
+                {customer.phone2 ? formatCustomerPhone(customer.phone2) : '-'}
               </p>
             </div>
             <div>
@@ -623,6 +634,15 @@ export default function CustomerDetailPage({
           open={sheetOpen}
           onOpenChange={setSheetOpen}
           onSuccess={handleSuccess}
+        />
+      )}
+
+      {canMergeCustomer && (
+        <CustomerMergeDialog
+          open={mergeOpen}
+          onOpenChange={setMergeOpen}
+          primary={{ id: customer.id, name: customer.name }}
+          onMerged={handleSuccess}
         />
       )}
 

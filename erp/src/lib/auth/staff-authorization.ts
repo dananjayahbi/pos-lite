@@ -1,4 +1,10 @@
-import { ALL_PERMISSIONS, ROLE_PERMISSIONS, type AssignableRole } from '@/lib/constants/permissions';
+import {
+  ALL_PERMISSIONS,
+  ROLE_PERMISSIONS,
+  isDeniedPermissionEntry,
+  permissionKeyFromEntry,
+  type AssignableRole,
+} from '@/lib/constants/permissions';
 
 const MANAGEMENT_ROLES = new Set<string>(['OWNER', 'MANAGER', 'SUPER_ADMIN']);
 const NON_MANAGEMENT_ROLES: AssignableRole[] = [
@@ -45,14 +51,25 @@ export function canResetStaffPassword(actorRole: string, targetRole: string): bo
 }
 
 /**
- * Reject a permission grant containing any key the actor cannot grant
- * (`PERMISSION_NOT_GRANTABLE`).
+ * Reject a permission payload containing any key the actor cannot grant
+ * (`PERMISSION_NOT_GRANTABLE`). `!key` revoke entries are checked against the
+ * same allow-list: an actor may only revoke a capability they themselves hold
+ * (ARGUS #464).
  */
 export function assertPermissionsGrantable(actorRole: string, permissions: string[]): void {
   const allowed = grantablePermissions(actorRole);
-  const denied = permissions.find((permission) => !allowed.has(permission));
+  const denied = permissions
+    .filter(isDeniedPermissionEntry)
+    .map(permissionKeyFromEntry)
+    .find((permission) => !allowed.has(permission));
   if (denied) {
     throw new Error(`PERMISSION_NOT_GRANTABLE: ${denied}`);
+  }
+  const granted = permissions
+    .filter((permission) => !isDeniedPermissionEntry(permission))
+    .find((permission) => !allowed.has(permission));
+  if (granted) {
+    throw new Error(`PERMISSION_NOT_GRANTABLE: ${granted}`);
   }
 }
 

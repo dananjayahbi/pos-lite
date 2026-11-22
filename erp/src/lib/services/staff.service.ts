@@ -8,7 +8,7 @@ import { mapPrismaError } from '@/lib/api/map-prisma-error';
 import { withUniqueGuard } from '@/lib/api/race-guard';
 import { ApiError } from '@/lib/api/errors';
 import {
-  extraPermissions,
+  permissionPayloadToSave,
   samePermissionSet,
 } from '@/lib/services/permissionSet.core';
 import {
@@ -106,6 +106,9 @@ const STAFF_LIST_SELECT = {
   email: true,
   role: true,
   isActive: true,
+  // ARGUS #464/#466: the settings roster must be able to name the explicit
+  // extras and revokes it shows; permissions are access metadata, not HR PII.
+  permissions: true,
   commissionRate: true,
   clockedInAt: true,
   createdAt: true,
@@ -295,9 +298,11 @@ export async function updateStaff(
   assignMoney('allowances');
 
   const nextRole = data.role ?? existing.role;
-  const beforePermissions = extraPermissions(existing.permissions, existing.role);
+  // ARGUS #464: the stored payload is extras plus `!`-prefixed revokes, so a
+  // deny survives the round-trip and is compared like any other change.
+  const beforePermissions = permissionPayloadToSave(existing.permissions, existing.role);
   const nextPermissions = data.permissions !== undefined
-    ? extraPermissions(data.permissions, nextRole)
+    ? permissionPayloadToSave(data.permissions, nextRole)
     : beforePermissions;
   const permissionsChanged =
     data.permissions !== undefined &&
@@ -342,7 +347,7 @@ export async function updateStaff(
     }
 
     if (permissionsChanged) {
-      const afterPermissions = extraPermissions(updated.permissions, nextRole);
+      const afterPermissions = permissionPayloadToSave(updated.permissions, nextRole);
 
       await writeAuditLogTx(tx, {
         tenantId,

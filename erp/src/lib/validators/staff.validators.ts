@@ -17,9 +17,14 @@ import {
  * was the casualty of the old hand-written list.
  */
 const StaffRole = z.enum(ASSIGNABLE_ROLES as [AssignableRole, ...AssignableRole[]]);
-const PermissionValueSchema = z.string().refine((value) => ALL_PERMISSIONS.includes(value as (typeof ALL_PERMISSIONS)[number]), {
-  message: 'Invalid permission value',
-});
+const PermissionValueSchema = z.string().refine(
+  (value) => {
+    // ARGUS #464: a `!key` entry revokes a role default for one user.
+    const key = value.startsWith('!') ? value.slice(1) : value;
+    return ALL_PERMISSIONS.includes(key as (typeof ALL_PERMISSIONS)[number]);
+  },
+  { message: 'Invalid permission value' },
+);
 
 /**
  * ARGUS #342: the contract is 0-100 percent everywhere. The old bound mirrored

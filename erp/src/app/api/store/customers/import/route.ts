@@ -12,21 +12,14 @@ import {
   CustomerCsvRowSchema,
   normalizeSriLankaPhone,
 } from '@/lib/validators/customer-import.validators';
+import {
+  normalizeImportTags,
+  parseCustomerBirthday,
+  reconcileImportCounts,
+} from '@/lib/services/customerImport.core';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 const MAX_ROWS = 500;
-
-function parseBirthday(value: string | undefined): Date | undefined {
-  if (!value || value.trim() === '') return undefined;
-  const date = new Date(value.trim());
-  if (isNaN(date.getTime())) return undefined;
-  return date;
-}
-
-function parseTags(value: string | undefined): string[] {
-  if (!value || value.trim() === '') return [];
-  return value.split(',').map((t) => t.trim()).filter(Boolean);
-}
 
 function parseGender(value: string | undefined): Gender | undefined {
   if (!value || value.trim() === '') return undefined;
@@ -114,13 +107,18 @@ export async function POST(request: Request) {
       );
     }
 
-    // Fetch existing phone numbers for duplicate checking
+    // Fetch existing phone numbers for duplicate checking. Archived rows still
+    // hold the tenant-unique phone, so they are included: otherwise the row is
+    // counted as imported and then silently skipped by the database (#318).
     const existingCustomers = await prisma.customer.findMany({
-      where: { tenantId, deletedAt: null },
-      select: { phone: true },
+      where: { tenantId },
+      select: { phone: true, deletedAt: true },
     });
-    const existingPhones = new Set(
-      existingCustomers.map((c) => normalizeSriLankaPhone(c.phone)),
+    const existingPhones = new Map(
+      existingCustomers.map((c) => [
+        normalizeSriLankaPhone(c.phone),
+        c.deletedAt,
+      ]),
     );
 
     const imported: string[] = [];
@@ -156,13 +154,20 @@ export async function POST(request: Request) {
       const phone = row.Phone;
 
       if (existingPhones.has(normalizeSriLankaPhone(phone))) {
-        skipped.push(`Row ${rowNum}: ${name} (duplicate phone ${phone})`);
+        const archived = existingPhones.get(normalizeSriLankaPhone(phone));
+        skipped.push(
+          `Row ${rowNum}: ${name} (duplicate phone ${phone}${
+            archived ? ', held by an archived customer' : ''
+          })`,
+        );
         continue;
       }
 
       const gender = parseGender(row.Gender);
-      const birthday = parseBirthday(row.Birthday);
-      const tags = parseTags(row.Tags);
+      // The row schema already rejected an unparseable birthday, so anything
+      // left here is either empty or a real date (#318).
+      const birthday = parseCustomerBirthday(row.Birthday);
+      const tags = normalizeImportTags(row.Tags);
       const email = row.Email && row.Email.trim() !== '' ? row.Email.trim() : null;
       const phone2 = row.Phone2 && row.Phone2.trim() !== '' ? row.Phone2.trim() : null;
       const address = row.Address && row.Address.trim() !== '' ? row.Address.trim() : null;
@@ -183,15 +188,25 @@ export async function POST(request: Request) {
         notes,
       });
 
-      existingPhones.add(normalizeSriLankaPhone(phone));
+      existingPhones.set(normalizeSriLankaPhone(phone), null);
       imported.push(name);
     }
 
+    let insertedCount = 0;
     if (toCreate.length > 0) {
-      await prisma.customer.createMany({
+      const result = await prisma.customer.createMany({
         data: toCreate,
         skipDuplicates: true,
       });
+      insertedCount = result.count;
+    }
+
+    // Report what the database actually inserted, not the number of rows that
+    // passed validation (#318: an archived duplicate used to be counted).
+    const reconciled = reconcileImportCounts(toCreate.length, insertedCount);
+    if (reconciled.skipped > 0) {
+      skipped.push(...reconciled.notes);
+      imported.splice(reconciled.imported);
     }
 
     // Customer imports are master-data changes too; record who ran the batch
@@ -204,7 +219,7 @@ export async function POST(request: Request) {
       entityId: randomUUID(),
       action: AUDIT_ACTIONS.CUSTOMER_IMPORTED,
       after: {
-        imported: imported.length,
+        imported: reconciled.imported,
         skipped: skipped.length,
         errors: errors.length,
       },
@@ -213,7 +228,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       data: {
-        imported: imported.length,
+        imported: reconciled.imported,
         skipped: skipped.length,
         errors: errors.length,
         skippedDetails: skipped,
