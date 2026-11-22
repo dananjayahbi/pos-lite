@@ -179,6 +179,66 @@ export function getUnitShortLabel(unit: string): string {
   return UNIT_SHORT_LABELS[unit] ?? unit;
 }
 
+/**
+ * ARGUS #247 - category/unit display names must be unique too.
+ *
+ * The category service only de-duplicated derived keys, so a tenant could add a
+ * second "Powders & Herbs" (stored as `POWDERS_HERBS_2`) and the edit form then
+ * offered two identical labels. Comparison is case/whitespace-insensitive.
+ */
+export function normalizeRawMaterialLabel(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+export interface RawMaterialLabelRow {
+  id: string;
+  name: string;
+}
+
+export function findDuplicateRawMaterialCategoryName(
+  name: string,
+  rows: readonly RawMaterialLabelRow[],
+  excludeId?: string,
+): RawMaterialLabelRow | null {
+  const target = normalizeRawMaterialLabel(name);
+  if (!target) return null;
+  return (
+    rows.find(
+      (row) => row.id !== excludeId && normalizeRawMaterialLabel(row.name) === target,
+    ) ?? null
+  );
+}
+
+/**
+ * ARGUS #247 - one option per display label.
+ *
+ * The select fallback prepended the material's current category/unit alongside
+ * the fetched catalogue, and older data could hold two keys with the same name.
+ * `preferKey` keeps the value the form is actually bound to.
+ */
+export function dedupeLabeledOptions<T extends { key: string; name: string }>(
+  options: readonly T[],
+  preferKey?: string,
+): T[] {
+  const ordered = preferKey
+    ? [...options].sort((a, b) => {
+        if (a.key === preferKey) return -1;
+        if (b.key === preferKey) return 1;
+        return 0;
+      })
+    : options;
+
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+  for (const option of ordered) {
+    const label = normalizeRawMaterialLabel(option.name);
+    if (seen.has(label)) continue;
+    seen.add(label);
+    deduped.push(option);
+  }
+  return deduped;
+}
+
 export type RawMaterialStockStatus = 'OUT' | 'LOW' | 'OK';
 
 /** Every status the list filter accepts, in display order. */
