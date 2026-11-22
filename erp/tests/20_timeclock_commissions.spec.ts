@@ -156,17 +156,42 @@ test.describe('Module 20 - Timeclock & Staff Commissions', () => {
     expect(Array.isArray(payoutBody?.data?.records ?? [])).toBe(true);
 
     for (const row of (summaryBody?.data ?? []) as Array<{ totalEarned?: string; totalPaid?: string; unpaid?: string }>) {
-      expect(Number(row.totalEarned ?? 0)).toBeGreaterThanOrEqual(0);
-      expect(Number(row.totalPaid ?? 0)).toBeGreaterThanOrEqual(0);
-      expect(Number(row.unpaid ?? 0)).toBeGreaterThanOrEqual(0);
+      // ARGUS #347: unpaid is money, not the derived isPaid flag.
+      expect(Number(row.unpaid ?? 0)).toBeCloseTo(
+        Number(row.totalEarned ?? 0) - Number(row.totalPaid ?? 0),
+        2,
+      );
+    }
+
+    for (const payout of (payoutBody?.data?.records ?? []) as Array<{
+      periodStart?: string;
+      periodEnd?: string;
+    }>) {
+      // A payout is listed when its commission window overlaps the selected one.
+      expect(new Date(payout.periodEnd!).getTime()).toBeGreaterThanOrEqual(
+        new Date(periodStart).getTime(),
+      );
+      expect(new Date(payout.periodStart!).getTime()).toBeLessThanOrEqual(
+        new Date(periodEnd).getTime(),
+      );
     }
   });
 
-  test('T4 payout creation validates payloads and either accepts or returns a domain-level 400', async ({ page }) => {
+  test('T4 payout creation requires a payment account and validates payloads', async ({ page }) => {
     await login(page, OWNER);
     const staff = await fetchStaff(page);
     const ownerUser = staff.find((u) => u.email === OWNER.email);
     expect(ownerUser).toBeTruthy();
+
+    // ARGUS #347: createCommissionPayout requires paymentAccountId, so the
+    // contract test must send one (or expect a typed 422 when none exists).
+    const accountsResponse = await page.request.get(
+      '/api/store/payment-accounts?status=ACTIVE',
+    );
+    expect(accountsResponse.status()).toBe(200);
+    const accountsBody = await json(accountsResponse);
+    const accounts = (accountsBody?.data?.accounts ?? []) as Array<{ id: string }>;
+    const paymentAccountId = accounts[0]?.id;
 
     const validPayload = {
       userId: ownerUser!.id,
@@ -175,6 +200,7 @@ test.describe('Module 20 - Timeclock & Staff Commissions', () => {
       paymentMethod: 'Bank Transfer',
       proofReference: 'QA-REF-20',
       notes: 'QA payout validation',
+      ...(paymentAccountId ? { paymentAccountId } : {}),
     };
 
     const payoutRequest = await page.request.post('/api/store/staff/commissions/payout', {
@@ -183,14 +209,21 @@ test.describe('Module 20 - Timeclock & Staff Commissions', () => {
     });
 
     const payoutBody = await json(payoutRequest);
-    // M20-02: an empty period now returns a typed 409 (no unpaid commissions)
-    // rather than a raw 500; a real payout still 201s.
-    expect([200, 201, 409]).toContain(payoutRequest.status());
-    if (payoutRequest.status() === 201) {
-      expect(payoutBody?.success).toBe(true);
-      expect(payoutBody?.data?.userId).toBe(ownerUser!.id);
+    if (!paymentAccountId) {
+      // No active account configured: the required account is a typed 422, not
+      // a raw 500 or a phantom payout.
+      expect(payoutRequest.status()).toBe(422);
+      expect(payoutBody?.error?.code).toBe('VALIDATION_ERROR');
     } else {
-      expect(['NO_UNPAID_COMMISSIONS', 'CONFLICT']).toContain(payoutBody?.error?.code ?? '');
+      // M20-02: an empty period returns a typed 409 (no unpaid commissions)
+      // rather than a raw 500; a real payout still 201s.
+      expect([200, 201, 409]).toContain(payoutRequest.status());
+      if (payoutRequest.status() === 201) {
+        expect(payoutBody?.success).toBe(true);
+        expect(payoutBody?.data?.userId).toBe(ownerUser!.id);
+      } else {
+        expect(['NO_UNPAID_COMMISSIONS', 'CONFLICT']).toContain(payoutBody?.error?.code ?? '');
+      }
     }
 
     // M20-02: malformed / unknown-staff payloads are typed 400/404 — never 500.
@@ -210,18 +243,24 @@ test.describe('Module 20 - Timeclock & Staff Commissions', () => {
         userId: 'clx0000000000000000000000',
         periodStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
         periodEnd: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 59, 999).toISOString(),
+        ...(paymentAccountId ? { paymentAccountId } : {}),
       },
       headers: { 'content-type': 'application/json' },
     });
     // An unknown/foreign staff member has no unpaid records → typed 409, not 500.
-    expect(foreignStaff.status()).toBe(409);
-    expect((await json(foreignStaff))?.error?.code).toBe('NO_UNPAID_COMMISSIONS');
+    if (paymentAccountId) {
+      expect(foreignStaff.status()).toBe(409);
+      expect((await json(foreignStaff))?.error?.code).toBe('NO_UNPAID_COMMISSIONS');
+    } else {
+      expect(foreignStaff.status()).toBe(422);
+    }
 
     const inverted = await page.request.post('/api/store/staff/commissions/payout', {
       data: {
         userId: ownerUser!.id,
         periodStart: new Date(2026, 5, 1).toISOString(),
         periodEnd: new Date(2026, 4, 1).toISOString(),
+        ...(paymentAccountId ? { paymentAccountId } : {}),
       },
       headers: { 'content-type': 'application/json' },
     });

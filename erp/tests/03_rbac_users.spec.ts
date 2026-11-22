@@ -410,24 +410,23 @@ test.describe('2. Financial & Calculation Precision (commissionRate)', () => {
     await ctx.close();
   });
 
-  test('2.2 Boundary: Decimal(5,2) ceiling 999.99 accepted, 1000.00 rejected', async ({
-    browser,
-  }) => {
+  test('2.2 Boundary: the shared 0-100 commission ceiling is enforced', async ({ browser }) => {
     const ctx = await authedContext(browser, 'owner');
     const req = ctx.request;
 
     const ok = await req.post('/api/store/staff', {
-      data: { email: qaEmail('max'), role: 'CASHIER', commissionRate: '999.99' },
+      data: { email: qaEmail('max'), role: 'CASHIER', commissionRate: '100' },
     });
-    expect(ok.status(), '999.99 fits Decimal(5,2)').toBe(201);
+    expect(ok.status(), '100% is the ceiling').toBe(201);
 
-    // The zod regex ^\d+(\.\d{1,2})?$ permits values the column cannot hold.
-    const over = await req.post('/api/store/staff', {
-      data: { email: qaEmail('over'), role: 'CASHIER', commissionRate: '1000.00' },
-    });
-    const overBody = await json(over);
-    expect(over.status(), '1000.00 must not be silently accepted').toBe(400);
-    expect(apiError(over, overBody)).toBe('VALIDATION_ERROR');
+    for (const rate of ['100.01', '999.99', '1000.00']) {
+      const over = await req.post('/api/store/staff', {
+        data: { email: qaEmail(`over-${rate.replace(/\D/g, 'x')}`), role: 'CASHIER', commissionRate: rate },
+      });
+      const overBody = await json(over);
+      expect(over.status(), `${rate} must not be silently accepted`).toBe(400);
+      expect(apiError(over, overBody)).toBe('VALIDATION_ERROR');
+    }
 
     await ctx.close();
   });
@@ -1490,4 +1489,32 @@ test.afterAll('cleanup: deactivate QA-created staff accounts', async ({ browser 
   } finally {
     await ctx.close();
   }
+});
+
+/**
+ * ARGUS #347: every staff PATCH is a management/HR operation. A cashier (or any
+ * signed-in user without staff:manage) cannot change salary, bank details or
+ * commission, and the /staff page redirects them before it renders.
+ */
+test('8.12 staff PATCH is HR-only and the staff page is guarded', async ({ browser }) => {
+  const ownerCtx = await authedContext(browser, 'owner');
+  const list = await ownerCtx.request.get('/api/store/staff');
+  expect(list.status()).toBe(200);
+  const staff = (await json(list))?.data ?? [];
+  const cashier = staff.find((u: { email?: string }) => u.email === USERS.cashier.email);
+  expect(cashier?.id, 'seeded cashier must be listed').toBeTruthy();
+
+  const cashierCtx = await authedContext(browser, 'cashier');
+  const patch = await cashierCtx.request.patch(`/api/store/staff/${cashier.id}`, {
+    data: { commissionRate: '10.00', basicSalary: '99999.00' },
+  });
+  expect(patch.status(), 'cashier cannot edit staff fields').toBe(403);
+  expect(apiError(patch, await json(patch))).toBe('FORBIDDEN');
+
+  const page = await cashierCtx.newPage();
+  await page.goto(`${BASE_URL}/staff`, { waitUntil: 'domcontentloaded' });
+  await expect.poll(() => page.url()).toMatch(/\/dashboard/);
+
+  await cashierCtx.close();
+  await ownerCtx.close();
 });
