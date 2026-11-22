@@ -17,7 +17,6 @@ import { useStockSummary } from '@/hooks/useStockSummary';
 import { useRecentMovements } from '@/hooks/useRecentMovements';
 import { stockActorLabel } from '@/lib/stock/actor-label';
 import { formatRupee } from '@/lib/format';
-import { LowStockAlertBadge } from '@/components/stock/LowStockAlertBadge';
 import { stockMovementReasonLabel } from '@/lib/constants/stock-movement';
 import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 import { PERMISSIONS } from '@/lib/constants/permissions';
@@ -183,8 +182,9 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
         </div>
       )}
 
-      {/* Low Stock Alert Badge */}
-      <LowStockAlertBadge />
+      {/* ARGUS #188: the banner above is the single low-stock call to action.
+          The extra LowStockAlertBadge duplicated the same count with a second
+          link to the same list. */}
 
       {/* Quick Actions */}
       <div>
