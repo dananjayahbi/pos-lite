@@ -23,6 +23,7 @@ import { DeferredMediaUploader } from '@/components/shared/DeferredMediaUploader
 import { CategoryPicker } from '@/components/settings/website-tabs/CategoryPicker';
 import { ProductPicker } from '@/components/settings/website-tabs/ProductPicker';
 import { toast } from 'sonner';
+import { isSafeWebsiteHrefOrEmpty } from '@/lib/website/link-validation.core';
 import type {
   WebsiteConfigData,
   WebsiteHeroSlideData,
@@ -469,6 +470,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
                         }
                         placeholder="e.g. /shop"
                         className="h-9 text-sm"
+                        aria-invalid={!isSafeWebsiteHrefOrEmpty(slide.ctaLink ?? '')}
                       />
                     </div>
                   </div>
@@ -827,6 +829,7 @@ export function LandingPageTab({ config, onChange }: LandingPageTabProps) {
                 onChange={(e) => handleInfoAdChange('buttonLink', e.target.value)}
                 placeholder="e.g. /about"
                 className="h-9 text-sm"
+                aria-invalid={!isSafeWebsiteHrefOrEmpty(infoAdSection?.buttonLink ?? '')}
               />
             </div>
           </div>

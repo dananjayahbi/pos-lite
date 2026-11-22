@@ -1,5 +1,6 @@
 import {
   ALL_PERMISSIONS,
+  ASSIGNABLE_ROLES,
   ROLE_PERMISSIONS,
   isDeniedPermissionEntry,
   permissionKeyFromEntry,
@@ -34,6 +35,14 @@ export function canAssignRole(actorRole: string, role: string): boolean {
   if (actorRole === 'OWNER' || actorRole === 'SUPER_ADMIN') return true;
   if (actorRole === 'MANAGER') return NON_MANAGEMENT_ROLES.includes(role as AssignableRole);
   return false;
+}
+
+/**
+ * Roles the actor may put in a create/edit dropdown (ARGUS #346). The UI used
+ * to offer OWNER to every editor even though the API rejected the assignment.
+ */
+export function assignableRolesFor(actorRole: string): AssignableRole[] {
+  return ASSIGNABLE_ROLES.filter((role) => canAssignRole(actorRole, role));
 }
 
 /** Permissions the actor may hand out. Managers may only grant what they hold. */

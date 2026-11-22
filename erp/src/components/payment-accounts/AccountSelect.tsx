@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { selectPaymentAccountOptions } from '@/lib/services/paymentAccountOptions.core';
 import type { PaymentAccount } from './paymentAccountTypes';
 
 /**
@@ -23,6 +24,12 @@ interface AccountSelectProps {
   placeholder: string;
   /** Hide this account from the list (e.g. the source of a transfer). */
   excludeAccountId?: string;
+  /**
+   * Hide fund-managed petty-cash accounts. Deposit sources and withdrawal
+   * destinations cannot be petty cash (the API rejects them), so offering the
+   * option only produces a dead selection (ARGUS #431).
+   */
+  excludePettyCash?: boolean;
   /** Label for an explicit "leave empty" option. Omit to force a selection. */
   noneLabel?: string;
   disabled?: boolean;
@@ -42,15 +49,17 @@ export function AccountSelect({
   onValueChange,
   placeholder,
   excludeAccountId,
+  excludePettyCash,
   noneLabel,
   disabled,
   id,
   className,
   fallbackOption,
 }: AccountSelectProps) {
-  const options = accounts.filter(
-    (account) => account.status === 'ACTIVE' && account.id !== excludeAccountId,
-  );
+  const options = selectPaymentAccountOptions(accounts, {
+    excludeAccountId,
+    excludePettyCash,
+  });
 
   // A saved value that cannot be found in the loaded options still needs a
   // label, otherwise Radix renders the placeholder for an existing selection.

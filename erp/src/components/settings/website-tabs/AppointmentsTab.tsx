@@ -8,12 +8,15 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Loader2, ExternalLink, X } from 'lucide-react';
 import { DeferredMediaUploader } from '@/components/shared/DeferredMediaUploader';
+import { buildStorefrontPreviewUrl } from '@/lib/website/storefront-url.core';
 import { cn } from '@/lib/utils';
 import type { WebsiteConfigData, WebsiteAppointmentsConfig } from '@/types/website.types';
 
 interface AppointmentsTabProps {
   config: WebsiteConfigData;
   onChange: (updates: Partial<WebsiteConfigData>) => void;
+  /** Tenant slug required by the storefront route (ARGUS #500). */
+  tenantSlug?: string;
 }
 
 interface ServiceOption {
@@ -39,9 +42,25 @@ const DEFAULT_APPOINTMENTS: WebsiteAppointmentsConfig = {
  *  - edit the nav label, page title, subtitle, intro and hero image
  *  - choose which appointment services are offered to customers
  */
-export function AppointmentsTab({ config, onChange }: AppointmentsTabProps) {
+export function AppointmentsTab({ config, onChange, tenantSlug = '' }: AppointmentsTabProps) {
   const appointments: WebsiteAppointmentsConfig =
     (config.appointments as WebsiteAppointmentsConfig) ?? DEFAULT_APPOINTMENTS;
+
+  const [previewUrl, setPreviewUrl] = useState('');
+
+  // Build after mount: the host and port only exist in the browser, and the
+  // link must include the tenant slug (ARGUS #500).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setPreviewUrl(
+      buildStorefrontPreviewUrl({
+        protocol: window.location.protocol,
+        host: window.location.host,
+        tenantSlug,
+        path: '/appointments',
+      }),
+    );
+  }, [tenantSlug]);
 
   const [services, setServices] = useState<ServiceOption[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
@@ -89,15 +108,8 @@ export function AppointmentsTab({ config, onChange }: AppointmentsTabProps) {
   // Derive the customer-facing appointments URL. In production the ERP is
   // served from an `admin.` subdomain while the storefront is on the bare
   // host, so strip the "admin." prefix. In local dev the ERP runs on 3003 and
-  // the storefront on 3002, so remap the port.
-  const previewUrl = (() => {
-    if (typeof window === 'undefined') return '';
-    const { host, protocol } = window.location;
-    let h = host.replace(/^admin\./i, '');
-    h = h.replace(/:3003$/, ':3002');
-    return `${protocol}//${h}/appointments`;
-  })();
-
+  // the storefront on 3002, so remap the port. The tenant slug is required:
+  // without it the storefront answers 404 (ARGUS #500).
   return (
     <div className="space-y-6">
       {/* Sync status + live page preview */}

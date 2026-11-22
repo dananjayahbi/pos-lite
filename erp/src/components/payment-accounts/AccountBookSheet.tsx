@@ -36,6 +36,7 @@ import { buildQuery, getJson } from './paymentAccountApi';
 import {
   ENTRY_SOURCE_LABELS,
   formatEntryDate,
+  formatEntryTime,
   parseMoney,
 } from './paymentAccountLabels';
 import { LEDGER_SOURCE_FILTERS } from './paymentAccountTypes';
@@ -125,6 +126,18 @@ function BookBody({ account }: { account: PaymentAccount }) {
             {formatRupee(header.balance)}
           </span>
         </p>
+        {header.details && header.details.length > 0 && (
+          <dl className="flex flex-wrap gap-x-5 gap-y-1 pt-1">
+            {header.details.map((detail, index) => (
+              <div key={`${detail.label}-${index}`}>
+                <dt className="font-body text-[10px] uppercase tracking-wide text-mist-ink">
+                  {detail.label || 'Detail'}
+                </dt>
+                <dd className="font-body text-xs text-espresso">{detail.value || '-'}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </DialogHeader>
 
       <div className="flex flex-wrap items-end gap-3 border-b border-mist p-4">
@@ -200,7 +213,7 @@ function BookBody({ account }: { account: PaymentAccount }) {
             <Table>
               <TableHeader>
                 <TableRow className="bg-linen/40">
-                  <TableHead className="text-espresso">Date</TableHead>
+                  <TableHead className="text-espresso">Date / recorded</TableHead>
                   <TableHead className="text-espresso">Description</TableHead>
                   <TableHead className="text-espresso">Source</TableHead>
                   <TableHead className="text-right text-espresso">Debit</TableHead>
@@ -219,7 +232,10 @@ function BookBody({ account }: { account: PaymentAccount }) {
                   entries.map((entry) => (
                     <TableRow key={entry.id} className="hover:bg-linen/20">
                       <TableCell className="whitespace-nowrap font-mono text-xs">
-                        {formatEntryDate(entry.entryDate)}
+                        <div>{formatEntryDate(entry.entryDate)}</div>
+                        <div className="text-[10px] text-mist-ink">
+                          rec {formatEntryTime(entry.createdAt)}
+                        </div>
                       </TableCell>
                       <TableCell className="max-w-xs truncate font-body">
                         {entry.description}

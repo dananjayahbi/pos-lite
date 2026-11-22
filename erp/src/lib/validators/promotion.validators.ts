@@ -179,7 +179,7 @@ const PromotionFields = {
     'PROMO_CODE',
   ]),
   value: z.number().min(0),
-  promoCode: z.string().trim().max(50).optional(),
+  promoCode: z.string().trim().toUpperCase().max(50).optional(),
   targetCategoryId: CreateNullableIdSchema,
   targetProductId: CreateNullableIdSchema,
   // M15-02: int column bound; min stays 1 because `evaluateBOGO` divides by
@@ -203,7 +203,7 @@ const PromotionUpdateBaseSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   type: PromotionFields.type.optional(),
   value: z.number().min(0).optional(),
-  promoCode: z.string().trim().max(50).optional(),
+  promoCode: z.string().trim().toUpperCase().max(50).optional(),
   targetCategoryId: UpdateNullableIdSchema,
   targetProductId: UpdateNullableIdSchema,
   minQuantity: z.number().int().min(1).max(MAX_MIN_QUANTITY).optional(),
@@ -248,16 +248,51 @@ export const UpdatePromotionSchema = PromotionUpdateBaseSchema.superRefine(
   applyPromotionRefinements,
 );
 
-export const EvaluateCartSchema = z.object({
-  cartLines: z.array(z.object({
+/**
+ * ARGUS #334 — evaluate input hardening.
+ *
+ * `unitPrice`/`manualDiscountAmount` were any non-empty string, so a caller
+ * could send `abc` (Decimal throws -> 500) or `-100` (a negative discount that
+ * credits the customer). Money is a non-negative decimal string, bounded by
+ * the Promotion money ceiling, and a manual discount cannot exceed its line.
+ */
+const MAX_EVALUATE_MONEY = 9_999_999_999.99;
+const MAX_CART_LINE_QUANTITY = 1_000_000;
+const MONEY_TEXT = /^\d+(?:\.\d{1,2})?$/;
+
+const evaluateMoney = z
+  .string()
+  .trim()
+  .min(1, 'Amount is required')
+  .regex(MONEY_TEXT, 'Amount must be a non-negative number with at most 2 decimals')
+  .refine((value) => Number(value) <= MAX_EVALUATE_MONEY, {
+    message: `Amount cannot exceed ${MAX_EVALUATE_MONEY.toFixed(2)}`,
+  });
+
+const EvaluateCartLineSchema = z
+  .object({
     variantId: z.string().min(1),
-    quantity: z.number().int().min(1),
-    unitPrice: z.string().min(1),
-    manualDiscountAmount: z.string().optional(),
+    quantity: z.number().int().min(1).max(MAX_CART_LINE_QUANTITY),
+    unitPrice: evaluateMoney,
+    manualDiscountAmount: evaluateMoney.optional(),
     categoryId: z.string().optional(),
-  })).min(1),
+  })
+  .superRefine((line, ctx) => {
+    if (line.manualDiscountAmount === undefined) return;
+    const lineTotal = Number(line.unitPrice) * line.quantity;
+    if (Number(line.manualDiscountAmount) > lineTotal) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['manualDiscountAmount'],
+        message: 'Manual discount cannot exceed the line total',
+      });
+    }
+  });
+
+export const EvaluateCartSchema = z.object({
+  cartLines: z.array(EvaluateCartLineSchema).min(1),
   customerId: z.string().optional(),
-  promoCode: z.string().optional(),
+  promoCode: z.string().trim().max(50).optional(),
 });
 
 export type CreatePromotionInput = z.infer<typeof CreatePromotionSchema>;

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertLastOwnerRemains,
   assertPermissionsGrantable,
+  assignableRolesFor,
   canAssignRole,
   canManageStaffRole,
   canResetStaffPassword,
@@ -34,6 +35,18 @@ describe('staff role hierarchy', () => {
     expect(canAssignRole('MANAGER', 'CASHIER')).toBe(true);
     expect(canAssignRole('OWNER', 'OWNER')).toBe(true);
     expect(canAssignRole('OWNER', 'MANAGER')).toBe(true);
+  });
+
+  it('offers only roles the actor can assign in the dropdown (ARGUS #346)', () => {
+    const managerRoles = assignableRolesFor('MANAGER');
+    expect(managerRoles).not.toContain('OWNER');
+    expect(managerRoles).not.toContain('MANAGER');
+    expect(managerRoles).toContain('CASHIER');
+
+    const ownerRoles = assignableRolesFor('OWNER');
+    expect(ownerRoles).toContain('OWNER');
+    expect(ownerRoles).toContain('MANAGER');
+    expect(assignableRolesFor('CASHIER')).toEqual([]);
   });
 
   it('restricts grantable permissions for managers to their own set', () => {

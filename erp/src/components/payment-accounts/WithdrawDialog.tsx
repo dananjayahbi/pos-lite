@@ -134,6 +134,7 @@ function WithdrawForm({ account, accounts, onSubmit, onCancel }: WithdrawFormPro
               onValueChange={setToAccountId}
               placeholder="Cash out of the business"
               excludeAccountId={account.id}
+              excludePettyCash
               noneLabel="Cash out of the business"
               disabled={isSubmitting}
               className="w-full border-mist"

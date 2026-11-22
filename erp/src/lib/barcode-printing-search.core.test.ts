@@ -53,4 +53,18 @@ describe('selectBarcodeSearchRows', () => {
   it('returns nothing when no product or variant matches', () => {
     expect(selectBarcodeSearchRows(rows, 'does-not-exist')).toEqual([]);
   });
+
+  it('handles a variant with no saved barcode without throwing (ARGUS #163)', () => {
+    const withMissing = [
+      ...rows,
+      { productName: 'Brahmi Ghrita', sku: 'BRG-100', barcode: null },
+    ];
+
+    expect(selectBarcodeSearchRows(withMissing, 'brahmi').map((entry) => entry.row.sku)).toEqual([
+      'BRG-100',
+    ]);
+    expect(selectBarcodeSearchRows(withMissing, '2003424422401').map((entry) => entry.row.sku)).toEqual([
+      'MGH-100',
+    ]);
+  });
 });

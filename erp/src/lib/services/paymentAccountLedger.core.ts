@@ -10,6 +10,8 @@
  * Sale Refund filter returned voids instead of returns. The pseudo source
  * `SALE_VOID` separates them using the originating document id.
  */
+import Decimal from 'decimal.js';
+
 export const SALE_VOID_SOURCE = 'SALE_VOID' as const;
 
 export interface RefundSourceIds {
@@ -46,4 +48,24 @@ export function matchesLedgerSourceFilter(
     return classifyLedgerSource(source, sourceId, ids) === 'SALE_REFUND';
   }
   return source === filter;
+}
+
+/**
+ * Next cached account balance for a ledger line (ARGUS #434). Kept pure and
+ * shared with the service so the debit-increases / credit-decreases rule has
+ * an explicit, testable contract instead of living only inside a transaction.
+ */
+export function nextAccountBalance(
+  current: Decimal.Value,
+  debit: Decimal.Value,
+  credit: Decimal.Value,
+): Decimal {
+  return new Decimal(current).plus(debit).minus(credit);
+}
+
+/** Page count for the account book / tenant ledger (ARGUS #434). */
+export function ledgerTotalPages(total: number, pageSize: number): number {
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  if (!Number.isFinite(pageSize) || pageSize <= 0) return 0;
+  return Math.ceil(total / pageSize);
 }

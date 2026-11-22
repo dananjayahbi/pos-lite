@@ -1,11 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useDeferredValue, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, RefreshCw, Wallet } from 'lucide-react';
+import { Plus, RefreshCw, Search, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
@@ -19,7 +27,7 @@ import { CloseAccountDialog } from './CloseAccountDialog';
 import { AccountBookSheet } from './AccountBookSheet';
 import { CashFlowTable } from './CashFlowTable';
 import { paymentAccountKeys } from './paymentAccountQueryKeys';
-import { getJson, sendJson } from './paymentAccountApi';
+import { buildQuery, getJson, sendJson } from './paymentAccountApi';
 import { parseMoney } from './paymentAccountLabels';
 import type {
   ClosePayload,
@@ -49,20 +57,38 @@ export function PaymentAccountsPageClient() {
   const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<ActiveDialog>(null);
   const [bookAccount, setBookAccount] = useState<PaymentAccount | null>(null);
+  // ARGUS #433: the list API already supports search/status; expose both so a
+  // closed account can be found without scanning the whole list.
+  const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'CLOSED'>('ALL');
   const { hasPermission } = usePermissions();
   const canManage = hasPermission(PERMISSIONS.PAYMENT_ACCOUNT.managePaymentAccount);
   const canTransfer = hasPermission(PERMISSIONS.PAYMENT_ACCOUNT.transferFunds);
   const canDeposit = hasPermission(PERMISSIONS.PAYMENT_ACCOUNT.depositFunds);
   const canClose = hasPermission(PERMISSIONS.PAYMENT_ACCOUNT.closePaymentAccount);
 
+  const accountFilters = {
+    search: deferredSearch.trim(),
+    status: statusFilter,
+  } as const;
+
   const accountsQuery = useQuery<PaymentAccountListResult>({
-    queryKey: paymentAccountKeys.list(),
-    queryFn: () => getJson<PaymentAccountListResult>('/api/store/payment-accounts'),
+    queryKey: paymentAccountKeys.list(accountFilters),
+    queryFn: () =>
+      getJson<PaymentAccountListResult>(
+        `/api/store/payment-accounts${buildQuery({
+          search: accountFilters.search,
+          status: statusFilter === 'ALL' ? undefined : statusFilter,
+        })}`,
+      ),
   });
 
   const accounts = accountsQuery.data?.accounts ?? [];
   const totalBalance = accountsQuery.data?.totalBalance ?? 0;
   const activeCount = accounts.filter((account) => account.status === 'ACTIVE').length;
+  // ARGUS #433: a closed account's frozen balance must not win "Highest".
+  const activeAccounts = accounts.filter((account) => account.status === 'ACTIVE');
 
   /** Any money movement changes balances, books and the cash-flow view. */
   const invalidateAll = async () => {
@@ -183,13 +209,13 @@ export function PaymentAccountsPageClient() {
           <p className="font-body text-xs uppercase tracking-wide text-mist-ink">Highest balance</p>
           <p className="mt-2 font-display text-2xl text-espresso">
             {formatRupee(
-              accounts.reduce(
+              activeAccounts.reduce(
                 (max, account) => Math.max(max, parseMoney(account.balance) ?? 0),
                 0,
               ),
             )}
           </p>
-          <p className="mt-1 font-body text-xs text-sand-ink">Single account</p>
+          <p className="mt-1 font-body text-xs text-sand-ink">Across active accounts</p>
         </div>
       </div>
 
@@ -199,11 +225,47 @@ export function PaymentAccountsPageClient() {
             Accounts
           </TabsTrigger>
           <TabsTrigger value="cash-flow" className="font-body px-3">
-            Cash Flow
+            Ledger
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="accounts" className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-mist-ink" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by name or account number"
+                aria-label="Search payment accounts"
+                className="border-mist pl-8"
+              />
+            </div>
+            <Select
+              value={statusFilter}
+              onValueChange={(value) =>
+                setStatusFilter(value as 'ALL' | 'ACTIVE' | 'CLOSED')
+              }
+            >
+              <SelectTrigger
+                className="w-40 border-mist"
+                aria-label="Filter payment accounts by status"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All accounts</SelectItem>
+                <SelectItem value="ACTIVE">Active only</SelectItem>
+                <SelectItem value="CLOSED">Closed only</SelectItem>
+              </SelectContent>
+            </Select>
+            {accountsQuery.isFetching && !accountsQuery.isLoading && (
+              <span className="font-body text-xs text-mist-ink" aria-live="polite">
+                Updating…
+              </span>
+            )}
+          </div>
+
           {accountsQuery.isLoading ? (
             <div className="space-y-2">
               {Array.from({ length: 4 }).map((_, index) => (
@@ -219,11 +281,17 @@ export function PaymentAccountsPageClient() {
           ) : accounts.length === 0 ? (
             <div className="rounded-xl border border-dashed border-mist bg-pearl p-10 text-center">
               <Wallet className="mx-auto h-8 w-8 text-mist-ink" />
-              <p className="mt-3 font-display text-base text-espresso">No accounts yet</p>
-              <p className="mt-1 font-body text-sm text-sand-ink">
-                Add your cash drawer, bank account or payment gateway to start tracking money.
+              <p className="mt-3 font-display text-base text-espresso">
+                {accountFilters.search || statusFilter !== 'ALL'
+                  ? 'No accounts match these filters'
+                  : 'No accounts yet'}
               </p>
-              {canManage && (
+              <p className="mt-1 font-body text-sm text-sand-ink">
+                {accountFilters.search || statusFilter !== 'ALL'
+                  ? 'Clear the search or switch the status filter to see every account.'
+                  : 'Add your cash drawer, bank account or payment gateway to start tracking money.'}
+              </p>
+              {canManage && !accountFilters.search && statusFilter === 'ALL' && (
                 <Button
                   className="mt-4 bg-espresso font-body text-pearl hover:bg-espresso/90"
                   onClick={() => setDialog({ kind: 'create' })}
