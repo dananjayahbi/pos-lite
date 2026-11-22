@@ -6,7 +6,7 @@ import { getExpenses, createExpense } from '@/lib/services/expense.service';
 import { CreateExpenseSchema } from '@/lib/validators/expense.validators';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { parseQueryInt } from '@/lib/api/query-params';
-import { normalizeExpenseSearch } from '@/lib/expenses/filter';
+import { normalizeExpenseSearch, validateExpenseDateRange } from '@/lib/expenses/filter';
 import {
   authorizeExpenseWrite,
   resolveExpenseApprovalThreshold,
@@ -38,6 +38,17 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
+    const dateRangeError = validateExpenseDateRange({
+      dateFrom: searchParams.get('dateFrom'),
+      dateTo: searchParams.get('dateTo'),
+    });
+    if (dateRangeError) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: dateRangeError } },
+        { status: 400 },
+      );
+    }
+
     const result = await getExpenses(tenantId, {
       category: searchParams.get('category') ?? undefined,
       search: normalizeExpenseSearch(searchParams.get('search')),

@@ -282,12 +282,195 @@ test.describe('Module 19 - Expenses & Petty Cash', () => {
     expect(create.body?.data?.description).toContain('Tamil');
   });
 
-  test('F10 rejects malformed query filters and keeps the API contract stable', async ({ page }) => {
+  test('F10 rejects malformed query filters with a typed 400, never a 500', async ({ page }) => {
     await login(page, OWNER);
-    const badDate = await page.request.get('/api/store/expenses?dateFrom=not-a-date&dateTo=also-not-a-date');
-    expect([200, 400, 500]).toContain(badDate.status());
+    const badDate = await page.request.get(
+      '/api/store/expenses?dateFrom=not-a-date&dateTo=also-not-a-date',
+    );
+    expect(badDate.status()).toBe(400);
+    expect((await json(badDate))?.error?.code).toBe('VALIDATION_ERROR');
+
+    const reversed = await page.request.get(
+      '/api/store/expenses?dateFrom=2026-11-30&dateTo=2026-11-01',
+    );
+    expect(reversed.status()).toBe(400);
+    expect((await json(reversed))?.error?.code).toBe('VALIDATION_ERROR');
 
     const invalidPage = await page.request.get('/api/store/expenses?page=0&pageSize=0');
-    expect([200, 400]).toContain(invalidPage.status());
+    expect(invalidPage.status()).toBe(400);
+    expect((await json(invalidPage))?.error?.code).toBe('VALIDATION_ERROR');
+  });
+
+  test('F11 the To-date boundary includes an expense dated on the end day', async ({ page }) => {
+    await login(page, OWNER);
+    const today = new Date().toISOString().slice(0, 10);
+    const description = `QA boundary ${Date.now()}`;
+    const create = await createExpense(page, {
+      category: 'MISCELLANEOUS',
+      amount: 3.25,
+      description,
+      expenseDate: today,
+    });
+    expect(create.response.status()).toBe(201);
+
+    const filtered = await page.request.get(
+      `/api/store/expenses?dateFrom=${today}&dateTo=${today}&search=${encodeURIComponent(
+        description,
+      )}`,
+    );
+    expect(filtered.status()).toBe(200);
+    const body = await json(filtered);
+    expect(body?.data?.total).toBe(1);
+    expect(body?.data?.expenses?.[0]?.description).toBe(description);
+    // The grand total covers the filtered set (ARGUS #404).
+    expect(Number(body?.data?.totalAmount)).toBeCloseTo(3.25, 2);
+  });
+
+  test('F12 editing an expense repoints the amount and unlinks the fund', async ({ page }) => {
+    await login(page, OWNER);
+    const fundBefore = await getFund(page);
+    const created = await createExpense(page, {
+      category: 'TRAVEL',
+      amount: 40,
+      description: `QA edit ${Date.now()}`,
+      expenseDate: new Date().toISOString().slice(0, 10),
+      pettyCashFundId: fundBefore.id,
+    });
+    expect(created.response.status()).toBe(201);
+    const id = created.body?.data?.id;
+
+    const patched = await page.request.patch(`/api/store/expenses/${id}`, {
+      data: {
+        amount: 12.5,
+        pettyCashFundId: null,
+        paymentAccountId: null,
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(patched.status()).toBe(200);
+    const after = await json(patched);
+    expect(Number(after?.data?.amount)).toBeCloseTo(12.5, 2);
+    expect(after?.data?.pettyCashFundId ?? null).toBeNull();
+
+    // The fund's ledger was reversed by the unlink, so its balance returns to
+    // the pre-expense figure (no orphaned deduction).
+    const fundAfter = await getFund(page);
+    expect(
+      Math.abs(Number(fundAfter.currentBalance) - Number(fundBefore.currentBalance)),
+    ).toBeLessThan(0.02);
+  });
+
+  test('F13 deleting an expense removes it and leaves an audit row with before data', async ({
+    page,
+  }) => {
+    await login(page, OWNER);
+    const description = `QA delete ${Date.now()}`;
+    const created = await createExpense(page, {
+      category: 'OFFICE_STATIONERY',
+      amount: 9.5,
+      description,
+      expenseDate: new Date().toISOString().slice(0, 10),
+    });
+    const id = created.body?.data?.id;
+    expect(created.response.status()).toBe(201);
+
+    expect((await page.request.delete(`/api/store/expenses/${id}`)).status()).toBe(200);
+
+    const list = await page.request.get(
+      `/api/store/expenses?search=${encodeURIComponent(description)}`,
+    );
+    expect((await json(list))?.data?.total).toBe(0);
+
+    const audit = await page.request.get(
+      `/api/audit-logs?action=EXPENSE_DELETED&search=${encodeURIComponent(id)}`,
+    );
+    expect(audit.status()).toBe(200);
+    const auditBody = await json(audit);
+    const rows = auditBody?.data?.data ?? auditBody?.data ?? [];
+    const row = rows.find((entry: { entityId?: string }) => entry.entityId === id);
+    expect(row, 'EXPENSE_DELETED audit row exists').toBeTruthy();
+    expect(JSON.stringify(row?.before ?? {})).toContain(description);
+  });
+
+  test('F14 creation above the approval threshold is recorded with an audit trail', async ({
+    page,
+  }) => {
+    await login(page, OWNER);
+    const description = `QA approval ${Date.now()}`;
+    const created = await createExpense(page, {
+      category: 'MAINTENANCE',
+      amount: 25_000,
+      description,
+      expenseDate: new Date().toISOString().slice(0, 10),
+    });
+    expect(created.response.status()).toBe(201);
+    const id = created.body?.data?.id;
+
+    const audit = await page.request.get(
+      `/api/audit-logs?action=EXPENSE_CREATED&search=${encodeURIComponent(id)}`,
+    );
+    expect(audit.status()).toBe(200);
+    const auditBody = await json(audit);
+    const rows = auditBody?.data?.data ?? auditBody?.data ?? [];
+    const row = rows.find((entry: { entityId?: string }) => entry.entityId === id);
+    expect(row, 'EXPENSE_CREATED audit row exists').toBeTruthy();
+    expect(Number(row?.after?.amount)).toBeCloseTo(25_000, 2);
+  });
+
+  test('F15 a filtered export contains only the matching rows and their amounts', async ({
+    page,
+  }) => {
+    await login(page, OWNER);
+    const marker = `QA export ${Date.now()}`;
+    const created = await createExpense(page, {
+      category: 'ADVERTISING',
+      amount: 61.75,
+      description: marker,
+      expenseDate: new Date().toISOString().slice(0, 10),
+    });
+    expect(created.response.status()).toBe(201);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const csv = await page.request.get(
+      `/api/store/expenses/export?category=ADVERTISING&dateFrom=${today}&dateTo=${today}&search=${encodeURIComponent(
+        marker,
+      )}`,
+    );
+    expect(csv.status()).toBe(200);
+    expect((csv.headers()['content-type'] ?? '').toLowerCase()).toContain('text/csv');
+    const text = await csv.text();
+    expect(text).toContain(marker);
+    expect(text).not.toContain('QA team lunch');
+    // Data row: Date,Category,Description,Account,Amount,...
+    const dataRow = text.split(/\r?\n/).find((line) => line.includes(marker));
+    expect(dataRow?.split(',')[4]).toBe('61.75');
+  });
+
+  test('F16 the expenses page is RBAC-gated and surfaces a load error with Retry', async ({
+    page,
+  }) => {
+    await login(page, CASHIER);
+    await page.goto(`${BASE_URL}/expenses`, { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
+    await expect(page.getByRole('heading', { name: /^Expenses$/i })).toHaveCount(0);
+
+    await login(page, OWNER);
+    await page.route('**/api/store/expenses**', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: false,
+            error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' },
+          }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+    await page.goto(`${BASE_URL}/expenses`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText(/Could not load expenses/i)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('button', { name: /^Retry$/i })).toBeVisible();
   });
 });

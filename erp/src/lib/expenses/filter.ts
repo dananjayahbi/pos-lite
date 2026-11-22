@@ -25,6 +25,42 @@ export function normalizeExpenseSearch(value: string | null | undefined): string
   return trimmed.slice(0, EXPENSE_SEARCH_MAX_LENGTH);
 }
 
+const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** True for a real calendar date in `YYYY-MM-DD` form (`2026-02-31` is not). */
+export function isValidExpenseDate(value: string): boolean {
+  const match = DATE_ONLY.exec(value);
+  if (!match) return false;
+  const [, year, month, day] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  return (
+    date.getFullYear() === Number(year) &&
+    date.getMonth() === Number(month) - 1 &&
+    date.getDate() === Number(day)
+  );
+}
+
+/**
+ * Validate the optional date range. Returns an error message for the standard
+ * 400 envelope instead of letting an Invalid Date reach Prisma (ARGUS #405:
+ * malformed dates used to surface as a 500).
+ */
+export function validateExpenseDateRange(input: {
+  dateFrom?: string | null | undefined;
+  dateTo?: string | null | undefined;
+}): string | null {
+  if (input.dateFrom && !isValidExpenseDate(input.dateFrom)) {
+    return 'dateFrom must be a valid date (YYYY-MM-DD)';
+  }
+  if (input.dateTo && !isValidExpenseDate(input.dateTo)) {
+    return 'dateTo must be a valid date (YYYY-MM-DD)';
+  }
+  if (input.dateFrom && input.dateTo && input.dateFrom > input.dateTo) {
+    return 'dateFrom must be on or before dateTo';
+  }
+  return null;
+}
+
 export function buildExpenseFilterWhere(
   tenantId: string,
   filters: ExpenseFilterInput,

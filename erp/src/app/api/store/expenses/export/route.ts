@@ -6,7 +6,7 @@ import { getExpensesForExport } from '@/lib/services/expense.service';
 import { EXPENSE_CATEGORIES } from '@/lib/validators/expense.validators';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { csvDownloadResponse } from '@/lib/export';
-import { normalizeExpenseSearch } from '@/lib/expenses/filter';
+import { normalizeExpenseSearch, validateExpenseDateRange } from '@/lib/expenses/filter';
 import {
   buildExpenseRegisterCsv,
   expenseRegisterFilename,
@@ -55,13 +55,23 @@ export async function GET(request: Request) {
       );
     }
 
+    const dateRangeError = validateExpenseDateRange({
+      dateFrom: searchParams.get('dateFrom'),
+      dateTo: searchParams.get('dateTo'),
+    });
+    if (dateRangeError) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: dateRangeError } },
+        { status: 400 },
+      );
+    }
+
     const expenses = await getExpensesForExport(tenantId, {
       category,
       search: normalizeExpenseSearch(searchParams.get('search')),
       dateFrom: searchParams.get('dateFrom') ?? undefined,
       dateTo: searchParams.get('dateTo') ?? undefined,
     });
-
     const csv = buildExpenseRegisterCsv(expenses);
     return csvDownloadResponse(csv, expenseRegisterFilename());
   } catch (error) {

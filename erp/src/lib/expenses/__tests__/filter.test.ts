@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   EXPENSE_SEARCH_MAX_LENGTH,
   buildExpenseFilterWhere,
+  isValidExpenseDate,
   normalizeExpenseSearch,
+  validateExpenseDateRange,
 } from '@/lib/expenses/filter';
 
 /** ARGUS #404: description search combines with category and dates. */
@@ -43,5 +45,27 @@ describe('buildExpenseFilterWhere', () => {
 
   it('ignores an empty search', () => {
     expect(buildExpenseFilterWhere('t', { search: '   ' })).not.toHaveProperty('description');
+  });
+});
+
+describe('expense date range validation (ARGUS #405)', () => {
+  it('accepts a real calendar date', () => {
+    expect(isValidExpenseDate('2026-11-20')).toBe(true);
+    expect(isValidExpenseDate('2028-02-29')).toBe(true);
+  });
+
+  it('rejects malformed and impossible dates', () => {
+    for (const value of ['not-a-date', '2026-13-01', '2026-02-31', '2026-1-1', '20261120']) {
+      expect(isValidExpenseDate(value), value).toBe(false);
+    }
+  });
+
+  it('reports the invalid parameter without throwing', () => {
+    expect(validateExpenseDateRange({ dateFrom: 'nope' })).toMatch(/dateFrom/);
+    expect(validateExpenseDateRange({ dateTo: 'nope' })).toMatch(/dateTo/);
+    expect(
+      validateExpenseDateRange({ dateFrom: '2026-11-30', dateTo: '2026-11-01' }),
+    ).toMatch(/on or before/);
+    expect(validateExpenseDateRange({})).toBeNull();
   });
 });
