@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { Search, Plus, Minus, Lock, Loader2, ChevronRight } from 'lucide-react';
 import {
   MANUAL_ADJUSTMENT_REASONS,
+  MANUAL_ADJUSTMENT_REASON_LABELS,
   isManualReasonDirectionValid,
   manualAdjustmentDirectionError,
   validManualReasonsForDirection,
@@ -60,13 +61,9 @@ interface VariantData {
 
 // ── Reason labels ────────────────────────────────────────────────────────────
 
-const REASON_LABELS: Record<ManualAdjustmentReason, string> = {
-  FOUND: 'Found',
-  DAMAGED: 'Damaged',
-  STOLEN: 'Stolen',
-  DATA_ERROR: 'Data Error',
-  RETURNED_TO_SUPPLIER: 'Returned to Supplier',
-};
+// ARGUS #189: labels come from the movement-ledger map so the form and the
+// ledger cannot disagree about the same reason.
+const REASON_LABELS = MANUAL_ADJUSTMENT_REASON_LABELS;
 
 // ── Form schema ──────────────────────────────────────────────────────────────
 

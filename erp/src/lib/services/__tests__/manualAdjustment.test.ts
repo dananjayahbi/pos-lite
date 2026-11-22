@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   MANUAL_ADJUSTMENT_REASONS,
+  MANUAL_ADJUSTMENT_REASON_LABELS,
   isManualAdjustmentReason,
   isManualReasonDirectionValid,
   manualAdjustmentDirectionError,
@@ -9,6 +10,7 @@ import {
   manualAdjustmentSideEffectSummary,
   validManualReasonsForDirection,
 } from '@/lib/services/manualAdjustment.core';
+import { stockMovementReasonLabel } from '@/lib/constants/stock-movement';
 
 /**
  * ARGUS #181 — system-only movement reasons must never be accepted as manual
@@ -143,5 +145,15 @@ describe('manual adjustment side-effect payload', () => {
       { variantId: 'v3', quantityDelta: -1, reason: 'DAMAGED', note: 'broken' },
       { variantId: 'v1', quantityDelta: 1, reason: 'DATA_ERROR', note: null },
     ]);
+  });
+});
+
+describe('manual reason labels (ARGUS #189)', () => {
+  it('uses the movement-ledger vocabulary for every manual reason', () => {
+    for (const reason of MANUAL_ADJUSTMENT_REASONS) {
+      expect(MANUAL_ADJUSTMENT_REASON_LABELS[reason]).toBe(stockMovementReasonLabel(reason));
+    }
+    expect(MANUAL_ADJUSTMENT_REASON_LABELS.STOLEN).toBe('Stolen or Lost');
+    expect(MANUAL_ADJUSTMENT_REASON_LABELS.DATA_ERROR).toBe('Data Entry Correction');
   });
 });
