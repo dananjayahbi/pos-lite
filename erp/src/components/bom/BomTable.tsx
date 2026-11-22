@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useDeleteBom, type BomItemView } from '@/hooks/useBom';
+import { useDeleteBom, useUpdateBom, type BomItemView } from '@/hooks/useBom';
 import { BOM_LOCKED_MESSAGE, canModifyBom } from '@/lib/services/bom.core';
 
 interface BomTableProps {
@@ -34,7 +34,24 @@ export function BomTable({
   onProduce,
 }: BomTableProps) {
   const deleteMutation = useDeleteBom();
+  const updateMutation = useUpdateBom();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  // ARGUS #251: retiring a recipe is separate from deleting it. Production
+  // history keeps its recipe; only future production is blocked.
+  const handleToggleActive = (bom: BomItemView) => {
+    setTogglingId(bom.id);
+    updateMutation.mutate(
+      { id: bom.id, isActive: !bom.isActive },
+      {
+        onSuccess: () =>
+          toast.success(bom.isActive ? 'BOM deactivated' : 'BOM activated'),
+        onError: (err: Error) => toast.error(err.message),
+        onSettled: () => setTogglingId(null),
+      },
+    );
+  };
 
   const handleDelete = (id: string, name: string) => {
     if (!window.confirm(`Delete BOM "${name}"?`)) return;
@@ -91,6 +108,20 @@ export function BomTable({
                     {canProduce && bom.isActive && (
                       <Button variant="outline" size="sm" onClick={() => onProduce(bom.id)}>
                         Produce
+                      </Button>
+                    )}
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={togglingId === bom.id}
+                        onClick={() => handleToggleActive(bom)}
+                      >
+                        {togglingId === bom.id
+                          ? 'Saving…'
+                          : bom.isActive
+                            ? 'Deactivate'
+                            : 'Activate'}
                       </Button>
                     )}
                     {canEdit && (

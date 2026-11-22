@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   bomCreateDecision,
+  bomUpdateChangesRecipe,
   bomVariantIneligibilityReason,
   buildProductionBatchNumber,
   canModifyBom,
@@ -262,5 +263,14 @@ describe('bomCreateDecision', () => {
 
   it('revives a soft-deleted BOM instead of blocking the variant forever', () => {
     expect(bomCreateDecision({ deletedAt: new Date() })).toBe('revive');
+  });
+});
+
+describe('bomUpdateChangesRecipe (ARGUS #251)', () => {
+  it('treats an isActive-only update as lifecycle, not a recipe edit', () => {
+    expect(bomUpdateChangesRecipe({})).toBe(false);
+    expect(bomUpdateChangesRecipe({ name: 'x' })).toBe(true);
+    expect(bomUpdateChangesRecipe({ notes: 'x' })).toBe(true);
+    expect(bomUpdateChangesRecipe({ ingredients: [] })).toBe(true);
   });
 });

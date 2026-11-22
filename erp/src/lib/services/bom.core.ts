@@ -220,6 +220,26 @@ export function canModifyBom(productionLogCount: number): boolean {
 }
 
 /**
+ * ARGUS #251 - activating/deactivating a recipe is not a recipe edit.
+ *
+ * The update service refused every PATCH once a production run existed, which
+ * also blocked the `isActive` toggle the API and table now expose. Retiring a
+ * recipe must stay possible (it only stops future production), while ingredient,
+ * name and note changes remain refused because they would rewrite history.
+ */
+export function bomUpdateChangesRecipe(input: {
+  name?: unknown;
+  notes?: unknown;
+  ingredients?: unknown;
+}): boolean {
+  return (
+    input.name !== undefined ||
+    input.notes !== undefined ||
+    input.ingredients !== undefined
+  );
+}
+
+/**
  * Build a deterministic, human-readable batch number for a production run.
  *
  * Example: `MFG-20261101-8FK2M1QZ`. The suffix comes from the production-log

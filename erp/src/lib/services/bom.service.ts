@@ -17,6 +17,7 @@ import {
   bomCreateDecision,
   buildProductionBatchNumber,
   canModifyBom,
+  bomUpdateChangesRecipe,
   computeConsumptionPlan,
   findDuplicateRawMaterialIds,
   getInsufficientIngredients,
@@ -422,8 +423,12 @@ export async function updateBom(
 
     // ARGUS #248: once a production run references this recipe it must stay
     // frozen, otherwise past runs silently point at a different ingredient list.
+    // ARGUS #251: an isActive-only update is lifecycle, not a recipe edit, so a
+    // used BOM can still be retired.
     const productionLogCount = await tx.productionLog.count({ where: { bomId: id } });
-    if (!canModifyBom(productionLogCount)) throw new Error('BOM_LOCKED');
+    if (bomUpdateChangesRecipe(input) && !canModifyBom(productionLogCount)) {
+      throw new Error('BOM_LOCKED');
+    }
 
     if (input.ingredients !== undefined) {
       assertNoDuplicateIngredients(input.ingredients);
@@ -462,6 +467,7 @@ export async function updateBom(
         ...(input.ingredients !== undefined
           ? { ingredientCount: input.ingredients.length }
           : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
       },
     }).catch(() => {});
 
