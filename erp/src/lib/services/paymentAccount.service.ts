@@ -7,6 +7,8 @@ import { evaluatePaymentAccountPolicy } from '@/lib/services/paymentAccountPolic
 import {
   SALE_VOID_SOURCE,
   classifyLedgerSource,
+  ledgerTotalPages,
+  nextAccountBalance,
   type RefundSourceIds,
 } from '@/lib/services/paymentAccountLedger.core';
 import {
@@ -227,7 +229,7 @@ export async function postLedgerEntries(
     }
 
     const current = running.get(line.accountId)!;
-    const next = current.plus(debit).minus(credit);
+    const next = nextAccountBalance(current, debit, credit);
     running.set(line.accountId, next);
 
     return {
@@ -978,7 +980,7 @@ export async function getAccountBook(
     total,
     page: query.page,
     pageSize: query.pageSize,
-    totalPages: Math.ceil(total / query.pageSize),
+    totalPages: ledgerTotalPages(total, query.pageSize),
     sums: {
       debit: toMoney(dec(totals._sum.debit ?? 0)),
       credit: toMoney(dec(totals._sum.credit ?? 0)),
@@ -1034,7 +1036,7 @@ export async function getCashFlow(
     total,
     page: query.page,
     pageSize: query.pageSize,
-    totalPages: Math.ceil(total / query.pageSize),
+    totalPages: ledgerTotalPages(total, query.pageSize),
     sums: {
       debit: toMoney(dec(totals._sum.debit ?? 0)),
       credit: toMoney(dec(totals._sum.credit ?? 0)),
