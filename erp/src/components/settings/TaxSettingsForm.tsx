@@ -135,9 +135,9 @@ export default function TaxSettingsForm({
           ? `Tax settings saved - they take effect on ${formatDate(form.effectiveFrom)}`
           : 'Tax settings saved',
       );
-      // A reload is the honest way to pick up the new version and the
-      // server-resolved active/pending schedule.
-      window.location.reload();
+      // Give the confirmation a moment to be read, then reload so the new
+      // version and the server-resolved active/pending schedule are loaded.
+      window.setTimeout(() => window.location.reload(), 900);
     } catch {
       toast.error('Network error - could not save tax settings');
     } finally {
