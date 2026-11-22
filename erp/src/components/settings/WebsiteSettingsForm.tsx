@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Palette, Layout, Layers, Footprints, ShoppingBag, FileText, Phone, AlertTriangle, CalendarDays } from 'lucide-react';
@@ -16,6 +17,7 @@ import { ResetConfirmDialog } from './ResetConfirmDialog';
 import { pendingUploads, removedUrls, processPendingUploads, deleteRemovedUrls, resetUploadState } from './uploadState';
 import type { WebsiteConfigData } from '@/types/website.types';
 import { resolveWebsiteLoadResult } from '@/lib/website/load-state';
+import { isWebsiteConfigDirty } from '@/lib/website/dirty-state.core';
 
 const DEFAULT_CONFIG: WebsiteConfigData = {
   siteName: '',
@@ -121,6 +123,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 export default function WebsiteSettingsForm({ tenantSlug = '' }: { tenantSlug?: string }) {
+  const router = useRouter();
   const [config, setConfig] = useState<WebsiteConfigData>(DEFAULT_CONFIG);
   const [activeTab, setActiveTab] = useState<TabValue>('general');
   const [isSaving, setIsSaving] = useState(false);
@@ -131,25 +134,74 @@ export default function WebsiteSettingsForm({ tenantSlug = '' }: { tenantSlug?: 
   const [startedFromEmpty, setStartedFromEmpty] = useState(false);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
-  // Cheap O(1) dirty tracking — avoids expensive JSON.stringify on every keystroke
-  const [dirtyCount, setDirtyCount] = useState(0);
 
-  const initialConfigRef = useRef<string>('');
+  // ARGUS #502: dirty state is a real comparison against the loaded config, not
+  // a keystroke counter. Changing a value back clears it.
+  const initialConfigRef = useRef<WebsiteConfigData | null>(null);
   const pendingTabRef = useRef<TabValue | null>(null);
+  const pendingNavigationRef = useRef<string | null>(null);
 
-  const isDirty = dirtyCount > 0;
+  const isDirty = useMemo(
+    () => isWebsiteConfigDirty(initialConfigRef.current, config),
+    [config],
+  );
 
-  // Beforeunload listener — read from reliable state, stable closure
+  // Browser unload guard.
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (dirtyCount > 0) {
+      if (isDirty) {
         e.preventDefault();
         e.returnValue = '';
       }
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [dirtyCount]);
+  }, [isDirty]);
+
+  /**
+   * In-app route guard. Next's App Router has no router.events API, so a
+   * capture-phase click listener intercepts same-origin links (the sidebar
+   * Dashboard, Settings hub cards, etc.) before Next handles them. Modified
+   * clicks and new-tab/download links are left alone. Browser Back/Forward
+   * still relies on the unload guard.
+   */
+  useEffect(() => {
+    if (!isDirty) return;
+
+    const handler = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+      const target = event.target;
+      const anchor =
+        target instanceof Element ? target.closest<HTMLAnchorElement>('a[href]') : null;
+      if (!anchor) return;
+      if (anchor.target && anchor.target !== '_self') return;
+      if (anchor.hasAttribute('download')) return;
+
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('#')) return;
+
+      let url: URL;
+      try {
+        url = new URL(anchor.href, window.location.href);
+      } catch {
+        return;
+      }
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search) {
+        return;
+      }
+
+      event.preventDefault();
+      pendingTabRef.current = null;
+      pendingNavigationRef.current = `${url.pathname}${url.search}${url.hash}`;
+      setShowUnsavedDialog(true);
+    };
+
+    document.addEventListener('click', handler, true);
+    return () => document.removeEventListener('click', handler, true);
+  }, [isDirty]);
 
   // Load config from API on mount (and on retry)
   useEffect(() => {
@@ -170,13 +222,12 @@ export default function WebsiteSettingsForm({ tenantSlug = '' }: { tenantSlug?: 
             result.data,
           ) as unknown as WebsiteConfigData;
           setConfig(merged);
-          initialConfigRef.current = JSON.stringify(merged);
+          initialConfigRef.current = merged;
           setLoadState('ready');
         } else if (result.kind === 'empty') {
           setConfig(DEFAULT_CONFIG);
-          initialConfigRef.current = JSON.stringify(DEFAULT_CONFIG);
+          initialConfigRef.current = DEFAULT_CONFIG;
           setStartedFromEmpty(false);
-          setDirtyCount(0);
           setLoadState('empty');
         } else {
           setLoadError(result.message);
@@ -196,15 +247,15 @@ export default function WebsiteSettingsForm({ tenantSlug = '' }: { tenantSlug?: 
     };
   }, [reloadToken]);
 
-  // Pure state updater — increments dirty counter on every change
+  // Pure state updater - dirty state is derived from the config diff.
   const updateConfig = useCallback((updates: Partial<WebsiteConfigData>) => {
     setConfig((prev) => ({ ...prev, ...updates }));
-    setDirtyCount((c) => c + 1);
   }, []);
 
   const handleTabChange = (tab: TabValue) => {
     if (tab === activeTab) return;
     if (isDirty) {
+      pendingNavigationRef.current = null;
       pendingTabRef.current = tab;
       setShowUnsavedDialog(true);
     } else {
@@ -212,16 +263,30 @@ export default function WebsiteSettingsForm({ tenantSlug = '' }: { tenantSlug?: 
     }
   };
 
+  const leaveAfterChange = () => {
+    const destination = pendingNavigationRef.current;
+    const tab = pendingTabRef.current;
+    pendingNavigationRef.current = null;
+    pendingTabRef.current = null;
+    if (destination) {
+      router.push(destination);
+      return;
+    }
+    if (tab) setActiveTab(tab);
+  };
+
   const handleDiscard = () => {
-    const initial = JSON.parse(initialConfigRef.current) as WebsiteConfigData;
+    const initial = initialConfigRef.current ?? DEFAULT_CONFIG;
     setConfig(initial);
-    setDirtyCount(0);
     setShowUnsavedDialog(false);
     resetUploadState();
-    if (pendingTabRef.current) {
-      setActiveTab(pendingTabRef.current);
-      pendingTabRef.current = null;
-    }
+    leaveAfterChange();
+  };
+
+  const handleCancelLeave = () => {
+    pendingNavigationRef.current = null;
+    pendingTabRef.current = null;
+    setShowUnsavedDialog(false);
   };
 
   // ── Sanitize null values from the DB before sending to the API ────────────
@@ -259,14 +324,14 @@ export default function WebsiteSettingsForm({ tenantSlug = '' }: { tenantSlug?: 
     return JSON.parse(resolved) as WebsiteConfigData;
   }
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<boolean> => {
     if (loadState !== 'ready' && !(loadState === 'empty' && startedFromEmpty)) {
       toast.error('Website configuration is not loaded - reload before saving');
-      return;
+      return false;
     }
     if (!config.siteName?.trim()) {
       toast.error('Set a Site Name on the General tab before saving');
-      return;
+      return false;
     }
     setIsSaving(true);
     try {
@@ -278,7 +343,7 @@ export default function WebsiteSettingsForm({ tenantSlug = '' }: { tenantSlug?: 
         } catch {
           toast.error('Failed to upload media files. Please try again.');
           setIsSaving(false);
-          return;
+          return false;
         }
       }
 
@@ -306,7 +371,7 @@ export default function WebsiteSettingsForm({ tenantSlug = '' }: { tenantSlug?: 
         } else {
           toast.error(data.error?.message || 'Failed to save');
         }
-        return;
+        return false;
       }
 
       // Delete removed media from Cloudflare
@@ -320,25 +385,24 @@ export default function WebsiteSettingsForm({ tenantSlug = '' }: { tenantSlug?: 
 
       // Reset upload state
       resetUploadState();
-      initialConfigRef.current = JSON.stringify(resolvedConfig);
+      initialConfigRef.current = resolvedConfig;
       setConfig(resolvedConfig);
-      setDirtyCount(0);
 
       toast.success('Website settings saved successfully');
+      return true;
     } catch {
       toast.error('An error occurred while saving');
+      return false;
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleSaveAndLeave = async () => {
-    await handleSave();
+    const saved = await handleSave();
+    if (!saved) return;
     setShowUnsavedDialog(false);
-    if (pendingTabRef.current) {
-      setActiveTab(pendingTabRef.current);
-      pendingTabRef.current = null;
-    }
+    leaveAfterChange();
   };
 
   const handleReset = async () => {
@@ -361,8 +425,7 @@ export default function WebsiteSettingsForm({ tenantSlug = '' }: { tenantSlug?: 
       const failedAssets = json.data?.failedAssets ?? 0;
 
       setConfig(DEFAULT_CONFIG);
-      setDirtyCount(0);
-      initialConfigRef.current = JSON.stringify(DEFAULT_CONFIG);
+      initialConfigRef.current = DEFAULT_CONFIG;
       setStartedFromEmpty(false);
       setLoadState('empty');
       resetUploadState();
@@ -451,8 +514,7 @@ export default function WebsiteSettingsForm({ tenantSlug = '' }: { tenantSlug?: 
           className="bg-espresso hover:bg-espresso/90"
           onClick={() => {
             setConfig(DEFAULT_CONFIG);
-            initialConfigRef.current = JSON.stringify(DEFAULT_CONFIG);
-            setDirtyCount(0);
+            initialConfigRef.current = DEFAULT_CONFIG;
             setStartedFromEmpty(true);
           }}
         >
@@ -554,7 +616,7 @@ export default function WebsiteSettingsForm({ tenantSlug = '' }: { tenantSlug?: 
                 You have unsaved changes. Do you want to save before leaving?
               </p>
               <div className="flex justify-end gap-3">
-                <Button variant="outline" size="sm" onClick={() => setShowUnsavedDialog(false)}>
+                <Button variant="outline" size="sm" onClick={handleCancelLeave}>
                   Cancel
                 </Button>
                 <Button variant="ghost" size="sm" className="text-terracotta" onClick={handleDiscard}>
