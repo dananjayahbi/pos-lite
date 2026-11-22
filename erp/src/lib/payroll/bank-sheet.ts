@@ -5,6 +5,7 @@ import {
   describePayrollRunStatus,
   type PayrollRunPaymentInfo,
 } from '@/lib/payroll/payroll-run-status';
+import { applyMoneyNumberFormat } from '@/lib/payroll/xlsx-money.core';
 
 export interface BankSheetRow {
   staffName: string;
@@ -87,6 +88,9 @@ export function generateBankSheetXlsx(meta: BankSheetMeta, rows: BankSheetRow[])
     { wch: 22 },
     { wch: 16 },
   ];
+  // ARGUS #390: the worksheet's money column is two-decimal, including total.
+  const bankHeaderRow = aoa.findIndex((row) => row[0] === 'No.');
+  applyMoneyNumberFormat(worksheet, [6], bankHeaderRow + 1, aoa.length - 1);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, BANK_WORKSHEET_SHEET_NAME);
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;

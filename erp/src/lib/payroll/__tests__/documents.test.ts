@@ -15,6 +15,7 @@ import {
 import {
   generateSummaryReportPdf,
   generateSummaryReportXlsx,
+  summaryEpfHeader,
 } from '@/lib/payroll/summary-report';
 
 const meta = {
@@ -125,7 +126,7 @@ describe('payroll documents', () => {
     expect(isZip(xlsx)).toBe(true);
     expect(isPdf(generateBankSheetPdf(meta, rows))).toBe(true);
 
-    const workbook = XLSX.read(xlsx, { type: 'buffer' });
+    const workbook = XLSX.read(xlsx, { type: 'buffer', cellNF: true });
     expect(workbook.SheetNames).toEqual([BANK_WORKSHEET_SHEET_NAME]);
     const sheet = workbook.Sheets[BANK_WORKSHEET_SHEET_NAME]!;
     const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as unknown[][];
@@ -149,6 +150,9 @@ describe('payroll documents', () => {
       item.bankAccountNumber,
       Number(item.netSalary),
     ]);
+    // ARGUS #390: two-decimal money format on the data and total rows.
+    expect(sheet['G7']?.z).toBe('#,##0.00');
+    expect(sheet['G9']?.z).toBe('#,##0.00');
   });
 
   it('names the download a worksheet, not a bank batch file', () => {
@@ -173,11 +177,23 @@ describe('payroll documents', () => {
     expect(isZip(xlsx)).toBe(true);
     expect(isPdf(generateStatutoryReturnPdf(statutoryMeta, rows))).toBe(true);
 
-    const workbook = XLSX.read(xlsx, { type: 'buffer' });
+    const workbook = XLSX.read(xlsx, { type: 'buffer', cellNF: true });
     const epf = XLSX.utils.sheet_to_json(workbook.Sheets['EPF C-Form']!, {
       header: 1,
     }) as unknown[][];
     expect(String(epf[4]?.[0])).toContain('UNPAID');
+    // ARGUS #390: earnings and contributions carry a two-decimal format.
+    expect(epf[6]).toEqual([
+      'No.',
+      'Employee Name',
+      'NIC',
+      'EPF Number',
+      'Total Monthly Earnings (LKR)',
+      'Employee EPF 8% (LKR)',
+      'Employer EPF 12% (LKR)',
+    ]);
+    expect(workbook.Sheets['EPF C-Form']!['E8']?.z).toBe('#,##0.00');
+    expect(workbook.Sheets['EPF C-Form']!['G8']?.z).toBe('#,##0.00');
   });
 
   it('renders the monthly summary in Excel and PDF', () => {
@@ -200,6 +216,7 @@ describe('payroll documents', () => {
 
     const workbook = XLSX.read(generateSummaryReportXlsx(meta, summaryTotals, rows), {
       type: 'buffer',
+      cellNF: true,
     });
     const summaryRows = XLSX.utils.sheet_to_json(workbook.Sheets['Summary']!, {
       header: 1,
@@ -207,6 +224,21 @@ describe('payroll documents', () => {
     expect(
       summaryRows.some((row) => String(row[0]).includes('PAYE/APIT income tax is not configured')),
     ).toBe(true);
+
+    // ARGUS #390: the same control totals as the PDF, with real money formats.
+    expect(summaryRows[5]).toEqual(['Headcount', 1]);
+    const summarySheet = workbook.Sheets['Summary']!;
+    expect(summarySheet['B8']?.z).toBe('#,##0.00');
+    const detailSheet = workbook.Sheets['Employees']!;
+    const detailRows = XLSX.utils.sheet_to_json(detailSheet, { header: 1 }) as unknown[][];
+    expect(detailRows[3]?.[0]).toBe('Total');
+    expect(Number(detailRows[3]?.[6])).toBeCloseTo(Number(item.grossSalary), 2);
+    expect(Number(detailRows[3]?.[9])).toBeCloseTo(Number(item.netSalary), 2);
+    expect(detailSheet['G4']?.z).toBe('#,##0.00');
+
+    // ARGUS #390: the detail header reflects the rate stored on the run.
+    expect(summaryEpfHeader(9)).toBe('EPF (9%)');
+    expect(summaryEpfHeader()).toBe('EPF (8%)');
   });
 
   it('labels the net amount as payable until the run is paid', () => {

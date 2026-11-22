@@ -7,6 +7,7 @@ import {
   type PayrollRunPaymentInfo,
 } from '@/lib/payroll/payroll-run-status';
 import { PAYROLL_TAX_NOT_CONFIGURED_MESSAGE } from '@/lib/payroll/tax-disclosure.core';
+import { applyMoneyNumberFormat } from '@/lib/payroll/xlsx-money.core';
 
 export interface SummaryReportTotals {
   headcount: number;
@@ -49,6 +50,8 @@ export interface SummaryReportMeta {
   payment?: PayrollRunPaymentInfo | null;
   /** ARGUS #387: explicit current-profile caveat for regenerated exports. */
   provenanceNote?: string;
+  /** ARGUS #390: the rate the run actually applied, not a hard-coded 8%. */
+  employeeEpfRate?: number;
 }
 
 function num(value: string): number {
@@ -113,6 +116,7 @@ export function generateSummaryReportXlsx(
     ...(meta.provenanceNote ? [[meta.provenanceNote]] : []),
     [PAYROLL_TAX_NOT_CONFIGURED_MESSAGE],
     [],
+    ['Headcount', totals.headcount],
     ['Item', 'Amount (LKR)'],
     ...rows.map(([label, key]) => [
       label,
@@ -121,8 +125,27 @@ export function generateSummaryReportXlsx(
   ];
   const summarySheet = XLSX.utils.aoa_to_sheet(summaryAoa);
   summarySheet['!cols'] = [{ wch: 34 }, { wch: 18 }];
+  // ARGUS #390: headcount is a count, not money; every amount below the header
+  // gets an explicit two-decimal format.
+  const summaryHeaderRow = summaryAoa.findIndex((row) => row[0] === 'Item');
+  applyMoneyNumberFormat(summarySheet, [1], summaryHeaderRow + 1, summaryAoa.length - 1);
   XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
 
+  const moneyColumns = [2, 3, 4, 5, 6, 7, 8, 9];
+  const totalOf = (pick: (item: SummaryReportItem) => string): number =>
+    items.reduce((sum, item) => sum + num(pick(item)), 0);
+  const detailTotalRow: (string | number)[] = [
+    'Total',
+    '',
+    totalOf((item) => item.basicSalary),
+    totalOf((item) => item.allowances),
+    totalOf((item) => item.overtimeAmount),
+    totalOf((item) => item.commissionAmount),
+    totalOf((item) => item.grossSalary),
+    totalOf((item) => item.totalDeductions),
+    totalOf((item) => item.employeeEpf),
+    totalOf((item) => item.netSalary),
+  ];
   const detailAoa: (string | number)[][] = [
     ['Employee', 'Role', 'Basic', 'Allowances', 'OT', 'Commission', 'Gross', 'No-pay + advances', 'Employee EPF', 'Net'],
     ...items.map((item) => [
@@ -138,13 +161,21 @@ export function generateSummaryReportXlsx(
       num(item.netSalary),
     ]),
     [],
+    detailTotalRow,
     ['Net = Gross - No-pay + advances - Employee EPF'],
   ];
   const detailSheet = XLSX.utils.aoa_to_sheet(detailAoa);
   detailSheet['!cols'] = new Array(10).fill({ wch: 16 });
+  const detailTotalRowIndex = detailAoa.length - 2;
+  applyMoneyNumberFormat(detailSheet, moneyColumns, 1, detailTotalRowIndex);
   XLSX.utils.book_append_sheet(workbook, detailSheet, 'Employees');
 
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+}
+
+/** ARGUS #390: header label uses the rate stored on the run, not a constant. */
+export function summaryEpfHeader(employeeEpfRate?: number): string {
+  return `EPF (${employeeEpfRate ?? 8}%)`;
 }
 
 export function generateSummaryReportPdf(
@@ -221,7 +252,7 @@ export function generateSummaryReportPdf(
         'Commission',
         'Gross',
         'No-pay + advances',
-        'EPF (8%)',
+        summaryEpfHeader(meta.employeeEpfRate),
         'Net',
       ],
     ],
