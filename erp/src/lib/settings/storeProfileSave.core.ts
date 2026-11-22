@@ -47,3 +47,34 @@ export function storeProfileControlsLocked(
 ): boolean {
   return input.saving;
 }
+
+/** Browser/navigation prompt text while edits are unsaved. */
+export const UNSAVED_PROFILE_PROMPT =
+  'You have unsaved store profile changes. Leave without saving?';
+
+export function unsavedProfilePrompt(isDirty: boolean): string | null {
+  return isDirty ? UNSAVED_PROFILE_PROMPT : null;
+}
+
+/**
+ * Why Save is disabled, in operator language. A disabled button with no
+ * explanation was the ARGUS #493 complaint.
+ */
+export function storeProfileSaveBlockMessage(
+  reason: StoreProfileSaveBlockReason,
+  options: { hasFieldErrors?: boolean } = {},
+): string | null {
+  if (options.hasFieldErrors) return 'Fix the highlighted field before saving.';
+  switch (reason) {
+    case 'saving':
+      return 'Saving...';
+    case 'logo-uploading':
+      return 'Save is disabled until the logo upload finishes.';
+    case 'name-too-short':
+      return 'Store name must be at least 2 characters.';
+    case 'not-dirty':
+      return null;
+    default:
+      return null;
+  }
+}

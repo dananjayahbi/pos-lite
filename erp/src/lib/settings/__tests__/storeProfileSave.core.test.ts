@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveStoreProfileSaveState,
   storeProfileControlsLocked,
+  storeProfileSaveBlockMessage,
+  unsavedProfilePrompt,
 } from '@/lib/settings/storeProfileSave.core';
 
 /**
@@ -53,3 +55,22 @@ describe('store profile save gate', () => {
     expect(storeProfileControlsLocked({ saving: false })).toBe(false);
   });
 });
+
+/** ARGUS #493: unsaved edits must be announced and removable, not silently lost. */
+describe('store profile dirty-state guidance', () => {
+  it('only prompts while the form is dirty', () => {
+    expect(unsavedProfilePrompt(true)).toMatch(/unsaved store profile changes/i);
+    expect(unsavedProfilePrompt(false)).toBeNull();
+  });
+
+  it('explains every blocked Save state in operator language', () => {
+    expect(storeProfileSaveBlockMessage('name-too-short')).toMatch(/at least 2 characters/i);
+    expect(storeProfileSaveBlockMessage('logo-uploading')).toMatch(/upload finishes/i);
+    expect(storeProfileSaveBlockMessage('saving')).toMatch(/saving/i);
+    expect(storeProfileSaveBlockMessage('not-dirty')).toBeNull();
+    expect(storeProfileSaveBlockMessage('name-too-short', { hasFieldErrors: true })).toMatch(
+      /highlighted field/i,
+    );
+  });
+});
+

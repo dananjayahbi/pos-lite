@@ -33,3 +33,20 @@ Save stays disabled (see the tax-scheduling section above).
 
 Pure logic/tests: `src/lib/settings/storeProfileLimits.ts`,
 `src/lib/storage-keys.core.ts`, `storeProfileLimits.test.ts`.
+
+## Dirty-state guard and reset (ARGUS #493)
+
+The store profile form used to lose edits silently: typing a suffix enabled
+Save, but navigating away and back reset the form with no prompt, and a cleared
+name disabled Save with no explanation. Now:
+
+- a `beforeunload` prompt covers tab close, reload and back/forward;
+- a capture-phase click guard confirms in-app link navigation while dirty
+  (Ctrl/Cmd/Shift/middle-click and `target="_blank"` are left alone);
+- every blocked Save state has operator copy (`storeProfileSaveBlockMessage`):
+  short name, in-flight logo upload, saving, or a highlighted field error;
+- an always-visible status line announces "Unsaved changes - Save applies them";
+- **Cancel changes** restores the last saved values (and clears server field
+  errors), so a user can abandon an edit deliberately.
+
+The prompt/copy helpers are pure and tested in `storeProfileSave.core.test.ts`.

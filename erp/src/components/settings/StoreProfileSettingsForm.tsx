@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -20,6 +20,8 @@ import { storeProfileRefreshPlan } from '@/lib/settings/storeProfileRefresh.core
 import {
   resolveStoreProfileSaveState,
   storeProfileControlsLocked,
+  storeProfileSaveBlockMessage,
+  unsavedProfilePrompt,
 } from '@/lib/settings/storeProfileSave.core';
 import {
   STORE_PROFILE_LIMITS,
@@ -72,13 +74,53 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
     values.email !== initialValues.email ||
     values.receiptFooter !== initialValues.receiptFooter;
 
-  const canSave =
-    resolveStoreProfileSaveState({
-      saving,
-      logoUploading,
-      isDirty,
-      storeName: values.storeName,
-    }).canSave && !hasFieldErrors;
+  const saveState = resolveStoreProfileSaveState({
+    saving,
+    logoUploading,
+    isDirty,
+    storeName: values.storeName,
+  });
+  const canSave = saveState.canSave && !hasFieldErrors;
+  const blockMessage = hasFieldErrors
+    ? storeProfileSaveBlockMessage(null, { hasFieldErrors: true })
+    : storeProfileSaveBlockMessage(saveState.reason);
+
+  // ARGUS #493: edits were silently lost on navigation. Prompt on tab close /
+  // reload and on in-app link navigation while the form is dirty.
+  useEffect(() => {
+    const prompt = unsavedProfilePrompt(isDirty);
+    if (!prompt) return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = prompt;
+    };
+    const handleLinkClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = event.target instanceof Element ? event.target : null;
+      const anchor = target?.closest('a');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('#') || anchor.getAttribute('target') === '_blank') return;
+      if (!window.confirm(prompt)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('click', handleLinkClick, true);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('click', handleLinkClick, true);
+    };
+  }, [isDirty]);
+
+  function handleReset() {
+    setValues({ ...initialValues });
+    setServerErrors({});
+  }
 
   async function handleSave() {
     // Blocked while a replacement logo is uploading: PATCHing now would save
@@ -259,18 +301,29 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
             )}
           </div>
 
-          <Button
-            onClick={handleSave}
-            disabled={!canSave}
-            className="w-full bg-espresso text-white hover:bg-espresso/90"
-          >
-            {saving ? 'Saving...' : logoUploading ? 'Uploading logo...' : 'Save Store Profile'}
-          </Button>
-          {logoUploading && (
-            <p className="text-center text-xs text-sand-ink">
-              Save is disabled until the logo upload finishes.
+          <div className="space-y-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                onClick={handleSave}
+                disabled={!canSave}
+                className="flex-1 bg-espresso text-white hover:bg-espresso/90"
+              >
+                {saving ? 'Saving...' : logoUploading ? 'Uploading logo...' : 'Save Store Profile'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleReset}
+                disabled={!isDirty || saving}
+                className="border-sand text-espresso"
+              >
+                Cancel changes
+              </Button>
+            </div>
+            <p aria-live="polite" className="text-center text-xs text-sand-ink">
+              {blockMessage ?? (isDirty ? 'Unsaved changes - Save applies them.' : null)}
             </p>
-          )}
+          </div>
         </CardContent>
       </Card>
     </div>
