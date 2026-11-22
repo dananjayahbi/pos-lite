@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { auth } from '@/lib/auth';
-import { denialRouteFor } from '@/lib/auth/page-guards';
-import { hasPermission } from '@/lib/utils/permissions';
+import { denialRouteFor } from '@/lib/auth/page-guards';import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import TaxSettingsForm from '@/components/settings/TaxSettingsForm';
@@ -76,6 +76,23 @@ export default async function TaxSettingsPage() {
         today={today}
         pending={schedule.pending}
       />
+
+      <Card className="border-mist">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4 text-sm">
+          <div>
+            <p className="font-medium text-espresso">Store name, contact and receipt footer</p>
+            <p className="text-sand-ink">
+              These tax rates are separate from the store profile printed on receipts.
+            </p>
+          </div>
+          <Link
+            href="/settings/store"
+            className="underline hover:text-terracotta"
+          >
+            Open Store Profile
+          </Link>
+        </CardContent>
+      </Card>
 
       <Card className="border-mist">
         <CardContent className="space-y-4 py-5">

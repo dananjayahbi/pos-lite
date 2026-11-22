@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import StoreProfileSettingsForm from '@/components/settings/StoreProfileSettingsForm';
 import { receiptIdentityIssues } from '@/lib/settings/receiptIdentity.core';
+import { canManageTaxSettings } from '@/lib/settings/settingsAudit.core';
 
 export const metadata = { title: 'Store Profile | AyurPOS' };
 
@@ -114,6 +115,20 @@ export default async function StoreProfileSettingsPage() {
           Manage the website brand
         </Link>
       </div>
+
+      {/* ARGUS #477: the sidebar no longer implies this page is under "Taxes &
+          Store Settings"; cross-link the tax page so the pair is discoverable. */}
+      {canManageTaxSettings(session.user.role) && (
+        <div className="rounded-lg border border-mist bg-white p-4 text-sm text-sand-ink">
+          <p className="font-medium text-espresso">VAT and SSCL rates</p>
+          <p className="mt-1">
+            Store-wide tax rates, effective dates and the tax-rule preview live on the Taxes page.
+          </p>
+          <Link href="/settings/taxes" className="mt-2 inline-block underline hover:text-terracotta">
+            Open Taxes
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
