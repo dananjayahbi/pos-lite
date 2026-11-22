@@ -637,8 +637,22 @@ export async function depositFunds(
   });
 
   return prisma.$transaction(async (tx) => {
-    const target = await tx.paymentAccount.findFirst({ where: { id: accountId, tenantId } });
+    const target = await tx.paymentAccount.findFirst({
+      where: { id: accountId, tenantId },
+      include: { pettyCashFund: { select: { id: true } } },
+    });
     if (!target) throw new ApiError(404, 'NOT_FOUND', 'Payment account not found');
+
+    // ARGUS #431: petty cash is funded through Petty Cash -> Add Cash In, not
+    // the generic deposit dialog. Reject it explicitly so a direct API call
+    // gets a clear message instead of the generic ledger guard.
+    if (target.pettyCashFund) {
+      throw new ApiError(
+        409,
+        'CONFLICT',
+        'This account is managed by Petty Cash. Add cash from Petty Cash → Add Cash In.',
+      );
+    }
 
     const lines: LedgerLine[] = [];
     const note = input.note?.trim();
@@ -646,10 +660,18 @@ export async function depositFunds(
     if (input.fromAccountId) {
       const source = await tx.paymentAccount.findFirst({
         where: { id: input.fromAccountId, tenantId },
+        include: { pettyCashFund: { select: { id: true } } },
       });
       if (!source) throw new ApiError(404, 'NOT_FOUND', 'Source account not found');
       if (source.id === target.id) {
         throw new ApiError(422, 'VALIDATION_ERROR', 'Source and destination accounts must differ');
+      }
+      if (source.pettyCashFund) {
+        throw new ApiError(
+          409,
+          'CONFLICT',
+          'Petty cash cannot be a deposit source. Record the spend as a Petty Cash expense instead.',
+        );
       }
       await assertSufficientFunds(tx, tenantId, source.id, amount);
 
@@ -711,8 +733,21 @@ export async function withdrawFunds(
   });
 
   return prisma.$transaction(async (tx) => {
-    const source = await tx.paymentAccount.findFirst({ where: { id: accountId, tenantId } });
+    const source = await tx.paymentAccount.findFirst({
+      where: { id: accountId, tenantId },
+      include: { pettyCashFund: { select: { id: true } } },
+    });
     if (!source) throw new ApiError(404, 'NOT_FOUND', 'Payment account not found');
+
+    // ARGUS #431: petty cash is spent through Petty Cash -> Expense, not a
+    // generic withdrawal. Block it explicitly for direct API callers too.
+    if (source.pettyCashFund) {
+      throw new ApiError(
+        409,
+        'CONFLICT',
+        'Petty cash cannot be withdrawn directly. Record the spend as a Petty Cash expense instead.',
+      );
+    }
 
     await assertSufficientFunds(tx, tenantId, source.id, amount);
 
@@ -732,10 +767,18 @@ export async function withdrawFunds(
     if (input.toAccountId) {
       const target = await tx.paymentAccount.findFirst({
         where: { id: input.toAccountId, tenantId },
+        include: { pettyCashFund: { select: { id: true } } },
       });
       if (!target) throw new ApiError(404, 'NOT_FOUND', 'Destination account not found');
       if (target.id === source.id) {
         throw new ApiError(422, 'VALIDATION_ERROR', 'Source and destination accounts must differ');
+      }
+      if (target.pettyCashFund) {
+        throw new ApiError(
+          409,
+          'CONFLICT',
+          'Petty cash cannot be a withdrawal destination. Use a fund transfer into Petty Cash instead.',
+        );
       }
       lines.push({
         accountId: target.id,
