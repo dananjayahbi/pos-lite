@@ -15,7 +15,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
-import { pinDayToNoonIso, todayIso } from './poDates';
+import { pinDayToNoonIso, poDeliveryDateError, todayIso } from './poDates';
 import { PODiscountField } from './PODiscountField';
 import { POLinesEditor } from './POLinesEditor';
 import { POOrderDateField } from './POOrderDateField';
@@ -112,6 +112,12 @@ export function CreatePurchaseOrderClient({ canApprove }: { canApprove: boolean 
     }
 
     if (!draft.orderDate) next['orderDate'] = 'Order date is required';
+
+    const deliveryError = poDeliveryDateError(
+      draft.orderDate,
+      draft.expectedDeliveryDate,
+    );
+    if (deliveryError) next['expectedDeliveryDate'] = deliveryError;
 
     if (draft.discountType !== null) {
       const value = Number.parseFloat(draft.discountValue);
@@ -247,10 +253,14 @@ export function CreatePurchaseOrderClient({ canApprove }: { canApprove: boolean 
                   <Input
                     id="po-expected-delivery"
                     type="date"
+                    min={draft.orderDate || undefined}
                     value={draft.expectedDeliveryDate}
                     onChange={(event) => patch({ expectedDeliveryDate: event.target.value })}
                     disabled={busy}
                   />
+                  {errors['expectedDeliveryDate'] ? (
+                    <p className="text-xs text-red-600">{errors['expectedDeliveryDate']}</p>
+                  ) : null}
                 </div>
                 <POPaymentTermsField
                   value={draft.paymentTermDays}

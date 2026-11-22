@@ -8,6 +8,7 @@ import { computePurchaseOrderTotals } from '@/lib/services/purchaseOrderTotals';
 import { computePurchaseOrderPayable } from '@/lib/services/purchaseOrderPayable.core';
 import { computePurchaseOrderPaymentState } from '@/lib/services/purchaseOrderPaymentState.core';
 import { buildPurchaseOrderDateRange } from '@/lib/services/purchaseOrderDateRange.core';
+import { purchaseOrderDeliveryDateError } from '@/lib/services/purchaseOrderDelivery.core';
 import {
   canCancelPurchaseOrder,
   isPurchaseOrderFinanciallyLocked,
@@ -123,6 +124,10 @@ export async function createPO(
   );
 
   const orderDate = input.orderDate ? new Date(input.orderDate) : new Date();
+
+  // ARGUS #233: delivery must be on/after the order date.
+  const deliveryError = purchaseOrderDeliveryDateError(orderDate, input.expectedDeliveryDate);
+  if (deliveryError) throw new Error(deliveryError);
 
   const customReference = input.referenceNo?.trim();
 
@@ -429,6 +434,21 @@ export async function updatePO(
   if (po.status === POStatus.CANCELLED) {
     throw new Error('A cancelled purchase order cannot be edited');
   }
+
+  // ARGUS #233: validate the effective pair, so editing just one side still
+  // cannot leave a delivery before the order date.
+  const effectiveOrderDate = input.orderDate ? new Date(input.orderDate) : po.orderDate;
+  const effectiveDelivery =
+    input.expectedDeliveryDate !== undefined
+      ? input.expectedDeliveryDate
+        ? new Date(input.expectedDeliveryDate)
+        : null
+      : po.expectedDeliveryDate;
+  const deliveryError = purchaseOrderDeliveryDateError(
+    effectiveOrderDate,
+    effectiveDelivery,
+  );
+  if (deliveryError) throw new Error(deliveryError);
 
   // Once money has been applied, the figures a payment was based on are frozen.
   // Changing the discount/lines/terms afterwards left `paidAt` and the paid

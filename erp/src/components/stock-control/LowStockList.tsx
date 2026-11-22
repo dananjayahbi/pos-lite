@@ -25,8 +25,10 @@ import {
 } from '@/components/stock-control/lowStockState';
 import { resolveLowStockShortfall } from '@/lib/inventory/lowStockShortfall';
 import {
+  LOW_STOCK_OVERRIDE_MAX,
   lowStockThresholdCellLabel,
   lowStockThresholdRuleLabel,
+  parseLowStockOverrideInput,
   resolveEffectiveLowStockThreshold,
 } from '@/lib/inventory/lowStockThreshold';
 
@@ -38,10 +40,12 @@ export function LowStockList({ permissions }: LowStockListProps) {
   const [page, setPage] = useState(1);
   const [limit] = useState(25);
   const [useOverride, setUseOverride] = useState(false);
-  const [thresholdOverride, setThresholdOverride] = useState(5);
+  // ARGUS #216: keep the raw text so the field can be emptied, and allow 0.
+  const [thresholdOverrideInput, setThresholdOverrideInput] = useState('5');
   const [exporting, setExporting] = useState(false);
 
-  const threshold = useOverride ? thresholdOverride : undefined;
+  const overrideParse = parseLowStockOverrideInput(thresholdOverrideInput);
+  const threshold = useOverride ? overrideParse.threshold : undefined;
 
   const { data, isLoading, isError, error, isFetching, refetch } = useLowStockVariants({ page, limit, threshold });
 
@@ -132,14 +136,21 @@ export function LowStockList({ permissions }: LowStockListProps) {
             )}
           </div>
           <p className="mt-1 font-body text-sm text-mist-ink">
-            Variants {lowStockThresholdRuleLabel(threshold)} - sorted by urgency.
+            {useOverride && overrideParse.error
+              ? 'Fix the override threshold to apply it.'
+              : `Variants ${lowStockThresholdRuleLabel(threshold)} - sorted by urgency.`}
           </p>
         </div>
         <Button
           variant="outline"
           className="border-sand text-espresso"
           onClick={handleExport}
-          disabled={exporting || viewState !== 'list' || total === 0}
+          disabled={
+            exporting ||
+            viewState !== 'list' ||
+            total === 0 ||
+            (useOverride && Boolean(overrideParse.error))
+          }
         >
           <Download className="mr-2 h-4 w-4" />
           {exporting ? 'Exporting…' : 'Export CSV'}
@@ -161,20 +172,41 @@ export function LowStockList({ permissions }: LowStockListProps) {
           Override threshold
         </label>
         {useOverride && (
-          <Input
-            type="number"
-            min={1}
-            value={thresholdOverride}
-            onChange={(e) => {
-              setThresholdOverride(Math.max(1, parseInt(e.target.value, 10) || 1));
-              setPage(1);
-            }}
-            className="w-24 border-sand"
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={0}
+              max={LOW_STOCK_OVERRIDE_MAX}
+              step={1}
+              inputMode="numeric"
+              aria-label="Low stock threshold override"
+              value={thresholdOverrideInput}
+              onChange={(e) => {
+                // Keep the typed text verbatim; parsing (and the error) is
+                // handled by the shared helper so an empty field is not
+                // silently replaced with 1.
+                setThresholdOverrideInput(e.target.value);
+                setPage(1);
+              }}
+              className="w-24 border-sand"
+            />
+            {overrideParse.error && (
+              <span role="alert" className="font-body text-xs text-red-600">
+                {overrideParse.error}
+              </span>
+            )}
+          </div>
         )}
         {!useOverride && (
           <span className="font-body text-xs text-mist-ink">
             Using individual per-variant thresholds
+          </span>
+        )}
+        {useOverride && !overrideParse.error && (
+          <span className="font-body text-xs text-mist-ink">
+            {overrideParse.threshold === 0
+              ? 'Showing only out-of-stock variants'
+              : `Override threshold: ${overrideParse.threshold}`}
           </span>
         )}
       </div>

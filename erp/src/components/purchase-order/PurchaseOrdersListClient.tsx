@@ -55,7 +55,7 @@ import { formatRupee } from '@/lib/format';
 import { canCancelPurchaseOrder } from '@/lib/services/purchaseOrderPermissions.core';
 
 import { cancelPurchaseOrder } from './poApi';
-import { formatPoDate } from './poDates';
+import { formatPoDate, poDueDay, poDueState } from './poDates';
 import { POStatusBadge } from './POStatusBadge';
 import { poQueryKeys } from './poQueryKeys';
 import type { PurchaseOrderListResponse, PurchaseOrderListItem } from './poTypes';
@@ -73,6 +73,36 @@ const STATUS_OPTIONS = [
 interface SupplierOption {
   id: string;
   name: string;
+  isActive?: boolean;
+}
+
+/** ARGUS #233: due date + overdue/paid state for the PO list. */
+function PoDueCell({ po }: { po: PurchaseOrderListItem }) {
+  const dueDay = poDueDay(po.orderDate, po.paymentTermDays);
+  const state = poDueState({
+    dueDay,
+    status: po.status,
+    outstanding: po.outstanding,
+  });
+
+  if (state === 'not_applicable' || !dueDay) {
+    return <span className="text-xs text-mist-ink">-</span>;
+  }
+
+  return (
+    <div>
+      <span className={state === 'overdue' ? 'font-medium text-amber-700' : 'text-mist-ink'}>
+        {formatPoDate(dueDay)}
+      </span>
+      {state === 'overdue' ? (
+        <Badge className="ml-1 bg-amber-100 text-amber-800 hover:bg-amber-100" variant="secondary">
+          Overdue
+        </Badge>
+      ) : state === 'paid' ? (
+        <span className="block text-[10px] text-green-700">Paid</span>
+      ) : null}
+    </div>
+  );
 }
 
 export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }) {
@@ -114,7 +144,11 @@ export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }
     data: { suppliers: SupplierOption[] };
   }>({
     queryKey: poQueryKeys.supplierOptions(),
-    queryFn: () => fetch('/api/store/suppliers?limit=100').then((r) => r.json()),
+    // ARGUS #238: the PO list is a historical view, so its supplier filter must
+    // include archived suppliers that still own POs. New-PO selection uses the
+    // active-only supplier list elsewhere.
+    queryFn: () =>
+      fetch('/api/store/suppliers?limit=100&includeArchived=true').then((r) => r.json()),
     staleTime: 60_000,
   });
   const suppliers = suppliersData?.data?.suppliers ?? [];
@@ -210,6 +244,7 @@ export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }
             {suppliers.map((supplier) => (
               <SelectItem key={supplier.id} value={supplier.id}>
                 {supplier.name}
+                {supplier.isActive === false ? ' (archived)' : ''}
               </SelectItem>
             ))}
           </SelectContent>
@@ -266,6 +301,7 @@ export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }
               <TableHead className="text-right">Total</TableHead>
               <TableHead>Order Date</TableHead>
               <TableHead>Expected Delivery</TableHead>
+              <TableHead>Due</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -273,7 +309,7 @@ export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }
             {isLoading ? (
               Array.from({ length: 5 }).map((_, rowIndex) => (
                 <TableRow key={rowIndex}>
-                  {Array.from({ length: 9 }).map((__, cellIndex) => (
+                  {Array.from({ length: 10 }).map((__, cellIndex) => (
                     <TableCell key={cellIndex}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
@@ -282,7 +318,7 @@ export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }
               ))
             ) : pos.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-mist-ink">
+                <TableCell colSpan={10} className="py-8 text-center text-mist-ink">
                   No purchase orders found
                 </TableCell>
               </TableRow>
@@ -336,6 +372,9 @@ export function PurchaseOrdersListClient({ canApprove }: { canApprove: boolean }
                   <TableCell className="text-mist-ink">{formatPoDate(po.orderDate)}</TableCell>
                   <TableCell className="text-mist-ink">
                     {po.expectedDeliveryDate ? formatPoDate(po.expectedDeliveryDate) : '-'}
+                  </TableCell>
+                  <TableCell>
+                    <PoDueCell po={po} />
                   </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>

@@ -1,4 +1,5 @@
 import type { StockMovementReason } from '@/generated/prisma/client';
+import { stockMovementReasonLabel } from '@/lib/constants/stock-movement';
 
 /**
  * ARGUS #181 — reasons a human may choose for a manual stock adjustment.
@@ -19,6 +20,22 @@ export const MANUAL_ADJUSTMENT_REASONS = [
 ] as const satisfies readonly StockMovementReason[];
 
 export type ManualAdjustmentReason = (typeof MANUAL_ADJUSTMENT_REASONS)[number];
+
+/**
+ * ARGUS #189 - one label per reason, shared with the movement ledger.
+ *
+ * The form used to say "Stolen", "Data Error", "Sale Return" and "Purchase
+ * Received" while the ledger said "Stolen or Lost", "Data Entry Correction",
+ * "Customer Return" and "Received from Purchase". The operator had to map two
+ * names for one reason, so the adjustment form now reads from the same map.
+ */
+export const MANUAL_ADJUSTMENT_REASON_LABELS: Record<ManualAdjustmentReason, string> = {
+  FOUND: stockMovementReasonLabel('FOUND'),
+  DAMAGED: stockMovementReasonLabel('DAMAGED'),
+  STOLEN: stockMovementReasonLabel('STOLEN'),
+  DATA_ERROR: stockMovementReasonLabel('DATA_ERROR'),
+  RETURNED_TO_SUPPLIER: stockMovementReasonLabel('RETURNED_TO_SUPPLIER'),
+};
 
 export type ManualAdjustmentDirection = 'add' | 'remove';
 

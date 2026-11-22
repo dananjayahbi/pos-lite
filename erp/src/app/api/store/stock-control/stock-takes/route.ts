@@ -5,10 +5,12 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { StockTakeStatus } from '@/generated/prisma/client';
 import { isStaleStockTake } from '@/lib/services/stockTakeAge.core';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/services/audit.service';
 import {
   parseStockTakeCategoryId,
   stockTakeCategoryListWhere,
   stockTakeCategoryLookupWhere,
+  validateStockTakeScope,
 } from '@/lib/services/stockTakePolicy.core';
 
 export async function GET() {
@@ -209,6 +211,17 @@ export async function POST(request: NextRequest) {
         select: { id: true, stockQuantity: true },
       });
 
+      // ARGUS #212: an empty session consumes the single in-progress slot and
+      // could be completed and approved as if it were a real count. Refuse it
+      // before anything commits.
+      const scopeCheck = validateStockTakeScope({
+        categoryId,
+        countableVariantCount: variants.length,
+      });
+      if (!scopeCheck.ok) {
+        throw new Error(`EMPTY_STOCK_TAKE_SCOPE|${scopeCheck.message}`);
+      }
+
       if (variants.length > 0) {
         await tx.stockTakeItem.createMany({
           data: variants.map((v) => ({
@@ -222,8 +235,39 @@ export async function POST(request: NextRequest) {
       return newSession.id;
     });
 
+    // ARGUS #211: creation is a stock-take lifecycle event. Approval,
+    // rejection and cancellation already write an audit row; without this the
+    // trail began only once someone acted on the session.
+    await createAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      actorRole: session.user.role,
+      entityType: 'StockTakeSession',
+      entityId: result,
+      action: AUDIT_ACTIONS.STOCK_TAKE_CREATED,
+      after: {
+        scope: categoryId ? 'category' : 'all',
+        categoryId,
+        initiatedBy: session.user.id,
+        startedAt: new Date().toISOString(),
+      },
+    });
+
     return NextResponse.json({ success: true, data: { id: result } }, { status: 201 });
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (message.startsWith('EMPTY_STOCK_TAKE_SCOPE|')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'EMPTY_SCOPE',
+            message: message.slice('EMPTY_STOCK_TAKE_SCOPE|'.length),
+          },
+        },
+        { status: 422 },
+      );
+    }
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to create stock take session' } },
       { status: 500 },

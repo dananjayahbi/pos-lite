@@ -160,6 +160,13 @@ export async function PATCH(
       );
     }
 
+    if (message.startsWith('Expected delivery date')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message } },
+        { status: 400 },
+      );
+    }
+
     // Status/state guards that make the request valid but impossible right now.
     if (
       message.startsWith('Lines cannot be edited') ||

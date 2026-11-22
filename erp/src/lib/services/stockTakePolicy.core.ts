@@ -136,7 +136,6 @@ export function stockTakeCategoryListWhere(tenantId: string, categoryIds: readon
 }
 
 export type StockTakeCancelDisposition = 'discard' | 'reject';
-
 /**
  * Cancellation is discard-only (ARGUS #206). A request that tries to apply
  * counted discrepancies is rejected; applying must go through
@@ -146,4 +145,36 @@ export function cancelDisposition(
   requestedAction: string | null | undefined,
 ): StockTakeCancelDisposition {
   return requestedAction === 'apply' ? 'reject' : 'discard';
+}
+
+/**
+ * ARGUS #212 - an empty session must never be created.
+ *
+ * A category with no live variants (or a tenant with no countable products)
+ * produced a 0-item session that held the single in-progress slot and could be
+ * completed and approved as if it were a real count. The route checks the
+ * actual variant count inside its transaction and refuses before committing.
+ */
+export type StockTakeScopeCheck = { ok: true } | { ok: false; message: string };
+
+export function validateStockTakeScope(input: {
+  categoryId: string | null;
+  countableVariantCount: number;
+}): StockTakeScopeCheck {
+  if (input.countableVariantCount > 0) return { ok: true };
+  return {
+    ok: false,
+    message: input.categoryId
+      ? 'The selected category has no countable variants, so this stock take would contain no items. Choose another category or count all products.'
+      : 'There are no countable variants in this store, so a stock take would contain no items.',
+  };
+}
+
+/**
+ * ARGUS #212 - a 0-item session may reach PENDING_APPROVAL from legacy data;
+ * completion and approval must still refuse it instead of recording an empty
+ * "verified" count.
+ */
+export function stockTakeHasNoItems(itemCount: number): boolean {
+  return itemCount <= 0;
 }

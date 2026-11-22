@@ -56,7 +56,9 @@ export function useLowStockVariants(filters: LowStockFilters) {
       const params = new URLSearchParams();
       if (filters.page) params.set('page', String(filters.page));
       if (filters.limit) params.set('limit', String(filters.limit));
-      if (filters.threshold) params.set('threshold', String(filters.threshold));
+      // ARGUS #216: threshold 0 is the out-of-stock view, so a truthiness
+      // check silently dropped it. Only an absent value means "per-variant".
+      if (filters.threshold !== undefined) params.set('threshold', String(filters.threshold));
       const res = await fetch(`/api/store/stock-control/low-stock?${params}`);
       // ARGUS #213: a 404/500 is an error, not an empty list.
       if (!res.ok) throw new Error(await readErrorMessage(res));

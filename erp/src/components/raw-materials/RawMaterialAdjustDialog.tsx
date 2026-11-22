@@ -91,7 +91,7 @@ export function RawMaterialAdjustDialog({
         <DialogHeader>
           <DialogTitle>Adjust stock - {material.name}</DialogTitle>
           <DialogDescription>
-            Current quantity: {material.quantity} {material.unitName}. Enter a
+            Current quantity: {material.quantity} {material.unitShortLabel}. Enter a
             positive value to add stock or a negative value to consume stock.
           </DialogDescription>
         </DialogHeader>

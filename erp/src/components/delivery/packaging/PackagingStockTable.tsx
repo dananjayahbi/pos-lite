@@ -5,7 +5,8 @@ import { Pencil, Package, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { PackagingItemRow } from '@/hooks/delivery/usePackaging';
-import { formatPackagingQuantity } from '@/lib/constants/packaging';
+import { formatPackagingQuantity, getPackagingUnitLabel } from '@/lib/constants/packaging';
+import { resolvePackagingPerParcelRate } from '@/lib/services/packaging.core';
 
 interface PackagingStockTableProps {
   items: PackagingItemRow[];
@@ -13,6 +14,8 @@ interface PackagingStockTableProps {
   onEdit: (item: PackagingItemRow) => void;
   onDelete: (item: PackagingItemRow) => void;
   canManage: boolean;
+  /** Shown instead of the first-run empty copy when filters matched nothing. */
+  emptyMessage?: string;
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -29,14 +32,19 @@ export function PackagingStockTable({
   onEdit,
   onDelete,
   canManage,
+  emptyMessage,
 }: PackagingStockTableProps) {
   if (items.length === 0) {
     return (
       <div className="border-espresso/20 flex flex-col items-center gap-3 rounded-lg border border-dashed py-12 text-center">
         <Package className="text-espresso/30 h-10 w-10" />
-        <p className="text-espresso/60 text-sm font-medium">No packaging items yet</p>
+        <p className="text-espresso/60 text-sm font-medium">
+          {emptyMessage ?? 'No packaging items yet'}
+        </p>
         <p className="text-espresso/40 text-xs">
-          Add a packaging item to track stock used per parcel.
+          {emptyMessage
+            ? 'Clear or change the filters to see the full list.'
+            : 'Add a packaging item to track stock used per parcel.'}
         </p>
       </div>
     );
@@ -83,7 +91,9 @@ export function PackagingStockTable({
                   </Badge>
                 </td>
                 <td className="text-espresso/60 px-4 py-3 font-mono text-xs">{item.sku ?? '-'}</td>
-                <td className="text-espresso/60 px-4 py-3 text-sm">{item.unit}</td>
+                <td className="text-espresso/60 px-4 py-3 text-sm">
+                  {getPackagingUnitLabel(item.unit)}
+                </td>
                 <td
                   className={`px-4 py-3 text-right text-sm font-semibold ${isLow ? 'text-terracotta' : 'text-espresso'}`}
                 >
@@ -119,7 +129,23 @@ export function PackagingStockTable({
                   )}
                 </td>
                 <td className="text-espresso/60 px-4 py-3 text-right text-sm">
-                  {item.consumptionPerParcel != null ? Number(item.consumptionPerParcel) : '-'}
+                  {item.consumptionPerParcel != null
+                    ? (() => {
+                        const rate = resolvePackagingPerParcelRate(item.consumptionPerParcel);
+                        return (
+                          <>
+                            <span>
+                              {formatPackagingQuantity(rate.effective, item.unit)} / parcel
+                            </span>
+                            {rate.rounded ? (
+                              <span className="text-espresso/40 block text-[10px]">
+                                {rate.configured} configured, rounded up
+                              </span>
+                            ) : null}
+                          </>
+                        );
+                      })()
+                    : '-'}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-1">

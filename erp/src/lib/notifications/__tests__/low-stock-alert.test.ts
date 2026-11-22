@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  filterNewLowStockAlerts,
   lowStockAlertBody,
   lowStockAlertTitle,
   selectLowStockAlerts,
@@ -61,5 +62,57 @@ describe('selectLowStockAlerts (ARGUS #55)', () => {
     expect(lowStockAlertBody(base, 'Sold via sale ABC12345')).toBe(
       'Current stock: 5 units. Threshold: 5 units. Sold via sale ABC12345.',
     );
+  });
+});
+
+describe('filterNewLowStockAlerts (ARGUS #197)', () => {
+  const recipients = [{ id: 'owner-1' }, { id: 'manager-1' }];
+
+  it('writes one alert per recipient when the inbox has none', () => {
+    expect(filterNewLowStockAlerts([base], recipients)).toHaveLength(2);
+  });
+
+  it('skips a recipient who already has an unread alert for the variant', () => {
+    const pairs = filterNewLowStockAlerts([base], recipients, [
+      { recipientId: 'owner-1', relatedEntityId: 'variant-1' },
+    ]);
+    expect(pairs).toEqual([{ candidate: base, recipientId: 'manager-1' }]);
+  });
+
+  it('does not suppress an alert for a different variant', () => {
+    const pairs = filterNewLowStockAlerts([base], recipients, [
+      { recipientId: 'owner-1', relatedEntityId: 'variant-2' },
+      { recipientId: 'manager-1', relatedEntityId: 'variant-2' },
+    ]);
+    expect(pairs).toHaveLength(2);
+  });
+
+  it('is empty when every recipient already has the unread alert', () => {
+    expect(
+      filterNewLowStockAlerts([base], recipients, [
+        { recipientId: 'owner-1', relatedEntityId: 'variant-1' },
+        { recipientId: 'manager-1', relatedEntityId: 'variant-1' },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('adjustment direction (ARGUS #217)', () => {
+  it('does not alert when an upward adjustment lands exactly on the threshold', () => {
+    expect(
+      selectLowStockAlerts([{ ...base, stockQuantity: 5, previousQuantity: 4 }]),
+    ).toEqual([]);
+  });
+
+  it('alerts on a downward crossing into the threshold', () => {
+    expect(
+      selectLowStockAlerts([{ ...base, stockQuantity: 4, previousQuantity: 6 }]),
+    ).toHaveLength(1);
+  });
+
+  it('does not alert when a decrease stays below the threshold', () => {
+    expect(
+      selectLowStockAlerts([{ ...base, stockQuantity: 3, previousQuantity: 4 }]),
+    ).toEqual([]);
   });
 });

@@ -17,7 +17,6 @@ import { useStockSummary } from '@/hooks/useStockSummary';
 import { useRecentMovements } from '@/hooks/useRecentMovements';
 import { stockActorLabel } from '@/lib/stock/actor-label';
 import { formatRupee } from '@/lib/format';
-import { LowStockAlertBadge } from '@/components/stock/LowStockAlertBadge';
 import { stockMovementReasonLabel } from '@/lib/constants/stock-movement';
 import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 import { PERMISSIONS } from '@/lib/constants/permissions';
@@ -26,16 +25,18 @@ interface StockControlDashboardProps {
   permissions: string[];
 }
 
-const REASON_BADGE: Record<string, { label: string; className: string }> = {
-  FOUND: { label: 'Found', className: 'bg-green-100 text-green-800 hover:bg-green-100' },
-  PURCHASE_RECEIVED: { label: 'Purchase Received', className: 'bg-green-100 text-green-800 hover:bg-green-100' },
-  INITIAL_STOCK: { label: 'Initial Stock', className: 'bg-green-100 text-green-800 hover:bg-green-100' },
-  SALE_RETURN: { label: 'Sale Return', className: 'bg-amber-100 text-amber-800 hover:bg-amber-100' },
-  RETURNED_TO_SUPPLIER: { label: 'Returned to Supplier', className: 'bg-amber-100 text-amber-800 hover:bg-amber-100' },
-  DAMAGED: { label: 'Damaged', className: 'bg-red-100 text-red-800 hover:bg-red-100' },
-  STOLEN: { label: 'Stolen', className: 'bg-red-100 text-red-800 hover:bg-red-100' },
-  DATA_ERROR: { label: 'Data Error', className: 'bg-blue-100 text-blue-800 hover:bg-blue-100' },
-  STOCK_TAKE_ADJUSTMENT: { label: 'Stock Take', className: 'bg-blue-100 text-blue-800 hover:bg-blue-100' },
+// ARGUS #189: badges share the movement-ledger label vocabulary; only the
+// colour class is dashboard-specific.
+const REASON_BADGE_CLASS: Record<string, string> = {
+  FOUND: 'bg-green-100 text-green-800 hover:bg-green-100',
+  PURCHASE_RECEIVED: 'bg-green-100 text-green-800 hover:bg-green-100',
+  INITIAL_STOCK: 'bg-green-100 text-green-800 hover:bg-green-100',
+  SALE_RETURN: 'bg-amber-100 text-amber-800 hover:bg-amber-100',
+  RETURNED_TO_SUPPLIER: 'bg-amber-100 text-amber-800 hover:bg-amber-100',
+  DAMAGED: 'bg-red-100 text-red-800 hover:bg-red-100',
+  STOLEN: 'bg-red-100 text-red-800 hover:bg-red-100',
+  DATA_ERROR: 'bg-blue-100 text-blue-800 hover:bg-blue-100',
+  STOCK_TAKE_ADJUSTMENT: 'bg-blue-100 text-blue-800 hover:bg-blue-100',
 };
 
 function formatDateTime(dateStr: string): string {
@@ -183,8 +184,9 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
         </div>
       )}
 
-      {/* Low Stock Alert Badge */}
-      <LowStockAlertBadge />
+      {/* ARGUS #188: the banner above is the single low-stock call to action.
+          The extra LowStockAlertBadge duplicated the same count with a second
+          link to the same list. */}
 
       {/* Quick Actions */}
       <div>
@@ -247,9 +249,11 @@ export function StockControlDashboard({ permissions }: StockControlDashboardProp
                 </TableRow>
               ) : (
                 movements.map((m) => {
-                  const badge = REASON_BADGE[m.reason] ?? {
+                  const badge = {
                     label: stockMovementReasonLabel(m.reason),
-                    className: 'bg-gray-100 text-gray-800 hover:bg-gray-100',
+                    className:
+                      REASON_BADGE_CLASS[m.reason] ??
+                      'bg-gray-100 text-gray-800 hover:bg-gray-100',
                   };
                   const isPositive = m.quantityDelta > 0;
 

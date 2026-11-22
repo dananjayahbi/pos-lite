@@ -49,3 +49,54 @@ export function formatPoDate(value: string | null | undefined): string {
 export function monthKey(day: string): string {
   return day.slice(0, 7);
 }
+
+/** Local `yyyy-mm-dd` for a stored instant or an existing day string. */
+export function localDay(value: string | Date | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 10);
+}
+
+/**
+ * ARGUS #233 - expected delivery may not precede the order date.
+ */
+export function poDeliveryDateError(
+  orderDay: string | null | undefined,
+  deliveryDay: string | null | undefined,
+): string | null {
+  if (!orderDay || !deliveryDay) return null;
+  return deliveryDay < orderDay ? 'Expected delivery cannot be before the order date' : null;
+}
+
+/** Due day derived from the order day and the payment term (`null` = immediate). */
+export function poDueDay(
+  orderDate: string | Date | null | undefined,
+  paymentTermDays: number | null | undefined,
+): string | undefined {
+  const orderDay = localDay(orderDate);
+  if (!orderDay) return undefined;
+  return addDays(orderDay, paymentTermDays ?? 0);
+}
+
+export type PoDueState = 'not_applicable' | 'paid' | 'overdue' | 'due';
+
+/**
+ * ARGUS #233 - accounts-payable ageing for the list/detail. Drafts and
+ * cancellations are not chased; a fully settled order is "paid"; otherwise the
+ * due day decides between due and overdue.
+ */
+export function poDueState(input: {
+  dueDay?: string | undefined;
+  status: string;
+  outstanding?: number | string | null | undefined;
+  today?: string | undefined;
+}): PoDueState {
+  if (input.status === 'DRAFT' || input.status === 'CANCELLED') return 'not_applicable';
+  if (input.outstanding !== undefined && input.outstanding !== null && Number(input.outstanding) <= 0) {
+    return 'paid';
+  }
+  if (!input.dueDay) return 'not_applicable';
+  return input.dueDay < (input.today ?? todayIso()) ? 'overdue' : 'due';
+}

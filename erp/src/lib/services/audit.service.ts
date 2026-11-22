@@ -112,6 +112,9 @@ export const AUDIT_ACTIONS = {
   CUSTOMER_PRICING_RULE_DEACTIVATED: 'CUSTOMER_PRICING_RULE_DEACTIVATED',
   // Stock
   STOCK_ADJUSTED: 'STOCK_ADJUSTED',
+  // ARGUS #211: session creation is an audited lifecycle event like approval,
+  // rejection and cancellation.
+  STOCK_TAKE_CREATED: 'STOCK_TAKE_CREATED',
   // Expense
   EXPENSE_CREATED: 'EXPENSE_CREATED',
   EXPENSE_UPDATED: 'EXPENSE_UPDATED',

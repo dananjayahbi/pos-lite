@@ -26,6 +26,7 @@ import {
 import type { RawMaterialItem } from '@/hooks/useRawMaterials';
 import { RawMaterialCategoryManagerDialog } from '@/components/raw-materials/RawMaterialCategoryManagerDialog';
 import { invalidateRawMaterialSurfaces } from '@/lib/factory/factoryQueries';
+import { dedupeLabeledOptions } from '@/lib/services/rawMaterial.core';
 import {
   useCreateRawMaterialCategory,
   useRawMaterialCategories,
@@ -109,13 +110,15 @@ export function RawMaterialFormDialog({
   // fall back to the first active category when creating a new material.
   const currentCategoryMissing =
     Boolean(form.category) && !categories.some((category) => category.key === form.category);
-  const categoryOptions =
+  const categoryOptions = dedupeLabeledOptions(
     isEdit && currentCategoryMissing
       ? [
           { id: 'current', key: form.category, name: material?.categoryName ?? form.category },
           ...categories,
         ]
-      : categories;
+      : categories,
+    form.category,
+  );
   const selectedCategory =
     isEdit && currentCategoryMissing
       ? form.category
@@ -128,7 +131,7 @@ export function RawMaterialFormDialog({
   // active unit from the tenant's catalog.
   const currentUnitMissing =
     Boolean(form.unit) && !units.some((unit) => unit.key === form.unit);
-  const unitOptions =
+  const unitOptions = dedupeLabeledOptions(
     isEdit && currentUnitMissing
       ? [
           {
@@ -139,7 +142,9 @@ export function RawMaterialFormDialog({
           },
           ...units,
         ]
-      : units;
+      : units,
+    form.unit,
+  );
   const selectedUnit =
     isEdit && currentUnitMissing
       ? form.unit

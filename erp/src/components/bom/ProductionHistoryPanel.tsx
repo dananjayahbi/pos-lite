@@ -4,6 +4,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useProductionLogs } from '@/hooks/useBom';
+import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
 import {
   factoryFeedErrorMessage,
   resolveFactoryFeedState,
@@ -13,12 +14,10 @@ interface ProductionHistoryPanelProps {
   compact?: boolean;
 }
 
+// ARGUS #255: the history used the browser's default toLocaleString (US-style
+// on many machines) while the rest of the ERP renders en-GB timestamps.
 function formatDate(value: string): string {
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return value;
-  }
+  return formatStockMovementTimestamp(value);
 }
 
 export function ProductionHistoryPanel({ compact = false }: ProductionHistoryPanelProps) {

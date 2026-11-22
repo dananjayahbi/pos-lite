@@ -6,11 +6,13 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowDown,
   ArrowUp,
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   Download,
   Loader2,
   PackageSearch,
+  RefreshCw,
   Search,
   ShieldX,
   X,
@@ -33,6 +35,7 @@ import { useStockActors } from '@/hooks/useStockActors';
 import { stockActorLabel } from '@/lib/stock/actor-label';
 import { resolveStockMovementSource } from '@/lib/stock/movement-source';
 import { formatStockMovementTimestamp } from '@/lib/stock/movement-timestamp';
+import { movementDateRangeError } from '@/lib/stock/movement-date-range';
 import { formatVariantLabel, VARIANT_LABEL_SEPARATOR } from '@/lib/products/variant-label';
 import { staffDisplayName } from '@/lib/utils/staff-name';
 import { Badge } from '@/components/ui/badge';
@@ -55,6 +58,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { toast } from 'sonner';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -110,6 +114,9 @@ function StockMovementHistoryInner() {
   const page = Number(searchParams.get('page') ?? '1');
   const from = searchParams.get('from') ?? getDefaultFrom();
   const to = searchParams.get('to') ?? '';
+  // ARGUS #204: an inverted range can never match, so say so instead of
+  // showing the ordinary empty result.
+  const dateRangeError = movementDateRangeError(from, to);
   const reasonsParam = searchParams.get('reasons');
   const search = searchParams.get('search') ?? '';
   const actorId = searchParams.get('actorId') ?? '';
@@ -169,7 +176,7 @@ function StockMovementHistoryInner() {
     [page, from, to, reasonFilter, search, actorId, sortOrder],
   );
 
-  const { data, isLoading } = useGlobalStockMovements(filters);
+  const { data, isLoading, isError, error, isFetching, refetch } = useGlobalStockMovements(filters);
   const { data: actorsData } = useStockActors();
 
   const movements = data?.data ?? [];
@@ -180,6 +187,10 @@ function StockMovementHistoryInner() {
   const [exporting, setExporting] = useState(false);
 
   const handleExport = useCallback(async () => {
+    if (dateRangeError) {
+      toast.error(dateRangeError);
+      return;
+    }
     setExporting(true);
     try {
       const params = new URLSearchParams();
@@ -192,7 +203,18 @@ function StockMovementHistoryInner() {
       params.set('format', 'csv');
 
       const res = await fetch(`/api/store/stock-control/movements?${params}`);
-      if (!res.ok) throw new Error('Export failed');
+      if (!res.ok) {
+        // ARGUS #202: never stop the spinner silently. Surface the server's
+        // message when it sent one (permission, bad filter, export failure).
+        let message = 'Failed to export stock movements';
+        try {
+          const body = (await res.json()) as { error?: { message?: string } };
+          if (body?.error?.message) message = body.error.message;
+        } catch {
+          // Non-JSON error body - keep the generic message.
+        }
+        throw new Error(message);
+      }
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -206,12 +228,17 @@ function StockMovementHistoryInner() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-    } catch {
-      // silently fail — could add toast if desired
+      toast.success('Stock movements exported');
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to export stock movements',
+      );
     } finally {
       setExporting(false);
     }
-  }, [from, to, reasonFilter, search, actorId, sortOrder]);
+  }, [from, to, reasonFilter, search, actorId, sortOrder, dateRangeError]);
 
   // ── Reason chip toggle ─────────────────────────────────────────────────────
   const toggleReason = useCallback(
@@ -264,7 +291,7 @@ function StockMovementHistoryInner() {
           <h1 className="font-display text-2xl font-semibold text-espresso">Stock Movement History</h1>
           <p className="mt-1 font-body text-sm text-mist-ink">View and export all stock movements across your inventory.</p>
         </div>
-        <Button variant="outline" onClick={handleExport} disabled={exporting}>
+        <Button variant="outline" onClick={handleExport} disabled={exporting || Boolean(dateRangeError)}>
           {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
           Export CSV
         </Button>
@@ -363,8 +390,7 @@ function StockMovementHistoryInner() {
             </div>
 
             {/* Search */}
-            <div className="space-y-1 flex-1 min-w-50">
-              <label className="text-xs font-medium text-mist-ink">Product / SKU</label>
+            <div className="space-y-1 flex-1 min-w-50">              <label className="text-xs font-medium text-mist-ink">Product / SKU</label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-mist-ink" />
                 <Input
@@ -395,6 +421,12 @@ function StockMovementHistoryInner() {
               </Select>
             </div>
           </div>
+
+          {dateRangeError && (
+            <p role="alert" className="font-body text-xs font-medium text-red-600">
+              {dateRangeError}
+            </p>
+          )}
 
           {/* Row 2: reason chips */}
           <div className="space-y-1.5">
@@ -503,7 +535,19 @@ function StockMovementHistoryInner() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading
+            {dateRangeError ? (
+              <TableRow>
+                <TableCell colSpan={10} className="h-40">
+                  <div className="flex flex-col items-center justify-center gap-2 text-center text-red-700">
+                    <AlertTriangle className="h-8 w-8 text-red-500" />
+                    <p className="text-sm font-medium">{dateRangeError}</p>
+                    <p className="text-xs">
+                      Adjust the dates to run the query - this is not an empty result.
+                    </p>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : isLoading
               ? Array.from({ length: 7 }).map((_, i) => (
                   <TableRow key={i}>
                     {Array.from({ length: 10 }).map((_, j) => (
@@ -513,7 +557,41 @@ function StockMovementHistoryInner() {
                     ))}
                   </TableRow>
                 ))
-              : movements.length === 0
+              : isError
+                ? (
+                    <TableRow>
+                      <TableCell colSpan={10} className="h-40">
+                        <div
+                          role="alert"
+                          className="flex flex-col items-center justify-center gap-2 text-center"
+                        >
+                          <AlertTriangle className="h-8 w-8 text-red-500" />
+                          <p className="text-sm font-medium text-red-800">
+                            Stock movements could not be loaded
+                          </p>
+                          <p className="max-w-md text-xs text-red-600">
+                            {error instanceof Error && error.message
+                              ? error.message
+                              : 'The movement query failed.'}{' '}
+                            This is a load failure, not an empty ledger.
+                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-red-200 bg-white text-red-700 hover:bg-red-100"
+                            onClick={() => void refetch()}
+                            disabled={isFetching}
+                          >
+                            <RefreshCw
+                              className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`}
+                            />
+                            {isFetching ? 'Retrying…' : 'Retry'}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                : movements.length === 0
                 ? (
                     <TableRow>
                       <TableCell colSpan={10} className="h-40">
@@ -611,7 +689,7 @@ function StockMovementHistoryInner() {
       </div>
 
       {/* Pagination */}
-      {meta && meta.totalPages > 0 && (
+      {meta && !isError && !dateRangeError && meta.totalPages > 0 && (
         <div className="flex items-center justify-between text-sm">
           <p className="text-mist-ink">
             Showing {startItem}–{endItem} of {meta.total}

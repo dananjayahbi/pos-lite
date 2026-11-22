@@ -11,6 +11,8 @@ import {
   parseStockTakeCategoryId,
   stockTakeCategoryListWhere,
   stockTakeCategoryLookupWhere,
+  stockTakeHasNoItems,
+  validateStockTakeScope,
 } from '@/lib/services/stockTakePolicy.core';
 
 const base = {
@@ -154,5 +156,30 @@ describe('stock-take category scoping (ARGUS #209)', () => {
       tenantId: 'tenant-1',
       deletedAt: null,
     });
+  });
+});
+
+describe('empty stock-take sessions (ARGUS #212)', () => {
+  it('refuses a scoped session when the category has no countable variants', () => {
+    const result = validateStockTakeScope({ categoryId: 'cat-1', countableVariantCount: 0 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain('no countable variants');
+  });
+
+  it('refuses an all-products session when the store has no countable variants', () => {
+    const result = validateStockTakeScope({ categoryId: null, countableVariantCount: 0 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain('no countable variants');
+  });
+
+  it('allows a session with at least one variant', () => {
+    expect(validateStockTakeScope({ categoryId: 'cat-1', countableVariantCount: 1 })).toEqual({
+      ok: true,
+    });
+  });
+
+  it('marks a legacy 0-item session as non-completable', () => {
+    expect(stockTakeHasNoItems(0)).toBe(true);
+    expect(stockTakeHasNoItems(1)).toBe(false);
   });
 });
