@@ -676,6 +676,9 @@ export async function getCommissionPayouts(
         userEmail: record.user.email,
         userName: record.user.fullName?.trim() || null,
         userRole: record.user.role,
+        // ARGUS #370: the column stores the amount actually paid (a partial
+        // payout stores only the paid part), so expose the accurate name too.
+        amountPaid: record.totalEarned.toString(),
         totalEarned: record.totalEarned.toString(),
         periodStart: record.periodStart,
         periodEnd: record.periodEnd,
