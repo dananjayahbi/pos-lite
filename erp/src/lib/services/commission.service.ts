@@ -3,7 +3,7 @@ import { ApiError } from '@/lib/api/errors';
 import { AUDIT_ACTIONS, createAuditLog } from '@/lib/services/audit.service';
 import { lockForUpdate } from '@/lib/api/race-guard';
 import { assertSufficientFunds, postLedgerEntries } from '@/lib/services/paymentAccount.service';
-import { adjustFundBalance, assertFundCanSpend } from '@/lib/services/petty-cash.service';
+import { adjustFundBalanceTx, assertFundCanSpend, checkFundLowBalance } from '@/lib/services/petty-cash.service';
 import {
   allocateCommissionPayment,
   summarizeCommissionAllocation,
@@ -567,18 +567,23 @@ export async function createCommissionPayout(input: CreateCommissionPayoutInput)
       });
     }
 
+    // ARGUS #369: the petty-cash fund leg commits with the payout, expense and
+    // ledger entries. Moving the balance adjustment after the commit left a
+    // paid payout without the matching fund reduction when the second write
+    // failed.
+    if (pettyCashFundId) {
+      await adjustFundBalanceTx(tx, input.tenantId, pettyCashFundId, -amount.toNumber(), {
+        enforceNonNegative: true,
+      });
+    }
+
     return { payout, pettyCashFundId, amount, accountName: account.name, staffName, expenseId: expense.id, allocation: allocationSummary };
   });
 
-  // A linked petty-cash payout also reduces the fund's running balance. Kept
-  // outside the transaction because adjustFundBalance owns its own write and
-  // low-balance check.
+  // Only the low-balance notification is post-commit: the money has already
+  // moved atomically above, and a notification failure must not roll it back.
   if (transactionResult.pettyCashFundId) {
-    await adjustFundBalance(
-      input.tenantId,
-      transactionResult.pettyCashFundId,
-      -transactionResult.amount.toNumber(),
-    );
+    await checkFundLowBalance(input.tenantId, transactionResult.pettyCashFundId);
   }
 
   await createAuditLog({
