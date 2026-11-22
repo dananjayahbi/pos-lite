@@ -1,9 +1,68 @@
 import type { UserRole } from '@/generated/prisma/client';
+import {
+  ArrowLeftRight,
+  BadgePercent,
+  Banknote,
+  Barcode,
+  Bell,
+  Bookmark,
+  Box,
+  Boxes,
+  Building2,
+  ChartColumn,
+  ChartSpline,
+  ClipboardCheck,
+  ClipboardList,
+  Clock4,
+  Factory,
+  FileSpreadsheet,
+  FolderTree,
+  Globe,
+  HandCoins,
+  IdCard,
+  Landmark,
+  LayoutDashboard,
+  ListTree,
+  Megaphone,
+  Package,
+  PackageX,
+  Percent,
+  PiggyBank,
+  Printer,
+  QrCode,
+  Receipt,
+  ReceiptText,
+  Ruler,
+  Scale,
+  ScanLine,
+  ScrollText,
+  Settings2,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sprout,
+  Stethoscope,
+  Sticker,
+  Store,
+  Table,
+  Tag,
+  Target,
+  Ticket,
+  Timer,
+  TrendingUp,
+  TriangleAlert,
+  Truck,
+  Undo2,
+  UserRound,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 import { PERMISSIONS, type PermissionKey } from '@/lib/constants/permissions';
 
 export interface NavItem {
   name: string;
   href: string;
+  /** Sidebar glyph; every item needs its own so the rail stays scannable. */
+  icon: LucideIcon;
   roles?: UserRole[];
   permission?: PermissionKey;
   match?: 'exact' | 'prefix';
@@ -58,12 +117,14 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Dashboard',
         href: '/dashboard',
+        icon: LayoutDashboard,
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         match: 'exact',
       },
       {
         name: 'Notifications',
         href: '/notifications',
+        icon: Bell,
       },
     ],
   },
@@ -73,30 +134,35 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'POS Terminal',
         href: '/pos',
+        icon: ScanLine,
         permission: PERMISSIONS.SALE.createSale,
         match: 'exact',
       },
       {
         name: 'Sales',
         href: '/sales',
+        icon: ReceiptText,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.SALE.viewSale,
       },
       {
         name: 'Returns & Refunds',
         href: '/returns',
+        icon: Undo2,
         roles: ['OWNER', 'MANAGER', 'CASHIER'],
         permission: PERMISSIONS.SALE.viewSale,
       },
       {
         name: 'Cashier Shifts',
         href: '/staff/shifts',
+        icon: Timer,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.STAFF.viewShift,
       },
       {
         name: 'Doctor Appointments',
         href: '/appointments',
+        icon: Stethoscope,
         roles: ['OWNER', 'MANAGER', 'CASHIER'],
         permission: PERMISSIONS.APPOINTMENT.viewAppointment,
         match: 'exact',
@@ -109,18 +175,21 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Products & Stock',
         href: '/inventory',
+        icon: Package,
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.PRODUCT.viewProduct,
       },
       {
         name: 'Barcode Printing',
         href: '/inventory/barcode-printing',
+        icon: Barcode,
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.PRODUCT.viewProduct,
       },
       {
         name: 'Categories',
         href: '/categories',
+        icon: FolderTree,
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.PRODUCT.viewProduct,
         match: 'exact',
@@ -128,6 +197,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Brands',
         href: '/brands',
+        icon: Tag,
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.PRODUCT.viewProduct,
         match: 'exact',
@@ -135,6 +205,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Stock Control',
         href: '/stock-control',
+        icon: Boxes,
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.STOCK.viewStock,
         match: 'exact',
@@ -142,30 +213,35 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Stock Adjustments',
         href: '/stock-control/adjust',
+        icon: SlidersHorizontal,
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.STOCK.adjustStock,
       },
       {
         name: 'Stock Movements',
         href: '/stock-control/movements',
+        icon: ArrowLeftRight,
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.STOCK.viewStock,
       },
       {
         name: 'Stock Takes (Cycle Counts)',
         href: '/stock-control/stock-takes',
+        icon: ClipboardCheck,
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.STOCK.conductStockTake,
       },
       {
         name: 'Low Stock Alerts',
         href: '/stock-control/low-stock',
+        icon: TriangleAlert,
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.STOCK.viewStock,
       },
       {
         name: 'Stock Valuation',
         href: '/stock-control/valuation',
+        icon: ChartColumn,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.STOCK.viewStockValuation,
       },
@@ -177,12 +253,14 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Purchase Orders (PO)',
         href: '/suppliers/purchase-orders',
+        icon: ClipboardList,
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.SUPPLIER.viewSupplier,
       },
       {
         name: 'Suppliers',
         href: '/suppliers',
+        icon: Building2,
         roles: ['OWNER', 'MANAGER', 'STOCK_CLERK'],
         permission: PERMISSIONS.SUPPLIER.viewSupplier,
         match: 'exact',
@@ -190,6 +268,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Raw Materials',
         href: '/factory/raw-materials',
+        icon: Sprout,
         roles: ['OWNER', 'MANAGER', 'FACTORY_MANAGER'],
         permission: PERMISSIONS.RAW_MATERIAL.viewRawMaterial,
         match: 'exact',
@@ -197,6 +276,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Bill of Materials (BOM)',
         href: '/factory/bom',
+        icon: ListTree,
         roles: ['OWNER', 'MANAGER', 'FACTORY_MANAGER'],
         permission: PERMISSIONS.BOM.viewBom,
         match: 'exact',
@@ -204,6 +284,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Factory Dashboard',
         href: '/factory',
+        icon: Factory,
         roles: ['OWNER', 'MANAGER', 'FACTORY_MANAGER'],
         permission: PERMISSIONS.FACTORY.viewFactoryDashboard,
         match: 'exact',
@@ -216,6 +297,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Dispatch Orders',
         href: '/orders',
+        icon: Ticket,
         roles: ['OWNER', 'MANAGER', 'CASHIER', 'DISPATCH_STAFF'],
         permission: PERMISSIONS.DELIVERY.viewDelivery,
         match: 'exact',
@@ -223,6 +305,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Deliveries & Tracking',
         href: '/delivery',
+        icon: Truck,
         roles: ['OWNER', 'MANAGER', 'CASHIER', 'DISPATCH_STAFF'],
         permission: PERMISSIONS.DELIVERY.viewDelivery,
         match: 'exact',
@@ -230,6 +313,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Packaging Stock',
         href: '/delivery/packaging',
+        icon: Box,
         roles: ['OWNER', 'MANAGER', 'DISPATCH_STAFF'],
         permission: PERMISSIONS.DELIVERY.managePackaging,
         match: 'exact',
@@ -237,6 +321,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Courier Settings & Rates',
         href: '/delivery/settings',
+        icon: Settings2,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.DELIVERY.manageCourierSettings,
         match: 'exact',
@@ -244,6 +329,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Rate Card',
         href: '/delivery/rate-card',
+        icon: Table,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.DELIVERY.manageRateCard,
         match: 'exact',
@@ -251,6 +337,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Waybill Design',
         href: '/delivery/label',
+        icon: Sticker,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.DELIVERY.manageLabelTemplate,
         match: 'exact',
@@ -258,6 +345,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Failed Deliveries & Recovery',
         href: '/delivery/failed',
+        icon: PackageX,
         roles: ['OWNER', 'MANAGER', 'DISPATCH_STAFF'],
         permission: PERMISSIONS.REPORT.viewRecoveryReport,
         match: 'exact',
@@ -270,6 +358,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Customers',
         href: '/customers',
+        icon: Users,
         roles: ['OWNER', 'MANAGER', 'CASHIER'],
         permission: PERMISSIONS.CUSTOMER.viewCustomer,
         match: 'exact',
@@ -277,6 +366,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Customer Broadcast',
         href: '/customers/broadcast',
+        icon: Megaphone,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.CUSTOMER.viewCustomer,
         match: 'exact',
@@ -284,6 +374,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Promotions & Discounts',
         href: '/promotions',
+        icon: BadgePercent,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.PROMOTION.createPromotion,
       },
@@ -295,6 +386,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Staff Directory',
         href: '/staff',
+        icon: IdCard,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.STAFF.viewStaff,
         match: 'exact',
@@ -302,18 +394,21 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Attendance & Timeclock',
         href: '/staff/timeclock',
+        icon: Clock4,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.STAFF.viewAttendance,
       },
       {
         name: 'Staff Commissions',
         href: '/staff/commissions',
+        icon: HandCoins,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.PAYROLL.viewPayroll,
       },
       {
         name: 'Run Payroll',
         href: '/payroll',
+        icon: Banknote,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.PAYROLL.viewPayroll,
         match: 'exact',
@@ -321,6 +416,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Payroll Reports & Bank Sheets',
         href: '/payroll/reports',
+        icon: FileSpreadsheet,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.PAYROLL.viewPayroll,
       },
@@ -332,6 +428,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Expenses',
         href: '/expenses',
+        icon: Receipt,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.EXPENSE.viewExpense,
         match: 'exact',
@@ -339,6 +436,7 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Petty Cash',
         href: '/petty-cash',
+        icon: PiggyBank,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.PETTY_CASH.viewPettyCash,
         match: 'exact',
@@ -346,18 +444,21 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Cash Flow',
         href: '/expenses/cash-flow',
+        icon: ChartSpline,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.REPORT.viewCashflowReport,
       },
       {
         name: 'Payment Accounts',
         href: '/payment-accounts',
+        icon: Landmark,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.PAYMENT_ACCOUNT.managePaymentAccount,
       },
       {
         name: 'Courier Reconciliation',
         href: '/delivery/reconciliation',
+        icon: Scale,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.DELIVERY.viewReconciliation,
         match: 'exact',
@@ -370,24 +471,28 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Profit & Loss',
         href: '/reports/profit-loss',
+        icon: TrendingUp,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.REPORT.viewProfitReport,
       },
       {
         name: 'Recovery Performance',
         href: '/reports/recovery-staff-performance',
+        icon: Target,
         roles: ['OWNER', 'MANAGER', 'DISPATCH_STAFF'],
         permission: PERMISSIONS.REPORT.viewRecoveryReport,
       },
       {
         name: 'Saved Reports',
         href: '/reports/saved',
+        icon: Bookmark,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.REPORT.viewSalesReport,
       },
       {
         name: 'Audit Log',
         href: '/settings/audit-log',
+        icon: ScrollText,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.SETTINGS.viewSettings,
       },
@@ -399,12 +504,14 @@ export const storeNavGroups: NavGroup[] = [
       {
         name: 'Team & Permissions',
         href: '/settings/users',
+        icon: ShieldCheck,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.SETTINGS.manageUsers,
       },
       {
         name: 'Hardware & POS Printers',
         href: '/settings/hardware',
+        icon: Printer,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.SETTINGS.manageHardware,
       },
@@ -414,36 +521,42 @@ export const storeNavGroups: NavGroup[] = [
         // so the label now matches the page; both pages cross-link.
         name: 'Taxes',
         href: '/settings/taxes',
+        icon: Percent,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.SETTINGS.manageTax,
       },
       {
         name: 'Units',
         href: '/settings/units',
+        icon: Ruler,
         roles: ['OWNER', 'MANAGER', 'FACTORY_MANAGER'],
         permission: PERMISSIONS.RAW_MATERIAL.viewRawMaterial,
       },
       {
         name: 'Payments & LankaQR',
         href: '/settings/payments',
+        icon: QrCode,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.SETTINGS.managePayments,
       },
       {
         name: 'Store Profile',
         href: '/settings/store',
+        icon: Store,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.SETTINGS.manageStoreProfile,
       },
       {
         name: 'Website CMS',
         href: '/settings/website',
+        icon: Globe,
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.SETTINGS.manageWebsite,
       },
       {
         name: 'My Account',
         href: '/settings/account',
+        icon: UserRound,
         roles: ['OWNER', 'MANAGER', 'CASHIER', 'STOCK_CLERK'],
       },
     ],

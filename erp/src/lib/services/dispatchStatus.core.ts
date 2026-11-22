@@ -1,5 +1,5 @@
 import type { DeliveryStatus } from '@/generated/prisma/client';
-import { DELIVERY_STATUS_RANK } from '@/lib/constants/courier';
+import { DELIVERY_STATUS_RANK } from '@/lib/constants/delivery-status';
 
 /**
  * ARGUS #263 — legal bulk status targets for the Orders / Dispatch queue.

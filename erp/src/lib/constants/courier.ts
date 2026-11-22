@@ -65,42 +65,14 @@ export const TERMINAL_SHIPMENT_STATUSES: ShipmentStatus[] = [
   "FAILED",
 ];
 
-/** Terminal delivery statuses. */
-export const TERMINAL_DELIVERY_STATUSES: DeliveryStatus[] = [
-  "DELIVERED",
-  "CANCELED",
-  "RETURNED",
-];
-
-/**
- * Forward progress order for courier-driven delivery statuses. Used so a late
- * or out-of-order carrier poll cannot move a dispatched parcel back to
- * "pending dispatch" (the first poll of a new shipment reports `submitted`).
- */
-export const DELIVERY_STATUS_RANK: Record<DeliveryStatus, number> = {
-  PLACED: 0,
-  PENDING_DISPATCH: 1,
-  HOLD: 1,
-  PENDING_PICKUP: 2,
-  DISPATCHED: 2,
-  IN_TRANSIT: 3,
-  OUT_FOR_DELIVERY: 4,
-  DELIVERED: 5,
-  FAILED: 5,
-  RETURNED: 5,
-  CANCELED: 5,
-};
-
-/** True when a carrier-mapped status should replace the delivery's status. */
-export function isDeliveryStatusAdvance(
-  current: DeliveryStatus,
-  next: DeliveryStatus,
-): boolean {
-  if (current === next) return false;
-  if (TERMINAL_DELIVERY_STATUSES.includes(current)) return false;
-  if (next === "FAILED" || next === "RETURNED" || next === "CANCELED") return true;
-  return DELIVERY_STATUS_RANK[next] > DELIVERY_STATUS_RANK[current];
-}
+// Delivery status ordering is shared with the client-side Orders / Dispatch
+// queue; it lives in a browser-safe module so importing it does not drag this
+// `server-only` file into a client bundle. Re-exported here for server callers.
+export {
+  DELIVERY_STATUS_RANK,
+  TERMINAL_DELIVERY_STATUSES,
+  isDeliveryStatusAdvance,
+} from './delivery-status';
 
 /** Hold-buffer window before auto-dispatch/expiry (ms). */
 export const HOLD_BUFFER_DURATION_MS = 45 * 60 * 1000; // 45 minutes

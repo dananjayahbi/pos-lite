@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { HealthConcern, TaxRule, StockMovementReason, ProductSource } from '@/generated/prisma/client';
+// Enums come from the generated `enums` module, not `client`. This validator is
+// shared with client components (e.g. StockAdjustmentForm), and `client` pulls
+// in the Prisma runtime (`node:module`), which Turbopack refuses to bundle for
+// the browser: "the chunking context (unknown) does not support external
+// modules (request: node:module)".
+import { HealthConcern, TaxRule, StockMovementReason, ProductSource } from '@/generated/prisma/enums';
 
 // ── Variant Schemas ──────────────────────────────────────────────────────────
 

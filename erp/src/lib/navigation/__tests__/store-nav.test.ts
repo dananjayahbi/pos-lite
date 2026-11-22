@@ -95,6 +95,26 @@ describe('store navigation', () => {
   });
 });
 
+describe('navigation icons', () => {
+  const allItems: NavItem[] = storeNavGroups.flatMap((group) => group.items);
+
+  it('gives every nav item an icon', () => {
+    for (const item of allItems) {
+      expect(item.icon, `${item.href} has no icon`).toBeTruthy();
+    }
+  });
+
+  it('never reuses an icon, so each section stays recognisable', () => {
+    const seen = new Map<unknown, string>();
+
+    for (const item of allItems) {
+      const previousHref = seen.get(item.icon);
+      expect(previousHref, `${item.href} reuses the icon of ${previousHref}`).toBeUndefined();
+      seen.set(item.icon, item.href);
+    }
+  });
+});
+
 describe('active nav item resolution', () => {
   const allItems: NavItem[] = storeNavGroups.flatMap((group) => group.items);
 
