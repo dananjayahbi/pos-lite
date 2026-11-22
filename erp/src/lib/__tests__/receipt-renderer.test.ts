@@ -149,3 +149,19 @@ describe('buildThermalReceiptHtml store logo', () => {
     expect(html).toContain('&quot;');
   });
 });
+
+/**
+ * ARGUS #491: the browser, ESC/POS and A4 receipts must share one footer
+ * fallback and one contact policy. A blank footer is not three different texts.
+ */
+describe('buildThermalReceiptHtml shared footer', () => {
+  it('uses the shared fallback when the saved footer is blank', () => {
+    const html = buildThermalReceiptHtml(
+      makeSale(),
+      makeTenant({ settings: { address: '', phoneNumber: '', receiptFooter: '   ' } }),
+      'Nimal',
+    );
+    expect(html).toContain('Thank you for shopping with us!');
+    expect(html).not.toContain('Thank you for your purchase!');
+  });
+});

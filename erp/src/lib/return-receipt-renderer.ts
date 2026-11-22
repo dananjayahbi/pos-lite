@@ -1,5 +1,6 @@
 import { formatRupee } from '@/lib/format';
 import { reprintIdentityNotice } from '@/lib/receipt-identity.core';
+import { resolveReceiptFooter } from '@/lib/settings/receiptIdentity.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,10 +150,9 @@ export function buildReturnReceiptHtml(
 
   const storeAddress = typeof s.address === 'string' ? s.address : '';
   const storePhone = typeof s.phoneNumber === 'string' ? s.phoneNumber : '';
-  const receiptFooter =
-    typeof s.receiptFooter === 'string' && s.receiptFooter.trim() !== ''
-      ? s.receiptFooter
-      : 'Thank you for shopping with us!';
+  const receiptFooter = resolveReceiptFooter(
+    typeof s.receiptFooter === 'string' ? s.receiptFooter : '',
+  );
   const logoUrl = typeof tenant.logoUrl === 'string' ? tenant.logoUrl.trim() : '';
 
   // ── Line items ──

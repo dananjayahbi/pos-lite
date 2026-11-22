@@ -358,3 +358,19 @@ describe('buildReturnReceiptHtml', () => {
     expect(html).toContain('Rs. 2,084.00');
   });
 });
+
+/**
+ * ARGUS #491: the A4 return receipt uses the same footer fallback as the
+ * browser and ESC/POS sale receipts.
+ */
+describe('buildReturnReceiptHtml shared footer', () => {
+  it('uses the shared fallback when the saved footer is blank', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn(),
+      makeTenant({ settings: { address: '', phoneNumber: '', receiptFooter: '' } }),
+      'Nimal',
+      'Kamal',
+    );
+    expect(html).toContain('Thank you for shopping with us!');
+  });
+});
