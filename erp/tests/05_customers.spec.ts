@@ -646,6 +646,62 @@ test.describe.serial('Module 5 — Customers CRM (full-scope QA)', () => {
 
   // ── §5 Chaos, button spamming & race conditions ────────────────────────────
 
+  test('M1 merge folds a duplicate into the kept customer and archives it', async ({ page }) => {
+    await login(page, OWNER.email, OWNER.password);
+
+    const stamp = Date.now().toString().slice(-7);
+    const primaryPhone = `07${stamp}1`;
+    const dupePhone = `07${stamp}2`;
+    const primaryName = `${RUN} Malindu`;
+    const dupeName = `${RUN} Malndu`;
+
+    const primary = await createCustomer(page, {
+      name: primaryName,
+      phone: primaryPhone,
+      tags: ['VIP'],
+    });
+    expect(primary.status).toBe(201);
+    const dupe = await createCustomer(page, {
+      name: dupeName,
+      phone: dupePhone,
+      tags: ['WHOLESALE'],
+      email: `${RUN}.dupe@example.com`,
+    });
+    expect(dupe.status).toBe(201);
+    state.createdIds.push(primary.body.data.id, dupe.body.data.id);
+
+    await page.goto(`${BASE_URL}/customers/${primary.body.data.id}`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await expect(page.getByRole('heading', { name: primaryName })).toBeVisible({
+      timeout: 60_000,
+    });
+    await page.getByRole('button', { name: /^Merge$/i }).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText(/Merge customer/i)).toBeVisible();
+    await dialog.locator('#merge-search').fill(dupeName);
+    await dialog.getByRole('option').filter({ hasText: dupeName }).click();
+    await dialog.getByRole('button', { name: /Merge into this customer/i }).click();
+
+    await expect(dialog).toBeHidden({ timeout: 30_000 });
+
+    // The duplicate is archived (GET 404) and no longer appears in search.
+    const dupeGet = await page.request.get(`/api/store/customers/${dupe.body.data.id}`);
+    expect(dupeGet.status()).toBe(404);
+    const merged = await json(
+      await page.request.get(`/api/store/customers/${primary.body.data.id}`),
+    );
+    expect(merged?.data?.tags).toEqual(expect.arrayContaining(['VIP', 'WHOLESALE']));
+
+    // Merging the same pair again is a typed 404, never a 500.
+    const again = await apiPost(page, '/api/store/customers/merge', {
+      primaryId: primary.body.data.id,
+      duplicateId: dupe.body.data.id,
+    });
+    expect(again.status()).toBe(404);
+  });
+
   test('R1 double-click Create submits exactly ONE customer', async ({ page }) => {
     await login(page, OWNER.email, OWNER.password);
     await page.goto(`${BASE_URL}/customers`, { waitUntil: 'domcontentloaded' });
