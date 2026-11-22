@@ -21,7 +21,7 @@ interface LogoUploadFieldProps {
   hint?: ReactNode;
 }
 
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_SIZE = 2 * 1024 * 1024;
 
 /**
@@ -53,7 +53,7 @@ export function LogoUploadField({
     if (!file) return;
 
     if (!ALLOWED_TYPES.includes(file.type)) {
-      setError('Only JPEG, PNG, WebP, and SVG images are accepted.');
+      setError('Only JPEG, PNG and WebP images are accepted.');
       return;
     }
     if (file.size > MAX_SIZE) {
@@ -190,7 +190,7 @@ export function LogoUploadField({
         <p className="ml-auto text-xs text-mist-ink">
           {hint ?? (
             <>
-              JPEG / PNG / WebP / SVG
+              JPEG / PNG / WebP
               <br />
               Max 2 MB
             </>
@@ -204,7 +204,7 @@ export function LogoUploadField({
         ref={fileInputRef}
         type="file"
         className="hidden"
-        accept="image/jpeg,image/png,image/webp,image/svg+xml"
+        accept="image/jpeg,image/png,image/webp"
         data-testid="logo-upload-input"
         onChange={handleFileSelect}
       />
