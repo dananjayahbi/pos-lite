@@ -163,7 +163,8 @@ polish, split ops (12: #473-#478, #490-#494, #516) and front
 
 Wave 4 result: 24/24 submitted. The full 174-task refill is implemented, merged
 into `argus_qa`, and submitted to Atlas; the board reads **0 pending, 0 in
-progress, 174 in review, 0 claim slots used**. The six stale batch-13
+progress, 174 in review, 0 claim slots used**. Final verification: `tsc` clean
+and **3,207 tests across 430 files** pass. The six stale batch-13
 in-progress leases (already implemented and merged, but unsubmittable because
 they carry no DoD checklist) were given a progress note and archived, so no
 orphaned leases remain. One task (#286) is explicitly submitted with a
