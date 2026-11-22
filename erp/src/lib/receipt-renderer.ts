@@ -33,6 +33,8 @@ export interface ReceiptSale {
 
 export interface ReceiptTenant {
   name: string;
+  /** Uploaded store logo; printed on the thermal header (ARGUS #474). */
+  logoUrl?: string | null;
   settings: unknown;
 }
 
@@ -95,6 +97,7 @@ export function buildThermalReceiptHtml(
 
   const storeAddress = typeof s.address === 'string' ? s.address : '';
   const storePhone = typeof s.phoneNumber === 'string' ? s.phoneNumber : '';
+  const logoUrl = typeof tenant.logoUrl === 'string' ? tenant.logoUrl.trim() : '';
   const receiptFooter =
     typeof s.receiptFooter === 'string'
       ? s.receiptFooter
@@ -184,6 +187,7 @@ export function buildThermalReceiptHtml(
     margin-bottom: 4px;
   }
   .store-name { font-size: 16px; font-weight: bold; margin-bottom: 2px; }
+  .brand-logo { max-width: 34mm; max-height: 16mm; object-fit: contain; margin-bottom: 2px; }
   .store-info { font-size: 10px; color: #333; }
   .separator { border-top: 1px dashed #000; margin: 6px 0; }
   .meta-row { display: flex; justify-content: space-between; font-size: 11px; }
@@ -201,6 +205,7 @@ export function buildThermalReceiptHtml(
 <body>
 
 <div class="center">
+  ${logoUrl ? `<img class="brand-logo" src="${esc(logoUrl)}" alt="${esc(tenant.name)} logo" />` : ''}
   <div class="store-name">${esc(tenant.name)}</div>
   ${storeAddress ? `<div class="store-info">${esc(storeAddress)}</div>` : ''}
   ${storePhone ? `<div class="store-info">Tel: ${esc(storePhone)}</div>` : ''}

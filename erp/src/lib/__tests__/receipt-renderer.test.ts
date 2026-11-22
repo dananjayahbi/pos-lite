@@ -118,3 +118,34 @@ describe('buildThermalReceiptHtml voided sales', () => {
     expect(html).not.toContain('(reversed)');
   });
 });
+
+/**
+ * ARGUS #474: the Store profile promises the logo appears on receipts, but the
+ * 80 mm sale receipt rendered no logo (only the A4 return receipt did).
+ */
+describe('buildThermalReceiptHtml store logo', () => {
+  it('prints the uploaded logo on the header', () => {
+    const html = buildThermalReceiptHtml(
+      makeSale(),
+      makeTenant({ logoUrl: 'https://cdn.example.com/store-logo.png' }),
+      'Nimal',
+    );
+    expect(html).toContain('class="brand-logo"');
+    expect(html).toContain('src="https://cdn.example.com/store-logo.png"');
+  });
+
+  it('omits the logo element when no logo is stored', () => {
+    const html = buildThermalReceiptHtml(makeSale(), makeTenant({ logoUrl: null }), 'Nimal');
+    expect(html).not.toContain('class="brand-logo"');
+  });
+
+  it('escapes the logo URL so it cannot break out of the attribute', () => {
+    const html = buildThermalReceiptHtml(
+      makeSale(),
+      makeTenant({ logoUrl: 'https://cdn.example.com/a"onload="alert(1).png' }),
+      'Nimal',
+    );
+    expect(html).not.toContain('onload="alert(1)');
+    expect(html).toContain('&quot;');
+  });
+});
