@@ -140,12 +140,14 @@ function PayrollReportsContent() {
   const [sendingUserId, setSendingUserId] = useState<string | null>(null);
 
   const runsQuery = useQuery<PayrollRunSummary[]>({
-    queryKey: ['payroll-runs'],
+    queryKey: ['payroll-runs', 'month', month],
     queryFn: () =>
-      fetchPayrollEnvelope<PayrollRunSummary[]>('/api/store/payroll/runs?limit=60'),
+      fetchPayrollEnvelope<PayrollRunSummary[]>(
+        `/api/store/payroll/runs?month=${encodeURIComponent(month)}`,
+      ),
   });
 
-  const summary = (runsQuery.data ?? []).find((run) => run.periodMonth === month);
+  const summary = runsQuery.data?.[0];
 
   const runQuery = useQuery<PayrollRunDetail>({
     queryKey: ['payroll-run', summary?.id],
