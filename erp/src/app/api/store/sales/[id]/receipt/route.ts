@@ -34,7 +34,7 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { name: true, settings: true },
+      select: { name: true, logoUrl: true, settings: true },
     });
 
     if (!tenant) {

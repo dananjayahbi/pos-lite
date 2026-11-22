@@ -1,5 +1,10 @@
 import { formatRupee } from '@/lib/format';
 import { reprintIdentityNotice } from '@/lib/receipt-identity.core';
+import {
+  receiptContactLines,
+  receiptFooterLines,
+  resolveReceiptFooter,
+} from '@/lib/settings/receiptIdentity.core';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,6 +38,8 @@ export interface ReceiptSale {
 
 export interface ReceiptTenant {
   name: string;
+  /** Uploaded store logo; printed on the thermal header (ARGUS #474). */
+  logoUrl?: string | null;
   settings: unknown;
 }
 
@@ -95,10 +102,17 @@ export function buildThermalReceiptHtml(
 
   const storeAddress = typeof s.address === 'string' ? s.address : '';
   const storePhone = typeof s.phoneNumber === 'string' ? s.phoneNumber : '';
-  const receiptFooter =
-    typeof s.receiptFooter === 'string'
-      ? s.receiptFooter
-      : 'Thank you for your purchase!';
+  const logoUrl = typeof tenant.logoUrl === 'string' ? tenant.logoUrl.trim() : '';
+  const receiptFooter = resolveReceiptFooter(
+    typeof s.receiptFooter === 'string' ? s.receiptFooter : '',
+  );
+  // ARGUS #492: the address is a 3-row textarea and the footer a 4-row one, so
+  // the operator's line breaks must survive printing.
+  const contactLines = receiptContactLines({
+    address: storeAddress,
+    phoneNumber: storePhone,
+  });
+  const footerLines = receiptFooterLines(receiptFooter);
 
   // ── Line items ──
   let linesHtml = '';
@@ -184,6 +198,7 @@ export function buildThermalReceiptHtml(
     margin-bottom: 4px;
   }
   .store-name { font-size: 16px; font-weight: bold; margin-bottom: 2px; }
+  .brand-logo { max-width: 34mm; max-height: 16mm; object-fit: contain; margin-bottom: 2px; }
   .store-info { font-size: 10px; color: #333; }
   .separator { border-top: 1px dashed #000; margin: 6px 0; }
   .meta-row { display: flex; justify-content: space-between; font-size: 11px; }
@@ -201,9 +216,9 @@ export function buildThermalReceiptHtml(
 <body>
 
 <div class="center">
+  ${logoUrl ? `<img class="brand-logo" src="${esc(logoUrl)}" alt="${esc(tenant.name)} logo" />` : ''}
   <div class="store-name">${esc(tenant.name)}</div>
-  ${storeAddress ? `<div class="store-info">${esc(storeAddress)}</div>` : ''}
-  ${storePhone ? `<div class="store-info">Tel: ${esc(storePhone)}</div>` : ''}
+  ${contactLines.map((contactLine) => `<div class="store-info">${esc(contactLine)}</div>`).join('')}
   ${identityNotice ? `<div class="store-info" style="margin-top:4px;border-top:1px dashed #000;padding-top:4px;">${esc(identityNotice)}</div>` : ''}
 </div>
 
@@ -243,7 +258,7 @@ ${linesHtml}
 <div class="separator"></div>
 
 <div class="footer">
-  ${esc(receiptFooter)}
+  ${footerLines.map((footerLine) => `<div>${esc(footerLine)}</div>`).join('')}
   <div class="powered">Powered by AyurPOS</div>
   <div style="font-size:9px;color:#aaa;margin-top:2px;">Printed: ${printTimestamp}</div>
 </div>

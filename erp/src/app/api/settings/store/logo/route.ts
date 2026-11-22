@@ -4,7 +4,7 @@ import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { uploadFile } from '@/lib/storage';
 
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_SIZE = 2 * 1024 * 1024; // 2 MB for the store logo
 
 /**
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 
     if (!ALLOWED_TYPES.includes(file.type)) {
       return NextResponse.json(
-        { error: 'Only JPEG, PNG, WebP, and SVG images are accepted.' },
+        { error: 'Only JPEG, PNG and WebP images are accepted.' },
         { status: 400 },
       );
     }
@@ -58,8 +58,13 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: result.url });
   } catch (error) {
+    // ARGUS #494: log the storage/database detail server-side; the client only
+    // needs a retry-safe message. The `{ error }` shape is what the shared
+    // LogoUploadField parses.
     console.error('Store logo upload error:', error);
-    const message = error instanceof Error ? error.message : 'Upload failed';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Could not upload the logo. Please try again.' },
+      { status: 500 },
+    );
   }
 }

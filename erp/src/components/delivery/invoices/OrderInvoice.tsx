@@ -110,6 +110,23 @@ export function OrderInvoice({ data }: { data: OrderInvoiceData }) {
             <p className="text-[10px] uppercase tracking-[0.18em] text-espresso/55">
               Order / Shipping Invoice
             </p>
+            {/* ARGUS #490: seller contact details from the store profile. */}
+            {data.seller && (
+              <div
+                data-testid="invoice-seller-contact"
+                className="mt-1 space-y-0.5 text-[10px] leading-snug text-espresso/65"
+              >
+                {data.seller.address
+                  .split(/\r\n|\r|\n/)
+                  .map((line) => line.trim())
+                  .filter(Boolean)
+                  .map((line, index) => (
+                    <p key={`seller-address-${index}`}>{line}</p>
+                  ))}
+                {data.seller.phone && <p>Tel: {data.seller.phone}</p>}
+                {data.seller.email && <p>{data.seller.email}</p>}
+              </div>
+            )}
           </div>
         </div>
 

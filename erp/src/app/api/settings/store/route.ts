@@ -5,18 +5,61 @@ import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { AUDIT_ACTIONS } from '@/lib/services/audit.service';
+import { deleteStoredAssetForUrl } from '@/lib/storage';
 import {
   readStoreProfileSnapshot,
   storeProfileAuditPayload,
 } from '@/lib/settings/settingsAudit.core';
+import {
+  STORE_PROFILE_LIMITS,
+  isSafeLogoUrl,
+} from '@/lib/settings/storeProfileLimits';
 
 const storeProfileSchema = z.object({
-  storeName: z.string().trim().min(2, 'Store name must be at least 2 characters').max(80),
-  logoUrl: z.string().trim().url('Logo URL must be a valid URL').or(z.literal('')),
-  address: z.string().trim().max(160, 'Address must be 160 characters or less'),
-  phoneNumber: z.string().trim().max(40, 'Phone number must be 40 characters or less'),
-  receiptFooter: z.string().trim().max(240, 'Receipt footer must be 240 characters or less'),
+  storeName: z
+    .string()
+    .trim()
+    .min(2, 'Store name must be at least 2 characters')
+    .max(STORE_PROFILE_LIMITS.storeName, 'Store name must be 80 characters or less'),
+  logoUrl: z
+    .string()
+    .trim()
+    .max(STORE_PROFILE_LIMITS.logoUrl, 'Logo URL is too long')
+    .refine(isSafeLogoUrl, 'Logo URL must be a valid URL')
+    .or(z.literal('')),
+  address: z
+    .string()
+    .trim()
+    .max(STORE_PROFILE_LIMITS.address, 'Address must be 160 characters or less'),
+  phoneNumber: z
+    .string()
+    .trim()
+    .max(STORE_PROFILE_LIMITS.phoneNumber, 'Phone number must be 40 characters or less'),
+  // Optional: printed on the order invoice header (ARGUS #490). Absent in older
+  // clients, in which case the stored value is preserved.
+  email: z
+    .string()
+    .trim()
+    .max(STORE_PROFILE_LIMITS.email, 'Email must be 120 characters or less')
+    .refine((value) => value === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value), {
+      message: 'Enter a valid email address',
+    })
+    .optional(),
+  receiptFooter: z
+    .string()
+    .trim()
+    .max(STORE_PROFILE_LIMITS.receiptFooter, 'Receipt footer must be 240 characters or less'),
 });
+
+/** Map zod issues onto form field names so the UI can show them inline. */
+function fieldErrors(issues: z.ZodIssue[]): Record<string, string> {
+  const fields: Record<string, string> = {};
+  for (const issue of issues) {
+    const key = issue.path[0];
+    if (typeof key === 'string' && !fields[key]) fields[key] = issue.message;
+  }
+  return fields;
+}
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -47,7 +90,14 @@ export async function PATCH(request: NextRequest) {
     const parsed = storeProfileSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: parsed.error.issues[0]?.message ?? 'Invalid input' } },
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: parsed.error.issues[0]?.message ?? 'Invalid input',
+            fields: fieldErrors(parsed.error.issues),
+          },
+        },
         { status: 400 },
       );
     }
@@ -65,8 +115,12 @@ export async function PATCH(request: NextRequest) {
       ...currentSettings,
       address: parsed.data.address,
       phoneNumber: parsed.data.phoneNumber,
+      email:
+        parsed.data.email ??
+        (typeof currentSettings.email === 'string' ? currentSettings.email : ''),
       receiptFooter: parsed.data.receiptFooter,
     };
+    const email = typeof updatedSettings.email === 'string' ? updatedSettings.email : '';
 
     // ARGUS #468: profile edits stay manager-editable, but every write carries
     // an audit row with actor + the profile fields only (never other settings).
@@ -81,6 +135,7 @@ export async function PATCH(request: NextRequest) {
         logoUrl: parsed.data.logoUrl || null,
         address: parsed.data.address,
         phoneNumber: parsed.data.phoneNumber,
+        email,
         receiptFooter: parsed.data.receiptFooter,
       },
     );
@@ -116,11 +171,24 @@ export async function PATCH(request: NextRequest) {
       return next;
     });
 
+    // ARGUS #476: delete the replaced logo object only after the new URL is
+    // committed. Manual/CDN URLs are not owned by this app, so they are skipped;
+    // a storage failure is logged by deleteFile and never fails the save.
+    const replacedLogo = tenant.logoUrl?.trim() ?? '';
+    const savedLogo = updated.logoUrl?.trim() ?? '';
+    if (replacedLogo && replacedLogo !== savedLogo) {
+      await deleteStoredAssetForUrl(replacedLogo);
+    }
+
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to save store profile';
+    // ARGUS #494: never echo a database/storage exception to the browser.
+    console.error('PATCH /api/settings/store error:', error);
     return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message } },
+      {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to save store profile' },
+      },
       { status: 500 },
     );
   }

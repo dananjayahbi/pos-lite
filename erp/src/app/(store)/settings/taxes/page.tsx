@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { auth } from '@/lib/auth';
-import { denialRouteFor } from '@/lib/auth/page-guards';
-import { hasPermission } from '@/lib/utils/permissions';
+import { denialRouteFor } from '@/lib/auth/page-guards';import { hasPermission } from '@/lib/utils/permissions';
 import { PERMISSIONS } from '@/lib/constants/permissions';
 import { prisma } from '@/lib/prisma';
 import TaxSettingsForm from '@/components/settings/TaxSettingsForm';
@@ -11,6 +11,7 @@ import {
   missingTaxIdentityFields,
   taxIdentityFieldStatus,
 } from '@/lib/settings/taxIdentity.core';
+import { readTaxSchedule, todayIso } from '@/lib/settings/taxSettingsChange.core';
 
 export const metadata = { title: 'Tax Settings | AyurPOS' };
 
@@ -51,6 +52,11 @@ export default async function TaxSettingsPage() {
     ssclRate: typeof settings.ssclRate === 'number' ? settings.ssclRate : 0,
   };
 
+  // ARGUS #475: the form needs the version it loaded (optimistic lock) and the
+  // active/pending schedule so it can warn before a future-dated change.
+  const today = todayIso();
+  const schedule = readTaxSchedule(settings, today);
+
   const identityFields = taxIdentityFieldStatus(settings);
   const missingIdentityFieldCount = missingTaxIdentityFields(settings).length;
 
@@ -63,7 +69,30 @@ export default async function TaxSettingsPage() {
           Only the store owner can change these rates.
         </p>
       </div>
-      <TaxSettingsForm initialValues={initialValues} />
+      <TaxSettingsForm
+        initialValues={initialValues}
+        version={schedule.version}
+        currentEffectiveFrom={schedule.effectiveFrom}
+        today={today}
+        pending={schedule.pending}
+      />
+
+      <Card className="border-mist">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4 text-sm">
+          <div>
+            <p className="font-medium text-espresso">Store name, contact and receipt footer</p>
+            <p className="text-sand-ink">
+              These tax rates are separate from the store profile printed on receipts.
+            </p>
+          </div>
+          <Link
+            href="/settings/store"
+            className="underline hover:text-terracotta"
+          >
+            Open Store Profile
+          </Link>
+        </CardContent>
+      </Card>
 
       <Card className="border-mist">
         <CardContent className="space-y-4 py-5">

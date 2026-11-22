@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -20,13 +20,22 @@ import { storeProfileRefreshPlan } from '@/lib/settings/storeProfileRefresh.core
 import {
   resolveStoreProfileSaveState,
   storeProfileControlsLocked,
+  storeProfileSaveBlockMessage,
+  unsavedProfilePrompt,
 } from '@/lib/settings/storeProfileSave.core';
+import {
+  STORE_PROFILE_LIMITS,
+  firstStoreProfileFieldError,
+  storeProfileFieldErrors,
+  type StoreProfileFieldErrors,
+} from '@/lib/settings/storeProfileLimits';
 
 type StoreProfileValues = {
   storeName: string;
   logoUrl: string;
   address: string;
   phoneNumber: string;
+  email: string;
   receiptFooter: string;
 };
 
@@ -40,24 +49,78 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
   const [values, setValues] = useState<StoreProfileValues>(initialValues);
   const [saving, setSaving] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
+  const [serverErrors, setServerErrors] = useState<StoreProfileFieldErrors>({});
 
   const update = useCallback(<K extends keyof StoreProfileValues>(key: K, value: StoreProfileValues[K]) => {
     setValues((previous) => ({ ...previous, [key]: value }));
+    setServerErrors((previous) => {
+      const next = { ...previous };
+      delete next[key as keyof StoreProfileFieldErrors];
+      return next;
+    });
   }, []);
+
+  const fieldErrors = {
+    ...storeProfileFieldErrors(values),
+    ...serverErrors,
+  };
+  const hasFieldErrors = firstStoreProfileFieldError(fieldErrors) !== null;
 
   const isDirty =
     values.storeName !== initialValues.storeName ||
     values.logoUrl !== initialValues.logoUrl ||
     values.address !== initialValues.address ||
     values.phoneNumber !== initialValues.phoneNumber ||
+    values.email !== initialValues.email ||
     values.receiptFooter !== initialValues.receiptFooter;
 
-  const canSave = resolveStoreProfileSaveState({
+  const saveState = resolveStoreProfileSaveState({
     saving,
     logoUploading,
     isDirty,
     storeName: values.storeName,
-  }).canSave;
+  });
+  const canSave = saveState.canSave && !hasFieldErrors;
+  const blockMessage = hasFieldErrors
+    ? storeProfileSaveBlockMessage(null, { hasFieldErrors: true })
+    : storeProfileSaveBlockMessage(saveState.reason);
+
+  // ARGUS #493: edits were silently lost on navigation. Prompt on tab close /
+  // reload and on in-app link navigation while the form is dirty.
+  useEffect(() => {
+    const prompt = unsavedProfilePrompt(isDirty);
+    if (!prompt) return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = prompt;
+    };
+    const handleLinkClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = event.target instanceof Element ? event.target : null;
+      const anchor = target?.closest('a');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('#') || anchor.getAttribute('target') === '_blank') return;
+      if (!window.confirm(prompt)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('click', handleLinkClick, true);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('click', handleLinkClick, true);
+    };
+  }, [isDirty]);
+
+  function handleReset() {
+    setValues({ ...initialValues });
+    setServerErrors({});
+  }
 
   async function handleSave() {
     // Blocked while a replacement logo is uploading: PATCHing now would save
@@ -73,15 +136,19 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
 
       const json = (await res.json()) as {
         success: boolean;
-        error?: { message: string };
+        error?: { message: string; fields?: Record<string, string> };
       };
 
       if (!res.ok || !json.success) {
+        if (json.error?.fields) {
+          setServerErrors(json.error.fields as StoreProfileFieldErrors);
+        }
         toast.error(json.error?.message ?? 'Failed to save store profile');
         return;
       }
 
       toast.success('Store profile saved');
+      setServerErrors({});
       Object.assign(initialValues, values);
       setValues({ ...values });
 
@@ -117,7 +184,16 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
               value={values.storeName}
               onChange={(event) => update('storeName', event.target.value)}
               placeholder="AyurPOS Colombo"
+              maxLength={STORE_PROFILE_LIMITS.storeName}
+              aria-invalid={Boolean(fieldErrors.storeName)}
+              aria-describedby="storeName-help"
             />
+            <div id="storeName-help" className="flex items-start justify-between gap-3 text-xs">
+              <span className="text-[#9B2226]">{fieldErrors.storeName}</span>
+              <span className="ml-auto shrink-0 text-sand-ink">
+                {values.storeName.length}/{STORE_PROFILE_LIMITS.storeName}
+              </span>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -131,7 +207,7 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
               disabled={storeProfileControlsLocked({ saving })}
               hint={
                 <>
-                  JPEG / PNG / WebP / SVG
+                  JPEG / PNG / WebP
                   <br />
                   Max 2 MB · stored in R2
                 </>
@@ -150,8 +226,17 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
               value={values.address}
               onChange={(event) => update('address', event.target.value)}
               rows={3}
+              maxLength={STORE_PROFILE_LIMITS.address}
               placeholder="12 Flower Road, Colombo 07"
+              aria-invalid={Boolean(fieldErrors.address)}
+              aria-describedby="address-help"
             />
+            <div id="address-help" className="flex items-start justify-between gap-3 text-xs">
+              <span className="text-[#9B2226]">{fieldErrors.address}</span>
+              <span className="ml-auto shrink-0 text-sand-ink">
+                {values.address.length}/{STORE_PROFILE_LIMITS.address}
+              </span>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -161,7 +246,36 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
               value={values.phoneNumber}
               onChange={(event) => update('phoneNumber', event.target.value)}
               placeholder="+94 11 234 5678"
+              maxLength={STORE_PROFILE_LIMITS.phoneNumber}
+              aria-invalid={Boolean(fieldErrors.phoneNumber)}
+              aria-describedby="phoneNumber-help"
             />
+            <div id="phoneNumber-help" className="flex items-start justify-between gap-3 text-xs">
+              <span className="text-[#9B2226]">{fieldErrors.phoneNumber}</span>
+              <span className="ml-auto shrink-0 text-sand-ink">
+                {values.phoneNumber.length}/{STORE_PROFILE_LIMITS.phoneNumber}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="email">Email (invoice header)</Label>
+            <Input
+              id="email"
+              type="email"
+              value={values.email}
+              onChange={(event) => update('email', event.target.value)}
+              placeholder="hello@example.lk"
+              maxLength={STORE_PROFILE_LIMITS.email}
+              aria-invalid={Boolean(fieldErrors.email)}
+              aria-describedby="email-help"
+            />
+            <div id="email-help" className="flex items-start justify-between gap-3 text-xs">
+              <span className="text-[#9B2226]">{fieldErrors.email}</span>
+              <span className="ml-auto shrink-0 text-sand-ink">
+                {values.email.length}/{STORE_PROFILE_LIMITS.email}
+              </span>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -171,23 +285,45 @@ export default function StoreProfileSettingsForm({ initialValues }: Props) {
               value={values.receiptFooter}
               onChange={(event) => update('receiptFooter', event.target.value)}
               rows={4}
+              maxLength={STORE_PROFILE_LIMITS.receiptFooter}
               placeholder="Thank you for shopping with us!"
+              aria-invalid={Boolean(fieldErrors.receiptFooter)}
+              aria-describedby="receiptFooter-help"
             />
-            <p className="text-xs text-sand-ink">Printed at the bottom of sale and return receipts.</p>
+            <div id="receiptFooter-help" className="flex items-start justify-between gap-3 text-xs">
+              <span className="text-sand-ink">Printed at the bottom of sale and return receipts.</span>
+              <span className="ml-auto shrink-0 text-sand-ink">
+                {values.receiptFooter.length}/{STORE_PROFILE_LIMITS.receiptFooter}
+              </span>
+            </div>
+            {fieldErrors.receiptFooter && (
+              <p className="text-xs text-[#9B2226]">{fieldErrors.receiptFooter}</p>
+            )}
           </div>
 
-          <Button
-            onClick={handleSave}
-            disabled={!canSave}
-            className="w-full bg-espresso text-white hover:bg-espresso/90"
-          >
-            {saving ? 'Saving...' : logoUploading ? 'Uploading logo...' : 'Save Store Profile'}
-          </Button>
-          {logoUploading && (
-            <p className="text-center text-xs text-sand-ink">
-              Save is disabled until the logo upload finishes.
+          <div className="space-y-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                onClick={handleSave}
+                disabled={!canSave}
+                className="flex-1 bg-espresso text-white hover:bg-espresso/90"
+              >
+                {saving ? 'Saving...' : logoUploading ? 'Uploading logo...' : 'Save Store Profile'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleReset}
+                disabled={!isDirty || saving}
+                className="border-sand text-espresso"
+              >
+                Cancel changes
+              </Button>
+            </div>
+            <p aria-live="polite" className="text-center text-xs text-sand-ink">
+              {blockMessage ?? (isDirty ? 'Unsaved changes - Save applies them.' : null)}
             </p>
-          )}
+          </div>
         </CardContent>
       </Card>
     </div>

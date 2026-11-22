@@ -16,8 +16,8 @@ workflow:
 8. **Finance & Cash** — Expenses, Petty Cash, Cash Flow, Payment Accounts,
    Courier Reconciliation
 9. **Reports & Audit** — Sales & Profit Reports, Saved Reports, Audit Log
-10. **Settings** — Team & Permissions, Hardware, Taxes & Store Settings, Store
-    Profile, Website CMS, My Account
+10. **Settings** - Team & Permissions, Hardware, Taxes, Store Profile, Website CMS,
+    My Account
 
 Individual reports (including Return Rate / Returns Analytics) remain inside the
 Reports hub rather than being duplicated as top-level links.
@@ -56,3 +56,13 @@ Settings pages, …) only light up on their own route, not on child routes.
   to a single most-specific item.
 - `npx tsc --noEmit`
 - `npx vitest run`
+
+
+## Settings labels match their pages (ARGUS #477)
+
+The Settings group used to show `Taxes & Store Settings` while the link went
+only to `/settings/taxes`; the Store Profile page had a separate entry and
+neither page linked the other. The entry is now labelled **Taxes**, matching the
+page, and the two pages cross-link: Taxes links to Store Profile, and Store
+Profile links to Taxes for anyone with the owner-only tax permission. The
+Settings hub catalog already listed `Taxes`, so the sidebar and hub agree.

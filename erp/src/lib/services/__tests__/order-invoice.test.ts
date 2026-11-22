@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   mapDeliveryInvoiceLines,
   mapInvoiceLines,
+  mapInvoiceSeller,
   selectInvoiceLines,
   toNumber,
   type DeliveryLineSource,
@@ -122,5 +123,36 @@ describe('toNumber', () => {
   it('returns 0 for null/undefined', () => {
     expect(toNumber(null)).toBe(0);
     expect(toNumber(undefined)).toBe(0);
+  });
+});
+
+/** ARGUS #490: the invoice header must carry the seller contact, not just name/logo. */
+describe('mapInvoiceSeller', () => {
+  it('maps the store profile address, phone and email', () => {
+    expect(
+      mapInvoiceSeller({
+        name: '  Ruhunu Weda Gedara ',
+        settings: {
+          address: ' 12 Galle Road\nMatara ',
+          phoneNumber: ' 041 222 3344 ',
+          email: ' hello@ruhunu.lk ',
+          apiKey: 'never-print',
+        },
+      }),
+    ).toEqual({
+      name: 'Ruhunu Weda Gedara',
+      address: '12 Galle Road\nMatara',
+      phone: '041 222 3344',
+      email: 'hello@ruhunu.lk',
+    });
+  });
+
+  it('omits unset optional contact fields safely', () => {
+    expect(mapInvoiceSeller({ name: 'Store', settings: null })).toEqual({
+      name: 'Store',
+      address: '',
+      phone: '',
+      email: '',
+    });
   });
 });

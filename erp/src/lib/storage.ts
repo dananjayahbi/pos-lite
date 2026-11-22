@@ -1,11 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { v2 as cloudinary } from 'cloudinary';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import {
-  S3Client,
-  PutObjectCommand,
-  DeleteObjectCommand,
-  GetObjectCommand,
-} from '@aws-sdk/client-s3';
+  cloudinaryPublicIdFromUrl,
+  r2ObjectKeyFromUrl,
+  supabaseObjectKeyFromUrl,
+} from '@/lib/storage-keys.core';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -267,6 +267,29 @@ export async function deleteFile(
       error instanceof Error ? error.message : error,
     );
   }
+}
+
+/**
+ * Best-effort delete of an asset previously returned by `uploadFile`, given only
+ * its public URL (ARGUS #476: replacing a logo used to orphan the old object).
+ * Returns true when a provider-relative key was recognised and a delete was
+ * attempted; false for manual/CDN URLs that this app does not own.
+ */
+export async function deleteStoredAssetForUrl(url: string): Promise<boolean> {
+  const provider = process.env.STORAGE_PROVIDER;
+  let key: string | null = null;
+
+  if (provider === 'cloudflare_r2') {
+    key = r2ObjectKeyFromUrl(url, process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL);
+  } else if (provider === 'cloudinary') {
+    key = cloudinaryPublicIdFromUrl(url);
+  } else if (provider === 'supabase') {
+    key = supabaseObjectKeyFromUrl(url, BUCKET);
+  }
+
+  if (!key) return false;
+  await deleteFile(key, provider);
+  return true;
 }
 
 /**

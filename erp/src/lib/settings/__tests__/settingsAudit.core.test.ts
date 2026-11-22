@@ -63,6 +63,7 @@ describe('readStoreProfileSnapshot / storeProfileAuditPayload', () => {
         settings: {
           address: '12 Flower Road',
           phoneNumber: '011 234 5678',
+          email: 'hello@example.lk',
           receiptFooter: 'Thank you',
           apiKey: 'must-not-leak',
         },
@@ -72,6 +73,7 @@ describe('readStoreProfileSnapshot / storeProfileAuditPayload', () => {
       logoUrl: 'https://cdn.example/logo.png',
       address: '12 Flower Road',
       phoneNumber: '011 234 5678',
+      email: 'hello@example.lk',
       receiptFooter: 'Thank you',
     });
   });
@@ -84,6 +86,7 @@ describe('readStoreProfileSnapshot / storeProfileAuditPayload', () => {
       logoUrl: null,
       address: '',
       phoneNumber: '',
+      email: '',
       receiptFooter: '',
     });
   });
@@ -102,6 +105,7 @@ describe('readStoreProfileSnapshot / storeProfileAuditPayload', () => {
     expect(storeProfileAuditPayload(before, after)).toEqual({ before, after });
     expect(Object.keys(storeProfileAuditPayload(before, after).after).sort()).toEqual([
       'address',
+      'email',
       'logoUrl',
       'phoneNumber',
       'receiptFooter',
@@ -109,3 +113,4 @@ describe('readStoreProfileSnapshot / storeProfileAuditPayload', () => {
     ]);
   });
 });
+

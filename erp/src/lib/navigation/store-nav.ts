@@ -409,7 +409,10 @@ export const storeNavGroups: NavGroup[] = [
         permission: PERMISSIONS.SETTINGS.manageHardware,
       },
       {
-        name: 'Taxes & Store Settings',
+        // ARGUS #477: the label used to promise "Taxes & Store Settings" while
+        // linking only to /settings/taxes. The store profile has its own entry,
+        // so the label now matches the page; both pages cross-link.
+        name: 'Taxes',
         href: '/settings/taxes',
         roles: ['OWNER', 'MANAGER'],
         permission: PERMISSIONS.SETTINGS.manageTax,

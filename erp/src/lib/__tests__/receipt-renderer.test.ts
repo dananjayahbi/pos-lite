@@ -118,3 +118,76 @@ describe('buildThermalReceiptHtml voided sales', () => {
     expect(html).not.toContain('(reversed)');
   });
 });
+
+/**
+ * ARGUS #474: the Store profile promises the logo appears on receipts, but the
+ * 80 mm sale receipt rendered no logo (only the A4 return receipt did).
+ */
+describe('buildThermalReceiptHtml store logo', () => {
+  it('prints the uploaded logo on the header', () => {
+    const html = buildThermalReceiptHtml(
+      makeSale(),
+      makeTenant({ logoUrl: 'https://cdn.example.com/store-logo.png' }),
+      'Nimal',
+    );
+    expect(html).toContain('class="brand-logo"');
+    expect(html).toContain('src="https://cdn.example.com/store-logo.png"');
+  });
+
+  it('omits the logo element when no logo is stored', () => {
+    const html = buildThermalReceiptHtml(makeSale(), makeTenant({ logoUrl: null }), 'Nimal');
+    expect(html).not.toContain('class="brand-logo"');
+  });
+
+  it('escapes the logo URL so it cannot break out of the attribute', () => {
+    const html = buildThermalReceiptHtml(
+      makeSale(),
+      makeTenant({ logoUrl: 'https://cdn.example.com/a"onload="alert(1).png' }),
+      'Nimal',
+    );
+    expect(html).not.toContain('onload="alert(1)');
+    expect(html).toContain('&quot;');
+  });
+});
+
+/**
+ * ARGUS #491: the browser, ESC/POS and A4 receipts must share one footer
+ * fallback and one contact policy. A blank footer is not three different texts.
+ */
+describe('buildThermalReceiptHtml shared footer', () => {
+  it('uses the shared fallback when the saved footer is blank', () => {
+    const html = buildThermalReceiptHtml(
+      makeSale(),
+      makeTenant({ settings: { address: '', phoneNumber: '', receiptFooter: '   ' } }),
+      'Nimal',
+    );
+    expect(html).toContain('Thank you for shopping with us!');
+    expect(html).not.toContain('Thank you for your purchase!');
+  });
+});
+
+/**
+ * ARGUS #492: address and footer are multi-row textareas; their line breaks
+ * must survive on the printed HTML instead of collapsing into one line.
+ */
+describe('buildThermalReceiptHtml multi-line profile text', () => {
+  it('prints each address line separately', () => {
+    const html = buildThermalReceiptHtml(
+      makeSale(),
+      makeTenant({
+        settings: {
+          address: '12 Galle Road\r\nMatara',
+          phoneNumber: '041 222 3344',
+          receiptFooter: 'Thank you\nCome again',
+        },
+      }),
+      'Nimal',
+    );
+    expect(html).toContain('<div class="store-info">12 Galle Road</div>');
+    expect(html).toContain('<div class="store-info">Matara</div>');
+    expect(html).toContain('<div class="store-info">Tel: 041 222 3344</div>');
+    expect(html).toContain('<div>Thank you</div>');
+    expect(html).toContain('<div>Come again</div>');
+    expect(html).not.toContain('12 Galle Road\r\nMatara');
+  });
+});

@@ -358,3 +358,41 @@ describe('buildReturnReceiptHtml', () => {
     expect(html).toContain('Rs. 2,084.00');
   });
 });
+
+/**
+ * ARGUS #491: the A4 return receipt uses the same footer fallback as the
+ * browser and ESC/POS sale receipts.
+ */
+describe('buildReturnReceiptHtml shared footer', () => {
+  it('uses the shared fallback when the saved footer is blank', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn(),
+      makeTenant({ settings: { address: '', phoneNumber: '', receiptFooter: '' } }),
+      'Nimal',
+      'Kamal',
+    );
+    expect(html).toContain('Thank you for shopping with us!');
+  });
+});
+
+/** ARGUS #492: the A4 header/footer keep the operator's line breaks. */
+describe('buildReturnReceiptHtml multi-line profile text', () => {
+  it('prints each address and footer line separately', () => {
+    const html = buildReturnReceiptHtml(
+      makeReturn(),
+      makeTenant({
+        settings: {
+          address: '12 Galle Road\nMatara',
+          phoneNumber: '041 222 3344',
+          receiptFooter: 'Thank you\nCome again',
+        },
+      }),
+      'Nimal',
+      'Kamal',
+    );
+    expect(html).toContain('<div class="brand-meta">12 Galle Road</div>');
+    expect(html).toContain('<div class="brand-meta">Matara</div>');
+    expect(html).toContain('<div>Thank you</div>');
+    expect(html).toContain('<div>Come again</div>');
+  });
+});
