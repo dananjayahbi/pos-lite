@@ -6,6 +6,7 @@ import { getExpenses, createExpense } from '@/lib/services/expense.service';
 import { CreateExpenseSchema } from '@/lib/validators/expense.validators';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { parseQueryInt } from '@/lib/api/query-params';
+import { normalizeExpenseSearch } from '@/lib/expenses/filter';
 import {
   authorizeExpenseWrite,
   resolveExpenseApprovalThreshold,
@@ -39,6 +40,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const result = await getExpenses(tenantId, {
       category: searchParams.get('category') ?? undefined,
+      search: normalizeExpenseSearch(searchParams.get('search')),
       dateFrom: searchParams.get('dateFrom') ?? undefined,
       dateTo: searchParams.get('dateTo') ?? undefined,
       // XC-01: malformed page/pageSize now 400 instead of NaN → 500.

@@ -28,6 +28,12 @@ interface AccountSelectProps {
   disabled?: boolean;
   id?: string;
   className?: string;
+  /**
+   * Keep a saved value selectable even when it is no longer in `accounts`
+   * (inactive account, filtered fetch). ARGUS #404: this prevents the edit
+   * dialog from falling back to "Select account" for the fund account.
+   */
+  fallbackOption?: { id: string; label: string } | null;
 }
 
 export function AccountSelect({
@@ -40,10 +46,20 @@ export function AccountSelect({
   disabled,
   id,
   className,
+  fallbackOption,
 }: AccountSelectProps) {
   const options = accounts.filter(
     (account) => account.status === 'ACTIVE' && account.id !== excludeAccountId,
   );
+
+  // A saved value that cannot be found in the loaded options still needs a
+  // label, otherwise Radix renders the placeholder for an existing selection.
+  const fallback =
+    fallbackOption &&
+    value === fallbackOption.id &&
+    !options.some((account) => account.id === fallbackOption.id)
+      ? fallbackOption
+      : null;
 
   return (
     <Select
@@ -56,6 +72,7 @@ export function AccountSelect({
       </SelectTrigger>
       <SelectContent>
         {noneLabel !== undefined && <SelectItem value={NO_ACCOUNT}>{noneLabel}</SelectItem>}
+        {fallback && <SelectItem value={fallback.id}>{fallback.label}</SelectItem>}
         {options.map((account) => (
           <SelectItem key={account.id} value={account.id}>
             {account.name}

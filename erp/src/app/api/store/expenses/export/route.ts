@@ -6,6 +6,7 @@ import { getExpensesForExport } from '@/lib/services/expense.service';
 import { EXPENSE_CATEGORIES } from '@/lib/validators/expense.validators';
 import { toErrorResponse } from '@/lib/api/error-envelope';
 import { csvDownloadResponse } from '@/lib/export';
+import { normalizeExpenseSearch } from '@/lib/expenses/filter';
 import {
   buildExpenseRegisterCsv,
   expenseRegisterFilename,
@@ -56,6 +57,7 @@ export async function GET(request: Request) {
 
     const expenses = await getExpensesForExport(tenantId, {
       category,
+      search: normalizeExpenseSearch(searchParams.get('search')),
       dateFrom: searchParams.get('dateFrom') ?? undefined,
       dateTo: searchParams.get('dateTo') ?? undefined,
     });
