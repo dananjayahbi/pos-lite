@@ -24,12 +24,14 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { Plus, Pencil, Archive, ChevronLeft, ChevronRight, ArrowRight, RotateCw } from 'lucide-react';
+import { Plus, Pencil, Archive, ChevronLeft, ChevronRight, ArrowRight, RotateCw, ShieldX } from 'lucide-react';
 import { toast } from 'sonner';
 import { SupplierSheet } from '@/components/suppliers/SupplierSheet';
 import { RestoreSupplierButton } from '@/components/suppliers/RestoreSupplierButton';
 import { getSuppliersListState } from '@/lib/services/supplierListState.core';
 import { formatRupee } from '@/lib/format';
+import { usePermissions } from '@/hooks/usePermissions';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,6 +70,12 @@ interface SuppliersResponse {
 
 export default function SuppliersPage() {
   const queryClient = useQueryClient();
+  // ARGUS #240: every supplier API returns 403 for a cashier, but the page
+  // still rendered an empty master list and an active Add Supplier button.
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
+  const canView = hasPermission(PERMISSIONS.SUPPLIER.viewSupplier);
+  const canCreate = hasPermission(PERMISSIONS.SUPPLIER.createSupplier);
+  const canEdit = hasPermission(PERMISSIONS.SUPPLIER.editSupplier);
 
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -103,6 +111,8 @@ export default function SuppliersPage() {
     data: SuppliersResponse;
   }>({
     queryKey: ['suppliers', debouncedSearch, page, includeArchived],
+    // Do not fire a request the role is guaranteed to receive 403 for.
+    enabled: canView,
     queryFn: async () => {
       const response = await fetch(`/api/store/suppliers?${queryParams.toString()}`);
       const json = await response.json().catch(() => null);
@@ -162,6 +172,26 @@ export default function SuppliersPage() {
 
   return (
     <div className="space-y-6 p-6 md:p-8">
+      {permissionsLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <Skeleton key={index} className="h-12 w-full" />
+          ))}
+        </div>
+      ) : !canView ? (
+        <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-sand/40 bg-white py-20 text-center">
+          <ShieldX className="h-12 w-12 text-mist-ink" />
+          <h1 className="font-display text-2xl font-semibold text-espresso">Access Denied</h1>
+          <p className="max-w-md text-sm text-muted-foreground">
+            You do not have permission to view suppliers. Ask an owner or manager to grant
+            the supplier view permission.
+          </p>
+          <Button variant="outline" asChild>
+            <Link href="/">Back to Dashboard</Link>
+          </Button>
+        </div>
+      ) : (
+        <>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -176,10 +206,12 @@ export default function SuppliersPage() {
             </Link>
           </p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Supplier
-        </Button>
+        {canCreate && (
+          <Button onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Supplier
+          </Button>
+        )}
       </div>
 
       {/* Search */}
@@ -261,7 +293,7 @@ export default function SuppliersPage() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => openEdit(s)}
+                        onClick={canEdit ? () => openEdit(s) : undefined}
                         className="font-medium text-espresso hover:text-terracotta hover:underline"
                       >
                         {s.name}
@@ -323,26 +355,30 @@ export default function SuppliersPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      {s.isActive ? (
-                        <>
-                          <Button variant="ghost" size="sm" onClick={() => openEdit(s)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setArchiveTarget(s)}
-                          >
-                            <Archive className="h-4 w-4" />
-                          </Button>
-                        </>
-                      ) : (
-                        // M06-05: archived rows are read-only (PATCH → 409),
-                        // so the row offers Restore instead of Edit/Archive.
-                        <RestoreSupplierButton supplierId={s.id} supplierName={s.name} />
-                      )}
-                    </div>
+                    {canEdit ? (
+                      <div className="flex items-center justify-end gap-1">
+                        {s.isActive ? (
+                          <>
+                            <Button variant="ghost" size="sm" onClick={() => openEdit(s)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setArchiveTarget(s)}
+                            >
+                              <Archive className="h-4 w-4" />
+                            </Button>
+                          </>
+                        ) : (
+                          // M06-05: archived rows are read-only (PATCH → 409),
+                          // so the row offers Restore instead of Edit/Archive.
+                          <RestoreSupplierButton supplierId={s.id} supplierName={s.name} />
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Read only</span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
@@ -408,6 +444,8 @@ export default function SuppliersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </>
+      )}
     </div>
   );
 }
